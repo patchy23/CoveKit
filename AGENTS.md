@@ -49,6 +49,7 @@
 ## 工程约束（第一批验收红线）
 
 **可读性**：组件 < 300 行；逻辑抽纯函数（`tools/<id>/useXxx.ts`）；IPC 出入参只在 contracts.ts 出现一次；ESLint 9 + Prettier + rustfmt + `clippy -D warnings` 全绿才合入。
+**字体规范**：字号一律用语义 token（`text-h1/text-brand/text-card-title/text-h2/text-body/text-body-sm/text-caption/text-label-caps/text-display`，定义在 `src/assets/styles/main.css` @theme），禁止 arbitrary `text-[*px]`；字体族用 `--font-sans`（Inter Variable 本地打包）/ `--font-mono`（等宽）。
 **可扩展性**：新增工具 = 注册一行；新增 Rust 命令 = 模块 + 装配处注册一行；新增厂商/数据库 = adapter；升级第二批时第一批代码只增不改。
 
 ## 开放问题（默认值已定，开工前可与用户确认）

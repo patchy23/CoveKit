@@ -15,18 +15,19 @@ const previewHtml = computed(() => renderMarkdown(input.value));
 <template>
   <div class="grid grid-cols-2 gap-[12px]">
     <div>
-      <label class="mb-[6px] block text-[12px] font-semibold text-secondary">Markdown</label>
+      <label class="mb-[6px] block text-body-sm font-semibold text-secondary">Markdown</label>
       <textarea
         v-model="input"
         rows="14"
         spellcheck="false"
-        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[13px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
       />
     </div>
     <div>
-      <label class="mb-[6px] block text-[12px] font-semibold text-secondary">预览</label>
+      <label class="mb-[6px] block text-body-sm font-semibold text-secondary">预览</label>
       <div
-        class="markdown-body h-full min-h-[320px] resize-y overflow-auto rounded-md border border-border bg-surface-muted p-[14px] text-[13px] leading-relaxed text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="markdown-body h-full min-h-[320px] resize-y overflow-auto rounded-md border border-border bg-surface-muted p-[14px] leading-relaxed text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        style="font-size: var(--text-body)"
         v-html="previewHtml"
       />
     </div>

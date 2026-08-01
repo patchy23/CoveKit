@@ -42,10 +42,10 @@ function onSearchFocus() {
     class="flex h-[66px] shrink-0 items-center gap-md border-b border-border bg-surface px-xl dark:border-border-dark dark:bg-surface-dark"
   >
     <div class="min-w-0">
-      <h1 class="truncate text-[17px] font-bold tracking-[-0.02em] dark:text-primary-dark">
+      <h1 class="truncate text-h1 font-bold tracking-[-0.02em] dark:text-primary-dark">
         {{ title }}
       </h1>
-      <p class="mt-[1px] truncate text-[12px] text-text-muted dark:text-text-muted-dark">
+      <p class="mt-[1px] truncate text-body-sm text-text-muted dark:text-text-muted-dark">
         {{ subtitle }}
       </p>
     </div>
@@ -60,7 +60,7 @@ function onSearchFocus() {
       />
       <input
         v-model="ui.searchQuery"
-        class="flex-1 bg-transparent text-[13px] text-primary outline-none placeholder:text-text-muted dark:text-primary-dark dark:placeholder:text-text-muted-dark"
+        class="flex-1 bg-transparent text-body text-primary outline-none placeholder:text-text-muted dark:text-primary-dark dark:placeholder:text-text-muted-dark"
         type="text"
         placeholder="搜索工具…"
         spellcheck="false"

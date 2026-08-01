@@ -16,26 +16,26 @@ const stats = computed(() => diffStats(diff.value));
   <div class="flex flex-col gap-[12px]">
     <div class="grid grid-cols-2 gap-[12px]">
       <div>
-        <label class="mb-[6px] block text-[12px] font-semibold text-secondary">原文</label>
+        <label class="mb-[6px] block text-body-sm font-semibold text-secondary">原文</label>
         <textarea
           v-model="left"
           rows="8"
           spellcheck="false"
-          class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[13px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+          class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
         />
       </div>
       <div>
-        <label class="mb-[6px] block text-[12px] font-semibold text-secondary">新文</label>
+        <label class="mb-[6px] block text-body-sm font-semibold text-secondary">新文</label>
         <textarea
           v-model="right"
           rows="8"
           spellcheck="false"
-          class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[13px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+          class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
         />
       </div>
     </div>
 
-    <div class="flex items-center gap-[10px] text-[12px] text-text-muted">
+    <div class="flex items-center gap-[10px] text-body-sm text-text-muted">
       <span
         class="rounded-full bg-success-soft px-[9px] py-[2px] font-semibold text-success-strong dark:bg-success-soft-dark dark:text-success-dark"
       >
@@ -56,7 +56,7 @@ const stats = computed(() => diffStats(diff.value));
         <div
           v-for="(line, i) in diff"
           :key="i"
-          class="flex gap-[10px] border-b border-border px-[12px] py-[5px] font-mono text-[13px] leading-relaxed last:border-b-0 dark:border-border-dark"
+          class="flex gap-[10px] border-b border-border px-[12px] py-[5px] font-mono text-body leading-relaxed last:border-b-0 dark:border-border-dark"
           :class="
             line.type === 'add'
               ? 'bg-success-soft dark:bg-success-soft-dark'
@@ -78,7 +78,7 @@ const stats = computed(() => diffStats(diff.value));
           >
           <span class="whitespace-pre-wrap break-all dark:text-primary-dark">{{ line.text }}</span>
         </div>
-        <p v-if="!diff.length" class="p-[14px] text-[13px] text-text-muted">两侧内容相同或为空</p>
+        <p v-if="!diff.length" class="p-[14px] text-body text-text-muted">两侧内容相同或为空</p>
       </div>
     </div>
   </div>

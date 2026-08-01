@@ -30,13 +30,13 @@ const catNames: Record<string, string> = {
         <AppIcon :name="t.icon" :size="17" />
       </div>
       <div class="min-w-0">
-        <div class="text-[13px] font-semibold dark:text-primary-dark">{{ t.name }}</div>
-        <div class="mt-[1px] truncate text-[12px] text-secondary dark:text-secondary-dark">
+        <div class="text-body font-semibold dark:text-primary-dark">{{ t.name }}</div>
+        <div class="mt-[1px] truncate text-body-sm text-secondary dark:text-secondary-dark">
           {{ t.description }}
         </div>
       </div>
       <span
-        class="ml-auto shrink-0 rounded-full bg-neutral px-[9px] py-[3px] text-[11px] font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
+        class="ml-auto shrink-0 rounded-full bg-neutral px-[9px] py-[3px] text-caption font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
       >
         {{ catNames[t.category] ?? t.category }}
       </span>

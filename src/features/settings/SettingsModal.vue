@@ -37,10 +37,8 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
         <AppIcon name="gear" :size="23" class="text-tertiary-strong dark:text-tertiary-dark" />
       </div>
       <div>
-        <h2 class="text-[17px] font-extrabold tracking-[-0.02em] dark:text-primary-dark">
-          偏好设置
-        </h2>
-        <p class="mt-[3px] text-[13px] text-secondary dark:text-secondary-dark">
+        <h2 class="text-h1 font-extrabold tracking-[-0.02em] dark:text-primary-dark">偏好设置</h2>
+        <p class="mt-[3px] text-body text-secondary dark:text-secondary-dark">
           外观、快捷键与工具级配置
         </p>
       </div>
@@ -56,14 +54,14 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
     <div class="mt-[20px] flex flex-col gap-md">
       <!-- 外观 -->
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-        <h3 class="text-[13px] font-bold dark:text-primary-dark">外观</h3>
+        <h3 class="text-body font-bold dark:text-primary-dark">外观</h3>
         <div class="mt-sm grid grid-cols-2 gap-sm">
           <label
-            class="flex flex-col gap-[6px] text-[12px] font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
           >
             主题
             <select
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-[13px] text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
               :value="settings.settings.theme"
               @change="
                 settings.set(
@@ -78,11 +76,11 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             </select>
           </label>
           <label
-            class="flex flex-col gap-[6px] text-[12px] font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
           >
             语言
             <select
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-[13px] text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
               :value="settings.settings.language"
               @change="
                 settings.set(
@@ -100,21 +98,21 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
 
       <!-- 快捷键与通用 -->
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-        <h3 class="text-[13px] font-bold dark:text-primary-dark">快捷键与通用</h3>
+        <h3 class="text-body font-bold dark:text-primary-dark">快捷键与通用</h3>
         <div class="mt-sm flex flex-col gap-sm">
           <label
-            class="flex flex-col gap-[6px] text-[12px] font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
           >
             全局唤起快捷键
             <input
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-[13px] text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
               :value="settings.settings.globalHotkey"
               spellcheck="false"
               @change="settings.set('globalHotkey', ($event.target as HTMLInputElement).value)"
             />
           </label>
           <label
-            class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-[13px] font-medium dark:border-border-dark"
+            class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"
           >
             <span class="dark:text-primary-dark">开机自启</span>
             <input
@@ -129,10 +127,10 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
 
       <!-- 剪贴板策略 -->
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-        <h3 class="text-[13px] font-bold dark:text-primary-dark">剪贴板</h3>
+        <h3 class="text-body font-bold dark:text-primary-dark">剪贴板</h3>
         <div class="mt-sm flex flex-col gap-sm">
           <label
-            class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-[13px] font-medium dark:border-border-dark"
+            class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"
           >
             <span class="dark:text-primary-dark">启用剪贴板历史</span>
             <input
@@ -148,12 +146,12 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             />
           </label>
           <label
-            class="flex flex-col gap-[6px] text-[12px] font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
           >
             历史上限
             <input
               type="number"
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-[13px] text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
               :value="settings.settings.clipboard.historyLimit"
               @change="
                 settings.set('clipboard', {
@@ -164,11 +162,11 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             />
           </label>
           <label
-            class="flex flex-col gap-[6px] text-[12px] font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
           >
             忽略的应用关键词（逗号分隔）
             <input
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-[13px] text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
               :value="settings.settings.clipboard.ignore.join(', ')"
               placeholder="密码管理器, 密钥存储"
               @change="
@@ -191,7 +189,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
         :key="t.id"
         class="rounded-lg border border-border p-[16px] dark:border-border-dark"
       >
-        <h3 class="flex items-center gap-[8px] text-[13px] font-bold dark:text-primary-dark">
+        <h3 class="flex items-center gap-[8px] text-body font-bold dark:text-primary-dark">
           <AppIcon :name="t.icon" :size="15" class="text-tertiary-strong dark:text-tertiary-dark" />
           {{ t.name }} 设置
         </h3>
@@ -199,12 +197,12 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
           <label
             v-for="field in t.settingsSchema"
             :key="field.key"
-            class="flex flex-col gap-[6px] text-[12px] font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
           >
             {{ field.label }}
             <select
               v-if="field.type === 'select'"
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-[13px] text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
               :value="String(fieldValue(field, t.id))"
               @change="onFieldChange(field, t.id, ($event.target as HTMLSelectElement).value)"
             >
@@ -222,7 +220,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             <input
               v-else-if="field.type === 'number'"
               type="number"
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-[13px] text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
               :value="String(fieldValue(field, t.id))"
               @change="
                 onFieldChange(field, t.id, Number(($event.target as HTMLInputElement).value))
@@ -230,7 +228,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             />
             <input
               v-else
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-[13px] text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
               :value="String(fieldValue(field, t.id))"
               @change="onFieldChange(field, t.id, ($event.target as HTMLInputElement).value)"
             />
@@ -238,7 +236,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
         </div>
       </section>
 
-      <p v-if="!toolsWithSettings.length" class="text-[12px] text-text-muted">
+      <p v-if="!toolsWithSettings.length" class="text-body-sm text-text-muted">
         暂无带设置项的工具（首批工具设置将由 M1 工具声明 settingsSchema 后出现）
       </p>
     </div>

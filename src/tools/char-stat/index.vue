@@ -21,12 +21,12 @@ const items = [
 <template>
   <div class="flex flex-col gap-[12px]">
     <div>
-      <label class="mb-[6px] block text-[12px] font-semibold text-secondary">输入文本</label>
+      <label class="mb-[6px] block text-body-sm font-semibold text-secondary">输入文本</label>
       <textarea
         v-model="input"
         rows="10"
         spellcheck="false"
-        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[13px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
         placeholder="在此输入或粘贴文本，统计实时更新"
       />
     </div>
@@ -37,11 +37,11 @@ const items = [
         class="rounded-md border border-border p-[12px] text-center dark:border-border-dark"
       >
         <div
-          class="text-[20px] font-bold tabular-nums text-tertiary-strong dark:text-tertiary-dark"
+          class="text-display font-bold tabular-nums text-tertiary-strong dark:text-tertiary-dark"
         >
           {{ stats[item.key] }}
         </div>
-        <div class="mt-[2px] text-[11px] font-medium text-text-muted">{{ item.label }}</div>
+        <div class="mt-[2px] text-caption font-medium text-text-muted">{{ item.label }}</div>
       </div>
     </div>
   </div>

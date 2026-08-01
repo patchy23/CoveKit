@@ -62,11 +62,34 @@
   /* ── Typography（DESIGN.md typography：Inter 优先，中文回退）──
    * 西文/数字：本地 Inter Variable；缺失时 Segoe UI Variable（Win11）/ Segoe UI
    * 中文：PingFang SC（macOS）/ 微软雅黑 UI（Win10+，较旧版雅黑渲染更清晰）
-   * 等宽：Cascadia Code（Win11 终端默认）/ Consolas（Win10 通用） */
+   * 等宽：Cascadia Code（Win11 终端默认）/ Consolas（Win10 通用）
+   *
+   * ── 字号规范（单一事实源）──
+   * 新增字号先在此加 token，组件一律用语义类（text-h1 / text-body / …），
+   * 禁止散落 arbitrary 值（text-[13px]）。字重用 font-*，字距用 tracking-*。 */
   --font-sans:
     "Inter", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
     "Microsoft YaHei", sans-serif;
   --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+
+  /* 页面主标题（顶栏） */
+  --text-h1: 17px;
+  /* 品牌名（侧栏） */
+  --text-brand: 15px;
+  /* 卡片标题 / 弹窗标题 */
+  --text-card-title: 14.5px;
+  /* 区块标题 / 空状态主文案 */
+  --text-h2: 14px;
+  /* 正文 / 输入 / 按钮 / 导航 / 页签 */
+  --text-body: 13px;
+  /* 次级说明 / 描述 / placeholder / 提示 */
+  --text-body-sm: 12px;
+  /* 徽标 / 统计标签 / 辅助信息 */
+  --text-caption: 11px;
+  /* 分类小标 / 标签（配合 tracking） */
+  --text-label-caps: 10.5px;
+  /* 数据大数字（统计） */
+  --text-display: 20px;
 }
 
 /* 深色模式：切换 document.documentElement[data-theme=dark] */
@@ -88,6 +111,13 @@
 
   ::selection {
     @apply bg-tertiary text-on-tertiary dark:bg-tertiary-dark dark:text-on-tertiary-dark;
+  }
+
+  /* placeholder 统一规范：次级字号（12px）+ 弱化色 */
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--color-text-muted);
+    font-size: var(--text-body-sm);
   }
 
   /* 细滚动条（对齐原型 002） */

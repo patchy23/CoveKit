@@ -45,7 +45,7 @@ async function toggleFav() {
         />
       </div>
       <button
-        class="rounded-[6px] p-1 text-[17px] leading-none transition-all duration-150 hover:scale-110"
+        class="rounded-[6px] p-1 text-h1 leading-none transition-all duration-150 hover:scale-110"
         :class="isFav ? 'text-tertiary-strong' : 'text-text-muted hover:text-tertiary-strong'"
         :title="isFav ? '取消收藏' : '收藏'"
         @click.stop="toggleFav"
@@ -53,7 +53,7 @@ async function toggleFav() {
         {{ isFav ? "★" : "☆" }}
       </button>
     </div>
-    <h3 class="mt-md text-[14.5px] font-bold tracking-[-0.01em] dark:text-primary-dark">
+    <h3 class="mt-md text-card-title font-bold tracking-[-0.01em] dark:text-primary-dark">
       <template v-if="nameChunks">
         <template v-for="(c, i) in nameChunks" :key="i">
           <mark
@@ -66,14 +66,14 @@ async function toggleFav() {
       </template>
       <template v-else>{{ tool.name }}</template>
     </h3>
-    <p class="mt-[5px] text-[12px] leading-[1.55] text-secondary dark:text-secondary-dark">
+    <p class="mt-[5px] text-body-sm leading-[1.55] text-secondary dark:text-secondary-dark">
       {{ tool.description }}
     </p>
     <div v-if="tool.tags?.length" class="mt-[13px] flex gap-[6px]">
       <span
         v-for="tag in tool.tags"
         :key="tag"
-        class="rounded-[6px] px-2 py-[3px] text-[10.5px] font-semibold"
+        class="rounded-[6px] px-2 py-[3px] text-label-caps font-semibold"
         :class="
           tag === '热门'
             ? 'bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark'

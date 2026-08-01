@@ -12,7 +12,7 @@ const ui = useUiStore();
     <Transition name="toast">
       <div
         v-if="ui.toastVisible"
-        class="fixed bottom-[34px] left-1/2 z-[200] -translate-x-1/2 rounded-md bg-[#1c2129] px-[18px] py-[10px] text-[13px] text-white shadow-[0_12px_40px_rgba(16,24,40,0.14)]"
+        class="fixed bottom-[34px] left-1/2 z-[200] -translate-x-1/2 rounded-md bg-[#1c2129] px-[18px] py-[10px] text-body text-white shadow-[0_12px_40px_rgba(16,24,40,0.14)]"
       >
         {{ ui.toastMessage }}
       </div>

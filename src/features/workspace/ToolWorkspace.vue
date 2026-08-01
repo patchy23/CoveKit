@@ -44,22 +44,22 @@ function tabIcon(id: string) {
       class="flex shrink-0 items-center gap-[2px] border-b border-border bg-surface-muted px-sm dark:border-border-dark dark:bg-surface-muted-dark"
     >
       <button
-        class="flex h-[38px] items-center gap-[8px] rounded-t-[8px] px-[14px] text-[13px] font-medium transition-colors"
+        class="flex h-[38px] items-center gap-[8px] rounded-t-[8px] px-[14px] text-body font-medium transition-colors"
         :class="
           ui.activeTab === null
             ? 'bg-surface text-primary shadow-[inset_0_2px_0_0_var(--color-tertiary)] dark:bg-surface-dark dark:text-primary-dark'
             : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
         "
-        title="工具库"
+        title="回到工具库首页"
         @click="ui.goHome()"
       >
         <AppIcon name="all" :size="15" />
-        工具库
+        首页
       </button>
       <div
         v-for="id in ui.openTabs"
         :key="id"
-        class="group flex h-[38px] cursor-pointer items-center gap-[8px] rounded-t-[8px] px-[12px] text-[13px] font-medium transition-colors"
+        class="group flex h-[38px] cursor-pointer items-center gap-[8px] rounded-t-[8px] px-[12px] text-body font-medium transition-colors"
         :class="
           ui.activeTab === id
             ? 'bg-surface text-primary shadow-[inset_0_2px_0_0_var(--color-tertiary)] dark:bg-surface-dark dark:text-primary-dark'
@@ -90,8 +90,8 @@ function tabIcon(id: string) {
       <div v-show="ui.activeTab === null">
         <RecentStrip />
         <div class="mb-[12px] flex items-center gap-sm">
-          <h2 class="text-[14px] font-bold tracking-[-0.01em] dark:text-primary-dark">工具列表</h2>
-          <span class="text-[12px] text-text-muted dark:text-text-muted-dark"
+          <h2 class="text-h2 font-bold tracking-[-0.01em] dark:text-primary-dark">工具列表</h2>
+          <span class="text-body-sm text-text-muted dark:text-text-muted-dark"
             >{{ tools.filtered.length }} 个</span
           >
         </div>
@@ -107,10 +107,10 @@ function tabIcon(id: string) {
               class="text-tertiary-strong dark:text-tertiary-dark"
             />
           </div>
-          <p class="mt-md text-[14px] font-bold dark:text-primary-dark">
+          <p class="mt-md text-h2 font-bold dark:text-primary-dark">
             {{ searching ? "未找到匹配工具" : hasTools ? "该分类暂无工具" : "暂无工具" }}
           </p>
-          <p class="mt-xs text-[12px] text-text-muted dark:text-text-muted-dark">
+          <p class="mt-xs text-body-sm text-text-muted dark:text-text-muted-dark">
             {{
               searching
                 ? "换个关键词试试"
