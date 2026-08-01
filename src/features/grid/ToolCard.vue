@@ -73,7 +73,7 @@ async function toggleFav() {
       <span
         v-for="tag in tool.tags"
         :key="tag"
-        class="rounded-[6px] px-2 py-[3px] text-label-caps font-semibold"
+        class="rounded-[6px] px-2 py-[3px] text-caption font-medium"
         :class="
           tag === '热门'
             ? 'bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark'

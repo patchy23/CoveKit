@@ -5,6 +5,7 @@
 import { ref } from "vue";
 import { decodeUrl, encodeUrl, hasEncodedFragment } from "./useUrlCodec";
 import { useCopy } from "@/tools/shared/useClipboard";
+import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
 
 const { copyText } = useCopy();
 
@@ -30,13 +31,7 @@ function runDecode() {
   <div class="flex flex-col gap-[12px]">
     <div>
       <label class="mb-[6px] field-label">输入内容</label>
-      <textarea
-        v-model="input"
-        rows="6"
-        spellcheck="false"
-        class="field-textarea font-mono"
-        placeholder="https://example.com/搜索?q=patchy box"
-      />
+      <LineNumberTextarea v-model="input" placeholder="https://example.com/搜索?q=patchy box" />
     </div>
     <div class="flex items-center gap-[8px]">
       <button class="btn-primary" @click="runEncode">编码</button>
@@ -66,14 +61,7 @@ function runDecode() {
         <label class="text-body font-medium text-secondary">输出</label>
         <button v-if="output" class="btn-ghost" @click="copyText(output, '已复制')">复制</button>
       </div>
-      <textarea
-        :value="output"
-        rows="6"
-        readonly
-        spellcheck="false"
-        class="field-textarea font-mono"
-        placeholder="结果将显示在这里"
-      />
+      <LineNumberTextarea :model-value="output" readonly placeholder="结果将显示在这里" />
     </div>
   </div>
 </template>

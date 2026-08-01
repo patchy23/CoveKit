@@ -1,11 +1,16 @@
 <script setup lang="ts">
 /**
- * ToolList · 列表视图（对齐原型 .list/.lrow）
+ * ToolList · 列表视图（对齐原型 .list/.lrow，含收藏星）
  */
 import AppIcon from "@/features/ui/AppIcon.vue";
+import type { ToolManifest } from "@/core/registry/types";
+import { useFavoritesStore } from "@/stores/favorites";
 import { useToolsStore } from "@/stores/tools";
+import { useUiStore } from "@/stores/ui";
 
 const tools = useToolsStore();
+const favorites = useFavoritesStore();
+const ui = useUiStore();
 
 const catNames: Record<string, string> = {
   dev: "开发",
@@ -14,6 +19,13 @@ const catNames: Record<string, string> = {
   net: "网络",
   sys: "系统",
 };
+
+const isFav = (id: string) => favorites.has(id);
+
+async function toggleFav(t: ToolManifest) {
+  const nowFav = await favorites.toggle(t.id);
+  ui.toast(nowFav ? `已收藏「${t.name}」` : `已取消收藏「${t.name}」`);
+}
 </script>
 
 <template>
@@ -35,8 +47,16 @@ const catNames: Record<string, string> = {
           {{ t.description }}
         </div>
       </div>
+      <button
+        class="ml-auto shrink-0 rounded-[6px] p-1 text-h1 leading-none transition-all duration-150 hover:scale-110"
+        :class="isFav(t.id) ? 'text-tertiary-strong' : 'text-text-muted hover:text-tertiary-strong'"
+        :title="isFav(t.id) ? '取消收藏' : '收藏'"
+        @click.stop="toggleFav(t)"
+      >
+        {{ isFav(t.id) ? "★" : "☆" }}
+      </button>
       <span
-        class="ml-auto shrink-0 rounded-full bg-neutral px-[9px] py-[3px] text-caption font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
+        class="shrink-0 rounded-full bg-neutral px-[9px] py-[3px] text-caption font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
       >
         {{ catNames[t.category] ?? t.category }}
       </span>

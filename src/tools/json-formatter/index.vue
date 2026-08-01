@@ -1,10 +1,13 @@
 <script setup lang="ts">
 /**
  * JSON 格式化 · 格式化/压缩/校验 + 错误行号定位
+ * 输入带行号；输出语法高亮（highlight.js）。
  */
-import { ref } from "vue";
+import { computed, ref } from "vue";
+import hljs from "highlight.js";
 import { formatJson, minifyJson } from "./useFormat";
 import { useCopy } from "@/tools/shared/useClipboard";
+import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
 import { useSettingsStore } from "@/stores/settings";
 
 const settings = useSettingsStore();
@@ -29,33 +32,34 @@ function runMinify() {
     : "";
   output.value = r.output;
 }
+
+function clearAll() {
+  input.value = "";
+  output.value = "";
+  errorMsg.value = "";
+}
+
+/** 输出语法高亮（解析失败时回退为 HTML 转义纯文本） */
+const highlighted = computed(() => {
+  if (!output.value) return "";
+  try {
+    return hljs.highlight(output.value, { language: "json", ignoreIllegals: true }).value;
+  } catch {
+    return output.value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+});
 </script>
 
 <template>
   <div class="flex flex-col gap-[12px]">
     <div>
       <label class="mb-[6px] field-label">输入 JSON</label>
-      <textarea
-        v-model="input"
-        rows="8"
-        spellcheck="false"
-        class="field-textarea font-mono"
-        placeholder='输入 JSON，如 {"a": 1}'
-      />
+      <LineNumberTextarea v-model="input" min-height="180px" placeholder='输入 JSON，如 {"a": 1}' />
     </div>
     <div class="flex items-center gap-[8px]">
       <button class="btn-primary" @click="runFormat">格式化</button>
       <button class="btn-secondary" @click="runMinify">压缩</button>
-      <button
-        class="ml-auto rounded-md px-[12px] py-[9px] text-body font-medium text-secondary transition-colors hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        @click="
-          input = '';
-          output = '';
-          errorMsg = '';
-        "
-      >
-        清空
-      </button>
+      <button class="ml-auto btn-ghost" @click="clearAll">清空</button>
     </div>
     <p
       v-if="errorMsg"
@@ -65,19 +69,17 @@ function runMinify() {
     </p>
     <div>
       <div class="mb-[6px] flex items-center justify-between">
-        <label class="text-body font-medium text-secondary">输出</label>
+        <label class="field-label">输出</label>
         <button v-if="output" class="btn-ghost" @click="copyText(output, 'JSON 已复制')">
           复制
         </button>
       </div>
-      <textarea
-        :value="output"
-        rows="8"
-        readonly
-        spellcheck="false"
-        class="field-textarea font-mono"
-        placeholder="格式化结果将显示在这里"
-      />
+      <pre
+        class="min-h-[180px] overflow-auto rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
+      >
+        <code v-if="output" class="hljs" v-html="highlighted" />
+        <span v-else class="text-text-muted dark:text-text-muted-dark">格式化结果将显示在这里</span>
+      </pre>
     </div>
   </div>
 </template>

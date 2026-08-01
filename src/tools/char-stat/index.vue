@@ -4,6 +4,7 @@
  */
 import { computed, ref } from "vue";
 import { statText } from "./useCharStat";
+import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
 
 const input = ref("");
 const stats = computed(() => statText(input.value));
@@ -22,13 +23,7 @@ const items = [
   <div class="flex flex-col gap-[12px]">
     <div>
       <label class="mb-[6px] field-label">输入文本</label>
-      <textarea
-        v-model="input"
-        rows="10"
-        spellcheck="false"
-        class="field-textarea font-mono"
-        placeholder="在此输入或粘贴文本，统计实时更新"
-      />
+      <LineNumberTextarea v-model="input" placeholder="在此输入或粘贴文本，统计实时更新" />
     </div>
     <div class="grid grid-cols-3 gap-[10px]">
       <div

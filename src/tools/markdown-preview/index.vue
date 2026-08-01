@@ -1,22 +1,36 @@
 <script setup lang="ts">
 /**
- * Markdown 预览 · 左编辑右预览（GFM，实时渲染）
+ * Markdown 预览 · 左编辑右预览（GFM，实时渲染 + 代码高亮）
  */
-import { computed, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
+import hljs from "highlight.js";
 import { renderMarkdown } from "./useMarkdown";
+import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
 
 const input = ref(
   "# 欢迎使用 patchyBox\n\n- [x] 实时预览\n- [ ] 支持 GFM\n\n```ts\nconst hello = '世界';\n```\n\n**加粗** 与 `行内代码`"
 );
 
 const previewHtml = computed(() => renderMarkdown(input.value));
+
+// 代码块语法高亮（v-html 更新后对 pre code 执行 hljs；immediate 覆盖初始渲染）
+watch(
+  previewHtml,
+  async () => {
+    await nextTick();
+    document.querySelectorAll(".markdown-body pre code").forEach((el) => {
+      hljs.highlightElement(el as HTMLElement);
+    });
+  },
+  { flush: "post", immediate: true }
+);
 </script>
 
 <template>
   <div class="grid grid-cols-2 gap-[12px]">
     <div>
       <label class="mb-[6px] field-label">Markdown</label>
-      <textarea v-model="input" rows="14" spellcheck="false" class="field-textarea font-mono" />
+      <LineNumberTextarea v-model="input" />
     </div>
     <div>
       <label class="mb-[6px] field-label">预览</label>

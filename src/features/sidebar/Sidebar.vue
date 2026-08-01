@@ -67,6 +67,7 @@ function toggleTheme() {
         @click="
           ui.activeCategory = item.id;
           ui.searchQuery = '';
+          ui.goHome();
         "
       >
         <AppIcon :name="item.icon" :size="17" class="shrink-0" />

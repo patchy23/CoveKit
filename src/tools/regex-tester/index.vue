@@ -4,6 +4,7 @@
  */
 import { computed, ref } from "vue";
 import { COMMON_PATTERNS, testRegex } from "./useRegex";
+import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
 
 const pattern = ref("\\d+");
 const flags = ref("g");
@@ -63,7 +64,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
           >{{ result.ok ? `${result.count} 处匹配` : "—" }}</span
         >
       </div>
-      <textarea v-model="text" rows="6" spellcheck="false" class="field-textarea font-mono" />
+      <LineNumberTextarea v-model="text" />
     </div>
 
     <div

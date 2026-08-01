@@ -4,6 +4,7 @@
  */
 import { computed, ref } from "vue";
 import { diffLines, diffStats } from "./useDiff";
+import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
 
 const left = ref("第一行\n第二行\n第三行");
 const right = ref("第一行\n第二行（修改）\n第四行");
@@ -17,11 +18,11 @@ const stats = computed(() => diffStats(diff.value));
     <div class="grid grid-cols-2 gap-[12px]">
       <div>
         <label class="mb-[6px] field-label">原文</label>
-        <textarea v-model="left" rows="8" spellcheck="false" class="field-textarea font-mono" />
+        <LineNumberTextarea v-model="left" />
       </div>
       <div>
         <label class="mb-[6px] field-label">新文</label>
-        <textarea v-model="right" rows="8" spellcheck="false" class="field-textarea font-mono" />
+        <LineNumberTextarea v-model="right" />
       </div>
     </div>
 
