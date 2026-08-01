@@ -8,6 +8,7 @@ import { onMounted } from "vue";
 import Sidebar from "@/features/sidebar/Sidebar.vue";
 import TopBar from "@/features/topbar/TopBar.vue";
 import ToolWorkspace from "@/features/workspace/ToolWorkspace.vue";
+import TitleBar from "@/features/ui/TitleBar.vue";
 import SettingsModal from "@/features/settings/SettingsModal.vue";
 import Toast from "@/features/ui/Toast.vue";
 import { useFavoritesStore } from "@/stores/favorites";
@@ -24,12 +25,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden">
-    <Sidebar />
-    <main class="flex min-w-0 flex-1 flex-col">
-      <TopBar />
-      <ToolWorkspace />
-    </main>
+  <div class="flex h-screen flex-col overflow-hidden">
+    <TitleBar />
+    <div class="flex min-h-0 flex-1">
+      <Sidebar />
+      <main class="flex min-w-0 flex-1 flex-col">
+        <TopBar />
+        <ToolWorkspace />
+      </main>
+    </div>
 
     <SettingsModal />
     <Toast />

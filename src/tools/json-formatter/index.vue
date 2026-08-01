@@ -74,12 +74,10 @@ const highlighted = computed(() => {
           复制
         </button>
       </div>
+      <!-- pre 内不可换行缩进（pre 保留空白，会导致输出前出现空格） -->
       <pre
         class="min-h-[180px] overflow-auto rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
-      >
-        <code v-if="output" class="hljs" v-html="highlighted" />
-        <span v-else class="text-text-muted dark:text-text-muted-dark">格式化结果将显示在这里</span>
-      </pre>
+      ><code v-if="output" class="hljs" v-html="highlighted" /><span v-else class="text-text-muted dark:text-text-muted-dark">格式化结果将显示在这里</span></pre>
     </div>
   </div>
 </template>

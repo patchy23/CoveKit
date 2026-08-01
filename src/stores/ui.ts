@@ -20,9 +20,11 @@ export const useUiStore = defineStore("ui", () => {
   /** 当前激活的工具 id（null = 工具库首页） */
   const activeTab = ref<string | null>(null);
 
-  /** 打开工具页签（已打开则仅激活） */
+  /** 打开工具页签：新页签插到首页后的第一位（已打开则仅激活） */
   function openTool(id: string) {
-    if (!openTabs.value.includes(id)) openTabs.value.push(id);
+    if (!openTabs.value.includes(id)) {
+      openTabs.value.splice(1, 0, id);
+    }
     activeTab.value = id;
   }
 

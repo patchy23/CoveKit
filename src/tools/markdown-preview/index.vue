@@ -79,20 +79,30 @@ watch(
   font-family: var(--font-mono);
   font-size: 0.9em;
   background: var(--color-border);
+  color: var(--color-primary);
   border-radius: 4px;
   padding: 1px 5px;
 }
+[data-theme="dark"] .markdown-body code {
+  background: var(--color-border-dark);
+  color: var(--color-primary-dark);
+}
 .markdown-body pre {
-  background: var(--color-neutral-dark);
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
   border-radius: 8px;
   padding: 12px;
   overflow-x: auto;
   margin: 0.6em 0;
 }
+[data-theme="dark"] .markdown-body pre {
+  background: var(--color-neutral-dark);
+  border-color: var(--color-border-dark);
+}
 .markdown-body pre code {
   background: none;
   padding: 0;
-  color: var(--color-primary-dark);
+  color: inherit;
 }
 .markdown-body blockquote {
   border-left: 3px solid var(--color-tertiary);

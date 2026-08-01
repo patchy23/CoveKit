@@ -78,7 +78,8 @@ function onSearchFocus() {
     <button
       v-if="!activeTool"
       class="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-md bg-tertiary text-on-tertiary transition-[filter] duration-150 hover:brightness-110 dark:bg-tertiary-dark dark:text-on-tertiary-dark"
-      title="添加工具（M1 开放）"
+      title="添加工具"
+      @click="ui.toast('更多工具将在 M2 上线')"
     >
       <AppIcon name="add" :size="17" />
     </button>

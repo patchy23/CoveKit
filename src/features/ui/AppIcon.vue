@@ -25,6 +25,8 @@ const inner: Record<string, string> = {
   sun: '<circle cx="12" cy="12" r="4.5"/><path d="M12 2.8v2M12 19.2v2M2.8 12h2M19.2 12h2M5.4 5.4l1.4 1.4M17.2 17.2l1.4 1.4M18.6 5.4l-1.4 1.4M6.8 17.2l-1.4 1.4"/>',
   gear: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.3M12 18.9v2.3M2.8 12h2.3M18.9 12h2.3M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4 17 7M7 17l-1.6 1.6"/>',
   close: '<path d="M18 6 6 18M6 6l12 12"/>',
+  minus: '<path d="M5 12h14"/>',
+  maximize: '<rect x="5" y="5" width="14" height="14" rx="1.5"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   run: '<path d="M5 12h14M12 5l7 7-7 7"/>',
