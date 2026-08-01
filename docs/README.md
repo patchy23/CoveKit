@@ -1,0 +1,25 @@
+# ToolKit 文档索引
+
+桌面工具箱项目 · 设计方向：**② 明净浅色 · 内容优先**
+
+| 文档 | 内容 |
+|------|------|
+| [`DESIGN.md`](../DESIGN.md) | 设计 tokens 规范（颜色/字体/圆角/组件，单一事实源） |
+| [`01-tech-stack.md`](01-tech-stack.md) | 技术选型分析（Tauri 2.11 + Vue 3 + TS + Tailwind 4） |
+| [`02-architecture.md`](02-architecture.md) | 详细设计（架构、注册表、IPC 契约、数据模型、路线图） |
+
+## 原型（已验收）
+
+```
+sketches/
+├── 001-command-dark/     # 深色命令式（未采纳，留档）
+├── 002-clean-light/      # ✅ 采纳方向
+└── 003-glass-launcher/   # 玻璃启动器（未采纳，留档）
+```
+
+## 快速开始（M0 后生效）
+
+```bash
+pnpm install
+pnpm tauri dev
+```
