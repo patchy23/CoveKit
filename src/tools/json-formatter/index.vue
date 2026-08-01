@@ -39,7 +39,7 @@ function runMinify() {
         v-model="input"
         rows="8"
         spellcheck="false"
-        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[12.5px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[13px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
         placeholder='输入 JSON，如 {"a": 1}'
       />
     </div>
@@ -57,7 +57,7 @@ function runMinify() {
         压缩
       </button>
       <button
-        class="ml-auto rounded-md px-[12px] py-[9px] text-[12.5px] font-medium text-secondary transition-colors hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+        class="ml-auto rounded-md px-[12px] py-[9px] text-[13px] font-medium text-secondary transition-colors hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
         @click="
           input = '';
           output = '';
@@ -69,7 +69,7 @@ function runMinify() {
     </div>
     <p
       v-if="errorMsg"
-      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-[12.5px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
+      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-[13px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
     >
       {{ errorMsg }}
     </p>
@@ -89,7 +89,7 @@ function runMinify() {
         rows="8"
         readonly
         spellcheck="false"
-        class="w-full resize-y rounded-md border border-border bg-surface-muted p-[11px] font-mono text-[12.5px] leading-relaxed text-primary outline-none dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="w-full resize-y rounded-md border border-border bg-surface-muted p-[11px] font-mono text-[13px] leading-relaxed text-primary outline-none dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
         placeholder="格式化结果将显示在这里"
       />
     </div>

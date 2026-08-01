@@ -50,7 +50,7 @@ function useNow() {
         v-model="tsInput"
         type="text"
         spellcheck="false"
-        class="w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-[12.5px] text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-[13px] text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
         placeholder="1700000000 或 1700000000000"
       />
     </div>
@@ -64,7 +64,7 @@ function useNow() {
     </div>
     <p
       v-if="tsError"
-      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-[12.5px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
+      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-[13px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
     >
       {{ tsError }}
     </p>
@@ -111,7 +111,7 @@ function useNow() {
         v-model="dateInput"
         type="text"
         spellcheck="false"
-        class="w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-[12.5px] text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-[13px] text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
         placeholder="2023-11-14 22:13:20 或 ISO 字符串"
       />
     </div>
@@ -125,7 +125,7 @@ function useNow() {
     </div>
     <p
       v-if="dateError"
-      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-[12.5px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
+      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-[13px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
     >
       {{ dateError }}
     </p>

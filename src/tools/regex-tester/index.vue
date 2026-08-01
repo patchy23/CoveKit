@@ -21,7 +21,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
           v-model="pattern"
           type="text"
           spellcheck="false"
-          class="w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-[12.5px] text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+          class="w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-[13px] text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
           placeholder="\\d+"
         />
       </div>
@@ -31,7 +31,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
           v-model="flags"
           type="text"
           spellcheck="false"
-          class="w-[72px] rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-[12.5px] text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+          class="w-[72px] rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-[13px] text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
           placeholder="g"
         />
       </div>
@@ -41,7 +41,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
       <button
         v-for="p in COMMON_PATTERNS"
         :key="p.label"
-        class="rounded-full border border-border bg-surface px-[11px] py-[5px] text-[11.5px] font-medium text-secondary transition-colors hover:border-tertiary hover:text-tertiary-strong dark:border-border-dark dark:bg-surface-dark dark:text-secondary-dark dark:hover:border-tertiary-dark dark:hover:text-tertiary-dark"
+        class="rounded-full border border-border bg-surface px-[11px] py-[5px] text-[12px] font-medium text-secondary transition-colors hover:border-tertiary hover:text-tertiary-strong dark:border-border-dark dark:bg-surface-dark dark:text-secondary-dark dark:hover:border-tertiary-dark dark:hover:text-tertiary-dark"
         @click="pattern = p.pattern"
       >
         {{ p.label }}
@@ -50,7 +50,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
 
     <p
       v-if="!result.ok"
-      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] font-mono text-[12.5px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
+      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] font-mono text-[13px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
     >
       正则错误：{{ result.error }}
     </p>
@@ -59,7 +59,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
       <div class="mb-[6px] flex items-center justify-between">
         <label class="text-[12px] font-semibold text-secondary">测试文本</label>
         <span
-          class="rounded-full bg-neutral px-[9px] py-[2px] text-[11.5px] font-semibold text-tertiary-strong dark:bg-neutral-dark dark:text-tertiary-dark"
+          class="rounded-full bg-neutral px-[9px] py-[2px] text-[12px] font-semibold text-tertiary-strong dark:bg-neutral-dark dark:text-tertiary-dark"
           >{{ result.ok ? `${result.count} 处匹配` : "—" }}</span
         >
       </div>
@@ -67,7 +67,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
         v-model="text"
         rows="6"
         spellcheck="false"
-        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[12.5px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[13px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
       />
     </div>
 
@@ -78,7 +78,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
       <div
         v-for="(m, i) in result.matches.slice(0, 100)"
         :key="i"
-        class="flex items-baseline gap-[10px] border-b border-border px-[12px] py-[6px] font-mono text-[12.5px] last:border-b-0 dark:border-border-dark"
+        class="flex items-baseline gap-[10px] border-b border-border px-[12px] py-[6px] font-mono text-[13px] last:border-b-0 dark:border-border-dark"
       >
         <span class="w-[56px] shrink-0 select-none text-[11px] text-text-muted"
           >#{{ i + 1 }} @{{ m.index }}</span
@@ -87,7 +87,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
           m.text
         }}</span>
       </div>
-      <p v-if="result.count > 100" class="px-[12px] py-[6px] text-[11.5px] text-text-muted">
+      <p v-if="result.count > 100" class="px-[12px] py-[6px] text-[12px] text-text-muted">
         仅显示前 100 条（共 {{ result.count }} 条）
       </p>
     </div>

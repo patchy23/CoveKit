@@ -5,6 +5,15 @@
  * 修改视觉规范先改 DESIGN.md，再同步此处；勿在此引入规范外色值。
  * ============================================================ */
 
+/* ── 字体：Inter Variable（本地打包，西文/数字）+ 系统回退 ── */
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   /* ── Colors（DESIGN.md colors 全量，浅色 + -dark 变体）── */
   --color-primary: #191d23;
@@ -50,8 +59,14 @@
   --radius-xl: 16px;
   --radius-full: 9999px;
 
-  /* ── Typography（DESIGN.md typography：Inter + 中文回退）── */
-  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+  /* ── Typography（DESIGN.md typography：Inter 优先，中文回退）──
+   * 西文/数字：本地 Inter Variable；缺失时 Segoe UI Variable（Win11）/ Segoe UI
+   * 中文：PingFang SC（macOS）/ 微软雅黑 UI（Win10+，较旧版雅黑渲染更清晰）
+   * 等宽：Cascadia Code（Win11 终端默认）/ Consolas（Win10 通用） */
+  --font-sans:
+    "Inter", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
+    "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
 }
 
 /* 深色模式：切换 document.documentElement[data-theme=dark] */
@@ -66,6 +81,9 @@
 
   body {
     @apply bg-neutral font-sans text-primary antialiased dark:bg-neutral-dark dark:text-primary-dark;
+    /* 字号基准 14px：桌面 UI 密度友好（组件层用 DESIGN.md 语义字号覆盖） */
+    font-size: 14px;
+    line-height: 1.5;
   }
 
   ::selection {

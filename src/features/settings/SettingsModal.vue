@@ -40,7 +40,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
         <h2 class="text-[17px] font-extrabold tracking-[-0.02em] dark:text-primary-dark">
           偏好设置
         </h2>
-        <p class="mt-[3px] text-[12.5px] text-secondary dark:text-secondary-dark">
+        <p class="mt-[3px] text-[13px] text-secondary dark:text-secondary-dark">
           外观、快捷键与工具级配置
         </p>
       </div>

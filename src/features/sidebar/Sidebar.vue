@@ -58,7 +58,7 @@ function toggleTheme() {
       <button
         v-for="item in navItems"
         :key="item.id"
-        class="flex w-full items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-[13.5px] font-medium transition-colors duration-150"
+        class="flex w-full items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-[13px] font-medium transition-colors duration-150"
         :class="
           ui.activeCategory === item.id
             ? 'bg-tertiary-soft font-semibold text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'

@@ -20,7 +20,7 @@ const previewHtml = computed(() => renderMarkdown(input.value));
         v-model="input"
         rows="14"
         spellcheck="false"
-        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[12.5px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-[13px] leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
       />
     </div>
     <div>
@@ -66,7 +66,7 @@ const previewHtml = computed(() => renderMarkdown(input.value));
   list-style: decimal;
 }
 .markdown-body code {
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 0.9em;
   background: var(--color-border);
   border-radius: 4px;
