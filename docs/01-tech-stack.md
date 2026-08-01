@@ -125,8 +125,14 @@
 | 自动更新 | `tauri-plugin-updater` + 内置 bundler | 后期接入 |
 | 屏幕取色（系统级） | 自研 Rust 命令 | Windows: `GetDC`/`GetPixel` 或全屏截图 |
 | 磁盘扫描 | 自研 Rust 命令 | `walkdir` crate，异步 + 进度事件 |
+| HTTP/WS 调试（第二批） | `reqwest` + `tokio-tungstenite` | **Rust 侧发请求**，无 CORS，无 http 插件 scope 负担 |
+| 数据库工具（第二批） | `sqlx` | 统一 MySQL/Postgres/SQLite 三方言，连接池存 AppState |
+| hosts 修改（第二批） | std fs + 提权助手 | 读系统 hosts，写前检测权限，UAC 按需提权 |
+| DNS 管理（第二批） | `reqwest` + 签名实现 | 阿里 HMAC-SHA1 / 腾讯 TC3-HMAC-SHA256 / CF Bearer |
+| SSH 工具（第二批） | `russh` | 纯 Rust async；密钥走 secrets |
+| 凭据加密（第二批） | `tauri-plugin-stronghold` | Token/密码/私钥加密落盘，明文仅存 Rust 内存 |
 
-**明确不引入：** `tauri-plugin-shell`（默认安全策略下权限繁琐且风险高，需要执行外部命令的场景用 `opener` 或自研白名单命令替代）。
+**明确不引入：** `tauri-plugin-shell`（默认安全策略下权限繁琐且风险高，需要执行外部命令的场景用 `opener` 或自研白名单命令替代；hosts 提权用 std::process 拉起 PowerShell `-Verb RunAs`，不经 shell 插件）。
 
 ---
 
@@ -159,14 +165,30 @@
 
 ---
 
-## 8. 结论
+## 8. 第二批复杂工具的技术预备
+
+第二批工具对技术栈提出五类新需求，均已在上文映射完毕，这里给出现实性评估：
+
+| 第二批工具 | 技术难点 | 现实性评估 |
+|-----------|---------|-----------|
+| HTTP/WS 调试 | Rust 侧代理请求、WS 长连接、请求/响应体大文本 | 低风险：reqwest + tokio-tungstenite 成熟；难点在**前端渲染**（响应体格式化/WS 消息流），属可控工作量 |
+| 数据库工具 | 三方言统一、连接池、大结果集分页 | 中风险：sqlx 统一三方言；注意 SQLite 与 MySQL/PG 的类型差异展示；**绝不拼 SQL 到 `execute` 之外**（只读默认 + 显式确认写操作） |
+| hosts 修改 | 系统文件权限、提权、备份回滚 | 中风险：权限是唯一难点，按需提权助手方案可行；必须做**修改前备份 + 一键还原** |
+| DNS 管理 | 三家云 API 签名 | 中风险：签名算法都有公开文档，实现量不大；难点在**统一 Provider trait 抽象**与错误归一化（限流/欠费/权限错误） |
+| SSH 工具 | 密钥协商、交互式会话 | 中高风险：russh 较年轻；备选 `ssh2`（libssh2 绑定，成熟但 C 依赖）；第一批只做架构预留，M3 再定 |
+
+**预留结论：** 第二批的技术栈选择已收敛，无颠覆性风险；第一批开发时**不引入**这些依赖（避免 Cargo 编译时间与 API 噪音），但架构边界（§4.3 模块划分、sessions 模型、secrets 抽象）必须到位。
+
+---
+
+## 9. 结论
 
 ```
-Tauri 2.11 (Rust)  ── 系统能力层：剪贴板/取色/磁盘/快捷键/托盘/更新
-        ↑ IPC (invoke / event)
-Vue 3.5 + TS      ── 应用层：工具注册表 / 状态 / 路由
+Tauri 2.11 (Rust)  ── 框架层 + 业务模块（第一批 settings/clipboard/color；第二批 http/db/hosts/dns/ssh/secrets）
+        ↑ IPC (invoke / event) — contracts.ts 唯一契约源
+Vue 3.5 + TS      ── 注册表 / presentation(modal→workspace) / 状态 / 设置
         ↑
-Tailwind 4 + DESIGN.md tokens ── 表现层：方向二视觉规范
+Tailwind 4 + DESIGN.md tokens ── 方向二视觉规范（已过 lint）
 ```
 
-技术栈整体成熟、轻量、可控。前端框架若需更换，架构边界已预留。下一步进入详细设计（见 `02-architecture.md`）。
+技术栈成熟可控：第一批全部为低风险依赖；第二批的技术难点集中在**抽象设计**（Provider trait、会话模型、凭据管理）而非选型，这些抽象已在详细设计中预留。下一步进入 M0/M1 开发。

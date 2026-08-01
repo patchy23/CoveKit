@@ -1,7 +1,18 @@
-# 详细设计 · ToolKit 桌面工具箱
+# 详细设计 · patchyBox 桌面工具箱
 
-> 对应已确认的设计方向：**方向二 · 明净浅色（内容优先）**，视觉规范见仓库根目录 `DESIGN.md`。
-> 技术栈见 `01-tech-stack.md`：Tauri 2.11 + Vue 3.5 + TS + Tailwind 4 + Pinia。
+> 视觉方向：**明净浅色 · 内容优先**（已采纳，原型 `sketches/002-clean-light/`）；设计规范：`DESIGN.md`（已过 lint，0 错误）。
+> 技术栈：Tauri 2.11 + Vue 3.5 + TS + Tailwind 4 + Pinia（详见 `01-tech-stack.md`）。
+
+---
+
+## 0. 交付路线（两批次）
+
+| 批次 | 内容 | 目标 |
+|------|------|------|
+| **第一批** | 整体 UI 框架 + 后端框架 + **8 个常用文本小工具** | 框架稳定、可读可扩展，工具即插即用 |
+| **第二批** | 复杂工具：HTTP/WS 调试、数据库（MySQL/PG/SQLite）、本地 hosts 修改、DNS 管理（阿里/腾讯/CF）、SSH | 连接型 / 系统级 / 云 API 型工具 |
+
+**关键原则：第二批的工具形态（大工作区、长连接、凭据、提权）必须在第一批的框架抽象里预留**，第二批只做"填实现"，不改框架。
 
 ---
 
@@ -9,134 +20,130 @@
 
 ```
 ┌────────────────────────────── 前端 (src/) ──────────────────────────────┐
-│  features/  Sidebar · TopBar · ToolGrid · ToolList · ToolModal · Toast  │
+│  features/  Sidebar · TopBar · ToolGrid · ToolList · ToolModal ·        │
+│             ToolWorkspace(第二批) · Toast · Settings                    │
 │        ▲ 使用                                                           │
-│  core/    toolRegistry(注册表) · search(模糊搜索) · ipc(类型安全调用)      │
+│  core/    toolRegistry(注册表) · presentation(modal/workspace 路由)      │
+│           search(模糊搜索) · ipc(类型安全调用) · sessions(会话,第二批预留) │
 │        ▲ 读写                                                           │
-│  stores/ tools · settings · favorites · clipboard · ui   (Pinia)        │
+│  stores/  tools · settings · favorites · clipboard · ui   (Pinia)       │
 │        ▲ 懒加载                                                        │
-│  tools/  json-formatter · ts-converter · base64 · …  (内置工具实现)      │
+│  tools/   json-formatter · ts-converter · …  (目录即工具, 自注册)         │
 └──────────────────────────────────┬──────────────────────────────────────┘
-                                   │ invoke() / listen()   (类型安全, core/ipc 封装)
+                                   │ invoke() / listen()   (core/ipc 类型安全封装)
 ┌────────────────────────────── Rust (src-tauri/) ───────────────────────┐
-│  commands/  settings · clipboard · color · disk · window · …            │
-│  plugins    clipboard-manager · global-shortcut · store · sql · …       │
-│  state/     AppState (连接池、运行时配置)                                │
-│  系统能力   屏幕取色 · 磁盘扫描 · 剪贴板轮询 · 托盘 · 全局快捷键           │
+│  framework/  commands 装配 · 插件注册 · 托盘 · 全局快捷键 · 单实例        │
+│  modules/    settings · clipboard · color · …  (第一批)                 │
+│              http · ws · db · hosts · dns · ssh · secrets (第二批预留)   │
+│  services/   剪贴板轮询 · 提权助手 · 凭据加密(stronghold)                │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-**核心数据流（示例：用户打开「剪贴板历史」）：**
+**核心数据流（第一批示例：用户打开「JSON 格式化」）：**
 
 ```
-ToolGrid 点击卡片
-  → ToolModal 挂载, dynamic import 加载工具组件（首次）
-  → 工具组件调用 core/ipc.getClipboardHistory()
-  → Tauri invoke → Rust command: clipboard::list()
-  → rusqlite 查询 → JSON 序列化返回
-  → Pinia clipboard store 缓存 + 组件渲染列表
+ToolGrid 点击卡片 → ToolModal 挂载
+  → dynamic import 加载工具组件（首次，注册表 component() 工厂）
+  → 工具内纯函数处理文本（无需 IPC，全部前端完成）
+  → 需要系统能力时（第二批）→ core/ipc → invoke → Rust module
 ```
+
+**框架与工具的边界（第一批就定死）：**
+- 框架（`core/` + `features/` + `src-tauri/framework/`）负责：注册、路由、状态、主题、搜索、持久化、IPC 装配；
+- 工具（`tools/` + `src-tauri/modules/`）只做：自己的 UI + 自己的逻辑，**禁止**反向依赖框架内部实现；
+- 工具通过注册表声明自己需要什么（presentation、settings 字段、IPC 命令），框架按声明提供服务。
 
 ---
 
 ## 2. 目录结构
 
 ```
-toolbox-ui/
-├── DESIGN.md                  # 设计 tokens 规范（单一事实源）
-├── docs/                      # 本文档 + 技术选型
-├── index.html
-├── package.json
-├── vite.config.ts             # @vitejs/plugin-vue + auto-import + 路径别名
+patchyBox/
+├── DESIGN.md / AGENTS.md / docs/ / sketches/
+├── index.html / package.json / vite.config.ts
 ├── src/
-│   ├── main.ts
-│   ├── App.vue                # 布局骨架：Sidebar + TopBar + 内容区
-│   ├── assets/styles/main.css # Tailwind 4 @theme（对接 DESIGN.md tokens）
+│   ├── main.ts / App.vue            # App: 布局骨架 + 工具路由(modal/workspace)
+│   ├── assets/styles/main.css       # Tailwind 4 @theme（对接 DESIGN.md tokens）
 │   ├── core/
-│   │   ├── ipc/ipc.ts         # invoke/listen 的 Promise 封装 + 错误归一化
-│   │   ├── ipc/contracts.ts   # IPC 出入参 TS 类型（与 Rust 侧契约同步）
-│   │   ├── registry/toolRegistry.ts   # 工具注册表（核心，见 §4）
-│   │   ├── registry/types.ts          # ToolManifest 等接口
-│   │   ├── search/fuzzy.ts            # fuse.js 封装 + 高亮
-│   │   └── hotkeys/hotkeys.ts         # 应用内快捷键绑定
+│   │   ├── ipc/ipc.ts               # invoke/listen 封装 + 错误归一化
+│   │   ├── ipc/contracts.ts         # IPC 类型契约（唯一事实源，与 Rust serde 同步）
+│   │   ├── registry/toolRegistry.ts # 工具注册表（核心）
+│   │   ├── registry/types.ts        # ToolManifest 等接口（含 presentation）
+│   │   ├── presentation/            # modal/workspace 两种载体路由（workspace 第一批仅骨架）
+│   │   ├── search/fuzzy.ts          # fuse.js 封装 + 高亮
+│   │   ├── hotkeys/hotkeys.ts       # 应用内快捷键
+│   │   └── sessions/                # 会话模型（第二批预留：DB/SSH/WS 连接句柄）
 │   ├── features/
-│   │   ├── sidebar/Sidebar.vue        # 分类导航 + 收藏 + 底部设置入口
-│   │   ├── topbar/TopBar.vue          # 标题 + 搜索框 + 视图切换 + 添加按钮
-│   │   ├── grid/ToolGrid.vue          # 卡片网格视图
-│   │   ├── grid/ToolList.vue          # 列表视图
-│   │   ├── grid/RecentStrip.vue       # 最近使用快捷条
-│   │   ├── modal/ToolModal.vue        # 工具运行容器（懒加载 + 生命周期）
-│   │   ├── settings/SettingsModal.vue # 设置（主题/快捷键/剪贴板/语言）
-│   │   └── ui/                        # Button · Card · Chip · Modal · Toast · Toggle
-│   ├── tools/                          # 每个工具一个目录，独立可测
+│   │   ├── sidebar/ topbar/ grid/ modal/ workspace/ settings/ ui/
+│   ├── tools/                       # 第一批 8 个文本工具（每个目录独立可测）
 │   │   ├── json-formatter/{index.vue, useFormat.ts}
-│   │   ├── ts-converter/  base64/  password-gen/  char-stat/ …
-│   ├── stores/               # pinia: tools.ts settings.ts favorites.ts clipboard.ts ui.ts
-│   └── locales/zh-CN.ts      # vue-i18n
+│   │   ├── ts-converter/ base64/ url-codec/ char-stat/ text-diff/ markdown-preview/ regex-tester/
+│   ├── stores/                      # tools settings favorites clipboard ui
+│   └── locales/zh-CN.ts
 ├── src-tauri/
-│   ├── Cargo.toml            # tauri 2.11 + 插件依赖
-│   ├── tauri.conf.json       # 窗口配置/打包/标识符 com.yourname.toolkit
-│   ├── capabilities/default.json      # 权限白名单（见 §7）
-│   ├── icons/
+│   ├── Cargo.toml / tauri.conf.json / capabilities/default.json / icons/
 │   ├── src/
-│   │   ├── main.rs           # 入口：plugins 注册 + 命令注册 + tray + 单实例
-│   │   ├── lib.rs            # Builder 装配（供测试复用）
-│   │   ├── state.rs          # AppState：SqlitePool、剪贴板轮询句柄
-│   │   ├── commands/
-│   │   │   ├── mod.rs
-│   │   │   ├── settings.rs   # get/set 设置
-│   │   │   ├── clipboard.rs  # 历史列表/删除/清空/置顶
-│   │   │   ├── color.rs      # 屏幕取色
-│   │   │   ├── disk.rs       # 磁盘扫描（异步 + 进度事件）
-│   │   │   └── window.rs     # 主窗显隐切换
-│   │   └── services/
-│   │       ├── clipboard_watcher.rs   # 500ms 轮询 + hash 去重 + 落库
-│   │       └── color_picker.rs        # GetDC/GetPixel 取色
-│   └── tests/                # Rust 命令单测
-└── e2e/                      # Playwright（可选，M4）
+│   │   ├── main.rs                  # 入口：框架装配（plugins + commands + tray + 单实例）
+│   │   ├── lib.rs                   # Builder 装配（供测试复用）
+│   │   ├── framework/               # 框架层：命令注册宏、事件封装、窗口管理
+│   │   ├── modules/                 # 业务模块（第一批）
+│   │   │   ├── settings.rs clipboard.rs color.rs
+│   │   ├── services/                # 剪贴板轮询、提权助手、凭据加密
+│   │   └── (第二批预留模块说明见 §4.3)
+│   └── tests/
+└── e2e/                             # Playwright（M4 可选）
 ```
 
 ---
 
-## 3. 数据模型（TS 接口，与 Rust serde 结构一一对应）
+## 3. 数据模型
 
 ```ts
 // core/registry/types.ts
 export type CategoryId = 'dev' | 'text' | 'image' | 'net' | 'sys';
+export type Presentation = 'modal' | 'workspace';   // 第二批工具用 workspace
 
 export interface ToolManifest {
-  id: string;                     // 唯一 id，如 'json-formatter'
-  name: string;                   // 显示名
+  id: string;
+  name: string;
   category: CategoryId;
-  icon: string;                   // 图标 key（全局图标表索引）
+  icon: string;                       // 图标 key（全局图标表索引）
   description: string;
-  keywords: string[];             // 搜索用同义词（如 ['格式化','pretty','json']）
-  hotkey?: string;                // 应用内快捷键（如 'Ctrl+1'）
-  component: () => Promise<{ default: Component }>;  // 懒加载工厂
-  background?: boolean;           // true = 后台服务型（剪贴板/番茄钟），无 UI 弹窗
-  tags?: string[];                // 展示用标签（'热门' 等）
+  keywords: string[];                 // 搜索同义词
+  hotkey?: string;
+  presentation: Presentation;         // 默认 'modal'；第二批大工具声明 'workspace'
+  component: () => Promise<{ default: Component }>;   // 懒加载工厂
+  background?: boolean;               // 后台服务型（剪贴板/番茄钟）
+  settingsSchema?: SettingsField[];   // 工具级设置声明（框架渲染设置表单，工具零成本获得设置持久化）
+  tags?: string[];
+}
+
+export interface SettingsField {      // 工具设置声明式 schema
+  key: string; type: 'toggle' | 'text' | 'number' | 'select' | 'secret';
+  label: string; default?: unknown; options?: { label: string; value: string }[];
 }
 
 export interface Settings {
   theme: 'light' | 'dark' | 'system';
   language: 'zh-CN' | 'en-US';
-  globalHotkey: string;           // 全局唤起组合键，默认 'Ctrl+Shift+Space'
+  globalHotkey: string;               // 默认 'Ctrl+Shift+Space'
   launchAtStartup: boolean;
-  clipboard: {
-    enabled: boolean;
-    historyLimit: number;         // 默认 200
-    ignore: string[];             // 忽略的窗口/内容模式
-  };
-  recentTools: string[];          // 最近使用（最多 6）
+  clipboard: { enabled: boolean; historyLimit: number; ignore: string[] };
+  recentTools: string[];
+  tools: Record<string, Record<string, unknown>>;  // 工具级设置，按工具 id 分区
+}
+
+// 第二批预留：连接型工具的统一会话模型
+export interface ConnectionProfile {  // DB / SSH 通用
+  id: string; name: string; kind: 'mysql' | 'postgres' | 'sqlite' | 'ssh';
+  host?: string; port?: number; user?: string;
+  secretRef?: string;                 // 密码/密钥引用（存 stronghold，不落明文）
+  options?: Record<string, string>;
 }
 
 export interface ClipboardRecord {
-  id: string;                     // uuid
-  kind: 'text' | 'image' | 'file';
-  content: string;                // 文本内容；图片存缩略图路径
-  preview: string;                // 列表预览（截断 120 字）
-  pinned: boolean;
-  createdAt: number;              // epoch ms
+  id: string; kind: 'text' | 'image' | 'file';
+  content: string; preview: string; pinned: boolean; createdAt: number;
 }
 ```
 
@@ -144,151 +151,115 @@ export interface ClipboardRecord {
 
 | 数据 | 载体 | 理由 |
 |------|------|------|
-| Settings / favorites / recent | `tauri-plugin-store`（`settings.json`） | 小体积键值，读取即时 |
-| 剪贴板历史 | `tauri-plugin-sql`（SQLite `clipboard.db`） | 上限 200+ 条、需要查询与删除 |
-| 工具集合（内置） | 代码内静态注册 | 无运行时变更 |
-| 未来：用户自定义工具 | 独立 `tools.user.json` | M4 插件化预留 |
+| Settings / 工具级设置 / favorites / recent | `tauri-plugin-store` | 小体积键值，读取即时 |
+| 剪贴板历史 | `tauri-plugin-sql`（SQLite） | 查询/删除/上限管理 |
+| 第二批：连接配置（host/user 等非敏感部分） | `tauri-plugin-store` | 与设置同级 |
+| 第二批：密码/云 API Token/SSH 私钥 | `tauri-plugin-stronghold` | 加密落盘，明文只存内存 |
 
 ---
 
-## 4. 工具注册表（核心架构）
+## 4. 工具注册表与扩展性设计
 
-工具箱的本质是"工具的可插拔集合"。注册表统一收口：
+### 4.1 注册机制
 
 ```ts
 // core/registry/toolRegistry.ts
-import type { ToolManifest } from './types';
-
 const manifests = new Map<string, ToolManifest>();
-
 export function registerTool(m: ToolManifest) { manifests.set(m.id, m); }
 export function getTools(): ToolManifest[] { return [...manifests.values()]; }
 export function getTool(id: string) { return manifests.get(id); }
-
-// 分类聚合（侧栏计数复用）
-export function toolsByCategory(cat: CategoryId | 'all' | 'fav', favIds: Set<string>) { … }
 ```
 
-- **内置工具在 `tools/` 各目录内自注册**（`registerTool(...)`），新增工具 = 新建目录 + 注册一行，不动框架代码；
-- **懒加载**：`ToolModal` 首次打开时才 `component()` 动态 import，首屏只加载框架与图标；
-- **搜索**：fuse.js 索引 `name + keywords + description`，权重 name 3 > keywords 2 > desc 1；
-- **热键**：`hotkey` 字段注册应用内快捷键（`hotkeys.ts` 统一管理，避免多工具冲突）；
-- **后台工具**：`background: true` 的工具不渲染弹窗，只向 Rust 注册常驻服务（如剪贴板监听），在设置页显示开关与状态。
+- 工具目录内自注册（`tools/json-formatter/index.ts` 里 `registerTool(...)`）；
+- **新增工具 = 新建目录 + 注册一行**，框架零改动——第一批的 8 个工具就是注册表扩展性的验收用例；
+- 分类是数据不是枚举：侧栏分类由注册表按 `category` 聚合生成，新增分类只改类型联合 + 图标表。
 
-### 内置工具清单与排期
+### 4.2 Presentation 双载体（第一批做骨架，第二批受益）
 
-| 工具 | 分类 | 实现形态 | 里程碑 |
-|------|------|---------|--------|
-| JSON 格式化 | dev | 前端（演示已实现 ✅） | M2 |
-| 时间戳转换 | dev | 前端 | M2 |
-| Base64 编解码 | dev | 前端 | M2 |
-| 随机密码 | sys | 前端 | M2 |
-| 字符统计 | text | 前端 | M2 |
-| 文本对比 | text | 前端（左右分栏） | M2 |
-| Markdown 预览 | text | 前端（marked.js） | M2 |
-| 单位换算 | sys | 前端 | M2 |
-| URL 编解码 | dev | 前端 | M2 |
-| 正则测试 | dev | 前端（实时高亮） | M3 |
-| 哈希计算 | dev | Rust（md-5/sha2 crate）+ 前端 | M3 |
-| 颜色选择器 | image | 前端 + 自研取色命令 | M3 |
-| 屏幕取色 | image | Rust（GetDC/GetPixel） | M3 |
-| 剪贴板历史 | sys | Rust 轮询 + SQLite + 前端 | M3 |
-| 番茄钟 | sys | Rust notification + 前端 | M3 |
-| 汇率换算 | net | 前端 + HTTP 插件（离线缓存） | M3 |
-| 二维码生成 | image | 前端（qrcode.js） | M3 |
-| 图片压缩 | image | Rust（image crate）+ dialog/fs | M4 |
-| 批量重命名 | sys | Rust（fs 遍历 + 预览） | M4 |
-| 磁盘分析 | sys | Rust（walkdir 异步 + 进度事件） | M4 |
-| 快捷翻译 | text | HTTP 插件 + 多引擎适配 | M4 |
+- `modal`：轻量弹窗（第一批全部工具），沿用原型 002 的 ToolModal；
+- `workspace`：全内容区工作台（第二批 HTTP/WS、DB 工具需要），`core/presentation/` 提供统一的挂载/卸载/生命周期接口，第一批实现 modal，workspace 留接口 + 最小骨架；
+- 工具不关心载体，框架按 `manifest.presentation` 路由。
+
+### 4.3 Rust 侧模块化（第二批预留的形态）
+
+第一批的 Rust 只实现 `modules/settings|clipboard|color`，但**模块边界按第二批的形状划分**，每个复杂工具一个 module：
+
+| 预留模块 | 第二批工具 | 技术形态 |
+|---------|-----------|---------|
+| `modules/http_ws` | HTTP/WS 调试 | reqwest + tokio-tungstenite（Rust 侧发请求，无 CORS） |
+| `modules/db` | MySQL/PG/SQLite | sqlx（async，三方言统一）；连接池与会话存 `AppState` |
+| `modules/hosts` | hosts 修改 | 读 `C:\Windows\System32\drivers\etc\hosts` + **按需提权**（见 §7） |
+| `modules/dns` | 阿里/腾讯/CF | 统一 `Provider` trait + 三个 adapter（签名：阿里 HMAC-SHA1 / 腾讯 TC3-HMAC-SHA256 / CF Bearer） |
+| `modules/ssh` | SSH 工具 | russh（纯 Rust async）；密钥管理走 secrets |
+| `modules/secrets` | 以上共用 | stronghold 封装：存取 Token/密码/私钥 |
+
+**Adapter 模式是第二批的骨架**：`dns::Provider`、`db::Connector`、`ssh::Client` 都是 trait + 实现，新增云厂商/数据库 = 新增 adapter，不动框架。
 
 ---
 
 ## 5. IPC 契约
 
-> 前端一律经 `core/ipc/ipc.ts` 调用（封装错误归一化 + loading 态），**禁止**在组件里裸写 `invoke`。
-> `contracts.ts` 的类型是契约唯一事实源，Rust 侧 `serde` 结构体必须与之同步（CI 里加类型一致性抽查）。
+> 前端一律经 `core/ipc/ipc.ts` 调用；`contracts.ts` 为契约唯一事实源，与 Rust serde 同步（CI 抽查）。
 
-| 命令 `toolkit://` | 参数 | 返回 | 说明 |
-|-------------------|------|------|------|
-| `settings_get` | `{ key?: string }` | `Settings` | 全量或单键 |
-| `settings_set` | `{ key, value }` | `()` | 写 store 文件 |
-| `clipboard_list` | `{ limit?, pinnedOnly? }` | `ClipboardRecord[]` | 分页查询 |
-| `clipboard_delete` | `{ id }` | `()` | |
-| `clipboard_clear` | `{}` | `()` | |
-| `clipboard_toggle_pin` | `{ id, pinned }` | `()` | |
-| `color_pick_screen` | `{}` | `{ hex, rgb }` | 全屏取色（自研） |
-| `disk_scan` | `{ path? }` | `DiskReport` | 事件 `disk://progress` 推送进度 |
-| `hash_text` | `{ text, algos[] }` | `Record<algo, string>` | md5/sha1/sha256/sha512 |
-| `image_compress` | `{ srcPath, quality, maxWidth? }` | `{ outPath, before, after }` | |
+### 5.1 第一批（框架 + 文本工具实际使用）
+
+| 命令 | 参数 | 返回 | 模块 |
+|------|------|------|------|
+| `settings_get` | `{ key? }` | `Settings` | settings |
+| `settings_set` | `{ key, value }` | `()` | settings |
+| `clipboard_list` | `{ limit?, pinnedOnly? }` | `ClipboardRecord[]` | clipboard |
+| `clipboard_delete` / `clipboard_clear` / `clipboard_toggle_pin` | `{ id? }` 等 | `()` | clipboard |
+| `color_pick_screen` | `{}` | `{ hex, rgb }` | color |
+| `window_toggle` / `window_hide` | `{}` | `{ visible }` | framework |
 | `open_external` | `{ url }` | `()` | opener 插件 |
-| `window_toggle` | `{}` | `{ visible }` | 全局快捷键呼出/隐藏 |
-| `window_hide` | `{}` | `()` | 失焦隐藏（可选） |
 
-**事件（前端 `listen`）：**
-- `clipboard://changed` — 剪贴板新增记录（前台实时刷新）
-- `disk://progress` — 扫描进度 `{ current, total, path }`
-- `tray://menu` — 托盘菜单动作（显示主窗/退出）
+### 5.2 第二批（预留，命令签名先行，实现随批次交付）
+
+| 命令（预留） | 参数 | 返回 | 说明 |
+|------|------|------|------|
+| `http_request` | `{ method, url, headers, body, timeout }` | `HttpResponse` | Rust 侧 reqwest |
+| `ws_connect` / `ws_send` / `ws_close` | `{ id, url }` / `{ id, data }` | `()` | 会话经 `sessions` 管理 |
+| `db_connect` | `ConnectionProfile` | `{ sessionId }` | sqlx 连接池 |
+| `db_query` | `{ sessionId, sql, params? }` | `{ columns, rows }` | 运行时 SQL |
+| `hosts_read` / `hosts_write` | `{}` / `{ content }` | `string` / `()` | 写前检查权限，失败走提权流程 |
+| `dns_list_zones` / `dns_list_records` / `dns_upsert_record` | `{ provider, credRef, … }` | `Zone[]` / `Record[]` | Provider trait 分发 |
+| `ssh_connect` / `ssh_exec` / `ssh_disconnect` | `{ profile, command? }` | `{ sessionId }` / `{ stdout, stderr }` | russh |
+
+> 第二批命令现在**只写进契约文档**，Rust 侧不建空壳——避免死代码；第一批框架只需保证"新增命令 = 注册一行"的装配方式（宏/统一函数）。
 
 ---
 
-## 6. UI 组件树（从方向二原型映射）
+## 6. UI 组件树（第一批交付范围）
 
 ```
 App.vue
-├── Sidebar.vue
-│   ├── NavItem × n          # 分类 + 计数徽标（全部/开发/文本/图片/网络/系统/收藏）
-│   ├── ThemeToggle          # 浅色/深色/跟随系统
-│   └── SettingsEntry
-├── TopBar.vue
-│   ├── 标题 + 计数副标题
-│   ├── SearchBox             # 聚焦高亮 + Ctrl+K
-│   ├── ViewToggle            # 网格/列表
-│   └── AddButton（+）
-├── RecentStrip.vue           # 最近使用 Chips（最多 6，点击即开）
-├── ToolGrid.vue / ToolList.vue   # 双视图（响应式 auto-fill）
-│   └── ToolCard.vue          # 图标块 + 标题 + 描述 + 标签 + 收藏星
-├── ToolModal.vue             # 弹窗容器：标题/描述/关闭 + <component :is> 懒加载工具
-├── SettingsModal.vue         # 主题 / 全局快捷键 / 开机自启 / 剪贴板策略 / 语言
-└── Toast.vue                 # 底部居中提示（收藏/复制等反馈）
+├── Sidebar.vue           # 分类导航 + 计数徽标 + 主题切换 + 设置入口
+├── TopBar.vue            # 标题 + 计数副标题 + SearchBox(Ctrl+K) + 视图切换 + 添加按钮
+├── RecentStrip.vue       # 最近使用 Chips（≤6）
+├── ToolGrid.vue / ToolList.vue   # 双视图（auto-fill 响应式）
+│   └── ToolCard.vue      # 图标块 + 标题 + 描述 + 标签 + 收藏星
+├── ToolModal.vue         # 弹窗载体：标题/描述/关闭 + <component :is> 懒加载
+├── ToolWorkspace.vue     # 第二批预留：全内容区载体（第一批只实现空壳 + 路由）
+├── SettingsModal.vue     # 外观/快捷键/开机自启/剪贴板策略/语言 + 工具级设置(由 settingsSchema 渲染)
+└── Toast.vue
 ```
 
-**关键交互规格（对齐原型 002）：**
-- 卡片 hover：上浮 3px + 顶部 3px 橙色渐变线；点击开弹窗；收藏星 stopPropagation；
-- 搜索：输入即过滤（fuse），高亮命中片段；`Ctrl+K` 聚焦；
-- 弹窗：180ms 上浮淡入、`Esc`/遮罩点击关闭；工具组件卸载时清理其副作用（定时器/监听）；
-- 空状态：搜索无结果时展示"换个关键词"引导（原型已有）；
-- 最近使用：工具打开后写入 `settings.recentTools`（去重、上限 6）。
+**第一批交互规格**（对齐原型 002）：卡片 hover 上浮 + 顶部渐变线；搜索即过滤 + 高亮；弹窗 180ms 上浮、Esc/遮罩关闭；工具卸载清理副作用；收藏/最近使用实时联动。
 
 ---
 
 ## 7. 安全设计
 
-**Capabilities 白名单**（最小权限，`capabilities/default.json`）：
+**第一批落地：**
+- Capabilities 白名单（`capabilities/default.json`，最小权限，示例见技术选型文档）；
+- 严格 CSP（零远程资源，`default-src 'self'`）；
+- 禁用 `tauri-plugin-shell`；外链一律 `opener`。
 
-```json
-{
-  "identifier": "default",
-  "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "store:default",
-    "clipboard-manager:allow-read-text",
-    "clipboard-manager:allow-write-text",
-    "global-shortcut:allow-register",
-    "global-shortcut:allow-unregister",
-    "dialog:allow-open",
-    "opener:default",
-    "sql:allow-load",
-    "sql:allow-execute",
-    "sql:allow-select"
-  ]
-}
-```
-
-- **CSP**：`tauri.conf.json` 中设置 `"csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset:"`——本项目零远程资源，可做到最严；
-- **禁用** `shell` 插件与 `http` 插件的任意 URL 访问（翻译/汇率仅白名单域名）；
-- 前端不直接拿文件系统路径：图片压缩等经 dialog 选择 + Rust 处理，前端只见结果；
-- 剪贴板数据含敏感信息：默认只保留纯文本、提供"清空全部"与单条删除、设置页说明存储位置（`AppData` 内）。
+**第二批关键决策（架构已预留，实现时落地）：**
+- **网络请求走 Rust 侧**（reqwest / tokio-tungstenite），前端零 CORS、无 `http` 插件 scope 管理负担；
+- **凭据加密**：云 API Token、数据库密码、SSH 私钥存 stronghold（加密落盘），`ConnectionProfile.secretRef` 只存引用；明文生命周期仅存在于 Rust 内存；
+- **hosts 提权策略**：应用本体保持非提权运行；写 hosts 时检测权限，失败则通过 `std::process` 拉起 PowerShell `Start-Process -Verb RunAs` 的**最小化提权助手**（只执行 hosts 写入），UAC 按需弹出，不常驻管理员权限；
+- DB/SSH 会话默认超时与空闲回收，防连接泄漏。
 
 ---
 
@@ -296,46 +267,50 @@ App.vue
 
 | 分组 | 设置项 | 默认值 | 实现 |
 |------|--------|--------|------|
-| 外观 | 主题 | 跟随系统 | `data-theme` + `window.matchMedia` |
-| 外观 | 语言 | zh-CN | vue-i18n |
-| 快捷键 | 全局唤起 | `Ctrl+Shift+Space` | global-shortcut（失败提示改键） |
-| 通用 | 开机自启 | 关 | autostart 插件 |
-| 剪贴板 | 启用历史 | 开 | clipboard watcher |
-| 剪贴板 | 上限条数 | 200 | SQLite 清理策略 |
-| 剪贴板 | 忽略应用/内容 | 空 | 前缀匹配 |
-| 关于 | 版本/更新 | — | updater（M4） |
+| 外观 | 主题 / 语言 | 跟随系统 / zh-CN | `data-theme` / vue-i18n |
+| 快捷键 | 全局唤起 | Ctrl+Shift+Space | global-shortcut |
+| 通用 | 开机自启 | 关 | autostart |
+| 剪贴板 | 启用 / 上限 / 忽略 | 开 / 200 / 空 | watcher + SQLite |
+| **工具** | **各工具设置** | — | **框架渲染 `settingsSchema`，按 id 存 `settings.tools`** |
 
 ---
 
-## 9. 测试策略
+## 9. 工程约束：可读性与可扩展性（第一批验收红线）
 
-| 层 | 工具 | 覆盖点 |
-|----|------|--------|
-| 前端单元 | Vitest + @vue/test-utils | toolRegistry、fuzzy 搜索、stores（favorites/settings）、每个工具的核心逻辑（json 格式化/时间戳/base64 已有纯函数 ✅） |
-| Rust 单元 | `cargo test` | 剪贴板去重、SQLite 增删查、取色/哈希/压缩命令的纯逻辑 |
-| 契约 | CI 脚本 | contracts.ts ↔ Rust serde 字段名抽查 |
-| 手动验收 | 清单 | 双主题 × 双视图 × 21 工具 × 全局快捷键 × 托盘 × 单实例 |
+**可读性：**
+- 组件 < 300 行；逻辑抽纯函数（`tools/*/useXxx.ts`），UI 与逻辑分离——第一批 8 个工具全部遵循；
+- 命名：文件 kebab-case、组件 PascalCase、Rust snake_case；语义化命名优先于注释；
+- 契约集中：IPC 出入参只在 `contracts.ts` 出现一次；
+- 代码评审清单：ESLint 9 + Prettier + `rustfmt` + `clippy -D warnings` 全绿才可合入。
+
+**可扩展性（第二批验收标准 = 不破坏框架）：**
+- 新增工具：`tools/<id>/` 目录 + `registerTool()` 一行；
+- 新增 Rust 命令：`modules/` 下新模块 + 注册一行（装配处集中）；
+- 新增云厂商/数据库/SSH 实现：实现 trait 的 adapter，零框架改动；
+- 新增 presentation：`core/presentation/` 注册新载体，manifest 声明即用；
+- 升级到第二批时，第一批代码**只增不改**（新增模块/工具/命令，不重构既有路径）。
 
 ---
 
 ## 10. 里程碑路线图
 
-| 阶段 | 周期 | 交付物 |
-|------|------|--------|
-| **M0 脚手架** | 1–2 天 | create-tauri-app(vue-ts) + Tailwind 4 接入 DESIGN.md tokens + ESLint/Prettier/rustfmt + CI（lint/test/build artifact） |
-| **M1 应用框架** | 3–5 天 | 注册表 + 搜索 + 双视图 + 收藏 + 最近使用 + 主题 + 设置弹窗 + 托盘 + 全局唤起 + 单实例 |
-| **M2 首批工具** | 3–5 天 | 8 个纯前端工具（清单 §4 的 M2 行） |
-| **M3 系统能力** | 5–7 天 | 剪贴板历史、屏幕取色、颜色选择器、哈希、正则、番茄钟、汇率、二维码 |
-| **M4 打磨发布** | 持续 | 图片压缩、批量重命名、磁盘分析、翻译、i18n 英文、自动更新、代码签名、插件化预留 |
+| 阶段 | 周期 | 交付物 | 验收标准 |
+|------|------|--------|---------|
+| **M0 脚手架** | 1–2 天 | create-tauri-app(vue-ts) + Tailwind 4 接 DESIGN.md tokens + ESLint/Prettier/rustfmt + CI | `pnpm tauri dev` 出方向二主界面（空数据版），CI 绿 |
+| **M1 框架 + 第一批** | 5–8 天 | 整体 UI（§6 全部组件）+ 后端框架（§1 框架层 + settings/clipboard/color 模块 + 托盘/快捷键/单实例）+ **8 个文本工具** | 完整闭环：浏览-搜索-收藏-换肤-设置持久化；8 工具可用；`clippy -D warnings` 绿 |
+| **M2 第二批 I** | 5–7 天 | HTTP/WS 调试、SQLite 数据库工具、hosts 修改 + 补齐轻量工具（随机密码/哈希/颜色选择器/二维码） | workspace 载体上线；三工具可用；hosts 提权流程走通 |
+| **M3 第二批 II** | 7–10 天 | MySQL/PG 数据库工具、DNS 管理（阿里/腾讯/CF）、SSH 工具 | 连接会话管理 + stronghold 凭据落地；三云厂商 adapter 可用 |
+| **M4 打磨发布** | 持续 | 图片压缩/批量重命名/磁盘分析/翻译、i18n 英文、自动更新、代码签名、插件化预留 | 发布候选版 |
 
-**M0 验收标准**：`pnpm tauri dev` 一跑即出方向二的主界面（空数据版），CI 绿。
-**M1 验收标准**：无任何工具也能完整体验"浏览-搜索-收藏-换肤"闭环；全局快捷键呼出窗口。
+**第一批工具清单（8 个，全为文本类）：** JSON 格式化、时间戳转换、Base64 编解码、URL 编解码、字符统计、文本对比、Markdown 预览、正则测试。
 
 ---
 
-## 11. 开放决策（进入开发前需确认）
+## 11. 开放决策（进入开发前确认）
 
-1. **前端框架**：默认 Vue 3，若团队 React 更熟请在 M0 前提出（影响面见技术选型 §2）；
-2. **应用标识符**：`tauri.conf.json` 的 `identifier`（如 `com.yourname.toolkit`）与窗口名、产品名；
-3. **托盘行为**：关窗 = 最小化到托盘（推荐）还是直接退出；
-4. **剪贴板隐私**：是否需要"密码类内容不记录"的启发式过滤（默认只做忽略列表）。
+1. ~~项目名~~ → 已定：**patchyBox**，identifier 默认 `com.patchy23.patchybox`；
+2. 前端框架默认 **Vue 3**（M0 前可改 React，影响面见技术选型 §2）；
+3. 关窗行为：默认最小化到托盘；
+4. 剪贴板隐私：默认仅忽略列表；
+5. 第二批凭据方案：默认 **stronghold**（备选：Windows Credential Manager via `keyring` crate）；
+6. hosts 提权：默认**按需提权助手**（UAC 弹出最小授权），不整体管理员运行。
