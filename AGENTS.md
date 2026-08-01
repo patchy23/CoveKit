@@ -1,7 +1,7 @@
 # patchyBox · 项目简报（AGENTS.md）
 
 > 本文件在会话打开 `G:\workspace\patchyBox` 时自动注入，先读它再动手。
-> 设计阶段已完成（2026-08-02），当前状态：**M0 脚手架未开始**。
+> 设计阶段已完成（2026-08-02）；**M0 脚手架已完成（2026-08-02）**，当前目标：**M1 框架 + 第一批 8 个文本工具**。
 
 ## 项目是什么
 
@@ -32,13 +32,13 @@
 
 ## 文档地图
 
-| 文件 | 内容 |
-|------|------|
-| `DESIGN.md` | 设计 tokens：28 色 / 18 组件变体，已过 `designmd lint`（0 错误） |
-| `docs/01-tech-stack.md` | 技术选型 + 第二批技术预备评估 |
-| `docs/02-architecture.md` | 两批次详细设计：架构 / 注册表 / IPC / 安全 / 路线图 M0–M4 |
-| `sketches/002-clean-light/` | 已采纳方向的**可交互原型**，开发验收视觉参照 |
-| `sketches/001-command-dark/` `003-glass-launcher/` | 未采纳方向，留档勿删 |
+| 文件                                               | 内容                                                             |
+| -------------------------------------------------- | ---------------------------------------------------------------- |
+| `DESIGN.md`                                        | 设计 tokens：28 色 / 18 组件变体，已过 `designmd lint`（0 错误） |
+| `docs/01-tech-stack.md`                            | 技术选型 + 第二批技术预备评估                                    |
+| `docs/02-architecture.md`                          | 两批次详细设计：架构 / 注册表 / IPC / 安全 / 路线图 M0–M4        |
+| `sketches/002-clean-light/`                        | 已采纳方向的**可交互原型**，开发验收视觉参照                     |
+| `sketches/001-command-dark/` `003-glass-launcher/` | 未采纳方向，留档勿删                                             |
 
 ## 关键设计约束（来自 DESIGN.md，务必遵守）
 
@@ -60,13 +60,22 @@
 5. 第二批凭据：默认 **stronghold**（备选 Windows Credential Manager / keyring）
 6. hosts 提权：默认**按需提权助手**（UAC 最小授权），应用本体不常驻管理员
 
-## 下一步：M0 脚手架（新会话任务）
+## 下一步：M1 框架 + 第一批（新会话任务）
 
-1. `pnpm create tauri-app`（vue-ts 模板）装入本目录（或手工搭建 Vite + Vue3 + TS）
-2. Tailwind CSS 4 接入 DESIGN.md tokens（`@theme` + `@custom-variant dark` 绑定 `[data-theme=dark]`），示例见 01-tech-stack §3
-3. 工程化：ESLint 9 + Prettier、rustfmt + clippy、路径别名 `@/`
-4. CI：GitHub Actions（lint → test → `tauri build` artifact）
-5. 验收：`pnpm tauri dev` 出方向二主界面（空数据版）+ CI 绿
+M0 已完成（脚手架 + Tailwind tokens + 工程化 + CI，验收全绿）。M1 按 docs/02-architecture.md §6/§10 推进：
+
+1. **core/ 框架层**：工具注册表 `src/core/registry/`（ToolManifest + registerTool）、IPC 契约 `src/core/ipc/contracts.ts`（唯一事实源）+ ipc.ts 封装、presentation 双载体（modal 实现 + workspace 空壳）、search/fuzzy.ts
+2. **Rust 框架层**：`src-tauri/modules/`（settings/clipboard/color）+ 托盘/全局快捷键/单实例（`src-tauri/src/lib.rs` 装配处）
+3. **UI 组件树**（§6）：Sidebar/TopBar/RecentStrip/ToolGrid/ToolCard/ToolModal/SettingsModal/Toast，对齐 `sketches/002-clean-light/`（M0 的 App.vue 单文件骨架将被拆分为组件树）
+4. **8 个文本工具**：`tools/<id>/`（组件 <300 行 + useXxx.ts 纯函数 + vitest 单测），注册表注册一行
+5. 收尾：fuse.js + vue-i18n 依赖安装、工具设置 settingsSchema 表单
+
+验收红线（M0 已全部落地）：ESLint 9 + Prettier + `rustfmt` + `clippy -D warnings` + vitest 全绿才合入。
+
+### M0 环境备忘（Windows）
+
+- **pnpm 命令**：系统 corepack shim 损坏（`G:\d\base\nodejs\pnpm` 报 MODULE_NOT_FOUND），需先 `export PATH="/c/Users/patchy/AppData/Roaming/npm:$PATH"`（npm 全局 pnpm 11.18.0）再执行 pnpm
+- **pnpm 11 配置**：settings 在 `pnpm-workspace.yaml`（`allowBuilds: { esbuild: true }`），package.json 的 `pnpm` 字段已废弃不再读取
 
 ## 约定
 

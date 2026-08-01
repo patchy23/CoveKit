@@ -1,0 +1,4 @@
+# pnpm 设置（pnpm 11 起 settings 统一放此文件，package.json 的 pnpm 字段不再读取）
+# 允许构建脚本白名单：esbuild 的 postinstall 验证本地二进制
+allowBuilds:
+  esbuild: true

@@ -1,0 +1,15 @@
+dist
+coverage
+node_modules
+src-tauri/target
+src-tauri/gen
+public
+*.svg
+
+# 项目文档与留档原型：格式由人工维护，不交给 Prettier
+docs
+sketches
+DESIGN.md
+AGENTS.md
+IDEA.md
+README.md

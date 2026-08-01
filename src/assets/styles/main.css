@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+/* ============================================================
+ * patchyBox · DESIGN.md tokens 单一事实源映射（Tailwind 4 @theme）
+ * 修改视觉规范先改 DESIGN.md，再同步此处；勿在此引入规范外色值。
+ * ============================================================ */
+
+@theme {
+  /* ── Colors（DESIGN.md colors 全量，浅色 + -dark 变体）── */
+  --color-primary: #191d23;
+  --color-secondary: #5c6672;
+  --color-tertiary: #f0562c;
+  --color-tertiary-strong: #c2410c;
+  --color-tertiary-soft: #fdeee7;
+  --color-neutral: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-surface-muted: #fafbfc;
+  --color-border: #e5e8ec;
+  --color-border-strong: #d3d8de;
+  --color-text-muted: #98a2ad;
+  --color-on-tertiary: #ffffff;
+  --color-success: #12b76a;
+  --color-success-strong: #067647;
+  --color-success-soft: #e7f8f0;
+  --color-on-tertiary-dark: #0f1216;
+  --color-primary-dark: #e8edf2;
+  --color-secondary-dark: #9aa7b5;
+  --color-neutral-dark: #0f1216;
+  --color-surface-dark: #161b21;
+  --color-surface-muted-dark: #1b2129;
+  --color-border-dark: #232a34;
+  --color-border-strong-dark: #303946;
+  --color-text-muted-dark: #66727f;
+  --color-tertiary-dark: #ff7a4d;
+  --color-tertiary-soft-dark: #3a2116;
+  --color-success-dark: #34d399;
+  --color-success-soft-dark: #0f2e22;
+
+  /* ── Spacing（间距基线 4px，DESIGN.md spacing）── */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 14px;
+  --spacing-lg: 22px;
+  --spacing-xl: 26px;
+
+  /* ── Radius（DESIGN.md rounded）── */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ── Typography（DESIGN.md typography：Inter + 中文回退）── */
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+/* 深色模式：切换 document.documentElement[data-theme=dark] */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-neutral font-sans text-primary antialiased dark:bg-neutral-dark dark:text-primary-dark;
+  }
+
+  ::selection {
+    @apply bg-tertiary text-on-tertiary dark:bg-tertiary-dark dark:text-on-tertiary-dark;
+  }
+
+  /* 细滚动条（对齐原型 002） */
+  ::-webkit-scrollbar {
+    width: 9px;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border-strong;
+    border: 2px solid var(--color-surface);
+  }
+  [data-theme="dark"] ::-webkit-scrollbar-thumb {
+    @apply bg-border-strong-dark;
+    border-color: var(--color-surface-dark);
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

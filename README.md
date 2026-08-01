@@ -11,16 +11,16 @@ patchyBox 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，�
 
 ## 设计文档
 
-| 文档 | 说明 |
-|------|------|
-| [DESIGN.md](DESIGN.md) | 设计规范（颜色 / 字体 / 组件 tokens，单一事实源） |
-| [docs/01-tech-stack.md](docs/01-tech-stack.md) | 技术选型分析 |
-| [docs/02-architecture.md](docs/02-architecture.md) | 详细设计（架构 / IPC 契约 / 数据模型 / 路线图） |
-| [sketches/002-clean-light/](sketches/002-clean-light/index.html) | 已采纳 UI 方向的交互原型（浏览器直接打开） |
+| 文档                                                             | 说明                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------- |
+| [DESIGN.md](DESIGN.md)                                           | 设计规范（颜色 / 字体 / 组件 tokens，单一事实源） |
+| [docs/01-tech-stack.md](docs/01-tech-stack.md)                   | 技术选型分析                                      |
+| [docs/02-architecture.md](docs/02-architecture.md)               | 详细设计（架构 / IPC 契约 / 数据模型 / 路线图）   |
+| [sketches/002-clean-light/](sketches/002-clean-light/index.html) | 已采纳 UI 方向的交互原型（浏览器直接打开）        |
 
 ## 开发
 
-> 状态：设计阶段已完成，等待 M0 脚手架初始化（见 `AGENTS.md`）。
+> 状态：**M0 脚手架已完成**（2026-08-02）——Tauri 2 + Vue 3 + TS + Tailwind CSS 4 已就位，`pnpm tauri dev` 可出方向二主界面（空数据版）。下一步：M1 框架 + 第一批 8 个文本工具（见 `AGENTS.md`）。
 
 ```bash
 pnpm install

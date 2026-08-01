@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-test:
+    name: Lint & Test（前端）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm test
+
+  rust-checks:
+    name: Rustfmt & Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: rustfmt 检查
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: clippy 检查
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml -- -D warnings
+
+  build:
+    name: Tauri Build（Windows 安装包）
+    runs-on: windows-latest
+    needs: [lint-and-test, rust-checks]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: build
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: patchybox-installer
+          path: src-tauri/target/release/bundle/**/*.msi
+          if-no-files-found: error
