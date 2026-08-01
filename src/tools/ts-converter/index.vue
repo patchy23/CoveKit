@@ -50,17 +50,12 @@ function useNow() {
         v-model="tsInput"
         type="text"
         spellcheck="false"
-        class="w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-body text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="field-input font-mono"
         placeholder="1700000000 或 1700000000000"
       />
     </div>
     <div class="flex items-center gap-[8px]">
-      <button
-        class="h-[38px] rounded-md bg-tertiary-strong px-[18px] text-body font-medium text-on-tertiary transition-[filter] hover:brightness-110 dark:bg-tertiary-dark dark:text-on-tertiary-dark"
-        @click="convertTs"
-      >
-        转换为日期
-      </button>
+      <button class="btn-primary" @click="convertTs">转换为日期</button>
     </div>
     <p
       v-if="tsError"
@@ -104,24 +99,17 @@ function useNow() {
     <div class="my-[4px] border-t border-border dark:border-border-dark" />
 
     <div>
-      <label class="mb-[6px] block text-body font-medium text-secondary"
-        >日期 → 时间戳（毫秒）</label
-      >
+      <label class="mb-[6px] field-label">日期 → 时间戳（毫秒）</label>
       <input
         v-model="dateInput"
         type="text"
         spellcheck="false"
-        class="w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-body text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="field-input font-mono"
         placeholder="2023-11-14 22:13:20 或 ISO 字符串"
       />
     </div>
     <div class="flex items-center gap-[8px]">
-      <button
-        class="h-[38px] rounded-md border border-border-strong bg-surface px-[18px] text-body font-medium text-primary transition-colors hover:bg-surface-muted dark:border-border-strong-dark dark:bg-surface-dark dark:text-primary-dark dark:hover:bg-surface-muted-dark"
-        @click="convertDate"
-      >
-        转换为时间戳
-      </button>
+      <button class="btn-secondary" @click="convertDate">转换为时间戳</button>
     </div>
     <p
       v-if="dateError"

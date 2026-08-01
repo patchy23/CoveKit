@@ -16,22 +16,12 @@ const stats = computed(() => diffStats(diff.value));
   <div class="flex flex-col gap-[12px]">
     <div class="grid grid-cols-2 gap-[12px]">
       <div>
-        <label class="mb-[6px] block text-body font-medium text-secondary">原文</label>
-        <textarea
-          v-model="left"
-          rows="8"
-          spellcheck="false"
-          class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
-        />
+        <label class="mb-[6px] field-label">原文</label>
+        <textarea v-model="left" rows="8" spellcheck="false" class="field-textarea font-mono" />
       </div>
       <div>
-        <label class="mb-[6px] block text-body font-medium text-secondary">新文</label>
-        <textarea
-          v-model="right"
-          rows="8"
-          spellcheck="false"
-          class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
-        />
+        <label class="mb-[6px] field-label">新文</label>
+        <textarea v-model="right" rows="8" spellcheck="false" class="field-textarea font-mono" />
       </div>
     </div>
 

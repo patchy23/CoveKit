@@ -29,28 +29,18 @@ function runDecode() {
 <template>
   <div class="flex flex-col gap-[12px]">
     <div>
-      <label class="mb-[6px] block text-body font-medium text-secondary">输入内容</label>
+      <label class="mb-[6px] field-label">输入内容</label>
       <textarea
         v-model="input"
         rows="6"
         spellcheck="false"
-        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="field-textarea font-mono"
         placeholder="https://example.com/搜索?q=patchy box"
       />
     </div>
     <div class="flex items-center gap-[8px]">
-      <button
-        class="h-[38px] rounded-md bg-tertiary-strong px-[18px] text-body font-medium text-on-tertiary transition-[filter] hover:brightness-110 dark:bg-tertiary-dark dark:text-on-tertiary-dark"
-        @click="runEncode"
-      >
-        编码
-      </button>
-      <button
-        class="h-[38px] rounded-md border border-border-strong bg-surface px-[18px] text-body font-medium text-primary transition-colors hover:bg-surface-muted dark:border-border-strong-dark dark:bg-surface-dark dark:text-primary-dark dark:hover:bg-surface-muted-dark"
-        @click="runDecode"
-      >
-        解码
-      </button>
+      <button class="btn-primary" @click="runEncode">编码</button>
+      <button class="btn-secondary" @click="runDecode">解码</button>
       <button
         class="ml-auto rounded-md px-[12px] py-[9px] text-body font-medium text-secondary transition-colors hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
         @click="
@@ -74,20 +64,14 @@ function runDecode() {
     <div>
       <div class="mb-[6px] flex items-center justify-between">
         <label class="text-body font-medium text-secondary">输出</label>
-        <button
-          v-if="output"
-          class="rounded-md px-[10px] py-[4px] text-body-sm font-medium text-secondary transition-colors hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-          @click="copyText(output, '已复制')"
-        >
-          复制
-        </button>
+        <button v-if="output" class="btn-ghost" @click="copyText(output, '已复制')">复制</button>
       </div>
       <textarea
         :value="output"
         rows="6"
         readonly
         spellcheck="false"
-        class="w-full resize-y rounded-md border border-border bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="field-textarea font-mono"
         placeholder="结果将显示在这里"
       />
     </div>

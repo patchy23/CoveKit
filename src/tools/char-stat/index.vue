@@ -21,12 +21,12 @@ const items = [
 <template>
   <div class="flex flex-col gap-[12px]">
     <div>
-      <label class="mb-[6px] block text-body font-medium text-secondary">输入文本</label>
+      <label class="mb-[6px] field-label">输入文本</label>
       <textarea
         v-model="input"
         rows="10"
         spellcheck="false"
-        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        class="field-textarea font-mono"
         placeholder="在此输入或粘贴文本，统计实时更新"
       />
     </div>

@@ -16,17 +16,17 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
   <div class="flex flex-col gap-[12px]">
     <div class="grid grid-cols-[1fr_auto] gap-[10px]">
       <div>
-        <label class="mb-[6px] block text-body font-medium text-secondary">正则表达式</label>
+        <label class="mb-[6px] field-label">正则表达式</label>
         <input
           v-model="pattern"
           type="text"
           spellcheck="false"
-          class="w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] font-mono text-body text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+          class="field-input font-mono"
           placeholder="\\d+"
         />
       </div>
       <div>
-        <label class="mb-[6px] block text-body font-medium text-secondary">标志</label>
+        <label class="mb-[6px] field-label">标志</label>
         <input
           v-model="flags"
           type="text"
@@ -63,12 +63,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
           >{{ result.ok ? `${result.count} 处匹配` : "—" }}</span
         >
       </div>
-      <textarea
-        v-model="text"
-        rows="6"
-        spellcheck="false"
-        class="w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] font-mono text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
-      />
+      <textarea v-model="text" rows="6" spellcheck="false" class="field-textarea font-mono" />
     </div>
 
     <div

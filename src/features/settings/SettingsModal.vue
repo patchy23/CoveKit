@@ -56,12 +56,10 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
         <h3 class="text-h2 font-bold dark:text-primary-dark">外观</h3>
         <div class="mt-sm grid grid-cols-2 gap-sm">
-          <label
-            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
-          >
+          <label class="field-label flex flex-col gap-[6px]">
             主题
             <select
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="field-input"
               :value="settings.settings.theme"
               @change="
                 settings.set(
@@ -75,12 +73,10 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
               <option value="dark">深色</option>
             </select>
           </label>
-          <label
-            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
-          >
+          <label class="field-label flex flex-col gap-[6px]">
             语言
             <select
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="field-input"
               :value="settings.settings.language"
               @change="
                 settings.set(
@@ -100,12 +96,10 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
         <h3 class="text-h2 font-bold dark:text-primary-dark">快捷键与通用</h3>
         <div class="mt-sm flex flex-col gap-sm">
-          <label
-            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
-          >
+          <label class="field-label flex flex-col gap-[6px]">
             全局唤起快捷键
             <input
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="field-input"
               :value="settings.settings.globalHotkey"
               spellcheck="false"
               @change="settings.set('globalHotkey', ($event.target as HTMLInputElement).value)"
@@ -145,13 +139,11 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
               "
             />
           </label>
-          <label
-            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
-          >
+          <label class="field-label flex flex-col gap-[6px]">
             历史上限
             <input
               type="number"
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="field-input"
               :value="settings.settings.clipboard.historyLimit"
               @change="
                 settings.set('clipboard', {
@@ -161,12 +153,10 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
               "
             />
           </label>
-          <label
-            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
-          >
+          <label class="field-label flex flex-col gap-[6px]">
             忽略的应用关键词（逗号分隔）
             <input
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="field-input"
               :value="settings.settings.clipboard.ignore.join(', ')"
               placeholder="密码管理器, 密钥存储"
               @change="
@@ -197,12 +187,12 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
           <label
             v-for="field in t.settingsSchema"
             :key="field.key"
-            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
+            class="field-label flex flex-col gap-[6px]"
           >
             {{ field.label }}
             <select
               v-if="field.type === 'select'"
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="field-input"
               :value="String(fieldValue(field, t.id))"
               @change="onFieldChange(field, t.id, ($event.target as HTMLSelectElement).value)"
             >
@@ -220,7 +210,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             <input
               v-else-if="field.type === 'number'"
               type="number"
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="field-input"
               :value="String(fieldValue(field, t.id))"
               @change="
                 onFieldChange(field, t.id, Number(($event.target as HTMLInputElement).value))
@@ -228,7 +218,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             />
             <input
               v-else
-              class="rounded-sm border border-border-strong bg-surface-muted px-[10px] py-[8px] text-body text-primary outline-none focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              class="field-input"
               :value="String(fieldValue(field, t.id))"
               @change="onFieldChange(field, t.id, ($event.target as HTMLInputElement).value)"
             />
