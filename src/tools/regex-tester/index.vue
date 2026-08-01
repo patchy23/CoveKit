@@ -16,7 +16,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
   <div class="flex flex-col gap-[12px]">
     <div class="grid grid-cols-[1fr_auto] gap-[10px]">
       <div>
-        <label class="mb-[6px] block text-body-sm font-semibold text-secondary">正则表达式</label>
+        <label class="mb-[6px] block text-body font-medium text-secondary">正则表达式</label>
         <input
           v-model="pattern"
           type="text"
@@ -26,7 +26,7 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
         />
       </div>
       <div>
-        <label class="mb-[6px] block text-body-sm font-semibold text-secondary">标志</label>
+        <label class="mb-[6px] block text-body font-medium text-secondary">标志</label>
         <input
           v-model="flags"
           type="text"
@@ -57,9 +57,9 @@ const result = computed(() => testRegex(pattern.value, flags.value, text.value))
 
     <div>
       <div class="mb-[6px] flex items-center justify-between">
-        <label class="text-body-sm font-semibold text-secondary">测试文本</label>
+        <label class="text-body font-medium text-secondary">测试文本</label>
         <span
-          class="rounded-full bg-neutral px-[9px] py-[2px] text-body-sm font-semibold text-tertiary-strong dark:bg-neutral-dark dark:text-tertiary-dark"
+          class="rounded-full bg-neutral px-[9px] py-[2px] text-body-sm font-medium text-tertiary-strong dark:bg-neutral-dark dark:text-tertiary-dark"
           >{{ result.ok ? `${result.count} 处匹配` : "—" }}</span
         >
       </div>

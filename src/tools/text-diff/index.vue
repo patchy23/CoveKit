@@ -16,7 +16,7 @@ const stats = computed(() => diffStats(diff.value));
   <div class="flex flex-col gap-[12px]">
     <div class="grid grid-cols-2 gap-[12px]">
       <div>
-        <label class="mb-[6px] block text-body-sm font-semibold text-secondary">原文</label>
+        <label class="mb-[6px] block text-body font-medium text-secondary">原文</label>
         <textarea
           v-model="left"
           rows="8"
@@ -25,7 +25,7 @@ const stats = computed(() => diffStats(diff.value));
         />
       </div>
       <div>
-        <label class="mb-[6px] block text-body-sm font-semibold text-secondary">新文</label>
+        <label class="mb-[6px] block text-body font-medium text-secondary">新文</label>
         <textarea
           v-model="right"
           rows="8"

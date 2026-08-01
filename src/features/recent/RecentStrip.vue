@@ -20,7 +20,7 @@ const recentTools = computed(() =>
     class="mb-lg flex flex-wrap items-center gap-[12px] rounded-lg border border-border bg-gradient-to-br from-tertiary-soft to-surface p-[16px_18px] dark:border-border-dark dark:from-tertiary-soft-dark dark:to-surface-dark"
   >
     <span
-      class="mr-[4px] flex items-center gap-[7px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
+      class="mr-[4px] flex items-center gap-[7px] text-body font-medium text-secondary dark:text-secondary-dark"
     >
       <AppIcon name="ts" :size="15" class="text-tertiary-strong dark:text-tertiary-dark" />
       最近使用

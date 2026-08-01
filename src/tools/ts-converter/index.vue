@@ -38,7 +38,7 @@ function useNow() {
   <div class="flex flex-col gap-[12px]">
     <div>
       <div class="mb-[6px] flex items-center justify-between">
-        <label class="text-body-sm font-semibold text-secondary">时间戳（秒 / 毫秒自动识别）</label>
+        <label class="text-body font-medium text-secondary">时间戳（秒 / 毫秒自动识别）</label>
         <button
           class="rounded-md px-[10px] py-[4px] text-body-sm font-medium text-tertiary-strong transition-colors hover:bg-tertiary-soft dark:text-tertiary-dark dark:hover:bg-tertiary-soft-dark"
           @click="useNow"
@@ -56,7 +56,7 @@ function useNow() {
     </div>
     <div class="flex items-center gap-[8px]">
       <button
-        class="h-[38px] rounded-md bg-tertiary-strong px-[18px] text-body font-semibold text-on-tertiary transition-[filter] hover:brightness-110 dark:bg-tertiary-dark dark:text-on-tertiary-dark"
+        class="h-[38px] rounded-md bg-tertiary-strong px-[18px] text-body font-medium text-on-tertiary transition-[filter] hover:brightness-110 dark:bg-tertiary-dark dark:text-on-tertiary-dark"
         @click="convertTs"
       >
         转换为日期
@@ -104,7 +104,7 @@ function useNow() {
     <div class="my-[4px] border-t border-border dark:border-border-dark" />
 
     <div>
-      <label class="mb-[6px] block text-body-sm font-semibold text-secondary"
+      <label class="mb-[6px] block text-body font-medium text-secondary"
         >日期 → 时间戳（毫秒）</label
       >
       <input
@@ -117,7 +117,7 @@ function useNow() {
     </div>
     <div class="flex items-center gap-[8px]">
       <button
-        class="h-[38px] rounded-md border border-border-strong bg-surface px-[18px] text-body font-semibold text-primary transition-colors hover:bg-surface-muted dark:border-border-strong-dark dark:bg-surface-dark dark:text-primary-dark dark:hover:bg-surface-muted-dark"
+        class="h-[38px] rounded-md border border-border-strong bg-surface px-[18px] text-body font-medium text-primary transition-colors hover:bg-surface-muted dark:border-border-strong-dark dark:bg-surface-dark dark:text-primary-dark dark:hover:bg-surface-muted-dark"
         @click="convertDate"
       >
         转换为时间戳

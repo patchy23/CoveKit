@@ -21,7 +21,7 @@ const items = [
 <template>
   <div class="flex flex-col gap-[12px]">
     <div>
-      <label class="mb-[6px] block text-body-sm font-semibold text-secondary">输入文本</label>
+      <label class="mb-[6px] block text-body font-medium text-secondary">输入文本</label>
       <textarea
         v-model="input"
         rows="10"

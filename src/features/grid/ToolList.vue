@@ -30,7 +30,7 @@ const catNames: Record<string, string> = {
         <AppIcon :name="t.icon" :size="17" />
       </div>
       <div class="min-w-0">
-        <div class="text-body font-semibold dark:text-primary-dark">{{ t.name }}</div>
+        <div class="text-body font-medium dark:text-primary-dark">{{ t.name }}</div>
         <div class="mt-[1px] truncate text-body-sm text-secondary dark:text-secondary-dark">
           {{ t.description }}
         </div>

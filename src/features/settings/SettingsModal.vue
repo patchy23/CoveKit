@@ -54,10 +54,10 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
     <div class="mt-[20px] flex flex-col gap-md">
       <!-- 外观 -->
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-        <h3 class="text-body font-bold dark:text-primary-dark">外观</h3>
+        <h3 class="text-h2 font-bold dark:text-primary-dark">外观</h3>
         <div class="mt-sm grid grid-cols-2 gap-sm">
           <label
-            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
           >
             主题
             <select
@@ -76,7 +76,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             </select>
           </label>
           <label
-            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
           >
             语言
             <select
@@ -98,10 +98,10 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
 
       <!-- 快捷键与通用 -->
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-        <h3 class="text-body font-bold dark:text-primary-dark">快捷键与通用</h3>
+        <h3 class="text-h2 font-bold dark:text-primary-dark">快捷键与通用</h3>
         <div class="mt-sm flex flex-col gap-sm">
           <label
-            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
           >
             全局唤起快捷键
             <input
@@ -127,7 +127,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
 
       <!-- 剪贴板策略 -->
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-        <h3 class="text-body font-bold dark:text-primary-dark">剪贴板</h3>
+        <h3 class="text-h2 font-bold dark:text-primary-dark">剪贴板</h3>
         <div class="mt-sm flex flex-col gap-sm">
           <label
             class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"
@@ -146,7 +146,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             />
           </label>
           <label
-            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
           >
             历史上限
             <input
@@ -162,7 +162,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             />
           </label>
           <label
-            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
           >
             忽略的应用关键词（逗号分隔）
             <input
@@ -189,7 +189,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
         :key="t.id"
         class="rounded-lg border border-border p-[16px] dark:border-border-dark"
       >
-        <h3 class="flex items-center gap-[8px] text-body font-bold dark:text-primary-dark">
+        <h3 class="flex items-center gap-[8px] text-h2 font-bold dark:text-primary-dark">
           <AppIcon :name="t.icon" :size="15" class="text-tertiary-strong dark:text-tertiary-dark" />
           {{ t.name }} 设置
         </h3>
@@ -197,7 +197,7 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
           <label
             v-for="field in t.settingsSchema"
             :key="field.key"
-            class="flex flex-col gap-[6px] text-body-sm font-semibold text-secondary dark:text-secondary-dark"
+            class="flex flex-col gap-[6px] text-body font-medium text-secondary dark:text-secondary-dark"
           >
             {{ field.label }}
             <select
