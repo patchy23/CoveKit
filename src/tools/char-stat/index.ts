@@ -10,7 +10,7 @@ registerTool({
   icon: "stat",
   description: "字数、行数、词数、字节数实时统计。",
   keywords: ["字符", "字数", "统计", "count", "字节"],
-  presentation: "modal",
+  presentation: "workspace",
   component: () => import("./index.vue"),
   tags: ["文本"],
 });

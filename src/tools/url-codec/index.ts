@@ -10,7 +10,7 @@ registerTool({
   icon: "url",
   description: "URL 编码与解码，支持中文与特殊字符。",
   keywords: ["url", "编码", "解码", "encode", "decode"],
-  presentation: "modal",
+  presentation: "workspace",
   component: () => import("./index.vue"),
   tags: ["开发"],
 });

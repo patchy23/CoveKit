@@ -10,7 +10,7 @@ registerTool({
   icon: "diff",
   description: "左右分栏 Diff，逐行高亮增删改。",
   keywords: ["diff", "对比", "比较", "差异"],
-  presentation: "modal",
+  presentation: "workspace",
   component: () => import("./index.vue"),
   tags: ["文本"],
 });

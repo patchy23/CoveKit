@@ -81,9 +81,9 @@ export const useToolsStore = defineStore("tools", () => {
     await storage.set(STORE_FILE, RECENT_KEY, recent.value);
   }
 
-  /** 打开工具：记录最近使用 + 打开弹窗 */
+  /** 打开工具：打开页签 + 记录最近使用 */
   async function openTool(id: string) {
-    ui.openToolId = id;
+    ui.openTool(id);
     await pushRecent(id);
   }
 

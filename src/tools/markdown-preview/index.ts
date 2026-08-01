@@ -10,7 +10,7 @@ registerTool({
   icon: "md",
   description: "实时渲染 GFM，支持代码块与表格。",
   keywords: ["markdown", "md", "预览", "渲染"],
-  presentation: "modal",
+  presentation: "workspace",
   component: () => import("./index.vue"),
   tags: ["文本", "热门"],
 });

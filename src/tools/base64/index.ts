@@ -10,7 +10,7 @@ registerTool({
   icon: "b64",
   description: "文本 Base64 互转，完整支持中文 Unicode。",
   keywords: ["base64", "编码", "解码", "b64"],
-  presentation: "modal",
+  presentation: "workspace",
   component: () => import("./index.vue"),
   tags: ["开发"],
 });

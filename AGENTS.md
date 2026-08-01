@@ -25,7 +25,7 @@
 ## 架构核心（详见 docs/02-architecture.md）
 
 - **工具注册表**（`src/core/registry/`）：工具目录自注册，新增工具 = 建目录 + 注册一行，框架零改动
-- **presentation 双载体**：`modal`（第一批全用，原型 002 的弹窗）/ `workspace`（第二批大工具，第一批只留接口+空壳）
+- **presentation 双载体**：`workspace`（**多页签工作区，2026-08-02 用户决策：第一批起全部工具以子页面打开**，实现见 `src/features/workspace/ToolWorkspace.vue`）/ `modal`（轻量弹窗，备用载体）
 - **Rust 模块化**：`src-tauri/modules/` 按第二批形状划分（settings/clipboard/color 第一批；http_ws/db/hosts/dns/ssh/secrets 第二批），Adapter 模式（Provider trait）是第二批骨架
 - **IPC 契约唯一事实源**：`src/core/ipc/contracts.ts`（与 Rust serde 同步；命令清单见 02-architecture §5）
 - **工具级设置**：manifest 声明 `settingsSchema`，框架自动渲染设置表单并存 `settings.tools[id]`
@@ -62,14 +62,14 @@
 
 ## 下一步：M2 第二批 I（新会话任务）
 
-M0/M1 已完成（脚手架 + 框架 + 8 个文本工具，验收全绿）。M2 按 docs/02-architecture.md §10 推进：
+M0/M1 已完成（脚手架 + 框架 + 8 个文本工具，验收全绿；工具以多页签工作区子页面打开）。M2 按 docs/02-architecture.md §10 推进：
 
-1. **workspace 载体上线**：`core/presentation/` 补 workspace 挂载（第一批已留接口 + ToolWorkspace 空壳），HTTP/WS、DB 工具用全内容区工作台
-2. **HTTP/WS 调试**：Rust `modules/http_ws`（reqwest + tokio-tungstenite，第二批依赖此时引入）
-3. **SQLite 数据库工具**：`modules/db`（sqlx 统一三方言，先 SQLite）
-4. **hosts 修改**：`modules/hosts` + 按需提权助手（UAC 最小授权）+ 修改前备份
-5. **轻量工具补齐**：随机密码 / 哈希计算 / 颜色选择器（color_pick_screen 命令已就绪）/ 二维码
-6. **剪贴板历史工具**：clipboard 模块 + 轮询服务 + SQLite 历史已在 M1 就绪，补 UI 工具即可
+1. **HTTP/WS 调试**：Rust `modules/http_ws`（reqwest + tokio-tungstenite，第二批依赖此时引入）；workspace 页签载体已就绪直接复用
+2. **SQLite 数据库工具**：`modules/db`（sqlx 统一三方言，先 SQLite）
+3. **hosts 修改**：`modules/hosts` + 按需提权助手（UAC 最小授权）+ 修改前备份
+4. **轻量工具补齐**：随机密码 / 哈希计算 / 颜色选择器（color_pick_screen 命令已就绪）/ 二维码
+5. **剪贴板历史工具**：clipboard 模块 + 轮询服务 + SQLite 历史已在 M1 就绪，补 UI 工具即可
+6. **全局快捷键改键**：Rust 侧注册读取 settings.globalHotkey（本机 Ctrl+Shift+Space 被占用时降级告警）
 
 ### M1 环境备忘补充
 

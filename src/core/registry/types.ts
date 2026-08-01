@@ -7,8 +7,8 @@ import type { Component } from "vue";
 /** 工具分类（分类是数据不是枚举：新增分类 = 扩展联合 + 图标表） */
 export type CategoryId = "dev" | "text" | "image" | "net" | "sys";
 
-/** 展示载体：modal=弹窗（第一批全部）；workspace=全内容区工作台（第二批大工具） */
-export type Presentation = "modal" | "workspace";
+/** 展示载体：workspace=多页签工作区（2026-08-02 起第一批工具全用，子页面形态）；modal=轻量弹窗（备用） */
+export type Presentation = "workspace" | "modal";
 
 /** 工具级设置声明式 schema：框架自动渲染设置表单并存 settings.tools[id] */
 export interface SettingsField {

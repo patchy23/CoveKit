@@ -25,7 +25,7 @@ registerTool({
   icon: "json",
   description: "格式化、校验与压缩 JSON，错误自动定位行号。",
   keywords: ["json", "格式化", "格式化", "压缩", "校验", "pretty"],
-  presentation: "modal",
+  presentation: "workspace",
   component: () => import("./index.vue"),
   settingsSchema,
   tags: ["开发", "热门"],

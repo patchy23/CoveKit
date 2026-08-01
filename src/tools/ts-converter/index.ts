@@ -10,7 +10,7 @@ registerTool({
   icon: "ts",
   description: "Unix 时间戳与日期互转，支持毫秒与相对时间。",
   keywords: ["时间戳", "timestamp", "unix", "日期", "转换"],
-  presentation: "modal",
+  presentation: "workspace",
   component: () => import("./index.vue"),
   tags: ["开发"],
 });

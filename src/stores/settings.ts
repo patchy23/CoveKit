@@ -4,6 +4,7 @@
  */
 import { defineStore } from "pinia";
 import { ref } from "vue";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ipc } from "@/core/ipc/ipc";
 import type { AppSettings } from "@/core/ipc/contracts";
 import { storage } from "@/core/storage";
@@ -25,13 +26,19 @@ export const useSettingsStore = defineStore("settings", () => {
   const settings = ref<AppSettings>({ ...DEFAULTS });
   const loaded = ref(false);
 
-  /** 应用主题到 <html data-theme>（@custom-variant dark 绑定） */
+  /** 应用主题到 <html data-theme>（@custom-variant dark 绑定）+ Windows 标题栏同步 */
   function applyTheme() {
     const { theme } = settings.value;
     const dark =
       theme === "dark" ||
       (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
     document.documentElement.dataset.theme = dark ? "dark" : "";
+    // 原生标题栏跟随主题（WebView 环境才可用；浏览器预览忽略）
+    if ("__TAURI_INTERNALS__" in window) {
+      getCurrentWindow()
+        .setTheme(dark ? "dark" : "light")
+        .catch(() => {});
+    }
   }
 
   async function init() {

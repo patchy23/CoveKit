@@ -10,7 +10,7 @@ registerTool({
   icon: "regex",
   description: "实时匹配高亮，常用表达式一键插入。",
   keywords: ["正则", "regex", "匹配", "pattern", "表达式"],
-  presentation: "modal",
+  presentation: "workspace",
   component: () => import("./index.vue"),
   tags: ["开发"],
 });
