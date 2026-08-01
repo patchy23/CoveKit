@@ -1,7 +1,16 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "主窗口能力白名单（最小权限）",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "store:default",
+    "clipboard-manager:default",
+    "global-shortcut:default",
+    "autostart:default",
+    "sql:default",
+    "window-state:default"
+  ]
 }

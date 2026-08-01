@@ -1,7 +1,7 @@
 # patchyBox · 项目简报（AGENTS.md）
 
 > 本文件在会话打开 `G:\workspace\patchyBox` 时自动注入，先读它再动手。
-> 设计阶段已完成（2026-08-02）；**M0 脚手架已完成（2026-08-02）**，当前目标：**M1 框架 + 第一批 8 个文本工具**。
+> 设计阶段已完成（2026-08-02）；**M0/M1 已完成（2026-08-02）**，当前目标：**M2 第二批 I（HTTP/WS 调试、SQLite 数据库、hosts 修改 + 轻量工具）**。
 
 ## 项目是什么
 
@@ -60,17 +60,21 @@
 5. 第二批凭据：默认 **stronghold**（备选 Windows Credential Manager / keyring）
 6. hosts 提权：默认**按需提权助手**（UAC 最小授权），应用本体不常驻管理员
 
-## 下一步：M1 框架 + 第一批（新会话任务）
+## 下一步：M2 第二批 I（新会话任务）
 
-M0 已完成（脚手架 + Tailwind tokens + 工程化 + CI，验收全绿）。M1 按 docs/02-architecture.md §6/§10 推进：
+M0/M1 已完成（脚手架 + 框架 + 8 个文本工具，验收全绿）。M2 按 docs/02-architecture.md §10 推进：
 
-1. **core/ 框架层**：工具注册表 `src/core/registry/`（ToolManifest + registerTool）、IPC 契约 `src/core/ipc/contracts.ts`（唯一事实源）+ ipc.ts 封装、presentation 双载体（modal 实现 + workspace 空壳）、search/fuzzy.ts
-2. **Rust 框架层**：`src-tauri/modules/`（settings/clipboard/color）+ 托盘/全局快捷键/单实例（`src-tauri/src/lib.rs` 装配处）
-3. **UI 组件树**（§6）：Sidebar/TopBar/RecentStrip/ToolGrid/ToolCard/ToolModal/SettingsModal/Toast，对齐 `sketches/002-clean-light/`（M0 的 App.vue 单文件骨架将被拆分为组件树）
-4. **8 个文本工具**：`tools/<id>/`（组件 <300 行 + useXxx.ts 纯函数 + vitest 单测），注册表注册一行
-5. 收尾：fuse.js + vue-i18n 依赖安装、工具设置 settingsSchema 表单
+1. **workspace 载体上线**：`core/presentation/` 补 workspace 挂载（第一批已留接口 + ToolWorkspace 空壳），HTTP/WS、DB 工具用全内容区工作台
+2. **HTTP/WS 调试**：Rust `modules/http_ws`（reqwest + tokio-tungstenite，第二批依赖此时引入）
+3. **SQLite 数据库工具**：`modules/db`（sqlx 统一三方言，先 SQLite）
+4. **hosts 修改**：`modules/hosts` + 按需提权助手（UAC 最小授权）+ 修改前备份
+5. **轻量工具补齐**：随机密码 / 哈希计算 / 颜色选择器（color_pick_screen 命令已就绪）/ 二维码
+6. **剪贴板历史工具**：clipboard 模块 + 轮询服务 + SQLite 历史已在 M1 就绪，补 UI 工具即可
 
-验收红线（M0 已全部落地）：ESLint 9 + Prettier + `rustfmt` + `clippy -D warnings` + vitest 全绿才合入。
+### M1 环境备忘补充
+
+- 全局快捷键 Ctrl+Shift+Space 在本机被占用时降级告警（`[shortcut] 注册失败`），设置页改键功能 M2 接入（Rust 侧注册读取 settings.globalHotkey）
+- 剪贴板历史 db：`%APPDATA%/com.patchy23.patchybox/clipboard.db`（rusqlite bundled）；历史上限清理未实现（M2 接 settings.clipboard.historyLimit）
 
 ### M0 环境备忘（Windows）
 

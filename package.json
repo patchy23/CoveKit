@@ -19,8 +19,12 @@
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-store": "^2.4.4",
+    "fuse.js": "^7.5.0",
+    "marked": "^18.0.7",
     "pinia": "^4.0.2",
-    "vue": "^3.5.13"
+    "vue": "^3.5.13",
+    "vue-i18n": "^11.4.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",

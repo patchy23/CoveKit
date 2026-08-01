@@ -20,7 +20,7 @@ patchyBox 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，�
 
 ## 开发
 
-> 状态：**M0 脚手架已完成**（2026-08-02）——Tauri 2 + Vue 3 + TS + Tailwind CSS 4 已就位，`pnpm tauri dev` 可出方向二主界面（空数据版）。下一步：M1 框架 + 第一批 8 个文本工具（见 `AGENTS.md`）。
+> 状态：**M0/M1 已完成**（2026-08-02）——框架 + 8 个文本工具全线上线（浏览-搜索-收藏-换肤-设置持久化闭环），`pnpm tauri dev` 可运行。下一步：M2 第二批 I（HTTP/WS、SQLite、hosts + 轻量工具，见 `AGENTS.md`）。
 
 ```bash
 pnpm install
