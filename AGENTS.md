@@ -61,20 +61,27 @@
 5. 第二批凭据：默认 **stronghold**（备选 Windows Credential Manager / keyring）
 6. hosts 提权：默认**按需提权助手**（UAC 最小授权），应用本体不常驻管理员
 
-## 下一步：M2 第二批 II（新会话任务）
+## 下一步：M3 第二批 II（新会话任务）
 
-M2 第一批 I 已完成（轻量工具 4 个 + 剪贴板历史 + 快捷键改键 + HTTP/WS 调试，2026-08-02；共 14 个工具，验收全绿）。剩余：
+**M2 已全部完成（2026-08-02，共 17 个工具，验收全绿）**：轻量工具 4 + 剪贴板历史 + 快捷键改键 + HTTP/WS 调试 + SQLite 数据库 + hosts 修改。
 
-1. **SQLite 数据库工具**：`modules/db`（sqlx 统一三方言，先 SQLite）+ 连接管理 + 表浏览 + SQL 执行 + 结果表格
-2. **hosts 修改**：`modules/hosts` + 按需提权助手（UAC 最小授权）+ 修改前备份 + 语法校验
+M3 按 docs/02-architecture.md §10 推进：
+
+1. **数据库扩展**：MySQL/PG 连接（复用 `modules/db`，sqlx 三方言 Adapter）
+2. **DNS 管理**：阿里/腾讯/Cloudflare 三厂商 adapter（`modules/dns`）
+3. **SSH 工具**：russh 或 ssh2（M3 再定），`modules/ssh`
+4. **凭据加密**：tauri-plugin-stronghold（连接凭据落盘保护）
+5. **i18n / 发布准备**：英文语言包、自动更新、代码签名
 
 ### M2 已完成记录（2026-08-02）
 
 - 轻量工具：随机密码（usePassword）/ 哈希（useHash，MD5+WebCrypto SHA）/ 颜色选择器（useColor + color_pick_screen）/ 二维码（qrcode 库）
 - 剪贴板历史：前端页签（搜索/置顶/复制/删除/清空 + 3s 轮询），后端 M1 就绪
 - 快捷键改键：Rust `modules/settings.rs` register_hotkey（读 settings.globalHotkey + 动态切换），设置页预设 select
-- **HTTP/WS 调试**：`modules/http_ws.rs`（reqwest 0.12 + tokio-tungstenite 0.24 + tokio + futures-util）；6 命令 http_request/ws_connect/ws_send/ws_recv/ws_close/ws_sessions；前端 tools/http-ws（HttpPanel/WsPanel 双面板，JSON 响应高亮，WS 300ms 轮询拉取）；WS 会话 = id → 后台读写任务（tokio::select）+ 消息队列（上限 500 条）
-- 依赖备忘：tokio 需显式声明（tauri 不 re-export crate）；reqwest RequestBuilder 无 map_err（send 时出错）；tokio-tungstenite 0.24 的 Message 在 `tungstenite::` 下
+- **HTTP/WS 调试**：`modules/http_ws.rs`（reqwest 0.12 + tokio-tungstenite 0.24 + tokio + futures-util）；6 命令 http_request/ws_connect/ws_send/ws_recv/ws_close/ws_sessions；前端 tools/http-ws（HttpPanel/WsPanel 双面板，JSON 响应高亮，WS 300ms 轮询拉取）；WS 会话 = id → 后台读写任务（tokio::select）+ 消息队列（上限 500 条）；WS 连接支持自定义请求头（token 认证）
+- **SQLite 数据库**：`modules/db.rs`（sqlx 0.8 runtime-tokio+sqlite，M3 接 MySQL/PG 加 ConnectOptions）；5 命令 db_open/db_close/db_tables/db_execute/db_query_table；前端 tools/sqlite（表列表 + SQL 编辑 + 结果表格，NULL/blob 特殊显示，表名转义防注入）
+- **hosts 修改**：`modules/hosts.rs`（std::process + PowerShell Start-Process -Verb RunAs UAC 最小授权；备份 hosts.bak-<时间戳> + 临时文件/ps1 中转，仅备份→覆盖一步提权）；2 命令 hosts_read/hosts_save；前端 tools/hosts（LineNumberTextarea 编辑 + 实时语法校验 + 错误明细 + 保存前校验拦截）
+- 依赖备忘：tokio 需显式声明（tauri 不 re-export crate）；reqwest RequestBuilder 无 map_err（send 时出错）；tokio-tungstenite 0.24 的 Message 在 `tungstenite::` 下；sqlx 0.8 需显式 import `sqlx::Column`（name 方法），NULL 单元格用 `try_get::<Option<String>>` 兜底；MutexGuard 不能跨 await（先 take 出值再 await）
 
 ### M1 环境备忘补充
 
