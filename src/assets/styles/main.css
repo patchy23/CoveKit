@@ -220,23 +220,18 @@
 .hljs-params {
   color: #24292f;
 }
-/* 缩进对齐竖线（VS Code 式 indent guide）：每 2 字符一格，ch 单位随字体缩放；
-   仅内容行应用（折叠占位行不画线），所有行共享同一坐标系 → 天然对齐 */
-.indent-guides {
-  background-image: repeating-linear-gradient(
-    to right,
-    transparent 0 2ch,
-    rgba(16, 24, 40, 0.09) 2ch calc(2ch + 1px),
-    transparent calc(2ch + 1px) 4ch
-  );
+/* 树形引导线（文件树风格）：每层缩进一条竖线，层级结束截断为半高，最后子节点拐角 */
+.tree-line {
+  border-left: 1px solid rgba(16, 24, 40, 0.16);
 }
-[data-theme="dark"] .indent-guides {
-  background-image: repeating-linear-gradient(
-    to right,
-    transparent 0 2ch,
-    rgba(255, 255, 255, 0.11) 2ch calc(2ch + 1px),
-    transparent calc(2ch + 1px) 4ch
-  );
+.tree-line-h {
+  border-top: 1px solid rgba(16, 24, 40, 0.16);
+}
+[data-theme="dark"] .tree-line {
+  border-left-color: rgba(255, 255, 255, 0.22);
+}
+[data-theme="dark"] .tree-line-h {
+  border-top-color: rgba(255, 255, 255, 0.22);
 }
 
 /* XML/HTML 标签（hljs xml 语言 token：<tag> 尖括号 + 标签名） */

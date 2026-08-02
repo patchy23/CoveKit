@@ -63,6 +63,38 @@ function foldedCount(f: number): number {
   return n;
 }
 
+/* ── 树形引导线：每层缩进一条竖线，层级结束处截断，最后子节点拐角（文件树风格） ── */
+
+type TreeMark = "through" | "cut" | "branch-through" | "branch-cut";
+
+/** 预计算：行 i 之后是否存在 depth >= d 的行（后缀，用于判断竖线是否延续） */
+const suffix = computed<boolean[][]>(() => {
+  const n = lines.value.length;
+  const maxD = lines.value.reduce((m, l) => Math.max(m, l.depth), 0);
+  const suf: boolean[][] = Array.from({ length: n + 1 }, () => Array(maxD + 1).fill(false));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let d = 1; d <= maxD; d++) {
+      suf[i][d] = lines.value[i].depth >= d || suf[i + 1][d];
+    }
+  }
+  return suf;
+});
+
+/** 行 i 的树线标记（长度 = depth；每层一个） */
+function treeMarks(i: number): TreeMark[] {
+  const d = lines.value[i].depth;
+  const marks: TreeMark[] = [];
+  for (let lv = 1; lv <= d; lv++) {
+    const hasBelow = suffix.value[i + 1]?.[lv] ?? false;
+    if (lv === d) {
+      marks.push(hasBelow ? "branch-through" : "branch-cut");
+    } else {
+      marks.push(hasBelow ? "through" : "cut");
+    }
+  }
+  return marks;
+}
+
 /** 渲染计划：可见行 + 折叠占位（保持原始行号） */
 const renderPlan = computed<{ i: number; placeholder?: number }[]>(() => {
   const out: { i: number; placeholder?: number }[] = [];
@@ -106,11 +138,27 @@ function syncScroll() {
       @scroll="syncScroll"
     >
       <template v-for="p in renderPlan" :key="p.i">
-        <!-- 普通行：折叠箭头（块起始行）+ 高亮内容；背景画缩进对齐竖线 -->
-        <div
-          v-if="p.placeholder === undefined"
-          class="indent-guides flex h-[21px] items-center whitespace-pre"
-        >
+        <!-- 普通行：树形引导线 + 折叠箭头（块起始行）+ 高亮内容 -->
+        <div v-if="p.placeholder === undefined" class="flex h-[21px] items-center whitespace-pre">
+          <!-- 每层缩进一格（2ch），画树线：through=贯穿竖线 cut=截断（层级结束） branch=拐角+横线 -->
+          <span
+            v-for="(m, mi) in treeMarks(p.i)"
+            :key="mi"
+            class="relative h-[21px] w-[2ch] shrink-0"
+          >
+            <span
+              v-if="m === 'through' || m === 'branch-through'"
+              class="tree-line absolute inset-y-0 left-0"
+            />
+            <span
+              v-else-if="m === 'cut' || m === 'branch-cut'"
+              class="tree-line absolute left-0 top-0 h-1/2"
+            />
+            <span
+              v-if="m === 'branch-through' || m === 'branch-cut'"
+              class="tree-line-h absolute left-0 top-1/2 w-[2ch]"
+            />
+          </span>
           <button
             v-if="hasChildren(p.i)"
             class="grid h-[21px] w-[18px] shrink-0 place-items-center text-text-muted transition-colors hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:text-tertiary-dark"
