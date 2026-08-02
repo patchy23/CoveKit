@@ -75,7 +75,7 @@ function createEditor() {
         langExt,
         indentGuides,
         EditorView.editable.of(false),
-        EditorView.lineWrapping,
+        // 不启用 lineWrapping：长行横向滚动（左右不够时出现横向滚动条）
         EditorView.theme({
           "&": { height: "100%", fontSize: "13px" },
           ".cm-scroller": {
