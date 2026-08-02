@@ -26,8 +26,8 @@ const props = withDefaults(
   {
     title: "",
     disabled: false,
-    optionClass: () => undefined,
-    valueClass: () => undefined,
+    optionClass: () => undefined as ((value: string) => string) | undefined,
+    valueClass: () => undefined as ((value: string) => string) | undefined,
   },
 );
 
