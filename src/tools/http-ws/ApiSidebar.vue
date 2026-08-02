@@ -14,7 +14,6 @@ const emit = defineEmits<{
   (e: "select", r: ApiRecord): void;
   (e: "rename", r: ApiRecord): void;
   (e: "delete", id: number): void;
-  (e: "clear"): void;
   (e: "new"): void;
 }>();
 </script>
@@ -26,13 +25,6 @@ const emit = defineEmits<{
         接口列表（{{ apis.length }}）
       </span>
       <div class="flex items-center gap-[4px]">
-        <button
-          class="btn-ghost !px-[6px] !py-[2px] text-body-sm"
-          title="清空全部接口"
-          @click="emit('clear')"
-        >
-          清空
-        </button>
         <button
           class="btn-secondary !px-[8px] !py-[2px] text-body-sm"
           title="新建接口（清空当前表单）"

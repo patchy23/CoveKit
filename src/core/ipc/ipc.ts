@@ -52,7 +52,6 @@ export const ipc = {
   }) => call("api_save", r),
   apiList: () => call("api_list", {}),
   apiDelete: (id: number) => call("api_delete", { id }),
-  apiClear: () => call("api_clear", {}),
   wsConnect: (payload: import("./contracts").WsConnectPayload) => call("ws_connect", payload),
   wsSend: (id: string, message: string) => call("ws_send", { id, message }),
   wsRecv: (id: string) => call("ws_recv", { id }),

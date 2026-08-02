@@ -40,16 +40,6 @@ async function deleteApi(id: number) {
   }
 }
 
-async function clearApis() {
-  try {
-    await ipc.apiClear();
-    apis.value = [];
-    activeApiId.value = null;
-  } catch {
-    /* 忽略 */
-  }
-}
-
 /** 当前面板草稿 */
 function currentDraft(): ApiDraft | null {
   return panel.value?.getDraft() ?? null;
@@ -163,7 +153,6 @@ onMounted(loadApis);
         @select="applyApi"
         @rename="renameApi"
         @delete="deleteApi"
-        @clear="clearApis"
         @new="newApi"
       />
 

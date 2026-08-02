@@ -151,7 +151,6 @@ export const commandNames = {
   apiSave: "api_save",
   apiList: "api_list",
   apiDelete: "api_delete",
-  apiClear: "api_clear",
   wsConnect: "ws_connect",
   wsSend: "ws_send",
   wsRecv: "ws_recv",
@@ -192,7 +191,6 @@ export type IpcPayloads = {
   };
   api_list: Record<string, never>;
   api_delete: { id: number };
-  api_clear: Record<string, never>;
   ws_connect: WsConnectPayload;
   ws_send: { id: string; message: string };
   ws_recv: { id: string };
@@ -223,7 +221,6 @@ export type IpcResults = {
   api_save: number;
   api_list: ApiRecord[];
   api_delete: void;
-  api_clear: void;
   ws_connect: WsSession;
   ws_send: WsActionResult;
   ws_recv: WsSession;
