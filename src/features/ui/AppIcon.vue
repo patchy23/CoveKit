@@ -43,6 +43,13 @@ const inner: Record<string, string> = {
   md: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M7 15V9l2.5 3L12 9v6M15.5 9h3.5v6M15.5 12h3.5"/>',
   regex:
     '<path d="M5 5l14 14"/><circle cx="8.2" cy="15.8" r="1.6"/><circle cx="15.8" cy="8.2" r="1.6"/>',
+
+  // 第二批轻量工具图标
+  lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  hash: '<path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/>',
+  color:
+    '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18c-2.5 0-3.5-2-2.5-3.5S10 15 9 15c-2.2 0-3.5-2.5-1.5-4.5.8-.8.5-2-1-2.2A8.9 8.9 0 0 0 12 3z"/>',
+  qr: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><path d="M13 13h3v3h-3zM16 16h4v4h-4zM20 13h.01"/>',
 };
 </script>
 

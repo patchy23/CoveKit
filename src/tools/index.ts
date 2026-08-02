@@ -11,3 +11,7 @@ import "@/tools/char-stat";
 import "@/tools/text-diff";
 import "@/tools/markdown-preview";
 import "@/tools/regex-tester";
+import "@/tools/random-password";
+import "@/tools/hash";
+import "@/tools/color-picker";
+import "@/tools/qrcode";
