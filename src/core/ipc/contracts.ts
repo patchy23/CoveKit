@@ -130,7 +130,6 @@ export const commandNames = {
   clipboardClear: "clipboard_clear",
   clipboardTogglePin: "clipboard_toggle_pin",
   colorPickScreen: "color_pick_screen",
-  colorStartPicker: "color_start_picker",
   windowToggle: "window_toggle",
   windowHide: "window_hide",
   openExternal: "open_external",
@@ -158,7 +157,6 @@ export type IpcPayloads = {
   clipboard_clear: Record<string, never>;
   clipboard_toggle_pin: { id: string };
   color_pick_screen: Record<string, never>;
-  color_start_picker: Record<string, never>;
   window_toggle: Record<string, never>;
   window_hide: Record<string, never>;
   open_external: { url: string };
@@ -186,7 +184,6 @@ export type IpcResults = {
   clipboard_clear: void;
   clipboard_toggle_pin: void;
   color_pick_screen: PickColorResult;
-  color_start_picker: void;
   window_toggle: WindowState;
   window_hide: void;
   open_external: void;

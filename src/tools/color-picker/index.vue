@@ -2,8 +2,7 @@
 /**
  * 颜色选择器 · hex/rgb/hsl 互转 + 随机色 + 屏幕取色（Tauri）+ WCAG 对比度提示
  */
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { listen } from "@tauri-apps/api/event";
+import { ref } from "vue";
 import {
   contrastRatio,
   hexToRgb,
@@ -13,31 +12,8 @@ import {
   rgbToHsl,
 } from "./useColor";
 import { useCopy } from "@/tools/shared/useClipboard";
-import { ipc } from "@/core/ipc/ipc";
 
 const { copyText } = useCopy();
-
-/** 屏幕取色/色盘按钮仅 Tauri 环境显示（color_pick_screen 命令） */
-const isTauri = "__TAURI_INTERNALS__" in window;
-
-/** 屏幕取色：打开全屏遮罩窗口（#/picker），点击确定后经 picker-color 事件回传 */
-async function pickScreen() {
-  pickError.value = "";
-  try {
-    await ipc.colorStartPicker();
-  } catch (e) {
-    pickError.value = "打开取色器失败：" + (e instanceof Error ? e.message : String(e));
-  }
-}
-
-/** 监听取色窗口回传的颜色 */
-let unlisten: (() => void) | null = null;
-onMounted(async () => {
-  if (isTauri) {
-    unlisten = await listen("picker-color", (e) => applyHex(String(e.payload)));
-  }
-});
-onUnmounted(() => unlisten?.());
 
 const current = ref("#F0562C");
 const inputText = ref("#F0562C");
@@ -129,7 +105,6 @@ const PRESETS = [
             @input="applyHex(($event.target as HTMLInputElement).value)"
           />
         </label>
-        <button v-if="isTauri" class="btn-secondary" @click="pickScreen">屏幕取色</button>
       </div>
 
       <!-- 数值区 -->

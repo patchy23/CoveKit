@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "主窗口能力白名单（最小权限）",
-  "windows": ["main", "picker"],
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "core:window:allow-minimize",

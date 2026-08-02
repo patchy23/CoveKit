@@ -1,9 +1,7 @@
 //! 颜色模块：color_pick_screen（Windows 屏幕取色，取鼠标所在像素）
-//! color_start_picker：创建全屏半透明取色窗口（label=picker，加载主应用 #/picker 路由），
-//! 遮罩内实时取色，点击确定后通过 "picker-color" 事件回传主窗口并关闭。
+//! M2 颜色选择器工具接入放大镜 UI 时扩展此命令（可加坐标参数）。
 
 use serde::Serialize;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,23 +50,4 @@ pub fn color_pick_screen() -> Result<PickColor, String> {
     {
         Err("屏幕取色暂仅支持 Windows".into())
     }
-}
-
-/// 打开全屏半透明取色窗口（#/picker 路由渲染遮罩 UI；已打开则复用）
-#[tauri::command]
-pub fn color_start_picker(app: AppHandle) -> Result<(), String> {
-    if app.get_webview_window("picker").is_some() {
-        return Ok(());
-    }
-    WebviewWindowBuilder::new(&app, "picker", WebviewUrl::App("index.html#/picker".into()))
-        .title("屏幕取色")
-        .fullscreen(true)
-        .transparent(true)
-        .decorations(false)
-        .always_on_top(true)
-        .skip_taskbar(true)
-        .resizable(false)
-        .build()
-        .map_err(|e| e.to_string())?;
-    Ok(())
 }

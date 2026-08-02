@@ -54,7 +54,6 @@ pub fn run() {
             modules::clipboard::clipboard_clear,
             modules::clipboard::clipboard_toggle_pin,
             modules::color::color_pick_screen,
-            modules::color::color_start_picker,
             modules::http_ws::http_request,
             modules::http_ws::ws_connect,
             modules::http_ws::ws_send,
