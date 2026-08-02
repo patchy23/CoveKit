@@ -1,0 +1,190 @@
+<script setup lang="ts">
+/**
+ * HostsList · hosts 列表模式：结构化条目（启用开关 / IP / 主机名 / 注释 / 增删）
+ * 编辑后通过 emit("change", text) 同步回 hosts 文本（保留注释行/空行原位）。
+ */
+import { computed, ref } from "vue";
+import type { HostsEntry } from "./useHosts";
+import { parseEntries, validateEntry } from "./useHosts";
+
+const props = defineProps<{ content: string }>();
+const emit = defineEmits<{ (e: "change", text: string): void }>();
+
+const entries = ref<HostsEntry[]>(parseEntries(props.content));
+
+/** 可编辑条目（映射行 + 禁用的映射行；纯注释/空行保留但隐藏） */
+const editable = computed(() =>
+  entries.value.filter((e) => e.raw === undefined || (e.raw.startsWith("#") && e.ip))
+);
+
+/** 纯注释/空行数量（提示保留） */
+const rawCount = computed(() => entries.value.filter((e) => e.raw !== undefined).length);
+
+const errors = computed(() => editable.value.filter((e) => !e.valid).length);
+
+function sync() {
+  emit("change", entriesToText());
+}
+
+function entriesToText(): string {
+  return entries.value
+    .map((e) => {
+      if (e.raw !== undefined) return e.raw;
+      const hostStr = e.hosts.join(" ");
+      let line = `${e.ip} ${hostStr}`.trimEnd();
+      if (!e.enabled) line = `# ${line}`;
+      if (e.comment.trim()) line += ` ${e.comment.trim()}`;
+      return line;
+    })
+    .join("\n");
+}
+
+function updateEntry(e: HostsEntry) {
+  const check = validateEntry(e.ip, e.hosts, e.comment);
+  e.valid = check.valid;
+  e.error = check.error;
+  sync();
+}
+
+function onIpInput(e: HostsEntry, v: string) {
+  e.ip = v.trim();
+  updateEntry(e);
+}
+
+function onHostsInput(e: HostsEntry, v: string) {
+  e.hosts = v
+    .split(/[,\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  updateEntry(e);
+}
+
+function onCommentInput(e: HostsEntry, v: string) {
+  e.comment = v.trim() ? `# ${v.trim()}` : "";
+  updateEntry(e);
+}
+
+function toggleEnabled(e: HostsEntry) {
+  e.enabled = !e.enabled;
+  sync();
+}
+
+function remove(e: HostsEntry) {
+  entries.value = entries.value.filter((x) => x.id !== e.id);
+  sync();
+}
+
+function addRow() {
+  const id = `n${Date.now()}`;
+  entries.value.push({
+    id,
+    enabled: true,
+    ip: "",
+    hosts: [],
+    comment: "",
+    valid: false,
+    error: "IP 无效",
+  });
+  sync();
+}
+</script>
+
+<template>
+  <div class="flex flex-col gap-[8px]">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-[14px]">
+        <span class="text-body-sm font-medium text-secondary dark:text-secondary-dark">
+          {{ editable.length }} 条映射
+        </span>
+        <span
+          v-if="errors > 0"
+          class="text-body-sm font-medium text-tertiary-strong dark:text-tertiary-dark"
+        >
+          ⚠ {{ errors }} 处无效（保存将被阻止）
+        </span>
+        <span v-else class="text-body-sm text-text-muted dark:text-text-muted-dark">
+          语法检查通过
+        </span>
+        <span v-if="rawCount > 0" class="text-body-sm text-text-muted dark:text-text-muted-dark">
+          {{ rawCount }} 行注释/空行将原样保留
+        </span>
+      </div>
+      <button class="btn-ghost" @click="addRow">+ 新增映射</button>
+    </div>
+
+    <!-- 表头 -->
+    <div
+      class="grid grid-cols-[40px_110px_1fr_200px_44px] items-center gap-[8px] px-[12px] text-body-sm text-text-muted dark:text-text-muted-dark"
+    >
+      <span>启用</span>
+      <span>IP 地址</span>
+      <span>主机名（多个用空格/逗号分隔）</span>
+      <span>注释</span>
+      <span />
+    </div>
+
+    <!-- 条目行 -->
+    <div
+      v-for="e in editable"
+      :key="e.id"
+      class="grid grid-cols-[40px_110px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
+      :class="
+        e.valid
+          ? 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark'
+          : 'border-tertiary/40 bg-tertiary-soft/30 dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30'
+      "
+    >
+      <input
+        type="checkbox"
+        class="h-4 w-4 accent-[var(--color-tertiary)]"
+        :checked="e.enabled"
+        :title="e.enabled ? '点击禁用（行首加 #）' : '点击启用'"
+        @change="toggleEnabled(e)"
+      />
+      <input
+        :value="e.ip"
+        class="field-input !px-[10px] !py-[7px] font-mono"
+        placeholder="127.0.0.1"
+        spellcheck="false"
+        @input="onIpInput(e, ($event.target as HTMLInputElement).value)"
+      />
+      <input
+        :value="e.hosts.join(' ')"
+        class="field-input !px-[10px] !py-[7px] font-mono"
+        placeholder="example.com www.example.com"
+        spellcheck="false"
+        @input="onHostsInput(e, ($event.target as HTMLInputElement).value)"
+      />
+      <input
+        :value="e.comment.replace(/^#\s*/, '')"
+        class="field-input !px-[10px] !py-[7px]"
+        placeholder="备注（可选）"
+        @input="onCommentInput(e, ($event.target as HTMLInputElement).value)"
+      />
+      <button
+        class="grid h-[30px] w-[30px] place-items-center rounded-md text-text-muted transition-colors hover:bg-tertiary-soft hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark"
+        title="删除此条"
+        @click="remove(e)"
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        >
+          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+        </svg>
+      </button>
+    </div>
+
+    <p
+      v-if="!editable.length"
+      class="py-[24px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
+    >
+      暂无映射条目，点击「+ 新增映射」添加
+    </p>
+  </div>
+</template>

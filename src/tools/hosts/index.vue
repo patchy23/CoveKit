@@ -6,6 +6,7 @@ import { computed, onMounted, ref } from "vue";
 import { ipc } from "@/core/ipc/ipc";
 import { useUiStore } from "@/stores/ui";
 import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
+import HostsList from "./HostsList.vue";
 import { countErrors, countMappings, parseHostsLines } from "./useHosts";
 
 const ui = useUiStore();
@@ -14,6 +15,7 @@ const content = ref("");
 const loaded = ref(false);
 const busy = ref(false);
 const status = ref("");
+const mode = ref<"file" | "list">("list");
 
 const lines = computed(() => parseHostsLines(content.value));
 const errors = computed(() => countErrors(lines.value));
@@ -81,6 +83,32 @@ onMounted(load);
       }}</span>
     </div>
 
+    <!-- 模式切换 -->
+    <div v-if="loaded" class="flex items-center gap-[8px]">
+      <button
+        class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
+        :class="
+          mode === 'list'
+            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+            : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
+        "
+        @click="mode = 'list'"
+      >
+        列表方式
+      </button>
+      <button
+        class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
+        :class="
+          mode === 'file'
+            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+            : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
+        "
+        @click="mode = 'file'"
+      >
+        源文件
+      </button>
+    </div>
+
     <!-- 校验状态 -->
     <div
       v-if="loaded"
@@ -101,8 +129,8 @@ onMounted(load);
       </span>
     </div>
 
-    <!-- 错误明细 -->
-    <div v-if="errors > 0" class="flex flex-col gap-[4px]">
+    <!-- 错误明细（文件模式） -->
+    <div v-if="errors > 0 && mode === 'file'" class="flex flex-col gap-[4px]">
       <p
         v-for="(l, i) in lines.filter((x) => !x.valid)"
         :key="i"
@@ -112,12 +140,18 @@ onMounted(load);
       </p>
     </div>
 
-    <!-- 编辑区 -->
+    <!-- 编辑区：列表模式 / 文件模式 -->
     <div v-if="loaded">
-      <label class="mb-[6px] field-label"
-        >hosts 文件（C:\Windows\System32\drivers\etc\hosts）</label
-      >
-      <LineNumberTextarea v-model="content" min-height="320px" class="!font-mono" />
+      <label v-if="mode === 'file'" class="mb-[6px] field-label">
+        hosts 文件（C:\Windows\System32\drivers\etc\hosts）
+      </label>
+      <LineNumberTextarea
+        v-if="mode === 'file'"
+        v-model="content"
+        min-height="320px"
+        class="!font-mono"
+      />
+      <HostsList v-else :content="content" @change="content = $event" />
     </div>
     <p v-else class="text-body-sm text-text-muted dark:text-text-muted-dark">
       正在读取 hosts 文件…
