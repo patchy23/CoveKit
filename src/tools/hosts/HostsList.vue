@@ -12,7 +12,7 @@ const emit = defineEmits<{ (e: "change", text: string): void }>();
 
 const entries = ref<HostsEntry[]>(parseEntries(props.content));
 
-/** 可编辑条目（映射行 + 禁用的映射行；纯注释/空行保留但隐藏） */
+/** 可编辑条目（映射行 + 被注释的映射行（未勾选）；纯注释/空行保留但不在列表显示） */
 const editable = computed(() =>
   entries.value.filter((e) => e.raw === undefined || (e.raw.startsWith("#") && e.ip))
 );

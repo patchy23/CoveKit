@@ -91,7 +91,7 @@ export function parseEntries(content: string): HostsEntry[] {
     const id = `l${i}`;
     // 空行
     if (!line) return { id, enabled: true, ip: "", hosts: [], comment: "", raw, valid: true };
-    // 注释行：形如 "# 127.0.0.1 example.com" 视为被禁用的映射
+    // 注释行：形如 "# 127.0.0.1 example.com" 视为被禁用的映射条目（不勾选）
     if (line.startsWith("#")) {
       const inner = line.slice(1).trim();
       const parts = inner.split(/\s+/).filter(Boolean);
@@ -105,7 +105,7 @@ export function parseEntries(content: string): HostsEntry[] {
           valid: true,
         };
       }
-      // 纯注释行
+      // 纯注释行原样保留
       return { id, enabled: true, ip: "", hosts: [], comment: line, raw, valid: true };
     }
     // 映射行（含非法行，保留供用户修正）

@@ -50,7 +50,7 @@ describe("useHosts", () => {
     expect(countErrors(parseHostsLines(""))).toBe(0);
   });
 
-  it("条目解析：映射/禁用/注释/空行", () => {
+  it("条目解析：注释掉的映射 = 未勾选条目", () => {
     const content = ["# 说明注释", "", "127.0.0.1 localhost", "# 0.0.0.0 ads.example.com"].join(
       "\n"
     );
@@ -59,10 +59,11 @@ describe("useHosts", () => {
     expect(entries[0].raw).toBe("# 说明注释"); // 纯注释原样
     expect(entries[1].raw).toBe("");
     expect(entries[2]).toMatchObject({ ip: "127.0.0.1", hosts: ["localhost"], enabled: true });
+    // 被注释的映射行 = 未勾选条目（enabled=false）
     expect(entries[3]).toMatchObject({ ip: "0.0.0.0", hosts: ["ads.example.com"], enabled: false });
   });
 
-  it("条目重组：往返一致（含禁用行与注释）", () => {
+  it("条目重组：往返一致（未勾选条目恢复 # 前缀）", () => {
     const content = [
       "# 说明注释",
       "",
