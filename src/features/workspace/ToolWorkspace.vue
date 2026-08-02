@@ -142,6 +142,7 @@ onUnmounted(() => {
         <div
           v-if="overflowOpen"
           class="absolute left-0 top-full z-50 mt-[4px] max-h-[320px] w-[230px] overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+          @mousedown.stop
         >
           <div
             v-for="id in hiddenTabs"
