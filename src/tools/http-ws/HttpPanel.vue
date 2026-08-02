@@ -16,7 +16,6 @@ import {
   kvToHeaders,
   kvToQuery,
   mergeQuery,
-  methodBadgeClass,
   methodTextClass,
   newKvId,
 } from "./useHttp";
@@ -205,7 +204,7 @@ defineExpose({ getDraft, applyDraft });
           :key="m"
           :value="m"
           class="font-semibold"
-          :class="methodBadgeClass(m, m === 'WEBSOCKET' ? 'ws' : undefined)"
+          :class="methodTextClass(m, m === 'WEBSOCKET' ? 'ws' : undefined)"
         >
           {{ m }}
         </option>
