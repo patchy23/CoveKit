@@ -73,8 +73,8 @@ async function send() {
 
 <template>
   <div class="flex flex-col gap-[12px]">
-    <!-- 请求行 -->
-    <div class="flex items-center gap-[8px]">
+    <!-- 固定请求行（发送按钮滚动时始终可见） -->
+    <div class="sticky-toolbar !py-[10px]">
       <select
         :value="method"
         class="field-input !w-[100px] !px-[10px] !py-[8px]"

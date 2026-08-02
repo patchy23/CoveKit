@@ -11,7 +11,8 @@ const tab = ref<"http" | "ws">("http");
 
 <template>
   <div class="flex max-w-[1000px] flex-col gap-[12px]">
-    <div class="flex items-center gap-[8px]">
+    <!-- 固定面板切换（滚动时始终可见） -->
+    <div class="sticky-toolbar !py-[10px]">
       <button
         class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
         :class="

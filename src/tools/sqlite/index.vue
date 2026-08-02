@@ -100,11 +100,11 @@ function formatCell(v: string): string {
 
 <template>
   <div class="flex max-w-[1100px] flex-col gap-[12px]">
-    <!-- 连接栏 -->
-    <div class="flex items-center gap-[8px]">
+    <!-- 固定连接栏（滚动时始终可见） -->
+    <div class="sticky-toolbar">
       <input
         v-model="dbPath"
-        class="field-input font-mono"
+        class="field-input min-w-[280px] flex-1 font-mono"
         placeholder="数据库文件路径，如 C:\data\app.db"
         spellcheck="false"
         :disabled="connected"

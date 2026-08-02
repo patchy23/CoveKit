@@ -99,8 +99,8 @@ onUnmounted(() => {
 
 <template>
   <div class="flex flex-col gap-[12px]">
-    <!-- 连接栏 -->
-    <div class="flex items-center gap-[8px]">
+    <!-- 固定连接栏（连接/断开按钮滚动时始终可见） -->
+    <div class="sticky-toolbar !py-[10px]">
       <input
         v-model="url"
         class="field-input font-mono"

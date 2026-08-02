@@ -73,41 +73,41 @@ onMounted(load);
   <div class="flex max-w-[1000px] flex-col gap-[12px]">
     <!-- 工具栏 -->
     <div class="flex items-center gap-[10px]">
-      <button class="btn-secondary shrink-0" :disabled="busy" @click="load">重新读取</button>
-      <button class="btn-primary shrink-0" :disabled="busy || !loaded" @click="save">
-        {{ busy ? "处理中…" : "保存（需管理员授权）" }}
-      </button>
-      <button class="btn-ghost shrink-0" @click="reset">清空编辑区</button>
-      <span class="truncate text-body-sm text-text-muted dark:text-text-muted-dark">{{
-        status
-      }}</span>
-    </div>
-
-    <!-- 模式切换 -->
-    <div v-if="loaded" class="flex items-center gap-[8px]">
-      <button
-        class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
-        :class="
-          mode === 'list'
-            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-            : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
-        "
-        @click="mode = 'list'"
-      >
-        列表方式
-      </button>
-      <button
-        class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
-        :class="
-          mode === 'file'
-            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-            : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
-        "
-        @click="mode = 'file'"
-      >
-        源文件
-      </button>
-    </div>
+      <!-- 固定工具栏：读取/保存/清空 + 模式切换（滚动时始终可见） -->
+      <div class="sticky-toolbar flex-col !items-stretch !gap-[10px]">
+        <div class="flex flex-wrap items-center gap-[10px]">
+          <button class="btn-secondary shrink-0" :disabled="busy" @click="load">重新读取</button>
+          <button class="btn-primary shrink-0" :disabled="busy || !loaded" @click="save">
+            {{ busy ? "处理中…" : "保存（需管理员授权）" }}
+          </button>
+          <button class="btn-ghost shrink-0" @click="reset">清空编辑区</button>
+          <span class="truncate text-body-sm text-text-muted dark:text-text-muted-dark">{{ status }}</span>
+        </div>
+        <div v-if="loaded" class="flex items-center gap-[8px]">
+          <button
+            class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
+            :class="
+              mode === 'list'
+                ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+                : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
+            "
+            @click="mode = 'list'"
+          >
+            列表方式
+          </button>
+          <button
+            class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
+            :class="
+              mode === 'file'
+                ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+                : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
+            "
+            @click="mode = 'file'"
+          >
+            源文件
+          </button>
+        </div>
+      </div>
 
     <!-- 校验状态 -->
     <div

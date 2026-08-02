@@ -67,10 +67,10 @@ onUnmounted(() => {
 
 <template>
   <div class="flex max-w-[860px] flex-col gap-[12px]">
-    <!-- 工具栏 -->
-    <div class="flex items-center gap-[10px]">
+    <!-- 固定工具栏（搜索/刷新/清空，滚动时始终可见） -->
+    <div class="sticky-toolbar !py-[10px]">
       <div
-        class="flex h-[34px] flex-1 items-center gap-sm rounded-md border border-border bg-surface-muted px-[10px] dark:border-border-dark dark:bg-surface-muted-dark"
+        class="flex h-[34px] min-w-[200px] flex-1 items-center gap-sm rounded-md border border-border bg-surface-muted px-[10px] dark:border-border-dark dark:bg-surface-muted-dark"
       >
         <AppIcon
           name="search"
