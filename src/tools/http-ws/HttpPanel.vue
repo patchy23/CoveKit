@@ -195,7 +195,8 @@ defineExpose({ getDraft, applyDraft });
     <div class="flex shrink-0 items-center gap-[8px]">
       <select
         :value="method"
-        class="field-input !w-[100px] !px-[10px] !py-[8px]"
+        class="field-input !w-[112px] !px-[10px] !py-[8px] font-semibold"
+        :class="methodBadgeClass(method, isWs ? 'ws' : undefined)"
         @change="method = ($event.target as HTMLSelectElement).value as Method"
       >
         <option
