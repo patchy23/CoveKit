@@ -22,7 +22,7 @@ function windowCtl(): Window | null {
 function safe(fn: (w: Window) => Promise<unknown>) {
   const w = windowCtl();
   if (!w) return;
-  fn(w).catch(() => {});
+  fn(w).catch((e) => console.warn("[TitleBar] 窗口操作失败（检查 capabilities 权限）:", e));
 }
 
 function onDblClick() {
