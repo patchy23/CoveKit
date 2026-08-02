@@ -17,6 +17,7 @@ import {
   kvToQuery,
   mergeQuery,
   methodBadgeClass,
+  methodTextClass,
   newKvId,
 } from "./useHttp";
 
@@ -196,13 +197,14 @@ defineExpose({ getDraft, applyDraft });
       <select
         :value="method"
         class="field-input !w-[112px] !px-[10px] !py-[8px] font-semibold"
-        :class="methodBadgeClass(method, isWs ? 'ws' : undefined)"
+        :class="methodTextClass(method, isWs ? 'ws' : undefined)"
         @change="method = ($event.target as HTMLSelectElement).value as Method"
       >
         <option
           v-for="m in ALL_METHODS"
           :key="m"
           :value="m"
+          class="font-semibold"
           :class="methodBadgeClass(m, m === 'WEBSOCKET' ? 'ws' : undefined)"
         >
           {{ m }}

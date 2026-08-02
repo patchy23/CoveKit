@@ -147,3 +147,24 @@ export function methodBadgeClass(method: string, type?: string): string {
       return "bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark";
   }
 }
+
+/** 方法纯文字色（select 值区用：仅文字变色，保持默认背景） */
+export function methodTextClass(method: string, type?: string): string {
+  if (type === "ws") return "text-cyan-strong dark:text-cyan-dark";
+  switch (method) {
+    case "GET":
+      return "text-success-strong dark:text-success-dark";
+    case "POST":
+      return "text-tertiary-strong dark:text-tertiary-dark";
+    case "PUT":
+      return "text-info-strong dark:text-info-dark";
+    case "PATCH":
+      return "text-purple-strong dark:text-purple-dark";
+    case "DELETE":
+      return "text-danger-strong dark:text-danger-dark";
+    case "OPTIONS":
+      return "text-purple-strong dark:text-purple-dark";
+    default:
+      return "text-secondary dark:text-secondary-dark";
+  }
+}
