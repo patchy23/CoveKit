@@ -53,6 +53,7 @@ const inner: Record<string, string> = {
   clipboard:
     '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4a3 3 0 0 1 6 0M9 12h6M9 16h4"/>',
   pin: '<path d="M9 4h6l-1 6 3.5 3.5H6.5L10 10z"/><path d="M12 13.5V20"/>',
+  db: '<ellipse cx="12" cy="5.5" rx="8" ry="2.8"/><path d="M4 5.5v13c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8v-13"/><path d="M4 12c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8"/>',
 };
 </script>
 

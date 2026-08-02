@@ -43,4 +43,9 @@ export const ipc = {
   wsRecv: (id: string) => call("ws_recv", { id }),
   wsClose: (id: string) => call("ws_close", { id }),
   wsSessions: () => call("ws_sessions", {}),
+  dbOpen: (path: string) => call("db_open", { path }),
+  dbClose: () => call("db_close", {}),
+  dbTables: () => call("db_tables", {}),
+  dbExecute: (sql: string) => call("db_execute", { sql }),
+  dbQueryTable: (table: string, limit = 100) => call("db_query_table", { table, limit }),
 };

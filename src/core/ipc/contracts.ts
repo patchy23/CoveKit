@@ -92,6 +92,25 @@ export interface WsActionResult {
   message?: string;
 }
 
+/* ── SQLite 数据库（第二批，modules/db，sqlx 统一三方言）── */
+
+/** 打开数据库结果 */
+export interface DbOpenResult {
+  ok: boolean;
+  tables: string[];
+  error?: string;
+}
+
+/** SQL 执行结果（查询返回表格，非查询返回影响行数） */
+export interface DbQueryResult {
+  ok: boolean;
+  columns: string[];
+  rows: string[][];
+  rowsAffected: number;
+  isQuery: boolean;
+  error?: string;
+}
+
 // ── 命令清单（IPC 出入参的唯一出处）──
 
 export const commandNames = {
@@ -111,6 +130,11 @@ export const commandNames = {
   wsRecv: "ws_recv",
   wsClose: "ws_close",
   wsSessions: "ws_sessions",
+  dbOpen: "db_open",
+  dbClose: "db_close",
+  dbTables: "db_tables",
+  dbExecute: "db_execute",
+  dbQueryTable: "db_query_table",
 } as const;
 
 /** 各命令入参（Record<string, never> = 无参命令） */
@@ -131,6 +155,11 @@ export type IpcPayloads = {
   ws_recv: { id: string };
   ws_close: { id: string };
   ws_sessions: Record<string, never>;
+  db_open: { path: string };
+  db_close: Record<string, never>;
+  db_tables: Record<string, never>;
+  db_execute: { sql: string };
+  db_query_table: { table: string; limit?: number };
 };
 
 /** 各命令返回 */
@@ -151,4 +180,9 @@ export type IpcResults = {
   ws_recv: WsSession;
   ws_close: WsActionResult;
   ws_sessions: WsSession[];
+  db_open: DbOpenResult;
+  db_close: void;
+  db_tables: string[];
+  db_execute: DbQueryResult;
+  db_query_table: DbQueryResult;
 };

@@ -60,6 +60,11 @@ pub fn run() {
             modules::http_ws::ws_recv,
             modules::http_ws::ws_close,
             modules::http_ws::ws_sessions,
+            modules::db::db_open,
+            modules::db::db_close,
+            modules::db::db_tables,
+            modules::db::db_execute,
+            modules::db::db_query_table,
             framework::window_toggle,
             framework::window_hide,
             framework::open_external,
@@ -83,6 +88,9 @@ pub fn run() {
             app.manage(modules::http_ws::WsState(std::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )));
+
+            // 数据库连接（SQLite 调试工具）
+            app.manage(modules::db::DbState(std::sync::Mutex::new(None)));
 
             // 全局快捷键：读取设置 settings.globalHotkey 注册（占用时降级，不阻断启动）
             app.manage(modules::settings::HotkeyState(std::sync::Mutex::new(None)));
