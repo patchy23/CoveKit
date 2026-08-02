@@ -19,16 +19,13 @@ const props = withDefaults(
     title?: string;
     disabled?: boolean;
     /** 下拉选项文字色（按值） */
+    // eslint-disable-next-line vue/require-default-prop -- 函数类型可选，模板已空值安全
     optionClass?: (value: string) => string;
     /** 值区文字色（默认同 optionClass） */
+    // eslint-disable-next-line vue/require-default-prop -- 函数类型可选，模板已空值安全
     valueClass?: (value: string) => string;
   }>(),
-  {
-    title: "",
-    disabled: false,
-    optionClass: () => undefined as ((value: string) => string) | undefined,
-    valueClass: () => undefined as ((value: string) => string) | undefined,
-  },
+  { title: "", disabled: false },
 );
 
 const emit = defineEmits<{ (e: "update:modelValue", v: string): void }>();
