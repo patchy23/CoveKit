@@ -18,3 +18,4 @@ import "@/tools/qrcode";
 import "@/tools/clipboard-history";
 import "@/tools/http-ws";
 import "@/tools/sqlite";
+import "@/tools/hosts";

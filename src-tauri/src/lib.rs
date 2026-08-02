@@ -65,6 +65,8 @@ pub fn run() {
             modules::db::db_tables,
             modules::db::db_execute,
             modules::db::db_query_table,
+            modules::hosts::hosts_read,
+            modules::hosts::hosts_save,
             framework::window_toggle,
             framework::window_hide,
             framework::open_external,

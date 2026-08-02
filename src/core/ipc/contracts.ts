@@ -111,6 +111,15 @@ export interface DbQueryResult {
   error?: string;
 }
 
+/* ── hosts 修改（第二批，modules/hosts，UAC 提权）── */
+
+/** hosts 读取/保存结果 */
+export interface HostsResult {
+  ok: boolean;
+  content: string;
+  error?: string;
+}
+
 // ── 命令清单（IPC 出入参的唯一出处）──
 
 export const commandNames = {
@@ -135,6 +144,8 @@ export const commandNames = {
   dbTables: "db_tables",
   dbExecute: "db_execute",
   dbQueryTable: "db_query_table",
+  hostsRead: "hosts_read",
+  hostsSave: "hosts_save",
 } as const;
 
 /** 各命令入参（Record<string, never> = 无参命令） */
@@ -160,6 +171,8 @@ export type IpcPayloads = {
   db_tables: Record<string, never>;
   db_execute: { sql: string };
   db_query_table: { table: string; limit?: number };
+  hosts_read: Record<string, never>;
+  hosts_save: { content: string };
 };
 
 /** 各命令返回 */
@@ -185,4 +198,6 @@ export type IpcResults = {
   db_tables: string[];
   db_execute: DbQueryResult;
   db_query_table: DbQueryResult;
+  hosts_read: HostsResult;
+  hosts_save: HostsResult;
 };

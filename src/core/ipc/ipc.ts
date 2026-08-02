@@ -48,4 +48,6 @@ export const ipc = {
   dbTables: () => call("db_tables", {}),
   dbExecute: (sql: string) => call("db_execute", { sql }),
   dbQueryTable: (table: string, limit = 100) => call("db_query_table", { table, limit }),
+  hostsRead: () => call("hosts_read", {}),
+  hostsSave: (content: string) => call("hosts_save", { content }),
 };
