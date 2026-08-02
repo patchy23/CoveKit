@@ -23,6 +23,16 @@ const lineNumbers = computed(() => {
 function syncScroll() {
   if (gutter.value && pre.value) gutter.value.scrollTop = pre.value.scrollTop;
 }
+
+/** 点击输出区：选中全部内容（便于 Ctrl+C 复制） */
+function selectAll(e: MouseEvent) {
+  const el = e.currentTarget as HTMLElement;
+  const range = document.createRange();
+  range.selectNodeContents(el);
+  const sel = window.getSelection();
+  sel?.removeAllRanges();
+  sel?.addRange(range);
+}
 </script>
 
 <template>
@@ -37,11 +47,13 @@ function syncScroll() {
     >
       <div v-for="n in lineNumbers" :key="n">{{ n }}</div>
     </div>
-    <!-- 高亮内容区（内部滚动） -->
+    <!-- 高亮内容区（内部滚动；点击全选便于复制） -->
     <pre
       ref="pre"
-      class="min-h-0 flex-1 overflow-auto p-[13px] pl-[13px] font-mono text-body leading-relaxed"
+      class="min-h-0 flex-1 cursor-text overflow-auto p-[13px] pl-[13px] font-mono text-body leading-relaxed"
+      title="点击全选内容，Ctrl+C 复制"
       @scroll="syncScroll"
+      @click="selectAll"
     ><code v-if="html" class="hljs" v-html="html" /><span v-else class="text-text-muted dark:text-text-muted-dark">{{ text || "格式化结果将显示在这里" }}</span></pre>
   </div>
 </template>
