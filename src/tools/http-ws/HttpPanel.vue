@@ -106,7 +106,7 @@ async function send() {
     response.value = await ipc.httpRequest({
       method: method.value,
       url: finalUrl,
-      headers: kvToHeaders(headerRows.value),
+      headers: Object.entries(kvToHeaders(headerRows.value)),
       body: showBody.value && bodyMode.value !== "none" ? body.value : undefined,
       timeoutMs: timeoutMs.value,
     });
