@@ -105,7 +105,7 @@ function formatCell(v: string): string {
       <input
         v-model="dbPath"
         class="field-input min-w-[280px] flex-1 font-mono"
-        placeholder="数据库文件路径，如 C:\data\app.db"
+        placeholder="数据库文件路径（不存在将自动创建）"
         spellcheck="false"
         :disabled="connected"
         @keyup.enter="openDb"

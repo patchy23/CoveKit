@@ -134,10 +134,7 @@ onMounted(load);
     </div>
 
     <!-- 内容区：无外层滚动；文件模式=编辑器内部滚动，列表模式=条目区滚动 -->
-    <div
-      v-if="loaded && mode === 'file'"
-      class="flex min-h-0 flex-1 flex-col gap-[8px]"
-    >
+    <div v-if="loaded && mode === 'file'" class="flex min-h-0 flex-1 flex-col gap-[8px]">
       <label class="shrink-0 field-label">
         hosts 文件（C:\Windows\System32\drivers\etc\hosts）
       </label>
@@ -151,11 +148,7 @@ onMounted(load);
           第 {{ i + 1 }} 行：{{ l.error }} — {{ l.raw.trim().slice(0, 60) }}
         </p>
       </div>
-      <LineNumberTextarea
-        v-model="content"
-        min-height="200px"
-        class="min-h-0 flex-1 !font-mono"
-      />
+      <LineNumberTextarea v-model="content" min-height="200px" class="min-h-0 flex-1 !font-mono" />
     </div>
     <div v-else-if="loaded && mode === 'list'" class="min-h-0 flex-1">
       <HostsList :content="content" @change="content = $event" />

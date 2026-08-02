@@ -47,10 +47,10 @@ function onInput(e: Event) {
     >
       <div v-for="n in lineNumbers" :key="n">{{ n }}</div>
     </div>
-    <!-- 内容区：wrap off 保证行号对齐；滚动与行号列同步 -->
+    <!-- 内容区：wrap off 保证行号对齐；滚动与行号列同步；高度锁定（内容在内部滚动，不拉长页面） -->
     <textarea
       ref="ta"
-      class="min-h-[0] flex-1 resize-y border-0 bg-transparent p-[11px] pl-0 font-mono text-body leading-relaxed text-primary outline-none placeholder:text-text-muted dark:text-primary-dark dark:placeholder:text-text-muted-dark"
+      class="min-h-[0] flex-1 resize-none border-0 bg-transparent p-[11px] pl-0 font-mono text-body leading-relaxed text-primary outline-none placeholder:text-text-muted dark:text-primary-dark dark:placeholder:text-text-muted-dark"
       :value="modelValue"
       :readonly="readonly"
       :placeholder="placeholder"

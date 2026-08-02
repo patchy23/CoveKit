@@ -56,6 +56,7 @@ const inner: Record<string, string> = {
   db: '<ellipse cx="12" cy="5.5" rx="8" ry="2.8"/><path d="M4 5.5v13c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8v-13"/><path d="M4 12c0 1.5 3.6 2.8 8 2.8s8-1.3 8-2.8"/>',
   hosts:
     '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9h17M8 9v10.5M16 9v10.5"/>',
+  xml: '<path d="M8 6l-4 6 4 6M16 6l4 6-4 6M13.5 4l-3 16"/>',
 };
 </script>
 

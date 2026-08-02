@@ -2,7 +2,8 @@
 /**
  * 颜色选择器 · hex/rgb/hsl 互转 + 随机色 + 屏幕取色（Tauri）+ WCAG 对比度提示
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { listen } from "@tauri-apps/api/event";
 import {
   contrastRatio,
   hexToRgb,
@@ -16,8 +17,27 @@ import { ipc } from "@/core/ipc/ipc";
 
 const { copyText } = useCopy();
 
-/** 屏幕取色按钮仅 Tauri 环境显示（Rust color_pick_screen 命令） */
+/** 屏幕取色/色盘按钮仅 Tauri 环境显示（color_pick_screen 命令） */
 const isTauri = "__TAURI_INTERNALS__" in window;
+
+/** 屏幕取色：打开全屏遮罩窗口（#/picker），点击确定后经 picker-color 事件回传 */
+async function pickScreen() {
+  pickError.value = "";
+  try {
+    await ipc.colorStartPicker();
+  } catch (e) {
+    pickError.value = "打开取色器失败：" + (e instanceof Error ? e.message : String(e));
+  }
+}
+
+/** 监听取色窗口回传的颜色 */
+let unlisten: (() => void) | null = null;
+onMounted(async () => {
+  if (isTauri) {
+    unlisten = await listen("picker-color", (e) => applyHex(String(e.payload)));
+  }
+});
+onUnmounted(() => unlisten?.());
 
 const current = ref("#F0562C");
 const inputText = ref("#F0562C");
@@ -51,16 +71,6 @@ function applyHex(hex: string) {
 
 function random() {
   applyHex(randomColor());
-}
-
-async function pickScreen() {
-  pickError.value = "";
-  try {
-    const r = await ipc.colorPickScreen();
-    applyHex(r.hex);
-  } catch (e) {
-    pickError.value = "屏幕取色失败：" + (e instanceof Error ? e.message : String(e));
-  }
 }
 
 function onHslInput(part: keyof typeof hsl.value, v: number) {
@@ -102,6 +112,23 @@ const PRESETS = [
           >
         </div>
         <button class="btn-secondary" @click="random">随机色</button>
+        <!-- 色盘：原生全色系选择器（Windows 系统色盘） -->
+        <label
+          class="btn-secondary flex cursor-pointer items-center justify-center gap-[8px]"
+          title="打开色盘选择"
+        >
+          <span
+            class="h-[14px] w-[14px] rounded-[3px] border border-border-strong"
+            :style="{ backgroundColor: current }"
+          />
+          色盘取号
+          <input
+            type="color"
+            class="hidden"
+            :value="current"
+            @input="applyHex(($event.target as HTMLInputElement).value)"
+          />
+        </label>
         <button v-if="isTauri" class="btn-secondary" @click="pickScreen">屏幕取色</button>
       </div>
 

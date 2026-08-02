@@ -21,6 +21,8 @@ const ui = useUiStore();
 </template>
 
 <style scoped>
+/* 水平居中由容器的原生 translate 负责（Tailwind 4 translate 属性），
+   动画只做垂直位移与透明度，避免 transform 叠加导致先靠左。 */
 .toast-enter-active,
 .toast-leave-active {
   transition:
@@ -30,10 +32,10 @@ const ui = useUiStore();
 .toast-enter-from,
 .toast-leave-to {
   opacity: 0;
-  transform: translate(-50%, 20px);
+  transform: translateY(20px);
 }
 .toast-enter-to,
 .toast-leave-from {
-  transform: translate(-50%, 0);
+  transform: translateY(0);
 }
 </style>

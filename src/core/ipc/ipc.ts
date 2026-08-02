@@ -34,6 +34,7 @@ export const ipc = {
   clipboardClear: () => call("clipboard_clear", {}),
   clipboardTogglePin: (id: string) => call("clipboard_toggle_pin", { id }),
   colorPickScreen: () => call("color_pick_screen", {}),
+  colorStartPicker: () => call("color_start_picker", {}),
   windowToggle: () => call("window_toggle", {}),
   windowHide: () => call("window_hide", {}),
   openExternal: (url: string) => call("open_external", { url }),

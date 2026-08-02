@@ -37,15 +37,18 @@ function tabIcon(id: string) {
 }
 
 /* ── 页签溢出收纳：按页签条宽度估算可见页签数，其余进「···」下拉 ── */
-const MIN_TAB_WIDTH = 116; // px，含图标 + 名称 + 关闭按钮的最小页签宽
+// 估算值取页签上限宽（图标15 + 间距 + 文字120 + 关闭18 + padding ≈ 190px），
+// 并为「首页」与「···」按钮预留固定空间，避免溢出时省略号不出现。
+const MIN_TAB_WIDTH = 190; // px
+const RESERVED_WIDTH = 150; // px（首页页签 + 溢出按钮 + 尾部留白）
 const tabBar = ref<HTMLElement | null>(null);
 const overflowOpen = ref(false);
-const visibleTabCount = ref(6);
+const visibleTabCount = ref(5);
 let ro: ResizeObserver | null = null;
 
 function calcVisible() {
   const w = tabBar.value?.clientWidth ?? 0;
-  visibleTabCount.value = Math.max(1, Math.floor(w / MIN_TAB_WIDTH));
+  visibleTabCount.value = Math.max(1, Math.floor((w - RESERVED_WIDTH) / MIN_TAB_WIDTH));
 }
 
 /** 页签条直接显示的页签（首页占 1 个位置） */
