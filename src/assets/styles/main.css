@@ -220,6 +220,13 @@
 .hljs-params {
   color: #24292f;
 }
+/* XML/HTML 标签（hljs xml 语言 token：<tag> 尖括号 + 标签名） */
+.hljs-tag {
+  color: var(--color-text-muted);
+}
+.hljs-name {
+  color: #8250df;
+}
 [data-theme="dark"] .hljs-comment,
 [data-theme="dark"] .hljs-quote {
   color: #8b949e;
@@ -232,6 +239,12 @@
 [data-theme="dark"] .hljs-title,
 [data-theme="dark"] .hljs-title.function_,
 [data-theme="dark"] .hljs-title.class_ {
+  color: #d2a8ff;
+}
+[data-theme="dark"] .hljs-tag {
+  color: var(--color-text-muted-dark);
+}
+[data-theme="dark"] .hljs-name {
   color: #d2a8ff;
 }
 [data-theme="dark"] .hljs-variable,
