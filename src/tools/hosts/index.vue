@@ -133,10 +133,16 @@ onMounted(load);
       </div>
     </div>
 
-    <!-- 滚动区（仅内容滚动，操作区固定） -->
-    <div class="min-h-0 flex-1 overflow-y-auto">
-      <!-- 错误明细（文件模式） -->
-      <div v-if="errors > 0 && mode === 'file'" class="mb-[12px] flex flex-col gap-[4px]">
+    <!-- 内容区：无外层滚动；文件模式=编辑器内部滚动，列表模式=条目区滚动 -->
+    <div
+      v-if="loaded && mode === 'file'"
+      class="flex min-h-0 flex-1 flex-col gap-[8px]"
+    >
+      <label class="shrink-0 field-label">
+        hosts 文件（C:\Windows\System32\drivers\etc\hosts）
+      </label>
+      <!-- 错误明细（固定显示，不随编辑器滚动） -->
+      <div v-if="errors > 0" class="flex shrink-0 flex-col gap-[4px]">
         <p
           v-for="(l, i) in lines.filter((x) => !x.valid)"
           :key="i"
@@ -145,23 +151,17 @@ onMounted(load);
           第 {{ i + 1 }} 行：{{ l.error }} — {{ l.raw.trim().slice(0, 60) }}
         </p>
       </div>
-
-      <!-- 编辑区：列表模式 / 文件模式 -->
-      <div v-if="loaded">
-        <label v-if="mode === 'file'" class="mb-[6px] field-label">
-          hosts 文件（C:\Windows\System32\drivers\etc\hosts）
-        </label>
-        <LineNumberTextarea
-          v-if="mode === 'file'"
-          v-model="content"
-          min-height="320px"
-          class="!font-mono"
-        />
-        <HostsList v-else :content="content" @change="content = $event" />
-      </div>
-      <p v-else class="text-body-sm text-text-muted dark:text-text-muted-dark">
-        正在读取 hosts 文件…
-      </p>
+      <LineNumberTextarea
+        v-model="content"
+        min-height="200px"
+        class="min-h-0 flex-1 !font-mono"
+      />
     </div>
+    <div v-else-if="loaded && mode === 'list'" class="min-h-0 flex-1">
+      <HostsList :content="content" @change="content = $event" />
+    </div>
+    <p v-else class="text-body-sm text-text-muted dark:text-text-muted-dark">
+      正在读取 hosts 文件…
+    </p>
   </div>
 </template>
