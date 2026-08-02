@@ -6,11 +6,6 @@
 import "@/tools/json-formatter";
 import "@/tools/xml-formatter";
 import "@/tools/ts-converter";
-import "@/tools/base64";
-import "@/tools/url-codec";
-import "@/tools/random-password";
-import "@/tools/color-picker";
-import "@/tools/qrcode";
 import "@/tools/http-ws";
 import "@/tools/sqlite";
 import "@/tools/hosts";

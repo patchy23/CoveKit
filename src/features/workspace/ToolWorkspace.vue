@@ -81,29 +81,39 @@ onUnmounted(() => {
       class="flex shrink-0 items-center gap-[2px] overflow-hidden border-b border-border bg-surface-muted px-sm dark:border-border-dark dark:bg-surface-muted-dark"
     >
       <button
-        class="flex h-[38px] shrink-0 items-center gap-[8px] rounded-t-[8px] px-[14px] text-body font-medium transition-colors"
+        class="relative flex h-[38px] shrink-0 items-center gap-[8px] rounded-t-[8px] px-[14px] text-body font-medium transition-colors"
         :class="
           ui.activeTab === null
-            ? 'bg-surface text-primary shadow-[inset_0_2px_0_0_var(--color-tertiary)] dark:bg-surface-dark dark:text-primary-dark'
+            ? 'bg-surface text-primary dark:bg-surface-dark dark:text-primary-dark'
             : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
         "
         title="回到工具库首页"
         @click="ui.goHome()"
       >
+        <!-- 选中指示器：纯横线（独立元素，不随圆角弯曲） -->
+        <span
+          v-if="ui.activeTab === null"
+          class="absolute inset-x-0 top-0 h-[2px] bg-tertiary-strong dark:bg-tertiary-dark"
+        />
         <AppIcon name="all" :size="15" />
         首页
       </button>
       <div
         v-for="id in visibleTabs"
         :key="id"
-        class="group flex h-[38px] shrink-0 cursor-pointer items-center gap-[8px] rounded-t-[8px] px-[12px] text-body font-medium transition-colors"
+        class="group relative flex h-[38px] shrink-0 cursor-pointer items-center gap-[8px] rounded-t-[8px] px-[12px] text-body font-medium transition-colors"
         :class="
           ui.activeTab === id
-            ? 'bg-surface text-primary shadow-[inset_0_2px_0_0_var(--color-tertiary)] dark:bg-surface-dark dark:text-primary-dark'
+            ? 'bg-surface text-primary dark:bg-surface-dark dark:text-primary-dark'
             : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
         "
         @click="ui.openTool(id)"
       >
+        <!-- 选中指示器：纯横线（独立元素，不随圆角弯曲） -->
+        <span
+          v-if="ui.activeTab === id"
+          class="absolute inset-x-0 top-0 h-[2px] bg-tertiary-strong dark:bg-tertiary-dark"
+        />
         <AppIcon
           :name="tabIcon(id)"
           :size="15"
