@@ -70,16 +70,21 @@ onMounted(load);
 </script>
 
 <template>
-  <div class="flex max-w-[1000px] flex-col gap-[12px]">
-    <!-- 固定工具栏：读取/保存/清空 + 模式切换（滚动时始终可见） -->
-    <div class="sticky-toolbar flex-col !items-stretch !gap-[10px]">
+  <div class="flex h-full max-w-[1000px] flex-col gap-[12px]">
+    <!-- 固定操作区（不随内容滚动） -->
+    <div class="flex shrink-0 flex-col gap-[12px]">
+      <div
+        class="flex flex-col gap-[10px] border-b border-border pb-[12px] dark:border-border-dark"
+      >
         <div class="flex flex-wrap items-center gap-[10px]">
           <button class="btn-secondary shrink-0" :disabled="busy" @click="load">重新读取</button>
           <button class="btn-primary shrink-0" :disabled="busy || !loaded" @click="save">
             {{ busy ? "处理中…" : "保存（需管理员授权）" }}
           </button>
           <button class="btn-ghost shrink-0" @click="reset">清空编辑区</button>
-          <span class="truncate text-body-sm text-text-muted dark:text-text-muted-dark">{{ status }}</span>
+          <span class="truncate text-body-sm text-text-muted dark:text-text-muted-dark">{{
+            status
+          }}</span>
         </div>
         <div v-if="loaded" class="flex items-center gap-[8px]">
           <button
@@ -107,52 +112,56 @@ onMounted(load);
         </div>
       </div>
 
-    <!-- 校验状态 -->
-    <div
-      v-if="loaded"
-      class="flex items-center gap-[14px] rounded-md border px-[12px] py-[8px]"
-      :class="
-        errors > 0
-          ? 'border-tertiary/40 text-tertiary-strong dark:border-tertiary-dark/40 dark:text-tertiary-dark'
-          : 'border-border text-secondary dark:border-border-dark dark:text-secondary-dark'
-      "
-    >
-      <span class="text-body-sm font-medium">{{ mappings }} 条有效映射</span>
-      <span v-if="errors > 0" class="text-body-sm font-medium">
-        ⚠ {{ errors }} 处语法错误（保存将被阻止）
-      </span>
-      <span v-else class="text-body-sm">语法检查通过</span>
-      <span class="ml-auto text-body-sm text-text-muted dark:text-text-muted-dark">
-        保存前自动备份为 hosts.bak-&lt;时间戳&gt;
-      </span>
+      <!-- 校验状态 -->
+      <div
+        v-if="loaded"
+        class="flex items-center gap-[14px] rounded-md border px-[12px] py-[8px]"
+        :class="
+          errors > 0
+            ? 'border-tertiary/40 text-tertiary-strong dark:border-tertiary-dark/40 dark:text-tertiary-dark'
+            : 'border-border text-secondary dark:border-border-dark dark:text-secondary-dark'
+        "
+      >
+        <span class="text-body-sm font-medium">{{ mappings }} 条有效映射</span>
+        <span v-if="errors > 0" class="text-body-sm font-medium">
+          ⚠ {{ errors }} 处语法错误（保存将被阻止）
+        </span>
+        <span v-else class="text-body-sm">语法检查通过</span>
+        <span class="ml-auto text-body-sm text-text-muted dark:text-text-muted-dark">
+          保存前自动备份为 hosts.bak-&lt;时间戳&gt;
+        </span>
+      </div>
     </div>
 
-    <!-- 错误明细（文件模式） -->
-    <div v-if="errors > 0 && mode === 'file'" class="flex flex-col gap-[4px]">
-      <p
-        v-for="(l, i) in lines.filter((x) => !x.valid)"
-        :key="i"
-        class="font-mono text-body-sm text-tertiary-strong dark:text-tertiary-dark"
-      >
-        第 {{ i + 1 }} 行：{{ l.error }} — {{ l.raw.trim().slice(0, 60) }}
+    <!-- 滚动区（仅内容滚动，操作区固定） -->
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <!-- 错误明细（文件模式） -->
+      <div v-if="errors > 0 && mode === 'file'" class="mb-[12px] flex flex-col gap-[4px]">
+        <p
+          v-for="(l, i) in lines.filter((x) => !x.valid)"
+          :key="i"
+          class="font-mono text-body-sm text-tertiary-strong dark:text-tertiary-dark"
+        >
+          第 {{ i + 1 }} 行：{{ l.error }} — {{ l.raw.trim().slice(0, 60) }}
+        </p>
+      </div>
+
+      <!-- 编辑区：列表模式 / 文件模式 -->
+      <div v-if="loaded">
+        <label v-if="mode === 'file'" class="mb-[6px] field-label">
+          hosts 文件（C:\Windows\System32\drivers\etc\hosts）
+        </label>
+        <LineNumberTextarea
+          v-if="mode === 'file'"
+          v-model="content"
+          min-height="320px"
+          class="!font-mono"
+        />
+        <HostsList v-else :content="content" @change="content = $event" />
+      </div>
+      <p v-else class="text-body-sm text-text-muted dark:text-text-muted-dark">
+        正在读取 hosts 文件…
       </p>
     </div>
-
-    <!-- 编辑区：列表模式 / 文件模式 -->
-    <div v-if="loaded">
-      <label v-if="mode === 'file'" class="mb-[6px] field-label">
-        hosts 文件（C:\Windows\System32\drivers\etc\hosts）
-      </label>
-      <LineNumberTextarea
-        v-if="mode === 'file'"
-        v-model="content"
-        min-height="320px"
-        class="!font-mono"
-      />
-      <HostsList v-else :content="content" @change="content = $event" />
-    </div>
-    <p v-else class="text-body-sm text-text-muted dark:text-text-muted-dark">
-      正在读取 hosts 文件…
-    </p>
   </div>
 </template>

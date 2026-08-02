@@ -87,4 +87,14 @@ describe("useHosts", () => {
     expect(validateEntry("1.2.3.4", []).valid).toBe(false);
     expect(validateEntry("1.2.3.4", ["bad host"]).valid).toBe(false);
   });
+
+  it("被注释的映射行行尾注释正确解析到注释列", () => {
+    const entries = parseEntries("# 127.0.0.1 example.com # 广告屏蔽");
+    expect(entries[0]).toMatchObject({
+      enabled: false,
+      ip: "127.0.0.1",
+      hosts: ["example.com"],
+      comment: "# 广告屏蔽",
+    });
+  });
 });

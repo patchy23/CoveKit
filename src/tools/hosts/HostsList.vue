@@ -90,8 +90,9 @@ function addRow() {
 </script>
 
 <template>
-  <div class="flex flex-col gap-[8px]">
-    <div class="flex items-center justify-between">
+  <div class="flex h-full flex-col gap-[8px]">
+    <!-- 统计 + 操作（固定） -->
+    <div class="flex shrink-0 items-center justify-between">
       <div class="flex items-center gap-[14px]">
         <span class="text-body-sm font-medium text-secondary dark:text-secondary-dark">
           {{ editable.length }} 条映射
@@ -112,9 +113,9 @@ function addRow() {
       <button class="btn-ghost" @click="addRow">+ 新增映射</button>
     </div>
 
-    <!-- 表头 -->
+    <!-- 表头（固定） -->
     <div
-      class="grid grid-cols-[40px_110px_1fr_200px_44px] items-center gap-[8px] px-[12px] text-body-sm text-text-muted dark:text-text-muted-dark"
+      class="grid shrink-0 grid-cols-[40px_170px_1fr_200px_44px] items-center gap-[8px] px-[12px] text-body-sm text-text-muted dark:text-text-muted-dark"
     >
       <span>启用</span>
       <span>IP 地址</span>
@@ -123,68 +124,70 @@ function addRow() {
       <span />
     </div>
 
-    <!-- 条目行 -->
-    <div
-      v-for="e in editable"
-      :key="e.id"
-      class="grid grid-cols-[40px_110px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
-      :class="
-        e.valid
-          ? 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark'
-          : 'border-tertiary/40 bg-tertiary-soft/30 dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30'
-      "
-    >
-      <input
-        type="checkbox"
-        class="h-4 w-4 accent-[var(--color-tertiary)]"
-        :checked="e.enabled"
-        :title="e.enabled ? '点击禁用（行首加 #）' : '点击启用'"
-        @change="toggleEnabled(e)"
-      />
-      <input
-        :value="e.ip"
-        class="field-input !px-[10px] !py-[7px] font-mono"
-        placeholder="127.0.0.1"
-        spellcheck="false"
-        @input="onIpInput(e, ($event.target as HTMLInputElement).value)"
-      />
-      <input
-        :value="e.hosts.join(' ')"
-        class="field-input !px-[10px] !py-[7px] font-mono"
-        placeholder="example.com www.example.com"
-        spellcheck="false"
-        @input="onHostsInput(e, ($event.target as HTMLInputElement).value)"
-      />
-      <input
-        :value="e.comment.replace(/^#\s*/, '')"
-        class="field-input !px-[10px] !py-[7px]"
-        placeholder="备注（可选）"
-        @input="onCommentInput(e, ($event.target as HTMLInputElement).value)"
-      />
-      <button
-        class="grid h-[30px] w-[30px] place-items-center rounded-md text-text-muted transition-colors hover:bg-tertiary-soft hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark"
-        title="删除此条"
-        @click="remove(e)"
+    <!-- 条目区（仅条目滚动） -->
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <div
+        v-for="e in editable"
+        :key="e.id"
+        class="mb-[8px] grid grid-cols-[40px_170px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
+        :class="
+          e.valid
+            ? 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark'
+            : 'border-tertiary/40 bg-tertiary-soft/30 dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30'
+        "
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
+        <input
+          type="checkbox"
+          class="h-4 w-4 accent-[var(--color-tertiary)]"
+          :checked="e.enabled"
+          :title="e.enabled ? '点击禁用（行首加 #）' : '点击启用'"
+          @change="toggleEnabled(e)"
+        />
+        <input
+          :value="e.ip"
+          class="field-input !px-[10px] !py-[7px] font-mono"
+          placeholder="127.0.0.1"
+          spellcheck="false"
+          @input="onIpInput(e, ($event.target as HTMLInputElement).value)"
+        />
+        <input
+          :value="e.hosts.join(' ')"
+          class="field-input !px-[10px] !py-[7px] font-mono"
+          placeholder="example.com www.example.com"
+          spellcheck="false"
+          @input="onHostsInput(e, ($event.target as HTMLInputElement).value)"
+        />
+        <input
+          :value="e.comment.replace(/^#\s*/, '')"
+          class="field-input !px-[10px] !py-[7px]"
+          placeholder="备注（可选）"
+          @input="onCommentInput(e, ($event.target as HTMLInputElement).value)"
+        />
+        <button
+          class="grid h-[30px] w-[30px] place-items-center rounded-md text-text-muted transition-colors hover:bg-tertiary-soft hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark"
+          title="删除此条"
+          @click="remove(e)"
         >
-          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-        </svg>
-      </button>
-    </div>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          >
+            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+          </svg>
+        </button>
+      </div>
 
-    <p
-      v-if="!editable.length"
-      class="py-[24px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
-    >
-      暂无映射条目，点击「+ 新增映射」添加
-    </p>
+      <p
+        v-if="!editable.length"
+        class="py-[24px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
+      >
+        暂无映射条目，点击「+ 新增映射」添加
+      </p>
+    </div>
   </div>
 </template>

@@ -201,8 +201,8 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 工具页签（v-show 保持状态，切换不销毁） -->
-      <div v-for="id in ui.openTabs" v-show="ui.activeTab === id" :key="id">
+      <!-- 工具页签（v-show 保持状态，切换不销毁；h-full 让工具可内部滚动） -->
+      <div v-for="id in ui.openTabs" v-show="ui.activeTab === id" :key="id" class="h-full">
         <component :is="compFor(id)" v-if="compFor(id)" />
       </div>
     </div>
