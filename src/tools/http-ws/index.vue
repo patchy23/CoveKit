@@ -1,25 +1,19 @@
 <script setup lang="ts">
 /**
  * HTTP/WS 调试 · 主容器（接口列表管理中枢）
- * 顶部：HTTP/WebSocket 面板切换 + 保存按钮 + 命名输入
- * 左侧：接口列表（HTTP/WS 共用，SQLite 持久化）· 右侧：当前面板
+ * 方法下拉含 WS 同级（HttpPanel 内动态渲染），接口列表 HTTP/WS 共用（SQLite 持久化）。
  */
 import { onMounted, ref } from "vue";
 import type { ApiRecord } from "@/core/ipc/contracts";
 import { ipc } from "@/core/ipc/ipc";
 import HttpPanel from "./HttpPanel.vue";
-import WsPanel from "./WsPanel.vue";
 import ApiSidebar from "./ApiSidebar.vue";
 import type { ApiDraft } from "./useHttp";
 import { useUiStore } from "@/stores/ui";
 
 const ui = useUiStore();
 
-const tab = ref<"http" | "ws">("http");
-
-/* 面板实例（通过 defineExpose 取草稿/应用草稿） */
-const httpPanel = ref<InstanceType<typeof HttpPanel> | null>(null);
-const wsPanel = ref<InstanceType<typeof WsPanel> | null>(null);
+const panel = ref<InstanceType<typeof HttpPanel> | null>(null);
 
 /* 接口列表 */
 const apis = ref<ApiRecord[]>([]);
@@ -55,19 +49,18 @@ async function clearApis() {
   }
 }
 
-/** 当前面板的草稿 */
+/** 当前面板草稿 */
 function currentDraft(): ApiDraft | null {
-  if (tab.value === "http") return httpPanel.value?.getDraft() ?? null;
-  return wsPanel.value?.getDraft() ?? null;
+  return panel.value?.getDraft() ?? null;
 }
 
-/** 新建接口：切到对应面板并清空（由面板 applyDraft 空草稿实现） */
+/** 新建接口：清空表单 */
 function newApi() {
   activeApiId.value = null;
   saveNameOpen.value = false;
   saveName.value = "";
   const empty: ApiDraft = {
-    type: tab.value,
+    type: "http",
     method: "",
     url: "",
     params: [],
@@ -75,13 +68,11 @@ function newApi() {
     bodyMode: "none",
     body: "",
   };
-  if (tab.value === "http") httpPanel.value?.applyDraft(empty);
-  else wsPanel.value?.applyDraft(empty);
+  panel.value?.applyDraft(empty);
 }
 
-/** 点击接口：切换到对应面板并加载 */
+/** 点击接口：加载到表单（面板内自动切换方法/WS 视图） */
 function applyApi(a: ApiRecord) {
-  tab.value = a.type === "ws" ? "ws" : "http";
   const draft: ApiDraft = {
     type: a.type,
     method: a.method,
@@ -91,11 +82,7 @@ function applyApi(a: ApiRecord) {
     bodyMode: (a.bodyMode as "none" | "json" | "text") || "none",
     body: a.body || "",
   };
-  // 等面板切换渲染后应用草稿
-  setTimeout(() => {
-    if (draft.type === "ws") wsPanel.value?.applyDraft(draft);
-    else httpPanel.value?.applyDraft(draft);
-  }, 0);
+  panel.value?.applyDraft(draft);
   activeApiId.value = a.id;
   saveName.value = a.name;
   saveNameOpen.value = false;
@@ -157,32 +144,6 @@ onMounted(loadApis);
 
 <template>
   <div class="flex h-full min-h-0 w-full flex-col gap-[10px]">
-    <!-- 面板切换 + 保存 -->
-    <div class="flex shrink-0 items-center gap-[8px]">
-      <button
-        class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
-        :class="
-          tab === 'http'
-            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-            : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
-        "
-        @click="tab = 'http'"
-      >
-        HTTP 请求
-      </button>
-      <button
-        class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
-        :class="
-          tab === 'ws'
-            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-            : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
-        "
-        @click="tab = 'ws'"
-      >
-        WebSocket
-      </button>
-    </div>
-
     <!-- 左侧接口列表 + 右侧面板 -->
     <div class="flex min-h-0 flex-1 gap-[12px]">
       <ApiSidebar
@@ -195,8 +156,7 @@ onMounted(loadApis);
       />
 
       <div class="min-h-0 flex-1">
-        <HttpPanel v-show="tab === 'http'" ref="httpPanel" class="h-full" @save="saveApi" />
-        <WsPanel v-show="tab === 'ws'" ref="wsPanel" class="h-full" @save="saveApi" />
+        <HttpPanel ref="panel" class="h-full" @save="saveApi" />
       </div>
     </div>
 

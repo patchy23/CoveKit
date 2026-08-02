@@ -12,6 +12,8 @@ const props = defineProps<{
   headers: KvRow[];
   bodyMode: "none" | "json" | "text";
   body: string;
+  /** 仅显示 Headers 表格（WebSocket 模式：无 Params/Body） */
+  headersOnly?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -57,8 +59,8 @@ const tabClass = (active: boolean) =>
 
 <template>
   <div class="flex flex-col gap-[10px]">
-    <!-- 分页签 -->
-    <div class="flex shrink-0 gap-[16px] text-body">
+    <!-- 分页签（WS 模式隐藏，仅显示 Headers） -->
+    <div v-if="!props.headersOnly" class="flex shrink-0 gap-[16px] text-body">
       <button class="transition-colors" :class="tabClass(tab === 'params')" @click="tab = 'params'">
         Params
       </button>
@@ -75,7 +77,7 @@ const tabClass = (active: boolean) =>
     </div>
 
     <!-- Params：键值表格，自动拼接到 URL query -->
-    <div v-if="tab === 'params'">
+    <div v-if="!props.headersOnly && tab === 'params'">
       <div
         class="mb-[6px] grid grid-cols-[1fr_1fr_36px] gap-[8px] px-[2px] text-caption font-medium text-text-muted dark:text-text-muted-dark"
       >
@@ -129,8 +131,8 @@ const tabClass = (active: boolean) =>
       </button>
     </div>
 
-    <!-- Headers：键值表格 -->
-    <div v-if="tab === 'headers'">
+    <!-- Headers：键值表格（HTTP 与 WS 共用） -->
+    <div v-if="tab === 'headers' || props.headersOnly">
       <div
         class="mb-[6px] grid grid-cols-[1fr_1fr_36px] gap-[8px] px-[2px] text-caption font-medium text-text-muted dark:text-text-muted-dark"
       >
@@ -191,7 +193,7 @@ const tabClass = (active: boolean) =>
     </div>
 
     <!-- Body：模式选择 + 内容 -->
-    <div v-if="tab === 'body'" class="flex flex-col gap-[8px]">
+    <div v-if="!props.headersOnly && tab === 'body'" class="flex flex-col gap-[8px]">
       <select
         class="field-input !w-[180px] !px-[10px] !py-[7px]"
         :value="props.bodyMode"
