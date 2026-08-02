@@ -23,7 +23,12 @@ const props = withDefaults(
     /** 值区文字色（默认同 optionClass） */
     valueClass?: (value: string) => string;
   }>(),
-  { title: "", disabled: false }
+  {
+    title: "",
+    disabled: false,
+    optionClass: () => undefined,
+    valueClass: () => undefined,
+  },
 );
 
 const emit = defineEmits<{ (e: "update:modelValue", v: string): void }>();
