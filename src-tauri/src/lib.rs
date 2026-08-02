@@ -65,6 +65,9 @@ pub fn run() {
             modules::db::db_tables,
             modules::db::db_execute,
             modules::db::db_query_table,
+            modules::history::history_add,
+            modules::history::history_list,
+            modules::history::history_clear,
             modules::hosts::hosts_read,
             modules::hosts::hosts_save,
             framework::window_toggle,
@@ -90,6 +93,9 @@ pub fn run() {
             app.manage(modules::http_ws::WsState(std::sync::Mutex::new(
                 std::collections::HashMap::new(),
             )));
+
+            // HTTP 请求历史（SQLite 持久化）
+            app.manage(modules::history::HistoryState(std::sync::Mutex::new(None)));
 
             // 数据库连接（SQLite 调试工具）
             app.manage(modules::db::DbState(std::sync::Mutex::new(None)));

@@ -34,6 +34,19 @@ export interface PickColorResult {
   rgb: [number, number, number];
 }
 
+/** HTTP 请求历史记录 */
+export interface HistoryRecord {
+  id: number;
+  method: string;
+  url: string;
+  headers: string;
+  body: string;
+  status?: number;
+  durationMs?: number;
+  bodySize?: number;
+  createdAt: string;
+}
+
 /** 窗口状态 */
 export interface WindowState {
   visible: boolean;
@@ -134,6 +147,9 @@ export const commandNames = {
   windowHide: "window_hide",
   openExternal: "open_external",
   httpRequest: "http_request",
+  historyAdd: "history_add",
+  historyList: "history_list",
+  historyClear: "history_clear",
   wsConnect: "ws_connect",
   wsSend: "ws_send",
   wsRecv: "ws_recv",
@@ -160,7 +176,18 @@ export type IpcPayloads = {
   window_toggle: Record<string, never>;
   window_hide: Record<string, never>;
   open_external: { url: string };
-  http_request: HttpRequestPayload;
+  http_request: { payload: HttpRequestPayload };
+  history_add: {
+    method: string;
+    url: string;
+    headers: string;
+    body: string;
+    status?: number;
+    durationMs?: number;
+    bodySize?: number;
+  };
+  history_list: { limit: number };
+  history_clear: Record<string, never>;
   ws_connect: WsConnectPayload;
   ws_send: { id: string; message: string };
   ws_recv: { id: string };
@@ -188,6 +215,9 @@ export type IpcResults = {
   window_hide: void;
   open_external: void;
   http_request: HttpResponseResult;
+  history_add: void;
+  history_list: HistoryRecord[];
+  history_clear: void;
   ws_connect: WsSession;
   ws_send: WsActionResult;
   ws_recv: WsSession;

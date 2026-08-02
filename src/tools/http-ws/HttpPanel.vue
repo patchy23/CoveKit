@@ -2,9 +2,9 @@
 /**
  * HTTP 调试面板 · 请求构建 + 响应查看（JSON 高亮）
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import hljs from "highlight.js";
-import type { HttpMethod, HttpResponseResult } from "@/core/ipc/contracts";
+import type { HistoryRecord, HttpMethod, HttpResponseResult } from "@/core/ipc/contracts";
 import { ipc } from "@/core/ipc/ipc";
 import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
 import {
@@ -24,6 +24,62 @@ const timeoutMs = ref(15000);
 const sending = ref(false);
 const response = ref<HttpResponseResult | null>(null);
 const error = ref("");
+const respondedAt = ref("");
+
+/* ── 请求历史（SQLite 持久化） ── */
+const historyOpen = ref(false);
+const records = ref<HistoryRecord[]>([]);
+
+async function loadHistory() {
+  try {
+    records.value = await ipc.historyList(20);
+  } catch {
+    records.value = [];
+  }
+}
+
+async function clearHistory() {
+  try {
+    await ipc.historyClear();
+    records.value = [];
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/** 发送成功后记录历史 */
+async function saveHistory(res: HttpResponseResult) {
+  try {
+    await ipc.historyAdd({
+      id: 0,
+      method: method.value,
+      url: url.value.trim(),
+      headers: headersText.value,
+      body: showBody.value ? body.value : "",
+      status: res.ok ? res.status : undefined,
+      durationMs: res.durationMs,
+      bodySize: res.bodySize,
+      createdAt: "",
+    });
+  } catch {
+    /* 历史失败不影响请求 */
+  }
+}
+
+/** 点击历史记录：回填请求 */
+function applyRecord(r: HistoryRecord) {
+  method.value = (r.method as HttpMethod) || "GET";
+  url.value = r.url;
+  headersText.value = r.headers || "";
+  body.value = r.body || "";
+  historyOpen.value = false;
+}
+
+function formatTime(iso: string): string {
+  return iso.replace("T", " ").slice(0, 19);
+}
+
+onMounted(loadHistory);
 
 const showBody = computed(() => ["POST", "PUT", "PATCH"].includes(method.value));
 
@@ -49,12 +105,14 @@ const statusClass = computed(() => {
 
 async function send() {
   error.value = "";
-  if (!isValidUrl(url.value)) {
-    error.value = "URL 无效（支持 http/https）";
+  sending.value = true;
+  if (!isValidUrl(url.value.trim())) {
+    error.value = "URL 格式无效";
+    sending.value = false;
     return;
   }
-  sending.value = true;
   try {
+    respondedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     response.value = await ipc.httpRequest({
       method: method.value,
       url: url.value.trim(),
@@ -62,6 +120,7 @@ async function send() {
       body: showBody.value ? body.value : undefined,
       timeoutMs: timeoutMs.value,
     });
+    if (response.value) await saveHistory(response.value);
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e);
     response.value = null;
@@ -102,6 +161,75 @@ async function send() {
         <option :value="15000">15s 超时</option>
         <option :value="60000">60s 超时</option>
       </select>
+      <!-- 历史 -->
+      <div class="relative">
+        <button
+          class="btn-ghost"
+          :title="`请求历史（${records.length}）`"
+          @mousedown.stop
+          @click.stop="
+            historyOpen = !historyOpen;
+            if (historyOpen) loadHistory();
+          "
+        >
+          历史
+        </button>
+        <div
+          v-if="historyOpen"
+          class="absolute right-0 top-full z-50 mt-[4px] max-h-[320px] w-[340px] overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+          @mousedown.stop
+        >
+          <div class="flex items-center justify-between px-[10px] py-[6px]">
+            <span class="text-caption font-medium text-text-muted dark:text-text-muted-dark">
+              请求历史（{{ records.length }}）
+            </span>
+            <button class="btn-ghost !py-[2px] text-body-sm" @click="clearHistory">清空</button>
+          </div>
+          <div
+            v-for="r in records"
+            :key="r.id"
+            class="flex cursor-pointer items-center gap-[10px] px-[10px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+            @click="applyRecord(r)"
+          >
+            <span
+              class="w-[48px] shrink-0 rounded-[4px] px-[4px] py-[1px] text-center font-mono text-caption font-medium"
+              :class="
+                r.method === 'GET'
+                  ? 'bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark'
+                  : r.method === 'POST' || r.method === 'PUT' || r.method === 'PATCH'
+                    ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+                    : 'bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark'
+              "
+              >{{ r.method }}</span
+            >
+            <span
+              class="min-w-0 flex-1 truncate font-mono text-body-sm text-secondary dark:text-secondary-dark"
+            >
+              {{ r.url }}
+            </span>
+            <span
+              v-if="r.status"
+              class="shrink-0 font-mono text-body-sm"
+              :class="
+                r.status >= 400
+                  ? 'text-tertiary-strong dark:text-tertiary-dark'
+                  : 'text-success-strong dark:text-success-dark'
+              "
+            >
+              {{ r.status }}
+            </span>
+            <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
+              {{ formatTime(r.createdAt) }}
+            </span>
+          </div>
+          <p
+            v-if="!records.length"
+            class="px-[10px] py-[10px] text-body-sm text-text-muted dark:text-text-muted-dark"
+          >
+            暂无历史记录，发送请求后自动保存
+          </p>
+        </div>
+      </div>
     </div>
 
     <div class="grid grid-cols-2 gap-[12px]">
@@ -130,6 +258,9 @@ async function send() {
         </span>
         <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
           {{ formatBytes(response.bodySize) }}
+        </span>
+        <span v-if="respondedAt" class="text-body-sm text-text-muted dark:text-text-muted-dark">
+          {{ respondedAt }}
         </span>
         <span
           v-if="response.error"

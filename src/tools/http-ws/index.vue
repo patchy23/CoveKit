@@ -10,7 +10,7 @@ const tab = ref<"http" | "ws">("http");
 </script>
 
 <template>
-  <div class="flex max-w-[1000px] flex-col gap-[12px]">
+  <div class="flex h-full w-full flex-col gap-[12px]">
     <!-- 固定面板切换（滚动时始终可见） -->
     <div class="sticky-toolbar !py-[10px]">
       <button
