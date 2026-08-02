@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { ClipboardRecord } from "@/core/ipc/contracts";
 import { filterRecords, formatTime, previewText } from "./useClipboardHistory";
 
-const rec = (id: string, content: string, pinned = false, createdAt = Date.now()): ClipboardRecord => ({
+const rec = (
+  id: string,
+  content: string,
+  pinned = false,
+  createdAt = Date.now()
+): ClipboardRecord => ({
   id,
   kind: "text",
   content,

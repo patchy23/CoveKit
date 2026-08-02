@@ -10,7 +10,7 @@ use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_single_instance::init as single_instance_init;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -73,14 +73,20 @@ pub fn run() {
             app.manage(db);
             modules::clipboard::start_watcher(app.handle().clone());
 
-            // 全局快捷键注册（占用时降级，不阻断启动）
-            match "ctrl+shift+space".parse::<tauri_plugin_global_shortcut::Shortcut>() {
-                Ok(shortcut) => {
-                    if let Err(e) = app.global_shortcut().register(shortcut) {
-                        eprintln!("[shortcut] 全局快捷键注册失败（可能被占用）: {e}");
-                    }
-                }
-                Err(e) => eprintln!("[shortcut] 快捷键解析失败: {e}"),
+            // 全局快捷键：读取设置 settings.globalHotkey 注册（占用时降级，不阻断启动）
+            app.manage(modules::settings::HotkeyState(std::sync::Mutex::new(None)));
+            let hotkey = match tauri_plugin_store::StoreExt::store(app, "settings.json") {
+                Ok(s) => s
+                    .get("app")
+                    .and_then(|v| {
+                        v.get("globalHotkey")
+                            .and_then(|h| h.as_str().map(String::from))
+                    })
+                    .unwrap_or_else(|| "Ctrl+Shift+Space".to_string()),
+                Err(_) => "Ctrl+Shift+Space".to_string(),
+            };
+            if let Err(e) = modules::settings::register_hotkey(app.handle(), &hotkey) {
+                eprintln!("[shortcut] 全局快捷键注册失败（可能被占用）: {e}");
             }
 
             // 托盘：左键显示主窗；菜单含 显示/退出

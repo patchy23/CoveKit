@@ -98,12 +98,20 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
         <div class="mt-sm flex flex-col gap-sm">
           <label class="field-label flex flex-col gap-[6px]">
             全局唤起快捷键
-            <input
+            <select
               class="field-input"
               :value="settings.settings.globalHotkey"
-              spellcheck="false"
-              @change="settings.set('globalHotkey', ($event.target as HTMLInputElement).value)"
-            />
+              @change="settings.set('globalHotkey', ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="Ctrl+Shift+Space">Ctrl + Shift + Space</option>
+              <option value="Alt+Space">Alt + Space</option>
+              <option value="Ctrl+Alt+Space">Ctrl + Alt + Space</option>
+              <option value="Ctrl+Shift+`">Ctrl + Shift + `</option>
+              <option value="Ctrl+Shift+O">Ctrl + Shift + O</option>
+            </select>
+            <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
+              保存后立即生效；被系统占用时自动降级并提示
+            </span>
           </label>
           <label
             class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"

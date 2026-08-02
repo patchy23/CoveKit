@@ -6,9 +6,7 @@ import type { ClipboardRecord } from "@/core/ipc/contracts";
 /** 搜索 + 置顶优先排序 */
 export function filterRecords(records: ClipboardRecord[], query: string): ClipboardRecord[] {
   const q = query.trim().toLowerCase();
-  const filtered = q
-    ? records.filter((r) => r.content.toLowerCase().includes(q))
-    : [...records];
+  const filtered = q ? records.filter((r) => r.content.toLowerCase().includes(q)) : [...records];
   // 置顶优先，其余按时间倒序（后端已按时间倒序，仅需稳定置顶）
   return filtered.sort((a, b) => Number(b.pinned) - Number(a.pinned));
 }

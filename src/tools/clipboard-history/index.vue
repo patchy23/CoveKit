@@ -72,7 +72,11 @@ onUnmounted(() => {
       <div
         class="flex h-[34px] flex-1 items-center gap-sm rounded-md border border-border bg-surface-muted px-[10px] dark:border-border-dark dark:bg-surface-muted-dark"
       >
-        <AppIcon name="search" :size="14" class="shrink-0 text-text-muted dark:text-text-muted-dark" />
+        <AppIcon
+          name="search"
+          :size="14"
+          class="shrink-0 text-text-muted dark:text-text-muted-dark"
+        />
         <input
           v-model="query"
           class="flex-1 bg-transparent text-body text-primary outline-none placeholder:text-text-muted dark:text-primary-dark dark:placeholder:text-text-muted-dark"
@@ -88,8 +92,13 @@ onUnmounted(() => {
       </span>
     </div>
 
-    <p v-if="error" class="text-body-sm text-tertiary-strong dark:text-tertiary-dark">{{ error }}</p>
-    <p v-if="loading && !records.length" class="text-body-sm text-text-muted dark:text-text-muted-dark">
+    <p v-if="error" class="text-body-sm text-tertiary-strong dark:text-tertiary-dark">
+      {{ error }}
+    </p>
+    <p
+      v-if="loading && !records.length"
+      class="text-body-sm text-text-muted dark:text-text-muted-dark"
+    >
       加载中…
     </p>
 
@@ -106,7 +115,11 @@ onUnmounted(() => {
           :title="r.pinned ? '取消置顶' : '置顶'"
           @click="togglePin(r)"
         >
-          <AppIcon name="pin" :size="15" :class="r.pinned ? 'text-tertiary-strong dark:text-tertiary-dark' : ''" />
+          <AppIcon
+            name="pin"
+            :size="15"
+            :class="r.pinned ? 'text-tertiary-strong dark:text-tertiary-dark' : ''"
+          />
         </button>
         <button class="min-w-0 flex-1 text-left" :title="r.content" @click="copyRecord(r)">
           <div
@@ -114,24 +127,22 @@ onUnmounted(() => {
           >
             {{ previewText(r.content) }}
           </div>
-          <div class="mt-[2px] flex items-center gap-[10px] text-body-sm text-text-muted dark:text-text-muted-dark">
+          <div
+            class="mt-[2px] flex items-center gap-[10px] text-body-sm text-text-muted dark:text-text-muted-dark"
+          >
             <span>{{ formatTime(r.createdAt) }}</span>
             <span class="truncate">{{ r.content.length }} 字符</span>
           </div>
         </button>
-        <button
-          class="btn-ghost shrink-0"
-          title="删除此条"
-          @click="remove(r)"
-        >
-          删除
-        </button>
+        <button class="btn-ghost shrink-0" title="删除此条" @click="remove(r)">删除</button>
       </div>
     </div>
 
     <!-- 空状态 -->
     <div v-else-if="!loading" class="flex flex-col items-center py-[64px] text-center">
-      <div class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark">
+      <div
+        class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
+      >
         <AppIcon name="clipboard" :size="22" class="text-tertiary-strong dark:text-tertiary-dark" />
       </div>
       <p class="mt-md text-h2 font-bold dark:text-primary-dark">
