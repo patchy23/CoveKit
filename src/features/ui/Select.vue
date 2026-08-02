@@ -25,7 +25,7 @@ const props = withDefaults(
     // eslint-disable-next-line vue/require-default-prop -- 函数类型可选，模板已空值安全
     valueClass?: (value: string) => string;
   }>(),
-  { title: "", disabled: false },
+  { title: "", disabled: false }
 );
 
 const emit = defineEmits<{ (e: "update:modelValue", v: string): void }>();

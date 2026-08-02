@@ -20,6 +20,7 @@ const apis = ref<ApiRecord[]>([]);
 const activeApiId = ref<number | null>(null);
 const saveNameOpen = ref(false);
 const saveName = ref("");
+const renameMode = ref(false);
 
 async function loadApis() {
   try {
@@ -86,6 +87,15 @@ function applyApi(a: ApiRecord) {
   activeApiId.value = a.id;
   saveName.value = a.name;
   saveNameOpen.value = false;
+  renameMode.value = false;
+}
+
+/** 重命名接口：打开命名对话框（预填当前名） */
+function renameApi(a: ApiRecord) {
+  activeApiId.value = a.id;
+  saveName.value = a.name;
+  renameMode.value = true;
+  saveNameOpen.value = true;
 }
 
 function safeParse(json: string): never[] | { id: string; key: string; value: string }[] {
@@ -125,6 +135,7 @@ async function saveApi() {
     });
     activeApiId.value = id;
     saveNameOpen.value = false;
+    renameMode.value = false;
     await loadApis();
     ui.toast(activeApiId.value ? `已更新接口「${name}」` : `已保存接口「${name}」`);
   } catch (e) {
@@ -150,6 +161,7 @@ onMounted(loadApis);
         :apis="apis"
         :active-id="activeApiId"
         @select="applyApi"
+        @rename="renameApi"
         @delete="deleteApi"
         @clear="clearApis"
         @new="newApi"
@@ -171,7 +183,7 @@ onMounted(loadApis);
           class="w-[400px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
         >
           <h3 class="mb-[6px] text-body font-medium text-primary dark:text-primary-dark">
-            {{ activeApiId ? "更新接口" : "保存为接口" }}
+            {{ renameMode ? "重命名接口" : activeApiId ? "更新接口" : "保存为接口" }}
           </h3>
           <p
             class="mb-[12px] truncate font-mono text-body-sm text-text-muted dark:text-text-muted-dark"

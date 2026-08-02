@@ -196,7 +196,7 @@ defineExpose({ getDraft, applyDraft });
     <div class="flex shrink-0 items-center gap-[8px]">
       <Select
         v-model="method"
-        class="!w-[112px] shrink-0"
+        class="!w-[140px] shrink-0"
         title="请求方法"
         :options="ALL_METHODS.map((m) => ({ value: m, label: m }))"
         :option-class="(v: string) => methodTextClass(v, v === 'WEBSOCKET' ? 'ws' : undefined)"
