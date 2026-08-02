@@ -10,6 +10,7 @@ const props = defineProps<{
   modelValue: string;
   readonly?: boolean;
   placeholder?: string;
+  /** 固定高度（px）。注意：调用方若传入 flex-1 类，则由 flex 布局分配高度、本值仅作最小保底 */
   minHeight?: string;
 }>();
 
@@ -37,12 +38,12 @@ function onInput(e: Event) {
 <template>
   <div
     class="flex w-full overflow-hidden rounded-md border border-border-strong bg-surface-muted transition-colors focus-within:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark"
-    :style="minHeight ? { minHeight } : {}"
+    :style="minHeight ? { height: minHeight } : {}"
   >
-    <!-- 行号列（与内容区同字号同行高，padding-top 对齐 textarea） -->
+    <!-- 行号列：高度随容器（stretch），内容超高裁剪并由 scrollTop 同步；永不撑高容器 -->
     <div
       ref="gutter"
-      class="w-[44px] shrink-0 select-none overflow-hidden bg-transparent py-[11px] pr-[10px] text-right font-mono text-body leading-relaxed text-text-muted/50 dark:text-text-muted-dark/50"
+      class="w-[44px] shrink-0 select-none self-stretch overflow-hidden bg-transparent py-[11px] pr-[10px] text-right font-mono text-body leading-relaxed text-text-muted/50 dark:text-text-muted-dark/50"
       aria-hidden="true"
     >
       <div v-for="n in lineNumbers" :key="n">{{ n }}</div>

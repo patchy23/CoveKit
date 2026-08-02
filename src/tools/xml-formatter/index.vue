@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * XML 格式化 · 格式化/压缩/校验（输入输出均锁定高度，内置滚动）
+ * XML 格式化 · 格式化/压缩/校验（与 JSON 格式化同款布局：占满工作区 + 内部滚动）
  */
 import { computed, ref } from "vue";
 import hljs from "highlight.js";
@@ -49,37 +49,36 @@ function minify() {
 </script>
 
 <template>
-  <div class="flex max-w-[1000px] flex-col gap-[12px]">
-    <div class="flex items-center gap-[10px]">
+  <div class="flex h-full min-h-0 flex-col gap-[10px]">
+    <div class="flex shrink-0 items-center gap-[10px]">
       <button class="btn-primary" @click="format">格式化</button>
       <button class="btn-secondary" @click="minify">压缩</button>
-      <button v-if="output" class="btn-ghost" @click="copyText(output, '已复制格式化结果')">
+      <button
+        class="ml-auto btn-ghost"
+        :disabled="!output"
+        @click="copyText(output, '已复制格式化结果')"
+      >
         复制结果
       </button>
       <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-        支持 XML 声明 / 注释 / 自闭合标签
+        支持声明 / 注释 / 自闭合标签
       </span>
     </div>
 
-    <p v-if="error" class="text-body-sm text-tertiary-strong dark:text-tertiary-dark">
+    <p v-if="error" class="shrink-0 text-body-sm text-tertiary-strong dark:text-tertiary-dark">
       {{ error }}
     </p>
 
-    <div class="grid grid-cols-2 gap-[12px]">
-      <div class="flex flex-col">
-        <label class="mb-[6px] field-label">输入 XML</label>
-        <LineNumberTextarea v-model="input" min-height="360px" />
+    <div class="grid min-h-0 flex-1 grid-cols-2 gap-[12px]">
+      <div class="flex min-h-0 flex-col">
+        <label class="mb-[6px] shrink-0 field-label">输入 XML</label>
+        <LineNumberTextarea v-model="input" class="min-h-0 flex-1" />
       </div>
-      <div class="flex flex-col">
-        <label class="mb-[6px] field-label">输出</label>
-        <div
-          class="h-[360px] overflow-auto rounded-md border border-border bg-surface-muted p-[11px] font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
-        >
-          <code v-if="highlighted" class="hljs" v-html="highlighted" />
-          <span v-else class="text-text-muted dark:text-text-muted-dark">
-            {{ output || "格式化结果将显示在这里" }}
-          </span>
-        </div>
+      <div class="flex min-h-0 flex-col">
+        <label class="mb-[6px] shrink-0 field-label">输出</label>
+        <pre
+          class="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
+        ><code v-if="highlighted" class="hljs" v-html="highlighted" /><span v-else class="text-text-muted dark:text-text-muted-dark">{{ output || "格式化结果将显示在这里" }}</span></pre>
       </div>
     </div>
   </div>

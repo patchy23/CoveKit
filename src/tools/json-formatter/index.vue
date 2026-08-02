@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * JSON 格式化 · 格式化/压缩/校验 + 错误行号定位
- * 输入带行号；输出语法高亮（highlight.js）。
+ * 布局：输入/输出左右分栏，占满工作区高度；文本框内部滚动（不拉长页面）。
  */
 import { computed, ref } from "vue";
 import hljs from "highlight.js";
@@ -51,33 +51,39 @@ const highlighted = computed(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-[12px]">
-    <div>
-      <label class="mb-[6px] field-label">输入 JSON</label>
-      <LineNumberTextarea v-model="input" min-height="180px" placeholder='输入 JSON，如 {"a": 1}' />
-    </div>
-    <div class="flex items-center gap-[8px]">
+  <div class="flex h-full min-h-0 flex-col gap-[10px]">
+    <div class="flex shrink-0 items-center gap-[8px]">
       <button class="btn-primary" @click="runFormat">格式化</button>
       <button class="btn-secondary" @click="runMinify">压缩</button>
       <button class="ml-auto btn-ghost" @click="clearAll">清空</button>
+      <button v-if="output" class="btn-ghost" @click="copyText(output, 'JSON 已复制')">
+        复制结果
+      </button>
     </div>
+
     <p
       v-if="errorMsg"
-      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-body text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
+      class="shrink-0 rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-body text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
     >
       {{ errorMsg }}
     </p>
-    <div>
-      <div class="mb-[6px] flex items-center justify-between">
-        <label class="field-label">输出</label>
-        <button v-if="output" class="btn-ghost" @click="copyText(output, 'JSON 已复制')">
-          复制
-        </button>
+
+    <div class="grid min-h-0 flex-1 grid-cols-2 gap-[12px]">
+      <div class="flex min-h-0 flex-col">
+        <label class="mb-[6px] shrink-0 field-label">输入 JSON</label>
+        <LineNumberTextarea
+          v-model="input"
+          class="min-h-0 flex-1"
+          placeholder='输入 JSON，如 {"a": 1}'
+        />
       </div>
-      <!-- pre 内不可换行缩进（pre 保留空白，会导致输出前出现空格） -->
-      <pre
-        class="min-h-[180px] overflow-auto rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
-      ><code v-if="output" class="hljs" v-html="highlighted" /><span v-else class="text-text-muted dark:text-text-muted-dark">格式化结果将显示在这里</span></pre>
+      <div class="flex min-h-0 flex-col">
+        <label class="mb-[6px] shrink-0 field-label">输出</label>
+        <!-- pre 内不可换行缩进（pre 保留空白，会导致输出前出现空格） -->
+        <pre
+          class="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
+        ><code v-if="output" class="hljs" v-html="highlighted" /><span v-else class="text-text-muted dark:text-text-muted-dark">格式化结果将显示在这里</span></pre>
+      </div>
     </div>
   </div>
 </template>
