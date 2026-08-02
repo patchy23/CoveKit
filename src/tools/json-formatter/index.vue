@@ -8,7 +8,7 @@ import hljs from "highlight.js";
 import { formatJson, minifyJson } from "./useFormat";
 import { useCopy } from "@/tools/shared/useClipboard";
 import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
-import HighlightedOutput from "@/tools/shared/HighlightedOutput.vue";
+import FoldableOutput from "@/tools/shared/FoldableOutput.vue";
 import { useSettingsStore } from "@/stores/settings";
 
 const settings = useSettingsStore();
@@ -80,7 +80,7 @@ const highlighted = computed(() => {
       </div>
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输出</label>
-        <HighlightedOutput :text="output" :html="highlighted" />
+        <FoldableOutput :text="output" :html="highlighted" />
       </div>
     </div>
   </div>

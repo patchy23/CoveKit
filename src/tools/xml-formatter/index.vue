@@ -6,7 +6,7 @@ import { computed, ref } from "vue";
 import hljs from "highlight.js";
 import { formatXml, minifyXml, isValidXml } from "./useXml";
 import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
-import HighlightedOutput from "@/tools/shared/HighlightedOutput.vue";
+import FoldableOutput from "@/tools/shared/FoldableOutput.vue";
 import { useCopy } from "@/tools/shared/useClipboard";
 
 const { copyText } = useCopy();
@@ -77,7 +77,7 @@ function minify() {
       </div>
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输出</label>
-        <HighlightedOutput :text="output" :html="highlighted" />
+        <FoldableOutput :text="output" :html="highlighted" />
       </div>
     </div>
   </div>
