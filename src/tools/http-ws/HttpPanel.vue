@@ -15,9 +15,29 @@ import { isValidUrl, kvToHeaders, kvToQuery, mergeQuery, newKvId } from "./useHt
 
 const emit = defineEmits<{ (e: "save"): void }>();
 
-/** 方法下拉：HTTP 方法 + WS 同级 */
-const ALL_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "WS"] as const;
+/** 方法下拉：HTTP 方法 + WEBSOCKET 同级 */
+const ALL_METHODS = [
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+  "HEAD",
+  "OPTIONS",
+  "WEBSOCKET",
+] as const;
 type Method = (typeof ALL_METHODS)[number];
+
+/** 下拉选项配色（与接口列表徽标一致：GET 绿 / 写操作橙 / WEBSOCKET 蓝 / 其他灰） */
+function methodOptionClass(m: Method): string {
+  if (m === "GET")
+    return "bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark";
+  if (["POST", "PUT", "PATCH"].includes(m))
+    return "bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark";
+  if (m === "WEBSOCKET")
+    return "bg-info-soft text-info-strong dark:bg-info-soft-dark dark:text-info-dark";
+  return "bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark";
+}
 
 const method = ref<Method>("GET");
 const url = ref("https://httpbin.org/get");
@@ -38,7 +58,7 @@ const wsSession = ref<WsSession | null>(null);
 const wsConnecting = ref(false);
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
-const isWs = computed(() => method.value === "WS");
+const isWs = computed(() => method.value === "WEBSOCKET");
 const wsConnected = computed(() => wsSession.value?.open === true);
 const showBody = computed(() => ["POST", "PUT", "PATCH"].includes(method.value) && !isWs.value);
 
@@ -157,7 +177,7 @@ function getDraft(): ApiDraft {
 }
 
 function applyDraft(d: ApiDraft) {
-  method.value = (d.type === "ws" ? "WS" : d.method || "GET") as Method;
+  method.value = (d.type === "ws" ? "WEBSOCKET" : d.method || "GET") as Method;
   url.value = d.url;
   params.value = d.params?.length ? d.params : [{ id: newKvId(), key: "", value: "" }];
   headerRows.value = d.headers?.length
@@ -182,7 +202,9 @@ defineExpose({ getDraft, applyDraft });
         class="field-input !w-[100px] !px-[10px] !py-[8px]"
         @change="method = ($event.target as HTMLSelectElement).value as Method"
       >
-        <option v-for="m in ALL_METHODS" :key="m" :value="m">{{ m }}</option>
+        <option v-for="m in ALL_METHODS" :key="m" :value="m" :class="methodOptionClass(m)">
+          {{ m }}
+        </option>
       </select>
       <input
         v-model="url"
