@@ -78,7 +78,7 @@ onUnmounted(() => {
     <!-- 页签条 -->
     <div
       ref="tabBar"
-      class="flex shrink-0 items-center gap-[2px] overflow-hidden border-b border-border bg-surface-muted px-sm dark:border-border-dark dark:bg-surface-muted-dark"
+      class="flex shrink-0 items-center gap-[2px] border-b border-border bg-surface-muted px-sm dark:border-border-dark dark:bg-surface-muted-dark"
     >
       <button
         class="relative flex h-[38px] shrink-0 items-center gap-[8px] rounded-t-[8px] px-[14px] text-body font-medium transition-colors"
