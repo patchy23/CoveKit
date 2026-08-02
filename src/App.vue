@@ -4,7 +4,7 @@
  * 侧栏 + 顶栏 + ToolWorkspace（工具库首页 / 工具页签子页面）；
  * 工具数据来自注册表（tools store 聚合），主题/收藏/最近使用持久化。
  */
-import { computed, onMounted } from "vue";
+import { onMounted } from "vue";
 import Sidebar from "@/features/sidebar/Sidebar.vue";
 import TopBar from "@/features/topbar/TopBar.vue";
 import ToolWorkspace from "@/features/workspace/ToolWorkspace.vue";

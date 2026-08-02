@@ -43,13 +43,13 @@ const indentGuides = ViewPlugin.fromClass(
       if (u.docChanged || u.viewportChanged) this.decorations = buildIndentGuides(u.view);
     }
   },
-  { decorations: (v) => v.decorations },
+  { decorations: (v) => v.decorations }
 );
 
 function buildIndentGuides(view: EditorView) {
   const decos: Range<Decoration>[] = [];
   for (const { from, to } of view.visibleRanges) {
-    for (let pos = from; pos <= to; ) {
+    for (let pos = from; pos <= to;) {
       const line = view.state.doc.lineAt(pos);
       const indent = line.text.match(/^\s*/)?.[0].length ?? 0;
       if (indent > 0) {
@@ -111,7 +111,7 @@ watch(
   (doc) => {
     if (!view) return;
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: doc } });
-  },
+  }
 );
 
 watch(
@@ -121,7 +121,7 @@ watch(
     view?.destroy();
     view = null;
     if (host.value) createEditor();
-  },
+  }
 );
 
 onMounted(createEditor);
@@ -129,5 +129,8 @@ onUnmounted(() => view?.destroy());
 </script>
 
 <template>
-  <div ref="host" class="h-full min-h-0 w-full overflow-hidden rounded-md border border-border bg-surface-muted dark:border-border-dark dark:bg-surface-muted-dark" />
+  <div
+    ref="host"
+    class="h-full min-h-0 w-full overflow-hidden rounded-md border border-border bg-surface-muted dark:border-border-dark dark:bg-surface-muted-dark"
+  />
 </template>

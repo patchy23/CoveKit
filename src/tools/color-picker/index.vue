@@ -2,7 +2,7 @@
 /**
  * 颜色选择器 · hex/rgb/hsl 互转 + 随机色 + 屏幕取色（Tauri）+ WCAG 对比度提示
  */
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import {
   contrastRatio,
   hexToRgb,
