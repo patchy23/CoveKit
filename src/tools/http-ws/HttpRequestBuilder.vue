@@ -99,7 +99,7 @@ const tabClass = (active: boolean) =>
               r.id,
               'key',
               ($event.target as HTMLInputElement).value,
-              'update:params'
+              'params'
             )
           "
         />
@@ -114,14 +114,14 @@ const tabClass = (active: boolean) =>
               r.id,
               'value',
               ($event.target as HTMLInputElement).value,
-              'update:params'
+              'params'
             )
           "
         />
         <button
           class="grid h-[34px] place-items-center rounded-md text-text-muted transition-colors hover:bg-tertiary-soft hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark"
           title="删除"
-          @click="removeRow(props.params, r.id, 'update:params')"
+          @click="removeRow(props.params, r.id, 'params')"
         >
           <svg
             width="13"
@@ -136,7 +136,7 @@ const tabClass = (active: boolean) =>
           </svg>
         </button>
       </div>
-      <button class="btn-ghost text-body-sm" @click="addRow(props.params, 'update:params')">
+      <button class="btn-ghost text-body-sm" @click="addRow(props.params, 'params')">
         + 添加参数
       </button>
     </div>
@@ -166,7 +166,7 @@ const tabClass = (active: boolean) =>
               r.id,
               'key',
               ($event.target as HTMLInputElement).value,
-              'update:headers'
+              'headers'
             )
           "
         />
@@ -181,14 +181,14 @@ const tabClass = (active: boolean) =>
               r.id,
               'value',
               ($event.target as HTMLInputElement).value,
-              'update:headers'
+              'headers'
             )
           "
         />
         <button
           class="grid h-[34px] place-items-center rounded-md text-text-muted transition-colors hover:bg-tertiary-soft hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark"
           title="删除"
-          @click="removeRow(props.headers, r.id, 'update:headers')"
+          @click="removeRow(props.headers, r.id, 'headers')"
         >
           <svg
             width="13"
@@ -203,7 +203,7 @@ const tabClass = (active: boolean) =>
           </svg>
         </button>
       </div>
-      <button class="btn-ghost text-body-sm" @click="addRow(props.headers, 'update:headers')">
+      <button class="btn-ghost text-body-sm" @click="addRow(props.headers, 'headers')">
         + 添加 Header
       </button>
     </div>
