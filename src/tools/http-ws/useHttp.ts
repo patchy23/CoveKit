@@ -102,3 +102,26 @@ export function formatRelativeTime(iso: string): string {
   if (h < 24) return `${h} 小时前`;
   return `${Math.floor(h / 24)} 天前`;
 }
+
+/** 接口草稿（面板与接口列表之间的统一数据契约） */
+export interface ApiDraft {
+  type: "http" | "ws";
+  method: string;
+  url: string;
+  params: KvRow[];
+  headers: KvRow[];
+  bodyMode: "none" | "json" | "text";
+  body: string;
+}
+
+/** KvRow ↔ "Name: Value" 文本 */
+export function kvToText(rows: KvRow[]): string {
+  return rows
+    .filter((r) => r.key.trim())
+    .map((r) => `${r.key.trim()}: ${r.value}`)
+    .join("\n");
+}
+
+export function textToKv(text: string): KvRow[] {
+  return parseHeaders(text).map(([k, v]) => ({ id: newKvId(), key: k, value: v }));
+}

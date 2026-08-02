@@ -6,18 +6,39 @@ import { computed, onUnmounted, ref } from "vue";
 import type { WsSession } from "@/core/ipc/contracts";
 import { ipc } from "@/core/ipc/ipc";
 import { useUiStore } from "@/stores/ui";
-import { isValidUrl, parseHeaders } from "./useHttp";
+import type { ApiDraft } from "./useHttp";
+import { isValidUrl, kvToText, parseHeaders, textToKv } from "./useHttp";
 
 const ui = useUiStore();
 
 const url = ref("wss://echo.websocket.org");
-const headersText = ref("Authorization: Bearer YOUR_TOKEN");
+const headersText = ref("Authorization: Bearer ***");
 const message = ref("");
 const session = ref<WsSession | null>(null);
 const connecting = ref(false);
 const error = ref("");
 
 const connected = computed(() => session.value?.open === true);
+
+/* ── 接口草稿（index.vue 接口列表调用） ── */
+function getDraft(): ApiDraft {
+  return {
+    type: "ws",
+    method: "",
+    url: url.value,
+    params: [],
+    headers: textToKv(headersText.value),
+    bodyMode: "none",
+    body: "",
+  };
+}
+
+function applyDraft(d: ApiDraft) {
+  url.value = d.url;
+  headersText.value = kvToText(d.headers ?? []) || headersText.value;
+}
+
+defineExpose({ getDraft, applyDraft });
 
 const hasMessage = computed(() => (session.value?.messages.length ?? 0) > 0);
 

@@ -37,6 +37,7 @@ export interface PickColorResult {
 /** 接口列表记录（Params/Headers 为 KvRow 的 JSON 字符串） */
 export interface ApiRecord {
   id: number;
+  type: "http" | "ws";
   name: string;
   method: string;
   url: string;
@@ -180,6 +181,7 @@ export type IpcPayloads = {
   http_request: { payload: HttpRequestPayload };
   api_save: {
     id?: number;
+    type: "http" | "ws";
     name: string;
     method: string;
     url: string;
