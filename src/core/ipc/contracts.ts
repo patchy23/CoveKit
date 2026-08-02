@@ -34,17 +34,17 @@ export interface PickColorResult {
   rgb: [number, number, number];
 }
 
-/** HTTP 请求历史记录 */
-export interface HistoryRecord {
+/** 接口列表记录（Params/Headers 为 KvRow 的 JSON 字符串） */
+export interface ApiRecord {
   id: number;
+  name: string;
   method: string;
   url: string;
+  params: string;
   headers: string;
+  bodyMode: string;
   body: string;
-  status?: number;
-  durationMs?: number;
-  bodySize?: number;
-  createdAt: string;
+  updatedAt: string;
 }
 
 /** 窗口状态 */
@@ -147,9 +147,10 @@ export const commandNames = {
   windowHide: "window_hide",
   openExternal: "open_external",
   httpRequest: "http_request",
-  historyAdd: "history_add",
-  historyList: "history_list",
-  historyClear: "history_clear",
+  apiSave: "api_save",
+  apiList: "api_list",
+  apiDelete: "api_delete",
+  apiClear: "api_clear",
   wsConnect: "ws_connect",
   wsSend: "ws_send",
   wsRecv: "ws_recv",
@@ -177,17 +178,19 @@ export type IpcPayloads = {
   window_hide: Record<string, never>;
   open_external: { url: string };
   http_request: { payload: HttpRequestPayload };
-  history_add: {
+  api_save: {
+    id?: number;
+    name: string;
     method: string;
     url: string;
+    params: string;
     headers: string;
+    bodyMode: string;
     body: string;
-    status?: number;
-    durationMs?: number;
-    bodySize?: number;
   };
-  history_list: { limit: number };
-  history_clear: Record<string, never>;
+  api_list: Record<string, never>;
+  api_delete: { id: number };
+  api_clear: Record<string, never>;
   ws_connect: WsConnectPayload;
   ws_send: { id: string; message: string };
   ws_recv: { id: string };
@@ -215,9 +218,10 @@ export type IpcResults = {
   window_hide: void;
   open_external: void;
   http_request: HttpResponseResult;
-  history_add: void;
-  history_list: HistoryRecord[];
-  history_clear: void;
+  api_save: number;
+  api_list: ApiRecord[];
+  api_delete: void;
+  api_clear: void;
   ws_connect: WsSession;
   ws_send: WsActionResult;
   ws_recv: WsSession;

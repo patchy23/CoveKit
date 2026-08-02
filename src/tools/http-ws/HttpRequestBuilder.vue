@@ -94,13 +94,7 @@ const tabClass = (active: boolean) =>
           placeholder="key"
           spellcheck="false"
           @input="
-            setRow(
-              props.params,
-              r.id,
-              'key',
-              ($event.target as HTMLInputElement).value,
-              'params'
-            )
+            setRow(props.params, r.id, 'key', ($event.target as HTMLInputElement).value, 'params')
           "
         />
         <input
@@ -109,13 +103,7 @@ const tabClass = (active: boolean) =>
           placeholder="value"
           spellcheck="false"
           @input="
-            setRow(
-              props.params,
-              r.id,
-              'value',
-              ($event.target as HTMLInputElement).value,
-              'params'
-            )
+            setRow(props.params, r.id, 'value', ($event.target as HTMLInputElement).value, 'params')
           "
         />
         <button
@@ -161,13 +149,7 @@ const tabClass = (active: boolean) =>
           placeholder="Accept"
           spellcheck="false"
           @input="
-            setRow(
-              props.headers,
-              r.id,
-              'key',
-              ($event.target as HTMLInputElement).value,
-              'headers'
-            )
+            setRow(props.headers, r.id, 'key', ($event.target as HTMLInputElement).value, 'headers')
           "
         />
         <input

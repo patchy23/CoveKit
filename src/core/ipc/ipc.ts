@@ -39,18 +39,19 @@ export const ipc = {
   openExternal: (url: string) => call("open_external", { url }),
   httpRequest: (payload: import("./contracts").HttpRequestPayload) =>
     call("http_request", { payload }),
-  historyAdd: (r: import("./contracts").HistoryRecord) =>
-    call("history_add", {
-      method: r.method,
-      url: r.url,
-      headers: r.headers,
-      body: r.body,
-      status: r.status,
-      durationMs: r.durationMs,
-      bodySize: r.bodySize,
-    }),
-  historyList: (limit: number) => call("history_list", { limit }),
-  historyClear: () => call("history_clear", {}),
+  apiSave: (r: {
+    id?: number;
+    name: string;
+    method: string;
+    url: string;
+    params: string;
+    headers: string;
+    bodyMode: string;
+    body: string;
+  }) => call("api_save", r),
+  apiList: () => call("api_list", {}),
+  apiDelete: (id: number) => call("api_delete", { id }),
+  apiClear: () => call("api_clear", {}),
   wsConnect: (payload: import("./contracts").WsConnectPayload) => call("ws_connect", payload),
   wsSend: (id: string, message: string) => call("ws_send", { id, message }),
   wsRecv: (id: string) => call("ws_recv", { id }),
