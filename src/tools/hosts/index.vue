@@ -71,10 +71,8 @@ onMounted(load);
 
 <template>
   <div class="flex max-w-[1000px] flex-col gap-[12px]">
-    <!-- 工具栏 -->
-    <div class="flex items-center gap-[10px]">
-      <!-- 固定工具栏：读取/保存/清空 + 模式切换（滚动时始终可见） -->
-      <div class="sticky-toolbar flex-col !items-stretch !gap-[10px]">
+    <!-- 固定工具栏：读取/保存/清空 + 模式切换（滚动时始终可见） -->
+    <div class="sticky-toolbar flex-col !items-stretch !gap-[10px]">
         <div class="flex flex-wrap items-center gap-[10px]">
           <button class="btn-secondary shrink-0" :disabled="busy" @click="load">重新读取</button>
           <button class="btn-primary shrink-0" :disabled="busy || !loaded" @click="save">
