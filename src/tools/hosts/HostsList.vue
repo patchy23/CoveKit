@@ -40,7 +40,7 @@ function entriesToText(): string {
 }
 
 function updateEntry(e: HostsEntry) {
-  const check = validateEntry(e.ip, e.hosts, e.comment);
+  const check = validateEntry(e.ip, e.hosts);
   e.valid = check.valid;
   e.error = check.error;
   sync();

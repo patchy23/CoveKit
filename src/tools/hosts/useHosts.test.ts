@@ -81,9 +81,9 @@ describe("useHosts", () => {
   });
 
   it("条目即时校验", () => {
-    expect(validateEntry("1.2.3.4", ["a.com"], "").valid).toBe(true);
-    expect(validateEntry("999.1.1.1", ["a.com"], "").valid).toBe(false);
-    expect(validateEntry("1.2.3.4", [], "").valid).toBe(false);
-    expect(validateEntry("1.2.3.4", ["bad host"], "").valid).toBe(false);
+    expect(validateEntry("1.2.3.4", ["a.com"]).valid).toBe(true);
+    expect(validateEntry("999.1.1.1", ["a.com"]).valid).toBe(false);
+    expect(validateEntry("1.2.3.4", []).valid).toBe(false);
+    expect(validateEntry("1.2.3.4", ["bad host"]).valid).toBe(false);
   });
 });

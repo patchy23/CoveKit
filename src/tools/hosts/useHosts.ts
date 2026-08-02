@@ -153,11 +153,7 @@ export function entriesToText(entries: HostsEntry[]): string {
 }
 
 /** 校验单个条目（列表模式行内即时校验） */
-export function validateEntry(
-  ip: string,
-  hosts: string[],
-  comment: string
-): { valid: boolean; error?: string } {
+export function validateEntry(ip: string, hosts: string[]): { valid: boolean; error?: string } {
   if (!isValidIp(ip)) return { valid: false, error: "IP 无效" };
   if (hosts.length === 0) return { valid: false, error: "缺少主机名" };
   const bad = hosts.find((h) => !isValidHostname(h));
