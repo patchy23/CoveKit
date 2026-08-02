@@ -6,7 +6,6 @@ import { computed, onUnmounted, ref } from "vue";
 import type { WsSession } from "@/core/ipc/contracts";
 import { ipc } from "@/core/ipc/ipc";
 import { useUiStore } from "@/stores/ui";
-import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
 import { isValidUrl, parseHeaders } from "./useHttp";
 
 const ui = useUiStore();
@@ -143,20 +142,17 @@ onUnmounted(() => {
       {{ error }}
     </p>
 
-    <!-- 连接请求头（token 等；握手时随 Upgrade 请求发送） -->
-    <details
-      class="rounded-md border border-border px-[12px] py-[8px] dark:border-border-dark"
-      :open="!!headersText.trim()"
-    >
-      <summary
-        class="cursor-pointer text-body-sm font-medium text-secondary dark:text-secondary-dark"
-      >
-        请求头（握手时发送，如 Authorization: Bearer xxx）
-      </summary>
-      <div class="mt-[8px]">
-        <LineNumberTextarea v-model="headersText" min-height="64px" />
-      </div>
-    </details>
+    <!-- 连接请求头（token 认证；握手时随 Upgrade 请求发送） -->
+    <div>
+      <label class="mb-[6px] field-label">请求头（每行一个，如 Authorization: Bearer xxx）</label>
+      <textarea
+        v-model="headersText"
+        rows="2"
+        class="field-textarea font-mono"
+        spellcheck="false"
+        placeholder="Authorization: Bearer xxx"
+      />
+    </div>
 
     <!-- 消息流 -->
     <div
