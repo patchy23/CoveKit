@@ -3,7 +3,7 @@
  * ApiSidebar · 接口列表侧栏（Postman Collections 式：保存的接口随时切换）
  */
 import type { ApiRecord } from "@/core/ipc/contracts";
-import { formatRelativeTime } from "./useHttp";
+import { formatRelativeTime, methodBadgeClass } from "./useHttp";
 
 defineProps<{
   apis: ApiRecord[];
@@ -16,16 +16,6 @@ const emit = defineEmits<{
   (e: "clear"): void;
   (e: "new"): void;
 }>();
-
-function methodClass(a: { type: string; method: string }): string {
-  if (a.type === "ws")
-    return "bg-info-soft text-info-strong dark:bg-info-soft-dark dark:text-info-dark";
-  if (a.method === "GET")
-    return "bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark";
-  if (["POST", "PUT", "PATCH"].includes(a.method))
-    return "bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark";
-  return "bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark";
-}
 </script>
 
 <template>
@@ -68,7 +58,7 @@ function methodClass(a: { type: string; method: string }): string {
         <div class="flex items-center gap-[8px]">
           <span
             class="w-[46px] shrink-0 rounded-[4px] px-[4px] py-[1px] text-center font-mono text-caption font-medium"
-            :class="methodClass(a)"
+            :class="methodBadgeClass(a.method, a.type)"
             >{{ a.type === "ws" ? "WS" : a.method }}</span
           >
           <span

@@ -45,6 +45,38 @@
   --color-success-dark: #34d399;
   --color-success-soft-dark: #0f2e22;
 
+  /* ── 方法色标（Apifox/Postman 惯例：GET 绿 POST 橙 PUT 蓝 PATCH 紫 DELETE 红 HEAD 灰 OPTIONS 紫 WS 青）
+   * 为接口列表徽标与请求方法下拉补齐 5 个色系（info/warning/danger/purple/cyan） */
+  --color-info: #2f9cf0;
+  --color-info-strong: #1d6fae;
+  --color-info-soft: #e8f3fd;
+  --color-info-dark: #6cb7f5;
+  --color-info-soft-dark: #12293e;
+
+  --color-warning: #f2a03d;
+  --color-warning-strong: #b96f1b;
+  --color-warning-soft: #fdf3e6;
+  --color-warning-dark: #f5b85e;
+  --color-warning-soft-dark: #3a2a14;
+
+  --color-danger: #e5484d;
+  --color-danger-strong: #c22f34;
+  --color-danger-soft: #fdecec;
+  --color-danger-dark: #f07074;
+  --color-danger-soft-dark: #3d1618;
+
+  --color-purple: #8b5cf6;
+  --color-purple-strong: #6d3fd1;
+  --color-purple-soft: #f1ebfe;
+  --color-purple-dark: #a78bfa;
+  --color-purple-soft-dark: #2a1f4d;
+
+  --color-cyan: #0ec5c5;
+  --color-cyan-strong: #0a9a9a;
+  --color-cyan-soft: #e5fafa;
+  --color-cyan-dark: #4fd6d6;
+  --color-cyan-soft-dark: #0e2f2f;
+
   /* ── Spacing（间距基线 4px，DESIGN.md spacing）── */
   --spacing-xs: 4px;
   --spacing-sm: 8px;

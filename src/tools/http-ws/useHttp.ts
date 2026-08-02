@@ -125,3 +125,25 @@ export function kvToText(rows: KvRow[]): string {
 export function textToKv(text: string): KvRow[] {
   return parseHeaders(text).map(([k, v]) => ({ id: newKvId(), key: k, value: v }));
 }
+
+/** 方法徽标配色（Apifox 惯例：GET 绿 / POST 橙 / PUT 蓝 / PATCH 紫 / DELETE 红 / HEAD 灰 / OPTIONS 紫 / WS 青） */
+export function methodBadgeClass(method: string, type?: string): string {
+  if (type === "ws")
+    return "bg-cyan-soft text-cyan-strong dark:bg-cyan-soft-dark dark:text-cyan-dark";
+  switch (method) {
+    case "GET":
+      return "bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark";
+    case "POST":
+      return "bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark";
+    case "PUT":
+      return "bg-info-soft text-info-strong dark:bg-info-soft-dark dark:text-info-dark";
+    case "PATCH":
+      return "bg-purple-soft text-purple-strong dark:bg-purple-soft-dark dark:text-purple-dark";
+    case "DELETE":
+      return "bg-danger-soft text-danger-strong dark:bg-danger-soft-dark dark:text-danger-dark";
+    case "OPTIONS":
+      return "bg-purple-soft text-purple-strong dark:bg-purple-soft-dark dark:text-purple-dark";
+    default:
+      return "bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark";
+  }
+}

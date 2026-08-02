@@ -11,7 +11,14 @@ import HttpRequestBuilder from "./HttpRequestBuilder.vue";
 import HttpResponse from "./HttpResponse.vue";
 import WsMessageArea from "./WsMessageArea.vue";
 import type { ApiDraft, KvRow } from "./useHttp";
-import { isValidUrl, kvToHeaders, kvToQuery, mergeQuery, newKvId } from "./useHttp";
+import {
+  isValidUrl,
+  kvToHeaders,
+  kvToQuery,
+  mergeQuery,
+  methodBadgeClass,
+  newKvId,
+} from "./useHttp";
 
 const emit = defineEmits<{ (e: "save"): void }>();
 
@@ -27,17 +34,6 @@ const ALL_METHODS = [
   "WEBSOCKET",
 ] as const;
 type Method = (typeof ALL_METHODS)[number];
-
-/** 下拉选项配色（与接口列表徽标一致：GET 绿 / 写操作橙 / WEBSOCKET 蓝 / 其他灰） */
-function methodOptionClass(m: Method): string {
-  if (m === "GET")
-    return "bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark";
-  if (["POST", "PUT", "PATCH"].includes(m))
-    return "bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark";
-  if (m === "WEBSOCKET")
-    return "bg-info-soft text-info-strong dark:bg-info-soft-dark dark:text-info-dark";
-  return "bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark";
-}
 
 const method = ref<Method>("GET");
 const url = ref("https://httpbin.org/get");
@@ -202,7 +198,12 @@ defineExpose({ getDraft, applyDraft });
         class="field-input !w-[100px] !px-[10px] !py-[8px]"
         @change="method = ($event.target as HTMLSelectElement).value as Method"
       >
-        <option v-for="m in ALL_METHODS" :key="m" :value="m" :class="methodOptionClass(m)">
+        <option
+          v-for="m in ALL_METHODS"
+          :key="m"
+          :value="m"
+          :class="methodBadgeClass(m, m === 'WEBSOCKET' ? 'ws' : undefined)"
+        >
           {{ m }}
         </option>
       </select>
