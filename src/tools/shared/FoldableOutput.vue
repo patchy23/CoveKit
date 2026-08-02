@@ -106,8 +106,11 @@ function syncScroll() {
       @scroll="syncScroll"
     >
       <template v-for="p in renderPlan" :key="p.i">
-        <!-- 普通行：折叠箭头（块起始行）+ 高亮内容 -->
-        <div v-if="p.placeholder === undefined" class="flex h-[21px] items-center whitespace-pre">
+        <!-- 普通行：折叠箭头（块起始行）+ 高亮内容；背景画缩进对齐竖线 -->
+        <div
+          v-if="p.placeholder === undefined"
+          class="indent-guides flex h-[21px] items-center whitespace-pre"
+        >
           <button
             v-if="hasChildren(p.i)"
             class="grid h-[21px] w-[18px] shrink-0 place-items-center text-text-muted transition-colors hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:text-tertiary-dark"
