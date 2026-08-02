@@ -15,3 +15,4 @@ import "@/tools/random-password";
 import "@/tools/hash";
 import "@/tools/color-picker";
 import "@/tools/qrcode";
+import "@/tools/clipboard-history";

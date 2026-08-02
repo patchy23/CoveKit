@@ -50,6 +50,9 @@ const inner: Record<string, string> = {
   color:
     '<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18c-2.5 0-3.5-2-2.5-3.5S10 15 9 15c-2.2 0-3.5-2.5-1.5-4.5.8-.8.5-2-1-2.2A8.9 8.9 0 0 0 12 3z"/>',
   qr: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><path d="M13 13h3v3h-3zM16 16h4v4h-4zM20 13h.01"/>',
+  clipboard:
+    '<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4a3 3 0 0 1 6 0M9 12h6M9 16h4"/>',
+  pin: '<path d="M9 4h6l-1 6 3.5 3.5H6.5L10 10z"/><path d="M12 13.5V20"/>',
 };
 </script>
 
