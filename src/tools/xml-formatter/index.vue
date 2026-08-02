@@ -2,29 +2,19 @@
 /**
  * XML 格式化 · 格式化/压缩/校验（与 JSON 格式化同款布局：占满工作区 + 内部滚动）
  */
-import { computed, ref } from "vue";
-import hljs from "highlight.js";
+import { ref } from "vue";
 import { formatXml, minifyXml } from "./useXml";
 import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
-import FoldableOutput from "@/tools/shared/FoldableOutput.vue";
+import CodeViewer from "@/tools/shared/CodeViewer.vue";
 import { useCopy } from "@/tools/shared/useClipboard";
 
 const { copyText } = useCopy();
 
 const input = ref(
-  '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <app name="patchyBox">\n    <version>0.1.0</version>\n  </app>\n</config>'
+  '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <app name="patchyBox">\n    <version>0.1.0</version>\n  </app>\n</config>',
 );
 const output = ref("");
 const error = ref("");
-
-const highlighted = computed(() => {
-  if (!output.value) return "";
-  try {
-    return hljs.highlight(output.value, { language: "xml", ignoreIllegals: true }).value;
-  } catch {
-    return "";
-  }
-});
 
 function format() {
   error.value = "";
@@ -76,7 +66,7 @@ function minify() {
       </div>
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输出</label>
-        <FoldableOutput :text="output" :html="highlighted" />
+        <CodeViewer :doc="output" lang="xml" />
       </div>
     </div>
   </div>

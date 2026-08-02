@@ -3,12 +3,11 @@
  * JSON 格式化 · 格式化/压缩/校验 + 错误行号定位
  * 布局：输入/输出左右分栏，占满工作区高度；文本框内部滚动（不拉长页面）。
  */
-import { computed, ref } from "vue";
-import hljs from "highlight.js";
+import { ref } from "vue";
 import { formatJson, minifyJson } from "./useFormat";
 import { useCopy } from "@/tools/shared/useClipboard";
 import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
-import FoldableOutput from "@/tools/shared/FoldableOutput.vue";
+import CodeViewer from "@/tools/shared/CodeViewer.vue";
 import { useSettingsStore } from "@/stores/settings";
 
 const settings = useSettingsStore();
@@ -39,16 +38,6 @@ function clearAll() {
   output.value = "";
   errorMsg.value = "";
 }
-
-/** 输出语法高亮（解析失败时回退为 HTML 转义纯文本） */
-const highlighted = computed(() => {
-  if (!output.value) return "";
-  try {
-    return hljs.highlight(output.value, { language: "json", ignoreIllegals: true }).value;
-  } catch {
-    return output.value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-});
 </script>
 
 <template>
@@ -80,7 +69,7 @@ const highlighted = computed(() => {
       </div>
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输出</label>
-        <FoldableOutput :text="output" :html="highlighted" />
+        <CodeViewer :doc="output" lang="json" />
       </div>
     </div>
   </div>
