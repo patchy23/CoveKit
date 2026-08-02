@@ -61,16 +61,20 @@
 5. 第二批凭据：默认 **stronghold**（备选 Windows Credential Manager / keyring）
 6. hosts 提权：默认**按需提权助手**（UAC 最小授权），应用本体不常驻管理员
 
-## 下一步：M2 第二批 I（新会话任务）
+## 下一步：M2 第二批 II（新会话任务）
 
-M0/M1 已完成（脚手架 + 框架 + 8 个文本工具，验收全绿；工具以多页签工作区子页面打开）。M2 按 docs/02-architecture.md §10 推进：
+M2 第一批 I 已完成（轻量工具 4 个 + 剪贴板历史 + 快捷键改键 + HTTP/WS 调试，2026-08-02；共 14 个工具，验收全绿）。剩余：
 
-1. **HTTP/WS 调试**：Rust `modules/http_ws`（reqwest + tokio-tungstenite，第二批依赖此时引入）；workspace 页签载体已就绪直接复用
-2. **SQLite 数据库工具**：`modules/db`（sqlx 统一三方言，先 SQLite）
-3. **hosts 修改**：`modules/hosts` + 按需提权助手（UAC 最小授权）+ 修改前备份
-4. **轻量工具补齐**：随机密码 / 哈希计算 / 颜色选择器（color_pick_screen 命令已就绪）/ 二维码
-5. **剪贴板历史工具**：clipboard 模块 + 轮询服务 + SQLite 历史已在 M1 就绪，补 UI 工具即可
-6. **全局快捷键改键**：Rust 侧注册读取 settings.globalHotkey（本机 Ctrl+Shift+Space 被占用时降级告警）
+1. **SQLite 数据库工具**：`modules/db`（sqlx 统一三方言，先 SQLite）+ 连接管理 + 表浏览 + SQL 执行 + 结果表格
+2. **hosts 修改**：`modules/hosts` + 按需提权助手（UAC 最小授权）+ 修改前备份 + 语法校验
+
+### M2 已完成记录（2026-08-02）
+
+- 轻量工具：随机密码（usePassword）/ 哈希（useHash，MD5+WebCrypto SHA）/ 颜色选择器（useColor + color_pick_screen）/ 二维码（qrcode 库）
+- 剪贴板历史：前端页签（搜索/置顶/复制/删除/清空 + 3s 轮询），后端 M1 就绪
+- 快捷键改键：Rust `modules/settings.rs` register_hotkey（读 settings.globalHotkey + 动态切换），设置页预设 select
+- **HTTP/WS 调试**：`modules/http_ws.rs`（reqwest 0.12 + tokio-tungstenite 0.24 + tokio + futures-util）；6 命令 http_request/ws_connect/ws_send/ws_recv/ws_close/ws_sessions；前端 tools/http-ws（HttpPanel/WsPanel 双面板，JSON 响应高亮，WS 300ms 轮询拉取）；WS 会话 = id → 后台读写任务（tokio::select）+ 消息队列（上限 500 条）
+- 依赖备忘：tokio 需显式声明（tauri 不 re-export crate）；reqwest RequestBuilder 无 map_err（send 时出错）；tokio-tungstenite 0.24 的 Message 在 `tungstenite::` 下
 
 ### M1 环境备忘补充
 
