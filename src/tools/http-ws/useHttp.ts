@@ -49,3 +49,56 @@ export function isValidUrl(url: string): boolean {
     return false;
   }
 }
+
+/* ── Postman 式键值行（Params / Headers 表格） ── */
+
+export interface KvRow {
+  id: string;
+  key: string;
+  value: string;
+}
+
+let kvSeq = 0;
+/** 生成行 id */
+export function newKvId(): string {
+  kvSeq += 1;
+  return `kv${Date.now().toString(36)}${kvSeq}`;
+}
+
+/** kv 行 → 请求头对象（空 key 忽略） */
+export function kvToHeaders(rows: KvRow[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const r of rows) {
+    const k = r.key.trim();
+    if (k) out[k] = r.value;
+  }
+  return out;
+}
+
+/** kv 行 → query 字符串（"a=1&b=2"，值 encode） */
+export function kvToQuery(rows: KvRow[]): string {
+  return rows
+    .filter((r) => r.key.trim())
+    .map((r) => `${encodeURIComponent(r.key.trim())}=${encodeURIComponent(r.value)}`)
+    .join("&");
+}
+
+/** 合并 query 到 URL（已有 query 追加 &） */
+export function mergeQuery(url: string, query: string): string {
+  if (!query) return url;
+  const sep = url.includes("?") ? "&" : "?";
+  return `${url}${sep}${query}`;
+}
+
+/** 相对时间（历史列表用） */
+export function formatRelativeTime(iso: string): string {
+  const t = new Date(iso.replace(" ", "T")).getTime();
+  if (Number.isNaN(t)) return iso.slice(5, 19).replace("T", " ");
+  const diff = Date.now() - t;
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return "刚刚";
+  if (min < 60) return `${min} 分钟前`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} 小时前`;
+  return `${Math.floor(h / 24)} 天前`;
+}

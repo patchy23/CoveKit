@@ -1,38 +1,48 @@
 <script setup lang="ts">
 /**
- * HTTP 调试面板 · 请求构建 + 响应查看（JSON 高亮）
+ * HttpPanel · HTTP 调试主面板（Postman 式布局）
+ * 顶部请求行（方法/URL/发送/超时）+ 左侧历史栏 + 右侧请求构建/响应查看。
  */
 import { computed, onMounted, ref } from "vue";
-import hljs from "highlight.js";
 import type { HistoryRecord, HttpMethod, HttpResponseResult } from "@/core/ipc/contracts";
 import { ipc } from "@/core/ipc/ipc";
-import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
+import HttpSidebar from "./HttpSidebar.vue";
+import HttpRequestBuilder from "./HttpRequestBuilder.vue";
+import HttpResponse from "./HttpResponse.vue";
+import type { KvRow } from "./useHttp";
 import {
-  METHODS,
-  formatBytes,
-  formatHeaders,
+  headersToText,
   isValidUrl,
-  looksLikeJson,
+  kvToHeaders,
+  kvToQuery,
+  mergeQuery,
+  newKvId,
   parseHeaders,
 } from "./useHttp";
 
 const method = ref<HttpMethod>("GET");
 const url = ref("https://httpbin.org/get");
-const headersText = ref("Accept: application/json");
-const body = ref("");
 const timeoutMs = ref(15000);
 const sending = ref(false);
 const response = ref<HttpResponseResult | null>(null);
 const error = ref("");
 const respondedAt = ref("");
 
-/* ── 请求历史（SQLite 持久化） ── */
-const historyOpen = ref(false);
+/* 请求构建状态（Params/Headers/Body） */
+const params = ref<KvRow[]>([{ id: newKvId(), key: "", value: "" }]);
+const headerRows = ref<KvRow[]>([{ id: newKvId(), key: "Accept", value: "application/json" }]);
+const bodyMode = ref<"none" | "json" | "text">("none");
+const body = ref("");
+
+/* 历史 */
 const records = ref<HistoryRecord[]>([]);
+const activeId = ref<number | null>(null);
+
+const showBody = computed(() => ["POST", "PUT", "PATCH"].includes(method.value));
 
 async function loadHistory() {
   try {
-    records.value = await ipc.historyList(20);
+    records.value = await ipc.historyList(50);
   } catch {
     records.value = [];
   }
@@ -42,6 +52,7 @@ async function clearHistory() {
   try {
     await ipc.historyClear();
     records.value = [];
+    activeId.value = null;
   } catch {
     /* 忽略 */
   }
@@ -53,71 +64,50 @@ async function saveHistory(res: HttpResponseResult) {
     await ipc.historyAdd({
       id: 0,
       method: method.value,
-      url: url.value.trim(),
-      headers: headersText.value,
-      body: showBody.value ? body.value : "",
+      url: mergeQuery(url.value.trim(), kvToQuery(params.value)),
+      headers: headersToText(Object.entries(kvToHeaders(headerRows.value))),
+      body: showBody.value && bodyMode.value !== "none" ? body.value : "",
       status: res.ok ? res.status : undefined,
       durationMs: res.durationMs,
       bodySize: res.bodySize,
       createdAt: "",
     });
+    await loadHistory();
   } catch {
     /* 历史失败不影响请求 */
   }
 }
 
-/** 点击历史记录：回填请求 */
+/** 点击历史：回填请求 */
 function applyRecord(r: HistoryRecord) {
   method.value = (r.method as HttpMethod) || "GET";
   url.value = r.url;
-  headersText.value = r.headers || "";
+  const pairs = parseHeaders(r.headers);
+  headerRows.value = pairs.map(([k, v]) => ({ id: newKvId(), key: k, value: v }));
+  if (r.headers && !headerRows.value.length)
+    headerRows.value = [{ id: newKvId(), key: "", value: "" }];
   body.value = r.body || "";
-  historyOpen.value = false;
+  bodyMode.value = r.body ? "json" : "none";
+  activeId.value = r.id;
+  error.value = "";
+  response.value = null;
 }
-
-function formatTime(iso: string): string {
-  return iso.replace("T", " ").slice(0, 19);
-}
-
-onMounted(loadHistory);
-
-const showBody = computed(() => ["POST", "PUT", "PATCH"].includes(method.value));
-
-const highlightedBody = computed(() => {
-  if (!response.value?.body) return "";
-  if (!looksLikeJson(response.value.body)) return "";
-  try {
-    return hljs.highlight(response.value.body, { language: "json", ignoreIllegals: true }).value;
-  } catch {
-    return "";
-  }
-});
-
-const statusClass = computed(() => {
-  if (!response.value) return "";
-  const s = response.value.status;
-  if (s >= 200 && s < 300)
-    return "bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark";
-  if (s >= 400)
-    return "bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark";
-  return "bg-warning-soft text-warning-strong dark:bg-warning-soft-dark dark:text-warning-dark";
-});
 
 async function send() {
   error.value = "";
-  sending.value = true;
-  if (!isValidUrl(url.value.trim())) {
-    error.value = "URL 格式无效";
-    sending.value = false;
+  const finalUrl = mergeQuery(url.value.trim(), kvToQuery(params.value));
+  if (!isValidUrl(finalUrl)) {
+    error.value = "URL 格式无效（支持 http/https）";
     return;
   }
+  sending.value = true;
   try {
     respondedAt.value = new Date().toLocaleTimeString("zh-CN", { hour12: false });
     response.value = await ipc.httpRequest({
       method: method.value,
-      url: url.value.trim(),
-      headers: parseHeaders(headersText.value),
-      body: showBody.value ? body.value : undefined,
+      url: finalUrl,
+      headers: kvToHeaders(headerRows.value),
+      body: showBody.value && bodyMode.value !== "none" ? body.value : undefined,
       timeoutMs: timeoutMs.value,
     });
     if (response.value) await saveHistory(response.value);
@@ -128,22 +118,30 @@ async function send() {
     sending.value = false;
   }
 }
+
+onMounted(loadHistory);
 </script>
 
 <template>
-  <div class="flex flex-col gap-[12px]">
-    <!-- 固定请求行（发送按钮滚动时始终可见） -->
-    <div class="sticky-toolbar !py-[10px]">
+  <div class="flex h-full min-h-0 w-full flex-col gap-[10px]">
+    <!-- 请求行 -->
+    <div class="flex shrink-0 items-center gap-[8px]">
       <select
         :value="method"
         class="field-input !w-[100px] !px-[10px] !py-[8px]"
         @change="method = ($event.target as HTMLSelectElement).value as HttpMethod"
       >
-        <option v-for="m in METHODS" :key="m" :value="m">{{ m }}</option>
+        <option
+          v-for="m in ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'] as const"
+          :key="m"
+          :value="m"
+        >
+          {{ m }}
+        </option>
       </select>
       <input
         v-model="url"
-        class="field-input font-mono"
+        class="field-input min-w-0 flex-1 font-mono"
         placeholder="https://example.com/api"
         spellcheck="false"
         @keyup.enter="send"
@@ -161,135 +159,37 @@ async function send() {
         <option :value="15000">15s 超时</option>
         <option :value="60000">60s 超时</option>
       </select>
-      <!-- 历史 -->
-      <div class="relative">
-        <button
-          class="btn-ghost"
-          :title="`请求历史（${records.length}）`"
-          @mousedown.stop
-          @click.stop="
-            historyOpen = !historyOpen;
-            if (historyOpen) loadHistory();
-          "
-        >
-          历史
-        </button>
-        <div
-          v-if="historyOpen"
-          class="absolute right-0 top-full z-50 mt-[4px] max-h-[320px] w-[340px] overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
-          @mousedown.stop
-        >
-          <div class="flex items-center justify-between px-[10px] py-[6px]">
-            <span class="text-caption font-medium text-text-muted dark:text-text-muted-dark">
-              请求历史（{{ records.length }}）
-            </span>
-            <button class="btn-ghost !py-[2px] text-body-sm" @click="clearHistory">清空</button>
-          </div>
-          <div
-            v-for="r in records"
-            :key="r.id"
-            class="flex cursor-pointer items-center gap-[10px] px-[10px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
-            @click="applyRecord(r)"
-          >
-            <span
-              class="w-[48px] shrink-0 rounded-[4px] px-[4px] py-[1px] text-center font-mono text-caption font-medium"
-              :class="
-                r.method === 'GET'
-                  ? 'bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark'
-                  : r.method === 'POST' || r.method === 'PUT' || r.method === 'PATCH'
-                    ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-                    : 'bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark'
-              "
-              >{{ r.method }}</span
-            >
-            <span
-              class="min-w-0 flex-1 truncate font-mono text-body-sm text-secondary dark:text-secondary-dark"
-            >
-              {{ r.url }}
-            </span>
-            <span
-              v-if="r.status"
-              class="shrink-0 font-mono text-body-sm"
-              :class="
-                r.status >= 400
-                  ? 'text-tertiary-strong dark:text-tertiary-dark'
-                  : 'text-success-strong dark:text-success-dark'
-              "
-            >
-              {{ r.status }}
-            </span>
-            <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
-              {{ formatTime(r.createdAt) }}
-            </span>
-          </div>
-          <p
-            v-if="!records.length"
-            class="px-[10px] py-[10px] text-body-sm text-text-muted dark:text-text-muted-dark"
-          >
-            暂无历史记录，发送请求后自动保存
-          </p>
-        </div>
-      </div>
     </div>
 
-    <div class="grid grid-cols-2 gap-[12px]">
-      <div>
-        <label class="mb-[6px] field-label">请求头（Name: Value，每行一个）</label>
-        <LineNumberTextarea v-model="headersText" min-height="120px" />
-      </div>
-      <div v-if="showBody">
-        <label class="mb-[6px] field-label">请求体</label>
-        <LineNumberTextarea v-model="body" min-height="120px" placeholder="请求体内容（JSON 等）" />
-      </div>
-    </div>
-
-    <p v-if="error" class="text-body-sm text-tertiary-strong dark:text-tertiary-dark">
+    <p v-if="error" class="shrink-0 text-body-sm text-tertiary-strong dark:text-tertiary-dark">
       {{ error }}
     </p>
 
-    <!-- 响应 -->
-    <div v-if="response" class="flex flex-col gap-[8px]">
-      <div class="flex flex-wrap items-center gap-[10px]">
-        <span class="rounded-full px-[10px] py-[3px] text-caption font-medium" :class="statusClass">
-          {{ response.ok ? response.status : response.statusText || "请求失败" }}
-        </span>
-        <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-          {{ response.durationMs }} ms
-        </span>
-        <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-          {{ formatBytes(response.bodySize) }}
-        </span>
-        <span v-if="respondedAt" class="text-body-sm text-text-muted dark:text-text-muted-dark">
-          {{ respondedAt }}
-        </span>
-        <span
-          v-if="response.error"
-          class="text-body-sm text-tertiary-strong dark:text-tertiary-dark"
-          >{{ response.error }}</span
-        >
-      </div>
+    <!-- 左侧历史栏 + 右侧构建/响应 -->
+    <div class="flex min-h-0 flex-1 gap-[12px]">
+      <HttpSidebar
+        :records="records"
+        :active-id="activeId"
+        @select="applyRecord"
+        @clear="clearHistory"
+      />
 
-      <details class="rounded-md border border-border px-[12px] py-[8px] dark:border-border-dark">
-        <summary
-          class="cursor-pointer text-body-sm font-medium text-secondary dark:text-secondary-dark"
-        >
-          响应头（{{ response.headers.length }}）
-        </summary>
-        <pre
-          class="mt-[8px] max-h-[160px] overflow-auto font-mono text-body-sm leading-relaxed text-secondary dark:text-secondary-dark"
-          >{{ formatHeaders(response.headers) }}</pre>
-      </details>
+      <div class="flex min-h-0 flex-1 flex-col gap-[10px]">
+        <HttpRequestBuilder
+          v-model:params="params"
+          v-model:headers="headerRows"
+          v-model:body-mode="bodyMode"
+          v-model:body="body"
+        />
 
-      <div>
-        <label class="mb-[6px] field-label">响应体</label>
-        <pre
-          v-if="highlightedBody"
-          class="max-h-[360px] overflow-auto rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
-        ><code class="hljs" v-html="highlightedBody" /></pre>
-        <pre
+        <!-- 响应区 -->
+        <HttpResponse v-if="response" :response="response" :responded-at="respondedAt" />
+        <div
           v-else
-          class="max-h-[360px] overflow-auto whitespace-pre-wrap rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
-          >{{ response.body || "(空响应体)" }}</pre>
+          class="grid min-h-0 flex-1 place-items-center rounded-md border border-dashed border-border text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
+        >
+          发送请求后在这里查看响应
+        </div>
       </div>
     </div>
   </div>

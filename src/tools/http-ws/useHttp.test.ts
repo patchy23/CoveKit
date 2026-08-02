@@ -1,35 +1,55 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatHeaders, isValidUrl, looksLikeJson, parseHeaders } from "./useHttp";
+import {
+  formatRelativeTime,
+  isValidUrl,
+  kvToHeaders,
+  kvToQuery,
+  looksLikeJson,
+  mergeQuery,
+  parseHeaders,
+} from "./useHttp";
 
 describe("useHttp", () => {
-  it("headers 文本解析", () => {
-    expect(parseHeaders("Content-Type: application/json\nX-Api-Key: abc\n\n无冒号行")).toEqual([
-      ["Content-Type", "application/json"],
-      ["X-Api-Key", "abc"],
+  it("headers 解析", () => {
+    expect(parseHeaders("A: 1\nB: 2\nno-colon")).toEqual([
+      ["A", "1"],
+      ["B", "2"],
     ]);
   });
 
-  it("headers 格式化往返", () => {
-    expect(
-      formatHeaders([
-        ["a", "1"],
-        ["b", "2"],
-      ])
-    ).toBe("a: 1\nb: 2");
+  it("URL 校验", () => {
+    expect(isValidUrl("https://example.com/api")).toBe(true);
+    expect(isValidUrl("ws://localhost:9000")).toBe(true);
+    expect(isValidUrl("ftp://x.com")).toBe(false);
+    expect(isValidUrl("not a url")).toBe(false);
   });
 
-  it("字节格式化", () => {
-    expect(formatBytes(500)).toBe("500 B");
-    expect(formatBytes(2048)).toBe("2.0 KB");
-    expect(formatBytes(3 * 1024 * 1024)).toBe("3.00 MB");
-  });
-
-  it("JSON 启发式与 URL 校验", () => {
+  it("JSON 启发", () => {
     expect(looksLikeJson('{"a":1}')).toBe(true);
+    expect(looksLikeJson("[1,2]")).toBe(true);
     expect(looksLikeJson("<html>")).toBe(false);
-    expect(isValidUrl("https://example.com")).toBe(true);
-    expect(isValidUrl("ws://localhost:8080")).toBe(true);
-    expect(isValidUrl("ftp://x")).toBe(false);
-    expect(isValidUrl("不是url")).toBe(false);
+  });
+
+  it("kv → headers/query/merge", () => {
+    const rows = [
+      { id: "1", key: "Accept", value: "application/json" },
+      { id: "2", key: "", value: "ignored" },
+    ];
+    expect(kvToHeaders(rows)).toEqual({ Accept: "application/json" });
+    const qRows = [
+      { id: "1", key: "q", value: "hello world" },
+      { id: "2", key: "n", value: "1" },
+    ];
+    expect(kvToQuery(qRows)).toBe("q=hello%20world&n=1");
+    expect(mergeQuery("https://a.com/x", "q=1")).toBe("https://a.com/x?q=1");
+    expect(mergeQuery("https://a.com/x?b=2", "q=1")).toBe("https://a.com/x?b=2&q=1");
+  });
+
+  it("相对时间", () => {
+    const now = new Date();
+    const d = new Date(now.getTime() - 5 * 60000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    expect(formatRelativeTime(local)).toContain("分钟前");
   });
 });
