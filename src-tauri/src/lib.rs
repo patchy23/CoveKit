@@ -54,6 +54,12 @@ pub fn run() {
             modules::clipboard::clipboard_clear,
             modules::clipboard::clipboard_toggle_pin,
             modules::color::color_pick_screen,
+            modules::http_ws::http_request,
+            modules::http_ws::ws_connect,
+            modules::http_ws::ws_send,
+            modules::http_ws::ws_recv,
+            modules::http_ws::ws_close,
+            modules::http_ws::ws_sessions,
             framework::window_toggle,
             framework::window_hide,
             framework::open_external,
@@ -72,6 +78,11 @@ pub fn run() {
             let db = modules::clipboard::init_db(app)?;
             app.manage(db);
             modules::clipboard::start_watcher(app.handle().clone());
+
+            // WebSocket 会话注册表（HTTP/WS 调试工具）
+            app.manage(modules::http_ws::WsState(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )));
 
             // 全局快捷键：读取设置 settings.globalHotkey 注册（占用时降级，不阻断启动）
             app.manage(modules::settings::HotkeyState(std::sync::Mutex::new(None)));

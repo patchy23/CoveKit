@@ -39,6 +39,59 @@ export interface WindowState {
   visible: boolean;
 }
 
+/* ── HTTP/WS 调试（第二批，modules/http_ws）── */
+
+export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS";
+
+/** HTTP 请求载荷 */
+export interface HttpRequestPayload {
+  method: HttpMethod;
+  url: string;
+  headers: [string, string][];
+  body?: string;
+  timeoutMs?: number;
+}
+
+/** HTTP 响应结果 */
+export interface HttpResponseResult {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  headers: [string, string][];
+  body: string;
+  bodySize: number;
+  durationMs: number;
+  error?: string;
+}
+
+/** WebSocket 连接请求 */
+export interface WsConnectPayload {
+  url: string;
+  headers?: [string, string][];
+}
+
+/** WS 消息（方向 + 内容 + 时间） */
+export interface WsMessage {
+  direction: "sent" | "received";
+  content: string;
+  time: number;
+}
+
+/** WS 会话快照 */
+export interface WsSession {
+  id: string;
+  url: string;
+  connectedAt: number;
+  open: boolean;
+  messages: WsMessage[];
+}
+
+/** WS 会话操作结果 */
+export interface WsActionResult {
+  ok: boolean;
+  message?: string;
+}
+
 // ── 命令清单（IPC 出入参的唯一出处）──
 
 export const commandNames = {
@@ -52,6 +105,12 @@ export const commandNames = {
   windowToggle: "window_toggle",
   windowHide: "window_hide",
   openExternal: "open_external",
+  httpRequest: "http_request",
+  wsConnect: "ws_connect",
+  wsSend: "ws_send",
+  wsRecv: "ws_recv",
+  wsClose: "ws_close",
+  wsSessions: "ws_sessions",
 } as const;
 
 /** 各命令入参（Record<string, never> = 无参命令） */
@@ -66,6 +125,12 @@ export type IpcPayloads = {
   window_toggle: Record<string, never>;
   window_hide: Record<string, never>;
   open_external: { url: string };
+  http_request: HttpRequestPayload;
+  ws_connect: WsConnectPayload;
+  ws_send: { id: string; message: string };
+  ws_recv: { id: string };
+  ws_close: { id: string };
+  ws_sessions: Record<string, never>;
 };
 
 /** 各命令返回 */
@@ -80,4 +145,10 @@ export type IpcResults = {
   window_toggle: WindowState;
   window_hide: void;
   open_external: void;
+  http_request: HttpResponseResult;
+  ws_connect: WsSession;
+  ws_send: WsActionResult;
+  ws_recv: WsSession;
+  ws_close: WsActionResult;
+  ws_sessions: WsSession[];
 };

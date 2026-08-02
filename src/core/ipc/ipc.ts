@@ -37,4 +37,10 @@ export const ipc = {
   windowToggle: () => call("window_toggle", {}),
   windowHide: () => call("window_hide", {}),
   openExternal: (url: string) => call("open_external", { url }),
+  httpRequest: (payload: import("./contracts").HttpRequestPayload) => call("http_request", payload),
+  wsConnect: (payload: import("./contracts").WsConnectPayload) => call("ws_connect", payload),
+  wsSend: (id: string, message: string) => call("ws_send", { id, message }),
+  wsRecv: (id: string) => call("ws_recv", { id }),
+  wsClose: (id: string) => call("ws_close", { id }),
+  wsSessions: () => call("ws_sessions", {}),
 };
