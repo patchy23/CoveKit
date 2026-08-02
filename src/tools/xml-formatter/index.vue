@@ -4,7 +4,7 @@
  */
 import { computed, ref } from "vue";
 import hljs from "highlight.js";
-import { formatXml, minifyXml, isValidXml } from "./useXml";
+import { formatXml, minifyXml } from "./useXml";
 import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
 import FoldableOutput from "@/tools/shared/FoldableOutput.vue";
 import { useCopy } from "@/tools/shared/useClipboard";
@@ -31,6 +31,9 @@ function format() {
   const r = formatXml(input.value);
   if (r.ok) {
     output.value = r.output ?? "";
+    if (r.loose) {
+      error.value = "宽松模式：命名空间或结构未通过严格校验，已按标签缩进格式化";
+    }
   } else {
     output.value = "";
     error.value = r.error ?? "格式化失败";
@@ -41,10 +44,6 @@ function minify() {
   error.value = "";
   const t = input.value.trim();
   if (!t) return;
-  if (!isValidXml(t)) {
-    error.value = "XML 解析失败";
-    return;
-  }
   output.value = minifyXml(t);
 }
 </script>

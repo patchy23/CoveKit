@@ -28,4 +28,32 @@ describe("useXml", () => {
     expect(isValidXml("<a><b/></a>")).toBe(true);
     expect(isValidXml("<a><b></a>")).toBe(false);
   });
+
+  it("CDATA 整体保留不破坏缩进", () => {
+    const r = formatXml(
+      '<taskResult>\n  <hunks>\n    <hunk>\n      <line type="add"><![CDATA[  <span class="badge">+新增</span>]]></line>\n    </hunk>\n  </hunks>\n</taskResult>'
+    );
+    expect(r.ok).toBe(true);
+    expect(r.output).toBe(
+      [
+        "<taskResult>",
+        "  <hunks>",
+        "    <hunk>",
+        '      <line type="add"><![CDATA[  <span class="badge">+新增</span>]]></line>',
+        "    </hunk>",
+        "  </hunks>",
+        "</taskResult>",
+      ].join("\n")
+    );
+  });
+
+  it("@url: 伪命名空间仍可格式化", () => {
+    const r = formatXml(
+      '<taskResult xmlns="@url:http://demo.hermes.agent/diff-task/v1">\n  <taskMeta taskId="t1"/>\n</taskResult>'
+    );
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("@url:http://demo.hermes.agent/diff-task/v1");
+    expect(r.output).toContain('  <taskMeta taskId="t1"/>');
+    expect(r.output).toContain("</taskResult>");
+  });
 });
