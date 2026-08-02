@@ -18,6 +18,8 @@ const session = ref<WsSession | null>(null);
 const connecting = ref(false);
 const error = ref("");
 
+const emit = defineEmits<{ (e: "save"): void }>();
+
 const connected = computed(() => session.value?.open === true);
 
 /* ── 接口草稿（index.vue 接口列表调用） ── */
@@ -139,6 +141,7 @@ onUnmounted(() => {
         {{ connecting ? "连接中…" : "连接" }}
       </button>
       <button v-else class="btn-secondary shrink-0" @click="disconnect">断开</button>
+      <button class="btn-secondary shrink-0" title="保存为接口" @click="emit('save')">保存</button>
       <span
         class="flex items-center gap-[6px] text-body-sm"
         :class="

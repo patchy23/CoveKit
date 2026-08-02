@@ -71,12 +71,12 @@ pub struct ApiRecord {
 }
 
 /// 保存接口：id 为 0 时新增，否则更新；返回记录 id
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 #[allow(clippy::too_many_arguments)] // Tauri 命令按字段平铺入参（与前端契约一一对应）
 pub fn api_save(
     state: State<'_, ApiState>,
     id: Option<i64>,
-    #[allow(unused)] kind: String,
+    kind: String,
     name: String,
     method: String,
     url: String,

@@ -181,7 +181,7 @@ export type IpcPayloads = {
   http_request: { payload: HttpRequestPayload };
   api_save: {
     id?: number;
-    type: "http" | "ws";
+    kind: "http" | "ws";
     name: string;
     method: string;
     url: string;

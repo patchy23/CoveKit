@@ -11,6 +11,9 @@ import HttpPanel from "./HttpPanel.vue";
 import WsPanel from "./WsPanel.vue";
 import ApiSidebar from "./ApiSidebar.vue";
 import type { ApiDraft } from "./useHttp";
+import { useUiStore } from "@/stores/ui";
+
+const ui = useUiStore();
 
 const tab = ref<"http" | "ws">("http");
 
@@ -107,10 +110,13 @@ function safeParse(json: string): never[] | { id: string; key: string; value: st
   }
 }
 
-/** 保存当前请求为接口 */
+/** 保存当前请求为接口（保存按钮在面板请求行，命名走对话框） */
 async function saveApi() {
   const draft = currentDraft();
-  if (!draft) return;
+  if (!draft) {
+    ui.toast("当前面板暂无可保存的内容");
+    return;
+  }
   const name =
     saveName.value.trim() ||
     (activeApiId.value ? apis.value.find((a) => a.id === activeApiId.value)?.name || "" : "");
@@ -121,7 +127,7 @@ async function saveApi() {
   try {
     const id = await ipc.apiSave({
       id: activeApiId.value ?? 0,
-      type: draft.type,
+      kind: draft.type,
       name,
       method: draft.method,
       url: draft.url.trim(),
@@ -133,9 +139,17 @@ async function saveApi() {
     activeApiId.value = id;
     saveNameOpen.value = false;
     await loadApis();
-  } catch {
-    /* 忽略 */
+    ui.toast(activeApiId.value ? `已更新接口「${name}」` : `已保存接口「${name}」`);
+  } catch (e) {
+    ui.toast("保存失败：" + (e instanceof Error ? e.message : String(e)));
   }
+}
+
+/** 保存摘要（对话框内显示） */
+function draftSummary(): string {
+  const d = currentDraft();
+  if (!d) return "";
+  return d.type === "ws" ? `WS  ${d.url}` : `${d.method}  ${d.url}`;
 }
 
 onMounted(loadApis);
@@ -167,26 +181,6 @@ onMounted(loadApis);
       >
         WebSocket
       </button>
-      <button
-        class="btn-secondary ml-auto shrink-0"
-        :title="activeApiId ? '更新当前接口' : '保存为接口'"
-        @click="saveApi"
-      >
-        保存
-      </button>
-    </div>
-
-    <!-- 命名输入（保存新接口） -->
-    <div v-if="saveNameOpen" class="flex shrink-0 items-center gap-[8px]">
-      <input
-        v-model="saveName"
-        class="field-input max-w-[320px] font-mono"
-        placeholder="接口名称，如：获取用户列表 / WS 推送通道"
-        spellcheck="false"
-        @keyup.enter="saveApi"
-      />
-      <button class="btn-primary" @click="saveApi">确定</button>
-      <button class="btn-ghost" @click="saveNameOpen = false">取消</button>
     </div>
 
     <!-- 左侧接口列表 + 右侧面板 -->
@@ -201,9 +195,43 @@ onMounted(loadApis);
       />
 
       <div class="min-h-0 flex-1">
-        <HttpPanel v-show="tab === 'http'" ref="httpPanel" class="h-full" />
-        <WsPanel v-show="tab === 'ws'" ref="wsPanel" class="h-full" />
+        <HttpPanel v-show="tab === 'http'" ref="httpPanel" class="h-full" @save="saveApi" />
+        <WsPanel v-show="tab === 'ws'" ref="wsPanel" class="h-full" @save="saveApi" />
       </div>
     </div>
+
+    <!-- 命名对话框（保存新接口 / 更新接口） -->
+    <Teleport to="body">
+      <div
+        v-if="saveNameOpen"
+        class="fixed inset-0 z-[150] grid place-items-center bg-black/30"
+        @click.self="saveNameOpen = false"
+      >
+        <div
+          class="w-[400px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
+        >
+          <h3 class="mb-[6px] text-body font-medium text-primary dark:text-primary-dark">
+            {{ activeApiId ? "更新接口" : "保存为接口" }}
+          </h3>
+          <p
+            class="mb-[12px] truncate font-mono text-body-sm text-text-muted dark:text-text-muted-dark"
+          >
+            {{ draftSummary() }}
+          </p>
+          <input
+            v-model="saveName"
+            class="field-input"
+            placeholder="接口名称，如：获取用户列表"
+            spellcheck="false"
+            autofocus
+            @keyup.enter="saveApi"
+          />
+          <div class="mt-[14px] flex justify-end gap-[8px]">
+            <button class="btn-ghost" @click="saveNameOpen = false">取消</button>
+            <button class="btn-primary" @click="saveApi">保存</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>

@@ -41,7 +41,7 @@ export const ipc = {
     call("http_request", { payload }),
   apiSave: (r: {
     id?: number;
-    type: "http" | "ws";
+    kind: "http" | "ws";
     name: string;
     method: string;
     url: string;

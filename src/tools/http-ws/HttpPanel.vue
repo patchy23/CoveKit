@@ -11,6 +11,8 @@ import HttpResponse from "./HttpResponse.vue";
 import type { ApiDraft, KvRow } from "./useHttp";
 import { isValidUrl, kvToHeaders, kvToQuery, mergeQuery, newKvId } from "./useHttp";
 
+const emit = defineEmits<{ (e: "save"): void }>();
+
 const method = ref<HttpMethod>("GET");
 const url = ref("https://httpbin.org/get");
 const timeoutMs = ref(15000);
@@ -108,6 +110,7 @@ async function send() {
       <button class="btn-primary shrink-0" :disabled="sending" @click="send">
         {{ sending ? "发送中…" : "发送" }}
       </button>
+      <button class="btn-secondary shrink-0" title="保存为接口" @click="emit('save')">保存</button>
       <select
         :value="timeoutMs"
         class="field-input !w-[110px] !px-[10px] !py-[8px]"
