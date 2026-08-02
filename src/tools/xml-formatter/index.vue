@@ -6,6 +6,7 @@ import { computed, ref } from "vue";
 import hljs from "highlight.js";
 import { formatXml, minifyXml, isValidXml } from "./useXml";
 import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
+import HighlightedOutput from "@/tools/shared/HighlightedOutput.vue";
 import { useCopy } from "@/tools/shared/useClipboard";
 
 const { copyText } = useCopy();
@@ -76,9 +77,7 @@ function minify() {
       </div>
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输出</label>
-        <pre
-          class="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
-        ><code v-if="highlighted" class="hljs" v-html="highlighted" /><span v-else class="text-text-muted dark:text-text-muted-dark">{{ output || "格式化结果将显示在这里" }}</span></pre>
+        <HighlightedOutput :text="output" :html="highlighted" />
       </div>
     </div>
   </div>
