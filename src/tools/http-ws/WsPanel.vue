@@ -6,11 +6,13 @@ import { computed, onUnmounted, ref } from "vue";
 import type { WsSession } from "@/core/ipc/contracts";
 import { ipc } from "@/core/ipc/ipc";
 import { useUiStore } from "@/stores/ui";
-import { isValidUrl } from "./useHttp";
+import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
+import { isValidUrl, parseHeaders } from "./useHttp";
 
 const ui = useUiStore();
 
 const url = ref("wss://echo.websocket.org");
+const headersText = ref("Authorization: Bearer YOUR_TOKEN");
 const message = ref("");
 const session = ref<WsSession | null>(null);
 const connecting = ref(false);
@@ -35,7 +37,10 @@ async function connect() {
   }
   connecting.value = true;
   try {
-    session.value = await ipc.wsConnect({ url: url.value.trim() });
+    session.value = await ipc.wsConnect({
+      url: url.value.trim(),
+      headers: parseHeaders(headersText.value),
+    });
     startPoll();
   } catch (e) {
     error.value = "连接失败：" + (e instanceof Error ? e.message : String(e));
@@ -137,6 +142,21 @@ onUnmounted(() => {
     <p v-if="error" class="text-body-sm text-tertiary-strong dark:text-tertiary-dark">
       {{ error }}
     </p>
+
+    <!-- 连接请求头（token 等；握手时随 Upgrade 请求发送） -->
+    <details
+      class="rounded-md border border-border px-[12px] py-[8px] dark:border-border-dark"
+      :open="!!headersText.trim()"
+    >
+      <summary
+        class="cursor-pointer text-body-sm font-medium text-secondary dark:text-secondary-dark"
+      >
+        请求头（握手时发送，如 Authorization: Bearer xxx）
+      </summary>
+      <div class="mt-[8px]">
+        <LineNumberTextarea v-model="headersText" min-height="64px" />
+      </div>
+    </details>
 
     <!-- 消息流 -->
     <div
