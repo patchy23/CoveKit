@@ -7,6 +7,7 @@
 import { computed, onUnmounted, ref } from "vue";
 import type { HttpMethod, HttpResponseResult, WsSession } from "@/core/ipc/contracts";
 import { ipc } from "@/core/ipc/ipc";
+import Select from "@/features/ui/Select.vue";
 import HttpRequestBuilder from "./HttpRequestBuilder.vue";
 import HttpResponse from "./HttpResponse.vue";
 import WsMessageArea from "./WsMessageArea.vue";
@@ -193,22 +194,14 @@ defineExpose({ getDraft, applyDraft });
   <div class="flex h-full min-h-0 w-full flex-col gap-[10px]">
     <!-- 请求行 -->
     <div class="flex shrink-0 items-center gap-[8px]">
-      <select
-        :value="method"
-        class="field-input !w-[112px] !px-[10px] !py-[8px] font-semibold"
-        :class="methodTextClass(method, isWs ? 'ws' : undefined)"
-        @change="method = ($event.target as HTMLSelectElement).value as Method"
-      >
-        <option
-          v-for="m in ALL_METHODS"
-          :key="m"
-          :value="m"
-          class="font-semibold"
-          :class="methodTextClass(m, m === 'WEBSOCKET' ? 'ws' : undefined)"
-        >
-          {{ m }}
-        </option>
-      </select>
+      <Select
+        v-model="method"
+        class="!w-[112px] shrink-0"
+        title="请求方法"
+        :options="ALL_METHODS.map((m) => ({ value: m, label: m }))"
+        :option-class="(v: string) => methodTextClass(v, v === 'WEBSOCKET' ? 'ws' : undefined)"
+        :value-class="(v: string) => methodTextClass(v, v === 'WEBSOCKET' ? 'ws' : undefined)"
+      />
       <input
         v-model="url"
         class="field-input min-w-0 flex-1 font-mono"
@@ -232,17 +225,18 @@ defineExpose({ getDraft, applyDraft });
         <button v-else class="btn-secondary shrink-0" @click="disconnectWs">断开</button>
       </template>
       <button class="btn-secondary shrink-0" title="保存为接口" @click="emit('save')">保存</button>
-      <select
+      <Select
         v-if="!isWs"
-        :value="timeoutMs"
-        class="field-input !w-[110px] !px-[10px] !py-[8px]"
+        :model-value="String(timeoutMs)"
+        class="!w-[110px] shrink-0"
         title="超时时间"
-        @change="timeoutMs = Number(($event.target as HTMLSelectElement).value)"
-      >
-        <option :value="5000">5s 超时</option>
-        <option :value="15000">15s 超时</option>
-        <option :value="60000">60s 超时</option>
-      </select>
+        :options="[
+          { value: '5000', label: '5s 超时' },
+          { value: '15000', label: '15s 超时' },
+          { value: '60000', label: '60s 超时' },
+        ]"
+        @update:model-value="timeoutMs = Number($event)"
+      />
       <span
         v-else
         class="flex shrink-0 items-center gap-[6px] text-body-sm"
