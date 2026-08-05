@@ -38,9 +38,8 @@ fn open_conn() -> Result<rusqlite::Connection, String> {
     )
     .map_err(|e| e.to_string())?;
     // 旧表（无 type 列）迁移
-    let _ = conn.execute_batch(
-        "ALTER TABLE api_list ADD COLUMN type TEXT NOT NULL DEFAULT 'http';",
-    );
+    let _ =
+        conn.execute_batch("ALTER TABLE api_list ADD COLUMN type TEXT NOT NULL DEFAULT 'http';");
     Ok(conn)
 }
 
@@ -101,7 +100,9 @@ pub fn api_save(
             c.execute(
                 "UPDATE api_list SET type=?1, name=?2, method=?3, url=?4, params=?5, headers=?6,
                  body_mode=?7, body=?8, updated_at=datetime('now', 'localtime') WHERE id=?9",
-                rusqlite::params![kind, name, method, url, params, headers, body_mode, body, existing],
+                rusqlite::params![
+                    kind, name, method, url, params, headers, body_mode, body, existing
+                ],
             )
             .map_err(|e| e.to_string())?;
             existing
@@ -154,6 +155,7 @@ pub fn api_delete(state: State<'_, ApiState>, id: i64) -> Result<(), String> {
 pub fn api_clear(state: State<'_, ApiState>) -> Result<(), String> {
     let mut guard = conn(&state)?;
     let c = guard.as_mut().unwrap();
-    c.execute("DELETE FROM api_list", []).map_err(|e| e.to_string())?;
+    c.execute("DELETE FROM api_list", [])
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
