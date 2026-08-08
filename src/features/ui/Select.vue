@@ -112,8 +112,12 @@ onBeforeUnmount(() => {
         v-for="opt in options"
         :key="opt.value"
         type="button"
-        class="flex w-full items-center px-[10px] py-[7px] text-left text-body font-medium transition-colors hover:bg-border dark:hover:bg-border-dark"
-        :class="[clsFor(opt.value), opt.value === modelValue ? 'font-semibold' : '']"
+        class="flex w-full items-center px-[10px] py-[7px] text-left font-medium transition-colors hover:bg-border dark:hover:bg-border-dark"
+        :class="[
+          props.size === 'sm' ? 'text-caption' : 'text-body',
+          clsFor(opt.value),
+          opt.value === modelValue ? 'font-semibold' : '',
+        ]"
         @click="select(opt.value)"
       >
         {{ opt.label ?? opt.value }}
