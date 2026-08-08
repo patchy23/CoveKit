@@ -178,7 +178,7 @@ onMounted(loadRecords);
       </label>
       <label class="flex min-w-[180px] flex-1 flex-col gap-[4px]">
         <span class="field-label text-body-sm">记录值</span>
-        <input v-model="formValue" class="field-input !px-[10px] !py-[7px] font-mono" placeholder="目标 IP / 域名" spellcheck="false" />
+        <input v-model="formValue" class="field-input !px-[10px] !py-[7px] font-mono placeholder:font-sans" placeholder="目标 IP / 域名" spellcheck="false" />
       </label>
       <label class="flex flex-col gap-[4px]">
         <span class="field-label text-body-sm">TTL</span>

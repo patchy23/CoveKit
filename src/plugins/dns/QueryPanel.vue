@@ -85,7 +85,7 @@ async function run() {
       <div class="flex flex-wrap items-center gap-[8px]">
         <input
           v-model="domain"
-          class="field-input min-w-[240px] flex-1 font-mono"
+          class="field-input min-w-[240px] flex-1 font-mono placeholder:font-sans"
           placeholder="域名，如 example.com"
           spellcheck="false"
           @keyup.enter="run"
@@ -133,7 +133,7 @@ async function run() {
 
         <input
           v-model="customServer"
-          class="field-input w-[160px] !px-[10px] !py-[7px] font-mono"
+          class="field-input w-[160px] !px-[10px] !py-[7px] font-mono placeholder:font-sans"
           placeholder="自定义 IP:端口"
           spellcheck="false"
           @keyup.enter="addCustom"
