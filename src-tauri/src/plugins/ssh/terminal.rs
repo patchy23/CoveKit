@@ -70,15 +70,7 @@ pub async fn ssh_terminal_open(
         .await
         .map_err(|e| format!("打开通道失败: {e}"))?;
     channel
-        .request_pty(
-            false,
-            "xterm",
-            cols,
-            rows,
-            0,
-            0,
-            &[(russh::Pty::TTY_OP_END, 0)],
-        )
+        .request_pty(false, "xterm", cols, rows, 0, 0, &[])
         .await
         .map_err(|e| format!("PTY 请求失败: {e}"))?;
     channel
