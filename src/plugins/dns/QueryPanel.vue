@@ -90,7 +90,7 @@ async function run() {
           spellcheck="false"
           @keyup.enter="run"
         />
-        <select v-model="rtype" class="field-select w-[110px]">
+        <select v-model="rtype" class="field-input w-[110px] !px-[10px] !py-[7px]">
           <option v-for="t in RECORD_TYPES" :key="t" :value="t">{{ t }}</option>
         </select>
         <button class="btn-primary shrink-0" :disabled="busy" @click="run">
@@ -133,7 +133,7 @@ async function run() {
 
         <input
           v-model="customServer"
-          class="field-input w-[160px] font-mono"
+          class="field-input w-[160px] !px-[10px] !py-[7px] font-mono"
           placeholder="自定义 IP:端口"
           spellcheck="false"
           @keyup.enter="addCustom"

@@ -161,28 +161,28 @@ onMounted(loadRecords);
       </button>
     </div>
 
-    <!-- 行内表单（新增/编辑共用） -->
+    <!-- 行内表单（新增/编辑共用；控件统一 field-input 压缩高度，与 HTTP 工具一致） -->
     <div
       v-if="formOpen"
-      class="flex shrink-0 flex-wrap items-end gap-[8px] rounded-md border border-tertiary/40 bg-tertiary-soft/30 p-[10px] dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30"
+      class="flex shrink-0 flex-wrap items-end gap-[10px] rounded-md border border-tertiary/40 bg-tertiary-soft/30 p-[10px] dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30"
     >
       <label class="flex flex-col gap-[4px]">
-        <span class="field-label">主机记录</span>
-        <input v-model="formRr" class="field-input w-[140px] font-mono" placeholder="@ / www" spellcheck="false" />
+        <span class="field-label text-body-sm">主机记录</span>
+        <input v-model="formRr" class="field-input w-[130px] !px-[10px] !py-[7px] font-mono" placeholder="@ / www" spellcheck="false" />
       </label>
       <label class="flex flex-col gap-[4px]">
-        <span class="field-label">类型</span>
-        <select v-model="formType" class="field-select w-[110px]">
+        <span class="field-label text-body-sm">类型</span>
+        <select v-model="formType" class="field-input w-[100px] !px-[10px] !py-[7px]">
           <option v-for="t in CLOUD_RECORD_TYPES" :key="t" :value="t">{{ t }}</option>
         </select>
       </label>
-      <label class="flex min-w-[200px] flex-1 flex-col gap-[4px]">
-        <span class="field-label">记录值</span>
-        <input v-model="formValue" class="field-input font-mono" placeholder="目标 IP / 域名" spellcheck="false" />
+      <label class="flex min-w-[180px] flex-1 flex-col gap-[4px]">
+        <span class="field-label text-body-sm">记录值</span>
+        <input v-model="formValue" class="field-input !px-[10px] !py-[7px] font-mono" placeholder="目标 IP / 域名" spellcheck="false" />
       </label>
       <label class="flex flex-col gap-[4px]">
-        <span class="field-label">TTL</span>
-        <select v-model.number="formTtl" class="field-select w-[110px]">
+        <span class="field-label text-body-sm">TTL</span>
+        <select v-model.number="formTtl" class="field-input w-[100px] !px-[10px] !py-[7px]">
           <option v-for="t in TTL_PRESETS" :key="t" :value="t">{{ t }}s</option>
           <option
             v-if="!TTL_PRESETS.includes(formTtl)"
@@ -191,19 +191,21 @@ onMounted(loadRecords);
         </select>
       </label>
       <div class="flex gap-[8px]">
-        <button class="btn-primary px-[12px] py-[6px] text-body-sm" :disabled="saving" @click="saveForm">
+        <button class="btn-primary px-[12px] py-[7px] text-body-sm" :disabled="saving" @click="saveForm">
           {{ saving ? "保存中…" : "保存" }}
         </button>
-        <button class="btn-ghost px-[12px] py-[6px] text-body-sm" @click="formOpen = null">取消</button>
+        <button class="btn-ghost px-[12px] py-[7px] text-body-sm" @click="formOpen = null">取消</button>
       </div>
     </div>
 
-    <!-- 记录表格 -->
-    <div class="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border bg-surface pr-[2px] dark:border-border-dark dark:bg-surface-dark">
+    <!-- 记录表格（主机记录列只显示 rr，域名在标题栏；线路/操作列不换行） -->
+    <div
+      class="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface pr-[2px] dark:border-border-dark dark:bg-surface-dark"
+    >
       <p v-if="!busy && records.length === 0" class="p-[14px] text-body-sm text-text-muted dark:text-text-muted-dark">
         暂无解析记录，点击「添加记录」创建。
       </p>
-      <table v-else class="w-full border-collapse">
+      <table v-else class="w-full min-w-[520px] border-collapse">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark">
             <th class="py-[8px] pl-[12px] pr-[12px] font-medium">主机记录</th>
@@ -220,18 +222,18 @@ onMounted(loadRecords);
             :key="r.recordId"
             class="border-b border-border/60 last:border-b-0 dark:border-border-dark/60"
           >
-            <td class="py-[7px] pl-[12px] pr-[12px] text-secondary dark:text-secondary-dark">
-              {{ r.rr === "@" ? "@" : r.rr }}.{{ domain.domainName }}
+            <td class="whitespace-nowrap py-[7px] pl-[12px] pr-[12px] text-secondary dark:text-secondary-dark">
+              {{ r.rr === "@" ? "@" : r.rr }}
             </td>
             <td class="py-[7px] pr-[12px]">
-              <span class="rounded px-[6px] py-[1px] font-medium" :class="recordTypeBadgeClass(r.recordType)">
+              <span class="rounded px-[6px] py-[1px] whitespace-nowrap font-medium" :class="recordTypeBadgeClass(r.recordType)">
                 {{ r.recordType }}
               </span>
             </td>
-            <td class="py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark">{{ r.ttl }}</td>
+            <td class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark">{{ r.ttl }}</td>
             <td class="break-all py-[7px] pr-[12px] text-secondary dark:text-secondary-dark">{{ r.value }}</td>
-            <td class="py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark">{{ r.line }}</td>
-            <td class="py-[7px] pr-[12px] text-right">
+            <td class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark">{{ r.line }}</td>
+            <td class="whitespace-nowrap py-[7px] pr-[12px] text-right">
               <button class="mr-[6px] rounded px-[8px] py-[3px] text-body-sm text-info-strong transition-colors hover:bg-info-soft dark:text-info-dark dark:hover:bg-info-soft-dark" @click="openEdit(r)">
                 编辑
               </button>
