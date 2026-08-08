@@ -1,6 +1,6 @@
 //! DNS 插件 · 门面
 //! 能力一：DNS 查询（query.rs，hickory-resolver，支持指定服务器/多服务器对比）
-//! 能力二：云解析管理（alidns.rs 阿里云 / dnspod.rs DNSPod）
+//! 能力二：云解析管理（alidns.rs 阿里云 / dnspod.rs 腾讯云 DNSPod API 3.0）
 //! 配置：dns.db（PluginDb 统一骨架）存两平台密钥（M3 stronghold 加密升级，当前明文）
 
 mod alidns;
@@ -155,7 +155,7 @@ pub async fn dns_domains(
     let cfg = load_config(&app, &state)?;
     match platform.as_str() {
         models::PLATFORM_ALIYUN => alidns::AliyunDns::new(&cfg.aliyun)?.get_domains().await,
-        models::PLATFORM_DNSPOD => dnspod::DnsPod::new(&cfg.dnspod)?.get_domains().await,
+        models::PLATFORM_DNSPOD => dnspod::TencentDns::new(&cfg.dnspod)?.get_domains().await,
         _ => Err(format!("不支持的平台: {platform}")),
     }
 }
@@ -178,7 +178,7 @@ pub async fn dns_records(
                 .await
         }
         models::PLATFORM_DNSPOD => {
-            dnspod::DnsPod::new(&cfg.dnspod)?
+            dnspod::TencentDns::new(&cfg.dnspod)?
                 .get_records(&domain, page.max(1), size.clamp(1, 200))
                 .await
         }
@@ -210,7 +210,7 @@ pub async fn dns_add_record(
                 .await
         }
         models::PLATFORM_DNSPOD => {
-            dnspod::DnsPod::new(&cfg.dnspod)?
+            dnspod::TencentDns::new(&cfg.dnspod)?
                 .add_record(
                     &payload.domain,
                     payload.rr.trim(),
@@ -246,7 +246,7 @@ pub async fn dns_update_record(
                 .await
         }
         models::PLATFORM_DNSPOD => {
-            dnspod::DnsPod::new(&cfg.dnspod)?
+            dnspod::TencentDns::new(&cfg.dnspod)?
                 .update_record(
                     &payload.domain,
                     &payload.record_id,
@@ -278,7 +278,7 @@ pub async fn dns_delete_record(
                 .await
         }
         models::PLATFORM_DNSPOD => {
-            dnspod::DnsPod::new(&cfg.dnspod)?
+            dnspod::TencentDns::new(&cfg.dnspod)?
                 .delete_record(&domain, &record_id)
                 .await
         }

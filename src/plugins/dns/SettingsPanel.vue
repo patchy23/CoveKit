@@ -79,27 +79,29 @@ onMounted(load);
         </div>
       </section>
 
-      <!-- DNSPod -->
+      <!-- 腾讯云 DNSPod -->
       <section
         class="rounded-lg border border-border bg-surface p-[16px] dark:border-border-dark dark:bg-surface-dark"
       >
-        <h3 class="mb-[4px] text-body font-medium text-primary dark:text-primary-dark">DNSPod</h3>
+        <h3 class="mb-[4px] text-body font-medium text-primary dark:text-primary-dark">
+          腾讯云 DNSPod
+        </h3>
         <p class="mb-[12px] text-body-sm text-text-muted dark:text-text-muted-dark">
-          DNSPod 云解析的 API Token（ID + Token）。创建入口：
+          腾讯云 DNSPod 云解析（API 3.0）的 CAM 密钥（SecretId + SecretKey）。创建入口：
           <a
             class="text-info-strong underline dark:text-info-dark"
-            href="https://console.dnspod.cn/account/token"
+            href="https://console.cloud.tencent.com/cam/capi"
             target="_blank"
             rel="noreferrer"
-          >DNSPod 控制台</a>
+          >腾讯云访问管理</a>
         </p>
         <div class="flex flex-col gap-[10px]">
           <label class="flex flex-col gap-[4px]">
-            <span class="field-label">Token ID</span>
-            <input v-model="dnspod.id" class="field-input font-mono" placeholder="12345" spellcheck="false" />
+            <span class="field-label">SecretId</span>
+            <input v-model="dnspod.id" class="field-input font-mono" placeholder="AKID…" spellcheck="false" />
           </label>
           <label class="flex flex-col gap-[4px]">
-            <span class="field-label">Token</span>
+            <span class="field-label">SecretKey</span>
             <input v-model="dnspod.key" class="field-input font-mono" type="password" placeholder="••••••••" spellcheck="false" />
           </label>
         </div>
