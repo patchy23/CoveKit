@@ -4,9 +4,10 @@
  * 列表项仅显示状态点 + 名称（防误触删除）；右键菜单控制连接/断开、编辑、删除；
  * 删除操作由父组件弹确认框（emit deleteRequest）。
  */
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, ref } from "vue";
 import type { ServerProfile, ServerConnection } from "./contracts";
 import { statusDotClass, statusText } from "./useSsh";
+import ContextMenu, { type ContextMenuItem } from "@/core/ui/ContextMenu.vue";
 
 const props = defineProps<{
   profiles: ServerProfile[];
@@ -51,28 +52,24 @@ const menuStatus = computed(() => {
   return connOf(menu.value.profile.id)?.status ?? "disconnected";
 });
 
-function menuConnectOrDisconnect() {
-  if (!menu.value) return;
+/** 组装菜单项（依据连接状态动态显示 连接/断开） */
+const menuItems = computed(() => {
+  if (!menu.value) return [] as ContextMenuItem[];
   const id = menu.value.profile.id;
-  if (menuStatus.value === "connected") emit("disconnect", id);
-  else emit("connect", id);
-  closeMenu();
-}
-
-function menuEdit() {
-  if (!menu.value) return;
-  emit("edit", menu.value.profile);
-  closeMenu();
-}
-
-function menuDelete() {
-  if (!menu.value) return;
-  emit("deleteRequest", menu.value.profile);
-  closeMenu();
-}
-
-onMounted(() => document.addEventListener("mousedown", closeMenu));
-onUnmounted(() => document.removeEventListener("mousedown", closeMenu));
+  const connected = menuStatus.value === "connected";
+  return [
+    {
+      label: connected ? "断开连接" : "连接",
+      onClick: () => {
+        if (connected) emit("disconnect", id);
+        else emit("connect", id);
+      },
+    },
+    { label: "编辑", onClick: () => emit("edit", menu.value!.profile) },
+    { separator: true },
+    { label: "删除", danger: true, onClick: () => emit("deleteRequest", menu.value!.profile) },
+  ] as ContextMenuItem[];
+});
 </script>
 
 <template>
@@ -131,34 +128,13 @@ onUnmounted(() => document.removeEventListener("mousedown", closeMenu));
       </p>
     </div>
 
-    <!-- 右键菜单（Teleport 到 body，点外部/滚动关闭） -->
-    <Teleport to="body">
-      <div
-        v-if="menu"
-        class="fixed z-[200] w-[150px] overflow-hidden rounded-md border border-border bg-surface py-[4px] shadow-[0_8px_24px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
-        :style="{ left: `${menu.x}px`, top: `${menu.y}px` }"
-        @mousedown.stop
-      >
-        <button
-          class="flex w-full items-center px-[12px] py-[7px] text-body text-primary transition-colors hover:bg-surface-muted dark:text-primary-dark dark:hover:bg-surface-muted-dark"
-          @click="menuConnectOrDisconnect"
-        >
-          {{ menuStatus === "connected" ? "断开连接" : "连接" }}
-        </button>
-        <button
-          class="flex w-full items-center px-[12px] py-[7px] text-body text-primary transition-colors hover:bg-surface-muted dark:text-primary-dark dark:hover:bg-surface-muted-dark"
-          @click="menuEdit"
-        >
-          编辑
-        </button>
-        <div class="my-[4px] border-t border-border dark:border-border-dark" />
-        <button
-          class="flex w-full items-center px-[12px] py-[7px] text-body text-danger-strong transition-colors hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark"
-          @click="menuDelete"
-        >
-          删除
-        </button>
-      </div>
-    </Teleport>
+    <!-- 右键菜单（公共组件，点外部/菜单项自动关闭） -->
+    <ContextMenu
+      v-if="menu"
+      :x="menu.x"
+      :y="menu.y"
+      :items="menuItems"
+      @close="closeMenu"
+    />
   </div>
 </template>
