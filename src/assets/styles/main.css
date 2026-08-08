@@ -177,17 +177,17 @@
 @layer components {
   /* 主按钮：tertiary-strong 底白字（小号白字必须 tertiary-strong，WCAG AA） */
   .btn-primary {
-    @apply flex h-[38px] items-center gap-[7px] rounded-md bg-tertiary-strong px-[18px] text-body font-medium text-on-tertiary transition-[filter] duration-150 hover:brightness-110 dark:bg-tertiary-dark dark:text-on-tertiary-dark;
+    @apply flex h-[36px] items-center gap-[7px] rounded-md bg-tertiary-strong px-[14px] text-body font-medium text-on-tertiary transition-[filter] duration-150 hover:brightness-110 dark:bg-tertiary-dark dark:text-on-tertiary-dark;
   }
 
   /* 次按钮：白底 + 描边 */
   .btn-secondary {
-    @apply flex h-[38px] items-center gap-[7px] rounded-md border border-border-strong bg-surface px-[18px] text-body font-medium text-primary transition-colors duration-150 hover:bg-surface-muted dark:border-border-strong-dark dark:bg-surface-dark dark:text-primary-dark dark:hover:bg-surface-muted-dark;
+    @apply flex h-[36px] items-center gap-[7px] rounded-md border border-border-strong bg-surface px-[14px] text-body font-medium text-primary transition-colors duration-150 hover:bg-surface-muted dark:border-border-strong-dark dark:bg-surface-dark dark:text-primary-dark dark:hover:bg-surface-muted-dark;
   }
 
   /* 幽灵按钮：无边框文字按钮（复制 / 清空 / 链接动作） */
   .btn-ghost {
-    @apply rounded-md px-[10px] py-[4px] text-body-sm font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark;
+    @apply rounded-md px-[10px] py-[3px] text-body-sm font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark;
   }
 
   /* 输入框标题（字段 label） */
@@ -195,9 +195,9 @@
     @apply block text-body font-medium text-secondary dark:text-secondary-dark;
   }
 
-  /* 输入框 / 文本域（等宽字体按需追加 font-mono） */
+  /* 输入框 / 文本域（等宽字体按需追加 font-mono；高度基线 36px 与按钮对齐） */
   .field-input {
-    @apply w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] text-body text-primary outline-none transition-colors placeholder:text-text-muted focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-tertiary-dark;
+    @apply w-full rounded-md border border-border-strong bg-surface-muted px-[10px] py-[7px] text-body text-primary outline-none transition-colors placeholder:text-text-muted focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-tertiary-dark;
   }
 
   /* 工具内固定工具栏：内容区滚动时始终可见（抵消内容区 px-md/py-md 内边距） */
@@ -205,7 +205,7 @@
     @apply sticky top-0 z-10 -mx-[14px] flex flex-wrap items-center gap-[10px] border-b border-border bg-surface px-[14px] py-[12px] shadow-[0_2px_10px_rgba(16,24,40,0.06)] dark:border-border-dark dark:bg-surface-dark;
   }
   .field-textarea {
-    @apply w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark;
+    @apply w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[9px] text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark;
   }
 }
 
