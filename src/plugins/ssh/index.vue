@@ -186,22 +186,6 @@ const activeTab = computed(() => tabs.find((t) => t.id === activeTabId.value) ??
               · {{ activeConnection.latencyMs }}ms
             </template>
           </span>
-          <div class="ml-auto flex gap-[6px]">
-            <button
-              v-if="activeConnection?.status === 'connected'"
-              class="btn-ghost text-body-sm"
-              @click="disconnect(activeProfileId)"
-            >
-              断开
-            </button>
-            <button
-              v-else
-              class="btn-primary !h-[30px] !px-[12px] text-body-sm"
-              @click="connect(activeProfileId)"
-            >
-              连接
-            </button>
-          </div>
         </div>
 
         <!-- 子页签条 -->
