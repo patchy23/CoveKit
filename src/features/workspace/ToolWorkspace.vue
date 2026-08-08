@@ -178,7 +178,7 @@ onUnmounted(() => {
     </div>
 
     <!-- 内容区 -->
-    <div class="min-h-0 flex-1 overflow-y-auto px-xl py-lg">
+    <div class="min-h-0 flex-1 overflow-y-auto px-xl py-md">
       <!-- 首页：工具库 -->
       <div v-show="ui.activeTab === null">
         <RecentStrip />
