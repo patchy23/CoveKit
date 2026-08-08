@@ -156,7 +156,7 @@ onUnmounted(() => document.removeEventListener("mousedown", closeMenu));
           class="flex w-full items-center px-[12px] py-[7px] text-body text-danger-strong transition-colors hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark"
           @click="menuDelete"
         >
-          删除连接信息
+          删除
         </button>
       </div>
     </Teleport>
