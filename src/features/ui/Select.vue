@@ -106,7 +106,7 @@ onBeforeUnmount(() => {
     <!-- 下拉面板 -->
     <div
       v-if="open"
-      class="absolute left-0 top-full z-50 mt-[4px] max-h-[280px] w-full min-w-[140px] overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+      class="absolute left-0 top-full z-50 mt-[4px] max-h-[280px] w-full overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
     >
       <button
         v-for="opt in options"
