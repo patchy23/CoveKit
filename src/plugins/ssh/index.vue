@@ -259,10 +259,10 @@ const activeTab = computed(() => tabs.find((t) => t.id === activeTabId.value) ??
           class="w-[380px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
         >
           <h3 class="mb-[8px] text-card-title font-medium text-primary dark:text-primary-dark">
-            删除服务器
+            删除服务器连接信息
           </h3>
           <p class="mb-[16px] text-body text-secondary dark:text-secondary-dark">
-            确定删除「{{ deleteTarget.name }}」（{{ deleteTarget.host }}）？此操作不可撤销。
+            确定删除「{{ deleteTarget.name }}」（{{ deleteTarget.host }}）的连接信息？此操作不可撤销。
           </p>
           <div class="flex justify-end gap-[8px]">
             <button class="btn-ghost" @click="deleteTarget = null">取消</button>
