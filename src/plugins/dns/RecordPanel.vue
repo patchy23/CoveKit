@@ -216,22 +216,22 @@ onMounted(loadRecords);
             <th class="py-[8px] pr-[12px] text-right font-medium">操作</th>
           </tr>
         </thead>
-        <tbody class="font-mono text-body-sm">
+        <tbody class="text-body-sm">
           <tr
             v-for="r in records"
             :key="r.recordId"
             class="border-b border-border/60 last:border-b-0 dark:border-border-dark/60"
           >
-            <td class="whitespace-nowrap py-[7px] pl-[12px] pr-[12px] text-secondary dark:text-secondary-dark">
+            <td class="whitespace-nowrap py-[7px] pl-[12px] pr-[12px] font-mono text-secondary dark:text-secondary-dark">
               {{ r.rr === "@" ? "@" : r.rr }}
             </td>
-            <td class="py-[7px] pr-[12px]">
+            <td class="py-[7px] pr-[12px] font-mono">
               <span class="rounded px-[6px] py-[1px] whitespace-nowrap font-medium" :class="recordTypeBadgeClass(r.recordType)">
                 {{ r.recordType }}
               </span>
             </td>
-            <td class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark">{{ r.ttl }}</td>
-            <td class="break-all py-[7px] pr-[12px] text-secondary dark:text-secondary-dark">{{ r.value }}</td>
+            <td class="whitespace-nowrap py-[7px] pr-[12px] font-mono text-text-muted dark:text-text-muted-dark">{{ r.ttl }}</td>
+            <td class="break-all py-[7px] pr-[12px] font-mono text-secondary dark:text-secondary-dark">{{ r.value }}</td>
             <td class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark">{{ r.line }}</td>
             <td class="whitespace-nowrap py-[7px] pr-[12px] text-right">
               <button class="mr-[6px] rounded px-[8px] py-[3px] text-body-sm text-info-strong transition-colors hover:bg-info-soft dark:text-info-dark dark:hover:bg-info-soft-dark" @click="openEdit(r)">
