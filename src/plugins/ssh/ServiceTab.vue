@@ -2,9 +2,10 @@
 /**
  * ServiceTab · systemd 服务管理子页签（当前为假数据演示）
  */
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { ServerConnection, ServerProfile, SystemdService } from "./contracts";
 import { useUiStore } from "@/stores/ui";
+import Select from "@/features/ui/Select.vue";
 
 defineProps<{
   connection?: ServerConnection;
@@ -23,15 +24,11 @@ const mockServices: SystemdService[] = [
   { name: "ssh.service", description: "OpenSSH Server", loadState: "loaded", activeState: "active", subState: "running", enabled: true },
 ];
 
-const filtered = ref([...mockServices]);
-
-function applyFilter() {
-  if (filter.value === "all") {
-    filtered.value = [...mockServices];
-  } else {
-    filtered.value = mockServices.filter((s) => s.activeState === filter.value);
-  }
-}
+/** 按状态筛选后的服务列表（computed 自动响应 filter 变化） */
+const filtered = computed(() => {
+  if (filter.value === "all") return mockServices;
+  return mockServices.filter((s) => s.activeState === filter.value);
+});
 
 function action(svc: SystemdService, act: "start" | "stop" | "restart") {
   ui.toast(`${act === "start" ? "启动" : act === "stop" ? "停止" : "重启"} ${svc.name}（待后端 IPC 接入）`);
@@ -62,18 +59,26 @@ function stateText(s: SystemdService): string {
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
         {{ profile?.name ?? "未连接" }} · 服务管理
       </span>
-      <select
-        v-model="filter"
-        class="field-input !h-[28px] !w-[110px] !py-[4px] text-caption"
-        @change="applyFilter"
-      >
-        <option value="all">全部</option>
-        <option value="active">运行中</option>
-        <option value="inactive">已停止</option>
-        <option value="failed">失败</option>
-      </select>
+      <Select
+        :model-value="filter"
+        size="sm"
+        class="!w-[110px] shrink-0"
+        title="按状态筛选"
+        :options="[
+          { value: 'all', label: '全部' },
+          { value: 'active', label: '运行中' },
+          { value: 'inactive', label: '已停止' },
+          { value: 'failed', label: '失败' },
+        ]"
+        @update:model-value="filter = $event as 'all' | 'active' | 'inactive' | 'failed'"
+      />
       <div class="ml-auto">
-        <button class="btn-ghost !px-[8px] !py-[3px] text-caption" @click="applyFilter">刷新</button>
+        <button
+          class="btn-ghost !px-[8px] !py-[3px] text-caption"
+          @click="filter = 'all'"
+        >
+          刷新
+        </button>
       </div>
     </div>
 

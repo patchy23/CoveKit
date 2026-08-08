@@ -6,6 +6,7 @@ import { computed, ref } from "vue";
 import type { ServerConnection, ServerProfile, ProcessInfo } from "./contracts";
 import { formatBytes } from "./useSsh";
 import { useUiStore } from "@/stores/ui";
+import Select from "@/features/ui/Select.vue";
 
 defineProps<{
   connection?: ServerConnection;
@@ -62,11 +63,18 @@ function kill(pid: number, force = false) {
         class="field-input !h-[28px] !w-[180px] !py-[4px] text-caption"
         placeholder="搜索进程/PID/用户"
       />
-      <select v-model="sortBy" class="field-input !h-[28px] !w-[100px] !py-[4px] text-caption">
-        <option value="cpu">按 CPU</option>
-        <option value="memory">按内存</option>
-        <option value="pid">按 PID</option>
-      </select>
+      <Select
+        :model-value="sortBy"
+        size="sm"
+        class="!w-[100px] shrink-0"
+        title="排序方式"
+        :options="[
+          { value: 'cpu', label: '按 CPU' },
+          { value: 'memory', label: '按内存' },
+          { value: 'pid', label: '按 PID' },
+        ]"
+        @update:model-value="sortBy = $event as 'cpu' | 'memory' | 'pid'"
+      />
       <div class="ml-auto">
         <button class="btn-ghost !px-[8px] !py-[3px] text-caption">刷新</button>
       </div>

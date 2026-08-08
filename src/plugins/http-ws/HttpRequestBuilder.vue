@@ -6,6 +6,7 @@ import { ref } from "vue";
 import type { KvRow } from "./useHttp";
 import { newKvId } from "./useHttp";
 import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
+import Select from "@/features/ui/Select.vue";
 
 const props = defineProps<{
   params: KvRow[];
@@ -194,20 +195,17 @@ const tabClass = (active: boolean) =>
 
     <!-- Body：模式选择 + 内容 -->
     <div v-if="!props.headersOnly && tab === 'body'" class="flex flex-col gap-[8px]">
-      <select
-        class="field-input !w-[180px] !px-[10px] !py-[7px]"
-        :value="props.bodyMode"
-        @change="
-          emit(
-            'update:bodyMode',
-            ($event.target as HTMLSelectElement).value as 'none' | 'json' | 'text'
-          )
-        "
-      >
-        <option value="none">none（无请求体）</option>
-        <option value="json">raw · JSON</option>
-        <option value="text">raw · 文本</option>
-      </select>
+      <Select
+        :model-value="props.bodyMode"
+        class="!w-[180px] shrink-0"
+        title="请求体模式"
+        :options="[
+          { value: 'none', label: 'none（无请求体）' },
+          { value: 'json', label: 'raw · JSON' },
+          { value: 'text', label: 'raw · 文本' },
+        ]"
+        @update:model-value="emit('update:bodyMode', $event as 'none' | 'json' | 'text')"
+      />
       <LineNumberTextarea
         v-if="props.bodyMode !== 'none'"
         :model-value="props.body"

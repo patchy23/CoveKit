@@ -7,6 +7,7 @@ import { computed, ref } from "vue";
 import { ipc } from "./ipc";
 import { useUiStore } from "@/stores/ui";
 import type { ServerQueryResult } from "./contracts";
+import Select from "@/features/ui/Select.vue";
 import {
   DNS_SERVERS,
   RECORD_TYPES,
@@ -90,9 +91,12 @@ async function run() {
           spellcheck="false"
           @keyup.enter="run"
         />
-        <select v-model="rtype" class="field-input w-[110px] !px-[10px] !py-[7px]">
-          <option v-for="t in RECORD_TYPES" :key="t" :value="t">{{ t }}</option>
-        </select>
+        <Select
+          v-model="rtype"
+          class="!w-[110px] shrink-0"
+          title="记录类型"
+          :options="RECORD_TYPES.map((t) => ({ value: t, label: t }))"
+        />
         <button class="btn-primary shrink-0" :disabled="busy" @click="run">
           {{ busy ? "查询中…" : "查询" }}
         </button>

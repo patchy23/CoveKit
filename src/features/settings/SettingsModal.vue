@@ -8,6 +8,7 @@ import { getTools } from "@/core/registry/toolRegistry";
 import type { SettingsField } from "@/core/registry/types";
 import BaseModal from "@/features/ui/BaseModal.vue";
 import AppIcon from "@/features/ui/AppIcon.vue";
+import Select from "@/features/ui/Select.vue";
 import { useSettingsStore } from "@/stores/settings";
 import { useUiStore } from "@/stores/ui";
 
@@ -58,36 +59,26 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
         <div class="mt-sm grid grid-cols-2 gap-sm">
           <label class="field-label flex flex-col gap-[6px]">
             主题
-            <select
-              class="field-input"
-              :value="settings.settings.theme"
-              @change="
-                settings.set(
-                  'theme',
-                  ($event.target as HTMLSelectElement).value as 'light' | 'dark' | 'system'
-                )
-              "
-            >
-              <option value="system">跟随系统</option>
-              <option value="light">浅色</option>
-              <option value="dark">深色</option>
-            </select>
+            <Select
+              :model-value="settings.settings.theme"
+              :options="[
+                { value: 'system', label: '跟随系统' },
+                { value: 'light', label: '浅色' },
+                { value: 'dark', label: '深色' },
+              ]"
+              @update:model-value="settings.set('theme', $event as 'light' | 'dark' | 'system')"
+            />
           </label>
           <label class="field-label flex flex-col gap-[6px]">
             语言
-            <select
-              class="field-input"
-              :value="settings.settings.language"
-              @change="
-                settings.set(
-                  'language',
-                  ($event.target as HTMLSelectElement).value as 'zh-CN' | 'en-US'
-                )
-              "
-            >
-              <option value="zh-CN">简体中文</option>
-              <option value="en-US" disabled>English（M4）</option>
-            </select>
+            <Select
+              :model-value="settings.settings.language"
+              :options="[
+                { value: 'zh-CN', label: '简体中文' },
+                { value: 'en-US', label: 'English（M4）' },
+              ]"
+              @update:model-value="settings.set('language', $event as 'zh-CN' | 'en-US')"
+            />
           </label>
         </div>
       </section>
@@ -98,17 +89,17 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
         <div class="mt-sm flex flex-col gap-sm">
           <label class="field-label flex flex-col gap-[6px]">
             全局唤起快捷键
-            <select
-              class="field-input"
-              :value="settings.settings.globalHotkey"
-              @change="settings.set('globalHotkey', ($event.target as HTMLSelectElement).value)"
-            >
-              <option value="Ctrl+Shift+Space">Ctrl + Shift + Space</option>
-              <option value="Alt+Space">Alt + Space</option>
-              <option value="Ctrl+Alt+Space">Ctrl + Alt + Space</option>
-              <option value="Ctrl+Shift+`">Ctrl + Shift + `</option>
-              <option value="Ctrl+Shift+O">Ctrl + Shift + O</option>
-            </select>
+            <Select
+              :model-value="settings.settings.globalHotkey"
+              :options="[
+                { value: 'Ctrl+Shift+Space', label: 'Ctrl + Shift + Space' },
+                { value: 'Alt+Space', label: 'Alt + Space' },
+                { value: 'Ctrl+Alt+Space', label: 'Ctrl + Alt + Space' },
+                { value: 'Ctrl+Shift+`', label: 'Ctrl + Shift + `' },
+                { value: 'Ctrl+Shift+O', label: 'Ctrl + Shift + O' },
+              ]"
+              @update:model-value="settings.set('globalHotkey', $event)"
+            />
             <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
               保存后立即生效；被系统占用时自动降级并提示
             </span>
@@ -144,16 +135,12 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             class="field-label flex flex-col gap-[6px]"
           >
             {{ field.label }}
-            <select
+            <Select
               v-if="field.type === 'select'"
-              class="field-input"
-              :value="String(fieldValue(field, t.id))"
-              @change="onFieldChange(field, t.id, ($event.target as HTMLSelectElement).value)"
-            >
-              <option v-for="opt in field.options" :key="opt.value" :value="opt.value">
-                {{ opt.label }}
-              </option>
-            </select>
+              :model-value="String(fieldValue(field, t.id))"
+              :options="field.options ?? []"
+              @update:model-value="onFieldChange(field, t.id, $event)"
+            />
             <input
               v-else-if="field.type === 'toggle'"
               type="checkbox"

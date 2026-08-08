@@ -6,6 +6,7 @@
 import { computed, ref } from "vue";
 import type { ServerConnection, ServerProfile, DockerContainer } from "./contracts";
 import { useUiStore } from "@/stores/ui";
+import Select from "@/features/ui/Select.vue";
 
 defineProps<{
   connection?: ServerConnection;
@@ -74,11 +75,18 @@ function stateClass(s: string): string {
         class="field-input !h-[28px] !w-[180px] !py-[4px] text-caption"
         placeholder="搜索名称/ID/镜像"
       />
-      <select v-model="statusFilter" class="field-input !h-[28px] !w-[100px] !py-[4px] text-caption">
-        <option value="all">全部</option>
-        <option value="running">运行中</option>
-        <option value="exited">已停止</option>
-      </select>
+      <Select
+        :model-value="statusFilter"
+        size="sm"
+        class="!w-[100px] shrink-0"
+        title="按状态筛选"
+        :options="[
+          { value: 'all', label: '全部' },
+          { value: 'running', label: '运行中' },
+          { value: 'exited', label: '已停止' },
+        ]"
+        @update:model-value="statusFilter = $event as 'all' | 'running' | 'exited'"
+      />
       <div class="ml-auto">
         <button class="btn-ghost !px-[8px] !py-[3px] text-caption">刷新</button>
       </div>

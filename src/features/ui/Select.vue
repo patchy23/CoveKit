@@ -18,6 +18,8 @@ const props = withDefaults(
     options: SelectOption[];
     title?: string;
     disabled?: boolean;
+    /** 尺寸：md=标准（36px，与 field-input 对齐）；sm=紧凑（28px，页签工具栏筛选） */
+    size?: "md" | "sm";
     /** 下拉选项文字色（按值） */
     // eslint-disable-next-line vue/require-default-prop -- 函数类型可选，模板已空值安全
     optionClass?: (value: string) => string;
@@ -25,7 +27,7 @@ const props = withDefaults(
     // eslint-disable-next-line vue/require-default-prop -- 函数类型可选，模板已空值安全
     valueClass?: (value: string) => string;
   }>(),
-  { title: "", disabled: false }
+  { title: "", disabled: false, size: "md" }
 );
 
 const emit = defineEmits<{ (e: "update:modelValue", v: string): void }>();
@@ -70,11 +72,15 @@ onBeforeUnmount(() => {
 
 <template>
   <div ref="triggerEl" class="relative select-none">
-    <!-- 触发按钮（field-input 同款外观） -->
+    <!-- 触发按钮（field-input 同款外观；sm 尺寸用于页签工具栏筛选） -->
     <button
       type="button"
-      class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] py-[8px] text-body font-semibold transition-colors hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark"
-      :class="[clsFor(modelValue), open ? 'border-tertiary dark:border-tertiary-dark' : '']"
+      class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] transition-colors hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark"
+      :class="[
+        props.size === 'sm' ? 'h-[28px] text-caption' : 'py-[8px] text-body font-semibold',
+        clsFor(modelValue),
+        open ? 'border-tertiary dark:border-tertiary-dark' : '',
+      ]"
       :title="title"
       :disabled="disabled"
       @click="toggle"

@@ -5,6 +5,7 @@
  */
 import { reactive, watch } from "vue";
 import type { ServerProfile, AuthMethod } from "./contracts";
+import Select from "@/features/ui/Select.vue";
 
 const props = defineProps<{
   profile: ServerProfile | null;
@@ -107,11 +108,15 @@ function submit() {
 
           <div>
             <label class="field-label mb-[4px]">认证方式</label>
-            <select v-model="form.authMethod" class="field-input">
-              <option value="password">密码</option>
-              <option value="privateKey">私钥</option>
-              <option value="privateKeyWithPassphrase">私钥 + Passphrase</option>
-            </select>
+            <Select
+              :model-value="form.authMethod"
+              :options="[
+                { value: 'password', label: '密码' },
+                { value: 'privateKey', label: '私钥' },
+                { value: 'privateKeyWithPassphrase', label: '私钥 + Passphrase' },
+              ]"
+              @update:model-value="form.authMethod = $event as AuthMethod"
+            />
           </div>
 
           <div v-if="form.authMethod === 'password'">

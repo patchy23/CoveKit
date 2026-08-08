@@ -8,6 +8,7 @@ import { ipc } from "./ipc";
 import { useUiStore } from "@/stores/ui";
 import type { CloudDomain, CloudRecord } from "./contracts";
 import { CLOUD_RECORD_TYPES, TTL_PRESETS, recordTypeBadgeClass } from "./useDns";
+import Select from "@/features/ui/Select.vue";
 
 const props = defineProps<{
   platform: "aliyun" | "dnspod";
@@ -172,9 +173,12 @@ onMounted(loadRecords);
       </label>
       <label class="flex flex-col gap-[4px]">
         <span class="field-label text-body-sm">类型</span>
-        <select v-model="formType" class="field-input w-[100px] !px-[10px] !py-[7px]">
-          <option v-for="t in CLOUD_RECORD_TYPES" :key="t" :value="t">{{ t }}</option>
-        </select>
+        <Select
+          :model-value="formType"
+          class="!w-[100px]"
+          :options="CLOUD_RECORD_TYPES.map((t) => ({ value: t, label: t }))"
+          @update:model-value="formType = $event"
+        />
       </label>
       <label class="flex min-w-[180px] flex-1 flex-col gap-[4px]">
         <span class="field-label text-body-sm">记录值</span>
@@ -182,13 +186,12 @@ onMounted(loadRecords);
       </label>
       <label class="flex flex-col gap-[4px]">
         <span class="field-label text-body-sm">TTL</span>
-        <select v-model.number="formTtl" class="field-input w-[100px] !px-[10px] !py-[7px]">
-          <option v-for="t in TTL_PRESETS" :key="t" :value="t">{{ t }}s</option>
-          <option
-            v-if="!TTL_PRESETS.includes(formTtl)"
-            :value="formTtl"
-          >{{ formTtl }}s</option>
-        </select>
+        <Select
+          :model-value="String(formTtl)"
+          class="!w-[100px]"
+          :options="TTL_PRESETS.map((t) => ({ value: String(t), label: `${t}s` }))"
+          @update:model-value="formTtl = Number($event)"
+        />
       </label>
       <div class="flex gap-[8px]">
         <button class="btn-primary px-[12px] py-[7px] text-body-sm" :disabled="saving" @click="saveForm">
