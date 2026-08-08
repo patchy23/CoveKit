@@ -12,6 +12,15 @@ pub use ws::WsState;
 
 /// 插件注册：命令 + WS 会话 State（惰性初始化）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    crate::framework::ipc_registry::register(&[
+        ("http_request", "发送 HTTP 请求"),
+        ("ws_connect", "建立 WebSocket 连接（支持自定义请求头）"),
+        ("ws_send", "发送 WS 消息"),
+        ("ws_recv", "拉取会话快照"),
+        ("ws_close", "关闭 WS 会话"),
+        ("ws_sessions", "全部 WS 会话"),
+    ])
+    .expect("IPC 命令重复注册");
     builder
         .invoke_handler(tauri::generate_handler![
             http::http_request,

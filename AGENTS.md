@@ -26,6 +26,8 @@
 
 - **插件模式（2026-08-08 起，前后端同构）**：前端 `src/plugins/<id>/`（manifest 自注册 + 私有 contracts.ts/ipc.ts + 组件，插件间禁止互相 import）；公共能力走 `src/core/ui/`（组件）与 `src/core/ipc/`（框架命令 + invokeCommand 基础设施）；**Rust 侧 `src-tauri/src/plugins/<id>.rs`**（命令 + State 由 `register(builder)` 自注册，启动初始化走 `init(app)`），lib.rs 仅 register/init 各一行链式装配，插件清单见 `plugins/mod.rs`
 - **Rust 插件内部结构**：单文件 ≤200 行保持 `<id>.rs`；复杂插件（>200 行或多实现变体）拆目录：`<id>/mod.rs`（门面：命令薄层 + register/init，**generate_handler 用完整路径 `http::http_request`**）、`models.rs`（serde 结构）、能力子模块（如 http.rs/ws.rs）；多厂商/方言用 trait + 子模块（DB 三方言、DNS 三厂商，第二批骨架）
+- **IPC 接口入库**（`framework/ipc_registry.rs`）：插件 register() 登记命令（名称+中文说明），启动校验全局唯一（重复即 panic）；框架命令 `framework_commands` 可查全量清单
+- **数据库管理规则**（`framework/store.rs`）：插件数据文件统一 `app_data_dir/<plugin>.db`（`plugin_db_path`）；表结构走 `PRAGMA user_version` 顺序迁移（`migrate`，只追加）；本地库 rusqlite / 连接型 sqlx（三方言 M3）
 - **工具注册表**（`src/core/registry/`）：工具目录自注册，新增工具 = 建目录 + 注册一行，框架零改动
 - **presentation 双载体**：`workspace`（**多页签工作区，2026-08-02 用户决策：第一批起全部工具以子页面打开**，实现见 `src/features/workspace/ToolWorkspace.vue`）/ `modal`（轻量弹窗，备用载体）
 - **Rust 插件化**：`src-tauri/src/plugins/`（与前端 plugins 同名同边界；settings/clipboard/color 基础，http_ws/api/db/hosts 业务；后续 dns/ssh/secrets 同目录），Adapter 模式（Provider trait）是第二批骨架
@@ -39,6 +41,7 @@
 | `DESIGN.md`                                        | 设计 tokens：28 色 / 18 组件变体，已过 `designmd lint`（0 错误） |
 | `docs/01-tech-stack.md`                            | 技术选型 + 第二批技术预备评估                                    |
 | `docs/02-architecture.md`                          | 两批次详细设计：架构 / 注册表 / IPC / 安全 / 路线图 M0–M4        |
+| `docs/03-plugin-development.md`                    | **插件开发规则 v1（2026-08-08）：IPC 接口入库 / 数据库管理 / 复杂工具架构 / 质量门槛 / 新增插件 Check-list** |
 | `sketches/002-clean-light/`                        | 已采纳方向的**可交互原型**，开发验收视觉参照                     |
 | `sketches/001-command-dark/` `003-glass-launcher/` | 未采纳方向，留档勿删                                             |
 

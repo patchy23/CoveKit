@@ -1,4 +1,8 @@
 //! 框架层：窗口控制命令 + 外链打开（托盘/快捷键/前端共用）
+//! + IPC 接口入库（ipc_registry）+ 插件数据管理（store）
+
+pub mod ipc_registry;
+pub mod store;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, WebviewWindow};

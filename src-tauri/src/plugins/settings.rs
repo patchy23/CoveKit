@@ -74,6 +74,11 @@ pub fn settings_set(app: AppHandle, key: String, value: Value) -> Result<(), Str
 
 /// 插件注册：命令 + State（惰性初始化）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    crate::framework::ipc_registry::register(&[
+        ("settings_get", "读取应用设置（可指定 key）"),
+        ("settings_set", "写入应用设置"),
+    ])
+    .expect("IPC 命令重复注册");
     builder
         .invoke_handler(tauri::generate_handler![settings_get, settings_set])
         .manage(HotkeyState(std::sync::Mutex::new(None)))

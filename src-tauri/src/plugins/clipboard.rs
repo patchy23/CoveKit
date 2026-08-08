@@ -161,6 +161,13 @@ pub fn clipboard_toggle_pin(state: State<ClipboardDb>, id: String) -> Result<(),
 
 /// 插件注册：命令
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    crate::framework::ipc_registry::register(&[
+        ("clipboard_list", "剪贴板历史列表"),
+        ("clipboard_delete", "删除历史记录"),
+        ("clipboard_clear", "清空历史"),
+        ("clipboard_toggle_pin", "置顶/取消置顶"),
+    ])
+    .expect("IPC 命令重复注册");
     builder.invoke_handler(tauri::generate_handler![
         clipboard_list,
         clipboard_delete,

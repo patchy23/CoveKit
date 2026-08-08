@@ -51,6 +51,7 @@ pub fn run() {
             framework::window_toggle,
             framework::window_hide,
             framework::open_external,
+            framework::ipc_registry::framework_commands,
         ]);
 
     // ── 业务插件装配（每个插件一行，互不影响）──

@@ -180,5 +180,10 @@ fn finish_save() -> Result<HostsResult, String> {
 
 /// 插件注册：命令
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    crate::framework::ipc_registry::register(&[
+        ("hosts_read", "读取 hosts 文件"),
+        ("hosts_save", "备份并写入 hosts（平台提权）"),
+    ])
+    .expect("IPC 命令重复注册");
     builder.invoke_handler(tauri::generate_handler![hosts_read, hosts_save])
 }

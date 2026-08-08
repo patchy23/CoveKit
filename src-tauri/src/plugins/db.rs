@@ -216,6 +216,14 @@ pub async fn db_query_table(
 
 /// 插件注册：命令 + 数据库连接 State（惰性初始化）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    crate::framework::ipc_registry::register(&[
+        ("db_open", "打开数据库（路径不存在自动创建）"),
+        ("db_close", "关闭数据库"),
+        ("db_tables", "表列表"),
+        ("db_execute", "执行 SQL（查询/非查询自动识别）"),
+        ("db_query_table", "浏览表数据"),
+    ])
+    .expect("IPC 命令重复注册");
     builder
         .invoke_handler(tauri::generate_handler![
             db_open,

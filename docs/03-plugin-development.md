@@ -1,0 +1,132 @@
+# patchyBox · 插件开发规则（v1 · 2026-08-08）
+
+> 本文件是大规模开发前的**规则体系**：几十上百个工具将按此规则开发，避免后期重构。
+> 与 `01-tech-stack.md`、`02-architecture.md` 并列；规则冲突时以本文为准并回改前两文。
+
+## 0. 总则（铁律）
+
+1. **插件自包含**：前端插件目录 `src/plugins/<id>/` 与 Rust 插件 `src-tauri/src/plugins/<id>` 一一对应（同名同边界），插件间**禁止互相 import / 互相调用**。
+2. **只增不改**：已发布插件对框架与其它插件零依赖变更；框架升级不允许破坏既有插件。
+3. **公共能力下沉框架**：组件走 `src/core/ui/`，IPC 基础设施走 `src/core/ipc/`，数据层走 `src-tauri/src/framework/`；插件不得重复造轮子（如各自实现 toast、各自建数据库）。
+4. **接口入库**：所有 Tauri 命令必须在启动时登记到 IPC 注册表（见 §2），重复注册直接报错。
+
+## 1. 目录与命名规范
+
+```
+前端  src/plugins/<id>/                 Rust  src-tauri/src/plugins/<id>/
+├── index.ts      注册 manifest          ├── mod.rs   门面（命令薄层 + register/init）
+├── index.vue     主组件（≤300 行）       ├── models.rs serde 结构（与前端 contracts.ts 同步）
+├── contracts.ts  本插件 IPC 契约        ├── <能力>.rs 按能力拆分（如 http.rs / ws.rs）
+├── ipc.ts        命令封装（invokeCommand）
+├── useXxx.ts     纯函数（必须带单测）
+└── 子组件 / 测试
+```
+
+- `id`：小写连字符（`http-ws`、`random-password`）；Rust 模块名 snake_case（`http_ws`）。
+- 命令名：snake_case（`db_open`）；前端封装名 camelCase（`dbOpen`）。
+- 字段：serde 统一 `camelCase`；错误结构统一 `{ ok: false, error: Option<String> }`（不抛错给前端展示）。
+- **复杂度分级**：单文件 ≤200 行保持 `<id>.rs`；>200 行或多实现变体拆目录（mod.rs 门面 + models.rs + 能力子模块）；多厂商/方言用 trait + 子模块。
+
+## 2. IPC 接口入库规则（tauri 接口入库）
+
+每个插件在 `register()` 中登记命令清单：
+
+```rust
+pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    ipc_registry::register(&[
+        ("db_open", "打开数据库（路径不存在自动创建）"),
+        ("db_execute", "执行 SQL（查询/非查询自动识别）"),
+    ]);
+    builder
+        .invoke_handler(tauri::generate_handler![db::db_open, db::db_execute])
+        .manage(...)
+}
+```
+
+规则：
+- **命令名全局唯一**：启动时 `ipc_registry` 检测重复，重复即 panic（开发期暴露，杜绝两个插件抢命令名）。
+- **入库元数据**：`(名称, 中文说明)` 是入库最小单位；说明必须写清用途与关键参数。
+- **可查询**：框架命令 `framework_commands` 返回全量清单（名称 + 说明），供前端调试面板/文档生成。
+- **契约同步**：前端 `contracts.ts` 与 Rust serde 结构逐字段对应；`rename_all = "camelCase"` 是默认，禁止手写不一致。
+- **入参校验**：命令内自行校验（URL 格式、SQL 白名单等），失败返回 `Err(String)` 或 `ok:false` 结构，禁止 panic。
+
+## 3. 数据库操作管理规则
+
+### 3.1 文件与路径约定
+
+- 插件数据文件统一存放：`%APPDATA%/com.patchy23.patchybox/<plugin-id>.db`（macOS `~/Library/Application Support/...`）。
+- 路径获取走框架助手 `framework::store::plugin_db_path(app, "api")`，禁止插件手拼路径。
+- 每个插件**一个数据文件**；跨插件共享数据必须经框架（当前不允许，后续需要时新增框架 API）。
+
+### 3.2 引擎选择
+
+| 场景 | 引擎 | 说明 |
+|---|---|---|
+| 本地键值/记录（接口列表、剪贴板历史、设置） | **rusqlite（bundled）** | 同步简单，框架 store 助手管理 |
+| 连接型数据库调试（SQLite/MySQL/PG） | **sqlx 0.8** | 三方言统一，`DbDialect` trait 按方言实现（M3） |
+| 复杂全文检索 | rusqlite FTS5 | 同 rusqlite |
+
+### 3.3 迁移规则
+
+- 表结构变更用 `PRAGMA user_version` 版本号 + 顺序迁移数组：
+
+```rust
+pub fn migrate(conn: &Connection, migrations: &[&str]) -> Result<(), String> {
+    let cur: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap_or(0);
+    for (i, sql) in migrations.iter().enumerate().skip(cur as usize) {
+        conn.execute_batch(sql)?;
+        conn.execute_batch(&format!("PRAGMA user_version = {}", i + 1))?;
+    }
+    Ok(())
+}
+```
+
+- **只允许追加迁移**，禁止修改已发布迁移；结构变更 = 追加一条。
+- 新建表必须走迁移数组（第 0 版），不允许散落 `CREATE TABLE IF NOT EXISTS` 于业务代码。
+
+### 3.4 连接生命周期
+
+- 连接用 `Mutex<Option<Connection>>` 惰性初始化（State 注入），命令内**锁内同步执行**，禁止跨 await 持锁。
+- 连接型（sqlx Pool）生命周期归 db 插件管理（open/close 命令），其它插件不得直接持有。
+
+## 4. 工具架构设计（复杂工具模板）
+
+复杂工具（SSH、DNS、DB、云端服务）统一分层：
+
+```
+前端（Postman 式参考）：
+  主组件（容器：状态中枢 + 布局）     ≤300 行
+  ├── 侧栏/列表组件（数据集合管理）   接收数据 + emit 操作
+  ├── 编辑面板（表单/请求构建）       受控组件（props + emit）
+  ├── 结果查看组件（响应/日志）       纯展示
+  useXxx.ts：纯函数 + 状态机（连接生命周期/消息队列） 必须单测
+
+Rust：
+  mod.rs     命令薄层（参数校验 → 调服务层）+ register/init
+  models.rs  serde 结构
+  <能力>.rs  服务层：会话注册表（State）、后台任务、适配器
+  多实现变体：trait + 子模块（如 db/dialect.rs + sqlite.rs/mysql.rs/postgres.rs）
+```
+
+以 SSH 工具为例（M3 预留形状）：
+- 会话：`SshState(Mutex<HashMap<String, SshSessionHandle>>)`（与 http_ws 的 WsState 同构）
+- 命令：`ssh_connect / ssh_exec / ssh_sftp_* / ssh_close / ssh_sessions`
+- 凭据：不落明文，引用 `ConnectionProfile.secretRef`（stronghold，M3）
+- 前端：连接列表侧栏 + 终端/命令面板（复用 Select/CodeViewer 等 core/ui）
+
+## 5. 质量门槛（合入红线）
+
+1. `pnpm lint --max-warnings 0` + `pnpm test` + `pnpm build` 全绿；Rust `clippy -D warnings` + `fmt --check` + `cargo test` 全绿。
+2. 纯函数必须单测（`useXxx.test.ts`）；契约字段变更必须同步更新测试。
+3. 组件 ≤300 行；逻辑抽 `useXxx.ts`。
+4. 所有用户操作必须有可见反馈（toast/错误行），禁止静默 catch。
+5. 提交信息：conventional commits 带插件作用域（`fix(http-ws): ...`；框架用 `core`）。
+
+## 6. 新增插件 Check-list
+
+- [ ] 前端 `src/plugins/<id>/`：manifest + contracts.ts + ipc.ts + index.vue + useXxx.ts + 测试
+- [ ] Rust `src-tauri/src/plugins/<id>.rs`：命令 + register（含 ipc_registry 入库）+ 需要时 init
+- [ ] `plugins/mod.rs` 一行 + `lib.rs` register/init 各一行 + 前端 `plugins/index.ts` 一行
+- [ ] 数据文件走 `framework::store`；表结构走迁移数组
+- [ ] 命令在 `ipc_registry` 登记；契约 camelCase 同步
+- [ ] 全量验证（§5）通过后提交（conventional commits + 插件作用域）

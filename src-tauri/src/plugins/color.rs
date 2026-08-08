@@ -54,5 +54,7 @@ pub fn color_pick_screen() -> Result<PickColor, String> {
 
 /// 插件注册：命令
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    crate::framework::ipc_registry::register(&[("color_pick_screen", "屏幕取色（鼠标所在像素）")])
+        .expect("IPC 命令重复注册");
     builder.invoke_handler(tauri::generate_handler![color_pick_screen])
 }
