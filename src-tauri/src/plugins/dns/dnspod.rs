@@ -87,7 +87,15 @@ impl DnsPod {
             .map_err(|e| format!("响应解析失败({status}): {e} — 响应内容: {}", preview(&text)))?;
 
         // dnsapi.cn 统一 status 结构：code != 1 即业务错误
-        let code = json["status"]["code"].as_i64().unwrap_or(-1);
+        // 注意：code 是字符串（如 "1"/"10003"），需兼容字符串解析，否则成功响应会误判为失败
+        let code = json["status"]["code"]
+            .as_i64()
+            .or_else(|| {
+                json["status"]["code"]
+                    .as_str()
+                    .and_then(|s| s.parse::<i64>().ok())
+            })
+            .unwrap_or(-1);
         if code != 1 {
             let msg = json["status"]["message"].as_str().unwrap_or("未知错误");
             return Err(format!("DNSPod 错误({code}): {msg}"));
@@ -244,8 +252,8 @@ mod tests {
         .unwrap();
         let err = pod.get_domains().await.unwrap_err();
         assert!(
-            err.contains("DNSPod 错误"),
-            "应返回业务错误而非解码错误: {err}"
+            err.contains("DNSPod 错误(10003)"),
+            "应显示具体业务错误码而非 -1: {err}"
         );
     }
 }

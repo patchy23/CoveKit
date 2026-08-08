@@ -79,13 +79,13 @@ onMounted(load);
         </div>
       </section>
 
-      <!-- 腾讯云 -->
+      <!-- DNSPod -->
       <section
         class="rounded-lg border border-border bg-surface p-[16px] dark:border-border-dark dark:bg-surface-dark"
       >
-        <h3 class="mb-[4px] text-body font-medium text-primary dark:text-primary-dark">腾讯云</h3>
+        <h3 class="mb-[4px] text-body font-medium text-primary dark:text-primary-dark">DNSPod</h3>
         <p class="mb-[12px] text-body-sm text-text-muted dark:text-text-muted-dark">
-          腾讯云 DNSPod 云解析的 API Token（ID + Token）。创建入口：
+          DNSPod 云解析的 API Token（ID + Token）。创建入口：
           <a
             class="text-info-strong underline dark:text-info-dark"
             href="https://console.dnspod.cn/account/token"
