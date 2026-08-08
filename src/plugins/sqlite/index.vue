@@ -3,10 +3,10 @@
  * SQLite 数据库 · 打开连接 + 表浏览 + SQL 执行 + 结果表格
  */
 import { computed, ref } from "vue";
-import type { DbQueryResult } from "@/core/ipc/contracts";
-import { ipc } from "@/core/ipc/ipc";
+import type { DbQueryResult } from "./contracts";
+import { ipc } from "./ipc";
 import { useUiStore } from "@/stores/ui";
-import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
+import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
 import { describeResult, displayCell, fileName } from "./useSqlite";
 
 const ui = useUiStore();

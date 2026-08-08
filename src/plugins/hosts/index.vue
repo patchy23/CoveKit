@@ -3,9 +3,9 @@
  * hosts 修改 · 读取/编辑/校验/保存（UAC 提权 + 自动备份）
  */
 import { computed, onMounted, ref } from "vue";
-import { ipc } from "@/core/ipc/ipc";
+import { ipc } from "./ipc";
 import { useUiStore } from "@/stores/ui";
-import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
+import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
 import HostsList from "./HostsList.vue";
 import { countErrors, countMappings, parseHostsLines } from "./useHosts";
 

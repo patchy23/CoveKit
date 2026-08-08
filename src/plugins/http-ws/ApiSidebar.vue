@@ -2,7 +2,7 @@
 /**
  * ApiSidebar · 接口列表侧栏（Postman Collections 式：保存的接口随时切换）
  */
-import type { ApiRecord } from "@/core/ipc/contracts";
+import type { ApiRecord } from "./contracts";
 import { formatRelativeTime, methodBadgeClass } from "./useHttp";
 
 defineProps<{

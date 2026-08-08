@@ -1,7 +1,7 @@
 /**
  * HTTP/WS 调试 · 纯函数（请求构建/headers 解析/格式化）
  */
-import type { HttpMethod } from "@/core/ipc/contracts";
+import type { HttpMethod } from "./contracts";
 
 export const METHODS: HttpMethod[] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 

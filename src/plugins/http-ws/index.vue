@@ -4,8 +4,8 @@
  * 方法下拉含 WS 同级（HttpPanel 内动态渲染），接口列表 HTTP/WS 共用（SQLite 持久化）。
  */
 import { onMounted, ref } from "vue";
-import type { ApiRecord } from "@/core/ipc/contracts";
-import { ipc } from "@/core/ipc/ipc";
+import type { ApiRecord } from "./contracts";
+import { ipc } from "./ipc";
 import HttpPanel from "./HttpPanel.vue";
 import ApiSidebar from "./ApiSidebar.vue";
 import type { ApiDraft } from "./useHttp";

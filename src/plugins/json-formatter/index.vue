@@ -5,9 +5,9 @@
  */
 import { ref } from "vue";
 import { formatJson, minifyJson } from "./useFormat";
-import { useCopy } from "@/tools/shared/useClipboard";
-import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
-import CodeViewer from "@/tools/shared/CodeViewer.vue";
+import { useCopy } from "@/core/ui/useClipboard";
+import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
+import CodeViewer from "@/core/ui/CodeViewer.vue";
 import { useSettingsStore } from "@/stores/settings";
 
 const settings = useSettingsStore();

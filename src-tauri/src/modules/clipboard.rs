@@ -158,3 +158,13 @@ pub fn clipboard_toggle_pin(state: State<ClipboardDb>, id: String) -> Result<(),
     .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+/// 插件注册：命令（State 由 lib.rs setup 经 init_db 初始化）
+pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder.invoke_handler(tauri::generate_handler![
+        clipboard_list,
+        clipboard_delete,
+        clipboard_clear,
+        clipboard_toggle_pin
+    ])
+}

@@ -317,3 +317,19 @@ pub async fn ws_sessions(state: State<'_, WsState>) -> Result<Vec<WsSession>, St
     let map = state.0.lock().map_err(|e| e.to_string())?;
     Ok(map.keys().filter_map(|k| snapshot(&map, k)).collect())
 }
+
+/// 插件注册：命令 + WS 会话 State（惰性初始化）
+pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder
+        .invoke_handler(tauri::generate_handler![
+            http_request,
+            ws_connect,
+            ws_send,
+            ws_recv,
+            ws_close,
+            ws_sessions
+        ])
+        .manage(WsState(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )))
+}

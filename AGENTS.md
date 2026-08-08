@@ -24,10 +24,11 @@
 
 ## 架构核心（详见 docs/02-architecture.md）
 
+- **插件模式（2026-08-08 起）**：前端 `src/plugins/<id>/`（manifest 自注册 + 私有 contracts.ts/ipc.ts + 组件，插件间禁止互相 import）；公共能力走 `src/core/ui/`（组件）与 `src/core/ipc/`（框架命令 + invokeCommand 基础设施）；Rust 侧每模块 `register(builder)` 自注册命令与 State，lib.rs 仅一行链式装配
 - **工具注册表**（`src/core/registry/`）：工具目录自注册，新增工具 = 建目录 + 注册一行，框架零改动
 - **presentation 双载体**：`workspace`（**多页签工作区，2026-08-02 用户决策：第一批起全部工具以子页面打开**，实现见 `src/features/workspace/ToolWorkspace.vue`）/ `modal`（轻量弹窗，备用载体）
 - **Rust 模块化**：`src-tauri/modules/` 按第二批形状划分（settings/clipboard/color 第一批；http_ws/db/hosts/dns/ssh/secrets 第二批），Adapter 模式（Provider trait）是第二批骨架
-- **IPC 契约唯一事实源**：`src/core/ipc/contracts.ts`（与 Rust serde 同步；命令清单见 02-architecture §5）
+- **IPC 契约插件化**：框架契约 `src/core/ipc/contracts.ts`（窗口/设置/剪贴板/取色）；插件契约在各自 `src/plugins/<id>/contracts.ts`（与 Rust serde 同步，互不影响）
 - **工具级设置**：manifest 声明 `settingsSchema`，框架自动渲染设置表单并存 `settings.tools[id]`
 
 ## 文档地图
@@ -50,7 +51,7 @@
 
 **可读性**：组件 < 300 行；逻辑抽纯函数（`tools/<id>/useXxx.ts`）；IPC 出入参只在 contracts.ts 出现一次；ESLint 9 + Prettier + rustfmt + `clippy -D warnings` 全绿才合入。
 **字体规范**：字号一律用语义 token（`text-h1/text-brand/text-card-title/text-h2/text-body/text-body-sm/text-caption/text-label-caps/text-display`，定义在 `src/assets/styles/main.css` @theme），禁止 arbitrary `text-[*px]`；字体族用 `--font-sans`（Inter Variable 本地打包）/ `--font-mono`（等宽）。
-**可扩展性**：新增工具 = 注册一行；新增 Rust 命令 = 模块 + 装配处注册一行；新增厂商/数据库 = adapter；升级第二批时第一批代码只增不改。
+**可扩展性**：新增工具 = `src/plugins/<id>/` 目录（manifest + 私有契约/封装）+ `plugins/index.ts` 一行；新增 Rust 命令 = 模块内 `register()` 一行；新增厂商/数据库 = adapter；升级第二批时第一批代码只增不改。
 
 ## 开放问题（默认值已定，开工前可与用户确认）
 

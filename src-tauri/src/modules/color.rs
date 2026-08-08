@@ -51,3 +51,8 @@ pub fn color_pick_screen() -> Result<PickColor, String> {
         Err("屏幕取色暂仅支持 Windows".into())
     }
 }
+
+/// 插件注册：命令
+pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder.invoke_handler(tauri::generate_handler![color_pick_screen])
+}

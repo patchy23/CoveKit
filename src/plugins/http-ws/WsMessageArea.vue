@@ -3,7 +3,7 @@
  * WsMessageArea · WebSocket 消息收发区（消息流 + 输入行）
  */
 import { nextTick, ref, watch } from "vue";
-import type { WsSession } from "@/core/ipc/contracts";
+import type { WsSession } from "./contracts";
 
 const props = defineProps<{
   session: WsSession | null;

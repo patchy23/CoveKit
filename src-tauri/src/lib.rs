@@ -1,6 +1,7 @@
 // patchyBox 桌面工具箱 · Rust 侧框架装配入口
-// 模块化边界按第二批形状划分（架构 §4.3）：
-// 新增命令 = modules/ 下新模块 + 下方 generate_handler 注册一行，框架零改动。
+// 插件模式：业务模块各自 register(builder)（命令 + State 自注册），
+// 新增插件 = modules/ 下新模块 + 下方 register 链一行，框架与既有插件零改动。
+// 框架级命令（窗口/外链）与启动初始化（剪贴板库/快捷键）留在本文件。
 
 mod framework;
 mod modules;
@@ -15,7 +16,7 @@ use tauri_plugin_single_instance::init as single_instance_init;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_sql::Builder::default().build())
@@ -47,34 +48,21 @@ pub fn run() {
                 .build(),
         )
         .invoke_handler(tauri::generate_handler![
-            modules::settings::settings_get,
-            modules::settings::settings_set,
-            modules::clipboard::clipboard_list,
-            modules::clipboard::clipboard_delete,
-            modules::clipboard::clipboard_clear,
-            modules::clipboard::clipboard_toggle_pin,
-            modules::color::color_pick_screen,
-            modules::http_ws::http_request,
-            modules::http_ws::ws_connect,
-            modules::http_ws::ws_send,
-            modules::http_ws::ws_recv,
-            modules::http_ws::ws_close,
-            modules::http_ws::ws_sessions,
-            modules::db::db_open,
-            modules::db::db_close,
-            modules::db::db_tables,
-            modules::db::db_execute,
-            modules::db::db_query_table,
-            modules::api::api_save,
-            modules::api::api_list,
-            modules::api::api_delete,
-            modules::api::api_clear,
-            modules::hosts::hosts_read,
-            modules::hosts::hosts_save,
             framework::window_toggle,
             framework::window_hide,
             framework::open_external,
-        ])
+        ]);
+
+    // ── 业务插件装配（每个插件一行，互不影响）──
+    let builder = modules::settings::register(builder);
+    let builder = modules::clipboard::register(builder);
+    let builder = modules::color::register(builder);
+    let builder = modules::http_ws::register(builder);
+    let builder = modules::api::register(builder);
+    let builder = modules::db::register(builder);
+    let builder = modules::hosts::register(builder);
+
+    builder
         // 关窗行为：最小化到托盘（开放问题默认值）
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
@@ -90,19 +78,7 @@ pub fn run() {
             app.manage(db);
             modules::clipboard::start_watcher(app.handle().clone());
 
-            // WebSocket 会话注册表（HTTP/WS 调试工具）
-            app.manage(modules::http_ws::WsState(std::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )));
-
-            // 接口列表（SQLite 持久化）
-            app.manage(modules::api::ApiState(std::sync::Mutex::new(None)));
-
-            // 数据库连接（SQLite 调试工具）
-            app.manage(modules::db::DbState(std::sync::Mutex::new(None)));
-
             // 全局快捷键：读取设置 settings.globalHotkey 注册（占用时降级，不阻断启动）
-            app.manage(modules::settings::HotkeyState(std::sync::Mutex::new(None)));
             let hotkey = match tauri_plugin_store::StoreExt::store(app, "settings.json") {
                 Ok(s) => s
                     .get("app")

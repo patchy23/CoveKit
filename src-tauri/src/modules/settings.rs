@@ -71,3 +71,10 @@ pub fn settings_set(app: AppHandle, key: String, value: Value) -> Result<(), Str
     }
     Ok(())
 }
+
+/// 插件注册：命令 + State（lib.rs 链式一行装配，插件互不影响）
+pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder
+        .invoke_handler(tauri::generate_handler![settings_get, settings_set])
+        .manage(HotkeyState(std::sync::Mutex::new(None)))
+}

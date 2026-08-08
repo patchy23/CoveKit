@@ -4,7 +4,7 @@
  */
 import { computed, ref } from "vue";
 import hljs from "highlight.js";
-import type { HttpResponseResult } from "@/core/ipc/contracts";
+import type { HttpResponseResult } from "./contracts";
 import { formatBytes, formatHeaders, looksLikeJson } from "./useHttp";
 
 const props = defineProps<{

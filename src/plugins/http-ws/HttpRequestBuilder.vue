@@ -5,7 +5,7 @@
 import { ref } from "vue";
 import type { KvRow } from "./useHttp";
 import { newKvId } from "./useHttp";
-import LineNumberTextarea from "@/tools/shared/LineNumberTextarea.vue";
+import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
 
 const props = defineProps<{
   params: KvRow[];

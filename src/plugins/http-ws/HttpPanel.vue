@@ -5,8 +5,8 @@
  * 选择 HTTP 方法显示 Params/Headers/Body + 响应区。
  */
 import { computed, onUnmounted, ref } from "vue";
-import type { HttpMethod, HttpResponseResult, WsSession } from "@/core/ipc/contracts";
-import { ipc } from "@/core/ipc/ipc";
+import type { HttpMethod, HttpResponseResult, WsSession } from "./contracts";
+import { ipc } from "./ipc";
 import Select from "@/features/ui/Select.vue";
 import HttpRequestBuilder from "./HttpRequestBuilder.vue";
 import HttpResponse from "./HttpResponse.vue";
