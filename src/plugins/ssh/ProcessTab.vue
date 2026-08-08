@@ -84,13 +84,13 @@ function kill(pid: number, force = false) {
       <table class="w-full text-left text-body">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark">
-            <th class="w-[70px] px-[12px] py-[8px] font-medium">PID</th>
-            <th class="w-[90px] px-[12px] py-[8px] font-medium">用户</th>
-            <th class="w-[80px] px-[12px] py-[8px] font-medium">CPU%</th>
-            <th class="w-[80px] px-[12px] py-[8px] font-medium">MEM%</th>
-            <th class="w-[100px] px-[12px] py-[8px] font-medium">内存</th>
+            <th class="w-[70px] whitespace-nowrap px-[12px] py-[8px] font-medium">PID</th>
+            <th class="w-[90px] whitespace-nowrap px-[12px] py-[8px] font-medium">用户</th>
+            <th class="w-[80px] whitespace-nowrap px-[12px] py-[8px] font-medium">CPU%</th>
+            <th class="w-[80px] whitespace-nowrap px-[12px] py-[8px] font-medium">MEM%</th>
+            <th class="w-[100px] whitespace-nowrap px-[12px] py-[8px] font-medium">内存</th>
             <th class="px-[12px] py-[8px] font-medium">命令</th>
-            <th class="w-[90px] px-[12px] py-[8px] font-medium">操作</th>
+            <th class="w-[110px] whitespace-nowrap px-[12px] py-[8px] font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -107,9 +107,21 @@ function kill(pid: number, force = false) {
             <td class="max-w-[200px] truncate px-[12px] py-[8px] font-mono text-body-sm" :title="p.command">
               {{ p.command }}
             </td>
-            <td class="px-[12px] py-[8px]">
-              <button class="btn-ghost !px-[6px] !py-[2px] text-caption" @click="kill(p.pid)">结束</button>
-              <button class="btn-ghost !px-[6px] !py-[2px] text-caption text-danger-strong dark:text-danger-dark" @click="kill(p.pid, true)">强杀</button>
+            <td class="whitespace-nowrap px-[12px] py-[8px]">
+              <div class="flex items-center gap-[4px]">
+                <button
+                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
+                  @click="kill(p.pid)"
+                >
+                  结束
+                </button>
+                <button
+                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption text-danger-strong dark:text-danger-dark"
+                  @click="kill(p.pid, true)"
+                >
+                  强杀
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>
