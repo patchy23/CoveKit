@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * DockerTab · Docker 容器管理子页签（当前为假数据演示）
+ * 搜索（名称/ID/镜像）+ 状态筛选。
  */
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { ServerConnection, ServerProfile, DockerContainer } from "./contracts";
 import { useUiStore } from "@/stores/ui";
 
@@ -21,6 +22,26 @@ const mockContainers: DockerContainer[] = [
 ];
 
 const containers = ref([...mockContainers]);
+const keyword = ref("");
+const statusFilter = ref<"all" | "running" | "exited">("all");
+
+/** 过滤后的容器列表（搜索 + 状态筛选） */
+const filtered = computed(() => {
+  let list = containers.value;
+  const kw = keyword.value.trim().toLowerCase();
+  if (kw) {
+    list = list.filter(
+      (c) =>
+        c.name.toLowerCase().includes(kw) ||
+        c.id.toLowerCase().includes(kw) ||
+        c.image.toLowerCase().includes(kw),
+    );
+  }
+  if (statusFilter.value !== "all") {
+    list = list.filter((c) => c.status === statusFilter.value);
+  }
+  return list;
+});
 
 function action(c: DockerContainer, act: "start" | "stop" | "restart" | "remove") {
   ui.toast(`${act === "start" ? "启动" : act === "stop" ? "停止" : act === "restart" ? "重启" : "删除"}容器 ${c.name}（待后端 IPC 接入）`);
@@ -48,6 +69,16 @@ function stateClass(s: string): string {
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
         {{ profile?.name ?? "未连接" }} · Docker 容器
       </span>
+      <input
+        v-model="keyword"
+        class="field-input !h-[28px] !w-[180px] !py-[4px] text-caption"
+        placeholder="搜索名称/ID/镜像"
+      />
+      <select v-model="statusFilter" class="field-input !h-[28px] !w-[100px] !py-[4px] text-caption">
+        <option value="all">全部</option>
+        <option value="running">运行中</option>
+        <option value="exited">已停止</option>
+      </select>
       <div class="ml-auto">
         <button class="btn-ghost !px-[8px] !py-[3px] text-caption">刷新</button>
       </div>
@@ -67,7 +98,7 @@ function stateClass(s: string): string {
         </thead>
         <tbody>
           <tr
-            v-for="c in containers"
+            v-for="c in filtered"
             :key="c.id"
             class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
           >
@@ -131,7 +162,7 @@ function stateClass(s: string): string {
     <div
       class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
     >
-      <span>共 {{ containers.length }} 个容器</span>
+      <span>共 {{ filtered.length }} 个容器</span>
       <span class="ml-auto">{{ connection?.status === "connected" ? "就绪" : "未连接" }}</span>
     </div>
   </div>
