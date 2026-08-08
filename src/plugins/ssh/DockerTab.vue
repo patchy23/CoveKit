@@ -57,12 +57,12 @@ function stateClass(s: string): string {
       <table class="w-full text-left text-body">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark">
-            <th class="w-[100px] px-[12px] py-[8px] font-medium">容器 ID</th>
-            <th class="px-[12px] py-[8px] font-medium">名称</th>
-            <th class="px-[12px] py-[8px] font-medium">镜像</th>
-            <th class="w-[90px] px-[12px] py-[8px] font-medium">状态</th>
-            <th class="w-[100px] px-[12px] py-[8px] font-medium">端口</th>
-            <th class="whitespace-nowrap px-[12px] py-[8px] font-medium">操作</th>
+            <th class="w-[100px] whitespace-nowrap px-[12px] py-[8px] font-medium">容器 ID</th>
+            <th class="whitespace-nowrap px-[12px] py-[8px] font-medium">名称</th>
+            <th class="w-[110px] px-[12px] py-[8px] font-medium">镜像</th>
+            <th class="w-[90px] whitespace-nowrap px-[12px] py-[8px] font-medium">状态</th>
+            <th class="w-[120px] px-[12px] py-[8px] font-medium">端口</th>
+            <th class="w-[230px] whitespace-nowrap px-[12px] py-[8px] font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -71,17 +71,17 @@ function stateClass(s: string): string {
             :key="c.id"
             class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
           >
-            <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ c.id }}</td>
-            <td class="px-[12px] py-[8px] text-body-sm">{{ c.name }}</td>
-            <td class="max-w-[90px] truncate px-[12px] py-[8px] font-mono text-body-sm" :title="c.image">
+            <td class="whitespace-nowrap px-[12px] py-[8px] font-mono text-body-sm">{{ c.id }}</td>
+            <td class="whitespace-nowrap px-[12px] py-[8px] text-body-sm">{{ c.name }}</td>
+            <td class="max-w-[110px] truncate px-[12px] py-[8px] font-mono text-body-sm" :title="c.image">
               {{ c.image }}
             </td>
-            <td class="px-[12px] py-[8px]">
+            <td class="whitespace-nowrap px-[12px] py-[8px]">
               <span :class="stateClass(c.status)">{{ c.status }}</span>
             </td>
-            <td class="whitespace-nowrap px-[12px] py-[8px] font-mono text-body-sm">{{ c.ports }}</td>
+            <td class="max-w-[120px] truncate px-[12px] py-[8px] font-mono text-body-sm" :title="c.ports">{{ c.ports }}</td>
             <td class="whitespace-nowrap px-[12px] py-[8px]">
-              <div class="flex items-center gap-[4px]">
+              <div class="flex items-center justify-end gap-[4px]">
                 <button
                   v-if="c.status !== 'running'"
                   class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
