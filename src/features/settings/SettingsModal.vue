@@ -127,60 +127,6 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
         </div>
       </section>
 
-      <!-- 剪贴板策略 -->
-      <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-        <h3 class="text-h2 font-bold dark:text-primary-dark">剪贴板</h3>
-        <div class="mt-sm flex flex-col gap-sm">
-          <label
-            class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"
-          >
-            <span class="dark:text-primary-dark">启用剪贴板历史</span>
-            <input
-              type="checkbox"
-              class="h-4 w-4 accent-[var(--color-tertiary)]"
-              :checked="settings.settings.clipboard.enabled"
-              @change="
-                settings.set('clipboard', {
-                  ...settings.settings.clipboard,
-                  enabled: ($event.target as HTMLInputElement).checked,
-                })
-              "
-            />
-          </label>
-          <label class="field-label flex flex-col gap-[6px]">
-            历史上限
-            <input
-              type="number"
-              class="field-input"
-              :value="settings.settings.clipboard.historyLimit"
-              @change="
-                settings.set('clipboard', {
-                  ...settings.settings.clipboard,
-                  historyLimit: Number(($event.target as HTMLInputElement).value),
-                })
-              "
-            />
-          </label>
-          <label class="field-label flex flex-col gap-[6px]">
-            忽略的应用关键词（逗号分隔）
-            <input
-              class="field-input"
-              :value="settings.settings.clipboard.ignore.join(', ')"
-              placeholder="密码管理器, 密钥存储"
-              @change="
-                settings.set('clipboard', {
-                  ...settings.settings.clipboard,
-                  ignore: ($event.target as HTMLInputElement).value
-                    .split(',')
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                })
-              "
-            />
-          </label>
-        </div>
-      </section>
-
       <!-- 工具级设置（settingsSchema 自动渲染） -->
       <section
         v-for="t in toolsWithSettings"

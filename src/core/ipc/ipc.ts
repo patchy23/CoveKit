@@ -34,17 +34,12 @@ async function call<K extends keyof FrameworkPayloads & keyof FrameworkResults>(
   return invokeCommand<FrameworkPayloads[K], FrameworkResults[K]>(command, payload);
 }
 
-/** 框架命令封装（窗口/设置/剪贴板/取色） */
+/** 框架命令封装（设置/窗口/外链/命令清单） */
 export const ipc = {
   settingsGet: (key?: string) => call("settings_get", { key }),
   settingsSet: (key: string, value: unknown) => call("settings_set", { key, value }),
-  clipboardList: (limit?: number, pinnedOnly?: boolean) =>
-    call("clipboard_list", { limit, pinnedOnly }),
-  clipboardDelete: (id: string) => call("clipboard_delete", { id }),
-  clipboardClear: () => call("clipboard_clear", {}),
-  clipboardTogglePin: (id: string) => call("clipboard_toggle_pin", { id }),
-  colorPickScreen: () => call("color_pick_screen", {}),
   windowToggle: () => call("window_toggle", {}),
   windowHide: () => call("window_hide", {}),
   openExternal: (url: string) => call("open_external", { url }),
+  frameworkCommandsList: () => call("framework_commands", {}),
 };

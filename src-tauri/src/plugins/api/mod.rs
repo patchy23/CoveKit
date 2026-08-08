@@ -2,7 +2,8 @@
 //! 数据文件与迁移走框架约定（framework::store，见 docs/03-plugin-development.md §3）
 //! 表：api_list（type/name/method/url/params/headers/body_mode/body/updated_at）
 
-use serde::Serialize;
+mod models;
+
 use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, State};
 
@@ -43,21 +44,7 @@ fn conn<'a>(
     Ok(guard)
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApiRecord {
-    pub id: i64,
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub name: String,
-    pub method: String,
-    pub url: String,
-    pub params: String,
-    pub headers: String,
-    pub body_mode: String,
-    pub body: String,
-    pub updated_at: String,
-}
+use crate::plugins::api::models::ApiRecord;
 
 /// 保存接口：id 为 0 时新增，否则更新；返回记录 id
 #[tauri::command(rename_all = "camelCase")]

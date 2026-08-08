@@ -24,8 +24,8 @@
 
 ## 架构核心（详见 docs/02-architecture.md）
 
-- **插件模式（2026-08-08 起，前后端同构）**：前端 `src/plugins/<id>/`（manifest 自注册 + 私有 contracts.ts/ipc.ts + 组件，插件间禁止互相 import）；公共能力走 `src/core/ui/`（组件）与 `src/core/ipc/`（框架命令 + invokeCommand 基础设施）；**Rust 侧 `src-tauri/src/plugins/<id>.rs`**（命令 + State 由 `register(builder)` 自注册，启动初始化走 `init(app)`），lib.rs 仅 register/init 各一行链式装配，插件清单见 `plugins/mod.rs`
-- **Rust 插件内部结构**：单文件 ≤200 行保持 `<id>.rs`；复杂插件（>200 行或多实现变体）拆目录：`<id>/mod.rs`（门面：命令薄层 + register/init，**generate_handler 用完整路径 `http::http_request`**）、`models.rs`（serde 结构）、能力子模块（如 http.rs/ws.rs）；多厂商/方言用 trait + 子模块（DB 三方言、DNS 三厂商，第二批骨架）
+- **插件模式（2026-08-08 起，前后端同构）**：前端 `src/plugins/<id>/`（manifest 自注册 + 私有 contracts.ts/ipc.ts + 组件，插件间禁止互相 import）；公共能力走 `src/core/ui/`（组件）与 `src/core/ipc/`（框架命令 + invokeCommand 基础设施）；**Rust 侧 `src-tauri/src/plugins/<id>/` 一律目录结构**（mod.rs 门面 + models.rs + 能力子模块；命令 + State 由 `register(builder)` 自注册，启动初始化走 `init(app)`），lib.rs 仅 register/init 各一行链式装配，插件清单见 `plugins/mod.rs`
+- **框架与插件分离**：`src-tauri/src/framework/`（设置存储/全局快捷键/窗口/命令入库/数据管理）是基建不属于插件；**无实际前端引用的插件必须删除**（color/clipboard 已删，设置弹窗剪贴板区块已清）
 - **IPC 接口入库**（`framework/ipc_registry.rs`）：插件 register() 登记命令（名称+中文说明），启动校验全局唯一（重复即 panic）；框架命令 `framework_commands` 可查全量清单
 - **数据库管理规则**（`framework/store.rs`）：插件数据文件统一 `app_data_dir/<plugin>.db`（`plugin_db_path`）；表结构走 `PRAGMA user_version` 顺序迁移（`migrate`，只追加）；本地库 rusqlite / 连接型 sqlx（三方言 M3）
 - **工具注册表**（`src/core/registry/`）：工具目录自注册，新增工具 = 建目录 + 注册一行，框架零改动

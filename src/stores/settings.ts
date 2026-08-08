@@ -17,7 +17,6 @@ const DEFAULTS: AppSettings = {
   language: "zh-CN",
   globalHotkey: "Ctrl+Shift+Space",
   launchAtStartup: false,
-  clipboard: { enabled: true, historyLimit: 200, ignore: [] },
   recentTools: [],
   tools: {},
 };

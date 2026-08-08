@@ -3,7 +3,9 @@
 //!
 //! 契约见前端 src/core/ipc/contracts.ts（唯一事实源）。
 
-use serde::Serialize;
+mod models;
+
+use crate::plugins::db::models::{DbOpenResult, DbQueryResult};
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
 use sqlx::{Column, Row, Sqlite};
 use std::path::Path;
@@ -12,27 +14,6 @@ use tauri::State;
 
 /// 当前打开的数据库连接（State 注入；None = 未连接）
 pub struct DbState(pub Mutex<Option<SqlitePool>>);
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DbOpenResult {
-    ok: bool,
-    tables: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DbQueryResult {
-    ok: bool,
-    columns: Vec<String>,
-    rows: Vec<Vec<String>>,
-    rows_affected: u64,
-    is_query: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
 
 fn pool(state: &State<'_, DbState>) -> Result<sqlx::Pool<Sqlite>, String> {
     state

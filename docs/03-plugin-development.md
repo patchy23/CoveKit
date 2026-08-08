@@ -12,11 +12,13 @@
 
 ## 1. 目录与命名规范
 
+**所有插件一律目录结构（无单文件例外）**：
+
 ```
 前端  src/plugins/<id>/                 Rust  src-tauri/src/plugins/<id>/
-├── index.ts      注册 manifest          ├── mod.rs   门面（命令薄层 + register/init）
-├── index.vue     主组件（≤300 行）       ├── models.rs serde 结构（与前端 contracts.ts 同步）
-├── contracts.ts  本插件 IPC 契约        ├── <能力>.rs 按能力拆分（如 http.rs / ws.rs）
+├── index.ts      注册 manifest          ├── mod.rs   门面（命令薄层 + register/init + mod models;）
+├── index.vue     主组件（≤300 行）       ├── models.rs serde 结构（字段 pub(crate)，与前端 contracts.ts 同步）
+├── contracts.ts  本插件 IPC 契约        └── <能力>.rs 按能力拆分（如 http.rs / ws.rs；多实现变体用 trait）
 ├── ipc.ts        命令封装（invokeCommand）
 ├── useXxx.ts     纯函数（必须带单测）
 └── 子组件 / 测试
@@ -25,7 +27,8 @@
 - `id`：小写连字符（`http-ws`、`random-password`）；Rust 模块名 snake_case（`http_ws`）。
 - 命令名：snake_case（`db_open`）；前端封装名 camelCase（`dbOpen`）。
 - 字段：serde 统一 `camelCase`；错误结构统一 `{ ok: false, error: Option<String> }`（不抛错给前端展示）。
-- **复杂度分级**：单文件 ≤200 行保持 `<id>.rs`；>200 行或多实现变体拆目录（mod.rs 门面 + models.rs + 能力子模块）；多厂商/方言用 trait + 子模块。
+- **generate_handler 用完整路径**（`http::http_request`），因为宏在子模块作用域外不可见。
+- 框架级能力（设置/快捷键/窗口/命令入库/数据管理）在 `src-tauri/src/framework/`，**不属于插件**。
 
 ## 2. IPC 接口入库规则（tauri 接口入库）
 

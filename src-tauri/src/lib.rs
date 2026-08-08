@@ -55,9 +55,7 @@ pub fn run() {
         ]);
 
     // ── 业务插件装配（每个插件一行，互不影响）──
-    let builder = plugins::settings::register(builder);
-    let builder = plugins::clipboard::register(builder);
-    let builder = plugins::color::register(builder);
+    let builder = framework::settings::register(builder);
     let builder = plugins::http_ws::register(builder);
     let builder = plugins::api::register(builder);
     let builder = plugins::db::register(builder);
@@ -74,9 +72,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            // ── 插件启动初始化（每个插件自包含）──
-            plugins::clipboard::init(app)?;
-            plugins::settings::init(app)?;
+            // ── 框架启动初始化 ──
+            framework::settings::init(app)?;
 
             // 托盘：左键显示主窗；菜单含 显示/退出
             let show_item = MenuItem::with_id(app, "show", "显示 patchyBox", true, None::<&str>)?;

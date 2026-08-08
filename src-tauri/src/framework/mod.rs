@@ -1,7 +1,10 @@
 //! 框架层：窗口控制命令 + 外链打开（托盘/快捷键/前端共用）
-//! + IPC 接口入库（ipc_registry）+ 插件数据管理（store）
+//! 设置存储与全局快捷键（framework/settings.rs）
+//! IPC 接口入库（ipc_registry）与插件数据管理（store）
+//! 框架能力不属于业务插件（插件 = 工具，框架 = 基建）。
 
 pub mod ipc_registry;
+pub mod settings;
 pub mod store;
 
 use serde::Serialize;

@@ -7,7 +7,8 @@
 //!
 //! 契约见前端 src/core/ipc/contracts.ts（唯一事实源）。
 
-use serde::Serialize;
+mod models;
+
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -21,14 +22,7 @@ pub fn hosts_path() -> &'static str {
     "/etc/hosts"
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HostsResult {
-    ok: bool,
-    content: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<String>,
-}
+use crate::plugins::hosts::models::HostsResult;
 
 fn timestamp() -> String {
     SystemTime::now()

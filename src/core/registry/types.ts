@@ -46,7 +46,6 @@ export interface AppSettings {
   language: "zh-CN" | "en-US";
   globalHotkey: string;
   launchAtStartup: boolean;
-  clipboard: { enabled: boolean; historyLimit: number; ignore: string[] };
   recentTools: string[];
   tools: Record<string, Record<string, unknown>>;
 }
