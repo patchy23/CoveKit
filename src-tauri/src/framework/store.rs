@@ -1,9 +1,45 @@
 //! 插件数据管理 · 统一规则（docs/03-plugin-development.md §3）
 //! - 数据文件约定：%APPDATA%/com.patchy23.patchybox/<plugin-id>.db（按平台 app_data_dir）
 //! - 迁移规则：PRAGMA user_version 版本号 + 顺序迁移数组（只追加不改写）
+//! - 本地库统一骨架 PluginDb：连接生命周期 + 锁语义 + 迁移，插件只管业务 SQL
 
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::Manager;
+
+/// 插件本地数据库（rusqlite 场景的统一骨架）
+/// 用途：本地键值/记录型插件（接口列表、设置等）直接使用；
+/// 连接型/方言型（MySQL/PG 调试）走 sqlx，不套用本结构。
+pub struct PluginDb {
+    /// 连接（锁内同步执行；rusqlite 无跨 await 需求，禁止持锁跨 await）
+    conn: Mutex<rusqlite::Connection>,
+}
+
+impl PluginDb {
+    /// 打开插件数据文件并执行迁移（路径统一约定，文件不存在自动创建）
+    pub fn open(app: &tauri::AppHandle, plugin: &str, migrations: &[&str]) -> Result<Self, String> {
+        let path = plugin_db_path(app, plugin)?;
+        let conn = rusqlite::Connection::open(path).map_err(|e| e.to_string())?;
+        migrate(&conn, migrations)?;
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// 锁内访问原始连接（保持 rusqlite 全 API 自由度，业务 SQL 由插件书写）
+    pub fn with_conn<T>(
+        &self,
+        f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let guard = self.conn.lock().map_err(|e| e.to_string())?;
+        f(&guard)
+    }
+
+    /// 便捷执行：无参写入语句（返回受影响行数）
+    pub fn execute(&self, sql: &str) -> Result<usize, String> {
+        self.with_conn(|c| c.execute(sql, []).map_err(|e| e.to_string()))
+    }
+}
 
 /// 插件数据文件路径（统一约定，禁止插件手拼路径）
 pub fn plugin_db_path(app: &tauri::AppHandle, plugin: &str) -> Result<PathBuf, String> {

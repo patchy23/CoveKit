@@ -65,9 +65,26 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
 
 | 场景 | 引擎 | 说明 |
 |---|---|---|
-| 本地键值/记录（接口列表、剪贴板历史、设置） | **rusqlite（bundled）** | 同步简单，框架 store 助手管理 |
+| 本地键值/记录（接口列表、剪贴板历史、设置） | **rusqlite（bundled）** | 统一走框架骨架 **`PluginDb`**（`framework::store`：路径 + 迁移 + 锁内访问），插件只写业务 SQL |
 | 连接型数据库调试（SQLite/MySQL/PG） | **sqlx 0.8** | 三方言统一，`DbDialect` trait 按方言实现（M3） |
-| 复杂全文检索 | rusqlite FTS5 | 同 rusqlite |
+| 复杂全文检索 | rusqlite FTS5 | 同 rusqlite（经 `PluginDb::with_conn`） |
+
+**PluginDb 用法**（本地库插件标准姿势，禁止自建连接样板）：
+
+```rust
+pub struct XxxState(pub Mutex<Option<PluginDb>>);   // 惰性 State
+const MIGRATIONS: &[&str] = &["CREATE TABLE ...;"];  // 只追加
+
+// 命令内：
+let guard = db(&app, &state)?;                      // 锁内借用（首次自动打开+迁移）
+guard.as_ref().unwrap().with_conn(|c| {
+    // rusqlite 全 API，业务 SQL 自由书写
+    c.execute("INSERT ...", params).map_err(|e| e.to_string())?;
+    Ok(())
+})
+```
+
+边界：**不做 ORM/查询构造器**——复杂查询（join/聚合/FTS）直接在 `with_conn` 闭包写 SQL；连接型（sqlx）场景不套 PluginDb。
 
 ### 3.3 迁移规则
 
