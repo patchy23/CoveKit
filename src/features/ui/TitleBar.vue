@@ -35,6 +35,7 @@ function onDblClick() {
     <div class="flex-1" data-tauri-drag-region />
     <div class="flex h-full items-center">
       <button
+        v-if="!ui.immersive"
         class="grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
         :class="
           ui.sidebarCollapsed
