@@ -80,6 +80,19 @@ function deleteProfile(id: string) {
   ui.toast(`已删除服务器「${p.name}」`);
 }
 
+/* ── 删除确认弹窗 ── */
+const deleteTarget = ref<ServerProfile | null>(null);
+
+function requestDelete(p: ServerProfile) {
+  deleteTarget.value = p;
+}
+
+function confirmDelete() {
+  if (!deleteTarget.value) return;
+  deleteProfile(deleteTarget.value.id);
+  deleteTarget.value = null;
+}
+
 /* ── 连接操作 ── */
 function connect(profileId: string) {
   const conn = connections.value.find((c) => c.profileId === profileId);
@@ -136,7 +149,7 @@ const activeTab = computed(() => tabs.find((t) => t.id === activeTabId.value) ??
       @disconnect="disconnect"
       @add="openAddForm"
       @edit="openEditForm"
-      @delete="deleteProfile"
+      @delete-request="requestDelete"
     />
 
     <!-- 右侧：页签工作区 -->
@@ -234,5 +247,29 @@ const activeTab = computed(() => tabs.find((t) => t.id === activeTabId.value) ??
       @save="saveProfile"
       @cancel="formOpen = false"
     />
+
+    <!-- 删除确认弹窗 -->
+    <Teleport to="body">
+      <div
+        v-if="deleteTarget"
+        class="fixed inset-0 z-[160] grid place-items-center bg-black/30"
+        @click.self="deleteTarget = null"
+      >
+        <div
+          class="w-[380px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
+        >
+          <h3 class="mb-[8px] text-card-title font-medium text-primary dark:text-primary-dark">
+            删除服务器
+          </h3>
+          <p class="mb-[16px] text-body text-secondary dark:text-secondary-dark">
+            确定删除「{{ deleteTarget.name }}」（{{ deleteTarget.host }}）？此操作不可撤销。
+          </p>
+          <div class="flex justify-end gap-[8px]">
+            <button class="btn-ghost" @click="deleteTarget = null">取消</button>
+            <button class="btn-primary !bg-danger-strong" @click="confirmDelete">删除</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
