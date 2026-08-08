@@ -166,7 +166,8 @@ impl TencentDns {
                 .unwrap_or("未知错误");
             return Err(format!("腾讯云 DNSPod 错误({code}): {msg}"));
         }
-        Ok(json)
+        // API 3.0 成功响应统一包在 Response 里，解包后返回业务数据层
+        Ok(json.get("Response").cloned().unwrap_or(json))
     }
 
     /// 域名列表（一次拉取前 100 条）
@@ -443,5 +444,63 @@ mod tests {
             err.contains("AuthFailure"),
             "无效密钥应返回签名校验错误: {err}"
         );
+    }
+
+    /// API 3.0 响应解析：Response 包装解包 + 字段映射（回归：missing field DomainList）
+    #[test]
+    fn parse_domain_list_resp() {
+        let json: Value = serde_json::from_str(
+            r#"{
+                "Response": {
+                    "DomainList": [
+                        {
+                            "DomainId": 1,
+                            "Name": "example.com",
+                            "RecordCount": 5,
+                            "CreatedOn": "2020-01-01 00:00:00"
+                        }
+                    ],
+                    "DomainCountInfo": { "DomainTotal": 1, "AllTotal": 1 },
+                    "RequestId": "req-1"
+                }
+            }"#,
+        )
+        .unwrap();
+        let resp: DescribeDomainListResp =
+            serde_json::from_value(json.get("Response").cloned().unwrap_or(json)).unwrap();
+        assert_eq!(resp.domain_list.len(), 1);
+        assert_eq!(resp.domain_list[0].name, "example.com");
+        assert_eq!(resp.domain_list[0].record_count, 5);
+        assert_eq!(resp.domain_count_info.domain_total, 1);
+    }
+
+    /// API 3.0 记录列表响应解析（同样带 Response 包装）
+    #[test]
+    fn parse_record_list_resp() {
+        let json: Value = serde_json::from_str(
+            r#"{
+                "Response": {
+                    "RecordList": [
+                        {
+                            "RecordId": 100,
+                            "Name": "www",
+                            "Type": "A",
+                            "Value": "1.2.3.4",
+                            "TTL": 600,
+                            "Line": "默认"
+                        }
+                    ],
+                    "RecordCountInfo": { "TotalCount": 1 },
+                    "RequestId": "req-2"
+                }
+            }"#,
+        )
+        .unwrap();
+        let resp: DescribeRecordListResp =
+            serde_json::from_value(json.get("Response").cloned().unwrap_or(json)).unwrap();
+        assert_eq!(resp.record_list.len(), 1);
+        assert_eq!(resp.record_list[0].record_id, 100);
+        assert_eq!(resp.record_list[0].type_field, "A");
+        assert_eq!(resp.record_count_info.total_count, 1);
     }
 }
