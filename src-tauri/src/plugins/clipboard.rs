@@ -159,7 +159,7 @@ pub fn clipboard_toggle_pin(state: State<ClipboardDb>, id: String) -> Result<(),
     Ok(())
 }
 
-/// 插件注册：命令（State 由 lib.rs setup 经 init_db 初始化）
+/// 插件注册：命令
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder.invoke_handler(tauri::generate_handler![
         clipboard_list,
@@ -167,4 +167,12 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         clipboard_clear,
         clipboard_toggle_pin
     ])
+}
+
+/// 插件启动初始化：打开剪贴板历史库 + 启动剪贴板监听
+pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let db = init_db(app)?;
+    app.manage(db);
+    start_watcher(app.handle().clone());
+    Ok(())
 }

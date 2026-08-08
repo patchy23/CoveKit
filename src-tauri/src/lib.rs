@@ -1,10 +1,10 @@
 // patchyBox 桌面工具箱 · Rust 侧框架装配入口
-// 插件模式：业务模块各自 register(builder)（命令 + State 自注册），
-// 新增插件 = modules/ 下新模块 + 下方 register 链一行，框架与既有插件零改动。
-// 框架级命令（窗口/外链）与启动初始化（剪贴板库/快捷键）留在本文件。
+// 插件模式：业务插件位于 plugins/（命令 + State 由 register 自注册，启动初始化走 init）；
+// 新增插件 = plugins/<id>.rs + 下方 register/init 各一行，框架与既有插件零改动。
+// 框架级命令（窗口/外链）留在本文件。
 
 mod framework;
-mod modules;
+mod plugins;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -54,13 +54,13 @@ pub fn run() {
         ]);
 
     // ── 业务插件装配（每个插件一行，互不影响）──
-    let builder = modules::settings::register(builder);
-    let builder = modules::clipboard::register(builder);
-    let builder = modules::color::register(builder);
-    let builder = modules::http_ws::register(builder);
-    let builder = modules::api::register(builder);
-    let builder = modules::db::register(builder);
-    let builder = modules::hosts::register(builder);
+    let builder = plugins::settings::register(builder);
+    let builder = plugins::clipboard::register(builder);
+    let builder = plugins::color::register(builder);
+    let builder = plugins::http_ws::register(builder);
+    let builder = plugins::api::register(builder);
+    let builder = plugins::db::register(builder);
+    let builder = plugins::hosts::register(builder);
 
     builder
         // 关窗行为：最小化到托盘（开放问题默认值）
@@ -73,25 +73,9 @@ pub fn run() {
             }
         })
         .setup(|app| {
-            // 剪贴板历史库（app_data_dir/clipboard.db）
-            let db = modules::clipboard::init_db(app)?;
-            app.manage(db);
-            modules::clipboard::start_watcher(app.handle().clone());
-
-            // 全局快捷键：读取设置 settings.globalHotkey 注册（占用时降级，不阻断启动）
-            let hotkey = match tauri_plugin_store::StoreExt::store(app, "settings.json") {
-                Ok(s) => s
-                    .get("app")
-                    .and_then(|v| {
-                        v.get("globalHotkey")
-                            .and_then(|h| h.as_str().map(String::from))
-                    })
-                    .unwrap_or_else(|| "Ctrl+Shift+Space".to_string()),
-                Err(_) => "Ctrl+Shift+Space".to_string(),
-            };
-            if let Err(e) = modules::settings::register_hotkey(app.handle(), &hotkey) {
-                eprintln!("[shortcut] 全局快捷键注册失败（可能被占用）: {e}");
-            }
+            // ── 插件启动初始化（每个插件自包含）──
+            plugins::clipboard::init(app)?;
+            plugins::settings::init(app)?;
 
             // 托盘：左键显示主窗；菜单含 显示/退出
             let show_item = MenuItem::with_id(app, "show", "显示 patchyBox", true, None::<&str>)?;

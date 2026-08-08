@@ -72,9 +72,27 @@ pub fn settings_set(app: AppHandle, key: String, value: Value) -> Result<(), Str
     Ok(())
 }
 
-/// 插件注册：命令 + State（lib.rs 链式一行装配，插件互不影响）
+/// 插件注册：命令 + State（惰性初始化）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder
         .invoke_handler(tauri::generate_handler![settings_get, settings_set])
         .manage(HotkeyState(std::sync::Mutex::new(None)))
+}
+
+/// 插件启动初始化：按设置注册全局快捷键（被占用时降级告警，不阻断启动）
+pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    let hotkey = match tauri_plugin_store::StoreExt::store(app, "settings.json") {
+        Ok(s) => s
+            .get("app")
+            .and_then(|v| {
+                v.get("globalHotkey")
+                    .and_then(|h| h.as_str().map(String::from))
+            })
+            .unwrap_or_else(|| "Ctrl+Shift+Space".to_string()),
+        Err(_) => "Ctrl+Shift+Space".to_string(),
+    };
+    if let Err(e) = register_hotkey(app.handle(), &hotkey) {
+        eprintln!("[shortcut] 全局快捷键注册失败（可能被占用）: {e}");
+    }
+    Ok(())
 }
