@@ -27,6 +27,9 @@ const inner: Record<string, string> = {
   close: '<path d="M18 6 6 18M6 6l12 12"/>',
   minus: '<path d="M5 12h14"/>',
   maximize: '<rect x="5" y="5" width="14" height="14" rx="1.5"/>',
+  panel: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9.5 4v16"/>',
+  immersive:
+    '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   copy: '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
   check: '<path d="M20 6 9 17l-5-5"/>',
   run: '<path d="M5 12h14M12 5l7 7-7 7"/>',

@@ -3,30 +3,16 @@
  * TitleBar · 内置标题栏（无边框窗口，2026-08-02 用户决策）
  * 背景随主题切换（bg-surface / dark:bg-surface-dark）；拖拽区移动窗口；
  * 双击标题栏最大化；右侧窗口控制按钮（关闭 = 最小化到托盘，见 Rust CloseRequested 处理）。
+ * 额外提供：侧栏折叠切换（panel 按钮）与沉浸模式切换（expand 按钮，隐藏标题栏+侧栏）。
  */
-import { getCurrentWindow, type Window } from "@tauri-apps/api/window";
+import { safeWindow } from "@/core/ui/windowCtl";
+import { useUiStore } from "@/stores/ui";
 import AppIcon from "@/features/ui/AppIcon.vue";
 
-const isTauri = "__TAURI_INTERNALS__" in window;
-
-/** 非 Tauri 环境（浏览器预览）惰性获取窗口句柄，取不到则窗口操作静默跳过 */
-function windowCtl(): Window | null {
-  if (!isTauri) return null;
-  try {
-    return getCurrentWindow();
-  } catch {
-    return null;
-  }
-}
-
-function safe(fn: (w: Window) => Promise<unknown>) {
-  const w = windowCtl();
-  if (!w) return;
-  fn(w).catch((e) => console.warn("[TitleBar] 窗口操作失败（检查 capabilities 权限）:", e));
-}
+const ui = useUiStore();
 
 function onDblClick() {
-  safe((w) => w.toggleMaximize());
+  safeWindow((w) => w.toggleMaximize());
 }
 </script>
 
@@ -49,23 +35,42 @@ function onDblClick() {
     <div class="flex-1" data-tauri-drag-region />
     <div class="flex h-full items-center">
       <button
+        class="grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+        :class="
+          ui.sidebarCollapsed
+            ? 'bg-border text-primary dark:bg-border-dark dark:text-primary-dark'
+            : ''
+        "
+        :title="ui.sidebarCollapsed ? '展开侧栏' : '隐藏侧栏'"
+        @click="ui.sidebarCollapsed = !ui.sidebarCollapsed"
+      >
+        <AppIcon name="panel" :size="15" />
+      </button>
+      <button
+        class="grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+        :title="ui.immersive ? '退出沉浸模式' : '沉浸模式（隐藏标题栏与侧栏）'"
+        @click="ui.toggleImmersive()"
+      >
+        <AppIcon name="immersive" :size="14" />
+      </button>
+      <button
         class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
         title="最小化"
-        @click="safe((w) => w.minimize())"
+        @click="safeWindow((w) => w.minimize())"
       >
         <AppIcon name="minus" :size="14" />
       </button>
       <button
         class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
         title="最大化"
-        @click="safe((w) => w.toggleMaximize())"
+        @click="safeWindow((w) => w.toggleMaximize())"
       >
         <AppIcon name="maximize" :size="12" />
       </button>
       <button
         class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-red-500 hover:text-white"
         title="关闭（最小化到托盘）"
-        @click="safe((w) => w.close())"
+        @click="safeWindow((w) => w.close())"
       >
         <AppIcon name="close" :size="13" />
       </button>
