@@ -15,12 +15,21 @@ export const useUiStore = defineStore("ui", () => {
   const settingsVisible = ref(false);
   /** 侧栏折叠（标题栏按钮切换，内容区最大化） */
   const sidebarCollapsed = ref(false);
-  /** 沉浸模式（隐藏工具标题栏 TopBar，窗口标题栏保留） */
+  /** 沉浸模式（隐藏工具标题栏 TopBar + 侧栏，退出恢复进入前状态） */
   const immersive = ref(false);
+  /** 进入沉浸前侧栏状态（退出时恢复） */
+  const sidebarBeforeImmersive = ref(false);
 
-  /** 切换沉浸模式 */
+  /** 切换沉浸模式：进入收起侧栏并记状态，退出按记忆恢复 */
   function toggleImmersive() {
-    immersive.value = !immersive.value;
+    if (immersive.value) {
+      sidebarCollapsed.value = sidebarBeforeImmersive.value;
+      immersive.value = false;
+    } else {
+      sidebarBeforeImmersive.value = sidebarCollapsed.value;
+      sidebarCollapsed.value = true;
+      immersive.value = true;
+    }
   }
 
   /* ── 多页签工作区（工具以子页面形式打开，可切换/关闭，状态保持）── */
