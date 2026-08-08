@@ -1,24 +1,26 @@
 <script setup lang="ts">
 /**
  * FileManagerTab · 远程文件管理子页签
- * 路径导航 + 文件列表 + 上传/下载/删除/重命名操作（当前为假数据演示）；
+ * 路径导航 + 文件列表 + 上传/下载/删除/重命名（后端 SFTP 真实数据）；
  * 双击文本文件 → 弹窗编辑 → 保存回写服务器。
  */
 import { computed, ref } from "vue";
+import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import type { ServerConnection, ServerProfile, RemoteFile } from "./contracts";
-import { formatBytes, formatTime, mockFiles } from "./useSsh";
+import { formatBytes, formatTime } from "./useSsh";
 import { useUiStore } from "@/stores/ui";
 import EditorDialog from "./EditorDialog.vue";
+import { ipc } from "./ipc";
 
-defineProps<{
+const props = defineProps<{
   connection?: ServerConnection;
   profile?: ServerProfile;
 }>();
 
 const ui = useUiStore();
 
-const currentPath = ref("/var/log/nginx");
-const files = ref<RemoteFile[]>([...mockFiles]);
+const currentPath = ref("/");
+const files = ref<RemoteFile[]>([]);
 const selectedFile = ref<RemoteFile | null>(null);
 
 /** 当前打开的编辑弹窗（path + 内容） */
@@ -31,10 +33,20 @@ const parentPath = computed(() => {
   return idx <= 0 ? "/" : p.slice(0, idx);
 });
 
-function navigate(path: string) {
+async function navigate(path: string) {
+  if (!props.connection?.sessionId) return;
   currentPath.value = path;
   selectedFile.value = null;
-  // TODO: IPC 加载远程目录
+  try {
+    const r = await ipc.sshFileList(props.connection.sessionId, path);
+    if (r.ok) {
+      files.value = r.files;
+    } else {
+      ui.toast(`读取目录失败：${r.error ?? "未知错误"}`);
+    }
+  } catch (e) {
+    ui.toast(`读取目录失败：${e}`);
+  }
 }
 
 function navigateUp() {
@@ -42,59 +54,131 @@ function navigateUp() {
 }
 
 /** 双击：目录进入，文件打开编辑弹窗 */
-function onDoubleClick(file: RemoteFile) {
+async function onDoubleClick(file: RemoteFile) {
   if (file.isDir) {
     navigate(file.path);
     return;
   }
-  // TODO: IPC 拉取远程文件内容（ssh_edit_open），当前为 mock 示例内容
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const mockByExt: Record<string, string> = {
-    log: `2026-08-08 14:32:05 [info] ${file.name} 服务启动正常\n2026-08-08 14:33:12 [warn] 请求延迟偏高 120ms\n2026-08-08 14:35:40 [error] 连接池超时，重试中\n`,
-    conf: `# ${file.name}\nserver {\n    listen 80;\n    server_name example.com;\n    root /var/www/html;\n\n    location /api {\n        proxy_pass http://127.0.0.1:3000;\n    }\n}\n`,
-  };
-  editing.value = {
-    path: file.path,
-    content: mockByExt[ext] ?? `# ${file.name}\n（内容待后端 IPC 加载）\n`,
-  };
+  if (!props.connection?.sessionId) return;
+  try {
+    const r = await ipc.sshEditOpen(props.connection.sessionId, file.path);
+    if (r.ok) {
+      editing.value = { path: r.path, content: r.content };
+    } else {
+      ui.toast(`打开文件失败：${r.error ?? "未知错误"}`);
+    }
+  } catch (e) {
+    ui.toast(`打开文件失败：${e}`);
+  }
 }
 
-/** 保存：回写服务器（后端 IPC 接入前为 mock 提示） */
-function onSave(content: string) {
+/** 保存：回写服务器（ssh_edit_save） */
+async function onSave(content: string) {
   const path = editing.value?.path ?? "";
-  // TODO: IPC 保存远程文件（ssh_edit_save）
-  ui.toast(`已保存 ${path}（${content.length} 字符）`);
-  editing.value = null;
+  if (!props.connection?.sessionId) return;
+  try {
+    const r = await ipc.sshEditSave(props.connection.sessionId, path, content);
+    if (r.ok) {
+      ui.toast(`已保存 ${path}（${content.length} 字符）`);
+      editing.value = null;
+    } else {
+      ui.toast(`保存失败：${r.error ?? "未知错误"}`);
+    }
+  } catch (e) {
+    ui.toast(`保存失败：${e}`);
+  }
 }
 
-function upload() {
-  ui.toast("上传功能待后端 IPC 接入");
+/** 上传：选择本地文件 → 传输到当前目录 */
+async function upload() {
+  if (!props.connection?.sessionId) return;
+  const picked = await dialogOpen({ multiple: false, directory: false });
+  if (!picked || typeof picked !== "string") return;
+  const name = picked.split(/[\\/]/).pop() ?? "file";
+  const remote = currentPath.value.endsWith("/")
+    ? `${currentPath.value}${name}`
+    : `${currentPath.value}/${name}`;
+  try {
+    const r = await ipc.sshFileUpload({
+      connectionId: props.connection.sessionId,
+      localPath: picked,
+      remotePath: remote,
+    });
+    if (r.done) {
+      ui.toast(`上传完成：${name}`);
+      navigate(currentPath.value);
+    }
+  } catch (e) {
+    ui.toast(`上传失败：${e}`);
+  }
 }
 
-function download() {
-  if (!selectedFile.value) {
-    ui.toast("请先选择文件");
+/** 下载：选择保存位置 → 传输到本地 */
+async function download() {
+  if (!selectedFile.value || !props.connection?.sessionId) {
+    if (!selectedFile.value) ui.toast("请先选择文件");
     return;
   }
-  ui.toast(`下载 ${selectedFile.value.name}（待后端 IPC 接入）`);
+  const picked = await dialogSave({ defaultPath: selectedFile.value.name });
+  if (!picked) return;
+  try {
+    const r = await ipc.sshFileDownload({
+      connectionId: props.connection.sessionId,
+      remotePath: selectedFile.value.path,
+      localPath: picked,
+    });
+    if (r.done) ui.toast(`下载完成：${selectedFile.value.name}`);
+  } catch (e) {
+    ui.toast(`下载失败：${e}`);
+  }
 }
 
-function del() {
-  if (!selectedFile.value) {
-    ui.toast("请先选择文件");
+async function del() {
+  if (!selectedFile.value || !props.connection?.sessionId) {
+    if (!selectedFile.value) ui.toast("请先选择文件");
     return;
   }
   // 删除前确认（UI-009：与服务器删除一致，避免误删）
   if (!window.confirm(`确定删除「${selectedFile.value.name}」？此操作不可恢复。`)) return;
-  ui.toast(`删除 ${selectedFile.value.name}（待后端 IPC 接入）`);
+  try {
+    const r = await ipc.sshFileDelete(
+      props.connection.sessionId,
+      selectedFile.value.path,
+      selectedFile.value.isDir,
+    );
+    if (r.ok) {
+      ui.toast(`已删除 ${selectedFile.value.name}`);
+      selectedFile.value = null;
+      navigate(currentPath.value);
+    } else {
+      ui.toast(`删除失败：${r.error ?? "未知错误"}`);
+    }
+  } catch (e) {
+    ui.toast(`删除失败：${e}`);
+  }
 }
 
-function rename() {
-  if (!selectedFile.value) {
-    ui.toast("请先选择文件");
+async function rename() {
+  if (!selectedFile.value || !props.connection?.sessionId) {
+    if (!selectedFile.value) ui.toast("请先选择文件");
     return;
   }
-  ui.toast(`重命名 ${selectedFile.value.name}（待后端 IPC 接入）`);
+  const name = window.prompt("新文件名：", selectedFile.value.name);
+  if (!name || name === selectedFile.value.name) return;
+  const dir = selectedFile.value.path.slice(0, selectedFile.value.path.lastIndexOf("/") + 1);
+  const newPath = `${dir}${name}`;
+  try {
+    const r = await ipc.sshFileRename(props.connection.sessionId, selectedFile.value.path, newPath);
+    if (r.ok) {
+      ui.toast(`已重命名为 ${name}`);
+      selectedFile.value = null;
+      navigate(currentPath.value);
+    } else {
+      ui.toast(`重命名失败：${r.error ?? "未知错误"}`);
+    }
+  } catch (e) {
+    ui.toast(`重命名失败：${e}`);
+  }
 }
 </script>
 

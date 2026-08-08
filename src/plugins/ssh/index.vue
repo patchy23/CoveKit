@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
  * SSH 工具 · 主容器（服务器列表 + 页签工作区）
- * 当前为纯前端 UI 演示，后端 IPC 接入后替换 mock 数据与本地状态。
+ * 连接/断开/凭证走真实 IPC；状态经事件 ssh://connection-status 同步。
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useUiStore } from "@/stores/ui";
 import ServerList from "./ServerList.vue";
 import ServerForm from "./ServerForm.vue";
@@ -13,21 +13,16 @@ import MonitorTab from "./MonitorTab.vue";
 import ServiceTab from "./ServiceTab.vue";
 import ProcessTab from "./ProcessTab.vue";
 import DockerTab from "./DockerTab.vue";
-import {
-  mockConnections,
-  mockProfiles,
-  mockTerminals,
-  statusDotClass,
-  statusText,
-} from "./useSsh";
-import type { ServerProfile } from "./contracts";
+import { loadProfiles, persistProfiles, statusDotClass, statusText } from "./useSsh";
+import { ipc, onConnectionStatus } from "./ipc";
+import type { ServerConnection, ServerProfile } from "./contracts";
 
 const ui = useUiStore();
 
-/* ── 服务器列表状态 ── */
-const profiles = ref<ServerProfile[]>([...mockProfiles]);
-const connections = ref([...mockConnections]);
-const activeProfileId = ref<string | null>("profile-1");
+/* ── 服务器列表状态（配置 localStorage 持久化，凭证后端加密存储）── */
+const profiles = ref<ServerProfile[]>(loadProfiles());
+const connections = ref<ServerConnection[]>([]);
+const activeProfileId = ref<string | null>(null);
 const searchKeyword = ref("");
 
 const filteredProfiles = computed(() => {
@@ -59,7 +54,10 @@ function openEditForm(p: ServerProfile) {
   formOpen.value = true;
 }
 
-function saveProfile(p: ServerProfile) {
+function saveProfile(
+  p: ServerProfile,
+  creds: { password?: string; privateKey?: string; passphrase?: string },
+) {
   const idx = profiles.value.findIndex((x) => x.id === p.id);
   if (idx >= 0) {
     profiles.value[idx] = p;
@@ -67,6 +65,11 @@ function saveProfile(p: ServerProfile) {
   } else {
     profiles.value.push(p);
     ui.toast(`已添加服务器「${p.name}」`);
+  }
+  persistProfiles(profiles.value);
+  // 凭证（密码/私钥）加密存储到后端（AES-GCM），仅当用户填写时更新
+  if (creds.password || creds.privateKey || creds.passphrase) {
+    ipc.sshCredentialSave({ profile: p, ...creds }).catch((e) => ui.toast(`凭证保存失败：${e}`));
   }
   formOpen.value = false;
 }
@@ -77,6 +80,8 @@ function deleteProfile(id: string) {
   profiles.value = profiles.value.filter((x) => x.id !== id);
   connections.value = connections.value.filter((x) => x.profileId !== id);
   if (activeProfileId.value === id) activeProfileId.value = null;
+  persistProfiles(profiles.value);
+  ipc.sshCredentialDelete(id).catch(() => undefined);
   ui.toast(`已删除服务器「${p.name}」`);
 }
 
@@ -93,32 +98,70 @@ function confirmDelete() {
   deleteTarget.value = null;
 }
 
-/* ── 连接操作 ── */
-function connect(profileId: string) {
-  const conn = connections.value.find((c) => c.profileId === profileId);
-  if (conn) {
-    conn.status = "connecting";
-    setTimeout(() => {
-      conn.status = "connected";
-      conn.host = profiles.value.find((p) => p.id === profileId)?.host;
-      conn.latencyMs = Math.floor(Math.random() * 50) + 10;
-      conn.connectedAt = Date.now();
-      ui.toast(`已连接到 ${conn.host}`);
-    }, 800);
+/* ── 连接操作（真实 IPC）── */
+async function connect(profileId: string) {
+  const p = profiles.value.find((x) => x.id === profileId);
+  if (!p) return;
+  const existing = connections.value.find((c) => c.profileId === profileId);
+  if (existing) {
+    activeProfileId.value = profileId;
+    return; // 已连接：仅切换
   }
-  activeProfileId.value = profileId;
+  try {
+    // 从后端取加密凭证（密码/私钥），随连接请求发送
+    const creds = await ipc.sshCredentialGet(profileId);
+    const conn = await ipc.sshConnect({
+      profile: p,
+      password: creds.password,
+      privateKey: creds.privateKey,
+      passphrase: creds.passphrase,
+    });
+    connections.value = connections.value.filter((c) => c.profileId !== profileId);
+    connections.value.push(conn);
+    activeProfileId.value = profileId;
+    p.lastConnectedAt = Date.now();
+    persistProfiles(profiles.value);
+    ui.toast(`已连接到 ${conn.host ?? p.host}`);
+  } catch (e) {
+    ui.toast(`连接失败：${e}`);
+  }
 }
 
-function disconnect(profileId: string) {
+async function disconnect(profileId: string) {
   const conn = connections.value.find((c) => c.profileId === profileId);
-  if (conn) {
-    conn.status = "disconnected";
-    conn.host = undefined;
-    conn.latencyMs = undefined;
-    conn.connectedAt = undefined;
+  if (!conn?.sessionId) return;
+  try {
+    await ipc.sshDisconnect(conn.sessionId);
+    connections.value = connections.value.filter((c) => c.profileId !== profileId);
     ui.toast("已断开连接");
+  } catch (e) {
+    ui.toast(`断开失败：${e}`);
   }
 }
+
+/* ── 状态事件订阅（后端推送连接/断开/重连）── */
+let unlistenConn: (() => void) | null = null;
+
+onMounted(async () => {
+  // 初始会话列表 + 状态事件
+  try {
+    connections.value = await ipc.sshConnections();
+    if (connections.value.length > 0 && !activeProfileId.value) {
+      activeProfileId.value = connections.value[0].profileId;
+    }
+  } catch {
+    /* 后端未就绪时静默（浏览器预览场景） */
+  }
+  unlistenConn = await onConnectionStatus((conn) => {
+    const idx = connections.value.findIndex((c) => c.profileId === conn.profileId);
+    if (idx >= 0) connections.value[idx] = conn;
+    else connections.value.push(conn);
+  });
+});
+
+onUnmounted(() => {
+  unlistenConn?.();
+});
 
 /* ── 页签工作区 ── */
 const tabs = [
@@ -222,7 +265,6 @@ const activeTab = computed(() => tabs.find((t) => t.id === activeTabId.value) ??
             :is="activeTab.component"
             :connection="activeConnection"
             :profile="profiles.find((p) => p.id === activeProfileId)"
-            :terminals="mockTerminals"
             class="h-full"
           />
         </div>

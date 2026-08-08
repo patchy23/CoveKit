@@ -12,7 +12,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: "save", p: ServerProfile): void;
+  (e: "save", p: ServerProfile, creds: { password?: string; privateKey?: string; passphrase?: string }): void;
   (e: "cancel"): void;
   (e: "error", msg: string): void;
 }>();
@@ -81,7 +81,11 @@ function submit() {
     remark: form.remark.trim() || undefined,
     lastConnectedAt: props.profile?.lastConnectedAt,
   };
-  emit("save", p);
+  emit("save", p, {
+    password: form.password.trim() || undefined,
+    privateKey: form.privateKey.trim() || undefined,
+    passphrase: form.passphrase.trim() || undefined,
+  });
 }
 </script>
 

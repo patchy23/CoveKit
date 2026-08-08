@@ -1,14 +1,15 @@
 <script setup lang="ts">
 /**
- * ProcessTab · 进程管理子页签（当前为假数据演示）
+ * ProcessTab · 进程管理子页签（后端 ps 真实数据）
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import type { ServerConnection, ServerProfile, ProcessInfo } from "./contracts";
 import { formatBytes } from "./useSsh";
 import { useUiStore } from "@/stores/ui";
 import Select from "@/features/ui/Select.vue";
+import { ipc } from "./ipc";
 
-defineProps<{
+const props = defineProps<{
   connection?: ServerConnection;
   profile?: ServerProfile;
 }>();
@@ -17,17 +18,10 @@ const ui = useUiStore();
 
 const keyword = ref("");
 const sortBy = ref<"cpu" | "memory" | "pid">("cpu");
-
-const mockProcesses: ProcessInfo[] = [
-  { pid: 1, user: "root", cpuPercent: 0.1, memoryPercent: 0.3, memoryBytes: 50 * 1024 * 1024, startedAt: Date.now() - 86400000 * 7, command: "/sbin/init" },
-  { pid: 1234, user: "www-data", cpuPercent: 15.2, memoryPercent: 8.1, memoryBytes: 1.2 * 1024 * 1024 * 1024, startedAt: Date.now() - 3600000 * 5, command: "nginx: worker process" },
-  { pid: 5678, user: "mysql", cpuPercent: 45.0, memoryPercent: 22.3, memoryBytes: 3.5 * 1024 * 1024 * 1024, startedAt: Date.now() - 86400000 * 3, command: "/usr/sbin/mysqld" },
-  { pid: 9012, user: "root", cpuPercent: 2.3, memoryPercent: 1.5, memoryBytes: 256 * 1024 * 1024, startedAt: Date.now() - 3600000, command: "/usr/sbin/sshd -D" },
-  { pid: 3456, user: "redis", cpuPercent: 8.7, memoryPercent: 4.2, memoryBytes: 640 * 1024 * 1024, startedAt: Date.now() - 86400000 * 2, command: "redis-server 127.0.0.1:6379" },
-];
+const processes = ref<ProcessInfo[]>([]);
 
 const filtered = computed(() => {
-  let list = [...mockProcesses];
+  let list = [...processes.value];
   const kw = keyword.value.trim().toLowerCase();
   if (kw) {
     list = list.filter(
@@ -45,9 +39,37 @@ const filtered = computed(() => {
   return list;
 });
 
-function kill(pid: number, force = false) {
-  ui.toast(`${force ? "强制结束" : "结束"}进程 ${pid}（待后端 IPC 接入）`);
+async function refresh() {
+  if (!props.connection?.sessionId) return;
+  try {
+    processes.value = await ipc.sshProcessList({
+      connectionId: props.connection.sessionId,
+      sortBy: sortBy.value,
+      keyword: keyword.value.trim() || undefined,
+    });
+  } catch (e) {
+    ui.toast(`进程列表加载失败：${e}`);
+  }
 }
+
+async function kill(pid: number, force = false) {
+  if (!props.connection?.sessionId) return;
+  // 结束进程前确认（危险操作）
+  if (!window.confirm(`${force ? "强制结束" : "结束"}进程 ${pid}？`)) return;
+  try {
+    const r = await ipc.sshProcessKill(props.connection.sessionId, pid, force);
+    if (r.ok) {
+      ui.toast(`${force ? "强制结束" : "结束"}进程 ${pid} 成功`);
+      refresh();
+    } else {
+      ui.toast(`结束进程失败：${r.error ?? "未知错误"}`);
+    }
+  } catch (e) {
+    ui.toast(`操作失败：${e}`);
+  }
+}
+
+onMounted(refresh);
 </script>
 
 <template>

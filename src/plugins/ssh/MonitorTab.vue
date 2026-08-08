@@ -1,45 +1,33 @@
 <script setup lang="ts">
 /**
  * MonitorTab · 资源监控子页签
- * CPU / 内存 / 磁盘 / 网络 四卡片 + 迷你折线图（当前为假数据演示）
+ * CPU / 内存 / 磁盘 / 网络 四卡片 + 迷你折线图（3s 轮询后端监控命令）
  */
 import { onMounted, onUnmounted, ref } from "vue";
 import type { ServerConnection, ServerProfile, MonitorData } from "./contracts";
 import { formatBytes } from "./useSsh";
+import { ipc } from "./ipc";
 
-defineProps<{
+const props = defineProps<{
   connection?: ServerConnection;
   profile?: ServerProfile;
 }>();
 
-const data = ref<MonitorData>({
-  cpuPercent: 45,
-  memoryPercent: 62,
-  memoryUsed: 8.2 * 1024 * 1024 * 1024,
-  memoryTotal: 16 * 1024 * 1024 * 1024,
-  diskPercent: 78,
-  diskUsed: 156 * 1024 * 1024 * 1024,
-  diskTotal: 200 * 1024 * 1024 * 1024,
-  netUploadBps: 1.2 * 1024 * 1024,
-  netDownloadBps: 3.4 * 1024 * 1024,
-  timestamp: Date.now(),
-});
+const data = ref<MonitorData | null>(null);
 
 const history = ref<MonitorData[]>([]);
 let timer: number | null = null;
 
-function refresh() {
-  // TODO: IPC 获取真实监控数据
-  data.value = {
-    ...data.value,
-    cpuPercent: Math.max(5, Math.min(95, data.value.cpuPercent + (Math.random() - 0.5) * 20)),
-    memoryPercent: Math.max(30, Math.min(90, data.value.memoryPercent + (Math.random() - 0.5) * 5)),
-    netUploadBps: Math.floor(Math.random() * 5 * 1024 * 1024),
-    netDownloadBps: Math.floor(Math.random() * 10 * 1024 * 1024),
-    timestamp: Date.now(),
-  };
-  history.value.push({ ...data.value });
-  if (history.value.length > 60) history.value.shift();
+async function refresh() {
+  if (!props.connection?.sessionId) return;
+  try {
+    const d = await ipc.sshMonitorGet(props.connection.sessionId);
+    data.value = d;
+    history.value.push(d);
+    if (history.value.length > 60) history.value.shift();
+  } catch {
+    /* 连接断开时停止轮询（保留上次数据） */
+  }
 }
 
 onMounted(() => {
@@ -80,7 +68,10 @@ function sparkline(values: number[], width = 80, height = 24): string {
     </div>
 
     <!-- 监控卡片 -->
-    <div class="grid min-h-0 flex-1 grid-cols-2 gap-[12px] overflow-y-auto p-[12px]">
+    <div
+      v-if="data"
+      class="grid min-h-0 flex-1 grid-cols-2 gap-[12px] overflow-y-auto p-[12px]"
+    >
       <!-- CPU -->
       <div class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark">
         <div class="flex items-center justify-between">
@@ -164,7 +155,7 @@ function sparkline(values: number[], width = 80, height = 24): string {
     <div
       class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
     >
-      <span>最后更新：{{ new Date(data.timestamp).toLocaleTimeString() }}</span>
+      <span>最后更新：{{ data ? new Date(data.timestamp).toLocaleTimeString() : "-" }}</span>
       <span class="ml-auto">{{ connection?.status === "connected" ? "监控中" : "未连接" }}</span>
     </div>
   </div>

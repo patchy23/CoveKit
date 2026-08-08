@@ -1,28 +1,22 @@
 <script setup lang="ts">
 /**
- * DockerTab · Docker 容器管理子页签（当前为假数据演示）
+ * DockerTab · Docker 容器管理子页签（后端 docker 命令真实数据）
  * 搜索（名称/ID/镜像）+ 状态筛选。
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import type { ServerConnection, ServerProfile, DockerContainer } from "./contracts";
 import { useUiStore } from "@/stores/ui";
 import Select from "@/features/ui/Select.vue";
+import { ipc } from "./ipc";
 
-defineProps<{
+const props = defineProps<{
   connection?: ServerConnection;
   profile?: ServerProfile;
 }>();
 
 const ui = useUiStore();
 
-const mockContainers: DockerContainer[] = [
-  { id: "a1b2c3d4", name: "nginx", image: "nginx:latest", status: "running", ports: "80:80,443:443", createdAt: Date.now() - 86400000 * 7 },
-  { id: "e5f6g7h8", name: "mysql", image: "mysql:8.0", status: "running", ports: "3306:3306", createdAt: Date.now() - 86400000 * 14 },
-  { id: "i9j0k1l2", name: "redis", image: "redis:alpine", status: "exited", ports: "6379:6379", createdAt: Date.now() - 86400000 * 30 },
-  { id: "m3n4o5p6", name: "app-api", image: "registry.local/api:v2.1", status: "running", ports: "8080:8080", createdAt: Date.now() - 86400000 * 3 },
-];
-
-const containers = ref([...mockContainers]);
+const containers = ref<DockerContainer[]>([]);
 const keyword = ref("");
 const statusFilter = ref<"all" | "running" | "exited">("all");
 
@@ -44,22 +38,55 @@ const filtered = computed(() => {
   return list;
 });
 
-function action(c: DockerContainer, act: "start" | "stop" | "restart" | "remove") {
-  ui.toast(`${act === "start" ? "启动" : act === "stop" ? "停止" : act === "restart" ? "重启" : "删除"}容器 ${c.name}（待后端 IPC 接入）`);
+async function refresh() {
+  if (!props.connection?.sessionId) return;
+  try {
+    containers.value = await ipc.sshDockerList(props.connection.sessionId);
+  } catch (e) {
+    ui.toast(`容器列表加载失败：${e}`);
+  }
+}
+
+async function action(c: DockerContainer, act: "start" | "stop" | "restart" | "remove") {
+  if (!props.connection?.sessionId) return;
+  if (act === "remove" && !window.confirm(`删除容器「${c.name}」？此操作不可恢复。`)) return;
+  try {
+    const r = await ipc.sshDockerAction({
+      connectionId: props.connection.sessionId,
+      containerId: c.id,
+      action: act,
+    });
+    if (r.ok) {
+      ui.toast(`${act === "start" ? "启动" : act === "stop" ? "停止" : act === "restart" ? "重启" : "删除"}容器 ${c.name} 成功`);
+      refresh();
+    } else {
+      ui.toast(`操作失败：${r.error ?? "未知错误"}`);
+    }
+  } catch (e) {
+    ui.toast(`操作失败：${e}`);
+  }
 }
 
 function logs(c: DockerContainer) {
-  ui.toast(`查看容器 ${c.name} 日志（待后端 IPC 接入）`);
+  if (!props.connection?.sessionId) return;
+  ipc
+    .sshDockerLogs({ connectionId: props.connection.sessionId, containerId: c.id, lines: 100 })
+    .then((r) => {
+      if (r.ok) ui.toast(`日志已获取（${r.logs.length} 字符）`);
+    })
+    .catch((e) => ui.toast(`日志获取失败：${e}`));
 }
 
 function exec(c: DockerContainer) {
-  ui.toast(`进入容器 ${c.name} 终端（待后端 IPC 接入）`);
+  ui.toast(`进入容器 ${c.name} 终端（终端通道联调后接入）`);
 }
 
 function stateClass(s: string): string {
   if (s === "running") return "text-success-strong dark:text-success-dark";
   return "text-text-muted dark:text-text-muted-dark";
 }
+
+onMounted(refresh);
 </script>
 
 <template>

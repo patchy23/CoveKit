@@ -74,6 +74,26 @@ export const mockProfiles: ServerProfile[] = [
   },
 ];
 
+/* ── 服务器配置持久化（localStorage；凭证本体走后端 AES-GCM，不入库）── */
+
+const PROFILES_KEY = "ssh.profiles.v1";
+
+/** 读取服务器配置（首次运行时播种示例） */
+export function loadProfiles(): ServerProfile[] {
+  try {
+    const raw = localStorage.getItem(PROFILES_KEY);
+    if (raw) return JSON.parse(raw) as ServerProfile[];
+  } catch {
+    /* 数据损坏时回退种子 */
+  }
+  return mockProfiles;
+}
+
+/** 保存服务器配置（新增/更新，返回最新列表） */
+export function persistProfiles(list: ServerProfile[]): void {
+  localStorage.setItem(PROFILES_KEY, JSON.stringify(list));
+}
+
 export const mockConnections: ServerConnection[] = [
   {
     profileId: "profile-1",

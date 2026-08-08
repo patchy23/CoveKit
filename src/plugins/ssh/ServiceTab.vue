@@ -1,13 +1,14 @@
 <script setup lang="ts">
 /**
- * ServiceTab · systemd 服务管理子页签（当前为假数据演示）
+ * ServiceTab · systemd 服务管理子页签（后端 exec 真实数据）
  */
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import type { ServerConnection, ServerProfile, SystemdService } from "./contracts";
 import { useUiStore } from "@/stores/ui";
 import Select from "@/features/ui/Select.vue";
+import { ipc } from "./ipc";
 
-defineProps<{
+const props = defineProps<{
   connection?: ServerConnection;
   profile?: ServerProfile;
 }>();
@@ -15,27 +16,58 @@ defineProps<{
 const ui = useUiStore();
 
 const filter = ref<"all" | "active" | "inactive" | "failed">("all");
-
-const mockServices: SystemdService[] = [
-  { name: "nginx.service", description: "Nginx HTTP Server", loadState: "loaded", activeState: "active", subState: "running", enabled: true },
-  { name: "docker.service", description: "Docker Application Container Engine", loadState: "loaded", activeState: "active", subState: "running", enabled: true },
-  { name: "mysql.service", description: "MySQL Database Server", loadState: "loaded", activeState: "inactive", subState: "dead", enabled: false },
-  { name: "redis.service", description: "Redis In-Memory Data Store", loadState: "loaded", activeState: "failed", subState: "failed", enabled: true },
-  { name: "ssh.service", description: "OpenSSH Server", loadState: "loaded", activeState: "active", subState: "running", enabled: true },
-];
+const services = ref<SystemdService[]>([]);
+const loading = ref(false);
 
 /** 按状态筛选后的服务列表（computed 自动响应 filter 变化） */
 const filtered = computed(() => {
-  if (filter.value === "all") return mockServices;
-  return mockServices.filter((s) => s.activeState === filter.value);
+  if (filter.value === "all") return services.value;
+  return services.value.filter((s) => s.activeState === filter.value);
 });
 
-function action(svc: SystemdService, act: "start" | "stop" | "restart") {
-  ui.toast(`${act === "start" ? "启动" : act === "stop" ? "停止" : "重启"} ${svc.name}（待后端 IPC 接入）`);
+async function refresh() {
+  if (!props.connection?.sessionId) return;
+  loading.value = true;
+  try {
+    services.value = await ipc.sshServiceList({
+      connectionId: props.connection.sessionId,
+      filter: filter.value,
+    });
+  } catch (e) {
+    ui.toast(`服务列表加载失败：${e}`);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function action(svc: SystemdService, act: "start" | "stop" | "restart") {
+  if (!props.connection?.sessionId) return;
+  try {
+    const r = await ipc.sshServiceAction({
+      connectionId: props.connection.sessionId,
+      serviceName: svc.name,
+      action: act,
+    });
+    if (r.ok) {
+      ui.toast(`${act === "start" ? "启动" : act === "stop" ? "停止" : "重启"} ${svc.name} 成功`);
+      refresh();
+    } else {
+      ui.toast(`${act} ${svc.name} 失败：${r.error ?? "未知错误"}`);
+    }
+  } catch (e) {
+    ui.toast(`操作失败：${e}`);
+  }
 }
 
 function logs(svc: SystemdService) {
-  ui.toast(`查看 ${svc.name} 日志（待后端 IPC 接入）`);
+  if (!props.connection?.sessionId) return;
+  ui.toast(`查看 ${svc.name} 日志（控制台输出）`);
+  ipc
+    .sshServiceLogs({ connectionId: props.connection.sessionId, serviceName: svc.name, lines: 100 })
+    .then((r) => {
+      if (r.ok) ui.toast(`日志已获取（${r.logs.length} 字符）`);
+    })
+    .catch((e) => ui.toast(`日志获取失败：${e}`));
 }
 
 function stateClass(s: SystemdService): string {
@@ -49,6 +81,8 @@ function stateText(s: SystemdService): string {
   if (s.activeState === "failed") return "失败";
   return "已停止";
 }
+
+onMounted(refresh);
 </script>
 
 <template>

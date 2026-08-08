@@ -1,51 +1,142 @@
 <script setup lang="ts">
 /**
- * TerminalTab · SSH 终端子页签
- * 当前为纯前端演示：xterm.js 占位 + 假数据回显，后端 IPC 接入后替换为真实数据流。
+ * TerminalTab · SSH 交互式终端（xterm.js）
+ * 连接会话 → 打开 PTY 通道；输出走 ssh://terminal-data 事件推送，
+ * 输入走 ssh_terminal_write；ResizeObserver 同步窗口大小。
  */
-import { onMounted, ref } from "vue";
-import type { ServerConnection, ServerProfile, TerminalSession } from "./contracts";
+import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { Terminal } from "xterm";
+import { FitAddon } from "@xterm/addon-fit";
+import "xterm/css/xterm.css";
+import type { ServerConnection, ServerProfile } from "./contracts";
 import { useUiStore } from "@/stores/ui";
+import { ipc, onTerminalData } from "./ipc";
 
-defineProps<{
+const props = defineProps<{
   connection?: ServerConnection;
   profile?: ServerProfile;
-  terminals: TerminalSession[];
 }>();
 
 const ui = useUiStore();
-const terminalEl = ref<HTMLElement | null>(null);
 
-/** 默认终端输出（mock 假数据；清空/重连按钮操作此列表） */
-const DEFAULT_LINES = [
-  "$ whoami",
-  "root",
-  "$ ls -la /var/log/",
-  "total 128",
-  "drwxr-xr-x 8 root root 4096 Aug 1 12:00 .",
-  "drwxr-xr-x 3 root root 4096 Aug 1 12:00 ..",
-  "-rw-r--r-- 1 root root 12.4M Aug 8 14:32 access.log",
-  "-rw-r--r-- 1 root root 3.2M Aug 8 14:32 error.log",
-];
+const termHost = ref<HTMLDivElement | null>(null);
+const statusLine = ref("未连接");
 
-/** 终端输出行（清空按钮清空，重连按钮重置） */
-const terminalLines = ref<string[]>([...DEFAULT_LINES]);
+let term: Terminal | null = null;
+let fitAddon: FitAddon | null = null;
+let terminalId: string | null = null;
+let unlistenData: (() => void) | null = null;
+let resizeObserver: ResizeObserver | null = null;
 
-/** 重新连接（mock：重置输出并提示，后端接入后改为 ssh_reconnect） */
-function reconnect() {
-  terminalLines.value = [...DEFAULT_LINES];
-  ui.toast("已重新连接（mock）");
+/** 打开终端通道（连接建立/重连时调用） */
+async function openTerminal() {
+  if (!props.connection?.sessionId || !term) return;
+  try {
+    const cols = term.cols;
+    const rows = term.rows;
+    const t = await ipc.sshTerminalOpen({
+      connectionId: props.connection.sessionId,
+      cols,
+      rows,
+    });
+    terminalId = t.id;
+    statusLine.value = `已连接 ${props.connection.host ?? ""} · ${t.cols}×${t.rows}`;
+    ui.toast("终端已打开");
+  } catch (e) {
+    statusLine.value = `终端打开失败：${e}`;
+    ui.toast(`终端打开失败：${e}`);
+  }
 }
 
-onMounted(() => {
-  // TODO: 接入 xterm.js 与 Tauri IPC 终端数据流
-  // 当前仅展示占位与假数据
+/** 关闭终端通道（断开/组件卸载时调用） */
+async function closeTerminal() {
+  if (terminalId) {
+    try {
+      await ipc.sshTerminalClose(terminalId);
+    } catch {
+      /* 通道可能已被服务端关闭 */
+    }
+    terminalId = null;
+  }
+}
+
+async function reconnect() {
+  await closeTerminal();
+  term?.reset();
+  await openTerminal();
+}
+
+onMounted(async () => {
+  if (!termHost.value) return;
+  term = new Terminal({
+    cursorBlink: true,
+    fontSize: 13,
+    fontFamily: "var(--font-mono)",
+    theme: {
+      background: "#0d1117",
+      foreground: "#e6edf3",
+      cursor: "#f0562c",
+    },
+    scrollback: 2000,
+  });
+  fitAddon = new FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(termHost.value);
+  fitAddon.fit();
+
+  // 用户输入 → 后端
+  term.onData((data) => {
+    if (terminalId) {
+      ipc.sshTerminalWrite(terminalId, data).catch(() => undefined);
+    }
+  });
+
+  // 后端输出 → 终端（事件推送）
+  unlistenData = await onTerminalData((d) => {
+    if (terminalId && d.terminalId === terminalId) {
+      term?.write(d.data);
+    }
+  });
+
+  // 窗口尺寸同步（xterm → SSH PTY）
+  resizeObserver = new ResizeObserver(() => {
+    if (!term || !fitAddon || !terminalId) return;
+    fitAddon.fit();
+    const { cols, rows } = term;
+    if (cols > 0 && rows > 0) {
+      ipc.sshTerminalResize(terminalId, cols, rows).catch(() => undefined);
+    }
+  });
+  resizeObserver.observe(termHost.value);
+
+  // 连接会话变化 → 打开/关闭终端
+  await openTerminal();
 });
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  unlistenData?.();
+  closeTerminal();
+  term?.dispose();
+  term = null;
+});
+
+// 连接切换（侧栏点击其他服务器）时重开终端
+watch(
+  () => props.connection?.sessionId,
+  async (newId, oldId) => {
+    if (newId && newId !== oldId) {
+      await closeTerminal();
+      term?.reset();
+      await openTerminal();
+    }
+  },
+);
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <!-- 终端工具栏 -->
+    <!-- 状态栏 -->
     <div
       class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
     >
@@ -53,19 +144,15 @@ onMounted(() => {
         {{ profile?.name ?? "未连接" }} · 终端
       </span>
       <span class="font-mono text-caption text-text-muted dark:text-text-muted-dark">
-        80×24 UTF-8
+        {{ statusLine }}
       </span>
       <div class="ml-auto flex gap-[6px]">
-        <button
-          class="btn-ghost !px-[8px] !py-[3px] text-caption"
-          title="清空终端"
-          @click="terminalLines = []"
-        >
+        <button class="btn-ghost !px-[8px] !py-[3px] text-caption" title="清空终端" @click="term?.clear()">
           清空
         </button>
         <button
           class="btn-ghost !px-[8px] !py-[3px] text-caption"
-          title="重新连接"
+          title="重连"
           @click="reconnect"
         >
           重连
@@ -73,32 +160,7 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 终端区域（xterm.js 挂载点） -->
-    <div
-      ref="terminalEl"
-      class="min-h-0 flex-1 select-text overflow-auto bg-surface p-[12px] font-mono text-body-sm leading-relaxed text-primary dark:bg-surface-dark dark:text-primary-dark"
-    >
-      <template v-if="connection?.status === 'connected'">
-        <p class="font-sans text-success-strong dark:text-success-dark">
-          ● 已连接到 {{ connection.host }}（延迟 {{ connection.latencyMs }}ms）
-        </p>
-        <p v-for="line in terminalLines" :key="line" class="mt-[2px]">{{ line }}</p>
-        <p class="mt-[8px]">$ <span class="animate-pulse">█</span></p>
-      </template>
-      <template v-else>
-        <p class="font-sans text-text-muted dark:text-text-muted-dark">
-          未连接。请从左侧选择服务器并点击「连接」。
-        </p>
-      </template>
-    </div>
-
-    <!-- 状态栏 -->
-    <div
-      class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-    >
-      <span>终端 {{ terminals.length }} 个</span>
-      <span>SSH 通道复用</span>
-      <span class="ml-auto">{{ connection?.status === "connected" ? "就绪" : "未连接" }}</span>
-    </div>
+    <!-- xterm 挂载区 -->
+    <div ref="termHost" class="min-h-0 flex-1 overflow-hidden bg-[#0d1117] p-[8px]" />
   </div>
 </template>
