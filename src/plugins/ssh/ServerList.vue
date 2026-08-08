@@ -76,7 +76,7 @@ onUnmounted(() => document.removeEventListener("mousedown", closeMenu));
 </script>
 
 <template>
-  <div class="flex w-[240px] shrink-0 flex-col border-r border-border dark:border-border-dark">
+  <div class="flex w-[180px] shrink-0 flex-col border-r border-border dark:border-border-dark">
     <!-- 搜索 + 添加 -->
     <div class="shrink-0 space-y-[8px] px-[12px] py-[10px]">
       <input
