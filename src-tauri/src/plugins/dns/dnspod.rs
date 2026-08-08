@@ -23,7 +23,7 @@ impl DnsPod {
     /// 由密钥配置构造客户端；Token 未配置返回明确错误（引导去设置页）
     pub fn new(cfg: &ProviderConfig) -> Result<Self, String> {
         if cfg.id.is_empty() || cfg.key.is_empty() {
-            return Err("请先在「设置」页配置 DNSPod API Token（ID / Token）".into());
+            return Err("请先在「设置」页配置腾讯云 API Token（ID / Token）".into());
         }
         Ok(Self {
             client: reqwest::Client::new(),

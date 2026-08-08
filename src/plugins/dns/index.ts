@@ -9,7 +9,7 @@ registerTool({
   category: "net",
   icon: "dns",
   description:
-    "DNS 查询（多类型、多服务器对比）+ 阿里云/DNSPod 云解析记录管理（增删改查）。",
+    "DNS 查询（多类型、多服务器对比）+ 阿里云/腾讯云云解析记录管理（增删改查）。",
   keywords: [
     "dns",
     "域名",

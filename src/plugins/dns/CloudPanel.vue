@@ -28,17 +28,34 @@ async function switchPlatform(p: "aliyun" | "dnspod") {
   await loadDomains();
 }
 
-/** 拉取域名列表（密钥未配置时 configured=false 引导去设置页） */
+/** 检查当前平台是否已配置密钥（未配置则静默显示引导条，不请求域名列表） */
+async function ensureConfigured(): Promise<boolean> {
+  try {
+    const cfg = await ipc.dnsConfigGet();
+    const c = platform.value === "aliyun" ? cfg.aliyun : cfg.dnspod;
+    const ok = Boolean(c.id.trim() && c.key.trim());
+    configured.value = ok;
+    return ok;
+  } catch {
+    // 读配置失败按未配置处理（引导条兜底，不弹错误）
+    configured.value = false;
+    return false;
+  }
+}
+
+/** 拉取域名列表（未配置密钥时直接显示引导条，不发起请求） */
 async function loadDomains() {
+  if (!(await ensureConfigured())) {
+    domains.value = [];
+    return;
+  }
   busy.value = true;
   try {
     const r = await ipc.dnsDomains(platform.value);
     domains.value = r.list;
     configured.value = true;
   } catch (e) {
-    // 密钥未配置或网络失败：提示并展示空列表（引导去设置页）
-    configured.value = false;
-    domains.value = [];
+    // 已配置但请求失败（网络/密钥无效）：明确提示
     ui.toast("加载域名失败：" + (e instanceof Error ? e.message : String(e)));
   } finally {
     busy.value = false;

@@ -72,7 +72,7 @@ describe("预设与常量", () => {
   });
   it("platformLabel", () => {
     expect(platformLabel("aliyun")).toBe("阿里云");
-    expect(platformLabel("dnspod")).toBe("DNSPod");
+    expect(platformLabel("dnspod")).toBe("腾讯云");
     expect(platformLabel("cf")).toBe("cf");
   });
 });
