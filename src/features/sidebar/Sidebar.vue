@@ -61,7 +61,7 @@ function toggleTheme() {
         class="flex w-full items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium transition-colors duration-150"
         :class="
           ui.activeCategory === item.id
-            ? 'bg-tertiary-soft font-semibold text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
             : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
         "
         @click="
