@@ -13,7 +13,6 @@ import MonitorTab from "./MonitorTab.vue";
 import ServiceTab from "./ServiceTab.vue";
 import ProcessTab from "./ProcessTab.vue";
 import DockerTab from "./DockerTab.vue";
-import EditorTab from "./EditorTab.vue";
 import {
   mockConnections,
   mockProfiles,
@@ -116,7 +115,6 @@ const tabs = [
   { id: "services", name: "服务", component: ServiceTab },
   { id: "processes", name: "进程", component: ProcessTab },
   { id: "docker", name: "Docker", component: DockerTab },
-  { id: "editor", name: "编辑", component: EditorTab },
 ] as const;
 
 const activeTabId = ref<string>("terminal");

@@ -1,12 +1,14 @@
 <script setup lang="ts">
 /**
  * FileManagerTab · 远程文件管理子页签
- * 路径导航 + 文件列表 + 上传/下载/删除/重命名操作（当前为假数据演示）
+ * 路径导航 + 文件列表 + 上传/下载/删除/重命名操作（当前为假数据演示）；
+ * 双击文本文件 → 弹窗编辑 → 保存回写服务器。
  */
 import { computed, ref } from "vue";
 import type { ServerConnection, ServerProfile, RemoteFile } from "./contracts";
 import { formatBytes, formatTime, mockFiles } from "./useSsh";
 import { useUiStore } from "@/stores/ui";
+import EditorDialog from "./EditorDialog.vue";
 
 defineProps<{
   connection?: ServerConnection;
@@ -18,6 +20,9 @@ const ui = useUiStore();
 const currentPath = ref("/var/log/nginx");
 const files = ref<RemoteFile[]>([...mockFiles]);
 const selectedFile = ref<RemoteFile | null>(null);
+
+/** 当前打开的编辑弹窗（path + 内容） */
+const editing = ref<{ path: string; content: string } | null>(null);
 
 const parentPath = computed(() => {
   const p = currentPath.value;
@@ -36,12 +41,30 @@ function navigateUp() {
   if (parentPath.value) navigate(parentPath.value);
 }
 
+/** 双击：目录进入，文件打开编辑弹窗 */
 function onDoubleClick(file: RemoteFile) {
   if (file.isDir) {
     navigate(file.path);
-  } else {
-    ui.toast(`打开编辑：${file.name}（远程编辑页签开发中）`);
+    return;
   }
+  // TODO: IPC 拉取远程文件内容（ssh_edit_open），当前为 mock 示例内容
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const mockByExt: Record<string, string> = {
+    log: `2026-08-08 14:32:05 [info] ${file.name} 服务启动正常\n2026-08-08 14:33:12 [warn] 请求延迟偏高 120ms\n2026-08-08 14:35:40 [error] 连接池超时，重试中\n`,
+    conf: `# ${file.name}\nserver {\n    listen 80;\n    server_name example.com;\n    root /var/www/html;\n\n    location /api {\n        proxy_pass http://127.0.0.1:3000;\n    }\n}\n`,
+  };
+  editing.value = {
+    path: file.path,
+    content: mockByExt[ext] ?? `# ${file.name}\n（内容待后端 IPC 加载）\n`,
+  };
+}
+
+/** 保存：回写服务器（后端 IPC 接入前为 mock 提示） */
+function onSave(content: string) {
+  const path = editing.value?.path ?? "";
+  // TODO: IPC 保存远程文件（ssh_edit_save）
+  ui.toast(`已保存 ${path}（${content.length} 字符）`);
+  editing.value = null;
 }
 
 function upload() {
@@ -147,5 +170,14 @@ function rename() {
         已选：{{ selectedFile.name }}
       </span>
     </div>
+
+    <!-- 远程编辑弹窗（双击文件打开） -->
+    <EditorDialog
+      v-if="editing"
+      :path="editing.path"
+      :content="editing.content"
+      @save="onSave"
+      @cancel="editing = null"
+    />
   </div>
 </template>
