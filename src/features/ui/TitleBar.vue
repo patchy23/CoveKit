@@ -53,7 +53,7 @@ function onDblClick() {
             ? 'bg-border text-primary dark:bg-border-dark dark:text-primary-dark'
             : ''
         "
-        :title="ui.immersive ? '退出沉浸模式' : '沉浸模式（隐藏工具标题栏）'"
+        :title="ui.immersive ? '退出沉浸模式' : '沉浸模式（隐藏工具标题栏与侧栏）'"
         @click="ui.toggleImmersive()"
       >
         <AppIcon name="immersive" :size="14" />
