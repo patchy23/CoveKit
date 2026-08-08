@@ -73,10 +73,14 @@
 M3 按 docs/02-architecture.md §10 推进：
 
 1. **数据库扩展**：MySQL/PG 连接（复用 `modules/db`，sqlx 三方言 Adapter）
-2. **DNS 管理**：阿里/腾讯/Cloudflare 三厂商 adapter（`modules/dns`）
+2. **DNS 管理**：✅ 已完成（2026-08-08，见下方实现记录）
 3. **SSH 工具**：russh 或 ssh2（M3 再定），`modules/ssh`
-4. **凭据加密**：tauri-plugin-stronghold（连接凭据落盘保护）
+4. **凭据加密**：tauri-plugin-stronghold（连接凭据落盘保护）——**DNS 插件密钥当前明文存 dns.db，接入 stronghold 时迁移**
 5. **i18n / 发布准备**：英文语言包、自动更新、代码签名
+
+### M3 已完成记录（2026-08-08）
+
+- **DNS 工具**：`plugins/dns`（Rust `src-tauri/src/plugins/dns/`：mod.rs 门面 + models.rs + query.rs + alidns.rs + dnspod.rs）。DNS 查询用 hickory-resolver 0.26（feature `tokio`+`system-config`；**API 与旧版差异大：类型是 `TokioResolver`/`Resolver<TokioRuntimeProvider>` Builder 模式、`ResolverConfig::from_parts` 3 参、`NameServerConfig::udp(ip)`、Record 的 name/ttl/data 是公开字段、`Lookup::answers()`、TXT 用 `.txt_data` 字段**）；云解析：阿里云走 aliyun-openapi-core-rust-sdk 1.1（同参考项目 DnsAnalysisTools），DNSPod 走 dnsapi.cn Token API（POST 表单，零新依赖，参考项目用的是腾讯云 TC3 SDK）。8 命令 dns_query/dns_domains/dns_records/dns_add_record/dns_update_record/dns_delete_record/dns_config_get/dns_config_set 全量入库；add/update 用 payload 结构体打包（规避 clippy too_many_arguments）；密钥存 dns.db（PluginDb）明文。前端 plugins/dns/：三页签（DNS 查询/解析管理/密钥设置），查询面板多服务器对比 + 自定义服务器，解析管理两段式删除确认 + 行内表单 + 分页；recordTypeBadgeClass 色标在 useDns.ts。
 
 ### M2 已完成记录（2026-08-02）
 
