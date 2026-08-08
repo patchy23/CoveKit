@@ -5,6 +5,7 @@
  */
 import { onMounted, ref } from "vue";
 import type { ServerConnection, ServerProfile, TerminalSession } from "./contracts";
+import { useUiStore } from "@/stores/ui";
 
 defineProps<{
   connection?: ServerConnection;
@@ -12,7 +13,29 @@ defineProps<{
   terminals: TerminalSession[];
 }>();
 
+const ui = useUiStore();
 const terminalEl = ref<HTMLElement | null>(null);
+
+/** 默认终端输出（mock 假数据；清空/重连按钮操作此列表） */
+const DEFAULT_LINES = [
+  "$ whoami",
+  "root",
+  "$ ls -la /var/log/",
+  "total 128",
+  "drwxr-xr-x 8 root root 4096 Aug 1 12:00 .",
+  "drwxr-xr-x 3 root root 4096 Aug 1 12:00 ..",
+  "-rw-r--r-- 1 root root 12.4M Aug 8 14:32 access.log",
+  "-rw-r--r-- 1 root root 3.2M Aug 8 14:32 error.log",
+];
+
+/** 终端输出行（清空按钮清空，重连按钮重置） */
+const terminalLines = ref<string[]>([...DEFAULT_LINES]);
+
+/** 重新连接（mock：重置输出并提示，后端接入后改为 ssh_reconnect） */
+function reconnect() {
+  terminalLines.value = [...DEFAULT_LINES];
+  ui.toast("已重新连接（mock）");
+}
 
 onMounted(() => {
   // TODO: 接入 xterm.js 与 Tauri IPC 终端数据流
@@ -33,8 +56,20 @@ onMounted(() => {
         80×24 UTF-8
       </span>
       <div class="ml-auto flex gap-[6px]">
-        <button class="btn-ghost !px-[8px] !py-[3px] text-caption" title="清空终端">清空</button>
-        <button class="btn-ghost !px-[8px] !py-[3px] text-caption" title="重新连接">重连</button>
+        <button
+          class="btn-ghost !px-[8px] !py-[3px] text-caption"
+          title="清空终端"
+          @click="terminalLines = []"
+        >
+          清空
+        </button>
+        <button
+          class="btn-ghost !px-[8px] !py-[3px] text-caption"
+          title="重新连接"
+          @click="reconnect"
+        >
+          重连
+        </button>
       </div>
     </div>
 
@@ -47,14 +82,7 @@ onMounted(() => {
         <p class="font-sans text-success-strong dark:text-success-dark">
           ● 已连接到 {{ connection.host }}（延迟 {{ connection.latencyMs }}ms）
         </p>
-        <p class="mt-[8px]">$ whoami</p>
-        <p>{{ profile?.username ?? "root" }}</p>
-        <p class="mt-[4px]">$ ls -la /var/log/</p>
-        <p>total 128</p>
-        <p>drwxr-xr-x 8 root root 4096 Aug 1 12:00 .</p>
-        <p>drwxr-xr-x 3 root root 4096 Aug 1 12:00 ..</p>
-        <p>-rw-r--r-- 1 root root 12.4M Aug 8 14:32 access.log</p>
-        <p>-rw-r--r-- 1 root root 3.2M Aug 8 14:32 error.log</p>
+        <p v-for="line in terminalLines" :key="line" class="mt-[2px]">{{ line }}</p>
         <p class="mt-[8px]">$ <span class="animate-pulse">█</span></p>
       </template>
       <template v-else>

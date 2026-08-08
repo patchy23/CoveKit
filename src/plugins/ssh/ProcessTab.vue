@@ -76,7 +76,11 @@ function kill(pid: number, force = false) {
         @update:model-value="sortBy = $event as 'cpu' | 'memory' | 'pid'"
       />
       <div class="ml-auto">
-        <button class="btn-ghost !px-[8px] !py-[3px] text-caption">刷新</button>
+        <button
+          class="btn-ghost !px-[8px] !py-[3px] text-caption"
+          title="刷新进程列表"
+          @click="ui.toast('已刷新（mock）')"
+        >刷新</button>
       </div>
     </div>
 

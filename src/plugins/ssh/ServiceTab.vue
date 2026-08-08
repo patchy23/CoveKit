@@ -75,7 +75,8 @@ function stateText(s: SystemdService): string {
       <div class="ml-auto">
         <button
           class="btn-ghost !px-[8px] !py-[3px] text-caption"
-          @click="filter = 'all'"
+          title="刷新服务列表"
+          @click="ui.toast('已刷新（mock）')"
         >
           刷新
         </button>

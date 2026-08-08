@@ -84,6 +84,8 @@ function del() {
     ui.toast("请先选择文件");
     return;
   }
+  // 删除前确认（UI-009：与服务器删除一致，避免误删）
+  if (!window.confirm(`确定删除「${selectedFile.value.name}」？此操作不可恢复。`)) return;
   ui.toast(`删除 ${selectedFile.value.name}（待后端 IPC 接入）`);
 }
 

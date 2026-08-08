@@ -144,7 +144,12 @@ const activeTab = computed(() => tabs.find((t) => t.id === activeTabId.value) ??
       :active-profile-id="activeProfileId"
       :search-keyword="searchKeyword"
       @update:search-keyword="searchKeyword = $event"
-      @select="activeProfileId = $event"
+      @select="
+        (id) => {
+          activeProfileId = id;
+          connect(id); // 单击即连接（UI.md 要求，UI-016）
+        }
+      "
       @connect="connect"
       @disconnect="disconnect"
       @add="openAddForm"
@@ -229,6 +234,7 @@ const activeTab = computed(() => tabs.find((t) => t.id === activeTabId.value) ??
       v-if="formOpen"
       :profile="editingProfile"
       @save="saveProfile"
+      @error="(msg) => ui.toast(msg)"
       @cancel="formOpen = false"
     />
 

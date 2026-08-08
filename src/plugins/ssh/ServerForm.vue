@@ -14,6 +14,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "save", p: ServerProfile): void;
   (e: "cancel"): void;
+  (e: "error", msg: string): void;
 }>();
 
 const form = reactive({
@@ -57,6 +58,19 @@ watch(
 );
 
 function submit() {
+  // 必填校验：名称/主机/用户名任一为空则提示并中止（UI-014）
+  if (!form.name.trim()) {
+    emit("error", "请输入服务器名称");
+    return;
+  }
+  if (!form.host.trim()) {
+    emit("error", "请输入主机地址");
+    return;
+  }
+  if (!form.username.trim()) {
+    emit("error", "请输入登录用户名");
+    return;
+  }
   const p: ServerProfile = {
     id: form.id || `profile-${Date.now()}`,
     name: form.name.trim(),
