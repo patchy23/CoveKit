@@ -77,7 +77,7 @@ onBeforeUnmount(() => {
       type="button"
       class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] transition-colors hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark"
       :class="[
-        props.size === 'sm' ? 'h-[28px] text-caption' : 'py-[8px] text-body font-semibold',
+        props.size === 'sm' ? 'h-[28px] text-caption' : 'py-[8px] text-body font-medium',
         clsFor(modelValue),
         open ? 'border-tertiary dark:border-tertiary-dark' : '',
       ]"
@@ -116,7 +116,9 @@ onBeforeUnmount(() => {
         :class="[
           props.size === 'sm' ? 'text-caption' : 'text-body',
           clsFor(opt.value),
-          opt.value === modelValue ? 'font-semibold' : '',
+          opt.value === modelValue
+            ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
+            : '',
         ]"
         @click="select(opt.value)"
       >
