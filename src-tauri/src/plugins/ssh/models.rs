@@ -109,6 +109,7 @@ pub struct TerminalSession {
     pub(crate) title: String,
     /// 当前行列数
     pub(crate) cols: u16,
+    /// 当前行数
     pub(crate) rows: u16,
     /// 是否活跃（前端正在展示）
     pub(crate) active: bool,
@@ -303,6 +304,7 @@ pub struct DockerContainer {
 /// Docker 日志条目
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // 契约类型：docker 日志列表，当前版本未构造（v1 返回原始文本）
 pub struct DockerLog {
     /// 容器 ID
     pub(crate) container_id: String,

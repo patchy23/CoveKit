@@ -62,6 +62,7 @@ pub fn run() {
     let builder = plugins::db::register(builder);
     let builder = plugins::hosts::register(builder);
     let builder = plugins::dns::register(builder);
+    let builder = plugins::ssh::register(builder);
 
     builder
         // 关窗行为：最小化到托盘（开放问题默认值）

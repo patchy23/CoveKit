@@ -7,3 +7,4 @@ pub mod db;
 pub mod dns;
 pub mod hosts;
 pub mod http_ws;
+pub mod ssh;

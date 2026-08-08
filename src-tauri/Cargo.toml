@@ -31,7 +31,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 reqwest = { version = "0.12", features = ["json"] }
-tokio = { version = "1", features = ["sync", "macros", "rt"] }
+tokio = { version = "1", features = ["sync", "macros", "rt", "fs", "io-util", "time"] }
 tokio-tungstenite = "0.24"
 futures-util = "0.3"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
@@ -40,7 +40,14 @@ aliyun-openapi-core-rust-sdk = "1.1"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
-time = { version = "0.3", features = ["formatting"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
+# SSH 插件：russh 客户端 + SFTP + 凭证 AES-GCM 加密（ssh-key 由 russh 依赖提供）
+# ring 后端：避免 aws-lc-rs 在 Windows 依赖 NASM 汇编器
+russh = { version = "0.62.5", default-features = false, features = ["flate2", "ring", "rsa"] }
+russh-sftp = "2.4.0"
+aes-gcm = "0.10"
+rand = "0.8"
+base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
