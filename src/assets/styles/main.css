@@ -200,9 +200,9 @@
     @apply w-full rounded-md border border-border-strong bg-surface-muted px-[13px] py-[11px] text-body text-primary outline-none transition-colors placeholder:text-text-muted focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-tertiary-dark;
   }
 
-  /* 工具内固定工具栏：内容区滚动时始终可见（抵消内容区 px-xl/py-lg 内边距） */
+  /* 工具内固定工具栏：内容区滚动时始终可见（抵消内容区 px-md/py-md 内边距） */
   .sticky-toolbar {
-    @apply sticky top-0 z-10 -mx-[24px] flex flex-wrap items-center gap-[10px] border-b border-border bg-surface px-[24px] py-[12px] shadow-[0_2px_10px_rgba(16,24,40,0.06)] dark:border-border-dark dark:bg-surface-dark;
+    @apply sticky top-0 z-10 -mx-[14px] flex flex-wrap items-center gap-[10px] border-b border-border bg-surface px-[14px] py-[12px] shadow-[0_2px_10px_rgba(16,24,40,0.06)] dark:border-border-dark dark:bg-surface-dark;
   }
   .field-textarea {
     @apply w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[11px] text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark;
