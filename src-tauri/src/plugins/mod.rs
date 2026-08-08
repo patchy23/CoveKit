@@ -4,5 +4,6 @@
 // 框架级能力（设置/快捷键/窗口/数据管理）在 framework/，不属于插件。
 pub mod api;
 pub mod db;
+pub mod dns;
 pub mod hosts;
 pub mod http_ws;
