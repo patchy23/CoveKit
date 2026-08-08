@@ -1,0 +1,150 @@
+<script setup lang="ts">
+/**
+ * ServerForm · 添加/编辑服务器弹窗
+ * 表单：名称 / host / port / 用户名 / 认证方式 / 密码/密钥 / 备注
+ */
+import { reactive, watch } from "vue";
+import type { ServerProfile, AuthMethod } from "./contracts";
+
+const props = defineProps<{
+  profile: ServerProfile | null;
+}>();
+
+const emit = defineEmits<{
+  (e: "save", p: ServerProfile): void;
+  (e: "cancel"): void;
+}>();
+
+const form = reactive({
+  id: "",
+  name: "",
+  host: "",
+  port: 22,
+  username: "",
+  authMethod: "password" as AuthMethod,
+  password: "",
+  privateKey: "",
+  passphrase: "",
+  remark: "",
+});
+
+watch(
+  () => props.profile,
+  (p) => {
+    if (p) {
+      form.id = p.id;
+      form.name = p.name;
+      form.host = p.host;
+      form.port = p.port;
+      form.username = p.username;
+      form.authMethod = p.authMethod;
+      form.remark = p.remark ?? "";
+    } else {
+      form.id = "";
+      form.name = "";
+      form.host = "";
+      form.port = 22;
+      form.username = "";
+      form.authMethod = "password";
+      form.password = "";
+      form.privateKey = "";
+      form.passphrase = "";
+      form.remark = "";
+    }
+  },
+  { immediate: true },
+);
+
+function submit() {
+  const p: ServerProfile = {
+    id: form.id || `profile-${Date.now()}`,
+    name: form.name.trim(),
+    host: form.host.trim(),
+    port: form.port,
+    username: form.username.trim(),
+    authMethod: form.authMethod,
+    remark: form.remark.trim() || undefined,
+    lastConnectedAt: props.profile?.lastConnectedAt,
+  };
+  emit("save", p);
+}
+</script>
+
+<template>
+  <Teleport to="body">
+    <div
+      class="fixed inset-0 z-[150] grid place-items-center bg-black/30"
+      @click.self="emit('cancel')"
+    >
+      <div
+        class="w-[420px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
+      >
+        <h3 class="mb-[14px] text-card-title font-medium text-primary dark:text-primary-dark">
+          {{ props.profile ? "编辑服务器" : "添加服务器" }}
+        </h3>
+
+        <div class="space-y-[10px]">
+          <div>
+            <label class="field-label mb-[4px]">名称</label>
+            <input v-model="form.name" class="field-input" placeholder="如：生产服务器" />
+          </div>
+
+          <div class="grid grid-cols-2 gap-[10px]">
+            <div>
+              <label class="field-label mb-[4px]">主机</label>
+              <input v-model="form.host" class="field-input font-mono" placeholder="192.168.1.1" />
+            </div>
+            <div>
+              <label class="field-label mb-[4px]">端口</label>
+              <input v-model.number="form.port" type="number" class="field-input" />
+            </div>
+          </div>
+
+          <div>
+            <label class="field-label mb-[4px]">用户名</label>
+            <input v-model="form.username" class="field-input" placeholder="root" />
+          </div>
+
+          <div>
+            <label class="field-label mb-[4px]">认证方式</label>
+            <select v-model="form.authMethod" class="field-input">
+              <option value="password">密码</option>
+              <option value="privateKey">私钥</option>
+              <option value="privateKeyWithPassphrase">私钥 + Passphrase</option>
+            </select>
+          </div>
+
+          <div v-if="form.authMethod === 'password'">
+            <label class="field-label mb-[4px]">密码</label>
+            <input v-model="form.password" type="password" class="field-input" />
+          </div>
+
+          <div v-if="form.authMethod !== 'password'">
+            <label class="field-label mb-[4px]">私钥内容</label>
+            <textarea
+              v-model="form.privateKey"
+              class="field-textarea font-mono text-body-sm"
+              rows="4"
+              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+            />
+          </div>
+
+          <div v-if="form.authMethod === 'privateKeyWithPassphrase'">
+            <label class="field-label mb-[4px]">Passphrase</label>
+            <input v-model="form.passphrase" type="password" class="field-input" />
+          </div>
+
+          <div>
+            <label class="field-label mb-[4px]">备注（可选）</label>
+            <input v-model="form.remark" class="field-input" placeholder="用途说明" />
+          </div>
+        </div>
+
+        <div class="mt-[16px] flex justify-end gap-[8px]">
+          <button class="btn-ghost" @click="emit('cancel')">取消</button>
+          <button class="btn-primary" @click="submit">保存</button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+</template>

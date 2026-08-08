@@ -10,3 +10,4 @@ import "@/plugins/http-ws";
 import "@/plugins/sqlite";
 import "@/plugins/hosts";
 import "@/plugins/dns";
+import "@/plugins/ssh";
