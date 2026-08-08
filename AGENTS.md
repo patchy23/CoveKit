@@ -96,6 +96,6 @@ M3 按 docs/02-architecture.md §10 推进：
 
 ## 约定
 
-- 文档与注释中文；代码标识符英文；提交信息中文且带模块前缀（如 `feat: http-ws: 保存对话框`；跨模块 `/` 分隔；框架/基建用 `core`）
+- 文档与注释中文；代码标识符英文；提交信息用 conventional commits 带模块作用域（如 `fix(http-ws): 保存对话框`；跨模块逗号分隔；框架/基建用 `core`）
 - 所有命令在 git-bash 执行；Windows 环境
 - 改 DESIGN.md 后跑 `npx -y -p @google/design.md designmd lint DESIGN.md` 校验
