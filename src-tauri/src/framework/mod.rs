@@ -10,12 +10,15 @@ pub mod store;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
+/// 窗口可见性状态（window_toggle 的返回）
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowState {
+    /// 切换后窗口是否可见
     visible: bool,
 }
 
+/// 获取主窗口引用（托盘/快捷键/命令共用）
 fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("main")
 }
@@ -29,6 +32,7 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
+/// 切换主窗口显示/隐藏（托盘左键与快捷键呼出）
 #[tauri::command]
 pub fn window_toggle(app: AppHandle) -> Result<WindowState, String> {
     let Some(win) = main_window(&app) else {
@@ -43,6 +47,7 @@ pub fn window_toggle(app: AppHandle) -> Result<WindowState, String> {
     Ok(WindowState { visible: !visible })
 }
 
+/// 隐藏主窗口（最小化到托盘）
 #[tauri::command]
 pub fn window_hide(app: AppHandle) -> Result<(), String> {
     let Some(win) = main_window(&app) else {

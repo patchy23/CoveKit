@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 
 use crate::plugins::http_ws::models::{HttpRequestPayload, HttpResponseResult};
 
+/// 方法字符串 → reqwest 方法枚举（未知值回退 GET）
 fn parse_method(m: &str) -> reqwest::Method {
     match m.to_uppercase().as_str() {
         "POST" => reqwest::Method::POST,
@@ -17,6 +18,7 @@ fn parse_method(m: &str) -> reqwest::Method {
     }
 }
 
+/// 发送 HTTP 请求（失败返回 ok=false + error，不抛错——便于前端展示）
 #[tauri::command]
 pub async fn http_request(payload: HttpRequestPayload) -> Result<HttpResponseResult, String> {
     let client = reqwest::Client::builder()

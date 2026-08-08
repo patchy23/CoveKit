@@ -8,7 +8,9 @@ use std::sync::Mutex;
 /// 命令条目（入库最小单位）
 #[derive(Clone)]
 pub struct IpcEntry {
+    /// 命令名（Tauri invoke 名，全局唯一）
     pub name: &'static str,
+    /// 中文用途说明（供 framework_commands 查询与文档生成）
     pub doc: &'static str,
 }
 
@@ -36,10 +38,13 @@ pub fn snapshot() -> Vec<IpcEntry> {
         .unwrap_or_default()
 }
 
+/// 命令清单条目（framework_commands 的返回项）
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IpcCommandInfo {
+    /// 命令名
     name: String,
+    /// 中文用途说明
     doc: String,
 }
 

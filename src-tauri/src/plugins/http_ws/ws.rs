@@ -14,17 +14,24 @@ use tokio::sync::mpsc;
 
 use crate::plugins::http_ws::models::{WsActionResult, WsMessage, WsSession};
 
+/// WS 会话句柄：消息队列（上限 500）+ 发送 channel（None = 已断开）
 pub(crate) struct WsSessionHandle {
+    /// 连接地址（快照展示用）
     url: String,
+    /// 建立连接的毫秒时间戳
     connected_at: u64,
+    /// 是否仍处于连接状态
     open: bool,
+    /// 消息队列（后台任务写入，快照时拷贝；上限 500 条）
     queue: Mutex<VecDeque<WsMessage>>,
+    /// 发送 channel（drop 后后台 select 收到 None → 断开连接）
     tx: Option<mpsc::UnboundedSender<String>>,
 }
 
 /// WS 会话注册表（State 注入）
 pub struct WsState(pub(crate) Mutex<HashMap<String, WsSessionHandle>>);
 
+/// 当前毫秒时间戳
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -32,6 +39,7 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+/// 会话注册表 → 对外快照（消息队列拷贝，不持锁跨 await）
 fn snapshot(map: &HashMap<String, WsSessionHandle>, id: &str) -> Option<WsSession> {
     let h = map.get(id)?;
     let messages = h.queue.lock().ok()?.iter().cloned().collect();

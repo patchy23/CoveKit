@@ -7,6 +7,7 @@ mod models;
 use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, State};
 
+/// 接口库连接状态（惰性初始化，首次命令访问时打开）
 pub struct ApiState(pub Mutex<Option<rusqlite::Connection>>);
 
 /// 建表迁移（v1：初始结构；v2：type 列——旧库迁移）
@@ -26,6 +27,7 @@ const MIGRATIONS: &[&str] = &[
     "ALTER TABLE api_list ADD COLUMN type TEXT NOT NULL DEFAULT 'http';",
 ];
 
+/// 打开插件数据文件并执行迁移（路径走 framework::store 约定）
 fn open_conn(app: &AppHandle) -> Result<rusqlite::Connection, String> {
     let path = crate::framework::store::plugin_db_path(app, "api")?;
     let conn = rusqlite::Connection::open(path).map_err(|e| e.to_string())?;
@@ -33,6 +35,7 @@ fn open_conn(app: &AppHandle) -> Result<rusqlite::Connection, String> {
     Ok(conn)
 }
 
+/// 取连接（锁内借用；首次访问时惰性打开）
 fn conn<'a>(
     app: &AppHandle,
     state: &'a State<'_, ApiState>,
@@ -89,6 +92,7 @@ pub fn api_save(
     Ok(id)
 }
 
+/// 接口列表（按更新时间倒序）
 #[tauri::command]
 pub fn api_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<ApiRecord>, String> {
     let mut guard = conn(&app, &state)?;
@@ -120,6 +124,7 @@ pub fn api_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<ApiRec
     Ok(rows)
 }
 
+/// 删除单个接口
 #[tauri::command]
 pub fn api_delete(app: AppHandle, state: State<'_, ApiState>, id: i64) -> Result<(), String> {
     let mut guard = conn(&app, &state)?;
@@ -129,6 +134,7 @@ pub fn api_delete(app: AppHandle, state: State<'_, ApiState>, id: i64) -> Result
     Ok(())
 }
 
+/// 清空全部接口
 #[tauri::command]
 pub fn api_clear(app: AppHandle, state: State<'_, ApiState>) -> Result<(), String> {
     let mut guard = conn(&app, &state)?;

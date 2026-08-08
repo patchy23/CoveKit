@@ -15,6 +15,7 @@ use tauri::State;
 /// 当前打开的数据库连接（State 注入；None = 未连接）
 pub struct DbState(pub Mutex<Option<SqlitePool>>);
 
+/// 取连接池（惰性初始化，路径不存在自动创建）
 fn pool(state: &State<'_, DbState>) -> Result<sqlx::Pool<Sqlite>, String> {
     state
         .0

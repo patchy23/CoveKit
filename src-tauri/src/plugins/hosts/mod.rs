@@ -12,11 +12,13 @@ mod models;
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// 当前平台的 hosts 文件路径（Windows）
 #[cfg(target_os = "windows")]
 pub fn hosts_path() -> &'static str {
     "C:\\Windows\\System32\\drivers\\etc\\hosts"
 }
 
+/// 当前平台的 hosts 文件路径（非 Windows：macOS / Linux 均为 /etc/hosts）
 #[cfg(not(target_os = "windows"))]
 pub fn hosts_path() -> &'static str {
     "/etc/hosts"
@@ -24,6 +26,7 @@ pub fn hosts_path() -> &'static str {
 
 use crate::plugins::hosts::models::HostsResult;
 
+/// 秒级时间戳（备份文件名后缀）
 fn timestamp() -> String {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -31,6 +34,7 @@ fn timestamp() -> String {
         .unwrap_or_default()
 }
 
+/// 读取 hosts 文件内容（普通权限可读）
 fn read_hosts() -> Result<String, String> {
     fs::read_to_string(hosts_path()).map_err(|e| format!("读取失败: {e}"))
 }
@@ -60,6 +64,7 @@ pub async fn hosts_save(content: String) -> Result<HostsResult, String> {
         .map_err(|e| format!("提权任务失败: {e}"))?
 }
 
+/// 平台分派：按当前 OS 走对应提权写入实现
 fn save_hosts_blocking(content: &str) -> Result<HostsResult, String> {
     #[cfg(target_os = "windows")]
     {
@@ -75,6 +80,7 @@ fn save_hosts_blocking(content: &str) -> Result<HostsResult, String> {
     }
 }
 
+/// Windows：临时文件 + ps1，Start-Process -Verb RunAs 提权「备份→覆盖」
 #[cfg(target_os = "windows")]
 fn save_windows(content: &str) -> Result<HostsResult, String> {
     let tmp_dir = std::env::temp_dir();
@@ -114,6 +120,7 @@ fn save_windows(content: &str) -> Result<HostsResult, String> {
     finish_save()
 }
 
+/// macOS：osascript 管理员授权「备份→覆盖→清理」（弹系统授权框）
 #[cfg(target_os = "macos")]
 fn save_macos(content: &str) -> Result<HostsResult, String> {
     let tmp_hosts = std::env::temp_dir().join("patchybox-hosts.tmp");
@@ -147,6 +154,7 @@ fn save_macos(content: &str) -> Result<HostsResult, String> {
     finish_save()
 }
 
+/// Linux：直接写入（需 root；失败返回明确错误）
 #[cfg(target_os = "linux")]
 fn save_linux(content: &str) -> Result<HostsResult, String> {
     let backup = format!("{}.bak-{}", hosts_path(), timestamp());

@@ -14,6 +14,7 @@ use tauri::{
 use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_single_instance::init as single_instance_init;
 
+/// 应用入口：装配框架与全部插件后启动（tauri 主循环）
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
