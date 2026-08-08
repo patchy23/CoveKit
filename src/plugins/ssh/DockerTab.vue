@@ -61,8 +61,8 @@ function stateClass(s: string): string {
             <th class="px-[12px] py-[8px] font-medium">名称</th>
             <th class="px-[12px] py-[8px] font-medium">镜像</th>
             <th class="w-[90px] px-[12px] py-[8px] font-medium">状态</th>
-            <th class="w-[140px] px-[12px] py-[8px] font-medium">端口</th>
-            <th class="w-[180px] px-[12px] py-[8px] font-medium">操作</th>
+            <th class="w-[100px] px-[12px] py-[8px] font-medium">端口</th>
+            <th class="whitespace-nowrap px-[12px] py-[8px] font-medium">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -73,40 +73,50 @@ function stateClass(s: string): string {
           >
             <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ c.id }}</td>
             <td class="px-[12px] py-[8px] text-body-sm">{{ c.name }}</td>
-            <td class="max-w-[160px] truncate px-[12px] py-[8px] font-mono text-body-sm" :title="c.image">
+            <td class="max-w-[90px] truncate px-[12px] py-[8px] font-mono text-body-sm" :title="c.image">
               {{ c.image }}
             </td>
             <td class="px-[12px] py-[8px]">
               <span :class="stateClass(c.status)">{{ c.status }}</span>
             </td>
-            <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ c.ports }}</td>
-            <td class="px-[12px] py-[8px]">
-              <div class="flex flex-wrap gap-[4px]">
+            <td class="whitespace-nowrap px-[12px] py-[8px] font-mono text-body-sm">{{ c.ports }}</td>
+            <td class="whitespace-nowrap px-[12px] py-[8px]">
+              <div class="flex items-center gap-[4px]">
                 <button
                   v-if="c.status !== 'running'"
-                  class="btn-ghost !px-[6px] !py-[2px] text-caption"
+                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
                   @click="action(c, 'start')"
                 >
                   启动
                 </button>
                 <button
                   v-if="c.status === 'running'"
-                  class="btn-ghost !px-[6px] !py-[2px] text-caption"
+                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
                   @click="action(c, 'stop')"
                 >
                   停止
                 </button>
                 <button
                   v-if="c.status === 'running'"
-                  class="btn-ghost !px-[6px] !py-[2px] text-caption"
+                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
                   @click="action(c, 'restart')"
                 >
                   重启
                 </button>
-                <button class="btn-ghost !px-[6px] !py-[2px] text-caption" @click="logs(c)">日志</button>
-                <button class="btn-ghost !px-[6px] !py-[2px] text-caption" @click="exec(c)">终端</button>
                 <button
-                  class="btn-ghost !px-[6px] !py-[2px] text-caption text-danger-strong dark:text-danger-dark"
+                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
+                  @click="logs(c)"
+                >
+                  日志
+                </button>
+                <button
+                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
+                  @click="exec(c)"
+                >
+                  终端
+                </button>
+                <button
+                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption text-danger-strong dark:text-danger-dark"
                   @click="action(c, 'remove')"
                 >
                   删除
