@@ -48,7 +48,12 @@ function onDblClick() {
       </button>
       <button
         class="grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        :title="ui.immersive ? '退出沉浸模式' : '沉浸模式（隐藏标题栏与侧栏）'"
+        :class="
+          ui.immersive
+            ? 'bg-border text-primary dark:bg-border-dark dark:text-primary-dark'
+            : ''
+        "
+        :title="ui.immersive ? '退出沉浸模式' : '沉浸模式（隐藏工具标题栏）'"
         @click="ui.toggleImmersive()"
       >
         <AppIcon name="immersive" :size="14" />

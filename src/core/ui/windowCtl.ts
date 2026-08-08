@@ -1,5 +1,5 @@
 /**
- * 窗口控制公共函数（TitleBar / ImmersiveBar 共用）
+ * 窗口控制公共函数（窗口按钮组件共用）
  * 非 Tauri 环境（浏览器预览）惰性获取窗口句柄，取不到则窗口操作静默跳过。
  */
 import { getCurrentWindow, type Window } from "@tauri-apps/api/window";

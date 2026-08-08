@@ -15,13 +15,12 @@ export const useUiStore = defineStore("ui", () => {
   const settingsVisible = ref(false);
   /** 侧栏折叠（标题栏按钮切换，内容区最大化） */
   const sidebarCollapsed = ref(false);
-  /** 沉浸模式（隐藏标题栏 + 侧栏，顶部悬浮条恢复） */
+  /** 沉浸模式（隐藏工具标题栏 TopBar，窗口标题栏保留） */
   const immersive = ref(false);
 
-  /** 切换沉浸模式：进入时同时收起侧栏，退出时恢复 */
+  /** 切换沉浸模式 */
   function toggleImmersive() {
     immersive.value = !immersive.value;
-    if (immersive.value) sidebarCollapsed.value = true;
   }
 
   /* ── 多页签工作区（工具以子页面形式打开，可切换/关闭，状态保持）── */
