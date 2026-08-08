@@ -389,3 +389,25 @@ export type Results = {
   ssh_docker_logs: { ok: boolean; logs: string; error?: string };
   ssh_docker_exec: TerminalSession;
 };
+
+/* ── 事件通道（Rust → 前端推送，与命令契约并列）──
+ * 交互式终端数据、文件传输进度、连接状态变化均为异步推送，
+ * 前端用 `listen(sshEvents.xxx, handler)` 订阅，不轮询。
+ */
+
+/** Tauri 事件名（全局唯一，`ssh://` 前缀隔离命名空间） */
+export const sshEvents = {
+  /** 终端输出推送（含 ANSI 转义序列，xterm.js 直接渲染） */
+  terminalData: "ssh://terminal-data",
+  /** 上传/下载进度推送 */
+  transferProgress: "ssh://transfer-progress",
+  /** 连接/断开/重连状态变化推送 */
+  connectionStatus: "ssh://connection-status",
+} as const;
+
+/** 事件负载类型（与命令出参类型同源） */
+export type SshEventPayloads = {
+  "ssh://terminal-data": TerminalData;
+  "ssh://transfer-progress": FileTransferProgress;
+  "ssh://connection-status": ServerConnection;
+};
