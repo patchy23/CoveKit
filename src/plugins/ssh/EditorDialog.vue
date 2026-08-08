@@ -121,9 +121,7 @@ onUnmounted(() => view?.destroy());
             <button class="btn-ghost !px-[10px] !py-[4px] text-body-sm" @click="cancel">
               取消
             </button>
-            <button class="btn-primary !h-[32px] !px-[14px] text-body-sm" @click="save">
-              保存
-            </button>
+            <button class="btn-primary text-body-sm" @click="save">保存</button>
           </div>
         </div>
 

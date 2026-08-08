@@ -86,7 +86,7 @@ onUnmounted(() => document.removeEventListener("mousedown", closeMenu));
         spellcheck="false"
         @input="emit('update:searchKeyword', ($event.target as HTMLInputElement).value)"
       />
-      <button class="btn-secondary w-full !h-[32px] text-body-sm" @click="emit('add')">
+      <button class="btn-secondary w-full text-body-sm" @click="emit('add')">
         + 添加服务器
       </button>
     </div>

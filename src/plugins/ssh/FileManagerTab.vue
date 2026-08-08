@@ -111,11 +111,11 @@ function rename() {
         spellcheck="false"
         @keyup.enter="navigate(currentPath)"
       />
-      <button class="btn-secondary !h-[28px] !px-[10px] text-caption" @click="upload">上传</button>
-      <button class="btn-secondary !h-[28px] !px-[10px] text-caption" @click="download">下载</button>
-      <button class="btn-secondary !h-[28px] !px-[10px] text-caption" @click="rename">重命名</button>
+      <button class="btn-secondary !px-[12px] text-body-sm" @click="upload">上传</button>
+      <button class="btn-secondary !px-[12px] text-body-sm" @click="download">下载</button>
+      <button class="btn-secondary !px-[12px] text-body-sm" @click="rename">重命名</button>
       <button
-        class="btn-secondary !h-[28px] !px-[10px] text-caption text-danger-strong dark:text-danger-dark"
+        class="btn-secondary !px-[12px] text-body-sm text-danger-strong dark:text-danger-dark"
         @click="del"
       >
         删除
