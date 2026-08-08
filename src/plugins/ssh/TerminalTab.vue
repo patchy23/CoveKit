@@ -44,7 +44,7 @@ onMounted(() => {
       class="min-h-0 flex-1 select-text overflow-auto bg-surface p-[12px] font-mono text-body-sm leading-relaxed text-primary dark:bg-surface-dark dark:text-primary-dark"
     >
       <template v-if="connection?.status === 'connected'">
-        <p class="text-success-strong dark:text-success-dark">
+        <p class="font-sans text-success-strong dark:text-success-dark">
           ● 已连接到 {{ connection.host }}（延迟 {{ connection.latencyMs }}ms）
         </p>
         <p class="mt-[8px]">$ whoami</p>
@@ -58,7 +58,7 @@ onMounted(() => {
         <p class="mt-[8px]">$ <span class="animate-pulse">█</span></p>
       </template>
       <template v-else>
-        <p class="text-text-muted dark:text-text-muted-dark">
+        <p class="font-sans text-text-muted dark:text-text-muted-dark">
           未连接。请从左侧选择服务器并点击「连接」。
         </p>
       </template>

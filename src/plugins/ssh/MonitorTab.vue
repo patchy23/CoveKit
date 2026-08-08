@@ -85,7 +85,7 @@ function sparkline(values: number[], width = 80, height = 24): string {
       <div class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark">
         <div class="flex items-center justify-between">
           <span class="text-body-sm text-text-muted dark:text-text-muted-dark">CPU</span>
-          <span class="text-display font-medium text-primary dark:text-primary-dark">
+          <span class="text-display font-mono font-medium text-primary dark:text-primary-dark">
             {{ data.cpuPercent.toFixed(0) }}%
           </span>
         </div>
@@ -103,11 +103,11 @@ function sparkline(values: number[], width = 80, height = 24): string {
       <div class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark">
         <div class="flex items-center justify-between">
           <span class="text-body-sm text-text-muted dark:text-text-muted-dark">内存</span>
-          <span class="text-display font-medium text-primary dark:text-primary-dark">
+          <span class="text-display font-mono font-medium text-primary dark:text-primary-dark">
             {{ data.memoryPercent.toFixed(0) }}%
           </span>
         </div>
-        <p class="mt-[2px] text-caption text-text-muted dark:text-text-muted-dark">
+        <p class="mt-[2px] font-mono text-caption text-text-muted dark:text-text-muted-dark">
           {{ formatBytes(data.memoryUsed) }} / {{ formatBytes(data.memoryTotal) }}
         </p>
         <svg class="mt-[4px] h-[32px] w-full" preserveAspectRatio="none">
@@ -124,11 +124,11 @@ function sparkline(values: number[], width = 80, height = 24): string {
       <div class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark">
         <div class="flex items-center justify-between">
           <span class="text-body-sm text-text-muted dark:text-text-muted-dark">磁盘</span>
-          <span class="text-display font-medium text-primary dark:text-primary-dark">
+          <span class="text-display font-mono font-medium text-primary dark:text-primary-dark">
             {{ data.diskPercent.toFixed(0) }}%
           </span>
         </div>
-        <p class="mt-[2px] text-caption text-text-muted dark:text-text-muted-dark">
+        <p class="mt-[2px] font-mono text-caption text-text-muted dark:text-text-muted-dark">
           {{ formatBytes(data.diskUsed) }} / {{ formatBytes(data.diskTotal) }}
         </p>
         <svg class="mt-[4px] h-[32px] w-full" preserveAspectRatio="none">
@@ -145,7 +145,7 @@ function sparkline(values: number[], width = 80, height = 24): string {
       <div class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark">
         <div class="flex items-center justify-between">
           <span class="text-body-sm text-text-muted dark:text-text-muted-dark">网络</span>
-          <span class="text-body-sm font-medium text-primary dark:text-primary-dark">
+          <span class="font-mono text-body-sm font-medium text-primary dark:text-primary-dark">
             ↑ {{ formatBytes(data.netUploadBps) }}/s ↓ {{ formatBytes(data.netDownloadBps) }}/s
           </span>
         </div>
