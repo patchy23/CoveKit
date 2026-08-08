@@ -171,8 +171,14 @@ mod tests {
     #[test]
     fn server_ip_works() {
         assert!(server_ip("system").unwrap().is_none());
-        assert_eq!(server_ip("8.8.8.8").unwrap().unwrap(), "8.8.8.8".parse::<IpAddr>().unwrap());
-        assert_eq!(server_ip("2400:3200::1").unwrap().unwrap(), "2400:3200::1".parse::<IpAddr>().unwrap());
+        assert_eq!(
+            server_ip("8.8.8.8").unwrap().unwrap(),
+            "8.8.8.8".parse::<IpAddr>().unwrap()
+        );
+        assert_eq!(
+            server_ip("2400:3200::1").unwrap().unwrap(),
+            "2400:3200::1".parse::<IpAddr>().unwrap()
+        );
         assert!(server_ip("abc").is_err());
     }
 
