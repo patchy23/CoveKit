@@ -29,7 +29,7 @@ function toggleTheme() {
 
 <template>
   <aside
-    class="flex w-[236px] shrink-0 flex-col border-r border-border bg-surface-muted px-md pb-[16px] pt-lg dark:border-border-dark dark:bg-surface-muted-dark"
+    class="flex w-[177px] shrink-0 flex-col border-r border-border bg-surface-muted px-md pb-[16px] pt-lg dark:border-border-dark dark:bg-surface-muted-dark"
   >
     <!-- 品牌 -->
     <div class="mb-lg flex items-center gap-[10px] px-[10px]">
