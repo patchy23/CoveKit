@@ -63,13 +63,3 @@ export interface ConnectionProfile {
   secretRef?: string;
   options?: Record<string, string>;
 }
-
-/** 剪贴板记录（与 Rust modules/clipboard.rs serde 同步） */
-export interface ClipboardRecord {
-  id: string;
-  kind: "text" | "image" | "file";
-  content: string;
-  preview: string;
-  pinned: boolean;
-  createdAt: number;
-}
