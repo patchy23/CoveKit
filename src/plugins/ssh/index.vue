@@ -3,7 +3,7 @@
  * SSH 工具 · 主容器（服务器列表 + 页签工作区）
  * 连接/断开/凭证走真实 IPC；状态经事件 ssh://connection-status 同步。
  */
-import { ref } from "vue";
+import { ref, watch } from "vue";
 import ServerList from "./ServerList.vue";
 import ServerForm from "./ServerForm.vue";
 import TerminalTab from "./TerminalTab.vue";
@@ -22,7 +22,6 @@ const {
   searchKeyword,
   filteredProfiles,
   activeConnection,
-  usableConnection,
   formOpen,
   editingProfile,
   deleteTarget,
@@ -46,14 +45,37 @@ const tabs = [
 ] as const;
 
 const activeTabId = ref<string>("terminal");
-const terminalConnectRequest = ref(0);
+const visitedProfileIds = ref<string[]>([]);
+const terminalConnectRequests = ref<Record<string, number>>({});
+
+/** 记录已打开过的服务器工作区，使不同服务器的终端与页签状态独立保活。 */
+function selectProfile(profileId: string) {
+  activeProfileId.value = profileId;
+  if (!visitedProfileIds.value.includes(profileId)) visitedProfileIds.value.push(profileId);
+}
+
+/** 返回指定服务器当前可用的连接，而不是复用当前选中服务器的连接。 */
+function usableConnectionFor(profileId: string) {
+  const connection = connections.value.find((item) => item.profileId === profileId);
+  return connection?.status === "connected" ? connection : undefined;
+}
 
 /** 左侧服务器连接属于显式操作：连接成功后同步打开该服务器终端。 */
 async function connectAndOpenTerminal(profileId: string) {
+  selectProfile(profileId);
   activeTabId.value = "terminal";
   await connect(profileId);
-  terminalConnectRequest.value += 1;
+  terminalConnectRequests.value = {
+    ...terminalConnectRequests.value,
+    [profileId]: (terminalConnectRequests.value[profileId] ?? 0) + 1,
+  };
 }
+
+watch(activeProfileId, (profileId) => {
+  if (profileId && !visitedProfileIds.value.includes(profileId)) {
+    visitedProfileIds.value.push(profileId);
+  }
+});
 </script>
 
 <template>
@@ -65,7 +87,7 @@ async function connectAndOpenTerminal(profileId: string) {
       :active-profile-id="activeProfileId"
       :search-keyword="searchKeyword"
       @update:search-keyword="searchKeyword = $event"
-      @select="activeProfileId = $event"
+      @select="selectProfile"
       @connect="connectAndOpenTerminal"
       @disconnect="disconnect"
       @add="openAddForm"
@@ -134,16 +156,25 @@ async function connectAndOpenTerminal(profileId: string) {
 
         <!-- 页签内容区 -->
         <div class="min-h-0 flex-1 overflow-hidden">
-          <component
-            :is="tab.component"
-            v-for="tab in tabs"
-            v-show="activeTabId === tab.id"
-            :key="tab.id"
-            :connection="usableConnection"
-            :profile="profiles.find((p) => p.id === activeProfileId)"
-            v-bind="tab.id === 'terminal' ? { connectRequest: terminalConnectRequest } : {}"
-            class="h-full"
-          />
+          <template
+            v-for="profile in profiles.filter((item) => visitedProfileIds.includes(item.id))"
+            :key="profile.id"
+          >
+            <component
+              :is="tab.component"
+              v-for="tab in tabs"
+              v-show="activeProfileId === profile.id && activeTabId === tab.id"
+              :key="`${profile.id}:${tab.id}`"
+              :connection="usableConnectionFor(profile.id)"
+              :profile="profile"
+              v-bind="
+                tab.id === 'terminal'
+                  ? { connectRequest: terminalConnectRequests[profile.id] ?? 0 }
+                  : {}
+              "
+              class="h-full"
+            />
+          </template>
         </div>
       </template>
     </div>
