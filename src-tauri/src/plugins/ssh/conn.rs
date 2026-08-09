@@ -424,7 +424,7 @@ mod tests {
     use super::{resource_id, shell_quote};
 
     #[test]
-    fn shell参数中的单引号不会逃逸() {
+    fn shell_quote_keeps_single_quotes() {
         assert_eq!(shell_quote("nginx.service"), "'nginx.service'");
         assert_eq!(
             shell_quote("a'; touch /tmp/pwn; echo '"),
@@ -433,7 +433,7 @@ mod tests {
     }
 
     #[test]
-    fn 并发资源id不会碰撞() {
+    fn resource_ids_do_not_collide() {
         let ids = (0..1000)
             .map(|_| resource_id("test"))
             .collect::<HashSet<_>>();

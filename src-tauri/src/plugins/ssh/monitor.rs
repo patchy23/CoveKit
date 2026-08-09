@@ -173,13 +173,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 解析cpu使用率() {
+    fn parse_cpu_usage() {
         let v = parse_cpu("%Cpu(s): 12.3 us,  0.5 sy,  0.0 ni, 86.8 id,  0.0 wa");
         assert!((v - 13.2).abs() < 0.01);
     }
 
     #[test]
-    fn 解析内存与磁盘() {
+    fn parse_memory_and_disk() {
         let (t, u) = parse_mem("Mem:   16000000000  8000000000  8000000000");
         assert_eq!((t, u), (16000000000, 8000000000));
         let (t, u) = parse_disk("/dev/sda1  500000000000  250000000000  250000000000");
@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn 解析网络计数() {
+    fn parse_net_counters() {
         let lines = ["  eth0: 100 2 0 0 0 0 0 0 50 1 0 0 0 0 0 0"];
         let (rx, tx) = parse_net(&lines);
         assert_eq!(rx, 100);
@@ -195,7 +195,7 @@ mod tests {
     }
 
     #[test]
-    fn 组合输出解析为监控数据() {
+    fn parse_combined_output() {
         let out = "top - 17:00:00 up 1 day\nTasks: 100 total\n%Cpu(s):  5.0 us,  0.0 sy, 95.0 id\n---\nMem:   100 40 60\n---\n/dev/sda1  200 80 120\n---\nInter-| Receive\n eth0: 10 0 0 0 0 0 0 0 5 0 0 0 0 0 0 0";
         let d = parse_monitor_output(out);
         assert!((d.cpu_percent - 5.0).abs() < 0.01);

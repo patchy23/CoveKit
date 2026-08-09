@@ -264,7 +264,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 解析容器行() {
+    fn parses_container_line() {
         let c = parse_container_line(
             "abc123def456\x09mynginx\x09nginx:latest\x09Up 2 hours\x090.0.0.0:80->80/tcp",
         )
@@ -278,13 +278,13 @@ mod tests {
     }
 
     #[test]
-    fn 忽略空行() {
+    fn ignores_empty_line() {
         assert!(parse_container_line("").is_none());
         assert!(parse_container_line("CONTAINER ID IMAGE COMMAND").is_none());
     }
 
     #[test]
-    fn 容器状态归一化() {
+    fn container_status_normalization() {
         assert_eq!(normalize_status("Up 2 hours"), "running");
         assert_eq!(normalize_status("Up 2 hours (Paused)"), "paused");
         assert_eq!(normalize_status("Exited (0) 1 minute ago"), "exited");

@@ -124,7 +124,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 解析服务行() {
+    fn parses_service_line() {
         let s = parse_service_line("nginx.service loaded active running Nginx web server").unwrap();
         assert_eq!(s.name, "nginx.service");
         assert_eq!(s.active_state, "active");
@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn 忽略表头与空行() {
+    fn ignores_header_and_empty_lines() {
         assert!(parse_service_line("UNIT LOAD ACTIVE SUB DESCRIPTION").is_none());
         assert!(parse_service_line("").is_none());
     }

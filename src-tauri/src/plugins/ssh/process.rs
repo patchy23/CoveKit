@@ -95,7 +95,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 解析进程行() {
+    fn parses_process_line() {
         let p = parse_process_line("1234 root 1.5 0.2 65536 /usr/bin/nginx -g daemon off").unwrap();
         assert_eq!(p.pid, 1234);
         assert_eq!(p.user, "root");
@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn 忽略表头() {
+    fn ignores_header() {
         assert!(parse_process_line("PID USER %CPU %MEM RSS COMMAND").is_none());
     }
 }

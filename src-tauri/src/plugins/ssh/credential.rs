@@ -211,7 +211,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 加解密往返一致() {
+    fn encrypt_decrypt_roundtrip() {
         let key = [7u8; 32];
         let plain = b"{\"password\":\"s3cret\"}";
         let ct = encrypt_payload(&key, plain).unwrap();
@@ -220,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn 密钥错误解密失败() {
+    fn wrong_key_fails_decrypt() {
         let key = [7u8; 32];
         let plain = b"hello";
         let ct = encrypt_payload(&key, plain).unwrap();
@@ -229,7 +229,7 @@ mod tests {
     }
 
     #[test]
-    fn 损坏的短密文返回错误而不崩溃() {
+    fn corrupted_ciphertext_returns_error() {
         assert!(decrypt_payload(&[7u8; 32], b"short").is_err());
     }
 }

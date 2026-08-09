@@ -48,7 +48,7 @@ use std::sync::Arc;
 
 #[tokio::test]
 #[ignore = "需要真实服务器（SSH_TEST_* 环境变量）"]
-async fn live_密码认证并执行命令() {
+async fn live_password_auth_and_exec() {
     let (host, port, user, password) = live_env();
     let session = connect(&host, port, &user, &password).await;
 
@@ -78,7 +78,7 @@ async fn live_密码认证并执行命令() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "需要真实服务器（SSH_TEST_* 环境变量）"]
-async fn live_pty终端通道写读回显() {
+async fn live_pty_channel_echo() {
     let (host, port, user, password) = live_env();
     let session = connect(&host, port, &user, &password).await;
 
@@ -145,7 +145,7 @@ async fn live_pty终端通道写读回显() {
 
 #[tokio::test]
 #[ignore = "需要真实服务器（SSH_TEST_* 环境变量）"]
-async fn live_sftp目录列表() {
+async fn live_sftp_list_root() {
     let (host, port, user, password) = live_env();
     let session = connect(&host, port, &user, &password).await;
 
