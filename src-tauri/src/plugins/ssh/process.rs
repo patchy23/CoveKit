@@ -3,7 +3,7 @@
 
 use tauri::State;
 
-use crate::plugins::ssh::conn::{exec_collect, SshState};
+use crate::plugins::ssh::conn::{exec_collect, get_session, SshState};
 use crate::plugins::ssh::models::{ProcessInfo, SshActionResult};
 
 /// 解析 ps 行（纯函数）：
@@ -32,13 +32,7 @@ pub async fn ssh_process_list(
     sort_by: Option<String>,
     keyword: Option<String>,
 ) -> Result<Vec<ProcessInfo>, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
     let out = exec_collect(&session, "ps -eo pid,user,%cpu,%mem,rss,args --sort=-%cpu").await?;
     let mut procs: Vec<ProcessInfo> = out.lines().skip(1).filter_map(parse_process_line).collect();
     if let Some(kw) = keyword {
@@ -67,13 +61,7 @@ pub async fn ssh_process_kill(
     pid: u32,
     force: Option<bool>,
 ) -> Result<SshActionResult, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
     let cmd = if force.unwrap_or(false) {
         format!("kill -9 {pid} 2>&1")
     } else {

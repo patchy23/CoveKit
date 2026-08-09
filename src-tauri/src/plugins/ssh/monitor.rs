@@ -6,7 +6,7 @@ use std::{collections::HashMap, sync::Mutex};
 
 use tauri::State;
 
-use crate::plugins::ssh::conn::{exec_collect, SshState};
+use crate::plugins::ssh::conn::{exec_collect, get_session, SshState};
 use crate::plugins::ssh::models::MonitorData;
 
 /// 每个连接上一次网络累计计数与采样时间，用于换算字节/秒。
@@ -139,13 +139,7 @@ pub async fn ssh_monitor_get(
     monitor_state: State<'_, MonitorState>,
     connection_id: String,
 ) -> Result<MonitorData, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
     let out = exec_collect(&session, COLLECT_CMD).await?;
     let mut data = parse_monitor_output(&out);
     let raw_rx = data.net_download_bps;

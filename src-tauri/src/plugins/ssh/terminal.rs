@@ -5,7 +5,7 @@
 
 use std::{collections::HashMap, sync::Mutex};
 
-use russh::ChannelMsg;
+use russh::{client, ChannelMsg};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, watch};
 
@@ -40,6 +40,58 @@ pub(crate) struct TerminalHandle {
 
 /// 终端注册表（State 注入）
 pub struct TerminalState(pub Mutex<HashMap<String, TerminalHandle>>);
+
+/// 启动终端通道后台任务（terminal.rs 与 docker.rs 共用）：
+/// select 双路——取消信号 + 前端指令（write/resize/close）与通道输出（wait → emit terminal-data）；
+/// 任务退出时从 TerminalState 注册表移除并标记非活跃。
+pub(crate) fn spawn_channel_task(
+    app: AppHandle,
+    terminal_id: String,
+    mut channel: russh::Channel<client::Msg>,
+    mut rx: mpsc::Receiver<TerminalCmd>,
+    mut cancel_rx: watch::Receiver<bool>,
+) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::select! {
+                changed = cancel_rx.changed() => {
+                    if changed.is_err() || *cancel_rx.borrow() { break; }
+                }
+                // 前端指令
+                cmd = rx.recv() => {
+                    match cmd {
+                        Some(TerminalCmd::Write(data)) => {
+                            if channel.data_bytes(data).await.is_err() { break; }
+                        }
+                        Some(TerminalCmd::Resize(c, r)) => {
+                            let _ = channel.window_change(c, r, 0, 0).await;
+                        }
+                        None => break,
+                    }
+                }
+                // 通道输出（服务端推送）
+                msg = channel.wait() => {
+                    match msg {
+                        Some(ChannelMsg::Data { data }) => {
+                            let payload = TerminalData {
+                                terminal_id: terminal_id.clone(),
+                                data: String::from_utf8_lossy(&data).to_string(),
+                                time: now_ms(),
+                            };
+                            let _ = app.emit("ssh://terminal-data", &payload);
+                        }
+                        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
+                        _ => {}
+                    }
+                }
+            }
+        }
+        // 任务退出：标记非活跃并从注册表移除
+        if let Ok(mut m) = app.state::<TerminalState>().0.lock() {
+            m.remove(&terminal_id);
+        }
+    });
+}
 
 /// 打开终端：在连接上开 PTY shell 通道并启动后台读写任务
 #[tauri::command(rename_all = "camelCase")]

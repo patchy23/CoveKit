@@ -2,13 +2,12 @@
 //! docker 命令输出解析为结构化容器列表；解析函数为纯函数（可单测）。
 //! docker exec 复用 PTY 通道（交互式容器终端）。
 
-use russh::ChannelMsg;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, State};
 use tokio::sync::{mpsc, watch};
 
-use crate::plugins::ssh::conn::{exec_collect, now_ms, resource_id, shell_quote, SshState};
+use crate::plugins::ssh::conn::{exec_collect, get_session, resource_id, shell_quote, SshState};
 use crate::plugins::ssh::models::{
-    DockerContainer, SshActionResult, SshDockerExecPayload, TerminalData, TerminalSession,
+    DockerContainer, SshActionResult, SshDockerExecPayload, TerminalSession,
 };
 use crate::plugins::ssh::terminal::TerminalState;
 
@@ -62,13 +61,7 @@ pub async fn ssh_docker_list(
     ssh_state: State<'_, SshState>,
     connection_id: String,
 ) -> Result<Vec<DockerContainer>, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
     let out = exec_collect(
         &session,
         "docker ps -a --no-trunc --format '{{.ID}}\x09{{.Names}}\x09{{.Image}}\x09{{.Status}}\x09{{.Ports}}' 2>&1",
@@ -91,13 +84,7 @@ pub async fn ssh_docker_action(
     container_id: String,
     action: String,
 ) -> Result<SshActionResult, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
     let action = match action.as_str() {
         "start" => "start",
         "stop" => "stop",
@@ -128,13 +115,7 @@ pub async fn ssh_docker_logs(
     container_id: String,
     lines: Option<u32>,
 ) -> Result<serde_json::Value, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
     let n = lines.unwrap_or(100).clamp(1, 2_000);
     let out = exec_collect(
         &session,
@@ -162,20 +143,14 @@ pub async fn ssh_docker_exec(
     if cols == 0 || rows == 0 || cols > u16::MAX as u32 || rows > u16::MAX as u32 {
         return Err("终端行列数必须在 1..=65535 范围内".into());
     }
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
 
     let shell = match shell.as_str() {
         "/bin/sh" => "/bin/sh",
         "/bin/bash" => "/bin/bash",
         _ => return Err("容器终端仅支持 /bin/sh 或 /bin/bash".into()),
     };
-    let mut channel = session
+    let channel = session
         .channel_open_session()
         .await
         .map_err(|e| format!("打开通道失败: {e}"))?;
@@ -192,8 +167,8 @@ pub async fn ssh_docker_exec(
         .map_err(|e| format!("进入容器失败: {e}"))?;
 
     let terminal_id = resource_id("docker-term");
-    let (tx, mut rx) = mpsc::channel::<crate::plugins::ssh::terminal::TerminalCmd>(128);
-    let (cancel, mut cancel_rx) = watch::channel(false);
+    let (tx, rx) = mpsc::channel::<crate::plugins::ssh::terminal::TerminalCmd>(128);
+    let (cancel, cancel_rx) = watch::channel(false);
 
     state.0.lock().map_err(|e| e.to_string())?.insert(
         terminal_id.clone(),
@@ -208,46 +183,14 @@ pub async fn ssh_docker_exec(
         },
     );
 
-    // 后台读写任务（与 terminal.rs 同构）
-    let app2 = app.clone();
-    let task_id = terminal_id.clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
-            tokio::select! {
-                changed = cancel_rx.changed() => {
-                    if changed.is_err() || *cancel_rx.borrow() { break; }
-                }
-                cmd = rx.recv() => {
-                    match cmd {
-                        Some(crate::plugins::ssh::terminal::TerminalCmd::Write(data)) => {
-                            if channel.data_bytes(data).await.is_err() { break; }
-                        }
-                        Some(crate::plugins::ssh::terminal::TerminalCmd::Resize(c, r)) => {
-                            let _ = channel.window_change(c, r, 0, 0).await;
-                        }
-                        None => break,
-                    }
-                }
-                msg = channel.wait() => {
-                    match msg {
-                        Some(ChannelMsg::Data { data }) => {
-                            let payload = TerminalData {
-                                terminal_id: task_id.clone(),
-                                data: String::from_utf8_lossy(&data).to_string(),
-                                time: now_ms(),
-                            };
-                            let _ = app2.emit("ssh://terminal-data", &payload);
-                        }
-                        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                        _ => {}
-                    }
-                }
-            }
-        }
-        if let Ok(mut m) = app2.state::<TerminalState>().0.lock() {
-            m.remove(&task_id);
-        }
-    });
+    // 后台读写任务（复用 terminal.rs 公共实现）
+    crate::plugins::ssh::terminal::spawn_channel_task(
+        app.clone(),
+        terminal_id.clone(),
+        channel,
+        rx,
+        cancel_rx,
+    );
 
     Ok(TerminalSession {
         id: terminal_id,

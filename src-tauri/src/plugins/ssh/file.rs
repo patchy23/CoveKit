@@ -6,7 +6,7 @@ use russh_sftp::protocol::FileAttributes;
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::plugins::ssh::conn::{resource_id, SshState};
+use crate::plugins::ssh::conn::{get_session, resource_id, SshState};
 use crate::plugins::ssh::models::{
     FileListResult, FileTransferProgress, RemoteFile, SshActionResult,
 };
@@ -16,13 +16,7 @@ async fn sftp_session(
     ssh_state: &State<'_, SshState>,
     connection_id: &str,
 ) -> Result<russh_sftp::client::SftpSession, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(ssh_state, connection_id)?;
     let channel = session
         .channel_open_session()
         .await
@@ -183,13 +177,7 @@ pub async fn ssh_file_upload(
     let total = std::fs::metadata(&local_path)
         .map_err(|e| format!("本地文件不可读: {e}"))?
         .len();
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
 
     let app2 = app.clone();
     let tid = transfer_id.clone();
@@ -323,13 +311,7 @@ pub async fn ssh_file_download(
 ) -> Result<FileTransferProgress, String> {
     let transfer_id = resource_id("down");
     let event_connection_id = connection_id.clone();
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
 
     let app2 = app.clone();
     let tid = transfer_id.clone();

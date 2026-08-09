@@ -3,7 +3,7 @@
 
 use tauri::State;
 
-use crate::plugins::ssh::conn::{exec_collect, shell_quote, SshState};
+use crate::plugins::ssh::conn::{exec_collect, get_session, shell_quote, SshState};
 use crate::plugins::ssh::models::{SshActionResult, SystemdService};
 
 /// 解析 systemctl 输出行（纯函数）：`unit  load  active  sub  desc` → SystemdService
@@ -30,13 +30,7 @@ pub async fn ssh_service_list(
     connection_id: String,
     filter: Option<String>,
 ) -> Result<Vec<SystemdService>, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
     let out = exec_collect(
         &session,
         "systemctl list-units --type=service --all --no-pager --plain",
@@ -64,13 +58,7 @@ pub async fn ssh_service_action(
     service_name: String,
     action: String,
 ) -> Result<SshActionResult, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
     let action = match action.as_str() {
         "start" => "start",
         "stop" => "stop",
@@ -100,13 +88,7 @@ pub async fn ssh_service_logs(
     service_name: String,
     lines: Option<u32>,
 ) -> Result<serde_json::Value, String> {
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
+    let session = get_session(&ssh_state, &connection_id)?;
     let n = lines.unwrap_or(100).clamp(1, 2_000);
     let out = exec_collect(
         &session,

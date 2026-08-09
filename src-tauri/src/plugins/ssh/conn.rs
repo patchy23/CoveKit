@@ -112,7 +112,22 @@ pub(crate) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
-/// 执行远程命令并收集全部输出（监控/服务/进程/Docker 通用）
+/// 从连接注册表取会话句柄（各命令通用样板，消除重复）
+/// 返回 Arc 句柄；连接不存在或已断开时返回错误。
+pub(crate) fn get_session(
+    state: &tauri::State<'_, SshState>,
+    connection_id: &str,
+) -> Result<Arc<client::Handle<SshHandler>>, String> {
+    state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(connection_id)
+        .map(|h| h.session.clone())
+        .ok_or_else(|| "连接不存在或已断开".to_string())
+}
+
+/// 执行远程命令并收集全部输出（监控/服务/进程/Docker 共用）
 /// 非交互 exec：开通道 → exec → 循环 wait() 收 Data 直到 Eof/Close
 pub(crate) async fn exec_collect(
     session: &client::Handle<SshHandler>,
