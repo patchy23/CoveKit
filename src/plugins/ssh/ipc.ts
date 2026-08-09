@@ -7,19 +7,20 @@ import { listen } from "@tauri-apps/api/event";
 import type { Payloads, Results, ServerConnection, TerminalData } from "./contracts";
 import { sshEvents } from "./contracts";
 
-/** 调命令（类型安全：入参/返回按契约） */
+/** 调命令（返回类型按契约；入参序列化时校验） */
 async function cmd<K extends keyof Payloads & keyof Results>(
   name: K,
-  payload: Payloads[K],
+  payload: Record<string, unknown>,
 ): Promise<Results[K]> {
-  return invokeCommand(name, payload as Record<string, unknown>);
+  return invokeCommand(name, payload);
 }
 
 export const ipc = {
-  /* 连接 */
-  sshConnect: (p: Payloads["ssh_connect"]) => cmd("ssh_connect", p),
+  /* 连接（Rust 侧命令以 payload 对象为入参） */
+  sshConnect: (p: Payloads["ssh_connect"]) => cmd("ssh_connect", { payload: p }),
   sshDisconnect: (sessionId: string) => cmd("ssh_disconnect", { sessionId }),
-  sshReconnect: (p: Payloads["ssh_reconnect"]) => cmd("ssh_reconnect", p),
+  sshReconnect: (sessionId: string, creds: Omit<Payloads["ssh_reconnect"], "sessionId">) =>
+    cmd("ssh_reconnect", { sessionId, payload: creds }),
   sshConnections: () => cmd("ssh_connections", {}),
 
   /* 终端 */
@@ -41,7 +42,8 @@ export const ipc = {
     cmd("ssh_file_rename", { connectionId, oldPath, newPath }),
 
   /* 凭证 */
-  sshCredentialSave: (p: Payloads["ssh_credential_save"]) => cmd("ssh_credential_save", p),
+  sshCredentialSave: (p: Payloads["ssh_credential_save"]) =>
+    cmd("ssh_credential_save", { payload: p }),
   sshCredentialGet: (profileId: string) => cmd("ssh_credential_get", { profileId }),
   sshCredentialDelete: (profileId: string) => cmd("ssh_credential_delete", { profileId }),
 

@@ -332,3 +332,20 @@ pub struct SshConnectPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) passphrase: Option<String>,
 }
+
+/// SSH 凭证保存载荷（与契约 Payloads.ssh_credential_save 对应）
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshCredentialSavePayload {
+    /// 服务器配置（id 作为凭证 key）
+    pub(crate) profile: ServerProfile,
+    /// 密码
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) password: Option<String>,
+    /// 私钥内容
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) private_key: Option<String>,
+    /// 私钥 passphrase
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) passphrase: Option<String>,
+}

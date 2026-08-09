@@ -12,7 +12,7 @@ use aes_gcm::{
 use rand::RngCore;
 use tauri::{AppHandle, Manager};
 
-use crate::plugins::ssh::models::{AuthMethod, SshActionResult};
+use crate::plugins::ssh::models::SshActionResult;
 
 /// 主密钥文件（不存在则生成 32 随机字节）
 fn master_key(app: &AppHandle) -> Result<[u8; 32], String> {
@@ -77,24 +77,20 @@ fn write_all(app: &AppHandle, map: &HashMap<String, serde_json::Value>) -> Resul
     std::fs::write(creds_path(app)?, out).map_err(|e| format!("凭证写入失败: {e}"))
 }
 
-/// 保存凭证（profile 级；字段与契约 SshConnectPayload 对应）
+/// 保存凭证（profile 级；字段与契约 Payloads.ssh_credential_save 对应）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn ssh_credential_save(
     app: AppHandle,
-    profile_id: String,
-    auth_method: AuthMethod,
-    password: Option<String>,
-    private_key: Option<String>,
-    passphrase: Option<String>,
+    payload: crate::plugins::ssh::models::SshCredentialSavePayload,
 ) -> Result<SshActionResult, String> {
     let mut map = read_all(&app)?;
     map.insert(
-        profile_id,
+        payload.profile.id,
         serde_json::json!({
-            "authMethod": auth_method,
-            "password": password,
-            "privateKey": private_key,
-            "passphrase": passphrase,
+            "authMethod": payload.profile.auth_method,
+            "password": payload.password,
+            "privateKey": payload.private_key,
+            "passphrase": payload.passphrase,
         }),
     );
     write_all(&app, &map)?;
