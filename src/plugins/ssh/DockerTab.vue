@@ -25,6 +25,7 @@ const keyword = ref("");
 const statusFilter = ref<"all" | "running" | "exited">("all");
 const terminalContainer = ref<DockerContainer | null>(null);
 const logOutput = ref<{ title: string; content: string } | null>(null);
+const busyContainerId = ref<string | null>(null);
 const pendingAction = ref<{
   container: DockerContainer;
   action: "stop" | "restart" | "remove";
@@ -60,10 +61,12 @@ async function refresh() {
 }
 
 async function action(c: DockerContainer, act: "start" | "stop" | "restart" | "remove") {
-  if (!props.connection?.sessionId) return;
+  const connectionId = props.connection?.sessionId;
+  if (!connectionId || busyContainerId.value) return;
+  busyContainerId.value = c.id;
   try {
     const r = await ipc.sshDockerAction({
-      connectionId: props.connection.sessionId,
+      connectionId,
       containerId: c.id,
       action: act,
     });
@@ -71,12 +74,14 @@ async function action(c: DockerContainer, act: "start" | "stop" | "restart" | "r
       ui.toast(
         `${act === "start" ? "启动" : act === "stop" ? "停止" : act === "restart" ? "重启" : "删除"}容器 ${c.name} 成功`
       );
-      refresh();
+      await refresh();
     } else {
       ui.toast(`操作失败：${r.error ?? "未知错误"}`);
     }
   } catch (e) {
     ui.toast(`操作失败：${e}`);
+  } finally {
+    busyContainerId.value = null;
   }
 }
 
@@ -173,7 +178,13 @@ watch(
       </div>
     </div>
 
-    <DockerTable :containers="filtered" @action="requestAction" @logs="logs" @terminal="exec" />
+    <DockerTable
+      :containers="filtered"
+      :busy-container-id="busyContainerId"
+      @action="requestAction"
+      @logs="logs"
+      @terminal="exec"
+    />
 
     <div
       class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"

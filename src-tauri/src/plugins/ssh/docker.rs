@@ -24,6 +24,7 @@ fn parse_container_line(line: &str) -> Option<DockerContainer> {
         name: parts[1].to_string(),
         image: parts[2].to_string(),
         status: normalize_status(parts[3]).to_string(),
+        uptime: extract_uptime(parts[3]),
         ports: parts.get(4).map(|s| s.to_string()).unwrap_or_default(),
         created_at: 0,
     })
@@ -32,13 +33,27 @@ fn parse_container_line(line: &str) -> Option<DockerContainer> {
 /// Docker 人类可读状态归一化为前端契约值。
 fn normalize_status(status: &str) -> &'static str {
     let status = status.trim().to_ascii_lowercase();
-    if status.starts_with("up ") || status == "up" {
-        "running"
-    } else if status.starts_with("paused") {
+    if status.starts_with("paused") || status.contains("(paused)") {
         "paused"
+    } else if status.starts_with("up ") || status == "up" {
+        "running"
     } else {
         "exited"
     }
+}
+
+/// 从 Docker Status 中提取本次运行时长，并去掉 health/paused 等括号状态。
+fn extract_uptime(status: &str) -> String {
+    let status = status.trim();
+    if !status.to_ascii_lowercase().starts_with("up ") {
+        return "—".to_string();
+    }
+    status[3..]
+        .split(" (")
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or("—")
+        .to_string()
 }
 
 /// 容器列表
@@ -258,6 +273,7 @@ mod tests {
         assert_eq!(c.name, "mynginx");
         assert_eq!(c.image, "nginx:latest");
         assert_eq!(c.status, "running");
+        assert_eq!(c.uptime, "2 hours");
         assert_eq!(c.ports, "0.0.0.0:80->80/tcp");
     }
 
@@ -270,7 +286,14 @@ mod tests {
     #[test]
     fn 容器状态归一化() {
         assert_eq!(normalize_status("Up 2 hours"), "running");
+        assert_eq!(normalize_status("Up 2 hours (Paused)"), "paused");
         assert_eq!(normalize_status("Exited (0) 1 minute ago"), "exited");
         assert_eq!(normalize_status("Paused"), "paused");
+        assert_eq!(
+            extract_uptime("Up Less than a second"),
+            "Less than a second"
+        );
+        assert_eq!(extract_uptime("Up 2 hours (healthy)"), "2 hours");
+        assert_eq!(extract_uptime("Exited (0) 1 minute ago"), "—");
     }
 }

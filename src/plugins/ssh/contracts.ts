@@ -243,6 +243,8 @@ export interface DockerContainer {
   image: string;
   /** 状态（running / exited / paused） */
   status: string;
+  /** 本次运行持续时间 */
+  uptime: string;
   /** 端口映射（如 "80:80,443:443"） */
   ports: string;
   /** 创建时间（毫秒时间戳） */

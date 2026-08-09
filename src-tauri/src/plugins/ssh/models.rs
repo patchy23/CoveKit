@@ -297,6 +297,8 @@ pub struct DockerContainer {
     pub(crate) image: String,
     /// 状态（running / exited / paused）
     pub(crate) status: String,
+    /// 本次运行持续时间（来自 docker ps Status）
+    pub(crate) uptime: String,
     /// 端口映射（如 "80:80,443:443"）
     pub(crate) ports: String,
     /// 创建时间（毫秒时间戳）

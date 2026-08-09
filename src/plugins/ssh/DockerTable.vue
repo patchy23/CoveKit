@@ -3,7 +3,7 @@
 import type { DockerContainer } from "./contracts";
 import { shortContainerId } from "./useSsh";
 
-defineProps<{ containers: DockerContainer[] }>();
+defineProps<{ containers: DockerContainer[]; busyContainerId?: string | null }>();
 const emit = defineEmits<{
   (
     event: "action",
@@ -31,6 +31,7 @@ function stateClass(status: string): string {
           <th class="w-[200px] px-[12px] py-[8px] font-medium">名称</th>
           <th class="w-[140px] px-[12px] py-[8px] font-medium">镜像</th>
           <th class="w-[90px] whitespace-nowrap px-[12px] py-[8px] font-medium">状态</th>
+          <th class="w-[120px] whitespace-nowrap px-[12px] py-[8px] font-medium">运行时间</th>
           <th class="w-[140px] px-[12px] py-[8px] font-medium">端口</th>
           <th class="w-[240px] whitespace-nowrap px-[12px] py-[8px] font-medium">操作</th>
         </tr>
@@ -60,7 +61,16 @@ function stateClass(status: string): string {
             {{ container.image }}
           </td>
           <td class="whitespace-nowrap px-[12px] py-[8px]">
-            <span :class="stateClass(container.status)">{{ container.status }}</span>
+            <span
+              v-if="busyContainerId === container.id"
+              class="animate-pulse text-tertiary-strong dark:text-tertiary-dark"
+            >
+              更新中…
+            </span>
+            <span v-else :class="stateClass(container.status)">{{ container.status }}</span>
+          </td>
+          <td class="whitespace-nowrap px-[12px] py-[8px] font-mono text-body-sm">
+            {{ container.uptime }}
           </td>
           <td
             class="max-w-[140px] truncate px-[12px] py-[8px] font-mono text-body-sm"
