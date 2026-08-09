@@ -3,7 +3,7 @@
  * 云解析管理 · 平台切换 + 域名列表
  * 点击域名进入记录管理（RecordPanel）；未配置密钥时给出引导提示。
  */
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { ipc } from "./ipc";
 import { useUiStore } from "@/stores/ui";
 import type { CloudDomain } from "./contracts";
@@ -16,15 +16,25 @@ const platform = ref<"aliyun" | "dnspod">("aliyun");
 const domains = ref<CloudDomain[]>([]);
 const busy = ref(false);
 const configured = ref(true);
+/** 域名搜索词（前端即时过滤，大小写不敏感） */
+const searchQuery = ref("");
+
+/** 过滤后的域名列表（按名称包含匹配） */
+const filteredDomains = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase();
+  if (!q) return domains.value;
+  return domains.value.filter((d) => d.domainName.toLowerCase().includes(q));
+});
 
 /** 当前选中的域名（非空 = 记录视图） */
 const activeDomain = ref<CloudDomain | null>(null);
 
-/** 切换平台：重新拉取域名列表 */
+/** 切换平台：清空搜索词并重新拉取域名列表 */
 async function switchPlatform(p: "aliyun" | "dnspod") {
   if (platform.value === p) return;
   platform.value = p;
   activeDomain.value = null;
+  searchQuery.value = "";
   await loadDomains();
 }
 
@@ -73,7 +83,7 @@ onMounted(loadDomains);
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-[12px]">
-    <!-- 平台切换 + 刷新 -->
+    <!-- 平台切换 + 搜索 + 刷新 -->
     <div class="flex shrink-0 items-center gap-[8px]">
       <button
         v-for="p in ['aliyun', 'dnspod'] as const"
@@ -88,6 +98,12 @@ onMounted(loadDomains);
       >
         {{ platformLabel(p) }}
       </button>
+      <input
+        v-model="searchQuery"
+        class="field-input ml-auto w-[180px] !px-[10px] !py-[7px]"
+        placeholder="搜索域名…"
+        spellcheck="false"
+      />
       <button class="btn-ghost shrink-0" :disabled="busy" @click="loadDomains">
         {{ busy ? "加载中…" : "刷新" }}
       </button>
@@ -111,14 +127,14 @@ onMounted(loadDomains);
       @back="backToDomains"
     />
 
-    <!-- 域名列表 -->
+    <!-- 域名列表（filteredDomains 即时过滤） -->
     <div v-else class="min-h-0 flex-1 overflow-y-auto pr-[2px]">
-      <p v-if="!busy && domains.length === 0" class="text-body-sm text-text-muted dark:text-text-muted-dark">
-        {{ configured ? "暂无域名（或平台侧无解析域名）" : "—" }}
+      <p v-if="!busy && filteredDomains.length === 0" class="text-body-sm text-text-muted dark:text-text-muted-dark">
+        {{ configured ? (searchQuery.trim() ? "无匹配域名" : "暂无域名（或平台侧无解析域名）") : "—" }}
       </p>
       <div class="grid grid-cols-[repeat(auto-fill,minmax(228px,1fr))] gap-[10px]">
         <button
-          v-for="d in domains"
+          v-for="d in filteredDomains"
           :key="d.domainId"
           class="flex flex-col items-start gap-[6px] rounded-lg border border-border bg-surface p-[14px] text-left transition-colors hover:border-tertiary/50 dark:border-border-dark dark:bg-surface-dark dark:hover:border-tertiary-dark/50"
           @click="activeDomain = d"
