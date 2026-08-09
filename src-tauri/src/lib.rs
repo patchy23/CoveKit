@@ -23,6 +23,7 @@ pub fn run() {
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -48,12 +49,13 @@ pub fn run() {
                 })
                 .build(),
         )
-        .invoke_handler(tauri::generate_handler![
-            framework::window_toggle,
-            framework::window_hide,
-            framework::open_external,
-            framework::ipc_registry::framework_commands,
-        ]);
+        .invoke_handler(|invoke| {
+            if plugins::is_command(invoke.message.command()) {
+                plugins::invoke_handler(invoke)
+            } else {
+                framework::invoke_handler(invoke)
+            }
+        });
 
     // ── 业务插件装配（每个插件一行，互不影响）──
     let builder = framework::settings::register(builder);

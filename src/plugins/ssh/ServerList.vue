@@ -83,9 +83,7 @@ const menuItems = computed(() => {
         spellcheck="false"
         @input="emit('update:searchKeyword', ($event.target as HTMLInputElement).value)"
       />
-      <button class="btn-secondary w-full text-body-sm" @click="emit('add')">
-        + 添加服务器
-      </button>
+      <button class="btn-secondary w-full text-body-sm" @click="emit('add')">+ 添加服务器</button>
     </div>
 
     <!-- 服务器列表（仅名称，右键菜单操作） -->
@@ -99,8 +97,9 @@ const menuItems = computed(() => {
             ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
             : 'hover:bg-border dark:hover:bg-border-dark'
         "
-        :title="`${p.username}@${p.host}:${p.port}（右键操作）`"
+        :title="`${p.username}@${p.host}:${p.port}（双击连接，右键操作）`"
         @click="emit('select', p.id)"
+        @dblclick="emit('connect', p.id)"
         @contextmenu="openMenu($event, p)"
       >
         <span
@@ -129,12 +128,6 @@ const menuItems = computed(() => {
     </div>
 
     <!-- 右键菜单（公共组件，点外部/菜单项自动关闭） -->
-    <ContextMenu
-      v-if="menu"
-      :x="menu.x"
-      :y="menu.y"
-      :items="menuItems"
-      @close="closeMenu"
-    />
+    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="closeMenu" />
   </div>
 </template>

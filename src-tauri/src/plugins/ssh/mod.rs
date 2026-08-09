@@ -5,19 +5,55 @@
 //! - terminal.rs：PTY 终端通道（事件推送）
 //! - file.rs / credential.rs / edit.rs / monitor.rs / service.rs / process.rs / docker.rs：其余能力
 
-mod conn;
-mod credential;
-mod docker;
-mod edit;
-mod file;
+pub(crate) mod conn;
+pub(crate) mod credential;
+pub(crate) mod docker;
+pub(crate) mod edit;
+pub(crate) mod file;
 mod models;
-mod monitor;
-mod process;
-mod service;
-mod terminal;
+pub(crate) mod monitor;
+pub(crate) mod process;
+pub(crate) mod service;
+pub(crate) mod terminal;
 
 use crate::plugins::ssh::conn::SshState;
 use crate::plugins::ssh::terminal::TerminalState;
+
+/// 分派 SSH 插件全部命令；应用级 Builder 仅安装一个总 handler。
+pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+        conn::ssh_connect,
+        conn::ssh_disconnect,
+        conn::ssh_reconnect,
+        conn::ssh_connections,
+        terminal::ssh_terminal_open,
+        terminal::ssh_terminal_write,
+        terminal::ssh_terminal_resize,
+        terminal::ssh_terminal_close,
+        terminal::ssh_terminal_list,
+        file::ssh_file_list,
+        file::ssh_file_upload,
+        file::ssh_file_download,
+        file::ssh_file_delete,
+        file::ssh_file_rename,
+        credential::ssh_credential_save,
+        credential::ssh_credential_get,
+        credential::ssh_credential_delete,
+        edit::ssh_edit_open,
+        edit::ssh_edit_save,
+        monitor::ssh_monitor_get,
+        service::ssh_service_list,
+        service::ssh_service_action,
+        service::ssh_service_logs,
+        process::ssh_process_list,
+        process::ssh_process_kill,
+        docker::ssh_docker_list,
+        docker::ssh_docker_action,
+        docker::ssh_docker_logs,
+        docker::ssh_docker_exec,
+    ];
+    handler(invoke)
+}
 
 /// 插件注册：命令 + 会话/终端 State + IPC 命令入库
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
@@ -36,7 +72,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("ssh_file_download", "下载文件（进度事件推送）"),
         ("ssh_file_delete", "删除远程文件/目录"),
         ("ssh_file_rename", "重命名远程文件/目录"),
-        ("ssh_credential_save", "保存凭证（stronghold 加密）"),
+        ("ssh_credential_save", "保存凭证（AES-GCM 加密）"),
         ("ssh_credential_get", "读取凭证（解密返回）"),
         ("ssh_credential_delete", "删除凭证"),
         ("ssh_edit_open", "打开远程文件（下载内容）"),
@@ -54,41 +90,13 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     ])
     .expect("IPC 命令重复注册");
     builder
-        .invoke_handler(tauri::generate_handler![
-            conn::ssh_connect,
-            conn::ssh_disconnect,
-            conn::ssh_reconnect,
-            conn::ssh_connections,
-            terminal::ssh_terminal_open,
-            terminal::ssh_terminal_write,
-            terminal::ssh_terminal_resize,
-            terminal::ssh_terminal_close,
-            terminal::ssh_terminal_list,
-            file::ssh_file_list,
-            file::ssh_file_upload,
-            file::ssh_file_download,
-            file::ssh_file_delete,
-            file::ssh_file_rename,
-            credential::ssh_credential_save,
-            credential::ssh_credential_get,
-            credential::ssh_credential_delete,
-            edit::ssh_edit_open,
-            edit::ssh_edit_save,
-            monitor::ssh_monitor_get,
-            service::ssh_service_list,
-            service::ssh_service_action,
-            service::ssh_service_logs,
-            process::ssh_process_list,
-            process::ssh_process_kill,
-            docker::ssh_docker_list,
-            docker::ssh_docker_action,
-            docker::ssh_docker_logs,
-            docker::ssh_docker_exec
-        ])
         .manage(SshState(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
         .manage(TerminalState(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )))
+        .manage(monitor::MonitorState(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
 }

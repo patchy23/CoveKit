@@ -41,7 +41,8 @@ export interface ServerProfile {
 }
 
 /** 服务器连接状态 */
-export type ConnectionStatus = "disconnected" | "connecting" | "connected" | "error" | "reconnecting";
+export type ConnectionStatus =
+  "disconnected" | "connecting" | "connected" | "error" | "reconnecting";
 
 /** 服务器连接快照（侧栏列表展示用） */
 export interface ServerConnection {
@@ -124,8 +125,10 @@ export interface FileListResult {
 
 /** 文件传输进度 */
 export interface FileTransferProgress {
-  /** 传输 id */
+  /** 本次传输唯一标识 */
   transferId: string;
+  /** 所属 SSH 连接会话 id */
+  connectionId: string;
   /** 本地路径 */
   localPath: string;
   /** 远程路径 */
@@ -138,6 +141,14 @@ export interface FileTransferProgress {
   done: boolean;
   /** 是否失败 */
   error?: string;
+}
+
+/** 解密后的 SSH 凭证（仅 IPC 临时返回，不持久化到前端） */
+export interface SshCredential {
+  authMethod?: AuthMethod;
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
 }
 
 /* ── 远程编辑 ── */
@@ -292,9 +303,20 @@ export const commands = {
 
 export type Payloads = {
   /* 连接 */
-  ssh_connect: { profile: ServerProfile; password?: string; privateKey?: string; passphrase?: string };
+  ssh_connect: {
+    profile: ServerProfile;
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+  };
   ssh_disconnect: { sessionId: string };
-  ssh_reconnect: { sessionId: string; password?: string; privateKey?: string; passphrase?: string };
+  ssh_reconnect: {
+    sessionId: string;
+    profile: ServerProfile;
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+  };
   ssh_connections: Record<string, never>;
 
   /* 终端 */
@@ -312,7 +334,12 @@ export type Payloads = {
   ssh_file_rename: { connectionId: string; oldPath: string; newPath: string };
 
   /* 凭证 */
-  ssh_credential_save: { profile: ServerProfile; password?: string; privateKey?: string; passphrase?: string };
+  ssh_credential_save: {
+    profile: ServerProfile;
+    password?: string;
+    privateKey?: string;
+    passphrase?: string;
+  };
   ssh_credential_get: { profileId: string };
   ssh_credential_delete: { profileId: string };
 
@@ -325,7 +352,11 @@ export type Payloads = {
 
   /* 服务 */
   ssh_service_list: { connectionId: string; filter?: "all" | "active" | "inactive" | "failed" };
-  ssh_service_action: { connectionId: string; serviceName: string; action: "start" | "stop" | "restart" };
+  ssh_service_action: {
+    connectionId: string;
+    serviceName: string;
+    action: "start" | "stop" | "restart";
+  };
   ssh_service_logs: { connectionId: string; serviceName: string; lines?: number };
 
   /* 进程 */
@@ -334,9 +365,33 @@ export type Payloads = {
 
   /* Docker */
   ssh_docker_list: { connectionId: string };
-  ssh_docker_action: { connectionId: string; containerId: string; action: "start" | "stop" | "restart" | "remove" };
+  ssh_docker_action: {
+    connectionId: string;
+    containerId: string;
+    action: "start" | "stop" | "restart" | "remove";
+  };
   ssh_docker_logs: { connectionId: string; containerId: string; lines?: number };
-  ssh_docker_exec: { connectionId: string; containerId: string; cols: number; rows: number };
+  ssh_docker_exec: {
+    connectionId: string;
+    containerId: string;
+    shell: "/bin/sh" | "/bin/bash";
+    cols: number;
+    rows: number;
+  };
+};
+
+/** 前端 invoke 的真实顶层参数；Rust payload 结构体命令在此统一声明包裹层。 */
+export type InvokePayloads = Omit<
+  Payloads,
+  "ssh_connect" | "ssh_reconnect" | "ssh_credential_save" | "ssh_docker_exec"
+> & {
+  ssh_connect: { payload: Payloads["ssh_connect"] };
+  ssh_reconnect: {
+    sessionId: string;
+    payload: Omit<Payloads["ssh_reconnect"], "sessionId">;
+  };
+  ssh_credential_save: { payload: Payloads["ssh_credential_save"] };
+  ssh_docker_exec: { payload: Payloads["ssh_docker_exec"] };
 };
 
 /* ── 命令返回 ── */
@@ -364,7 +419,7 @@ export type Results = {
 
   /* 凭证 */
   ssh_credential_save: SshActionResult;
-  ssh_credential_get: ServerProfile & { password?: string; privateKey?: string; passphrase?: string };
+  ssh_credential_get: SshCredential;
   ssh_credential_delete: SshActionResult;
 
   /* 远程编辑 */

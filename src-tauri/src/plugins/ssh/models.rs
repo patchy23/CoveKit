@@ -44,7 +44,7 @@ pub struct ServerProfile {
     pub(crate) username: String,
     /// 认证方式
     pub(crate) auth_method: AuthMethod,
-    /// 凭证引用（stronghold 密钥 id，密码/私钥不落盘）
+    /// 凭证引用（预留字段；密码/私钥由 credential.rs 加密落盘）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) secret_ref: Option<String>,
     /// 备注
@@ -175,6 +175,8 @@ pub struct FileListResult {
 pub struct FileTransferProgress {
     /// 传输 id
     pub(crate) transfer_id: String,
+    /// 所属 SSH 连接会话 id
+    pub(crate) connection_id: String,
     /// 本地路径
     pub(crate) local_path: String,
     /// 远程路径
@@ -348,4 +350,20 @@ pub struct SshCredentialSavePayload {
     /// 私钥 passphrase
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) passphrase: Option<String>,
+}
+
+/// Docker 交互终端命令入参；打包为 payload 以保持 IPC 契约稳定并规避参数过多。
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SshDockerExecPayload {
+    /// SSH 连接会话 id
+    pub(crate) connection_id: String,
+    /// Docker 容器 id
+    pub(crate) container_id: String,
+    /// 容器内 shell，只允许 /bin/sh 或 /bin/bash
+    pub(crate) shell: String,
+    /// PTY 列数
+    pub(crate) cols: u32,
+    /// PTY 行数
+    pub(crate) rows: u32,
 }

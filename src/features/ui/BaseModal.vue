@@ -20,7 +20,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
     <Transition name="modal">
       <div
         v-if="open"
-        class="fixed inset-0 z-[100] grid place-items-center bg-[rgba(16,20,28,0.45)] backdrop-blur-[3px]"
+        class="fixed inset-0 z-[180] grid place-items-center bg-[rgba(16,20,28,0.45)] backdrop-blur-[3px]"
         @click.self="emit('close')"
       >
         <div

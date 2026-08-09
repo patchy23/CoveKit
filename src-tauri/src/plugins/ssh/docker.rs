@@ -4,11 +4,11 @@
 
 use russh::ChannelMsg;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
-use crate::plugins::ssh::conn::{exec_collect, now_ms, SshState};
+use crate::plugins::ssh::conn::{exec_collect, now_ms, resource_id, shell_quote, SshState};
 use crate::plugins::ssh::models::{
-    DockerContainer, SshActionResult, TerminalData, TerminalSession,
+    DockerContainer, SshActionResult, SshDockerExecPayload, TerminalData, TerminalSession,
 };
 use crate::plugins::ssh::terminal::TerminalState;
 
@@ -23,10 +23,22 @@ fn parse_container_line(line: &str) -> Option<DockerContainer> {
         id: parts[0].to_string(),
         name: parts[1].to_string(),
         image: parts[2].to_string(),
-        status: parts[3].to_string(),
+        status: normalize_status(parts[3]).to_string(),
         ports: parts.get(4).map(|s| s.to_string()).unwrap_or_default(),
         created_at: 0,
     })
+}
+
+/// Docker 人类可读状态归一化为前端契约值。
+fn normalize_status(status: &str) -> &'static str {
+    let status = status.trim().to_ascii_lowercase();
+    if status.starts_with("up ") || status == "up" {
+        "running"
+    } else if status.starts_with("paused") {
+        "paused"
+    } else {
+        "exited"
+    }
 }
 
 /// 容器列表
@@ -78,7 +90,11 @@ pub async fn ssh_docker_action(
         "remove" => "rm -f",
         _ => return Err(format!("不支持的操作: {action}")),
     };
-    let out = exec_collect(&session, &format!("docker {action} {container_id} 2>&1")).await?;
+    let out = exec_collect(
+        &session,
+        &format!("docker {action} {}", shell_quote(&container_id)),
+    )
+    .await?;
     Ok(SshActionResult {
         ok: out.trim().is_empty() || !out.contains("Error"),
         error: if out.trim().is_empty() {
@@ -104,10 +120,10 @@ pub async fn ssh_docker_logs(
         .get(&connection_id)
         .map(|h| h.session.clone())
         .ok_or("连接不存在或已断开")?;
-    let n = lines.unwrap_or(100);
+    let n = lines.unwrap_or(100).clamp(1, 2_000);
     let out = exec_collect(
         &session,
-        &format!("docker logs --tail {n} {container_id} 2>&1"),
+        &format!("docker logs --tail {n} {}", shell_quote(&container_id)),
     )
     .await?;
     Ok(serde_json::json!({ "ok": true, "logs": out }))
@@ -119,11 +135,18 @@ pub async fn ssh_docker_exec(
     app: AppHandle,
     state: State<'_, TerminalState>,
     ssh_state: State<'_, SshState>,
-    connection_id: String,
-    container_id: String,
-    cols: u32,
-    rows: u32,
+    payload: SshDockerExecPayload,
 ) -> Result<TerminalSession, String> {
+    let SshDockerExecPayload {
+        connection_id,
+        container_id,
+        shell,
+        cols,
+        rows,
+    } = payload;
+    if cols == 0 || rows == 0 || cols > u16::MAX as u32 || rows > u16::MAX as u32 {
+        return Err("终端行列数必须在 1..=65535 范围内".into());
+    }
     let session = ssh_state
         .0
         .lock()
@@ -132,6 +155,11 @@ pub async fn ssh_docker_exec(
         .map(|h| h.session.clone())
         .ok_or("连接不存在或已断开")?;
 
+    let shell = match shell.as_str() {
+        "/bin/sh" => "/bin/sh",
+        "/bin/bash" => "/bin/bash",
+        _ => return Err("容器终端仅支持 /bin/sh 或 /bin/bash".into()),
+    };
     let mut channel = session
         .channel_open_session()
         .await
@@ -141,12 +169,16 @@ pub async fn ssh_docker_exec(
         .await
         .map_err(|e| format!("PTY 请求失败: {e}"))?;
     channel
-        .exec(false, format!("docker exec -it {container_id} /bin/sh"))
+        .exec(
+            false,
+            format!("docker exec -it {} {shell}", shell_quote(&container_id)),
+        )
         .await
         .map_err(|e| format!("进入容器失败: {e}"))?;
 
-    let terminal_id = format!("term-{}", now_ms());
-    let (tx, mut rx) = mpsc::unbounded_channel::<crate::plugins::ssh::terminal::TerminalCmd>();
+    let terminal_id = resource_id("docker-term");
+    let (tx, mut rx) = mpsc::channel::<crate::plugins::ssh::terminal::TerminalCmd>(128);
+    let (cancel, mut cancel_rx) = watch::channel(false);
 
     state.0.lock().map_err(|e| e.to_string())?.insert(
         terminal_id.clone(),
@@ -157,6 +189,7 @@ pub async fn ssh_docker_exec(
             rows,
             active: true,
             tx,
+            cancel,
         },
     );
 
@@ -166,6 +199,9 @@ pub async fn ssh_docker_exec(
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::select! {
+                changed = cancel_rx.changed() => {
+                    if changed.is_err() || *cancel_rx.borrow() { break; }
+                }
                 cmd = rx.recv() => {
                     match cmd {
                         Some(crate::plugins::ssh::terminal::TerminalCmd::Write(data)) => {
@@ -174,7 +210,7 @@ pub async fn ssh_docker_exec(
                         Some(crate::plugins::ssh::terminal::TerminalCmd::Resize(c, r)) => {
                             let _ = channel.window_change(c, r, 0, 0).await;
                         }
-                        Some(crate::plugins::ssh::terminal::TerminalCmd::Close) | None => break,
+                        None => break,
                     }
                 }
                 msg = channel.wait() => {
@@ -221,7 +257,7 @@ mod tests {
         assert_eq!(c.id, "abc123def456");
         assert_eq!(c.name, "mynginx");
         assert_eq!(c.image, "nginx:latest");
-        assert_eq!(c.status, "Up 2 hours");
+        assert_eq!(c.status, "running");
         assert_eq!(c.ports, "0.0.0.0:80->80/tcp");
     }
 
@@ -229,5 +265,12 @@ mod tests {
     fn 忽略空行() {
         assert!(parse_container_line("").is_none());
         assert!(parse_container_line("CONTAINER ID IMAGE COMMAND").is_none());
+    }
+
+    #[test]
+    fn 容器状态归一化() {
+        assert_eq!(normalize_status("Up 2 hours"), "running");
+        assert_eq!(normalize_status("Exited (0) 1 minute ago"), "exited");
+        assert_eq!(normalize_status("Paused"), "paused");
     }
 }

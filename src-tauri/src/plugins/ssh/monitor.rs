@@ -2,25 +2,34 @@
 //! 一条组合命令采集（top/free/df/net），解析为结构化数据；
 //! 解析函数为纯函数（parse_*），可独立单测。
 
+use std::{collections::HashMap, sync::Mutex};
+
 use tauri::State;
 
 use crate::plugins::ssh::conn::{exec_collect, SshState};
 use crate::plugins::ssh::models::MonitorData;
 
+/// 每个连接上一次网络累计计数与采样时间，用于换算字节/秒。
+pub struct MonitorState(pub(crate) Mutex<HashMap<String, (u64, u64, u64)>>);
+
 /// 采集命令（一次 exec 完成四项采集）
 const COLLECT_CMD: &str =
     "top -bn1 | head -3; echo ---; free -b; echo ---; df -B1 /; echo ---; cat /proc/net/dev";
 
-/// 解析 top 首行 CPU 使用率（纯函数）：`%Cpu(s): 12.3 us, ...` → 12.3
+/// 解析 top CPU 使用率（纯函数）：以 `100 - idle` 计入 user/system/iowait 等全部负载。
 fn parse_cpu(line: &str) -> f64 {
-    let Some(pos) = line.find("us,") else {
+    let Some((_, values)) = line.split_once(':') else {
         return 0.0;
     };
-    let before = &line[..pos];
-    let Some(colon) = before.rfind(':') else {
-        return 0.0;
-    };
-    before[colon + 1..].trim().parse().unwrap_or(0.0)
+    for field in values.split(',') {
+        let mut parts = field.split_whitespace();
+        let value = parts.next().and_then(|v| v.parse::<f64>().ok());
+        let label = parts.next();
+        if label == Some("id") {
+            return (100.0 - value.unwrap_or(100.0)).clamp(0.0, 100.0);
+        }
+    }
+    0.0
 }
 
 /// 解析 free -b 内存行（纯函数）：`Mem:   total  used  free` → (total, used)
@@ -56,6 +65,9 @@ fn parse_net(lines: &[&str]) -> (u64, u64) {
         let Some(colon) = line.find(':') else {
             continue;
         };
+        if line[..colon].trim() == "lo" {
+            continue;
+        }
         let parts: Vec<&str> = line[colon + 1..].split_whitespace().collect();
         if parts.len() >= 9 {
             rx += parts[0].parse().unwrap_or(0);
@@ -68,7 +80,11 @@ fn parse_net(lines: &[&str]) -> (u64, u64) {
 /// 组合输出 → MonitorData（纯函数，供命令与单测共用）
 fn parse_monitor_output(out: &str) -> MonitorData {
     let sections: Vec<&str> = out.split("---").collect();
-    let cpu = parse_cpu(sections.first().unwrap_or(&""));
+    let cpu = sections
+        .first()
+        .and_then(|section| section.lines().find(|line| line.contains("Cpu(s)")))
+        .map(parse_cpu)
+        .unwrap_or(0.0);
     let (mem_total, mem_used) = sections
         .get(1)
         .and_then(|s| s.lines().find(|l| l.starts_with("Mem:")))
@@ -82,7 +98,7 @@ fn parse_monitor_output(out: &str) -> MonitorData {
         })
         .map(parse_disk)
         .unwrap_or((0, 0));
-    let (_net_rx, _net_tx) = sections
+    let (net_rx, net_tx) = sections
         .get(3)
         .map(|s| {
             let lines: Vec<&str> = s.lines().skip(2).collect();
@@ -109,8 +125,9 @@ fn parse_monitor_output(out: &str) -> MonitorData {
         disk_percent: disk_pct as f32,
         disk_used,
         disk_total,
-        net_upload_bps: 0,
-        net_download_bps: 0,
+        // 解析阶段先携带累计计数；命令层结合上次采样换算为每秒速率。
+        net_upload_bps: net_tx,
+        net_download_bps: net_rx,
         timestamp: crate::plugins::ssh::conn::now_ms(),
     }
 }
@@ -119,6 +136,7 @@ fn parse_monitor_output(out: &str) -> MonitorData {
 #[tauri::command]
 pub async fn ssh_monitor_get(
     ssh_state: State<'_, SshState>,
+    monitor_state: State<'_, MonitorState>,
     connection_id: String,
 ) -> Result<MonitorData, String> {
     let session = ssh_state
@@ -129,7 +147,25 @@ pub async fn ssh_monitor_get(
         .map(|h| h.session.clone())
         .ok_or("连接不存在或已断开")?;
     let out = exec_collect(&session, COLLECT_CMD).await?;
-    Ok(parse_monitor_output(&out))
+    let mut data = parse_monitor_output(&out);
+    let raw_rx = data.net_download_bps;
+    let raw_tx = data.net_upload_bps;
+    let mut samples = monitor_state.0.lock().map_err(|e| e.to_string())?;
+    if let Some((prev_rx, prev_tx, prev_at)) = samples.get(&connection_id).copied() {
+        let elapsed_ms = data.timestamp.saturating_sub(prev_at);
+        if elapsed_ms > 0 {
+            data.net_download_bps = raw_rx.saturating_sub(prev_rx) * 1000 / elapsed_ms;
+            data.net_upload_bps = raw_tx.saturating_sub(prev_tx) * 1000 / elapsed_ms;
+        } else {
+            data.net_download_bps = 0;
+            data.net_upload_bps = 0;
+        }
+    } else {
+        data.net_download_bps = 0;
+        data.net_upload_bps = 0;
+    }
+    samples.insert(connection_id, (raw_rx, raw_tx, data.timestamp));
+    Ok(data)
 }
 
 #[cfg(test)]
@@ -139,7 +175,7 @@ mod tests {
     #[test]
     fn 解析cpu使用率() {
         let v = parse_cpu("%Cpu(s): 12.3 us,  0.5 sy,  0.0 ni, 86.8 id,  0.0 wa");
-        assert!((v - 12.3).abs() < 0.01);
+        assert!((v - 13.2).abs() < 0.01);
     }
 
     #[test]
@@ -160,14 +196,14 @@ mod tests {
 
     #[test]
     fn 组合输出解析为监控数据() {
-        let out = format!(
-            "%Cpu(s):  5.0 us,  0.0 sy, 95.0 id\n---\nMem:   100 40 60\n---\n/dev/sda1  200 80 120\n---\nInter-| Receive\n eth0: 10 0 0 0 0 0 0 0 5 0 0 0 0 0 0 0"
-        );
-        let d = parse_monitor_output(&out);
+        let out = "top - 17:00:00 up 1 day\nTasks: 100 total\n%Cpu(s):  5.0 us,  0.0 sy, 95.0 id\n---\nMem:   100 40 60\n---\n/dev/sda1  200 80 120\n---\nInter-| Receive\n eth0: 10 0 0 0 0 0 0 0 5 0 0 0 0 0 0 0";
+        let d = parse_monitor_output(out);
         assert!((d.cpu_percent - 5.0).abs() < 0.01);
         assert_eq!(d.memory_total, 100);
         assert_eq!(d.memory_used, 40);
         assert_eq!(d.disk_total, 200);
         assert_eq!(d.disk_used, 80);
+        assert_eq!(d.net_download_bps, 10);
+        assert_eq!(d.net_upload_bps, 5);
     }
 }

@@ -10,6 +10,19 @@ pub mod store;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, WebviewWindow};
 
+/// 分派全部框架命令；应用级 Builder 只能安装一个 invoke_handler。
+pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+        window_toggle,
+        window_hide,
+        open_external,
+        ipc_registry::framework_commands,
+        settings::settings_get,
+        settings::settings_set,
+    ];
+    handler(invoke)
+}
+
 /// 窗口可见性状态（window_toggle 的返回）
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]

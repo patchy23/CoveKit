@@ -12,7 +12,11 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: "save", p: ServerProfile, creds: { password?: string; privateKey?: string; passphrase?: string }): void;
+  (
+    e: "save",
+    p: ServerProfile,
+    creds: { password?: string; privateKey?: string; passphrase?: string }
+  ): void;
   (e: "cancel"): void;
   (e: "error", msg: string): void;
 }>();
@@ -33,6 +37,10 @@ const form = reactive({
 watch(
   () => props.profile,
   (p) => {
+    // 凭证永不回填到表单；每次打开都清空，避免上一次输入泄漏到另一台服务器。
+    form.password = "";
+    form.privateKey = "";
+    form.passphrase = "";
     if (p) {
       form.id = p.id;
       form.name = p.name;
@@ -48,13 +56,10 @@ watch(
       form.port = 22;
       form.username = "";
       form.authMethod = "password";
-      form.password = "";
-      form.privateKey = "";
-      form.passphrase = "";
       form.remark = "";
     }
   },
-  { immediate: true },
+  { immediate: true }
 );
 
 function submit() {
@@ -69,6 +74,10 @@ function submit() {
   }
   if (!form.username.trim()) {
     emit("error", "请输入登录用户名");
+    return;
+  }
+  if (!Number.isInteger(form.port) || form.port < 1 || form.port > 65535) {
+    emit("error", "端口必须是 1 到 65535 之间的整数");
     return;
   }
   const p: ServerProfile = {

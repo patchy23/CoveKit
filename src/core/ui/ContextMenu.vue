@@ -12,6 +12,8 @@ export interface ContextMenuItem {
   label: string;
   /** 危险操作（红色文字 + 红色 hover 底） */
   danger?: boolean;
+  /** 禁用操作（灰色文字，不触发回调） */
+  disabled?: boolean;
   /** 分隔线（单独成项，无 label） */
   separator?: boolean;
   /** 点击回调（触发后自动关闭菜单） */
@@ -53,10 +55,13 @@ onUnmounted(() => document.removeEventListener("mousedown", close));
         <button
           v-else
           class="flex w-full items-center px-[12px] py-[7px] text-body transition-colors"
+          :disabled="item.disabled"
           :class="
-            item.danger
-              ? 'text-danger-strong hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark'
-              : 'text-primary hover:bg-border dark:text-primary-dark dark:hover:bg-border-dark'
+            item.disabled
+              ? 'cursor-not-allowed text-text-muted opacity-60 dark:text-text-muted-dark'
+              : item.danger
+                ? 'text-danger-strong hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark'
+                : 'text-primary hover:bg-border dark:text-primary-dark dark:hover:bg-border-dark'
           "
           @click="
             item.onClick?.();

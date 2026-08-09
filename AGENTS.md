@@ -24,7 +24,7 @@
 
 ## 架构核心（详见 docs/02-architecture.md）
 
-- **插件模式（2026-08-08 起，前后端同构）**：前端 `src/plugins/<id>/`（manifest 自注册 + 私有 contracts.ts/ipc.ts + 组件，插件间禁止互相 import）；公共能力走 `src/core/ui/`（组件）与 `src/core/ipc/`（框架命令 + invokeCommand 基础设施）；**Rust 侧 `src-tauri/src/plugins/<id>/` 一律目录结构**（mod.rs 门面 + models.rs + 能力子模块；命令 + State 由 `register(builder)` 自注册，启动初始化走 `init(app)`），lib.rs 仅 register/init 各一行链式装配，插件清单见 `plugins/mod.rs`
+- **插件模式（2026-08-08 起，前后端同构）**：前端 `src/plugins/<id>/`（manifest 自注册 + 私有 contracts.ts/ipc.ts + 组件，插件间禁止互相 import）；公共能力走 `src/core/ui/`（组件）与 `src/core/ipc/`（框架命令 + invokeCommand 基础设施）；**Rust 侧 `src-tauri/src/plugins/<id>/` 一律目录结构**（mod.rs 门面 + models.rs + 能力子模块；命令清单由插件私有 `invoke_handler` 聚合，State 由 `register(builder)` 自注册，启动初始化走 `init(app)`）；应用级 `Builder::invoke_handler` 只能设置一次（后调用会覆盖前者），由 `plugins/mod.rs` 按前缀分派到插件 handler；lib.rs 仅保留一个总 handler 与 register/init 各一行链式装配
 - **框架与插件分离**：`src-tauri/src/framework/`（设置存储/全局快捷键/窗口/命令入库/数据管理）是基建不属于插件；**无实际前端引用的插件必须删除**（color/clipboard 已删，设置弹窗剪贴板区块已清）
 - **IPC 接口入库**（`framework/ipc_registry.rs`）：插件 register() 登记命令（名称+中文说明），启动校验全局唯一（重复即 panic）；框架命令 `framework_commands` 可查全量清单
 - **数据库管理规则**（`framework/store.rs`）：插件数据文件统一 `app_data_dir/<plugin>.db`（`plugin_db_path`）；表结构走 `PRAGMA user_version` 顺序迁移（`migrate`，只追加）；**本地库统一骨架 `PluginDb`**（连接生命周期 + 锁 + 迁移，插件只写业务 SQL）；连接型 sqlx（三方言 M3）不套用

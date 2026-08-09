@@ -286,7 +286,22 @@ pub async fn dns_delete_record(
     }
 }
 
-/// 插件注册：命令入库 + invoke_handler + 惰性 State
+/// 分派 DNS 插件命令。
+pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+        dns_query,
+        dns_domains,
+        dns_records,
+        dns_add_record,
+        dns_update_record,
+        dns_delete_record,
+        dns_config_get,
+        dns_config_set,
+    ];
+    handler(invoke)
+}
+
+/// 插件注册：命令入库 + State
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     crate::framework::ipc_registry::register(&[
         ("dns_query", "DNS 查询（指定服务器/多服务器对比）"),
@@ -299,16 +314,5 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("dns_config_set", "保存云平台密钥配置"),
     ])
     .expect("IPC 命令重复注册");
-    builder
-        .invoke_handler(tauri::generate_handler![
-            dns_query,
-            dns_domains,
-            dns_records,
-            dns_add_record,
-            dns_update_record,
-            dns_delete_record,
-            dns_config_get,
-            dns_config_set
-        ])
-        .manage(DnsState(Mutex::new(None)))
+    builder.manage(DnsState(Mutex::new(None)))
 }

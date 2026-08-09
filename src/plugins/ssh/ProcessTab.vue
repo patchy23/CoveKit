@@ -2,10 +2,11 @@
 /**
  * ProcessTab · 进程管理子页签（后端 ps 真实数据）
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import type { ServerConnection, ServerProfile, ProcessInfo } from "./contracts";
 import { formatBytes } from "./useSsh";
 import { useUiStore } from "@/stores/ui";
+import ConfirmDialog from "@/core/ui/ConfirmDialog.vue";
 import Select from "@/features/ui/Select.vue";
 import { ipc } from "./ipc";
 
@@ -19,6 +20,7 @@ const ui = useUiStore();
 const keyword = ref("");
 const sortBy = ref<"cpu" | "memory" | "pid">("cpu");
 const processes = ref<ProcessInfo[]>([]);
+const pendingKill = ref<{ pid: number; force: boolean } | null>(null);
 
 const filtered = computed(() => {
   let list = [...processes.value];
@@ -28,7 +30,7 @@ const filtered = computed(() => {
       (p) =>
         p.command.toLowerCase().includes(kw) ||
         p.user.toLowerCase().includes(kw) ||
-        String(p.pid).includes(kw),
+        String(p.pid).includes(kw)
     );
   }
   list.sort((a, b) => {
@@ -40,22 +42,22 @@ const filtered = computed(() => {
 });
 
 async function refresh() {
-  if (!props.connection?.sessionId) return;
+  const connectionId = props.connection?.sessionId;
+  if (!connectionId) return;
   try {
-    processes.value = await ipc.sshProcessList({
-      connectionId: props.connection.sessionId,
+    const result = await ipc.sshProcessList({
+      connectionId,
       sortBy: sortBy.value,
       keyword: keyword.value.trim() || undefined,
     });
+    if (props.connection?.sessionId === connectionId) processes.value = result;
   } catch (e) {
-    ui.toast(`进程列表加载失败：${e}`);
+    if (props.connection?.sessionId === connectionId) ui.toast(`进程列表加载失败：${e}`);
   }
 }
 
 async function kill(pid: number, force = false) {
   if (!props.connection?.sessionId) return;
-  // 结束进程前确认（危险操作）
-  if (!window.confirm(`${force ? "强制结束" : "结束"}进程 ${pid}？`)) return;
   try {
     const r = await ipc.sshProcessKill(props.connection.sessionId, pid, force);
     if (r.ok) {
@@ -69,7 +71,24 @@ async function kill(pid: number, force = false) {
   }
 }
 
-onMounted(refresh);
+function requestKill(pid: number, force = false) {
+  pendingKill.value = { pid, force };
+}
+
+function confirmKill() {
+  const pending = pendingKill.value;
+  pendingKill.value = null;
+  if (pending) void kill(pending.pid, pending.force);
+}
+
+watch(
+  () => props.connection?.sessionId,
+  (sessionId) => {
+    processes.value = [];
+    if (sessionId) void refresh();
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -101,15 +120,19 @@ onMounted(refresh);
         <button
           class="btn-ghost !px-[8px] !py-[3px] text-caption"
           title="刷新进程列表"
-          @click="ui.toast('已刷新（mock）')"
-        >刷新</button>
+          @click="refresh"
+        >
+          刷新
+        </button>
       </div>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
       <table class="w-full text-left text-body">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
-          <tr class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark">
+          <tr
+            class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
+          >
             <th class="w-[70px] whitespace-nowrap px-[12px] py-[8px] font-medium">PID</th>
             <th class="w-[90px] whitespace-nowrap px-[12px] py-[8px] font-medium">用户</th>
             <th class="w-[80px] whitespace-nowrap px-[12px] py-[8px] font-medium">CPU%</th>
@@ -128,22 +151,29 @@ onMounted(refresh);
             <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ p.pid }}</td>
             <td class="px-[12px] py-[8px] text-body-sm">{{ p.user }}</td>
             <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ p.cpuPercent.toFixed(1) }}</td>
-            <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ p.memoryPercent.toFixed(1) }}</td>
-            <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ formatBytes(p.memoryBytes) }}</td>
-            <td class="max-w-[200px] truncate px-[12px] py-[8px] font-mono text-body-sm" :title="p.command">
+            <td class="px-[12px] py-[8px] font-mono text-body-sm">
+              {{ p.memoryPercent.toFixed(1) }}
+            </td>
+            <td class="px-[12px] py-[8px] font-mono text-body-sm">
+              {{ formatBytes(p.memoryBytes) }}
+            </td>
+            <td
+              class="max-w-[200px] truncate px-[12px] py-[8px] font-mono text-body-sm"
+              :title="p.command"
+            >
               {{ p.command }}
             </td>
             <td class="whitespace-nowrap px-[12px] py-[8px]">
               <div class="flex items-center gap-[4px]">
                 <button
                   class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
-                  @click="kill(p.pid)"
+                  @click="requestKill(p.pid)"
                 >
                   结束
                 </button>
                 <button
                   class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption text-danger-strong dark:text-danger-dark"
-                  @click="kill(p.pid, true)"
+                  @click="requestKill(p.pid, true)"
                 >
                   强杀
                 </button>
@@ -160,5 +190,14 @@ onMounted(refresh);
       <span>共 {{ filtered.length }} 个进程</span>
       <span class="ml-auto">{{ connection?.status === "connected" ? "就绪" : "未连接" }}</span>
     </div>
+    <ConfirmDialog
+      :open="pendingKill !== null"
+      :title="pendingKill?.force ? '强制结束进程' : '结束进程'"
+      :message="`${pendingKill?.force ? '强制结束' : '结束'}进程 ${pendingKill?.pid ?? ''}？`"
+      :confirm-label="pendingKill?.force ? '强制结束' : '结束'"
+      :danger="pendingKill?.force"
+      @close="pendingKill = null"
+      @confirm="confirmKill"
+    />
   </div>
 </template>

@@ -4,11 +4,24 @@
 //! - http.rs：HTTP 请求实现（reqwest）
 //! - ws.rs：WebSocket 会话注册表与收发实现（tokio-tungstenite）
 
-mod http;
+pub(crate) mod http;
 mod models;
-mod ws;
+pub(crate) mod ws;
 
 pub use ws::WsState;
+
+/// 分派 HTTP/WS 插件命令。
+pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+        http::http_request,
+        ws::ws_connect,
+        ws::ws_send,
+        ws::ws_recv,
+        ws::ws_close,
+        ws::ws_sessions,
+    ];
+    handler(invoke)
+}
 
 /// 插件注册：命令 + WS 会话 State（惰性初始化）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
@@ -21,16 +34,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("ws_sessions", "全部 WS 会话"),
     ])
     .expect("IPC 命令重复注册");
-    builder
-        .invoke_handler(tauri::generate_handler![
-            http::http_request,
-            ws::ws_connect,
-            ws::ws_send,
-            ws::ws_recv,
-            ws::ws_close,
-            ws::ws_sessions
-        ])
-        .manage(WsState(std::sync::Mutex::new(
-            std::collections::HashMap::new(),
-        )))
+    builder.manage(WsState(std::sync::Mutex::new(
+        std::collections::HashMap::new(),
+    )))
 }

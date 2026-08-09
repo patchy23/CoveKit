@@ -1,16 +1,18 @@
 <script setup lang="ts">
-/**
- * FileManagerTab · 远程文件管理子页签
- * 路径导航 + 文件列表 + 上传/下载/删除/重命名（后端 SFTP 真实数据）；
- * 双击文本文件 → 弹窗编辑 → 保存回写服务器。
- */
-import { computed, ref } from "vue";
+/** SSH 远程文件管理：导航、传输、危险操作与弹窗编辑。 */
+import { computed, ref, watch } from "vue";
 import { open as dialogOpen, save as dialogSave } from "@tauri-apps/plugin-dialog";
 import type { ServerConnection, ServerProfile, RemoteFile } from "./contracts";
-import { formatBytes, formatTime } from "./useSsh";
+import { canEditRemoteFile } from "./useSsh";
 import { useUiStore } from "@/stores/ui";
+import ConfirmDialog from "@/core/ui/ConfirmDialog.vue";
+import ContextMenu from "@/core/ui/ContextMenu.vue";
+import InputDialog from "@/core/ui/InputDialog.vue";
 import EditorDialog from "./EditorDialog.vue";
+import FileBrowser from "./FileBrowser.vue";
 import { ipc } from "./ipc";
+import { useFileContextMenu } from "./useFileContextMenu";
+import { useFileTransfer } from "./useFileTransfer";
 
 const props = defineProps<{
   connection?: ServerConnection;
@@ -22,9 +24,15 @@ const ui = useUiStore();
 const currentPath = ref("/");
 const files = ref<RemoteFile[]>([]);
 const selectedFile = ref<RemoteFile | null>(null);
+const transferStatus = useFileTransfer(
+  () => props.connection?.sessionId,
+  () => void navigate(currentPath.value)
+);
 
-/** 当前打开的编辑弹窗（path + 内容） */
-const editing = ref<{ path: string; content: string } | null>(null);
+const editing = ref<{ connectionId: string; path: string; content: string } | null>(null);
+const savingEdit = ref(false);
+const renameTarget = ref<RemoteFile | null>(null);
+const deleteTarget = ref<RemoteFile | null>(null);
 
 const parentPath = computed(() => {
   const p = currentPath.value;
@@ -34,11 +42,13 @@ const parentPath = computed(() => {
 });
 
 async function navigate(path: string) {
-  if (!props.connection?.sessionId) return;
+  const connectionId = props.connection?.sessionId;
+  if (!connectionId) return;
   currentPath.value = path;
   selectedFile.value = null;
   try {
-    const r = await ipc.sshFileList(props.connection.sessionId, path);
+    const r = await ipc.sshFileList(connectionId, path);
+    if (props.connection?.sessionId !== connectionId) return;
     if (r.ok) {
       files.value = r.files;
     } else {
@@ -53,17 +63,28 @@ function navigateUp() {
   if (parentPath.value) navigate(parentPath.value);
 }
 
-/** 双击：目录进入，文件打开编辑弹窗 */
+/** 双击：目录进入，符合文本规则的文件打开统一编辑弹窗。 */
 async function onDoubleClick(file: RemoteFile) {
   if (file.isDir) {
     navigate(file.path);
     return;
   }
-  if (!props.connection?.sessionId) return;
+  if (!canEditRemoteFile(file)) {
+    ui.toast("该文件类型或大小不支持在线编辑");
+    return;
+  }
+  await openFile(file);
+}
+
+/** 双击与右键“编辑”共享同一打开路径。 */
+async function openFile(file: RemoteFile) {
+  const connectionId = props.connection?.sessionId;
+  if (!connectionId) return;
   try {
-    const r = await ipc.sshEditOpen(props.connection.sessionId, file.path);
+    const r = await ipc.sshEditOpen(connectionId, file.path);
+    if (props.connection?.sessionId !== connectionId) return;
     if (r.ok) {
-      editing.value = { path: r.path, content: r.content };
+      editing.value = { connectionId, path: r.path, content: r.content };
     } else {
       ui.toast(`打开文件失败：${r.error ?? "未知错误"}`);
     }
@@ -74,80 +95,95 @@ async function onDoubleClick(file: RemoteFile) {
 
 /** 保存：回写服务器（ssh_edit_save） */
 async function onSave(content: string) {
-  const path = editing.value?.path ?? "";
-  if (!props.connection?.sessionId) return;
+  const target = editing.value;
+  if (!target || savingEdit.value) return;
+  savingEdit.value = true;
   try {
-    const r = await ipc.sshEditSave(props.connection.sessionId, path, content);
+    const r = await ipc.sshEditSave(target.connectionId, target.path, content);
     if (r.ok) {
-      ui.toast(`已保存 ${path}（${content.length} 字符）`);
+      ui.toast(`已保存 ${target.path}（${content.length} 字符）`);
       editing.value = null;
     } else {
       ui.toast(`保存失败：${r.error ?? "未知错误"}`);
     }
   } catch (e) {
     ui.toast(`保存失败：${e}`);
+  } finally {
+    savingEdit.value = false;
   }
 }
 
 /** 上传：选择本地文件 → 传输到当前目录 */
 async function upload() {
   if (!props.connection?.sessionId) return;
-  const picked = await dialogOpen({ multiple: false, directory: false });
-  if (!picked || typeof picked !== "string") return;
-  const name = picked.split(/[\\/]/).pop() ?? "file";
+  let localPath: string | null;
+  try {
+    localPath = await dialogOpen({ multiple: false, directory: false });
+  } catch (error) {
+    ui.toast(`打开本地文件选择器失败：${error}`);
+    return;
+  }
+  if (typeof localPath !== "string") return;
+  const name = localPath.split(/[\\/]/).pop() ?? "file";
   const remote = currentPath.value.endsWith("/")
     ? `${currentPath.value}${name}`
     : `${currentPath.value}/${name}`;
   try {
-    const r = await ipc.sshFileUpload({
+    await ipc.sshFileUpload({
       connectionId: props.connection.sessionId,
-      localPath: picked,
+      localPath,
       remotePath: remote,
     });
-    if (r.done) {
-      ui.toast(`上传完成：${name}`);
-      navigate(currentPath.value);
-    }
+    transferStatus.value = `正在上传 ${name}`;
+    ui.toast(`已开始上传：${name}`);
   } catch (e) {
     ui.toast(`上传失败：${e}`);
   }
 }
 
 /** 下载：选择保存位置 → 传输到本地 */
-async function download() {
-  if (!selectedFile.value || !props.connection?.sessionId) {
-    if (!selectedFile.value) ui.toast("请先选择文件");
+async function download(file: RemoteFile | null = selectedFile.value) {
+  if (!file || !props.connection?.sessionId) {
+    if (!file) ui.toast("请先选择文件");
     return;
   }
-  const picked = await dialogSave({ defaultPath: selectedFile.value.name });
-  if (!picked) return;
+  let localPath: string | null;
   try {
-    const r = await ipc.sshFileDownload({
+    localPath = await dialogSave({ defaultPath: file.name });
+  } catch (error) {
+    ui.toast(`打开保存位置选择器失败：${error}`);
+    return;
+  }
+  if (!localPath) return;
+  try {
+    await ipc.sshFileDownload({
       connectionId: props.connection.sessionId,
-      remotePath: selectedFile.value.path,
-      localPath: picked,
+      remotePath: file.path,
+      localPath,
     });
-    if (r.done) ui.toast(`下载完成：${selectedFile.value.name}`);
+    transferStatus.value = `正在下载 ${file.name}`;
+    ui.toast(`已开始下载：${file.name}`);
   } catch (e) {
     ui.toast(`下载失败：${e}`);
   }
 }
 
-async function del() {
-  if (!selectedFile.value || !props.connection?.sessionId) {
-    if (!selectedFile.value) ui.toast("请先选择文件");
+function requestDelete(file: RemoteFile | null = selectedFile.value) {
+  if (!file) {
+    ui.toast("请先选择文件");
     return;
   }
-  // 删除前确认（UI-009：与服务器删除一致，避免误删）
-  if (!window.confirm(`确定删除「${selectedFile.value.name}」？此操作不可恢复。`)) return;
+  deleteTarget.value = file;
+}
+
+async function confirmDelete() {
+  const file = deleteTarget.value;
+  deleteTarget.value = null;
+  if (!file || !props.connection?.sessionId) return;
   try {
-    const r = await ipc.sshFileDelete(
-      props.connection.sessionId,
-      selectedFile.value.path,
-      selectedFile.value.isDir,
-    );
+    const r = await ipc.sshFileDelete(props.connection.sessionId, file.path, file.isDir);
     if (r.ok) {
-      ui.toast(`已删除 ${selectedFile.value.name}`);
+      ui.toast(`已删除 ${file.name}`);
       selectedFile.value = null;
       navigate(currentPath.value);
     } else {
@@ -158,17 +194,22 @@ async function del() {
   }
 }
 
-async function rename() {
-  if (!selectedFile.value || !props.connection?.sessionId) {
-    if (!selectedFile.value) ui.toast("请先选择文件");
+function requestRename(file: RemoteFile | null = selectedFile.value) {
+  if (!file) {
+    ui.toast("请先选择文件");
     return;
   }
-  const name = window.prompt("新文件名：", selectedFile.value.name);
-  if (!name || name === selectedFile.value.name) return;
-  const dir = selectedFile.value.path.slice(0, selectedFile.value.path.lastIndexOf("/") + 1);
+  renameTarget.value = file;
+}
+
+async function confirmRename(name: string) {
+  const file = renameTarget.value;
+  renameTarget.value = null;
+  if (!file || !props.connection?.sessionId || name === file.name) return;
+  const dir = file.path.slice(0, file.path.lastIndexOf("/") + 1);
   const newPath = `${dir}${name}`;
   try {
-    const r = await ipc.sshFileRename(props.connection.sessionId, selectedFile.value.path, newPath);
+    const r = await ipc.sshFileRename(props.connection.sessionId, file.path, newPath);
     if (r.ok) {
       ui.toast(`已重命名为 ${name}`);
       selectedFile.value = null;
@@ -180,90 +221,78 @@ async function rename() {
     ui.toast(`重命名失败：${e}`);
   }
 }
+
+const { menu, menuItems, openMenu } = useFileContextMenu({
+  refresh: () => void navigate(currentPath.value),
+  upload: () => void upload(),
+  download: (file) => void download(file),
+  edit: (file) => void openFile(file),
+  rename: requestRename,
+  select: (file) => (selectedFile.value = file),
+});
+
+watch(
+  () => props.connection?.sessionId,
+  (sessionId) => {
+    files.value = [];
+    selectedFile.value = null;
+    editing.value = null;
+    savingEdit.value = false;
+    renameTarget.value = null;
+    deleteTarget.value = null;
+    menu.value = null;
+    currentPath.value = "/";
+    if (sessionId) void navigate("/");
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <!-- 路径导航 + 操作栏 -->
-    <div
-      class="flex shrink-0 items-center gap-[8px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
-    >
-      <button class="btn-ghost !px-[6px] !py-[3px] text-caption" title="上级目录" @click="navigateUp">
-        ↑ 上级
-      </button>
-      <input
-        v-model="currentPath"
-        class="field-input !h-[28px] flex-1 !py-[4px] font-mono text-body-sm"
-        spellcheck="false"
-        @keyup.enter="navigate(currentPath)"
-      />
-      <button class="btn-secondary !px-[12px] text-body-sm" @click="upload">上传</button>
-      <button class="btn-secondary !px-[12px] text-body-sm" @click="download">下载</button>
-      <button class="btn-secondary !px-[12px] text-body-sm" @click="rename">重命名</button>
-      <button
-        class="btn-secondary !px-[12px] text-body-sm text-danger-strong dark:text-danger-dark"
-        @click="del"
-      >
-        删除
-      </button>
-    </div>
+    <FileBrowser
+      v-model:current-path="currentPath"
+      :files="files"
+      :selected-path="selectedFile?.path"
+      :selected-name="selectedFile?.name"
+      :transfer-status="transferStatus"
+      @navigate="navigate"
+      @up="navigateUp"
+      @upload="upload"
+      @download="download()"
+      @rename="requestRename()"
+      @delete="requestDelete()"
+      @select="selectedFile = $event"
+      @open="onDoubleClick"
+      @context="openMenu"
+    />
 
-    <!-- 文件列表 -->
-    <div class="min-h-0 flex-1 overflow-y-auto">
-      <table class="w-full text-left text-body">
-        <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
-          <tr class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark">
-            <th class="px-[12px] py-[8px] font-medium">名称</th>
-            <th class="w-[100px] px-[12px] py-[8px] font-medium">大小</th>
-            <th class="w-[120px] px-[12px] py-[8px] font-medium">修改时间</th>
-            <th class="w-[110px] px-[12px] py-[8px] font-medium">权限</th>
-            <th class="w-[80px] px-[12px] py-[8px] font-medium">所有者</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="f in files"
-            :key="f.path"
-            class="cursor-pointer border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
-            :class="{
-              'bg-tertiary-soft dark:bg-tertiary-soft-dark': selectedFile?.path === f.path,
-            }"
-            @click="selectedFile = f"
-            @dblclick="onDoubleClick(f)"
-          >
-            <td class="px-[12px] py-[7px]">
-              <span class="mr-[6px]">{{ f.isDir ? "📁" : "📄" }}</span>
-              <span :class="{ 'font-medium': f.isDir }">{{ f.name }}</span>
-            </td>
-            <td class="px-[12px] py-[7px] font-mono text-body-sm">
-              {{ f.isDir ? "-" : formatBytes(f.size) }}
-            </td>
-            <td class="px-[12px] py-[7px] text-body-sm">{{ formatTime(f.modifiedAt) }}</td>
-            <td class="px-[12px] py-[7px] font-mono text-body-sm">{{ f.permissions }}</td>
-            <td class="px-[12px] py-[7px] text-body-sm">{{ f.owner }}</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- 状态栏 -->
-    <div
-      class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-    >
-      <span>{{ currentPath }}</span>
-      <span>{{ files.length }} 个项目</span>
-      <span v-if="selectedFile" class="text-tertiary-strong dark:text-tertiary-dark">
-        已选：{{ selectedFile.name }}
-      </span>
-    </div>
-
-    <!-- 远程编辑弹窗（双击文件打开） -->
     <EditorDialog
       v-if="editing"
       :path="editing.path"
       :content="editing.content"
+      :saving="savingEdit"
       @save="onSave"
       @cancel="editing = null"
+    />
+    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
+    <InputDialog
+      :open="renameTarget !== null"
+      title="重命名"
+      label="新名称"
+      :initial-value="renameTarget?.name"
+      confirm-label="重命名"
+      @close="renameTarget = null"
+      @confirm="confirmRename"
+    />
+    <ConfirmDialog
+      :open="deleteTarget !== null"
+      title="删除文件"
+      :message="`确定删除「${deleteTarget?.name ?? ''}」？此操作不可恢复。`"
+      confirm-label="删除"
+      danger
+      @close="deleteTarget = null"
+      @confirm="confirmDelete"
     />
   </div>
 </template>

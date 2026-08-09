@@ -149,7 +149,7 @@ async fn live_sftp目录列表() {
     let (host, port, user, password) = live_env();
     let session = connect(&host, port, &user, &password).await;
 
-    let mut channel = session.channel_open_session().await.expect("打开通道失败");
+    let channel = session.channel_open_session().await.expect("打开通道失败");
     channel
         .request_subsystem(false, "sftp")
         .await

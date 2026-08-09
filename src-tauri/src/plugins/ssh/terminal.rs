@@ -7,9 +7,9 @@ use std::{collections::HashMap, sync::Mutex};
 
 use russh::ChannelMsg;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
-use crate::plugins::ssh::conn::{now_ms, SshState};
+use crate::plugins::ssh::conn::{now_ms, resource_id, SshState};
 use crate::plugins::ssh::models::{SshActionResult, TerminalData, TerminalSession};
 
 /// 终端指令（前端 → 后台任务）
@@ -18,8 +18,6 @@ pub(crate) enum TerminalCmd {
     Write(Vec<u8>),
     /// 调整窗口大小（xterm fit 后同步）
     Resize(u32, u32),
-    /// 关闭通道
-    Close,
 }
 
 /// 终端句柄（注册表存发送端；channel 归属后台任务）
@@ -35,7 +33,9 @@ pub(crate) struct TerminalHandle {
     /// 是否活跃（前端正在展示）
     pub(crate) active: bool,
     /// 指令通道（drop 后任务收到 None → 关闭）
-    pub(crate) tx: mpsc::UnboundedSender<TerminalCmd>,
+    pub(crate) tx: mpsc::Sender<TerminalCmd>,
+    /// 独立取消信号，不受已满的数据队列阻塞。
+    pub(crate) cancel: watch::Sender<bool>,
 }
 
 /// 终端注册表（State 注入）
@@ -51,6 +51,9 @@ pub async fn ssh_terminal_open(
     cols: u32,
     rows: u32,
 ) -> Result<TerminalSession, String> {
+    if cols == 0 || rows == 0 || cols > u16::MAX as u32 || rows > u16::MAX as u32 {
+        return Err("终端行列数必须在 1..=65535 范围内".into());
+    }
     // 从连接注册表取会话
     let handle = ssh_state
         .0
@@ -78,8 +81,9 @@ pub async fn ssh_terminal_open(
         .await
         .map_err(|e| format!("shell 启动失败: {e}"))?;
 
-    let terminal_id = format!("term-{}", now_ms());
-    let (tx, mut rx) = mpsc::unbounded_channel::<TerminalCmd>();
+    let terminal_id = resource_id("term");
+    let (tx, mut rx) = mpsc::channel::<TerminalCmd>(128);
+    let (cancel, mut cancel_rx) = watch::channel(false);
 
     // 登记句柄（先插入，任务退出时移除）
     state.0.lock().map_err(|e| e.to_string())?.insert(
@@ -91,6 +95,7 @@ pub async fn ssh_terminal_open(
             rows,
             active: true,
             tx,
+            cancel,
         },
     );
 
@@ -101,6 +106,9 @@ pub async fn ssh_terminal_open(
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::select! {
+                changed = cancel_rx.changed() => {
+                    if changed.is_err() || *cancel_rx.borrow() { break; }
+                }
                 // 前端指令
                 cmd = rx.recv() => {
                     match cmd {
@@ -110,7 +118,7 @@ pub async fn ssh_terminal_open(
                         Some(TerminalCmd::Resize(c, r)) => {
                             let _ = channel.window_change(c, r, 0, 0).await;
                         }
-                        Some(TerminalCmd::Close) | None => break,
+                        None => break,
                     }
                 }
                 // 通道输出（服务端推送）
@@ -154,14 +162,16 @@ pub async fn ssh_terminal_write(
     terminal_id: String,
     data: String,
 ) -> Result<SshActionResult, String> {
-    let map = state.0.lock().map_err(|e| e.to_string())?;
-    match map.get(&terminal_id) {
-        Some(h) => {
-            h.tx.send(TerminalCmd::Write(data.into_bytes()))
-                .map_err(|e| e.to_string())?
-        }
-        None => return Err("终端不存在或已关闭".into()),
-    }
+    let tx = state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&terminal_id)
+        .map(|h| h.tx.clone())
+        .ok_or("终端不存在或已关闭")?;
+    tx.send(TerminalCmd::Write(data.into_bytes()))
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(SshActionResult {
         ok: true,
         error: None,
@@ -176,29 +186,39 @@ pub async fn ssh_terminal_resize(
     cols: u32,
     rows: u32,
 ) -> Result<SshActionResult, String> {
-    let map = state.0.lock().map_err(|e| e.to_string())?;
-    match map.get(&terminal_id) {
-        Some(h) => {
-            h.tx.send(TerminalCmd::Resize(cols, rows))
-                .map_err(|e| e.to_string())?
-        }
-        None => return Err("终端不存在或已关闭".into()),
+    if cols == 0 || rows == 0 || cols > u16::MAX as u32 || rows > u16::MAX as u32 {
+        return Err("终端行列数必须在 1..=65535 范围内".into());
     }
+    let tx = {
+        let mut map = state.0.lock().map_err(|e| e.to_string())?;
+        let h = map.get_mut(&terminal_id).ok_or("终端不存在或已关闭")?;
+        h.cols = cols;
+        h.rows = rows;
+        h.tx.clone()
+    };
+    tx.send(TerminalCmd::Resize(cols, rows))
+        .await
+        .map_err(|e| e.to_string())?;
     Ok(SshActionResult {
         ok: true,
         error: None,
     })
 }
 
-/// 关闭终端（指令通道 Close → 后台任务退出并清理）
+/// 关闭终端（独立取消信号 → 后台任务退出并清理）
 #[tauri::command]
 pub async fn ssh_terminal_close(
     state: State<'_, TerminalState>,
     terminal_id: String,
 ) -> Result<SshActionResult, String> {
-    let map = state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(h) = map.get(&terminal_id) {
-        let _ = h.tx.send(TerminalCmd::Close);
+    let cancel = state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&terminal_id)
+        .map(|h| h.cancel);
+    if let Some(cancel) = cancel {
+        let _ = cancel.send(true);
     }
     Ok(SshActionResult {
         ok: true,

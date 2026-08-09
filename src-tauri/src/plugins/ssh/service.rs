@@ -3,7 +3,7 @@
 
 use tauri::State;
 
-use crate::plugins::ssh::conn::{exec_collect, SshState};
+use crate::plugins::ssh::conn::{exec_collect, shell_quote, SshState};
 use crate::plugins::ssh::models::{SshActionResult, SystemdService};
 
 /// 解析 systemctl 输出行（纯函数）：`unit  load  active  sub  desc` → SystemdService
@@ -77,7 +77,11 @@ pub async fn ssh_service_action(
         "restart" => "restart",
         _ => return Err(format!("不支持的操作: {action}")),
     };
-    let out = exec_collect(&session, &format!("systemctl {action} {service_name} 2>&1")).await?;
+    let out = exec_collect(
+        &session,
+        &format!("systemctl {action} {}", shell_quote(&service_name)),
+    )
+    .await?;
     Ok(SshActionResult {
         ok: out.trim().is_empty() || !out.contains("Failed"),
         error: if out.trim().is_empty() {
@@ -103,10 +107,13 @@ pub async fn ssh_service_logs(
         .get(&connection_id)
         .map(|h| h.session.clone())
         .ok_or("连接不存在或已断开")?;
-    let n = lines.unwrap_or(100);
+    let n = lines.unwrap_or(100).clamp(1, 2_000);
     let out = exec_collect(
         &session,
-        &format!("journalctl -u {service_name} -n {n} --no-pager 2>&1"),
+        &format!(
+            "journalctl -u {} -n {n} --no-pager",
+            shell_quote(&service_name)
+        ),
     )
     .await?;
     Ok(serde_json::json!({ "ok": true, "logs": out }))

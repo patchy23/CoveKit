@@ -180,6 +180,13 @@ fn finish_save() -> Result<HostsResult, String> {
     }
 }
 
+/// 分派 hosts 插件命令。
+pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+        tauri::generate_handler![hosts_read, hosts_save];
+    handler(invoke)
+}
+
 /// 插件注册：命令
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     crate::framework::ipc_registry::register(&[
@@ -187,5 +194,5 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("hosts_save", "备份并写入 hosts（平台提权）"),
     ])
     .expect("IPC 命令重复注册");
-    builder.invoke_handler(tauri::generate_handler![hosts_read, hosts_save])
+    builder
 }

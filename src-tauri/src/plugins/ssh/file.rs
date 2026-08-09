@@ -6,7 +6,7 @@ use russh_sftp::protocol::FileAttributes;
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::plugins::ssh::conn::{now_ms, SshState};
+use crate::plugins::ssh::conn::{resource_id, SshState};
 use crate::plugins::ssh::models::{
     FileListResult, FileTransferProgress, RemoteFile, SshActionResult,
 };
@@ -27,10 +27,75 @@ async fn sftp_session(
         .channel_open_session()
         .await
         .map_err(|e| format!("打开通道失败: {e}"))?;
+    channel
+        .request_subsystem(false, "sftp")
+        .await
+        .map_err(|e| format!("SFTP 子系统请求失败: {e}"))?;
     let stream = channel.into_stream();
     russh_sftp::client::SftpSession::new(stream)
         .await
         .map_err(|e| format!("SFTP 初始化失败: {e}"))
+}
+
+/// 将已完整写入的临时文件安全替换为目标文件；失败时尽量恢复旧文件。
+pub(crate) async fn replace_remote_file(
+    fs: &russh_sftp::client::SftpSession,
+    temp_path: &str,
+    target_path: &str,
+) -> Result<(), String> {
+    if !fs
+        .try_exists(target_path)
+        .await
+        .map_err(|e| format!("检查远程目标失败: {e}"))?
+    {
+        return fs
+            .rename(temp_path, target_path)
+            .await
+            .map_err(|e| format!("提交远程文件失败: {e}"));
+    }
+
+    let backup_path = format!("{target_path}.patchybox-backup-{}", resource_id("file"));
+    fs.rename(target_path, &backup_path)
+        .await
+        .map_err(|e| format!("备份远程原文件失败: {e}"))?;
+    if let Err(error) = fs.rename(temp_path, target_path).await {
+        let restore_error = fs.rename(&backup_path, target_path).await.err();
+        if restore_error.is_none() {
+            let _ = fs.remove_file(temp_path).await;
+        }
+        return Err(match restore_error {
+            Some(restore) => format!("提交远程文件失败: {error}；恢复原文件也失败: {restore}"),
+            None => format!("提交远程文件失败，已恢复原文件: {error}"),
+        });
+    }
+    if let Err(error) = fs.remove_file(&backup_path).await {
+        eprintln!("[ssh] 新文件已保存，但清理远程备份失败: {error}");
+    }
+    Ok(())
+}
+
+/// 将已完整写入的本地临时文件替换为下载目标；失败时恢复旧文件。
+fn replace_local_file(temp_path: &str, target_path: &str) -> Result<(), String> {
+    if !std::path::Path::new(target_path).exists() {
+        return std::fs::rename(temp_path, target_path)
+            .map_err(|e| format!("提交下载文件失败: {e}"));
+    }
+    let backup_path = format!("{target_path}.patchybox-backup-{}", resource_id("file"));
+    std::fs::rename(target_path, &backup_path).map_err(|e| format!("备份本地原文件失败: {e}"))?;
+    if let Err(error) = std::fs::rename(temp_path, target_path) {
+        let restore_error = std::fs::rename(&backup_path, target_path).err();
+        if restore_error.is_none() {
+            let _ = std::fs::remove_file(temp_path);
+        }
+        return Err(match restore_error {
+            Some(restore) => format!("提交下载文件失败: {error}；恢复原文件也失败: {restore}"),
+            None => format!("提交下载文件失败，已恢复原文件: {error}"),
+        });
+    }
+    if let Err(error) = std::fs::remove_file(&backup_path) {
+        eprintln!("[ssh] 下载成功，但清理本地备份失败: {error}");
+    }
+    Ok(())
 }
 
 /// 判断 u32 权限位是否为目录（S_IFDIR = 0o040000）
@@ -113,11 +178,11 @@ pub async fn ssh_file_upload(
     local_path: String,
     remote_path: String,
 ) -> Result<FileTransferProgress, String> {
-    let transfer_id = format!("up-{}", now_ms());
+    let transfer_id = resource_id("up");
+    let event_connection_id = connection_id.clone();
     let total = std::fs::metadata(&local_path)
         .map_err(|e| format!("本地文件不可读: {e}"))?
         .len();
-    let _ = total;
     let session = ssh_state
         .0
         .lock()
@@ -136,12 +201,36 @@ pub async fn ssh_file_upload(
                 .channel_open_session()
                 .await
                 .map_err(|e| e.to_string())?;
+            channel
+                .request_subsystem(false, "sftp")
+                .await
+                .map_err(|e| format!("SFTP 子系统请求失败: {e}"))?;
             let stream = channel.into_stream();
             let sftp = russh_sftp::client::SftpSession::new(stream)
                 .await
                 .map_err(|e| e.to_string())?;
+            let target_exists = sftp
+                .try_exists(&rpath)
+                .await
+                .map_err(|e| format!("检查远程目标失败: {e}"))?;
+            let target_path = if target_exists {
+                sftp.canonicalize(&rpath)
+                    .await
+                    .map_err(|e| format!("解析远程目标失败: {e}"))?
+            } else {
+                rpath.clone()
+            };
+            let target_permissions = if target_exists {
+                sftp.metadata(&target_path)
+                    .await
+                    .map_err(|e| format!("读取远程目标权限失败: {e}"))?
+                    .permissions
+            } else {
+                None
+            };
+            let temp_path = format!("{target_path}.patchybox-upload-{}", resource_id("file"));
             let mut remote = sftp
-                .create(&rpath)
+                .create(&temp_path)
                 .await
                 .map_err(|e| format!("创建远程文件失败: {e}"))?;
             let mut local = tokio::fs::File::open(&lpath)
@@ -154,34 +243,57 @@ pub async fn ssh_file_upload(
                 if n == 0 {
                     break;
                 }
-                let _ = remote.write(&buf[..n]).await;
+                remote
+                    .write_all(&buf[..n])
+                    .await
+                    .map_err(|e| format!("写入远程文件失败: {e}"))?;
                 transferred += n as u64;
                 // 进度事件（≥256KB 或最后一块）
                 let _ = app2.emit(
                     "ssh://transfer-progress",
                     &FileTransferProgress {
                         transfer_id: tid.clone(),
+                        connection_id: event_connection_id.clone(),
                         local_path: lpath.clone(),
                         remote_path: rpath.clone(),
                         transferred,
-                        total: total + 1,
+                        total,
                         done: false,
                         error: None,
                     },
                 );
             }
-            let _ = remote.flush().await;
-            Ok(())
+            remote
+                .flush()
+                .await
+                .map_err(|e| format!("刷新远程文件失败: {e}"))?;
+            remote
+                .shutdown()
+                .await
+                .map_err(|e| format!("关闭远程文件失败: {e}"))?;
+            if let Some(permissions) = target_permissions {
+                sftp.set_metadata(
+                    &temp_path,
+                    FileAttributes {
+                        permissions: Some(permissions),
+                        ..FileAttributes::default()
+                    },
+                )
+                .await
+                .map_err(|e| format!("保留远程文件权限失败: {e}"))?;
+            }
+            replace_remote_file(&sftp, &temp_path, &target_path).await
         }
         .await;
         let _ = app2.emit(
             "ssh://transfer-progress",
             &FileTransferProgress {
                 transfer_id: tid.clone(),
+                connection_id: event_connection_id.clone(),
                 local_path: lpath.clone(),
                 remote_path: rpath.clone(),
-                transferred: if result.is_ok() { total + 1 } else { 0 },
-                total: total + 1,
+                transferred: if result.is_ok() { total } else { 0 },
+                total,
                 done: true,
                 error: result.err(),
             },
@@ -190,10 +302,11 @@ pub async fn ssh_file_upload(
 
     Ok(FileTransferProgress {
         transfer_id,
+        connection_id,
         local_path,
         remote_path,
         transferred: 0,
-        total: total + 1,
+        total,
         done: false,
         error: None,
     })
@@ -208,7 +321,8 @@ pub async fn ssh_file_download(
     remote_path: String,
     local_path: String,
 ) -> Result<FileTransferProgress, String> {
-    let transfer_id = format!("dl-{}", now_ms());
+    let transfer_id = resource_id("down");
+    let event_connection_id = connection_id.clone();
     let session = ssh_state
         .0
         .lock()
@@ -227,6 +341,10 @@ pub async fn ssh_file_download(
                 .channel_open_session()
                 .await
                 .map_err(|e| e.to_string())?;
+            channel
+                .request_subsystem(false, "sftp")
+                .await
+                .map_err(|e| format!("SFTP 子系统请求失败: {e}"))?;
             let stream = channel.into_stream();
             let sftp = russh_sftp::client::SftpSession::new(stream)
                 .await
@@ -237,7 +355,8 @@ pub async fn ssh_file_download(
                 .map_err(|e| format!("读取元数据失败: {e}"))?;
             let total = meta.size.unwrap_or(0) as u64;
             let mut remote = sftp.open(&rpath).await.map_err(|e| e.to_string())?;
-            let mut local = tokio::fs::File::create(&lpath)
+            let temp_path = format!("{lpath}.patchybox-download-{}", resource_id("file"));
+            let mut local = tokio::fs::File::create(&temp_path)
                 .await
                 .map_err(|e| e.to_string())?;
             let mut buf = vec![0u8; 64 * 1024];
@@ -247,21 +366,34 @@ pub async fn ssh_file_download(
                 if n == 0 {
                     break;
                 }
-                let _ = local.write_all(&buf[..n]).await;
+                local
+                    .write_all(&buf[..n])
+                    .await
+                    .map_err(|e| format!("写入本地文件失败: {e}"))?;
                 transferred += n as u64;
                 let _ = app2.emit(
                     "ssh://transfer-progress",
                     &FileTransferProgress {
                         transfer_id: tid.clone(),
+                        connection_id: event_connection_id.clone(),
                         local_path: lpath.clone(),
                         remote_path: rpath.clone(),
                         transferred,
-                        total: total.max(1),
+                        total,
                         done: false,
                         error: None,
                     },
                 );
             }
+            local
+                .flush()
+                .await
+                .map_err(|e| format!("刷新本地文件失败: {e}"))?;
+            local
+                .shutdown()
+                .await
+                .map_err(|e| format!("关闭本地文件失败: {e}"))?;
+            replace_local_file(&temp_path, &lpath)?;
             Ok(total)
         }
         .await;
@@ -270,10 +402,11 @@ pub async fn ssh_file_download(
             "ssh://transfer-progress",
             &FileTransferProgress {
                 transfer_id: tid.clone(),
+                connection_id: event_connection_id.clone(),
                 local_path: lpath.clone(),
                 remote_path: rpath.clone(),
                 transferred: if result.is_ok() { total } else { 0 },
-                total: total.max(1),
+                total,
                 done: true,
                 error: result.err(),
             },
@@ -282,10 +415,11 @@ pub async fn ssh_file_download(
 
     Ok(FileTransferProgress {
         transfer_id,
+        connection_id,
         local_path,
         remote_path,
         transferred: 0,
-        total: 1,
+        total: 0,
         done: false,
         error: None,
     })

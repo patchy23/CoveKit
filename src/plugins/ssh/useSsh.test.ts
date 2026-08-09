@@ -5,6 +5,7 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  canEditRemoteFile,
   formatBytes,
   formatLatency,
   formatTime,
@@ -12,6 +13,7 @@ import {
   mockFiles,
   mockProfiles,
   mockTerminals,
+  shortContainerId,
   statusDotClass,
   statusText,
 } from "./useSsh";
@@ -33,7 +35,9 @@ describe("statusDotClass（状态 → 圆点样式，UI.md §3 五状态）", ()
 
   it("未连接 = 灰色（muted），未知状态兜底灰", () => {
     expect(statusDotClass("disconnected")).toBe("bg-text-muted dark:bg-text-muted-dark");
-    expect(statusDotClass("bogus" as ConnectionStatus)).toBe("bg-text-muted dark:bg-text-muted-dark");
+    expect(statusDotClass("bogus" as ConnectionStatus)).toBe(
+      "bg-text-muted dark:bg-text-muted-dark"
+    );
   });
 });
 
@@ -106,6 +110,31 @@ describe("formatLatency（延迟毫秒 → 文本）", () => {
   it(">= 1000ms 显示秒（一位小数）", () => {
     expect(formatLatency(1000)).toBe("1.0s");
     expect(formatLatency(1500)).toBe("1.5s");
+  });
+});
+
+describe("SSH 资源展示与文件菜单判定", () => {
+  it("容器 ID 只展示 Docker 标准 12 位短 ID，短值保持不变", () => {
+    expect(shortContainerId("1234567890abcdef1234567890abcdef")).toBe("1234567890ab");
+    expect(shortContainerId("abc123")).toBe("abc123");
+  });
+
+  it("仅允许不超过 5 MiB 的常见文本文件进入远程编辑", () => {
+    const base = {
+      path: "/tmp/config.json",
+      name: "config.json",
+      isDir: false,
+      size: 1024,
+      modifiedAt: 0,
+      permissions: "-rw-r--r--",
+      owner: "root",
+      group: "root",
+    };
+    expect(canEditRemoteFile(base)).toBe(true);
+    expect(canEditRemoteFile({ ...base, name: "README", path: "/tmp/README" })).toBe(true);
+    expect(canEditRemoteFile({ ...base, name: "image.png", path: "/tmp/image.png" })).toBe(false);
+    expect(canEditRemoteFile({ ...base, size: 5 * 1024 * 1024 + 1 })).toBe(false);
+    expect(canEditRemoteFile({ ...base, isDir: true })).toBe(false);
   });
 });
 

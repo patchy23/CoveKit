@@ -196,6 +196,13 @@ pub async fn db_query_table(
     db_execute(state, sql).await
 }
 
+/// 分派数据库插件命令。
+pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+        tauri::generate_handler![db_open, db_close, db_tables, db_execute, db_query_table];
+    handler(invoke)
+}
+
 /// 插件注册：命令 + 数据库连接 State（惰性初始化）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     crate::framework::ipc_registry::register(&[
@@ -206,13 +213,5 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("db_query_table", "浏览表数据"),
     ])
     .expect("IPC 命令重复注册");
-    builder
-        .invoke_handler(tauri::generate_handler![
-            db_open,
-            db_close,
-            db_tables,
-            db_execute,
-            db_query_table
-        ])
-        .manage(DbState(std::sync::Mutex::new(None)))
+    builder.manage(DbState(std::sync::Mutex::new(None)))
 }

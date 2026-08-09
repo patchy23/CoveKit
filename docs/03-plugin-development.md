@@ -27,7 +27,8 @@
 - `id`：小写连字符（`http-ws`、`random-password`）；Rust 模块名 snake_case（`http_ws`）。
 - 命令名：snake_case（`db_open`）；前端封装名 camelCase（`dbOpen`）。
 - 字段：serde 统一 `camelCase`；错误结构统一 `{ ok: false, error: Option<String> }`（不抛错给前端展示）。
-- **generate_handler 用完整路径**（`http::http_request`），因为宏在子模块作用域外不可见。
+- 每个插件在 `mod.rs` 提供自己的 `invoke_handler(invoke)`，内部 `generate_handler!` 使用完整路径；应用级 Builder 只安装一次总 handler，由 `plugins/mod.rs` 按命令前缀分派。
+- **禁止在多个 `register()` 中调用 `Builder::invoke_handler`**：该方法是 setter，后调用会覆盖前一批命令，并非追加。
 - 框架级能力（设置/快捷键/窗口/命令入库/数据管理）在 `src-tauri/src/framework/`，**不属于插件**。
 
 ## 2. IPC 接口入库规则（tauri 接口入库）
@@ -40,14 +41,19 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("db_open", "打开数据库（路径不存在自动创建）"),
         ("db_execute", "执行 SQL（查询/非查询自动识别）"),
     ]);
-    builder
-        .invoke_handler(tauri::generate_handler![db::db_open, db::db_execute])
-        .manage(...)
+    builder.manage(...)
+}
+
+pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+        tauri::generate_handler![db::db_open, db::db_execute];
+    handler(invoke)
 }
 ```
 
 规则：
 - **命令名全局唯一**：启动时 `ipc_registry` 检测重复，重复即 panic（开发期暴露，杜绝两个插件抢命令名）。
+- **唯一总 handler**：`lib.rs` 只调用一次 `Builder::invoke_handler`；`plugins/mod.rs` 只维护插件前缀到私有 handler 的一行路由。
 - **入库元数据**：`(名称, 中文说明)` 是入库最小单位；说明必须写清用途与关键参数。
 - **可查询**：框架命令 `framework_commands` 返回全量清单（名称 + 说明），供前端调试面板/文档生成。
 - **契约同步**：前端 `contracts.ts` 与 Rust serde 结构逐字段对应；`rename_all = "camelCase"` 是默认，禁止手写不一致。

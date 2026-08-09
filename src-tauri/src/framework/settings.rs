@@ -79,9 +79,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("settings_set", "写入应用设置"),
     ])
     .expect("IPC 命令重复注册");
-    builder
-        .invoke_handler(tauri::generate_handler![settings_get, settings_set])
-        .manage(HotkeyState(std::sync::Mutex::new(None)))
+    builder.manage(HotkeyState(std::sync::Mutex::new(None)))
 }
 
 /// 插件启动初始化：按设置注册全局快捷键（被占用时降级告警，不阻断启动）

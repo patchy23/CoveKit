@@ -1,6 +1,6 @@
 /**
  * SSH 工具 · 状态管理与纯函数
- * 连接状态机 + 会话列表 + 服务器配置（当前为前端假数据，后端 IPC 接入后替换）
+ * 连接状态机 + 服务器配置本地持久化 + 展示格式化纯函数。
  */
 import type {
   ServerProfile,
@@ -78,15 +78,15 @@ export const mockProfiles: ServerProfile[] = [
 
 const PROFILES_KEY = "ssh.profiles.v1";
 
-/** 读取服务器配置（首次运行时播种示例） */
+/** 读取服务器配置（首次运行返回空列表，不注入不可连接的示例服务器） */
 export function loadProfiles(): ServerProfile[] {
   try {
     const raw = localStorage.getItem(PROFILES_KEY);
     if (raw) return JSON.parse(raw) as ServerProfile[];
   } catch {
-    /* 数据损坏时回退种子 */
+    /* 数据损坏时回退空列表 */
   }
-  return mockProfiles;
+  return [];
 }
 
 /** 保存服务器配置（新增/更新，返回最新列表） */
@@ -195,4 +195,76 @@ export function formatTime(ts: number): string {
 export function formatLatency(ms?: number): string {
   if (ms === undefined) return "-";
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** Docker 默认短 ID 为前 12 位；异常短值保持原样。 */
+export function shortContainerId(id: string): string {
+  return id.slice(0, 12);
+}
+
+const EDITABLE_EXTENSIONS = new Set([
+  "txt",
+  "md",
+  "json",
+  "jsonc",
+  "yaml",
+  "yml",
+  "toml",
+  "ini",
+  "conf",
+  "cfg",
+  "xml",
+  "html",
+  "htm",
+  "css",
+  "scss",
+  "less",
+  "js",
+  "mjs",
+  "cjs",
+  "ts",
+  "tsx",
+  "jsx",
+  "vue",
+  "py",
+  "rs",
+  "go",
+  "java",
+  "kt",
+  "c",
+  "cc",
+  "cpp",
+  "h",
+  "hpp",
+  "cs",
+  "php",
+  "rb",
+  "sh",
+  "bash",
+  "zsh",
+  "fish",
+  "sql",
+  "log",
+  "env",
+  "properties",
+  "service",
+  "desktop",
+]);
+
+const EDITABLE_NAMES = new Set([
+  "readme",
+  "license",
+  "makefile",
+  "dockerfile",
+  ".env",
+  ".gitignore",
+  ".editorconfig",
+]);
+
+/** 远程编辑仅开放给不超过后端 5 MiB 上限的常见文本文件。 */
+export function canEditRemoteFile(file: RemoteFile): boolean {
+  if (file.isDir || file.size > 5 * 1024 * 1024) return false;
+  const name = file.name.toLowerCase();
+  const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1) : "";
+  return EDITABLE_NAMES.has(name) || EDITABLE_EXTENSIONS.has(extension);
 }

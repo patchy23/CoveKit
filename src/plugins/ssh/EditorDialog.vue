@@ -11,12 +11,15 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { tags as t } from "@lezer/highlight";
 import { json } from "@codemirror/lang-json";
 import { xml } from "@codemirror/lang-xml";
+import ConfirmDialog from "@/core/ui/ConfirmDialog.vue";
 
 const props = defineProps<{
   /** 远程文件完整路径 */
   path: string;
   /** 文件内容 */
   content: string;
+  /** 正在保存，禁用重复提交和关闭 */
+  saving?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -26,6 +29,7 @@ const emit = defineEmits<{
 
 const host = ref<HTMLElement | null>(null);
 const dirty = ref(false);
+const discardOpen = ref(false);
 let view: EditorView | null = null;
 
 /* ── 语法高亮（与 CodeViewer 同款 GitHub 配色，CSS 变量随主题） ── */
@@ -84,10 +88,21 @@ function createEditor() {
 }
 
 function save() {
+  if (props.saving) return;
   emit("save", view?.state.doc.toString() ?? props.content);
 }
 
 function cancel() {
+  if (props.saving) return;
+  if (dirty.value) {
+    discardOpen.value = true;
+    return;
+  }
+  emit("cancel");
+}
+
+function confirmDiscard() {
+  discardOpen.value = false;
   emit("cancel");
 }
 
@@ -118,16 +133,34 @@ onUnmounted(() => view?.destroy());
             已修改
           </span>
           <div class="ml-auto flex items-center gap-[8px]">
-            <button class="btn-ghost !px-[10px] !py-[4px] text-body-sm" @click="cancel">
+            <button
+              class="btn-ghost !px-[10px] !py-[4px] text-body-sm"
+              :disabled="saving"
+              @click="cancel"
+            >
               取消
             </button>
-            <button class="btn-primary text-body-sm" @click="save">保存</button>
+            <button class="btn-primary text-body-sm" :disabled="saving" @click="save">
+              {{ saving ? "保存中…" : "保存" }}
+            </button>
           </div>
         </div>
 
         <!-- CodeMirror 编辑区 -->
-        <div ref="host" class="min-h-0 flex-1 overflow-hidden bg-surface-muted dark:bg-surface-muted-dark" />
+        <div
+          ref="host"
+          class="min-h-0 flex-1 overflow-hidden bg-surface-muted dark:bg-surface-muted-dark"
+        />
       </div>
     </div>
+    <ConfirmDialog
+      :open="discardOpen"
+      title="放弃未保存的修改"
+      message="文件尚未保存，确定放弃修改吗？"
+      confirm-label="放弃修改"
+      danger
+      @close="discardOpen = false"
+      @confirm="confirmDiscard"
+    />
   </Teleport>
 </template>

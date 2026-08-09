@@ -3,7 +3,7 @@
  * MonitorTab · 资源监控子页签
  * CPU / 内存 / 磁盘 / 网络 四卡片 + 迷你折线图（3s 轮询后端监控命令）
  */
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import type { ServerConnection, ServerProfile, MonitorData } from "./contracts";
 import { formatBytes } from "./useSsh";
 import { ipc } from "./ipc";
@@ -14,19 +14,28 @@ const props = defineProps<{
 }>();
 
 const data = ref<MonitorData | null>(null);
+const errorMessage = ref("");
+const refreshing = ref(false);
 
 const history = ref<MonitorData[]>([]);
 let timer: number | null = null;
 
 async function refresh() {
-  if (!props.connection?.sessionId) return;
+  const connectionId = props.connection?.sessionId;
+  if (!connectionId || refreshing.value) return;
+  refreshing.value = true;
   try {
-    const d = await ipc.sshMonitorGet(props.connection.sessionId);
+    const d = await ipc.sshMonitorGet(connectionId);
+    if (props.connection?.sessionId !== connectionId) return;
+    errorMessage.value = "";
     data.value = d;
     history.value.push(d);
     if (history.value.length > 60) history.value.shift();
-  } catch {
-    /* 连接断开时停止轮询（保留上次数据） */
+  } catch (e) {
+    if (props.connection?.sessionId !== connectionId) return;
+    errorMessage.value = `刷新失败：${e}`;
+  } finally {
+    refreshing.value = false;
   }
 }
 
@@ -38,6 +47,16 @@ onMounted(() => {
 onUnmounted(() => {
   if (timer) clearInterval(timer);
 });
+
+watch(
+  () => props.connection?.sessionId,
+  (sessionId) => {
+    data.value = null;
+    history.value = [];
+    errorMessage.value = "";
+    if (sessionId) void refresh();
+  }
+);
 
 function sparkline(values: number[], width = 80, height = 24): string {
   if (values.length < 2) return "";
@@ -59,8 +78,9 @@ function sparkline(values: number[], width = 80, height = 24): string {
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
         {{ profile?.name ?? "未连接" }} · 资源监控
       </span>
-      <span class="text-caption text-text-muted dark:text-text-muted-dark">
-        每 3s 自动刷新
+      <span class="text-caption text-text-muted dark:text-text-muted-dark"> 每 3s 自动刷新 </span>
+      <span v-if="errorMessage" class="text-caption text-danger-strong dark:text-danger-dark">
+        {{ errorMessage }}
       </span>
       <div class="ml-auto">
         <button class="btn-ghost !px-[8px] !py-[3px] text-caption" @click="refresh">刷新</button>
@@ -68,12 +88,11 @@ function sparkline(values: number[], width = 80, height = 24): string {
     </div>
 
     <!-- 监控卡片 -->
-    <div
-      v-if="data"
-      class="grid min-h-0 flex-1 grid-cols-2 gap-[12px] overflow-y-auto p-[12px]"
-    >
+    <div v-if="data" class="grid min-h-0 flex-1 grid-cols-2 gap-[12px] overflow-y-auto p-[12px]">
       <!-- CPU -->
-      <div class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark">
+      <div
+        class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark"
+      >
         <div class="flex items-center justify-between">
           <span class="text-body-sm text-text-muted dark:text-text-muted-dark">CPU</span>
           <span class="text-display font-mono font-medium text-primary dark:text-primary-dark">
@@ -91,7 +110,9 @@ function sparkline(values: number[], width = 80, height = 24): string {
       </div>
 
       <!-- 内存 -->
-      <div class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark">
+      <div
+        class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark"
+      >
         <div class="flex items-center justify-between">
           <span class="text-body-sm text-text-muted dark:text-text-muted-dark">内存</span>
           <span class="text-display font-mono font-medium text-primary dark:text-primary-dark">
@@ -112,7 +133,9 @@ function sparkline(values: number[], width = 80, height = 24): string {
       </div>
 
       <!-- 磁盘 -->
-      <div class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark">
+      <div
+        class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark"
+      >
         <div class="flex items-center justify-between">
           <span class="text-body-sm text-text-muted dark:text-text-muted-dark">磁盘</span>
           <span class="text-display font-mono font-medium text-primary dark:text-primary-dark">
@@ -133,7 +156,9 @@ function sparkline(values: number[], width = 80, height = 24): string {
       </div>
 
       <!-- 网络 -->
-      <div class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark">
+      <div
+        class="rounded-lg border border-border bg-surface p-[14px] dark:border-border-dark dark:bg-surface-dark"
+      >
         <div class="flex items-center justify-between">
           <span class="text-body-sm text-text-muted dark:text-text-muted-dark">网络</span>
           <span class="font-mono text-body-sm font-medium text-primary dark:text-primary-dark">

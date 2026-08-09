@@ -143,6 +143,13 @@ pub fn api_clear(app: AppHandle, state: State<'_, ApiState>) -> Result<(), Strin
     d.execute("DELETE FROM api_list").map(|_| ())
 }
 
+/// 分派 API 插件命令。
+pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
+        tauri::generate_handler![api_save, api_list, api_delete, api_clear];
+    handler(invoke)
+}
+
 /// 插件注册：命令 + 库 State（惰性初始化）+ IPC 命令入库
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     crate::framework::ipc_registry::register(&[
@@ -152,9 +159,5 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("api_clear", "清空全部接口"),
     ])
     .expect("IPC 命令重复注册");
-    builder
-        .invoke_handler(tauri::generate_handler![
-            api_save, api_list, api_delete, api_clear
-        ])
-        .manage(ApiState(std::sync::Mutex::new(None)))
+    builder.manage(ApiState(std::sync::Mutex::new(None)))
 }
