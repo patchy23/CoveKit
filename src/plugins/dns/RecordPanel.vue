@@ -3,7 +3,7 @@
  * 云解析记录管理 · 记录表格 + 行内添加/编辑表单 + 分页
  * 删除采用两段式确认（再次点击执行，3s 后复原），避免弹窗打断。
  */
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ipc } from "./ipc";
 import { useUiStore } from "@/stores/ui";
 import type { CloudDomain, CloudRecord } from "./contracts";
@@ -24,6 +24,22 @@ const total = ref(0);
 const page = ref(1);
 const pageSize = 50;
 const busy = ref(false);
+/** 记录搜索词（服务端模糊搜索：主机记录/记录值） */
+const searchQuery = ref("");
+/** 搜索防抖定时器（输入停顿 300ms 才发起请求） */
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 输入防抖后搜索：重置到第一页并携带关键词重新拉取 */
+watch(searchQuery, () => {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    loadRecords(1);
+  }, 300);
+});
+
+onUnmounted(() => {
+  if (searchTimer) clearTimeout(searchTimer);
+});
 
 /** 表单模式：null=关闭，add=新增，CloudRecord=编辑 */
 const formOpen = ref<null | "add" | CloudRecord>(null);
@@ -39,11 +55,17 @@ const confirmDeleteId = ref<string | null>(null);
 /** 总页数 */
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)));
 
-/** 拉取记录列表（分页） */
+/** 拉取记录列表（分页；携带搜索关键词走服务端过滤） */
 async function loadRecords(p = page.value) {
   busy.value = true;
   try {
-    const r = await ipc.dnsRecords(props.platform, props.domain.domainName, p, pageSize);
+    const r = await ipc.dnsRecords(
+      props.platform,
+      props.domain.domainName,
+      p,
+      pageSize,
+      searchQuery.value.trim()
+    );
     records.value = r.list;
     total.value = r.total;
     page.value = p;
@@ -146,7 +168,7 @@ onMounted(loadRecords);
 
 <template>
   <div class="flex min-h-0 flex-col gap-[10px]">
-    <!-- 面包屑 + 操作 -->
+    <!-- 面包屑 + 搜索 + 操作 -->
     <div class="flex shrink-0 items-center gap-[8px]">
       <button class="btn-ghost shrink-0 px-[10px] py-[6px] text-body-sm" @click="emit('back')">
         ← 返回
@@ -154,10 +176,16 @@ onMounted(loadRecords);
       <span class="font-mono text-body font-medium text-primary dark:text-primary-dark">
         {{ domain.domainName }}
       </span>
-      <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
+      <span class="whitespace-nowrap text-body-sm text-text-muted dark:text-text-muted-dark">
         {{ total }} 条记录
       </span>
-      <button class="btn-primary ml-auto shrink-0 px-[12px] py-[6px] text-body-sm" @click="openAdd">
+      <input
+        v-model="searchQuery"
+        class="field-input ml-auto w-[180px] !px-[10px] !py-[7px]"
+        placeholder="搜索主机记录 / 记录值…"
+        spellcheck="false"
+      />
+      <button class="btn-primary shrink-0 px-[12px] py-[6px] text-body-sm" @click="openAdd">
         + 添加记录
       </button>
     </div>

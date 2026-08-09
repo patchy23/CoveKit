@@ -53,22 +53,29 @@ impl AliyunDns {
         })
     }
 
-    /// 解析记录列表（分页）
+    /// 解析记录列表（分页；keyword 非空时按主机记录/记录值模糊搜索，服务端过滤）
     pub async fn get_records(
         &self,
         domain: &str,
         page: u32,
         size: u32,
+        keyword: &str,
     ) -> Result<RecordList, String> {
+        // 阿里云用 RRKeyWord（主机记录）+ ValueKeyWord（记录值）两个独立关键字参数
+        let mut params = vec![
+            ("DomainName".to_string(), domain.to_string()),
+            ("PageNumber".to_string(), page.max(1).to_string()),
+            ("PageSize".to_string(), size.clamp(1, 200).to_string()),
+        ];
+        if !keyword.trim().is_empty() {
+            params.push(("RRKeyWord".to_string(), keyword.trim().to_string()));
+            params.push(("ValueKeyWord".to_string(), keyword.trim().to_string()));
+        }
         let resp = self
             .client
             .clone()
             .version("2015-01-09")
-            .query([
-                ("DomainName", domain),
-                ("PageNumber", &page.to_string()),
-                ("PageSize", &size.to_string()),
-            ])
+            .query(params)
             .post("DescribeDomainRecords")
             .json::<DescribeDomainRecords>()
             .await

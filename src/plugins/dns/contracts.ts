@@ -81,7 +81,7 @@ export const commands = {
 export type Payloads = {
   dns_query: { domain: string; rtype: string; servers: string[] };
   dns_domains: { platform: string };
-  dns_records: { platform: string; domain: string; page: number; size: number };
+  dns_records: { platform: string; domain: string; page: number; size: number; keyword: string };
   dns_add_record: {
     payload: {
       platform: string;

@@ -160,7 +160,7 @@ pub async fn dns_domains(
     }
 }
 
-/// 云解析记录列表（分页）
+/// 云解析记录列表（分页；keyword 非空时服务端按主机记录/记录值模糊搜索）
 #[tauri::command]
 pub async fn dns_records(
     app: AppHandle,
@@ -169,17 +169,18 @@ pub async fn dns_records(
     domain: String,
     page: u32,
     size: u32,
+    keyword: String,
 ) -> Result<RecordList, String> {
     let cfg = load_config(&app, &state)?;
     match platform.as_str() {
         models::PLATFORM_ALIYUN => {
             alidns::AliyunDns::new(&cfg.aliyun)?
-                .get_records(&domain, page.max(1), size.clamp(1, 200))
+                .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
                 .await
         }
         models::PLATFORM_DNSPOD => {
             dnspod::TencentDns::new(&cfg.dnspod)?
-                .get_records(&domain, page.max(1), size.clamp(1, 200))
+                .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
                 .await
         }
         _ => Err(format!("不支持的平台: {platform}")),

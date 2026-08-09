@@ -192,24 +192,25 @@ impl TencentDns {
         })
     }
 
-    /// 解析记录列表（分页；offset 从 0 开始）
+    /// 解析记录列表（分页；keyword 非空时按主机记录/记录值模糊搜索，服务端过滤）
     pub async fn get_records(
         &self,
         domain: &str,
         page: u32,
         size: u32,
+        keyword: &str,
     ) -> Result<RecordList, String> {
         let offset = (page.max(1) - 1) * size;
-        let json = self
-            .call(
-                "DescribeRecordList",
-                json!({
-                    "Domain": domain,
-                    "Offset": offset,
-                    "Limit": size,
-                }),
-            )
-            .await?;
+        // 腾讯云 DescribeRecordList 的 Keyword 支持主机记录、记录值模糊搜索
+        let mut payload = json!({
+            "Domain": domain,
+            "Offset": offset,
+            "Limit": size,
+        });
+        if !keyword.trim().is_empty() {
+            payload["Keyword"] = json!(keyword.trim());
+        }
+        let json = self.call("DescribeRecordList", payload).await?;
         let resp: DescribeRecordListResp =
             serde_json::from_value(json).map_err(|e| format!("响应解析失败: {e}"))?;
         let list = resp

@@ -12,8 +12,10 @@ export const ipc = {
     platform: string,
     domain: string,
     page: number,
-    size: number
-  ): Promise<RecordList> => invokeCommand("dns_records", { platform, domain, page, size }),
+    size: number,
+    keyword: string
+  ): Promise<RecordList> =>
+    invokeCommand("dns_records", { platform, domain, page, size, keyword }),
   dnsAddRecord: (
     platform: string,
     domain: string,
