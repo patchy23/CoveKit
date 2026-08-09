@@ -23,7 +23,7 @@ registerTool({
   name: "JSON 格式化",
   category: "dev",
   icon: "json",
-  description: "格式化、校验与压缩 JSON，错误自动定位行号。",
+  description: "JSON 格式化、压缩与校验，错误自动定位行号。",
   keywords: ["json", "格式化", "格式化", "压缩", "校验", "pretty"],
   presentation: "workspace",
   component: () => import("./index.vue"),

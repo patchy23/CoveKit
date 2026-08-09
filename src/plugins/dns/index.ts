@@ -5,11 +5,11 @@ import { registerTool } from "@/core/registry/toolRegistry";
 
 registerTool({
   id: "dns",
-  name: "DNS 工具",
+  name: "DNS 解析",
   category: "net",
   icon: "dns",
   description:
-    "DNS 查询（多类型、多服务器对比）+ 阿里云/腾讯云 DNSPod 云解析记录管理（增删改查）。",
+    "多类型、多服务器 DNS 查询对比，阿里云 / 腾讯云解析记录一站式管理。",
   keywords: [
     "dns",
     "域名",
