@@ -21,7 +21,6 @@ onUnmounted(() => window.removeEventListener("keydown", onKeydown));
       <div
         v-if="open"
         class="fixed inset-0 z-[180] grid place-items-center bg-[rgba(16,20,28,0.45)] backdrop-blur-[3px]"
-        @click.self="emit('close')"
       >
         <div
           class="max-h-[85vh] overflow-y-auto rounded-[18px] bg-surface p-[26px] shadow-[0_12px_40px_rgba(16,24,40,0.14)] dark:bg-surface-dark"

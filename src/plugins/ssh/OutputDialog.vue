@@ -8,7 +8,6 @@ defineEmits<{ (event: "close"): void }>();
   <Teleport to="body">
     <div
       class="fixed inset-0 z-[150] grid place-items-center bg-black/30 p-[40px]"
-      @click.self="$emit('close')"
     >
       <div
         class="flex h-full w-full max-w-[900px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"

@@ -193,7 +193,6 @@ watch(activeProfileId, (profileId) => {
       <div
         v-if="deleteTarget"
         class="fixed inset-0 z-[160] grid place-items-center bg-black/30"
-        @click.self="deleteTarget = null"
       >
         <div
           class="w-[380px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"

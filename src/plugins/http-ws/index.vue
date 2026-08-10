@@ -166,7 +166,6 @@ onMounted(loadApis);
       <div
         v-if="saveNameOpen"
         class="fixed inset-0 z-[150] grid place-items-center bg-black/30"
-        @click.self="saveNameOpen = false"
       >
         <div
           class="w-[400px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
