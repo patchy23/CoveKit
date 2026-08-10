@@ -11,7 +11,7 @@ use std::{
 
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 use tauri::{AppHandle, Manager};
 
 /// Edge TTS 公开客户端令牌（微软 readaloud 服务固定常量）
@@ -208,7 +208,7 @@ pub(crate) async fn synth_bytes(
                     .duration_since(UNIX_EPOCH)
                     .map(|d| d.as_nanos())
                     .unwrap_or(0) as u8;
-                let n = (b % 16) as u8;
+                let n = b % 16;
                 char::from(if n < 10 { b'0' + n } else { b'A' + n - 10 })
             })
             .collect();
@@ -269,10 +269,10 @@ pub(crate) async fn synth_bytes(
 
                 if let Some(p) = data.windows(10).position(|w| w == b"Path:audio") {
                     let mut s = p + 10;
-                    if data.get(s) == Some(&13) {
+                    if data.get(s).copied() == Some(13) {
                         s += 1;
                     }
-                    if data.get(s) == Some(&10) {
+                    if data.get(s).copied() == Some(10) {
                         s += 1;
                     }
                     audio.extend_from_slice(&data[s..]);
