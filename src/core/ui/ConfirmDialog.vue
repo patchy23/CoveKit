@@ -1,19 +1,19 @@
 <script setup lang="ts">
 /** ConfirmDialog · 基于 BaseModal 的项目统一确认弹窗。 */
-import BaseModal from "@/features/ui/BaseModal.vue";
+import BaseModal from '@/features/ui/BaseModal.vue'
 
 defineProps<{
-  open: boolean;
-  title: string;
-  message: string;
-  confirmLabel?: string;
-  danger?: boolean;
-}>();
+  open: boolean
+  title: string
+  message: string
+  confirmLabel?: string
+  danger?: boolean
+}>()
 
 const emit = defineEmits<{
-  (event: "confirm"): void;
-  (event: "close"): void;
-}>();
+  (event: 'confirm'): void
+  (event: 'close'): void
+}>()
 </script>
 
 <template>
@@ -31,7 +31,7 @@ const emit = defineEmits<{
         :class="{ '!bg-danger-strong dark:!bg-danger-dark': danger }"
         @click="emit('confirm')"
       >
-        {{ confirmLabel ?? "确定" }}
+        {{ confirmLabel ?? '确定' }}
       </button>
     </div>
   </BaseModal>

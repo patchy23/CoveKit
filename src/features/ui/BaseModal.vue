@@ -3,16 +3,16 @@
  * BaseModal · 通用弹窗壳
  * 遮罩 + 180ms 上浮淡入 + Esc/遮罩点击关闭（对齐原型 .modal-mask/.modal 与 DESIGN.md 弹窗规范）。
  */
-import { onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted } from 'vue'
 
-defineProps<{ open: boolean; width?: string }>();
-const emit = defineEmits<{ close: [] }>();
+defineProps<{ open: boolean; width?: string }>()
+const emit = defineEmits<{ close: [] }>()
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape") emit("close");
+  if (e.key === 'Escape') emit('close')
 }
-onMounted(() => window.addEventListener("keydown", onKeydown));
-onUnmounted(() => window.removeEventListener("keydown", onKeydown));
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 </script>
 
 <template>

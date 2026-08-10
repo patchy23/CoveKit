@@ -3,11 +3,11 @@
  * DNS 查询 · 多类型 + 多服务器对比（dig 风格）
  * 预设服务器勾选 + 自定义服务器追加；每台服务器独立结果卡片。
  */
-import { computed, ref } from "vue";
-import { ipc } from "./ipc";
-import { useUiStore } from "@/stores/ui";
-import type { ServerQueryResult } from "./contracts";
-import Select from "@/features/ui/Select.vue";
+import { computed, ref } from 'vue'
+import { ipc } from './ipc'
+import { useUiStore } from '@/stores/ui'
+import type { ServerQueryResult } from './contracts'
+import Select from '@/features/ui/Select.vue'
 import {
   DNS_SERVERS,
   RECORD_TYPES,
@@ -15,66 +15,64 @@ import {
   isValidServer,
   recordTypeBadgeClass,
   serverLabel,
-} from "./useDns";
+} from './useDns'
 
-const ui = useUiStore();
+const ui = useUiStore()
 
-const domain = ref("");
-const rtype = ref<string>("A");
-const selected = ref<string[]>(["system", "223.5.5.5", "119.29.29.29"]);
-const customServer = ref("");
-const customServers = ref<string[]>([]);
-const busy = ref(false);
-const results = ref<ServerQueryResult[]>([]);
+const domain = ref('')
+const rtype = ref<string>('A')
+const selected = ref<string[]>(['system', '223.5.5.5', '119.29.29.29'])
+const customServer = ref('')
+const customServers = ref<string[]>([])
+const busy = ref(false)
+const results = ref<ServerQueryResult[]>([])
 
 /** 有效服务器列表（预设勾选 + 自定义） */
 const servers = computed(() => [
   ...DNS_SERVERS.filter((s) => selected.value.includes(s.addr)).map((s) => s.addr),
   ...customServers.value,
-]);
+])
 
 /** 是否全部成功（顶部状态提示用） */
-const allOk = computed(
-  () => results.value.length > 0 && results.value.every((r) => r.ok)
-);
+const allOk = computed(() => results.value.length > 0 && results.value.every((r) => r.ok))
 
 /** 添加自定义服务器（校验格式；重复忽略） */
 function addCustom() {
-  const v = customServer.value.trim();
+  const v = customServer.value.trim()
   if (!isValidServer(v)) {
-    ui.toast("服务器地址无效（IPv4/IPv6/域名，如 8.8.8.8）");
-    return;
+    ui.toast('服务器地址无效（IPv4/IPv6/域名，如 8.8.8.8）')
+    return
   }
   if (customServers.value.includes(v) || servers.value.includes(v)) {
-    ui.toast("该服务器已在列表中");
-    return;
+    ui.toast('该服务器已在列表中')
+    return
   }
-  customServers.value.push(v);
-  customServer.value = "";
+  customServers.value.push(v)
+  customServer.value = ''
 }
 
 /** 移除自定义服务器 */
 function removeCustom(addr: string) {
-  customServers.value = customServers.value.filter((s) => s !== addr);
+  customServers.value = customServers.value.filter((s) => s !== addr)
 }
 
 /** 执行查询（Enter 与按钮均触发） */
 async function run() {
   if (!isValidDomain(domain.value)) {
-    ui.toast("请输入合法域名（如 example.com）");
-    return;
+    ui.toast('请输入合法域名（如 example.com）')
+    return
   }
   if (servers.value.length === 0) {
-    ui.toast("请至少选择一台 DNS 服务器");
-    return;
+    ui.toast('请至少选择一台 DNS 服务器')
+    return
   }
-  busy.value = true;
+  busy.value = true
   try {
-    results.value = await ipc.dnsQuery(domain.value.trim(), rtype.value, servers.value);
+    results.value = await ipc.dnsQuery(domain.value.trim(), rtype.value, servers.value)
   } catch (e) {
-    ui.toast("查询失败：" + (e instanceof Error ? e.message : String(e)));
+    ui.toast('查询失败：' + (e instanceof Error ? e.message : String(e)))
   } finally {
-    busy.value = false;
+    busy.value = false
   }
 }
 </script>
@@ -82,7 +80,9 @@ async function run() {
 <template>
   <div class="flex h-full min-h-0 flex-col gap-[12px]">
     <!-- 查询条件区（固定，不随结果滚动） -->
-    <div class="flex shrink-0 flex-col gap-[10px] border-b border-border pb-[12px] dark:border-border-dark">
+    <div
+      class="flex shrink-0 flex-col gap-[10px] border-b border-border pb-[12px] dark:border-border-dark"
+    >
       <div class="flex flex-wrap items-center gap-[8px]">
         <input
           v-model="domain"
@@ -98,7 +98,7 @@ async function run() {
           :options="RECORD_TYPES.map((t) => ({ value: t, label: t }))"
         />
         <button class="btn-primary shrink-0" :disabled="busy" @click="run">
-          {{ busy ? "查询中…" : "查询" }}
+          {{ busy ? '查询中…' : '查询' }}
         </button>
       </div>
 
@@ -150,10 +150,7 @@ async function run() {
 
     <!-- 结果区：每台服务器一张卡片 -->
     <div class="min-h-0 flex-1 space-y-[10px] overflow-y-auto pr-[2px]">
-      <p
-        v-if="results.length === 0"
-        class="text-body-sm text-text-muted dark:text-text-muted-dark"
-      >
+      <p v-if="results.length === 0" class="text-body-sm text-text-muted dark:text-text-muted-dark">
         输入域名并选择记录类型与服务器，点击「查询」开始（支持 PTR：直接填 IP）。
       </p>
 
@@ -175,7 +172,7 @@ async function run() {
                 : 'bg-danger-soft text-danger-strong dark:bg-danger-soft-dark dark:text-danger-dark'
             "
           >
-            {{ r.ok ? "成功" : "失败" }}
+            {{ r.ok ? '成功' : '失败' }}
           </span>
           <span v-if="r.ok" class="text-body-sm text-text-muted dark:text-text-muted-dark">
             {{ r.elapsedMs }} ms · {{ r.records.length }} 条
@@ -190,7 +187,9 @@ async function run() {
         <!-- 成功：记录表格 -->
         <table v-else-if="r.records.length > 0" class="w-full border-collapse">
           <thead>
-            <tr class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark">
+            <tr
+              class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
+            >
               <th class="py-[4px] pr-[12px] font-medium">类型</th>
               <th class="py-[4px] pr-[12px] font-medium">名称</th>
               <th class="py-[4px] pr-[12px] font-medium">TTL</th>
@@ -228,7 +227,10 @@ async function run() {
         </p>
       </div>
 
-      <p v-if="allOk && results.length > 1" class="text-body-sm text-success-strong dark:text-success-dark">
+      <p
+        v-if="allOk && results.length > 1"
+        class="text-body-sm text-success-strong dark:text-success-dark"
+      >
         ✓ 全部服务器查询成功
       </p>
     </div>

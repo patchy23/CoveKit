@@ -5,39 +5,39 @@
  * 点击外部 / 菜单项后自动关闭；菜单项支持分隔线与危险样式（红色）。
  * hover 高亮统一 bg-border（与 Select 下拉一致）。
  */
-import { onMounted, onUnmounted } from "vue";
+import { onMounted, onUnmounted } from 'vue'
 
 export interface ContextMenuItem {
   /** 菜单项文字 */
-  label: string;
+  label: string
   /** 危险操作（红色文字 + 红色 hover 底） */
-  danger?: boolean;
+  danger?: boolean
   /** 禁用操作（灰色文字，不触发回调） */
-  disabled?: boolean;
+  disabled?: boolean
   /** 分隔线（单独成项，无 label） */
-  separator?: boolean;
+  separator?: boolean
   /** 点击回调（触发后自动关闭菜单） */
-  onClick?: () => void;
+  onClick?: () => void
 }
 
 defineProps<{
   /** 菜单位置（视口坐标，父组件需自行收拢在视口内） */
-  x: number;
-  y: number;
+  x: number
+  y: number
   /** 菜单项列表 */
-  items: ContextMenuItem[];
-}>();
+  items: ContextMenuItem[]
+}>()
 
 const emit = defineEmits<{
-  (e: "close"): void;
-}>();
+  (e: 'close'): void
+}>()
 
 function close() {
-  emit("close");
+  emit('close')
 }
 
-onMounted(() => document.addEventListener("mousedown", close));
-onUnmounted(() => document.removeEventListener("mousedown", close));
+onMounted(() => document.addEventListener('mousedown', close))
+onUnmounted(() => document.removeEventListener('mousedown', close))
 </script>
 
 <template>
@@ -64,8 +64,8 @@ onUnmounted(() => document.removeEventListener("mousedown", close));
                 : 'text-primary hover:bg-border dark:text-primary-dark dark:hover:bg-border-dark'
           "
           @click="
-            item.onClick?.();
-            close();
+            item.onClick?.()
+            close()
           "
         >
           {{ item.label }}

@@ -6,26 +6,26 @@
  * 视图模式：侧栏可折叠（sidebarCollapsed）；沉浸模式隐藏工具标题栏 TopBar
  * （窗口标题栏 TitleBar 保留，退出靠其沉浸按钮）。
  */
-import { onMounted } from "vue";
-import Sidebar from "@/features/sidebar/Sidebar.vue";
-import TopBar from "@/features/topbar/TopBar.vue";
-import ToolWorkspace from "@/features/workspace/ToolWorkspace.vue";
-import TitleBar from "@/features/ui/TitleBar.vue";
-import SettingsModal from "@/features/settings/SettingsModal.vue";
-import Toast from "@/features/ui/Toast.vue";
-import { useFavoritesStore } from "@/stores/favorites";
-import { useSettingsStore } from "@/stores/settings";
-import { useToolsStore } from "@/stores/tools";
-import { useUiStore } from "@/stores/ui";
+import { onMounted } from 'vue'
+import Sidebar from '@/features/sidebar/Sidebar.vue'
+import TopBar from '@/features/topbar/TopBar.vue'
+import ToolWorkspace from '@/features/workspace/ToolWorkspace.vue'
+import TitleBar from '@/features/ui/TitleBar.vue'
+import SettingsModal from '@/features/settings/SettingsModal.vue'
+import Toast from '@/features/ui/Toast.vue'
+import { useFavoritesStore } from '@/stores/favorites'
+import { useSettingsStore } from '@/stores/settings'
+import { useToolsStore } from '@/stores/tools'
+import { useUiStore } from '@/stores/ui'
 
-const tools = useToolsStore();
-const favorites = useFavoritesStore();
-const settings = useSettingsStore();
-const ui = useUiStore();
+const tools = useToolsStore()
+const favorites = useFavoritesStore()
+const settings = useSettingsStore()
+const ui = useUiStore()
 
 onMounted(async () => {
-  await Promise.all([favorites.init(), tools.initRecent(), settings.init()]);
-});
+  await Promise.all([favorites.init(), tools.initRecent(), settings.init()])
+})
 </script>
 
 <template>

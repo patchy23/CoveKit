@@ -1,22 +1,22 @@
 <script setup lang="ts">
 /** DockerTable · SSH Docker 容器列表与行级操作。 */
-import type { DockerContainer } from "./contracts";
-import { shortContainerId } from "./useSsh";
+import type { DockerContainer } from './contracts'
+import { shortContainerId } from './useSsh'
 
-defineProps<{ containers: DockerContainer[]; busyContainerId?: string | null }>();
+defineProps<{ containers: DockerContainer[]; busyContainerId?: string | null }>()
 const emit = defineEmits<{
   (
-    event: "action",
+    event: 'action',
     container: DockerContainer,
-    action: "start" | "stop" | "restart" | "remove"
-  ): void;
-  (event: "logs", container: DockerContainer): void;
-  (event: "terminal", container: DockerContainer): void;
-}>();
+    action: 'start' | 'stop' | 'restart' | 'remove'
+  ): void
+  (event: 'logs', container: DockerContainer): void
+  (event: 'terminal', container: DockerContainer): void
+}>()
 
 function stateClass(status: string): string {
-  if (status === "running") return "text-success-strong dark:text-success-dark";
-  return "text-text-muted dark:text-text-muted-dark";
+  if (status === 'running') return 'text-success-strong dark:text-success-dark'
+  return 'text-text-muted dark:text-text-muted-dark'
 }
 </script>
 

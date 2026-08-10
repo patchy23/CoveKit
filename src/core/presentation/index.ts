@@ -4,16 +4,16 @@
  * modal=轻量弹窗（备用载体，未来按需重建 ToolModal）。
  * 工具不感知载体：框架按 manifest.presentation 路由挂载。
  */
-import type { Presentation } from "@/core/registry/types";
+import type { Presentation } from '@/core/registry/types'
 
-export type { Presentation };
+export type { Presentation }
 
 /** 载体路由：按工具声明返回挂载方式 */
-export function resolvePresentation(p: Presentation): "workspace" | "modal" {
-  return p;
+export function resolvePresentation(p: Presentation): 'workspace' | 'modal' {
+  return p
 }
 
 /** 打开工具的载荷 */
 export interface OpenToolPayload {
-  id: string;
+  id: string
 }

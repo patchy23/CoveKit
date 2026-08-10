@@ -3,143 +3,143 @@
  * DockerTab · Docker 容器管理子页签（后端 docker 命令真实数据）
  * 搜索（名称/ID/镜像）+ 状态筛选。
  */
-import { computed, ref, watch } from "vue";
-import type { ServerConnection, ServerProfile, DockerContainer } from "./contracts";
-import { useUiStore } from "@/stores/ui";
-import ConfirmDialog from "@/core/ui/ConfirmDialog.vue";
-import Select from "@/features/ui/Select.vue";
-import TerminalTab from "./TerminalTab.vue";
-import OutputDialog from "./OutputDialog.vue";
-import DockerTable from "./DockerTable.vue";
-import { ipc } from "./ipc";
+import { computed, ref, watch } from 'vue'
+import type { ServerConnection, ServerProfile, DockerContainer } from './contracts'
+import { useUiStore } from '@/stores/ui'
+import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import Select from '@/features/ui/Select.vue'
+import TerminalTab from './TerminalTab.vue'
+import OutputDialog from './OutputDialog.vue'
+import DockerTable from './DockerTable.vue'
+import { ipc } from './ipc'
 
 const props = defineProps<{
-  connection?: ServerConnection;
-  profile?: ServerProfile;
-}>();
+  connection?: ServerConnection
+  profile?: ServerProfile
+}>()
 
-const ui = useUiStore();
+const ui = useUiStore()
 
-const containers = ref<DockerContainer[]>([]);
-const keyword = ref("");
-const statusFilter = ref<"all" | "running" | "exited">("all");
-const terminalContainer = ref<DockerContainer | null>(null);
-const logOutput = ref<{ title: string; content: string } | null>(null);
-const busyContainerId = ref<string | null>(null);
+const containers = ref<DockerContainer[]>([])
+const keyword = ref('')
+const statusFilter = ref<'all' | 'running' | 'exited'>('all')
+const terminalContainer = ref<DockerContainer | null>(null)
+const logOutput = ref<{ title: string; content: string } | null>(null)
+const busyContainerId = ref<string | null>(null)
 const pendingAction = ref<{
-  container: DockerContainer;
-  action: "stop" | "restart" | "remove";
-} | null>(null);
+  container: DockerContainer
+  action: 'stop' | 'restart' | 'remove'
+} | null>(null)
 
 /** 过滤后的容器列表（搜索 + 状态筛选） */
 const filtered = computed(() => {
-  let list = containers.value;
-  const kw = keyword.value.trim().toLowerCase();
+  let list = containers.value
+  const kw = keyword.value.trim().toLowerCase()
   if (kw) {
     list = list.filter(
       (c) =>
         c.name.toLowerCase().includes(kw) ||
         c.id.toLowerCase().includes(kw) ||
         c.image.toLowerCase().includes(kw)
-    );
+    )
   }
-  if (statusFilter.value !== "all") {
-    list = list.filter((c) => c.status === statusFilter.value);
+  if (statusFilter.value !== 'all') {
+    list = list.filter((c) => c.status === statusFilter.value)
   }
-  return list;
-});
+  return list
+})
 
 async function refresh() {
-  const connectionId = props.connection?.sessionId;
-  if (!connectionId) return;
+  const connectionId = props.connection?.sessionId
+  if (!connectionId) return
   try {
-    const result = await ipc.sshDockerList(connectionId);
-    if (props.connection?.sessionId === connectionId) containers.value = result;
+    const result = await ipc.sshDockerList(connectionId)
+    if (props.connection?.sessionId === connectionId) containers.value = result
   } catch (e) {
-    if (props.connection?.sessionId === connectionId) ui.toast(`容器列表加载失败：${e}`);
+    if (props.connection?.sessionId === connectionId) ui.toast(`容器列表加载失败：${e}`)
   }
 }
 
-async function action(c: DockerContainer, act: "start" | "stop" | "restart" | "remove") {
-  const connectionId = props.connection?.sessionId;
-  if (!connectionId || busyContainerId.value) return;
-  busyContainerId.value = c.id;
+async function action(c: DockerContainer, act: 'start' | 'stop' | 'restart' | 'remove') {
+  const connectionId = props.connection?.sessionId
+  if (!connectionId || busyContainerId.value) return
+  busyContainerId.value = c.id
   try {
     const r = await ipc.sshDockerAction({
       connectionId,
       containerId: c.id,
       action: act,
-    });
+    })
     if (r.ok) {
       ui.toast(
-        `${act === "start" ? "启动" : act === "stop" ? "停止" : act === "restart" ? "重启" : "删除"}容器 ${c.name} 成功`
-      );
-      await refresh();
+        `${act === 'start' ? '启动' : act === 'stop' ? '停止' : act === 'restart' ? '重启' : '删除'}容器 ${c.name} 成功`
+      )
+      await refresh()
     } else {
-      ui.toast(`操作失败：${r.error ?? "未知错误"}`);
+      ui.toast(`操作失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
-    ui.toast(`操作失败：${e}`);
+    ui.toast(`操作失败：${e}`)
   } finally {
-    busyContainerId.value = null;
+    busyContainerId.value = null
   }
 }
 
 /** 启动无需确认；停止、重启和删除使用项目统一确认弹窗。 */
-function requestAction(c: DockerContainer, act: "start" | "stop" | "restart" | "remove") {
-  if (act === "start") {
-    void action(c, act);
-    return;
+function requestAction(c: DockerContainer, act: 'start' | 'stop' | 'restart' | 'remove') {
+  if (act === 'start') {
+    void action(c, act)
+    return
   }
-  pendingAction.value = { container: c, action: act };
+  pendingAction.value = { container: c, action: act }
 }
 
 function confirmAction() {
-  const pending = pendingAction.value;
-  if (!pending) return;
-  pendingAction.value = null;
-  void action(pending.container, pending.action);
+  const pending = pendingAction.value
+  if (!pending) return
+  pendingAction.value = null
+  void action(pending.container, pending.action)
 }
 
 const pendingActionText = computed(() => {
-  const pending = pendingAction.value;
-  if (!pending) return { title: "", message: "", label: "确定" };
-  const name = pending.container.name;
-  if (pending.action === "remove") {
-    return { title: "删除容器", message: `删除容器「${name}」？此操作不可恢复。`, label: "删除" };
+  const pending = pendingAction.value
+  if (!pending) return { title: '', message: '', label: '确定' }
+  const name = pending.container.name
+  if (pending.action === 'remove') {
+    return { title: '删除容器', message: `删除容器「${name}」？此操作不可恢复。`, label: '删除' }
   }
-  const verb = pending.action === "stop" ? "停止" : "重启";
-  return { title: `${verb}容器`, message: `确定${verb}容器「${name}」吗？`, label: verb };
-});
+  const verb = pending.action === 'stop' ? '停止' : '重启'
+  return { title: `${verb}容器`, message: `确定${verb}容器「${name}」吗？`, label: verb }
+})
 
 async function logs(c: DockerContainer) {
-  if (!props.connection?.sessionId) return;
+  if (!props.connection?.sessionId) return
   try {
     const r = await ipc.sshDockerLogs({
       connectionId: props.connection.sessionId,
       containerId: c.id,
       lines: 100,
-    });
-    if (r.ok) logOutput.value = { title: `${c.name} · 最近日志`, content: r.logs };
-    else ui.toast(`日志获取失败：${r.error ?? "未知错误"}`);
+    })
+    if (r.ok) logOutput.value = { title: `${c.name} · 最近日志`, content: r.logs }
+    else ui.toast(`日志获取失败：${r.error ?? '未知错误'}`)
   } catch (e) {
-    ui.toast(`日志获取失败：${e}`);
+    ui.toast(`日志获取失败：${e}`)
   }
 }
 
 function exec(c: DockerContainer) {
-  if (!props.connection?.sessionId) return;
-  terminalContainer.value = c;
+  if (!props.connection?.sessionId) return
+  terminalContainer.value = c
 }
 
 watch(
   () => props.connection?.sessionId,
   (sessionId) => {
-    containers.value = [];
-    if (sessionId) void refresh();
+    containers.value = []
+    if (sessionId) void refresh()
   },
   { immediate: true }
-);
+)
 </script>
 
 <template>
@@ -148,7 +148,7 @@ watch(
       class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
     >
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
-        {{ profile?.name ?? "未连接" }} · Docker 容器
+        {{ profile?.name ?? '未连接' }} · Docker 容器
       </span>
       <input
         v-model="keyword"
@@ -190,7 +190,7 @@ watch(
       class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
     >
       <span>共 {{ filtered.length }} 个容器</span>
-      <span class="ml-auto">{{ connection?.status === "connected" ? "就绪" : "未连接" }}</span>
+      <span class="ml-auto">{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
     </div>
 
     <Teleport to="body">

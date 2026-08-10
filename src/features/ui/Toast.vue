@@ -2,9 +2,9 @@
 /**
  * Toast · 全局轻提示（固定深色，视口底部居中；状态在 ui store）
  */
-import { useUiStore } from "@/stores/ui";
+import { useUiStore } from '@/stores/ui'
 
-const ui = useUiStore();
+const ui = useUiStore()
 </script>
 
 <template>

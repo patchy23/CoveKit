@@ -4,73 +4,73 @@
  * 页签条 + 内容区：首页（工具库）/ 各工具页签（v-show 保持组件状态，切换不销毁）。
  * 页签过多时：新页签在首页后第一位，超出显示宽度的页签收纳进「···」下拉。
  */
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, type Component } from "vue";
-import { getTool } from "@/core/registry/toolRegistry";
-import AppIcon from "@/features/ui/AppIcon.vue";
-import RecentStrip from "@/features/recent/RecentStrip.vue";
-import ToolGrid from "@/features/grid/ToolGrid.vue";
-import ToolList from "@/features/grid/ToolList.vue";
-import { useToolsStore } from "@/stores/tools";
-import { useUiStore } from "@/stores/ui";
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, type Component } from 'vue'
+import { getTool } from '@/core/registry/toolRegistry'
+import AppIcon from '@/features/ui/AppIcon.vue'
+import RecentStrip from '@/features/recent/RecentStrip.vue'
+import ToolGrid from '@/features/grid/ToolGrid.vue'
+import ToolList from '@/features/grid/ToolList.vue'
+import { useToolsStore } from '@/stores/tools'
+import { useUiStore } from '@/stores/ui'
 
-const ui = useUiStore();
-const tools = useToolsStore();
+const ui = useUiStore()
+const tools = useToolsStore()
 
-const hasTools = computed(() => tools.tools.length > 0);
-const searching = computed(() => ui.searchQuery.trim().length > 0);
+const hasTools = computed(() => tools.tools.length > 0)
+const searching = computed(() => ui.searchQuery.trim().length > 0)
 
 // 页签组件缓存：同一工具只创建一次异步组件（v-show 保持实例状态）
-const compCache = new Map<string, Component>();
+const compCache = new Map<string, Component>()
 function compFor(id: string): Component | null {
-  const m = getTool(id);
-  if (!m) return null;
-  if (!compCache.has(id)) compCache.set(id, defineAsyncComponent(m.component));
-  return compCache.get(id)!;
+  const m = getTool(id)
+  if (!m) return null
+  if (!compCache.has(id)) compCache.set(id, defineAsyncComponent(m.component))
+  return compCache.get(id)!
 }
 
 function tabTitle(id: string) {
-  return getTool(id)?.name ?? id;
+  return getTool(id)?.name ?? id
 }
 
 function tabIcon(id: string) {
-  return getTool(id)?.icon ?? "all";
+  return getTool(id)?.icon ?? 'all'
 }
 
 /* ── 页签溢出收纳：按页签条宽度估算可见页签数，其余进「···」下拉 ── */
 // 估算值取页签上限宽（图标15 + 间距 + 文字120 + 关闭18 + padding ≈ 190px），
 // 并为「首页」与「···」按钮预留固定空间，避免溢出时省略号不出现。
-const MIN_TAB_WIDTH = 190; // px
-const RESERVED_WIDTH = 150; // px（首页页签 + 溢出按钮 + 尾部留白）
-const tabBar = ref<HTMLElement | null>(null);
-const overflowOpen = ref(false);
-const visibleTabCount = ref(5);
-let ro: ResizeObserver | null = null;
+const MIN_TAB_WIDTH = 190 // px
+const RESERVED_WIDTH = 150 // px（首页页签 + 溢出按钮 + 尾部留白）
+const tabBar = ref<HTMLElement | null>(null)
+const overflowOpen = ref(false)
+const visibleTabCount = ref(5)
+let ro: ResizeObserver | null = null
 
 function calcVisible() {
-  const w = tabBar.value?.clientWidth ?? 0;
-  visibleTabCount.value = Math.max(1, Math.floor((w - RESERVED_WIDTH) / MIN_TAB_WIDTH));
+  const w = tabBar.value?.clientWidth ?? 0
+  visibleTabCount.value = Math.max(1, Math.floor((w - RESERVED_WIDTH) / MIN_TAB_WIDTH))
 }
 
 /** 页签条直接显示的页签（首页占 1 个位置） */
-const visibleTabs = computed(() => ui.openTabs.slice(0, Math.max(0, visibleTabCount.value - 1)));
+const visibleTabs = computed(() => ui.openTabs.slice(0, Math.max(0, visibleTabCount.value - 1)))
 /** 收纳进下拉的页签 */
-const hiddenTabs = computed(() => ui.openTabs.slice(Math.max(0, visibleTabCount.value - 1)));
+const hiddenTabs = computed(() => ui.openTabs.slice(Math.max(0, visibleTabCount.value - 1)))
 
 function onDocMouseDown() {
-  overflowOpen.value = false;
+  overflowOpen.value = false
 }
 
 onMounted(() => {
-  calcVisible();
-  ro = new ResizeObserver(calcVisible);
-  if (tabBar.value) ro.observe(tabBar.value);
-  document.addEventListener("mousedown", onDocMouseDown);
-});
+  calcVisible()
+  ro = new ResizeObserver(calcVisible)
+  if (tabBar.value) ro.observe(tabBar.value)
+  document.addEventListener('mousedown', onDocMouseDown)
+})
 
 onUnmounted(() => {
-  ro?.disconnect();
-  document.removeEventListener("mousedown", onDocMouseDown);
-});
+  ro?.disconnect()
+  document.removeEventListener('mousedown', onDocMouseDown)
+})
 </script>
 
 <template>
@@ -154,8 +154,8 @@ onUnmounted(() => {
                 : 'text-secondary dark:text-secondary-dark'
             "
             @click="
-              ui.openTool(id);
-              overflowOpen = false;
+              ui.openTool(id)
+              overflowOpen = false
             "
           >
             <AppIcon
@@ -201,15 +201,15 @@ onUnmounted(() => {
             />
           </div>
           <p class="mt-md text-h2 font-bold dark:text-primary-dark">
-            {{ searching ? "未找到匹配工具" : hasTools ? "该分类暂无工具" : "暂无工具" }}
+            {{ searching ? '未找到匹配工具' : hasTools ? '该分类暂无工具' : '暂无工具' }}
           </p>
           <p class="mt-xs text-body-sm text-text-muted dark:text-text-muted-dark">
             {{
               searching
-                ? "换个关键词试试"
+                ? '换个关键词试试'
                 : hasTools
-                  ? "工具将在此分类上线"
-                  : "首批 8 个文本工具将在 M1 上线"
+                  ? '工具将在此分类上线'
+                  : '首批 8 个文本工具将在 M1 上线'
             }}
           </p>
         </div>

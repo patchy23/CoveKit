@@ -3,17 +3,17 @@
  * SSH 工具 · 主容器（服务器列表 + 页签工作区）
  * 连接/断开/凭证走真实 IPC；状态经事件 ssh://connection-status 同步。
  */
-import { ref, watch } from "vue";
-import ServerList from "./ServerList.vue";
-import ServerForm from "./ServerForm.vue";
-import TerminalTab from "./TerminalTab.vue";
-import FileManagerTab from "./FileManagerTab.vue";
-import MonitorTab from "./MonitorTab.vue";
-import ServiceTab from "./ServiceTab.vue";
-import ProcessTab from "./ProcessTab.vue";
-import DockerTab from "./DockerTab.vue";
-import { statusDotClass, statusText } from "./useSsh";
-import { useSshWorkspace } from "./useSshWorkspace";
+import { ref, watch } from 'vue'
+import ServerList from './ServerList.vue'
+import ServerForm from './ServerForm.vue'
+import TerminalTab from './TerminalTab.vue'
+import FileManagerTab from './FileManagerTab.vue'
+import MonitorTab from './MonitorTab.vue'
+import ServiceTab from './ServiceTab.vue'
+import ProcessTab from './ProcessTab.vue'
+import DockerTab from './DockerTab.vue'
+import { statusDotClass, statusText } from './useSsh'
+import { useSshWorkspace } from './useSshWorkspace'
 
 const {
   profiles,
@@ -33,49 +33,49 @@ const {
   confirmDelete,
   connect,
   disconnect,
-} = useSshWorkspace();
+} = useSshWorkspace()
 
 const tabs = [
-  { id: "terminal", name: "终端", component: TerminalTab },
-  { id: "files", name: "文件", component: FileManagerTab },
-  { id: "monitor", name: "监控", component: MonitorTab },
-  { id: "services", name: "服务", component: ServiceTab },
-  { id: "processes", name: "进程", component: ProcessTab },
-  { id: "docker", name: "Docker", component: DockerTab },
-] as const;
+  { id: 'terminal', name: '终端', component: TerminalTab },
+  { id: 'files', name: '文件', component: FileManagerTab },
+  { id: 'monitor', name: '监控', component: MonitorTab },
+  { id: 'services', name: '服务', component: ServiceTab },
+  { id: 'processes', name: '进程', component: ProcessTab },
+  { id: 'docker', name: 'Docker', component: DockerTab },
+] as const
 
-const activeTabId = ref<string>("terminal");
-const visitedProfileIds = ref<string[]>([]);
-const terminalConnectRequests = ref<Record<string, number>>({});
+const activeTabId = ref<string>('terminal')
+const visitedProfileIds = ref<string[]>([])
+const terminalConnectRequests = ref<Record<string, number>>({})
 
 /** 记录已打开过的服务器工作区，使不同服务器的终端与页签状态独立保活。 */
 function selectProfile(profileId: string) {
-  activeProfileId.value = profileId;
-  if (!visitedProfileIds.value.includes(profileId)) visitedProfileIds.value.push(profileId);
+  activeProfileId.value = profileId
+  if (!visitedProfileIds.value.includes(profileId)) visitedProfileIds.value.push(profileId)
 }
 
 /** 返回指定服务器当前可用的连接，而不是复用当前选中服务器的连接。 */
 function usableConnectionFor(profileId: string) {
-  const connection = connections.value.find((item) => item.profileId === profileId);
-  return connection?.status === "connected" ? connection : undefined;
+  const connection = connections.value.find((item) => item.profileId === profileId)
+  return connection?.status === 'connected' ? connection : undefined
 }
 
 /** 左侧服务器连接属于显式操作：连接成功后同步打开该服务器终端。 */
 async function connectAndOpenTerminal(profileId: string) {
-  selectProfile(profileId);
-  activeTabId.value = "terminal";
-  await connect(profileId);
+  selectProfile(profileId)
+  activeTabId.value = 'terminal'
+  await connect(profileId)
   terminalConnectRequests.value = {
     ...terminalConnectRequests.value,
     [profileId]: (terminalConnectRequests.value[profileId] ?? 0) + 1,
-  };
+  }
 }
 
 watch(activeProfileId, (profileId) => {
   if (profileId && !visitedProfileIds.value.includes(profileId)) {
-    visitedProfileIds.value.push(profileId);
+    visitedProfileIds.value.push(profileId)
   }
-});
+})
 </script>
 
 <template>
@@ -121,10 +121,10 @@ watch(activeProfileId, (profileId) => {
             {{ profiles.find((p) => p.id === activeProfileId)?.name }}
           </span>
           <span class="font-mono text-body-sm text-text-muted dark:text-text-muted-dark">
-            {{ activeConnection?.host ?? "—" }}
+            {{ activeConnection?.host ?? '—' }}
           </span>
           <span class="text-caption text-text-muted dark:text-text-muted-dark">
-            {{ statusText(activeConnection?.status ?? "disconnected") }}
+            {{ statusText(activeConnection?.status ?? 'disconnected') }}
             <template v-if="activeConnection?.latencyMs">
               · {{ activeConnection.latencyMs }}ms
             </template>
@@ -190,10 +190,7 @@ watch(activeProfileId, (profileId) => {
 
     <!-- 删除确认弹窗 -->
     <Teleport to="body">
-      <div
-        v-if="deleteTarget"
-        class="fixed inset-0 z-[160] grid place-items-center bg-black/30"
-      >
+      <div v-if="deleteTarget" class="fixed inset-0 z-[160] grid place-items-center bg-black/30">
         <div
           class="w-[380px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
         >

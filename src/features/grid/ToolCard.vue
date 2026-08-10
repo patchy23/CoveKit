@@ -3,25 +3,25 @@
  * ToolCard · 工具卡片（图标块 + 标题[搜索高亮] + 描述 + 标签 + 收藏星）
  * hover 上浮 + 顶部 3px 渐变线（对齐原型 .card 与 DESIGN.md card 规范）。
  */
-import { computed } from "vue";
-import AppIcon from "@/features/ui/AppIcon.vue";
-import type { ToolManifest } from "@/core/registry/types";
-import { useFavoritesStore } from "@/stores/favorites";
-import { useToolsStore } from "@/stores/tools";
-import { useUiStore } from "@/stores/ui";
+import { computed } from 'vue'
+import AppIcon from '@/features/ui/AppIcon.vue'
+import type { ToolManifest } from '@/core/registry/types'
+import { useFavoritesStore } from '@/stores/favorites'
+import { useToolsStore } from '@/stores/tools'
+import { useUiStore } from '@/stores/ui'
 
-const props = defineProps<{ tool: ToolManifest }>();
+const props = defineProps<{ tool: ToolManifest }>()
 
-const tools = useToolsStore();
-const favorites = useFavoritesStore();
-const ui = useUiStore();
+const tools = useToolsStore()
+const favorites = useFavoritesStore()
+const ui = useUiStore()
 
-const nameChunks = computed(() => tools.nameChunks(props.tool));
-const isFav = computed(() => favorites.has(props.tool.id));
+const nameChunks = computed(() => tools.nameChunks(props.tool))
+const isFav = computed(() => favorites.has(props.tool.id))
 
 async function toggleFav() {
-  const nowFav = await favorites.toggle(props.tool.id);
-  ui.toast(nowFav ? `已收藏「${props.tool.name}」` : `已取消收藏「${props.tool.name}」`);
+  const nowFav = await favorites.toggle(props.tool.id)
+  ui.toast(nowFav ? `已收藏「${props.tool.name}」` : `已取消收藏「${props.tool.name}」`)
 }
 </script>
 
@@ -50,7 +50,7 @@ async function toggleFav() {
         :title="isFav ? '取消收藏' : '收藏'"
         @click.stop="toggleFav"
       >
-        {{ isFav ? "★" : "☆" }}
+        {{ isFav ? '★' : '☆' }}
       </button>
     </div>
     <h3 class="mt-md text-card-title font-bold tracking-[-0.01em] dark:text-primary-dark">

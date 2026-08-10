@@ -4,72 +4,72 @@
  * 列表项仅显示状态点 + 名称（防误触删除）；右键菜单控制连接/断开、编辑、删除；
  * 删除操作由父组件弹确认框（emit deleteRequest）。
  */
-import { computed, ref } from "vue";
-import type { ServerProfile, ServerConnection } from "./contracts";
-import { statusDotClass, statusText } from "./useSsh";
-import ContextMenu, { type ContextMenuItem } from "@/core/ui/ContextMenu.vue";
+import { computed, ref } from 'vue'
+import type { ServerProfile, ServerConnection } from './contracts'
+import { statusDotClass, statusText } from './useSsh'
+import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 
 const props = defineProps<{
-  profiles: ServerProfile[];
-  connections: ServerConnection[];
-  activeProfileId: string | null;
-  searchKeyword: string;
-}>();
+  profiles: ServerProfile[]
+  connections: ServerConnection[]
+  activeProfileId: string | null
+  searchKeyword: string
+}>()
 
 const emit = defineEmits<{
-  (e: "update:searchKeyword", v: string): void;
-  (e: "select", profileId: string): void;
-  (e: "connect", profileId: string): void;
-  (e: "disconnect", profileId: string): void;
-  (e: "add"): void;
-  (e: "edit", p: ServerProfile): void;
-  (e: "deleteRequest", p: ServerProfile): void;
-}>();
+  (e: 'update:searchKeyword', v: string): void
+  (e: 'select', profileId: string): void
+  (e: 'connect', profileId: string): void
+  (e: 'disconnect', profileId: string): void
+  (e: 'add'): void
+  (e: 'edit', p: ServerProfile): void
+  (e: 'deleteRequest', p: ServerProfile): void
+}>()
 
 function connOf(profileId: string): ServerConnection | undefined {
-  return props.connections.find((c) => c.profileId === profileId);
+  return props.connections.find((c) => c.profileId === profileId)
 }
 
 /* ── 右键菜单状态 ── */
-const menu = ref<{ profile: ServerProfile; x: number; y: number } | null>(null);
+const menu = ref<{ profile: ServerProfile; x: number; y: number } | null>(null)
 
 /** 右键打开菜单（限制在视口内，避免溢出） */
 function openMenu(e: MouseEvent, p: ServerProfile) {
-  e.preventDefault();
-  const MENU_W = 150;
-  const MENU_H = 132;
-  const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8);
-  const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8);
-  menu.value = { profile: p, x, y };
+  e.preventDefault()
+  const MENU_W = 150
+  const MENU_H = 132
+  const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8)
+  const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8)
+  menu.value = { profile: p, x, y }
 }
 
 function closeMenu() {
-  menu.value = null;
+  menu.value = null
 }
 
 const menuStatus = computed(() => {
-  if (!menu.value) return "disconnected";
-  return connOf(menu.value.profile.id)?.status ?? "disconnected";
-});
+  if (!menu.value) return 'disconnected'
+  return connOf(menu.value.profile.id)?.status ?? 'disconnected'
+})
 
 /** 组装菜单项（依据连接状态动态显示 连接/断开） */
 const menuItems = computed(() => {
-  if (!menu.value) return [] as ContextMenuItem[];
-  const id = menu.value.profile.id;
-  const connected = menuStatus.value === "connected";
+  if (!menu.value) return [] as ContextMenuItem[]
+  const id = menu.value.profile.id
+  const connected = menuStatus.value === 'connected'
   return [
     {
-      label: connected ? "断开连接" : "连接",
+      label: connected ? '断开连接' : '连接',
       onClick: () => {
-        if (connected) emit("disconnect", id);
-        else emit("connect", id);
+        if (connected) emit('disconnect', id)
+        else emit('connect', id)
       },
     },
-    { label: "编辑", onClick: () => emit("edit", menu.value!.profile) },
+    { label: '编辑', onClick: () => emit('edit', menu.value!.profile) },
     { separator: true },
-    { label: "删除", danger: true, onClick: () => emit("deleteRequest", menu.value!.profile) },
-  ] as ContextMenuItem[];
-});
+    { label: '删除', danger: true, onClick: () => emit('deleteRequest', menu.value!.profile) },
+  ] as ContextMenuItem[]
+})
 </script>
 
 <template>
@@ -115,7 +115,7 @@ const menuItems = computed(() => {
           class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
           :class="{ 'animate-pulse': connOf(p.id)?.status === 'connecting' }"
         >
-          {{ statusText(connOf(p.id)?.status ?? "disconnected") }}
+          {{ statusText(connOf(p.id)?.status ?? 'disconnected') }}
         </span>
       </div>
 

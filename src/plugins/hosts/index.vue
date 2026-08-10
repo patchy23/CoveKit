@@ -2,71 +2,71 @@
 /**
  * hosts 修改 · 读取/编辑/校验/保存（UAC 提权 + 自动备份）
  */
-import { computed, onMounted, ref } from "vue";
-import { ipc } from "./ipc";
-import { useUiStore } from "@/stores/ui";
-import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
-import HostsList from "./HostsList.vue";
-import { countErrors, countMappings, parseHostsLines } from "./useHosts";
+import { computed, onMounted, ref } from 'vue'
+import { ipc } from './ipc'
+import { useUiStore } from '@/stores/ui'
+import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
+import HostsList from './HostsList.vue'
+import { countErrors, countMappings, parseHostsLines } from './useHosts'
 
-const ui = useUiStore();
+const ui = useUiStore()
 
-const content = ref("");
-const loaded = ref(false);
-const busy = ref(false);
-const status = ref("");
-const mode = ref<"file" | "list">("list");
+const content = ref('')
+const loaded = ref(false)
+const busy = ref(false)
+const status = ref('')
+const mode = ref<'file' | 'list'>('list')
 
-const lines = computed(() => parseHostsLines(content.value));
-const errors = computed(() => countErrors(lines.value));
-const mappings = computed(() => countMappings(lines.value));
+const lines = computed(() => parseHostsLines(content.value))
+const errors = computed(() => countErrors(lines.value))
+const mappings = computed(() => countMappings(lines.value))
 
 async function load() {
-  busy.value = true;
+  busy.value = true
   try {
-    const r = await ipc.hostsRead();
+    const r = await ipc.hostsRead()
     if (!r.ok) {
-      ui.toast(r.error ?? "读取失败");
-      return;
+      ui.toast(r.error ?? '读取失败')
+      return
     }
-    content.value = r.content;
-    loaded.value = true;
-    status.value = `已读取（${mappings.value} 条映射）`;
+    content.value = r.content
+    loaded.value = true
+    status.value = `已读取（${mappings.value} 条映射）`
   } catch (e) {
-    ui.toast("读取失败：" + (e instanceof Error ? e.message : String(e)));
+    ui.toast('读取失败：' + (e instanceof Error ? e.message : String(e)))
   } finally {
-    busy.value = false;
+    busy.value = false
   }
 }
 
 async function save() {
   if (errors.value > 0) {
-    ui.toast(`存在 ${errors.value} 处语法错误，请先修复`);
-    return;
+    ui.toast(`存在 ${errors.value} 处语法错误，请先修复`)
+    return
   }
-  busy.value = true;
+  busy.value = true
   try {
-    const r = await ipc.hostsSave(content.value);
+    const r = await ipc.hostsSave(content.value)
     if (!r.ok) {
-      ui.toast(r.error ?? "保存失败");
-      return;
+      ui.toast(r.error ?? '保存失败')
+      return
     }
-    content.value = r.content;
-    status.value = "已保存（修改前已自动备份）";
-    ui.toast("hosts 已保存（已备份原文件）");
+    content.value = r.content
+    status.value = '已保存（修改前已自动备份）'
+    ui.toast('hosts 已保存（已备份原文件）')
   } catch (e) {
-    ui.toast("保存失败：" + (e instanceof Error ? e.message : String(e)));
+    ui.toast('保存失败：' + (e instanceof Error ? e.message : String(e)))
   } finally {
-    busy.value = false;
+    busy.value = false
   }
 }
 
 function reset() {
-  content.value = "";
-  status.value = "";
+  content.value = ''
+  status.value = ''
 }
 
-onMounted(load);
+onMounted(load)
 </script>
 
 <template>
@@ -79,7 +79,7 @@ onMounted(load);
         <div class="flex flex-wrap items-center gap-[10px]">
           <button class="btn-secondary shrink-0" :disabled="busy" @click="load">重新读取</button>
           <button class="btn-primary shrink-0" :disabled="busy || !loaded" @click="save">
-            {{ busy ? "处理中…" : "保存（需管理员授权）" }}
+            {{ busy ? '处理中…' : '保存（需管理员授权）' }}
           </button>
           <button class="btn-ghost shrink-0" @click="reset">清空编辑区</button>
           <span class="truncate text-body-sm text-text-muted dark:text-text-muted-dark">{{

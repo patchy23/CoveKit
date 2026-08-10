@@ -4,34 +4,34 @@
  * 行号列与内容区滚动同步；wrap="off" 保证行号精确对齐（长行横向滚动）。
  * 只读模式（readonly）用于输出区。
  */
-import { computed, ref } from "vue";
+import { computed, ref } from 'vue'
 
 const props = defineProps<{
-  modelValue: string;
-  readonly?: boolean;
-  placeholder?: string;
+  modelValue: string
+  readonly?: boolean
+  placeholder?: string
   /** 固定高度（px）。注意：调用方若传入 flex-1 类，则由 flex 布局分配高度、本值仅作最小保底 */
-  minHeight?: string;
-}>();
+  minHeight?: string
+}>()
 
 const emit = defineEmits<{
-  (e: "update:modelValue", value: string): void;
-}>();
+  (e: 'update:modelValue', value: string): void
+}>()
 
-const ta = ref<HTMLTextAreaElement | null>(null);
-const gutter = ref<HTMLDivElement | null>(null);
+const ta = ref<HTMLTextAreaElement | null>(null)
+const gutter = ref<HTMLDivElement | null>(null)
 
 const lineNumbers = computed(() => {
-  const n = props.modelValue.split("\n").length;
-  return Array.from({ length: n }, (_, i) => i + 1);
-});
+  const n = props.modelValue.split('\n').length
+  return Array.from({ length: n }, (_, i) => i + 1)
+})
 
 function syncScroll() {
-  if (gutter.value && ta.value) gutter.value.scrollTop = ta.value.scrollTop;
+  if (gutter.value && ta.value) gutter.value.scrollTop = ta.value.scrollTop
 }
 
 function onInput(e: Event) {
-  emit("update:modelValue", (e.target as HTMLTextAreaElement).value);
+  emit('update:modelValue', (e.target as HTMLTextAreaElement).value)
 }
 </script>
 

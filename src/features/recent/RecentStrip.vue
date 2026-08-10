@@ -2,16 +2,16 @@
 /**
  * RecentStrip · 最近使用快捷条（≤6 个 chips，对齐原型 .recent/.rchip）
  */
-import { computed } from "vue";
-import AppIcon from "@/features/ui/AppIcon.vue";
-import { getTool } from "@/core/registry/toolRegistry";
-import { useToolsStore } from "@/stores/tools";
+import { computed } from 'vue'
+import AppIcon from '@/features/ui/AppIcon.vue'
+import { getTool } from '@/core/registry/toolRegistry'
+import { useToolsStore } from '@/stores/tools'
 
-const tools = useToolsStore();
+const tools = useToolsStore()
 
 const recentTools = computed(() =>
   tools.recent.map((id) => getTool(id)).filter((t): t is NonNullable<typeof t> => Boolean(t))
-);
+)
 </script>
 
 <template>

@@ -4,36 +4,36 @@
  * 首页：分类标题 + 计数副标题 + 搜索框 + 视图切换 + 添加按钮；
  * 工具页签激活：显示工具名 + 描述（搜索框聚焦时自动回到工具库）。
  */
-import { computed } from "vue";
-import AppIcon from "@/features/ui/AppIcon.vue";
-import { getTool } from "@/core/registry/toolRegistry";
-import { useToolsStore } from "@/stores/tools";
-import { useUiStore } from "@/stores/ui";
+import { computed } from 'vue'
+import AppIcon from '@/features/ui/AppIcon.vue'
+import { getTool } from '@/core/registry/toolRegistry'
+import { useToolsStore } from '@/stores/tools'
+import { useUiStore } from '@/stores/ui'
 
-const ui = useUiStore();
-const tools = useToolsStore();
+const ui = useUiStore()
+const tools = useToolsStore()
 
 const titleMap: Record<string, string> = {
-  all: "全部工具",
-  dev: "开发工具",
-  text: "文本处理",
-  image: "图片工具",
-  net: "网络工具",
-  sys: "系统工具",
-  fav: "我的收藏",
-};
+  all: '全部工具',
+  dev: '开发工具',
+  text: '文本处理',
+  image: '图片工具',
+  net: '网络工具',
+  sys: '系统工具',
+  fav: '我的收藏',
+}
 
-const activeTool = computed(() => (ui.activeTab ? getTool(ui.activeTab) : undefined));
-const title = computed(() => activeTool.value?.name ?? titleMap[ui.activeCategory] ?? "全部工具");
+const activeTool = computed(() => (ui.activeTab ? getTool(ui.activeTab) : undefined))
+const title = computed(() => activeTool.value?.name ?? titleMap[ui.activeCategory] ?? '全部工具')
 const subtitle = computed(() =>
   activeTool.value
     ? activeTool.value.description
     : `共 ${tools.filtered.length} 个工具 · 点击卡片即可使用`
-);
+)
 
 /** 聚焦搜索时若在工具页签，切回工具库首页 */
 function onSearchFocus() {
-  if (ui.activeTab) ui.goHome();
+  if (ui.activeTab) ui.goHome()
 }
 </script>
 

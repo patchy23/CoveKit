@@ -2,39 +2,39 @@
 /**
  * XML 格式化 · 格式化/压缩/校验（与 JSON 格式化同款布局：占满工作区 + 内部滚动）
  */
-import { ref } from "vue";
-import { formatXml, minifyXml } from "./useXml";
-import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
-import CodeViewer from "@/core/ui/CodeViewer.vue";
-import { useCopy } from "@/core/ui/useClipboard";
+import { ref } from 'vue'
+import { formatXml, minifyXml } from './useXml'
+import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
+import CodeViewer from '@/core/ui/CodeViewer.vue'
+import { useCopy } from '@/core/ui/useClipboard'
 
-const { copyText } = useCopy();
+const { copyText } = useCopy()
 
 const input = ref(
   '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <app name="patchyBox">\n    <version>0.1.0</version>\n  </app>\n</config>'
-);
-const output = ref("");
-const error = ref("");
+)
+const output = ref('')
+const error = ref('')
 
 function format() {
-  error.value = "";
-  const r = formatXml(input.value);
+  error.value = ''
+  const r = formatXml(input.value)
   if (r.ok) {
-    output.value = r.output ?? "";
+    output.value = r.output ?? ''
     if (r.loose) {
-      error.value = "宽松模式：命名空间或结构未通过严格校验，已按标签缩进格式化";
+      error.value = '宽松模式：命名空间或结构未通过严格校验，已按标签缩进格式化'
     }
   } else {
-    output.value = "";
-    error.value = r.error ?? "格式化失败";
+    output.value = ''
+    error.value = r.error ?? '格式化失败'
   }
 }
 
 function minify() {
-  error.value = "";
-  const t = input.value.trim();
-  if (!t) return;
-  output.value = minifyXml(t);
+  error.value = ''
+  const t = input.value.trim()
+  if (!t) return
+  output.value = minifyXml(t)
 }
 </script>
 

@@ -3,27 +3,27 @@
  * Sidebar · 侧栏（品牌 + 工具库导航 + 计数徽标 + 主题/设置入口）
  * 导航项与计数来自工具注册表聚合（tools store）；主题切换走 settings store。
  */
-import AppIcon from "@/features/ui/AppIcon.vue";
-import { useSettingsStore } from "@/stores/settings";
-import { useToolsStore } from "@/stores/tools";
-import { useUiStore } from "@/stores/ui";
+import AppIcon from '@/features/ui/AppIcon.vue'
+import { useSettingsStore } from '@/stores/settings'
+import { useToolsStore } from '@/stores/tools'
+import { useUiStore } from '@/stores/ui'
 
-const ui = useUiStore();
-const tools = useToolsStore();
-const settings = useSettingsStore();
+const ui = useUiStore()
+const tools = useToolsStore()
+const settings = useSettingsStore()
 
 const navItems = [
-  { id: "all", label: "全部工具", icon: "all" },
-  { id: "dev", label: "开发工具", icon: "dev" },
-  { id: "text", label: "文本处理", icon: "text" },
-  { id: "image", label: "图片工具", icon: "image" },
-  { id: "net", label: "网络工具", icon: "net" },
-  { id: "sys", label: "系统工具", icon: "sys" },
-  { id: "fav", label: "我的收藏", icon: "fav" },
-];
+  { id: 'all', label: '全部工具', icon: 'all' },
+  { id: 'dev', label: '开发工具', icon: 'dev' },
+  { id: 'text', label: '文本处理', icon: 'text' },
+  { id: 'image', label: '图片工具', icon: 'image' },
+  { id: 'net', label: '网络工具', icon: 'net' },
+  { id: 'sys', label: '系统工具', icon: 'sys' },
+  { id: 'fav', label: '我的收藏', icon: 'fav' },
+]
 
 function toggleTheme() {
-  settings.set("theme", settings.settings.theme === "dark" ? "light" : "dark");
+  settings.set('theme', settings.settings.theme === 'dark' ? 'light' : 'dark')
 }
 </script>
 
@@ -65,9 +65,9 @@ function toggleTheme() {
             : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
         "
         @click="
-          ui.activeCategory = item.id;
-          ui.searchQuery = '';
-          ui.goHome();
+          ui.activeCategory = item.id
+          ui.searchQuery = ''
+          ui.goHome()
         "
       >
         <AppIcon :name="item.icon" :size="17" class="shrink-0" />
@@ -96,7 +96,7 @@ function toggleTheme() {
           :size="16"
           class="shrink-0"
         />
-        {{ settings.settings.theme === "dark" ? "浅色模式" : "深色模式" }}
+        {{ settings.settings.theme === 'dark' ? '浅色模式' : '深色模式' }}
       </button>
       <button
         class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"

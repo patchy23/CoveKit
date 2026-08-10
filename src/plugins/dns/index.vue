@@ -2,21 +2,21 @@
 /**
  * DNS 工具 · 主容器（页签：DNS 查询 / 云解析管理 / 密钥设置）
  */
-import { ref } from "vue";
-import QueryPanel from "./QueryPanel.vue";
-import CloudPanel from "./CloudPanel.vue";
-import SettingsPanel from "./SettingsPanel.vue";
+import { ref } from 'vue'
+import QueryPanel from './QueryPanel.vue'
+import CloudPanel from './CloudPanel.vue'
+import SettingsPanel from './SettingsPanel.vue'
 
-type TabId = "query" | "cloud" | "settings";
+type TabId = 'query' | 'cloud' | 'settings'
 
-const tab = ref<TabId>("query");
+const tab = ref<TabId>('query')
 
 /** 页签定义（查询/云解析/设置） */
 const tabs: { id: TabId; label: string }[] = [
-  { id: "query", label: "DNS 查询" },
-  { id: "cloud", label: "解析管理" },
-  { id: "settings", label: "密钥设置" },
-];
+  { id: 'query', label: 'DNS 查询' },
+  { id: 'cloud', label: '解析管理' },
+  { id: 'settings', label: '密钥设置' },
+]
 </script>
 
 <template>

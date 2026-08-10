@@ -2,10 +2,10 @@
 /**
  * ToolGrid · 卡片网格（auto-fill minmax(228px,1fr)，对齐 DESIGN.md 布局规范）
  */
-import ToolCard from "./ToolCard.vue";
-import { useToolsStore } from "@/stores/tools";
+import ToolCard from './ToolCard.vue'
+import { useToolsStore } from '@/stores/tools'
 
-const tools = useToolsStore();
+const tools = useToolsStore()
 </script>
 
 <template>

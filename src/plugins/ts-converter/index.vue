@@ -2,35 +2,35 @@
 /**
  * 时间戳转换 · 秒/毫秒自动识别，时间戳 ⇄ 日期双向互转
  */
-import { ref } from "vue";
-import { dateToTimestamp, nowSeconds, timestampToResult } from "./useConverter";
-import { useCopy } from "@/core/ui/useClipboard";
+import { ref } from 'vue'
+import { dateToTimestamp, nowSeconds, timestampToResult } from './useConverter'
+import { useCopy } from '@/core/ui/useClipboard'
 
-const { copyText } = useCopy();
+const { copyText } = useCopy()
 
-const tsInput = ref(String(nowSeconds()));
-const tsResult = ref<ReturnType<typeof timestampToResult>>(null);
-const tsError = ref("");
+const tsInput = ref(String(nowSeconds()))
+const tsResult = ref<ReturnType<typeof timestampToResult>>(null)
+const tsError = ref('')
 
-const dateInput = ref("");
-const dateResult = ref<number | null>(null);
-const dateError = ref("");
+const dateInput = ref('')
+const dateResult = ref<number | null>(null)
+const dateError = ref('')
 
 function convertTs() {
-  const r = timestampToResult(tsInput.value);
-  tsError.value = r ? "" : "请输入有效的时间戳数字";
-  tsResult.value = r;
+  const r = timestampToResult(tsInput.value)
+  tsError.value = r ? '' : '请输入有效的时间戳数字'
+  tsResult.value = r
 }
 
 function convertDate() {
-  const ms = dateToTimestamp(dateInput.value);
-  dateError.value = ms === null ? "无法解析该日期（示例：2023-11-14 22:13:20）" : "";
-  dateResult.value = ms;
+  const ms = dateToTimestamp(dateInput.value)
+  dateError.value = ms === null ? '无法解析该日期（示例：2023-11-14 22:13:20）' : ''
+  dateResult.value = ms
 }
 
 function useNow() {
-  tsInput.value = String(nowSeconds());
-  convertTs();
+  tsInput.value = String(nowSeconds())
+  convertTs()
 }
 </script>
 

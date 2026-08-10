@@ -3,40 +3,40 @@
  * JSON 格式化 · 格式化/压缩/校验 + 错误行号定位
  * 布局：输入/输出左右分栏，占满工作区高度；文本框内部滚动（不拉长页面）。
  */
-import { ref } from "vue";
-import { formatJson, minifyJson } from "./useFormat";
-import { useCopy } from "@/core/ui/useClipboard";
-import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
-import CodeViewer from "@/core/ui/CodeViewer.vue";
-import { useSettingsStore } from "@/stores/settings";
+import { ref } from 'vue'
+import { formatJson, minifyJson } from './useFormat'
+import { useCopy } from '@/core/ui/useClipboard'
+import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
+import CodeViewer from '@/core/ui/CodeViewer.vue'
+import { useSettingsStore } from '@/stores/settings'
 
-const settings = useSettingsStore();
-const { copyText } = useCopy();
+const settings = useSettingsStore()
+const { copyText } = useCopy()
 
-const input = ref('{\n  "name": "patchyBox",\n  "tools": 8\n}');
-const output = ref("");
-const errorMsg = ref("");
+const input = ref('{\n  "name": "patchyBox",\n  "tools": 8\n}')
+const output = ref('')
+const errorMsg = ref('')
 
 function runFormat() {
-  const r = formatJson(input.value, settings.getToolSetting("json-formatter", "indent", 2));
+  const r = formatJson(input.value, settings.getToolSetting('json-formatter', 'indent', 2))
   errorMsg.value = r.error
     ? `${r.error.message}（第 ${r.error.line} 行，第 ${r.error.col} 列）`
-    : "";
-  output.value = r.output;
+    : ''
+  output.value = r.output
 }
 
 function runMinify() {
-  const r = minifyJson(input.value);
+  const r = minifyJson(input.value)
   errorMsg.value = r.error
     ? `${r.error.message}（第 ${r.error.line} 行，第 ${r.error.col} 列）`
-    : "";
-  output.value = r.output;
+    : ''
+  output.value = r.output
 }
 
 function clearAll() {
-  input.value = "";
-  output.value = "";
-  errorMsg.value = "";
+  input.value = ''
+  output.value = ''
+  errorMsg.value = ''
 }
 </script>
 

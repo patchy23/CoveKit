@@ -3,89 +3,89 @@
  * HostsList · hosts 列表模式：结构化条目（启用开关 / IP / 主机名 / 注释 / 增删）
  * 编辑后通过 emit("change", text) 同步回 hosts 文本（保留注释行/空行原位）。
  */
-import { computed, ref } from "vue";
-import type { HostsEntry } from "./useHosts";
-import { parseEntries, validateEntry } from "./useHosts";
+import { computed, ref } from 'vue'
+import type { HostsEntry } from './useHosts'
+import { parseEntries, validateEntry } from './useHosts'
 
-const props = defineProps<{ content: string }>();
-const emit = defineEmits<{ (e: "change", text: string): void }>();
+const props = defineProps<{ content: string }>()
+const emit = defineEmits<{ (e: 'change', text: string): void }>()
 
-const entries = ref<HostsEntry[]>(parseEntries(props.content));
+const entries = ref<HostsEntry[]>(parseEntries(props.content))
 
 /** 可编辑条目（映射行 + 被注释的映射行（未勾选）；纯注释/空行保留但不在列表显示） */
 const editable = computed(() =>
-  entries.value.filter((e) => e.raw === undefined || (e.raw.startsWith("#") && e.ip))
-);
+  entries.value.filter((e) => e.raw === undefined || (e.raw.startsWith('#') && e.ip))
+)
 
 /** 纯注释/空行数量（提示保留） */
-const rawCount = computed(() => entries.value.filter((e) => e.raw !== undefined).length);
+const rawCount = computed(() => entries.value.filter((e) => e.raw !== undefined).length)
 
-const errors = computed(() => editable.value.filter((e) => !e.valid).length);
+const errors = computed(() => editable.value.filter((e) => !e.valid).length)
 
 function sync() {
-  emit("change", entriesToText());
+  emit('change', entriesToText())
 }
 
 function entriesToText(): string {
   return entries.value
     .map((e) => {
-      if (e.raw !== undefined) return e.raw;
-      const hostStr = e.hosts.join(" ");
-      let line = `${e.ip} ${hostStr}`.trimEnd();
-      if (!e.enabled) line = `# ${line}`;
-      if (e.comment.trim()) line += ` ${e.comment.trim()}`;
-      return line;
+      if (e.raw !== undefined) return e.raw
+      const hostStr = e.hosts.join(' ')
+      let line = `${e.ip} ${hostStr}`.trimEnd()
+      if (!e.enabled) line = `# ${line}`
+      if (e.comment.trim()) line += ` ${e.comment.trim()}`
+      return line
     })
-    .join("\n");
+    .join('\n')
 }
 
 function updateEntry(e: HostsEntry) {
-  const check = validateEntry(e.ip, e.hosts);
-  e.valid = check.valid;
-  e.error = check.error;
-  sync();
+  const check = validateEntry(e.ip, e.hosts)
+  e.valid = check.valid
+  e.error = check.error
+  sync()
 }
 
 function onIpInput(e: HostsEntry, v: string) {
-  e.ip = v.trim();
-  updateEntry(e);
+  e.ip = v.trim()
+  updateEntry(e)
 }
 
 function onHostsInput(e: HostsEntry, v: string) {
   e.hosts = v
     .split(/[,\s]+/)
     .map((s) => s.trim())
-    .filter(Boolean);
-  updateEntry(e);
+    .filter(Boolean)
+  updateEntry(e)
 }
 
 function onCommentInput(e: HostsEntry, v: string) {
-  e.comment = v.trim() ? `# ${v.trim()}` : "";
-  updateEntry(e);
+  e.comment = v.trim() ? `# ${v.trim()}` : ''
+  updateEntry(e)
 }
 
 function toggleEnabled(e: HostsEntry) {
-  e.enabled = !e.enabled;
-  sync();
+  e.enabled = !e.enabled
+  sync()
 }
 
 function remove(e: HostsEntry) {
-  entries.value = entries.value.filter((x) => x.id !== e.id);
-  sync();
+  entries.value = entries.value.filter((x) => x.id !== e.id)
+  sync()
 }
 
 function addRow() {
-  const id = `n${Date.now()}`;
+  const id = `n${Date.now()}`
   entries.value.push({
     id,
     enabled: true,
-    ip: "",
+    ip: '',
     hosts: [],
-    comment: "",
+    comment: '',
     valid: false,
-    error: "IP 无效",
-  });
-  sync();
+    error: 'IP 无效',
+  })
+  sync()
 }
 </script>
 

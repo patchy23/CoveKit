@@ -1,39 +1,39 @@
 <script setup lang="ts">
 /** InputDialog · 基于 BaseModal 的项目统一单行输入弹窗。 */
-import { nextTick, ref, watch } from "vue";
-import BaseModal from "@/features/ui/BaseModal.vue";
+import { nextTick, ref, watch } from 'vue'
+import BaseModal from '@/features/ui/BaseModal.vue'
 
 const props = defineProps<{
-  open: boolean;
-  title: string;
-  label: string;
-  initialValue?: string;
-  confirmLabel?: string;
-}>();
+  open: boolean
+  title: string
+  label: string
+  initialValue?: string
+  confirmLabel?: string
+}>()
 
 const emit = defineEmits<{
-  (event: "confirm", value: string): void;
-  (event: "close"): void;
-}>();
+  (event: 'confirm', value: string): void
+  (event: 'close'): void
+}>()
 
-const value = ref("");
-const input = ref<HTMLInputElement | null>(null);
+const value = ref('')
+const input = ref<HTMLInputElement | null>(null)
 
 watch(
   () => props.open,
   async (open) => {
-    if (!open) return;
-    value.value = props.initialValue ?? "";
-    await nextTick();
-    input.value?.focus();
-    input.value?.select();
+    if (!open) return
+    value.value = props.initialValue ?? ''
+    await nextTick()
+    input.value?.focus()
+    input.value?.select()
   },
   { immediate: true }
-);
+)
 
 function submit() {
-  const trimmed = value.value.trim();
-  if (trimmed) emit("confirm", trimmed);
+  const trimmed = value.value.trim()
+  if (trimmed) emit('confirm', trimmed)
 }
 </script>
 
@@ -54,7 +54,7 @@ function submit() {
     <div class="flex justify-end gap-[8px]">
       <button class="btn-ghost" @click="emit('close')">取消</button>
       <button class="btn-primary" :disabled="!value.trim()" @click="submit">
-        {{ confirmLabel ?? "确定" }}
+        {{ confirmLabel ?? '确定' }}
       </button>
     </div>
   </BaseModal>

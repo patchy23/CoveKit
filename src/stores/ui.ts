@@ -1,81 +1,81 @@
 /**
  * UI 状态（Pinia）：当前分类 / 视图模式 / 搜索词 / 多页签工作区 / 设置弹窗 / 全局 toast
  */
-import { defineStore } from "pinia";
-import { ref } from "vue";
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
 
-export const useUiStore = defineStore("ui", () => {
+export const useUiStore = defineStore('ui', () => {
   /** 当前导航分类（"all" = 全部工具，"fav" = 我的收藏） */
-  const activeCategory = ref<string>("all");
+  const activeCategory = ref<string>('all')
   /** 网格 / 列表视图 */
-  const listView = ref(false);
+  const listView = ref(false)
   /** 顶栏搜索词 */
-  const searchQuery = ref("");
+  const searchQuery = ref('')
   /** 设置弹窗 */
-  const settingsVisible = ref(false);
+  const settingsVisible = ref(false)
   /** 侧栏折叠（标题栏按钮切换，内容区最大化） */
-  const sidebarCollapsed = ref(false);
+  const sidebarCollapsed = ref(false)
   /** 沉浸模式（隐藏工具标题栏 TopBar + 侧栏，退出时恢复侧栏展开） */
-  const immersive = ref(false);
+  const immersive = ref(false)
 
   /** 切换沉浸模式：进入收起侧栏，退出恢复侧栏展开 */
   function toggleImmersive() {
     if (immersive.value) {
-      immersive.value = false;
-      sidebarCollapsed.value = false;
+      immersive.value = false
+      sidebarCollapsed.value = false
     } else {
-      immersive.value = true;
-      sidebarCollapsed.value = true;
+      immersive.value = true
+      sidebarCollapsed.value = true
     }
   }
 
   /* ── 多页签工作区（工具以子页面形式打开，可切换/关闭，状态保持）── */
   /** 已打开的工具 id（页签顺序） */
-  const openTabs = ref<string[]>([]);
+  const openTabs = ref<string[]>([])
   /** 当前激活的工具 id（null = 工具库首页） */
-  const activeTab = ref<string | null>(null);
+  const activeTab = ref<string | null>(null)
 
   /** 打开工具页签：新页签插到首页后的第一位（已打开则仅激活） */
   function openTool(id: string) {
     if (!openTabs.value.includes(id)) {
-      openTabs.value.splice(1, 0, id);
+      openTabs.value.splice(1, 0, id)
     }
-    activeTab.value = id;
+    activeTab.value = id
   }
 
   /** 关闭页签；关闭激活页签时切到相邻页签或首页 */
   function closeTab(id: string) {
-    const idx = openTabs.value.indexOf(id);
-    if (idx < 0) return;
-    openTabs.value = openTabs.value.filter((x) => x !== id);
+    const idx = openTabs.value.indexOf(id)
+    if (idx < 0) return
+    openTabs.value = openTabs.value.filter((x) => x !== id)
     if (activeTab.value === id) {
-      activeTab.value = openTabs.value[idx - 1] ?? openTabs.value[0] ?? null;
+      activeTab.value = openTabs.value[idx - 1] ?? openTabs.value[0] ?? null
     }
   }
 
   /** 关闭全部工具页签，回到首页 */
   function closeAllTabs() {
-    openTabs.value = [];
-    activeTab.value = null;
+    openTabs.value = []
+    activeTab.value = null
   }
 
   /** 回到工具库首页 */
   function goHome() {
-    activeTab.value = null;
+    activeTab.value = null
   }
 
   /* ── 全局 toast（对齐原型 .toast，1600ms 自动消失）── */
-  const toastMessage = ref("");
-  const toastVisible = ref(false);
-  let toastTimer: ReturnType<typeof setTimeout> | null = null;
+  const toastMessage = ref('')
+  const toastVisible = ref(false)
+  let toastTimer: ReturnType<typeof setTimeout> | null = null
 
   function toast(msg: string) {
-    toastMessage.value = msg;
-    toastVisible.value = true;
-    if (toastTimer) clearTimeout(toastTimer);
+    toastMessage.value = msg
+    toastVisible.value = true
+    if (toastTimer) clearTimeout(toastTimer)
     toastTimer = setTimeout(() => {
-      toastVisible.value = false;
-    }, 1600);
+      toastVisible.value = false
+    }, 1600)
   }
 
   return {
@@ -95,5 +95,5 @@ export const useUiStore = defineStore("ui", () => {
     toastMessage,
     toastVisible,
     toast,
-  };
-});
+  }
+})

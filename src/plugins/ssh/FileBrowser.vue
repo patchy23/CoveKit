@@ -1,28 +1,28 @@
 <script setup lang="ts">
 /** FileBrowser · SSH 文件页的路径工具栏与远程文件表格。 */
-import type { RemoteFile } from "./contracts";
-import { formatBytes, formatTime } from "./useSsh";
+import type { RemoteFile } from './contracts'
+import { formatBytes, formatTime } from './useSsh'
 
 defineProps<{
-  currentPath: string;
-  files: RemoteFile[];
-  selectedPath?: string;
-  selectedName?: string;
-  transferStatus?: string;
-}>();
+  currentPath: string
+  files: RemoteFile[]
+  selectedPath?: string
+  selectedName?: string
+  transferStatus?: string
+}>()
 
 const emit = defineEmits<{
-  (event: "update:currentPath", value: string): void;
-  (event: "navigate", path: string): void;
-  (event: "up"): void;
-  (event: "upload"): void;
-  (event: "download"): void;
-  (event: "rename"): void;
-  (event: "delete"): void;
-  (event: "select", file: RemoteFile): void;
-  (event: "open", file: RemoteFile): void;
-  (event: "context", mouse: MouseEvent, file: RemoteFile | null): void;
-}>();
+  (event: 'update:currentPath', value: string): void
+  (event: 'navigate', path: string): void
+  (event: 'up'): void
+  (event: 'upload'): void
+  (event: 'download'): void
+  (event: 'rename'): void
+  (event: 'delete'): void
+  (event: 'select', file: RemoteFile): void
+  (event: 'open', file: RemoteFile): void
+  (event: 'context', mouse: MouseEvent, file: RemoteFile | null): void
+}>()
 </script>
 
 <template>
@@ -74,11 +74,11 @@ const emit = defineEmits<{
           @contextmenu.stop="emit('context', $event, file)"
         >
           <td class="px-[12px] py-[7px]">
-            <span class="mr-[6px]">{{ file.isDir ? "📁" : "📄" }}</span>
+            <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
             <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
           </td>
           <td class="px-[12px] py-[7px] font-mono text-body-sm">
-            {{ file.isDir ? "-" : formatBytes(file.size) }}
+            {{ file.isDir ? '-' : formatBytes(file.size) }}
           </td>
           <td class="px-[12px] py-[7px] text-body-sm">{{ formatTime(file.modifiedAt) }}</td>
           <td class="px-[12px] py-[7px] font-mono text-body-sm">{{ file.permissions }}</td>

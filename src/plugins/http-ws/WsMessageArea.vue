@@ -2,42 +2,42 @@
 /**
  * WsMessageArea · WebSocket 消息收发区（消息流 + 输入行）
  */
-import { nextTick, ref, watch } from "vue";
-import type { WsSession } from "./contracts";
+import { nextTick, ref, watch } from 'vue'
+import type { WsSession } from './contracts'
 
 const props = defineProps<{
-  session: WsSession | null;
-}>();
+  session: WsSession | null
+}>()
 
 const emit = defineEmits<{
-  (e: "send", text: string): void;
-  (e: "close"): void;
-}>();
+  (e: 'send', text: string): void
+  (e: 'close'): void
+}>()
 
-const text = ref("");
-const listEl = ref<HTMLElement | null>(null);
+const text = ref('')
+const listEl = ref<HTMLElement | null>(null)
 
-const connected = () => props.session?.open === true;
-const hasMessage = () => (props.session?.messages.length ?? 0) > 0;
+const connected = () => props.session?.open === true
+const hasMessage = () => (props.session?.messages.length ?? 0) > 0
 
 /** 新消息自动滚到底部 */
 watch(
   () => props.session?.messages.length ?? 0,
   async () => {
-    await nextTick();
-    if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight;
+    await nextTick()
+    if (listEl.value) listEl.value.scrollTop = listEl.value.scrollHeight
   }
-);
+)
 
 function send() {
-  const t = text.value.trim();
-  if (!t || !connected()) return;
-  emit("send", t);
-  text.value = "";
+  const t = text.value.trim()
+  if (!t || !connected()) return
+  emit('send', t)
+  text.value = ''
 }
 
 function formatMsgTime(t: number) {
-  return new Date(t).toLocaleTimeString("zh-CN", { hour12: false });
+  return new Date(t).toLocaleTimeString('zh-CN', { hour12: false })
 }
 </script>
 
@@ -64,7 +64,7 @@ function formatMsgTime(t: number) {
             "
           >
             <div class="mb-[2px] text-caption opacity-70">
-              {{ m.direction === "sent" ? "发送" : "接收" }} · {{ formatMsgTime(m.time) }}
+              {{ m.direction === 'sent' ? '发送' : '接收' }} · {{ formatMsgTime(m.time) }}
             </div>
             <div class="whitespace-pre-wrap break-all font-mono text-body-sm leading-relaxed">
               {{ m.content }}
@@ -76,7 +76,7 @@ function formatMsgTime(t: number) {
         v-else
         class="mt-[40px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
       >
-        {{ connected() ? "暂无消息" : "连接后在此收发消息" }}
+        {{ connected() ? '暂无消息' : '连接后在此收发消息' }}
       </p>
     </div>
 

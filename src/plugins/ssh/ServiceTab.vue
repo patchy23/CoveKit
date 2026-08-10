@@ -2,116 +2,116 @@
 /**
  * ServiceTab · systemd 服务管理子页签（后端 exec 真实数据）
  */
-import { computed, ref, watch } from "vue";
-import type { ServerConnection, ServerProfile, SystemdService } from "./contracts";
-import { useUiStore } from "@/stores/ui";
-import ConfirmDialog from "@/core/ui/ConfirmDialog.vue";
-import Select from "@/features/ui/Select.vue";
-import OutputDialog from "./OutputDialog.vue";
-import { ipc } from "./ipc";
+import { computed, ref, watch } from 'vue'
+import type { ServerConnection, ServerProfile, SystemdService } from './contracts'
+import { useUiStore } from '@/stores/ui'
+import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import Select from '@/features/ui/Select.vue'
+import OutputDialog from './OutputDialog.vue'
+import { ipc } from './ipc'
 
 const props = defineProps<{
-  connection?: ServerConnection;
-  profile?: ServerProfile;
-}>();
+  connection?: ServerConnection
+  profile?: ServerProfile
+}>()
 
-const ui = useUiStore();
+const ui = useUiStore()
 
-const filter = ref<"all" | "active" | "inactive" | "failed">("all");
-const services = ref<SystemdService[]>([]);
-const loading = ref(false);
-const logOutput = ref<{ title: string; content: string } | null>(null);
-const pendingAction = ref<{ service: SystemdService; action: "stop" | "restart" } | null>(null);
+const filter = ref<'all' | 'active' | 'inactive' | 'failed'>('all')
+const services = ref<SystemdService[]>([])
+const loading = ref(false)
+const logOutput = ref<{ title: string; content: string } | null>(null)
+const pendingAction = ref<{ service: SystemdService; action: 'stop' | 'restart' } | null>(null)
 
 /** 按状态筛选后的服务列表（computed 自动响应 filter 变化） */
 const filtered = computed(() => {
-  if (filter.value === "all") return services.value;
-  return services.value.filter((s) => s.activeState === filter.value);
-});
+  if (filter.value === 'all') return services.value
+  return services.value.filter((s) => s.activeState === filter.value)
+})
 
 async function refresh() {
-  const connectionId = props.connection?.sessionId;
-  if (!connectionId) return;
-  loading.value = true;
+  const connectionId = props.connection?.sessionId
+  if (!connectionId) return
+  loading.value = true
   try {
     const result = await ipc.sshServiceList({
       connectionId,
       filter: filter.value,
-    });
-    if (props.connection?.sessionId === connectionId) services.value = result;
+    })
+    if (props.connection?.sessionId === connectionId) services.value = result
   } catch (e) {
-    if (props.connection?.sessionId === connectionId) ui.toast(`服务列表加载失败：${e}`);
+    if (props.connection?.sessionId === connectionId) ui.toast(`服务列表加载失败：${e}`)
   } finally {
-    if (props.connection?.sessionId === connectionId) loading.value = false;
+    if (props.connection?.sessionId === connectionId) loading.value = false
   }
 }
 
-async function action(svc: SystemdService, act: "start" | "stop" | "restart") {
-  if (!props.connection?.sessionId) return;
+async function action(svc: SystemdService, act: 'start' | 'stop' | 'restart') {
+  if (!props.connection?.sessionId) return
   try {
     const r = await ipc.sshServiceAction({
       connectionId: props.connection.sessionId,
       serviceName: svc.name,
       action: act,
-    });
+    })
     if (r.ok) {
-      ui.toast(`${act === "start" ? "启动" : act === "stop" ? "停止" : "重启"} ${svc.name} 成功`);
-      refresh();
+      ui.toast(`${act === 'start' ? '启动' : act === 'stop' ? '停止' : '重启'} ${svc.name} 成功`)
+      refresh()
     } else {
-      ui.toast(`${act} ${svc.name} 失败：${r.error ?? "未知错误"}`);
+      ui.toast(`${act} ${svc.name} 失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
-    ui.toast(`操作失败：${e}`);
+    ui.toast(`操作失败：${e}`)
   }
 }
 
-function requestAction(svc: SystemdService, act: "start" | "stop" | "restart") {
-  if (act === "start") void action(svc, act);
-  else pendingAction.value = { service: svc, action: act };
+function requestAction(svc: SystemdService, act: 'start' | 'stop' | 'restart') {
+  if (act === 'start') void action(svc, act)
+  else pendingAction.value = { service: svc, action: act }
 }
 
 function confirmAction() {
-  const pending = pendingAction.value;
-  pendingAction.value = null;
-  if (pending) void action(pending.service, pending.action);
+  const pending = pendingAction.value
+  pendingAction.value = null
+  if (pending) void action(pending.service, pending.action)
 }
 
 async function logs(svc: SystemdService) {
-  if (!props.connection?.sessionId) return;
+  if (!props.connection?.sessionId) return
   try {
     const r = await ipc.sshServiceLogs({
       connectionId: props.connection.sessionId,
       serviceName: svc.name,
       lines: 100,
-    });
-    if (r.ok) logOutput.value = { title: `${svc.name} · 最近日志`, content: r.logs };
-    else ui.toast(`日志获取失败：${r.error ?? "未知错误"}`);
+    })
+    if (r.ok) logOutput.value = { title: `${svc.name} · 最近日志`, content: r.logs }
+    else ui.toast(`日志获取失败：${r.error ?? '未知错误'}`)
   } catch (e) {
-    ui.toast(`日志获取失败：${e}`);
+    ui.toast(`日志获取失败：${e}`)
   }
 }
 
 function stateClass(s: SystemdService): string {
-  if (s.activeState === "active") return "text-success-strong dark:text-success-dark";
-  if (s.activeState === "failed") return "text-danger-strong dark:text-danger-dark";
-  return "text-text-muted dark:text-text-muted-dark";
+  if (s.activeState === 'active') return 'text-success-strong dark:text-success-dark'
+  if (s.activeState === 'failed') return 'text-danger-strong dark:text-danger-dark'
+  return 'text-text-muted dark:text-text-muted-dark'
 }
 
 function stateText(s: SystemdService): string {
-  if (s.activeState === "active") return "运行中";
-  if (s.activeState === "failed") return "失败";
-  return "已停止";
+  if (s.activeState === 'active') return '运行中'
+  if (s.activeState === 'failed') return '失败'
+  return '已停止'
 }
 
 watch(
   () => props.connection?.sessionId,
   (sessionId) => {
-    services.value = [];
-    loading.value = false;
-    if (sessionId) void refresh();
+    services.value = []
+    loading.value = false
+    if (sessionId) void refresh()
   },
   { immediate: true }
-);
+)
 </script>
 
 <template>
@@ -120,7 +120,7 @@ watch(
       class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
     >
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
-        {{ profile?.name ?? "未连接" }} · 服务管理
+        {{ profile?.name ?? '未连接' }} · 服务管理
       </span>
       <Select
         :model-value="filter"
@@ -206,7 +206,7 @@ watch(
       class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
     >
       <span>共 {{ filtered.length }} 个服务</span>
-      <span class="ml-auto">{{ connection?.status === "connected" ? "就绪" : "未连接" }}</span>
+      <span class="ml-auto">{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
     </div>
     <OutputDialog
       v-if="logOutput"

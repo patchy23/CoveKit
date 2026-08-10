@@ -2,99 +2,99 @@
 /**
  * SQLite 数据库 · 打开连接 + 表浏览 + SQL 执行 + 结果表格
  */
-import { computed, ref } from "vue";
-import type { DbQueryResult } from "./contracts";
-import { ipc } from "./ipc";
-import { useUiStore } from "@/stores/ui";
-import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
-import { describeResult, displayCell, fileName } from "./useSqlite";
+import { computed, ref } from 'vue'
+import type { DbQueryResult } from './contracts'
+import { ipc } from './ipc'
+import { useUiStore } from '@/stores/ui'
+import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
+import { describeResult, displayCell, fileName } from './useSqlite'
 
-const ui = useUiStore();
+const ui = useUiStore()
 
-const dbPath = ref("");
-const connected = ref(false);
-const tables = ref<string[]>([]);
-const activeTable = ref("");
-const sql = ref("SELECT * FROM users LIMIT 100;");
-const result = ref<DbQueryResult | null>(null);
-const busy = ref(false);
-const status = ref("");
+const dbPath = ref('')
+const connected = ref(false)
+const tables = ref<string[]>([])
+const activeTable = ref('')
+const sql = ref('SELECT * FROM users LIMIT 100;')
+const result = ref<DbQueryResult | null>(null)
+const busy = ref(false)
+const status = ref('')
 
-const dbName = computed(() => fileName(dbPath.value));
+const dbName = computed(() => fileName(dbPath.value))
 
 async function openDb() {
   if (!dbPath.value.trim()) {
-    ui.toast("请输入数据库文件路径");
-    return;
+    ui.toast('请输入数据库文件路径')
+    return
   }
-  busy.value = true;
-  status.value = "";
+  busy.value = true
+  status.value = ''
   try {
-    const r = await ipc.dbOpen(dbPath.value.trim());
+    const r = await ipc.dbOpen(dbPath.value.trim())
     if (!r.ok) {
-      ui.toast(r.error ?? "打开失败");
-      return;
+      ui.toast(r.error ?? '打开失败')
+      return
     }
-    connected.value = true;
-    tables.value = r.tables;
-    activeTable.value = "";
-    result.value = null;
-    sql.value = tables.value.length ? `SELECT * FROM ${tables.value[0]} LIMIT 100;` : "";
-    status.value = `已连接 ${dbName.value}（${r.tables.length} 张表）`;
+    connected.value = true
+    tables.value = r.tables
+    activeTable.value = ''
+    result.value = null
+    sql.value = tables.value.length ? `SELECT * FROM ${tables.value[0]} LIMIT 100;` : ''
+    status.value = `已连接 ${dbName.value}（${r.tables.length} 张表）`
   } catch (e) {
-    ui.toast("打开失败：" + (e instanceof Error ? e.message : String(e)));
+    ui.toast('打开失败：' + (e instanceof Error ? e.message : String(e)))
   } finally {
-    busy.value = false;
+    busy.value = false
   }
 }
 
 async function closeDb() {
-  await ipc.dbClose().catch(() => {});
-  connected.value = false;
-  tables.value = [];
-  activeTable.value = "";
-  result.value = null;
-  status.value = "";
+  await ipc.dbClose().catch(() => {})
+  connected.value = false
+  tables.value = []
+  activeTable.value = ''
+  result.value = null
+  status.value = ''
 }
 
 async function refreshTables() {
   try {
-    tables.value = await ipc.dbTables();
+    tables.value = await ipc.dbTables()
   } catch (e) {
-    ui.toast("刷新失败：" + (e instanceof Error ? e.message : String(e)));
+    ui.toast('刷新失败：' + (e instanceof Error ? e.message : String(e)))
   }
 }
 
 async function browseTable(t: string) {
-  activeTable.value = t;
-  busy.value = true;
+  activeTable.value = t
+  busy.value = true
   try {
-    result.value = await ipc.dbQueryTable(t, 200);
+    result.value = await ipc.dbQueryTable(t, 200)
   } catch (e) {
-    ui.toast("查询失败：" + (e instanceof Error ? e.message : String(e)));
+    ui.toast('查询失败：' + (e instanceof Error ? e.message : String(e)))
   } finally {
-    busy.value = false;
+    busy.value = false
   }
 }
 
 async function runSql() {
-  if (!sql.value.trim()) return;
-  busy.value = true;
+  if (!sql.value.trim()) return
+  busy.value = true
   try {
-    result.value = await ipc.dbExecute(sql.value);
+    result.value = await ipc.dbExecute(sql.value)
     if (!result.value.ok) {
-      ui.toast(result.value.error ?? "执行失败");
+      ui.toast(result.value.error ?? '执行失败')
     }
   } catch (e) {
-    ui.toast("执行失败：" + (e instanceof Error ? e.message : String(e)));
+    ui.toast('执行失败：' + (e instanceof Error ? e.message : String(e)))
   } finally {
-    busy.value = false;
+    busy.value = false
   }
 }
 
 function formatCell(v: string): string {
-  const d = displayCell(v);
-  return d.length > 200 ? `${d.slice(0, 200)}…` : d;
+  const d = displayCell(v)
+  return d.length > 200 ? `${d.slice(0, 200)}…` : d
 }
 </script>
 
@@ -111,7 +111,7 @@ function formatCell(v: string): string {
         @keyup.enter="openDb"
       />
       <button v-if="!connected" class="btn-primary shrink-0" :disabled="busy" @click="openDb">
-        {{ busy ? "打开中…" : "打开 / 新建" }}
+        {{ busy ? '打开中…' : '打开 / 新建' }}
       </button>
       <button v-else class="btn-secondary shrink-0" @click="closeDb">断开</button>
       <span class="truncate text-body-sm text-text-muted dark:text-text-muted-dark">{{
@@ -172,7 +172,7 @@ function formatCell(v: string): string {
                       result.isQuery,
                       result.isQuery ? result.rows.length : result.rowsAffected
                     )
-                  : ""
+                  : ''
               }}
             </span>
           </div>

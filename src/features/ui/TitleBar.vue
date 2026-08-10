@@ -5,14 +5,14 @@
  * 双击标题栏最大化；右侧窗口控制按钮（关闭 = 最小化到托盘，见 Rust CloseRequested 处理）。
  * 额外提供：侧栏折叠切换（panel 按钮）与沉浸模式切换（expand 按钮，隐藏标题栏+侧栏）。
  */
-import { safeWindow } from "@/core/ui/windowCtl";
-import { useUiStore } from "@/stores/ui";
-import AppIcon from "@/features/ui/AppIcon.vue";
+import { safeWindow } from '@/core/ui/windowCtl'
+import { useUiStore } from '@/stores/ui'
+import AppIcon from '@/features/ui/AppIcon.vue'
 
-const ui = useUiStore();
+const ui = useUiStore()
 
 function onDblClick() {
-  safeWindow((w) => w.toggleMaximize());
+  safeWindow((w) => w.toggleMaximize())
 }
 </script>
 
@@ -50,9 +50,7 @@ function onDblClick() {
       <button
         class="grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
         :class="
-          ui.immersive
-            ? 'bg-border text-primary dark:bg-border-dark dark:text-primary-dark'
-            : ''
+          ui.immersive ? 'bg-border text-primary dark:bg-border-dark dark:text-primary-dark' : ''
         "
         :title="ui.immersive ? '退出沉浸模式' : '沉浸模式（隐藏工具标题栏与侧栏）'"
         @click="ui.toggleImmersive()"

@@ -5,69 +5,69 @@
  * - 选项 hover 用 bg-border（与列表项同款），选中项文字高亮
  * - optionClass / valueClass 允许按值定制颜色（如 HTTP 方法色标）
  */
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 export interface SelectOption {
-  value: string;
-  label?: string;
+  value: string
+  label?: string
 }
 
 const props = withDefaults(
   defineProps<{
-    modelValue: string;
-    options: SelectOption[];
-    title?: string;
-    disabled?: boolean;
+    modelValue: string
+    options: SelectOption[]
+    title?: string
+    disabled?: boolean
     /** 尺寸：md=标准（36px，与 field-input 对齐）；sm=紧凑（28px，页签工具栏筛选） */
-    size?: "md" | "sm";
+    size?: 'md' | 'sm'
     /** 下拉选项文字色（按值） */
     // eslint-disable-next-line vue/require-default-prop -- 函数类型可选，模板已空值安全
-    optionClass?: (value: string) => string;
+    optionClass?: (value: string) => string
     /** 值区文字色（默认同 optionClass） */
     // eslint-disable-next-line vue/require-default-prop -- 函数类型可选，模板已空值安全
-    valueClass?: (value: string) => string;
+    valueClass?: (value: string) => string
   }>(),
-  { title: "", disabled: false, size: "md" }
-);
+  { title: '', disabled: false, size: 'md' }
+)
 
-const emit = defineEmits<{ (e: "update:modelValue", v: string): void }>();
+const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
-const open = ref(false);
+const open = ref(false)
 
 const currentLabel = () =>
-  props.options.find((o) => o.value === props.modelValue)?.label ?? props.modelValue;
+  props.options.find((o) => o.value === props.modelValue)?.label ?? props.modelValue
 
 const clsFor = (v: string) =>
-  (props.valueClass ?? props.optionClass)?.(v) ?? "text-primary dark:text-primary-dark";
+  (props.valueClass ?? props.optionClass)?.(v) ?? 'text-primary dark:text-primary-dark'
 
 function toggle() {
-  if (!props.disabled) open.value = !open.value;
+  if (!props.disabled) open.value = !open.value
 }
 
 function select(v: string) {
-  emit("update:modelValue", v);
-  open.value = false;
+  emit('update:modelValue', v)
+  open.value = false
 }
 
 function onDocMouseDown(e: MouseEvent) {
-  if (!open.value) return;
-  const el = triggerEl.value;
-  if (el && !el.contains(e.target as Node)) open.value = false;
+  if (!open.value) return
+  const el = triggerEl.value
+  if (el && !el.contains(e.target as Node)) open.value = false
 }
 
-const triggerEl = ref<HTMLElement | null>(null);
+const triggerEl = ref<HTMLElement | null>(null)
 
 function onKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape") open.value = false;
+  if (e.key === 'Escape') open.value = false
 }
 
 onMounted(() => {
-  document.addEventListener("mousedown", onDocMouseDown);
-});
+  document.addEventListener('mousedown', onDocMouseDown)
+})
 
 onBeforeUnmount(() => {
-  document.removeEventListener("mousedown", onDocMouseDown);
-});
+  document.removeEventListener('mousedown', onDocMouseDown)
+})
 </script>
 
 <template>
@@ -116,9 +116,7 @@ onBeforeUnmount(() => {
         :class="[
           props.size === 'sm' ? 'text-caption' : 'text-body',
           clsFor(opt.value),
-          opt.value === modelValue
-            ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
-            : '',
+          opt.value === modelValue ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark' : '',
         ]"
         @click="select(opt.value)"
       >

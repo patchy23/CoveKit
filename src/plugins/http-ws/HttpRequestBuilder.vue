@@ -2,60 +2,60 @@
 /**
  * HttpRequestBuilder · 请求构建区（Postman 式 Params / Headers / Body 分页签）
  */
-import { ref } from "vue";
-import type { KvRow } from "./useHttp";
-import { newKvId } from "./useHttp";
-import LineNumberTextarea from "@/core/ui/LineNumberTextarea.vue";
-import Select from "@/features/ui/Select.vue";
+import { ref } from 'vue'
+import type { KvRow } from './useHttp'
+import { newKvId } from './useHttp'
+import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
+import Select from '@/features/ui/Select.vue'
 
 const props = defineProps<{
-  params: KvRow[];
-  headers: KvRow[];
-  bodyMode: "none" | "json" | "text";
-  body: string;
+  params: KvRow[]
+  headers: KvRow[]
+  bodyMode: 'none' | 'json' | 'text'
+  body: string
   /** 仅显示 Headers 表格（WebSocket 模式：无 Params/Body） */
-  headersOnly?: boolean;
-}>();
+  headersOnly?: boolean
+}>()
 
 const emit = defineEmits<{
-  (e: "update:params", v: KvRow[]): void;
-  (e: "update:headers", v: KvRow[]): void;
-  (e: "update:bodyMode", v: "none" | "json" | "text"): void;
-  (e: "update:body", v: string): void;
-}>();
+  (e: 'update:params', v: KvRow[]): void
+  (e: 'update:headers', v: KvRow[]): void
+  (e: 'update:bodyMode', v: 'none' | 'json' | 'text'): void
+  (e: 'update:body', v: string): void
+}>()
 
-const tab = ref<"params" | "headers" | "body">("params");
+const tab = ref<'params' | 'headers' | 'body'>('params')
 
-const JSON_PLACEHOLDER = '{\n  "key": "value"\n}';
+const JSON_PLACEHOLDER = '{\n  "key": "value"\n}'
 
-function addRow(rows: KvRow[], kind: "params" | "headers") {
-  const next = [...rows, { id: newKvId(), key: "", value: "" }];
-  if (kind === "params") emit("update:params", next);
-  else emit("update:headers", next);
+function addRow(rows: KvRow[], kind: 'params' | 'headers') {
+  const next = [...rows, { id: newKvId(), key: '', value: '' }]
+  if (kind === 'params') emit('update:params', next)
+  else emit('update:headers', next)
 }
 
-function removeRow(rows: KvRow[], id: string, kind: "params" | "headers") {
-  const next = rows.filter((r) => r.id !== id);
-  if (kind === "params") emit("update:params", next);
-  else emit("update:headers", next);
+function removeRow(rows: KvRow[], id: string, kind: 'params' | 'headers') {
+  const next = rows.filter((r) => r.id !== id)
+  if (kind === 'params') emit('update:params', next)
+  else emit('update:headers', next)
 }
 
 function setRow(
   rows: KvRow[],
   id: string,
-  field: "key" | "value",
+  field: 'key' | 'value',
   v: string,
-  kind: "params" | "headers"
+  kind: 'params' | 'headers'
 ) {
-  const next = rows.map((r) => (r.id === id ? { ...r, [field]: v } : r));
-  if (kind === "params") emit("update:params", next);
-  else emit("update:headers", next);
+  const next = rows.map((r) => (r.id === id ? { ...r, [field]: v } : r))
+  if (kind === 'params') emit('update:params', next)
+  else emit('update:headers', next)
 }
 
 const tabClass = (active: boolean) =>
   active
-    ? "border-b-[2px] border-tertiary-strong pb-[6px] font-medium text-tertiary-strong dark:border-tertiary-dark dark:text-tertiary-dark"
-    : "border-b-[2px] border-transparent pb-[6px] text-secondary hover:text-primary dark:text-secondary-dark dark:hover:text-primary-dark";
+    ? 'border-b-[2px] border-tertiary-strong pb-[6px] font-medium text-tertiary-strong dark:border-tertiary-dark dark:text-tertiary-dark'
+    : 'border-b-[2px] border-transparent pb-[6px] text-secondary hover:text-primary dark:text-secondary-dark dark:hover:text-primary-dark'
 </script>
 
 <template>

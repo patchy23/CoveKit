@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /* ============================================================
  * patchyBox · DESIGN.md tokens 单一事实源映射（Tailwind 4 @theme）
@@ -7,8 +7,8 @@
 
 /* ── 字体：Inter Variable（本地打包，西文/数字）+ 系统回退 ── */
 @font-face {
-  font-family: "Inter";
-  src: url("../fonts/InterVariable.woff2") format("woff2");
+  font-family: 'Inter';
+  src: url('../fonts/InterVariable.woff2') format('woff2');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
@@ -100,9 +100,9 @@
    * 新增字号先在此加 token，组件一律用语义类（text-h1 / text-body / …），
    * 禁止散落 arbitrary 值（text-[13px]）。字重用 font-*，字距用 tracking-*。 */
   --font-sans:
-    "Inter", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
-    "Microsoft YaHei", sans-serif;
-  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+    'Inter', 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI',
+    'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
 
   /* 页面主标题（顶栏） */
   --text-h1: 17px;
@@ -159,7 +159,7 @@
     @apply rounded-full bg-border-strong;
     border: 2px solid var(--color-surface);
   }
-  [data-theme="dark"] ::-webkit-scrollbar-thumb {
+  [data-theme='dark'] ::-webkit-scrollbar-thumb {
     @apply bg-border-strong-dark;
     border-color: var(--color-surface-dark);
   }
@@ -259,10 +259,10 @@
 .tree-line-h {
   border-top: 1px solid rgba(16, 24, 40, 0.16);
 }
-[data-theme="dark"] .tree-line {
+[data-theme='dark'] .tree-line {
   border-left-color: rgba(255, 255, 255, 0.22);
 }
-[data-theme="dark"] .tree-line-h {
+[data-theme='dark'] .tree-line-h {
   border-top-color: rgba(255, 255, 255, 0.22);
 }
 
@@ -276,7 +276,7 @@
   --cm-punct: #24292f;
   --cm-comment: #6a737d;
 }
-[data-theme="dark"] {
+[data-theme='dark'] {
   --cm-keyword: #ff7b72;
   --cm-property: #79c0ff;
   --cm-string: #7ee787;
@@ -295,7 +295,7 @@
     transparent calc(2ch + 1px) 4ch
   );
 }
-[data-theme="dark"] .cm-indent-guides {
+[data-theme='dark'] .cm-indent-guides {
   background-image: repeating-linear-gradient(
     to right,
     transparent 0 2ch,
@@ -311,44 +311,44 @@
 .hljs-name {
   color: #8250df;
 }
-[data-theme="dark"] .hljs-comment,
-[data-theme="dark"] .hljs-quote {
+[data-theme='dark'] .hljs-comment,
+[data-theme='dark'] .hljs-quote {
   color: #8b949e;
 }
-[data-theme="dark"] .hljs-keyword,
-[data-theme="dark"] .hljs-selector-tag,
-[data-theme="dark"] .hljs-built_in {
+[data-theme='dark'] .hljs-keyword,
+[data-theme='dark'] .hljs-selector-tag,
+[data-theme='dark'] .hljs-built_in {
   color: #ff7b72;
 }
-[data-theme="dark"] .hljs-title,
-[data-theme="dark"] .hljs-title.function_,
-[data-theme="dark"] .hljs-title.class_ {
+[data-theme='dark'] .hljs-title,
+[data-theme='dark'] .hljs-title.function_,
+[data-theme='dark'] .hljs-title.class_ {
   color: #d2a8ff;
 }
-[data-theme="dark"] .hljs-tag {
+[data-theme='dark'] .hljs-tag {
   color: var(--color-text-muted-dark);
 }
-[data-theme="dark"] .hljs-name {
+[data-theme='dark'] .hljs-name {
   color: #d2a8ff;
 }
-[data-theme="dark"] .hljs-variable,
-[data-theme="dark"] .hljs-template-variable,
-[data-theme="dark"] .hljs-attr {
+[data-theme='dark'] .hljs-variable,
+[data-theme='dark'] .hljs-template-variable,
+[data-theme='dark'] .hljs-attr {
   color: #79c0ff;
 }
-[data-theme="dark"] .hljs-string {
+[data-theme='dark'] .hljs-string {
   color: #7ee787;
 }
-[data-theme="dark"] .hljs-number,
-[data-theme="dark"] .hljs-literal {
+[data-theme='dark'] .hljs-number,
+[data-theme='dark'] .hljs-literal {
   color: #ff7b72;
 }
-[data-theme="dark"] .hljs-punctuation {
+[data-theme='dark'] .hljs-punctuation {
   color: var(--color-text-muted-dark);
 }
-[data-theme="dark"] .hljs-meta {
+[data-theme='dark'] .hljs-meta {
   color: #ffa657;
 }
-[data-theme="dark"] .hljs-params {
+[data-theme='dark'] .hljs-params {
   color: #c9d1d9;
 }

@@ -2,20 +2,20 @@
 /**
  * ApiSidebar · 接口列表侧栏（Postman Collections 式：保存的接口随时切换）
  */
-import type { ApiRecord } from "./contracts";
-import { formatRelativeTime, methodBadgeClass } from "./useHttp";
+import type { ApiRecord } from './contracts'
+import { formatRelativeTime, methodBadgeClass } from './useHttp'
 
 defineProps<{
-  apis: ApiRecord[];
-  activeId: number | null;
-}>();
+  apis: ApiRecord[]
+  activeId: number | null
+}>()
 
 const emit = defineEmits<{
-  (e: "select", r: ApiRecord): void;
-  (e: "rename", r: ApiRecord): void;
-  (e: "delete", id: number): void;
-  (e: "new"): void;
-}>();
+  (e: 'select', r: ApiRecord): void
+  (e: 'rename', r: ApiRecord): void
+  (e: 'delete', id: number): void
+  (e: 'new'): void
+}>()
 </script>
 
 <template>
@@ -52,12 +52,12 @@ const emit = defineEmits<{
           <span
             class="w-[46px] shrink-0 rounded-[4px] px-[4px] py-[1px] text-center font-mono text-caption font-medium"
             :class="methodBadgeClass(a.method, a.type)"
-            >{{ a.type === "ws" ? "WS" : a.method }}</span
+            >{{ a.type === 'ws' ? 'WS' : a.method }}</span
           >
           <span
             class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
           >
-            {{ a.name || "(未命名)" }}
+            {{ a.name || '(未命名)' }}
           </span>
           <button
             class="hidden shrink-0 text-text-muted transition-colors hover:text-info-strong group-hover:block dark:text-text-muted-dark dark:hover:text-info-dark"

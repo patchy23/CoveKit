@@ -3,14 +3,14 @@
  * - 框架命令封装见下方 `ipc`；
  * - 业务插件在各自 ipc.ts 用 invokeCommand 封装自己的命令（命令名/类型见插件 contracts.ts）。
  */
-import { invoke } from "@tauri-apps/api/core";
-import type { FrameworkPayloads, FrameworkResults } from "./contracts";
+import { invoke } from '@tauri-apps/api/core'
+import type { FrameworkPayloads, FrameworkResults } from './contracts'
 
 /** 归一化 IPC 错误：Tauri 侧错误可能是任意字符串/对象 */
 export class IpcError extends Error {
   constructor(command: string, detail: string) {
-    super(`[${command}] ${detail}`);
-    this.name = "IpcError";
+    super(`[${command}] ${detail}`)
+    this.name = 'IpcError'
   }
 }
 
@@ -20,10 +20,10 @@ export async function invokeCommand<P = Record<string, never>, R = void>(
   payload?: P
 ): Promise<R> {
   try {
-    return await invoke<R>(command, (payload ?? {}) as Record<string, unknown>);
+    return await invoke<R>(command, (payload ?? {}) as Record<string, unknown>)
   } catch (err) {
-    const detail = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
-    throw new IpcError(command, detail);
+    const detail = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err)
+    throw new IpcError(command, detail)
   }
 }
 
@@ -31,15 +31,15 @@ async function call<K extends keyof FrameworkPayloads & keyof FrameworkResults>(
   command: K,
   payload?: FrameworkPayloads[K]
 ): Promise<FrameworkResults[K]> {
-  return invokeCommand<FrameworkPayloads[K], FrameworkResults[K]>(command, payload);
+  return invokeCommand<FrameworkPayloads[K], FrameworkResults[K]>(command, payload)
 }
 
 /** 框架命令封装（设置/窗口/外链/命令清单） */
 export const ipc = {
-  settingsGet: (key?: string) => call("settings_get", { key }),
-  settingsSet: (key: string, value: unknown) => call("settings_set", { key, value }),
-  windowToggle: () => call("window_toggle", {}),
-  windowHide: () => call("window_hide", {}),
-  openExternal: (url: string) => call("open_external", { url }),
-  frameworkCommandsList: () => call("framework_commands", {}),
-};
+  settingsGet: (key?: string) => call('settings_get', { key }),
+  settingsSet: (key: string, value: unknown) => call('settings_set', { key, value }),
+  windowToggle: () => call('window_toggle', {}),
+  windowHide: () => call('window_hide', {}),
+  openExternal: (url: string) => call('open_external', { url }),
+  frameworkCommandsList: () => call('framework_commands', {}),
+}

@@ -3,25 +3,25 @@
  * SettingsModal · 设置弹窗
  * 外观 / 快捷键 / 通用 / 剪贴板策略 / 工具级设置（settingsSchema 自动渲染表单，架构 §8）
  */
-import { computed } from "vue";
-import { getTools } from "@/core/registry/toolRegistry";
-import type { SettingsField } from "@/core/registry/types";
-import BaseModal from "@/features/ui/BaseModal.vue";
-import AppIcon from "@/features/ui/AppIcon.vue";
-import Select from "@/features/ui/Select.vue";
-import { useSettingsStore } from "@/stores/settings";
-import { useUiStore } from "@/stores/ui";
+import { computed } from 'vue'
+import { getTools } from '@/core/registry/toolRegistry'
+import type { SettingsField } from '@/core/registry/types'
+import BaseModal from '@/features/ui/BaseModal.vue'
+import AppIcon from '@/features/ui/AppIcon.vue'
+import Select from '@/features/ui/Select.vue'
+import { useSettingsStore } from '@/stores/settings'
+import { useUiStore } from '@/stores/ui'
 
-const ui = useUiStore();
-const settings = useSettingsStore();
+const ui = useUiStore()
+const settings = useSettingsStore()
 
-const toolsWithSettings = computed(() => getTools().filter((t) => t.settingsSchema?.length));
+const toolsWithSettings = computed(() => getTools().filter((t) => t.settingsSchema?.length))
 
 function fieldValue(field: SettingsField, toolId: string) {
-  return settings.getToolSetting(toolId, field.key, field.default ?? "");
+  return settings.getToolSetting(toolId, field.key, field.default ?? '')
 }
 function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
-  settings.setToolSetting(toolId, field.key, value);
+  settings.setToolSetting(toolId, field.key, value)
 }
 </script>
 

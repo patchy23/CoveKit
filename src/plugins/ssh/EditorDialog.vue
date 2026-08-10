@@ -4,52 +4,52 @@
  * 文件管理页签双击文件打开；CodeMirror 6 可编辑模式（语法高亮/行号/缩进线，
  * 与 CodeViewer 同款配色）；保存后由父组件回写服务器（后端 IPC 接入前为 mock）。
  */
-import { onMounted, onUnmounted, ref } from "vue";
-import { EditorView, lineNumbers } from "@codemirror/view";
-import { EditorState } from "@codemirror/state";
-import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
-import { tags as t } from "@lezer/highlight";
-import { json } from "@codemirror/lang-json";
-import { xml } from "@codemirror/lang-xml";
-import ConfirmDialog from "@/core/ui/ConfirmDialog.vue";
+import { onMounted, onUnmounted, ref } from 'vue'
+import { EditorView, lineNumbers } from '@codemirror/view'
+import { EditorState } from '@codemirror/state'
+import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { tags as t } from '@lezer/highlight'
+import { json } from '@codemirror/lang-json'
+import { xml } from '@codemirror/lang-xml'
+import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
 const props = defineProps<{
   /** 远程文件完整路径 */
-  path: string;
+  path: string
   /** 文件内容 */
-  content: string;
+  content: string
   /** 正在保存，禁用重复提交和关闭 */
-  saving?: boolean;
-}>();
+  saving?: boolean
+}>()
 
 const emit = defineEmits<{
-  (e: "save", content: string): void;
-  (e: "cancel"): void;
-}>();
+  (e: 'save', content: string): void
+  (e: 'cancel'): void
+}>()
 
-const host = ref<HTMLElement | null>(null);
-const dirty = ref(false);
-const discardOpen = ref(false);
-let view: EditorView | null = null;
+const host = ref<HTMLElement | null>(null)
+const dirty = ref(false)
+const discardOpen = ref(false)
+let view: EditorView | null = null
 
 /* ── 语法高亮（与 CodeViewer 同款 GitHub 配色，CSS 变量随主题） ── */
 const highlight = HighlightStyle.define([
-  { tag: t.keyword, color: "var(--cm-keyword)" },
-  { tag: [t.propertyName, t.attributeName], color: "var(--cm-property)" },
-  { tag: [t.string, t.special(t.string)], color: "var(--cm-string)" },
-  { tag: [t.number, t.bool, t.null], color: "var(--cm-number)" },
-  { tag: [t.tagName, t.typeName], color: "var(--cm-tag)" },
-  { tag: [t.angleBracket, t.paren, t.brace, t.bracket, t.separator], color: "var(--cm-punct)" },
-  { tag: t.comment, color: "var(--cm-comment)", fontStyle: "italic" },
-  { tag: t.operator, color: "var(--cm-punct)" },
-]);
+  { tag: t.keyword, color: 'var(--cm-keyword)' },
+  { tag: [t.propertyName, t.attributeName], color: 'var(--cm-property)' },
+  { tag: [t.string, t.special(t.string)], color: 'var(--cm-string)' },
+  { tag: [t.number, t.bool, t.null], color: 'var(--cm-number)' },
+  { tag: [t.tagName, t.typeName], color: 'var(--cm-tag)' },
+  { tag: [t.angleBracket, t.paren, t.brace, t.bracket, t.separator], color: 'var(--cm-punct)' },
+  { tag: t.comment, color: 'var(--cm-comment)', fontStyle: 'italic' },
+  { tag: t.operator, color: 'var(--cm-punct)' },
+])
 
 /** 按扩展名选择语法（未匹配返回空扩展 = 纯文本） */
 function langFor(path: string) {
-  const ext = path.split(".").pop()?.toLowerCase();
-  if (ext === "json") return json();
-  if (ext === "xml" || ext === "html" || ext === "htm" || ext === "svg") return xml();
-  return [];
+  const ext = path.split('.').pop()?.toLowerCase()
+  if (ext === 'json') return json()
+  if (ext === 'xml' || ext === 'html' || ext === 'htm' || ext === 'svg') return xml()
+  return []
 }
 
 function createEditor() {
@@ -63,58 +63,56 @@ function createEditor() {
         langFor(props.path),
         // 编辑监听：内容变化标记 dirty
         EditorView.updateListener.of((u) => {
-          if (u.docChanged) dirty.value = true;
+          if (u.docChanged) dirty.value = true
         }),
         EditorView.theme({
-          "&": { height: "100%", fontSize: "13px" },
-          ".cm-scroller": {
-            fontFamily: "var(--font-mono)",
-            lineHeight: "1.5",
-            overflow: "auto",
+          '&': { height: '100%', fontSize: '13px' },
+          '.cm-scroller': {
+            fontFamily: 'var(--font-mono)',
+            lineHeight: '1.5',
+            overflow: 'auto',
           },
-          ".cm-content": { padding: "10px 0" },
-          ".cm-line": { padding: "0 12px" },
-          ".cm-cursor": { borderLeftColor: "var(--color-tertiary)" },
-          ".cm-gutters": {
-            background: "transparent",
-            borderRight: "1px solid var(--color-border)",
-            color: "var(--color-text-muted)",
-            fontSize: "12px",
+          '.cm-content': { padding: '10px 0' },
+          '.cm-line': { padding: '0 12px' },
+          '.cm-cursor': { borderLeftColor: 'var(--color-tertiary)' },
+          '.cm-gutters': {
+            background: 'transparent',
+            borderRight: '1px solid var(--color-border)',
+            color: 'var(--color-text-muted)',
+            fontSize: '12px',
           },
         }),
       ],
     }),
-  });
+  })
 }
 
 function save() {
-  if (props.saving) return;
-  emit("save", view?.state.doc.toString() ?? props.content);
+  if (props.saving) return
+  emit('save', view?.state.doc.toString() ?? props.content)
 }
 
 function cancel() {
-  if (props.saving) return;
+  if (props.saving) return
   if (dirty.value) {
-    discardOpen.value = true;
-    return;
+    discardOpen.value = true
+    return
   }
-  emit("cancel");
+  emit('cancel')
 }
 
 function confirmDiscard() {
-  discardOpen.value = false;
-  emit("cancel");
+  discardOpen.value = false
+  emit('cancel')
 }
 
-onMounted(createEditor);
-onUnmounted(() => view?.destroy());
+onMounted(createEditor)
+onUnmounted(() => view?.destroy())
 </script>
 
 <template>
   <Teleport to="body">
-    <div
-      class="fixed inset-0 z-[150] grid place-items-center bg-black/30 p-[40px]"
-    >
+    <div class="fixed inset-0 z-[150] grid place-items-center bg-black/30 p-[40px]">
       <div
         class="flex h-full w-full max-w-[820px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
       >
@@ -140,7 +138,7 @@ onUnmounted(() => view?.destroy());
               取消
             </button>
             <button class="btn-primary text-body-sm" :disabled="saving" @click="save">
-              {{ saving ? "保存中…" : "保存" }}
+              {{ saving ? '保存中…' : '保存' }}
             </button>
           </div>
         </div>

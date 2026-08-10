@@ -2,29 +2,29 @@
 /**
  * ToolList · 列表视图（对齐原型 .list/.lrow，含收藏星）
  */
-import AppIcon from "@/features/ui/AppIcon.vue";
-import type { ToolManifest } from "@/core/registry/types";
-import { useFavoritesStore } from "@/stores/favorites";
-import { useToolsStore } from "@/stores/tools";
-import { useUiStore } from "@/stores/ui";
+import AppIcon from '@/features/ui/AppIcon.vue'
+import type { ToolManifest } from '@/core/registry/types'
+import { useFavoritesStore } from '@/stores/favorites'
+import { useToolsStore } from '@/stores/tools'
+import { useUiStore } from '@/stores/ui'
 
-const tools = useToolsStore();
-const favorites = useFavoritesStore();
-const ui = useUiStore();
+const tools = useToolsStore()
+const favorites = useFavoritesStore()
+const ui = useUiStore()
 
 const catNames: Record<string, string> = {
-  dev: "开发",
-  text: "文本",
-  image: "图片",
-  net: "网络",
-  sys: "系统",
-};
+  dev: '开发',
+  text: '文本',
+  image: '图片',
+  net: '网络',
+  sys: '系统',
+}
 
-const isFav = (id: string) => favorites.has(id);
+const isFav = (id: string) => favorites.has(id)
 
 async function toggleFav(t: ToolManifest) {
-  const nowFav = await favorites.toggle(t.id);
-  ui.toast(nowFav ? `已收藏「${t.name}」` : `已取消收藏「${t.name}」`);
+  const nowFav = await favorites.toggle(t.id)
+  ui.toast(nowFav ? `已收藏「${t.name}」` : `已取消收藏「${t.name}」`)
 }
 </script>
 
@@ -53,7 +53,7 @@ async function toggleFav(t: ToolManifest) {
         :title="isFav(t.id) ? '取消收藏' : '收藏'"
         @click.stop="toggleFav(t)"
       >
-        {{ isFav(t.id) ? "★" : "☆" }}
+        {{ isFav(t.id) ? '★' : '☆' }}
       </button>
       <span
         class="shrink-0 rounded-full bg-neutral px-[9px] py-[3px] text-caption font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"

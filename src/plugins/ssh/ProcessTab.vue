@@ -2,93 +2,93 @@
 /**
  * ProcessTab · 进程管理子页签（后端 ps 真实数据）
  */
-import { computed, ref, watch } from "vue";
-import type { ServerConnection, ServerProfile, ProcessInfo } from "./contracts";
-import { formatBytes } from "./useSsh";
-import { useUiStore } from "@/stores/ui";
-import ConfirmDialog from "@/core/ui/ConfirmDialog.vue";
-import Select from "@/features/ui/Select.vue";
-import { ipc } from "./ipc";
+import { computed, ref, watch } from 'vue'
+import type { ServerConnection, ServerProfile, ProcessInfo } from './contracts'
+import { formatBytes } from './useSsh'
+import { useUiStore } from '@/stores/ui'
+import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import Select from '@/features/ui/Select.vue'
+import { ipc } from './ipc'
 
 const props = defineProps<{
-  connection?: ServerConnection;
-  profile?: ServerProfile;
-}>();
+  connection?: ServerConnection
+  profile?: ServerProfile
+}>()
 
-const ui = useUiStore();
+const ui = useUiStore()
 
-const keyword = ref("");
-const sortBy = ref<"cpu" | "memory" | "pid">("cpu");
-const processes = ref<ProcessInfo[]>([]);
-const pendingKill = ref<{ pid: number; force: boolean } | null>(null);
+const keyword = ref('')
+const sortBy = ref<'cpu' | 'memory' | 'pid'>('cpu')
+const processes = ref<ProcessInfo[]>([])
+const pendingKill = ref<{ pid: number; force: boolean } | null>(null)
 
 const filtered = computed(() => {
-  let list = [...processes.value];
-  const kw = keyword.value.trim().toLowerCase();
+  let list = [...processes.value]
+  const kw = keyword.value.trim().toLowerCase()
   if (kw) {
     list = list.filter(
       (p) =>
         p.command.toLowerCase().includes(kw) ||
         p.user.toLowerCase().includes(kw) ||
         String(p.pid).includes(kw)
-    );
+    )
   }
   list.sort((a, b) => {
-    if (sortBy.value === "cpu") return b.cpuPercent - a.cpuPercent;
-    if (sortBy.value === "memory") return b.memoryPercent - a.memoryPercent;
-    return a.pid - b.pid;
-  });
-  return list;
-});
+    if (sortBy.value === 'cpu') return b.cpuPercent - a.cpuPercent
+    if (sortBy.value === 'memory') return b.memoryPercent - a.memoryPercent
+    return a.pid - b.pid
+  })
+  return list
+})
 
 async function refresh() {
-  const connectionId = props.connection?.sessionId;
-  if (!connectionId) return;
+  const connectionId = props.connection?.sessionId
+  if (!connectionId) return
   try {
     const result = await ipc.sshProcessList({
       connectionId,
       sortBy: sortBy.value,
       keyword: keyword.value.trim() || undefined,
-    });
-    if (props.connection?.sessionId === connectionId) processes.value = result;
+    })
+    if (props.connection?.sessionId === connectionId) processes.value = result
   } catch (e) {
-    if (props.connection?.sessionId === connectionId) ui.toast(`进程列表加载失败：${e}`);
+    if (props.connection?.sessionId === connectionId) ui.toast(`进程列表加载失败：${e}`)
   }
 }
 
 async function kill(pid: number, force = false) {
-  if (!props.connection?.sessionId) return;
+  if (!props.connection?.sessionId) return
   try {
-    const r = await ipc.sshProcessKill(props.connection.sessionId, pid, force);
+    const r = await ipc.sshProcessKill(props.connection.sessionId, pid, force)
     if (r.ok) {
-      ui.toast(`${force ? "强制结束" : "结束"}进程 ${pid} 成功`);
-      refresh();
+      ui.toast(`${force ? '强制结束' : '结束'}进程 ${pid} 成功`)
+      refresh()
     } else {
-      ui.toast(`结束进程失败：${r.error ?? "未知错误"}`);
+      ui.toast(`结束进程失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
-    ui.toast(`操作失败：${e}`);
+    ui.toast(`操作失败：${e}`)
   }
 }
 
 function requestKill(pid: number, force = false) {
-  pendingKill.value = { pid, force };
+  pendingKill.value = { pid, force }
 }
 
 function confirmKill() {
-  const pending = pendingKill.value;
-  pendingKill.value = null;
-  if (pending) void kill(pending.pid, pending.force);
+  const pending = pendingKill.value
+  pendingKill.value = null
+  if (pending) void kill(pending.pid, pending.force)
 }
 
 watch(
   () => props.connection?.sessionId,
   (sessionId) => {
-    processes.value = [];
-    if (sessionId) void refresh();
+    processes.value = []
+    if (sessionId) void refresh()
   },
   { immediate: true }
-);
+)
 </script>
 
 <template>
@@ -97,7 +97,7 @@ watch(
       class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
     >
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
-        {{ profile?.name ?? "未连接" }} · 进程管理
+        {{ profile?.name ?? '未连接' }} · 进程管理
       </span>
       <input
         v-model="keyword"
@@ -188,7 +188,7 @@ watch(
       class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
     >
       <span>共 {{ filtered.length }} 个进程</span>
-      <span class="ml-auto">{{ connection?.status === "connected" ? "就绪" : "未连接" }}</span>
+      <span class="ml-auto">{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
     </div>
     <ConfirmDialog
       :open="pendingKill !== null"
