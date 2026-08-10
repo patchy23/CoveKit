@@ -20,7 +20,6 @@
     "dialog:default",
     "global-shortcut:default",
     "autostart:default",
-    "sql:default",
     "window-state:default"
   ]
 }
