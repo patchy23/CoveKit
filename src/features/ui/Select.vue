@@ -5,7 +5,7 @@
  * - 选项 hover 用 bg-border（与列表项同款），选中项文字高亮
  * - optionClass / valueClass 允许按值定制颜色（如 HTTP 方法色标）
  */
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 
 export interface SelectOption {
   value: string
@@ -33,6 +33,10 @@ const props = withDefaults(
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
 const open = ref(false)
+/** 向上弹出（下方空间不足时翻转，避免触发页面滚动条） */
+const flipUp = ref(false)
+/** 面板最大高度（按可用空间收缩，默认 280） */
+const panelMaxH = ref(280)
 
 const currentLabel = () =>
   props.options.find((o) => o.value === props.modelValue)?.label ?? props.modelValue
@@ -41,7 +45,22 @@ const clsFor = (v: string) =>
   (props.valueClass ?? props.optionClass)?.(v) ?? 'text-primary dark:text-primary-dark'
 
 function toggle() {
-  if (!props.disabled) open.value = !open.value
+  if (props.disabled) return
+  open.value = !open.value
+  if (open.value) {
+    // 打开时测量空间：下方不足 280 且上方更多 → 向上弹出
+    nextTick(() => {
+      const rect = triggerEl.value?.getBoundingClientRect()
+      if (!rect) return
+      const below = window.innerHeight - rect.bottom
+      const above = rect.top
+      flipUp.value = below < 280 && above > below
+      panelMaxH.value = Math.max(
+        120,
+        Math.min(280, (flipUp.value ? above : below) - 8),
+      )
+    })
+  }
 }
 
 function select(v: string) {
@@ -103,10 +122,12 @@ onBeforeUnmount(() => {
       </svg>
     </button>
 
-    <!-- 下拉面板 -->
+    <!-- 下拉面板（下方空间不足时向上弹出） -->
     <div
       v-if="open"
-      class="absolute left-0 top-full z-50 mt-[4px] max-h-[280px] w-full overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+      class="absolute left-0 z-50 w-full overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+      :class="flipUp ? 'bottom-full mb-[4px]' : 'top-full mt-[4px]'"
+      :style="{ maxHeight: panelMaxH + 'px' }"
     >
       <button
         v-for="opt in options"

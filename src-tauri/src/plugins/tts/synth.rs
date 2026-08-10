@@ -1,18 +1,13 @@
-//! TTS 插件 · 文字转语音（微软 Edge TTS 免费服务）
+//! TTS 插件 · 合成能力（Edge TTS websocket 协议实现）
 //! 协议：wss://speech.platform.bing.com 的 readaloud websocket，
 //! 发 speech.config + SSML 两段 JSON，收音频二进制分片（mp3）。
-//! 鉴权：TrustedClientToken（公开常量）+ Sec-MS-GEC（时间戳 HMAC 签名）。
-//! 生成文件：app_data_dir/tts/<时间戳>.mp3，前端 convertFileSrc 播放。
+//! 鉴权：TrustedClientToken（公开常量）+ Sec-MS-GEC（Windows 文件时间签名）。
+//! 消息格式：2 字节前缀 + 头部行（CRLF 分隔，含 Path:audio 标记行）+ MP3 数据。
 
-use std::{
-    path::PathBuf,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures_util::{SinkExt, StreamExt};
-use serde_json::json;
 use sha2::Digest;
-use tauri::{AppHandle, Manager};
 
 /// Edge TTS 公开客户端令牌（微软 readaloud 服务固定常量）
 const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
@@ -42,99 +37,67 @@ fn sec_ms_gec() -> String {
 }
 
 /// 内置语音列表（中文优先 + 常用英文）
-fn builtin_voices() -> Vec<TtsVoice> {
+pub(crate) fn builtin_voices() -> Vec<super::TtsVoice> {
     vec![
         // 中文（普通话）
-        TtsVoice {
+        super::TtsVoice {
             name: "zh-CN-XiaoxiaoNeural".into(),
             label: "晓晓 · 女声（温暖）".into(),
             lang: "zh-CN".into(),
         },
-        TtsVoice {
+        super::TtsVoice {
             name: "zh-CN-YunxiNeural".into(),
             label: "云希 · 男声（阳光）".into(),
             lang: "zh-CN".into(),
         },
-        TtsVoice {
+        super::TtsVoice {
             name: "zh-CN-YunyangNeural".into(),
             label: "云扬 · 男声（新闻）".into(),
             lang: "zh-CN".into(),
         },
-        TtsVoice {
+        super::TtsVoice {
             name: "zh-CN-XiaoyiNeural".into(),
             label: "晓伊 · 女声（活泼）".into(),
             lang: "zh-CN".into(),
         },
-        TtsVoice {
+        super::TtsVoice {
             name: "zh-CN-YunjianNeural".into(),
             label: "云健 · 男声（浑厚）".into(),
             lang: "zh-CN".into(),
         },
-        TtsVoice {
+        super::TtsVoice {
             name: "zh-CN-liaoning-XiaobeiNeural".into(),
             label: "晓北 · 东北话女声".into(),
             lang: "zh-CN".into(),
         },
         // 粤语 / 台湾
-        TtsVoice {
+        super::TtsVoice {
             name: "zh-HK-HiuMaanNeural".into(),
             label: "曉曼 · 粤语女声".into(),
             lang: "zh-HK".into(),
         },
-        TtsVoice {
+        super::TtsVoice {
             name: "zh-TW-HsiaoChenNeural".into(),
             label: "曉臻 · 台湾女声".into(),
             lang: "zh-TW".into(),
         },
         // 常用英文
-        TtsVoice {
+        super::TtsVoice {
             name: "en-US-JennyNeural".into(),
             label: "Jenny · 美式女声".into(),
             lang: "en-US".into(),
         },
-        TtsVoice {
+        super::TtsVoice {
             name: "en-US-GuyNeural".into(),
             label: "Guy · 美式男声".into(),
             lang: "en-US".into(),
         },
-        TtsVoice {
+        super::TtsVoice {
             name: "en-GB-SoniaNeural".into(),
             label: "Sonia · 英式女声".into(),
             lang: "en-GB".into(),
         },
     ]
-}
-
-/// 语音项（对外契约）
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TtsVoice {
-    /// 语音标识（Edge TTS 名称，如 zh-CN-XiaoxiaoNeural）
-    pub(crate) name: String,
-    /// 展示名（中文描述）
-    pub(crate) label: String,
-    /// 语言代码
-    pub(crate) lang: String,
-}
-
-/// 合成结果（对外契约）
-#[derive(serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TtsResult {
-    /// 是否成功
-    pub(crate) ok: bool,
-    /// 生成的音频文件路径（前端 convertFileSrc 播放）
-    pub(crate) file_path: Option<String>,
-    /// 音频字节数
-    pub(crate) bytes: u64,
-    /// 错误信息（失败时）
-    pub(crate) error: Option<String>,
-}
-
-/// 语音列表
-#[tauri::command(rename_all = "camelCase")]
-pub fn tts_voices() -> Vec<TtsVoice> {
-    builtin_voices()
 }
 
 /// 合成语音（纯网络部分，可独立测试）：文本 + 语音 + 语速/音调 → mp3 字节
@@ -224,7 +187,7 @@ pub(crate) async fn synth_bytes(
         .map_err(|e| format!("连接语音服务失败: {e}"))?;
 
     // 1) speech.config（音频格式：24kHz 48kbps mp3）
-    let config_msg = json!({
+    let config_msg = serde_json::json!({
         "context": {
             "synthesis": {
                 "audio": { "metadataoptions": { "sentenceBoundaryEnabled": "false", "wordBoundaryEnabled": "false" }, "outputFormat": "audio-24khz-48kbitrate-mono-mp3" }
@@ -256,7 +219,7 @@ pub(crate) async fn synth_bytes(
     .await
     .map_err(|e| format!("发送文本失败: {e}"))?;
 
-    // 3) 收音频分片，直到 TurnEnd（消息格式：头部 + 空行 + 数据）
+    // 3) 收音频分片，直到 TurnEnd（消息 = 2 字节前缀 + 头部行 + MP3 数据）
     let mut audio: Vec<u8> = Vec::new();
     loop {
         let Some(msg) = ws.next().await else {
@@ -265,14 +228,13 @@ pub(crate) async fn synth_bytes(
         let msg = msg.map_err(|e| format!("接收音频失败: {e}"))?;
         match msg {
             tokio_tungstenite::tungstenite::Message::Binary(data) => {
-                // 消息 = 2 字节前缀 + 头部行（CRLF 分隔，含 Path:audio 标记行）+ MP3 数据
-
+                // 头部行以 Path:audio 标记行为结尾，其后为 MP3 数据（[13,10] = CRLF）
                 if let Some(p) = data.windows(10).position(|w| w == b"Path:audio") {
                     let mut s = p + 10;
-                    if data.get(s).copied() == Some(13) {
+                    if data.get(s) == Some(&13) {
                         s += 1;
                     }
-                    if data.get(s).copied() == Some(10) {
+                    if data.get(s) == Some(&10) {
                         s += 1;
                     }
                     audio.extend_from_slice(&data[s..]);
@@ -292,40 +254,6 @@ pub(crate) async fn synth_bytes(
     }
 
     Ok(audio)
-}
-
-/// 合成语音：文本 + 语音 + 语速/音调 → mp3 文件
-#[tauri::command(rename_all = "camelCase")]
-pub async fn tts_synthesize(
-    app: AppHandle,
-    text: String,
-    voice: String,
-    rate: Option<i32>,
-    pitch: Option<i32>,
-) -> Result<TtsResult, String> {
-    let audio = synth_bytes(&text, &voice, rate, pitch).await?;
-
-    // 落盘 app_data_dir/tts/<ts>.mp3
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("数据目录获取失败: {e}"))?
-        .join("tts");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建 tts 目录失败: {e}"))?;
-    let ts = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let path: PathBuf = dir.join(format!("{ts}.mp3"));
-    std::fs::write(&path, &audio).map_err(|e| format!("写入音频失败: {e}"))?;
-
-    let bytes = audio.len() as u64;
-    Ok(TtsResult {
-        ok: true,
-        file_path: Some(path.to_string_lossy().to_string()),
-        bytes,
-        error: None,
-    })
 }
 
 /// 当前时间（RFC 3339 格式，用于 X-Timestamp 头）
@@ -367,26 +295,6 @@ fn xml_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&apos;")
-}
-
-/// 分派 TTS 插件命令
-pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
-    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
-        tauri::generate_handler![tts_voices, tts_synthesize,];
-    handler(invoke)
-}
-
-/// 插件注册：命令入库（无 State，纯函数式）
-pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(&[
-        ("tts_voices", "获取文字转语音可选语音列表"),
-        (
-            "tts_synthesize",
-            "合成语音（文本 + 语音 + 语速/音调 → mp3）",
-        ),
-    ])
-    .expect("IPC 命令重复注册");
-    builder
 }
 
 #[cfg(test)]
