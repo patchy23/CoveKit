@@ -32,7 +32,7 @@ function stateClass(status: string): string {
           <th class="w-[110px] px-[8px] py-[8px] font-medium">镜像</th>
           <th class="w-[70px] whitespace-nowrap px-[8px] py-[8px] font-medium">状态</th>
           <th class="w-[96px] whitespace-nowrap px-[8px] py-[8px] font-medium">运行时间</th>
-          <th class="hidden w-[110px] px-[8px] py-[8px] font-medium 2xl:table-cell">端口</th>
+          <th class="w-[110px] px-[8px] py-[8px] font-medium">端口</th>
           <th class="w-[210px] whitespace-nowrap px-[8px] py-[8px] font-medium">操作</th>
         </tr>
       </thead>
@@ -69,10 +69,7 @@ function stateClass(status: string): string {
           >
             {{ container.uptime }}
           </td>
-          <td
-            class="hidden truncate px-[8px] py-[8px] font-mono text-body-sm 2xl:table-cell"
-            :title="container.ports"
-          >
+          <td class="truncate px-[8px] py-[8px] font-mono text-body-sm" :title="container.ports">
             {{ container.ports }}
           </td>
           <td class="whitespace-nowrap px-[8px] py-[8px]">
