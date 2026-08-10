@@ -247,7 +247,7 @@ pub(crate) async fn synth_bytes(
         voice,
         pitch_str,
         rate_str,
-        xml_escape(&text)
+        xml_escape(text)
     );
     ws.send(tokio_tungstenite::tungstenite::Message::Text(format!(
         "X-RequestId:{}\r\nContent-Type:application/ssml+xml\r\nPath:ssml\r\n\r\n{}",
