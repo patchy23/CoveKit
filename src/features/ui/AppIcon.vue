@@ -60,6 +60,7 @@ const inner: Record<string, string> = {
     '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9h17M8 9v10.5M16 9v10.5"/>',
   dns: '<circle cx="12" cy="12" r="7.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="2.2"/>',
   xml: '<path d="M8 6l-4 6 4 6M16 6l4 6-4 6M13.5 4l-3 16"/>',
+  tts: '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
 }
 </script>
 

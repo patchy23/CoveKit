@@ -8,6 +8,7 @@ pub mod dns;
 pub mod hosts;
 pub mod http_ws;
 pub mod ssh;
+pub mod tts;
 
 /// 判断命令是否属于业务插件，供唯一的应用级 invoke_handler 路由。
 pub(crate) fn is_command(command: &str) -> bool {
@@ -18,6 +19,7 @@ pub(crate) fn is_command(command: &str) -> bool {
         || command.starts_with("hosts_")
         || command.starts_with("dns_")
         || command.starts_with("ssh_")
+        || command.starts_with("tts_")
 }
 
 /// 按插件命令前缀分派到插件私有 handler，避免 Builder::invoke_handler 互相覆盖。
@@ -31,6 +33,7 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         command if command.starts_with("hosts_") => hosts::invoke_handler(invoke),
         command if command.starts_with("dns_") => dns::invoke_handler(invoke),
         command if command.starts_with("ssh_") => ssh::invoke_handler(invoke),
+        command if command.starts_with("tts_") => tts::invoke_handler(invoke),
         _ => false,
     }
 }
