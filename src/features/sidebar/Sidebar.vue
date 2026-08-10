@@ -25,6 +25,12 @@ const navItems = [
 function toggleTheme() {
   settings.set('theme', settings.settings.theme === 'dark' ? 'light' : 'dark')
 }
+/** 分类导航：切换分类并回到工具库首页 */
+function selectCategory(item: { id: string }) {
+  ui.activeCategory = item.id
+  ui.searchQuery = ''
+  ui.goHome()
+}
 </script>
 
 <template>
@@ -64,11 +70,7 @@ function toggleTheme() {
             ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
             : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
         "
-        @click="
-          ui.activeCategory = item.id
-          ui.searchQuery = ''
-          ui.goHome()
-        "
+        @click="selectCategory(item)"
       >
         <AppIcon :name="item.icon" :size="17" class="shrink-0" />
         <span class="flex-1 text-left">{{ item.label }}</span>

@@ -36,6 +36,12 @@ function close() {
   emit('close')
 }
 
+/** 菜单项点击：执行回调后关闭菜单（单语句调用，避免模板多语句表达式） */
+function handleClick(item: ContextMenuItem) {
+  item.onClick?.()
+  close()
+}
+
 onMounted(() => document.addEventListener('mousedown', close))
 onUnmounted(() => document.removeEventListener('mousedown', close))
 </script>
@@ -63,10 +69,7 @@ onUnmounted(() => document.removeEventListener('mousedown', close))
                 ? 'text-danger-strong hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark'
                 : 'text-primary hover:bg-border dark:text-primary-dark dark:hover:bg-border-dark'
           "
-          @click="
-            item.onClick?.()
-            close()
-          "
+          @click="handleClick(item)"
         >
           {{ item.label }}
         </button>

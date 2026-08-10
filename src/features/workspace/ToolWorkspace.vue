@@ -36,6 +36,12 @@ function tabIcon(id: string) {
   return getTool(id)?.icon ?? 'all'
 }
 
+/** 从溢出下拉打开页签：打开后收起下拉 */
+function openHiddenTool(id: string) {
+  ui.openTool(id)
+  overflowOpen.value = false
+}
+
 /* ── 页签溢出收纳：按页签条宽度估算可见页签数，其余进「···」下拉 ── */
 // 估算值取页签上限宽（图标15 + 间距 + 文字120 + 关闭18 + padding ≈ 190px），
 // 并为「首页」与「···」按钮预留固定空间，避免溢出时省略号不出现。
@@ -153,10 +159,7 @@ onUnmounted(() => {
                 ? 'bg-tertiary-soft font-medium text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
                 : 'text-secondary dark:text-secondary-dark'
             "
-            @click="
-              ui.openTool(id)
-              overflowOpen = false
-            "
+            @click="openHiddenTool(id)"
           >
             <AppIcon
               :name="tabIcon(id)"
