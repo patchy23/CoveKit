@@ -105,5 +105,6 @@ M3 按 docs/02-architecture.md §10 推进：
 ## 约定
 
 - 文档与注释中文；代码标识符英文；提交信息用 conventional commits 带模块作用域（如 `fix(http-ws): 保存对话框`；跨模块逗号分隔；框架/基建用 `core`）
+- 提交要求（所有项目通用）：Conventional Commits `类型(scope): 中文描述`；标题一行总概括，body 按代码增删改分条、内容具体（禁"xx产品化"式模糊概括），不写文件级细节/架构性质；类型按实质（搬移 refactor/隐患 fix/新机制 feat/测试 test）、scope 按真实改动模块；禁破折号与评审编号。署名：每会话首次提交前与用户明确（用户名+邮箱），无本地 git 配置则添加 local，会话内统一。提交时机：默认自动提交（除非明确说不提交）；复杂模块开发前先提交基线；任务尽量一次提交、大任务按阶段；只 commit 不 push
 - 所有命令在 git-bash 执行；Windows 环境
 - 改 DESIGN.md 后跑 `npx -y -p @google/design.md designmd lint DESIGN.md` 校验
