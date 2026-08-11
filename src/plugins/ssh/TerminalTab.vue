@@ -39,6 +39,23 @@ let terminalGeneration = 0
 let handledConnectRequest = 0
 let disposed = false
 
+/** fit 终端并兜底：fit 的行高度量与渲染行高（line-height: normal）存在亚像素偏差，
+ *  行数偏大时最后一行会被容器裁掉半截（最大化时最明显），溢出则减一行。 */
+function fitTerminal() {
+  if (!term || !fitAddon) return
+  fitAddon.fit()
+  const hostEl = termHost.value
+  const screenEl = term.element?.querySelector('.xterm-screen')
+  if (hostEl && screenEl) {
+    const cs = getComputedStyle(hostEl)
+    const availH =
+      hostEl.clientHeight - parseInt(cs.paddingTop || '0') - parseInt(cs.paddingBottom || '0')
+    if (screenEl.scrollHeight > availH + 1) {
+      term.resize(term.cols, Math.max(1, term.rows - 1))
+    }
+  }
+}
+
 /** 打开终端通道（连接建立/重连时调用） */
 async function openTerminal() {
   const connectionId = props.connection?.sessionId
@@ -165,7 +182,7 @@ onMounted(async () => {
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(termHost.value)
-  fitAddon.fit()
+  fitTerminal()
 
   // 用户输入 → 后端
   term.onData((data) => {
@@ -192,7 +209,7 @@ onMounted(async () => {
   // 窗口尺寸同步（xterm → SSH PTY）
   resizeObserver = new ResizeObserver(() => {
     if (!term || !fitAddon || !terminalId) return
-    fitAddon.fit()
+    fitTerminal()
     const { cols, rows } = term
     if (cols > 0 && rows > 0) {
       ipc.sshTerminalResize(terminalId, cols, rows).catch((e) => {
