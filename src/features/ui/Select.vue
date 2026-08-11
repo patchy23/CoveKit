@@ -55,10 +55,7 @@ function toggle() {
       const below = window.innerHeight - rect.bottom
       const above = rect.top
       flipUp.value = below < 280 && above > below
-      panelMaxH.value = Math.max(
-        120,
-        Math.min(280, (flipUp.value ? above : below) - 8),
-      )
+      panelMaxH.value = Math.max(120, Math.min(280, (flipUp.value ? above : below) - 8))
     })
   }
 }

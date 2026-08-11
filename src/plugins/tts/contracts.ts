@@ -6,33 +6,33 @@
 /** 语音项 */
 export interface TtsVoice {
   /** 语音标识（Edge TTS 名称，如 zh-CN-XiaoxiaoNeural） */
-  name: string;
+  name: string
   /** 展示名（中文描述） */
-  label: string;
+  label: string
   /** 语言代码 */
-  lang: string;
+  lang: string
 }
 
 /** 合成结果 */
 export interface TtsResult {
   /** 是否成功 */
-  ok: boolean;
+  ok: boolean
   /** 生成的音频文件路径（convertFileSrc 后播放） */
-  filePath?: string;
+  filePath?: string
   /** 音频字节数 */
-  bytes: number;
+  bytes: number
   /** 错误信息（失败时） */
-  error?: string;
+  error?: string
 }
 
 /** 命令入参 */
 export type Payloads = {
-  tts_voices: Record<string, never>;
-  tts_synthesize: { text: string; voice: string; rate?: number; pitch?: number };
-};
+  tts_voices: Record<string, never>
+  tts_synthesize: { text: string; voice: string; rate?: number; pitch?: number }
+}
 
 /** 命令返回 */
 export type Results = {
-  tts_voices: TtsVoice[];
-  tts_synthesize: TtsResult;
-};
+  tts_voices: TtsVoice[]
+  tts_synthesize: TtsResult
+}

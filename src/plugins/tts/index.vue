@@ -4,85 +4,85 @@
  * 文本输入 → 选语音（中文优先）→ 语速/音调调节 → 合成 mp3 → 播放/下载。
  * 后端走微软 Edge TTS 免费服务（无需 API key）。
  */
-import { computed, onMounted, ref } from "vue";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { useUiStore } from "@/stores/ui";
-import Select from "@/features/ui/Select.vue";
-import { ipc } from "./ipc";
-import type { TtsVoice } from "./contracts";
+import { computed, onMounted, ref } from 'vue'
+import { convertFileSrc } from '@tauri-apps/api/core'
+import { useUiStore } from '@/stores/ui'
+import Select from '@/features/ui/Select.vue'
+import { ipc } from './ipc'
+import type { TtsVoice } from './contracts'
 
-const ui = useUiStore();
+const ui = useUiStore()
 
 /** 输入文本 */
-const text = ref("你好，欢迎使用 patchyBox 文字转语音工具。这是一段中文语音测试。");
+const text = ref('你好，欢迎使用 patchyBox 文字转语音工具。这是一段中文语音测试。')
 /** 语音列表与选中项 */
-const voices = ref<TtsVoice[]>([]);
-const voiceName = ref("zh-CN-XiaoxiaoNeural");
+const voices = ref<TtsVoice[]>([])
+const voiceName = ref('zh-CN-XiaoxiaoNeural')
 /** 语速（-50 ~ +50%）与音调（-50 ~ +50Hz） */
-const rate = ref(0);
-const pitch = ref(0);
+const rate = ref(0)
+const pitch = ref(0)
 
 /** 合成状态与结果 */
-const generating = ref(false);
-const audioUrl = ref<string>("");
-const audioFile = ref("");
-const lastBytes = ref(0);
+const generating = ref(false)
+const audioUrl = ref<string>('')
+const audioFile = ref('')
+const lastBytes = ref(0)
 
 /** 按语言分组：中文组在前 */
 const voiceOptions = computed(() => {
-  const zh = voices.value.filter((v) => v.lang.startsWith("zh"));
-  const other = voices.value.filter((v) => !v.lang.startsWith("zh"));
+  const zh = voices.value.filter((v) => v.lang.startsWith('zh'))
+  const other = voices.value.filter((v) => !v.lang.startsWith('zh'))
   return [
     ...zh.map((v) => ({ value: v.name, label: v.label })),
     ...other.map((v) => ({ value: v.name, label: v.label })),
-  ];
-});
+  ]
+})
 
 async function generate() {
   if (!text.value.trim()) {
-    ui.toast("请输入要合成的文字");
-    return;
+    ui.toast('请输入要合成的文字')
+    return
   }
   if (text.value.length > 2000) {
-    ui.toast("文本过长（最多 2000 字）");
-    return;
+    ui.toast('文本过长（最多 2000 字）')
+    return
   }
-  generating.value = true;
+  generating.value = true
   try {
     const r = await ipc.ttsSynthesize({
       text: text.value,
       voice: voiceName.value,
       rate: rate.value,
       pitch: pitch.value,
-    });
+    })
     if (r.ok && r.filePath) {
-      audioFile.value = r.filePath;
-      audioUrl.value = convertFileSrc(r.filePath);
-      lastBytes.value = r.bytes;
-      ui.toast(`合成成功（${(r.bytes / 1024).toFixed(1)} KB）`);
+      audioFile.value = r.filePath
+      audioUrl.value = convertFileSrc(r.filePath)
+      lastBytes.value = r.bytes
+      ui.toast(`合成成功（${(r.bytes / 1024).toFixed(1)} KB）`)
     } else {
-      ui.toast(`合成失败：${r.error ?? "未知错误"}`);
+      ui.toast(`合成失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
-    ui.toast(`合成失败：${e}`);
+    ui.toast(`合成失败：${e}`)
   } finally {
-    generating.value = false;
+    generating.value = false
   }
 }
 
 function reset() {
-  text.value = "";
-  audioUrl.value = "";
-  audioFile.value = "";
+  text.value = ''
+  audioUrl.value = ''
+  audioFile.value = ''
 }
 
 onMounted(async () => {
   try {
-    voices.value = await ipc.ttsVoices();
+    voices.value = await ipc.ttsVoices()
   } catch (e) {
-    ui.toast(`语音列表加载失败：${e}`);
+    ui.toast(`语音列表加载失败：${e}`)
   }
-});
+})
 </script>
 
 <template>
@@ -112,17 +112,19 @@ onMounted(async () => {
         </div>
         <div class="grid grid-cols-2 gap-[14px]">
           <div>
-            <label class="field-label mb-[4px]">语速（{{ rate > 0 ? "+" : "" }}{{ rate }}%）</label>
+            <label class="field-label mb-[4px]">语速（{{ rate > 0 ? '+' : '' }}{{ rate }}%）</label>
             <input v-model.number="rate" type="range" min="-50" max="50" step="5" class="w-full" />
           </div>
           <div>
-            <label class="field-label mb-[4px]">音调（{{ pitch > 0 ? "+" : "" }}{{ pitch }}Hz）</label>
+            <label class="field-label mb-[4px]"
+              >音调（{{ pitch > 0 ? '+' : '' }}{{ pitch }}Hz）</label
+            >
             <input v-model.number="pitch" type="range" min="-50" max="50" step="5" class="w-full" />
           </div>
         </div>
         <div class="flex gap-[10px]">
           <button class="btn-primary flex-1" :disabled="generating" @click="generate">
-            {{ generating ? "合成中…" : "合成语音" }}
+            {{ generating ? '合成中…' : '合成语音' }}
           </button>
           <button class="btn-ghost" @click="reset">清空</button>
         </div>
@@ -137,11 +139,7 @@ onMounted(async () => {
           <p class="text-caption text-text-muted dark:text-text-muted-dark">
             已生成 {{ (lastBytes / 1024).toFixed(1) }} KB
           </p>
-          <a
-            :href="audioUrl"
-            class="btn-secondary"
-            :download="`tts-${Date.now()}.mp3`"
-          >
+          <a :href="audioUrl" class="btn-secondary" :download="`tts-${Date.now()}.mp3`">
             下载 MP3
           </a>
         </template>
