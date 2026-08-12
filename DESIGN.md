@@ -167,7 +167,7 @@ ToolKit 是一个面向大众用户的桌面工具箱：明净、亲和、低学
 
 ## Typography
 
-Inter 全站统一（回退 PingFang SC / Microsoft YaHei 处理中文）。层级靠字重与字号，不换字体族。卡片标题 14.5px/700 与正文 12px 形成明确的主次；`label-caps` 用于侧栏分类小标与页面小标题，强调间距不强调字号。
+Inter 全站统一（回退 PingFang SC / Microsoft YaHei 处理中文）。层级靠字重与字号，不换字体族。卡片标题 14.5px/700 与正文 12px 形成明确的主次；`label-caps` 用于侧栏分类小标与页面小标题，强调间距不强调字号。技术字段的拉丁字符使用 Cascadia Code / Consolas；等宽区域中的中文必须在 generic monospace 之前显式回退 PingFang SC / Microsoft YaHei，禁止出现宋体类字形。
 
 ## Layout
 

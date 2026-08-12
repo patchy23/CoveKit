@@ -72,6 +72,12 @@ function previewLoading() {
       >
         快速搜索 <UiKbd>Ctrl</UiKbd><span>+</span><UiKbd>K</UiKbd>
       </div>
+      <div class="mt-md rounded-md bg-surface-muted p-sm text-body-sm dark:bg-surface-muted-dark">
+        <span class="text-text-muted dark:text-text-muted-dark">等宽中英混排：</span>
+        <span class="font-mono text-danger-strong dark:text-danger-dark">
+          api-server-01 · 连接失败
+        </span>
+      </div>
     </UiPanel>
   </div>
 

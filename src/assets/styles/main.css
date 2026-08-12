@@ -94,7 +94,7 @@
   /* ── Typography（DESIGN.md typography：Inter 优先，中文回退）──
    * 西文/数字：本地 Inter Variable；缺失时 Segoe UI Variable（Win11）/ Segoe UI
    * 中文：PingFang SC（macOS）/ 微软雅黑 UI（Win10+，较旧版雅黑渲染更清晰）
-   * 等宽：Cascadia Code（Win11 终端默认）/ Consolas（Win10 通用）
+   * 等宽：拉丁字符走 Cascadia Code / Consolas；中文必须显式回退无衬线雅黑/PingFang，禁止落到宋体
    *
    * ── 字号规范（单一事实源）──
    * 新增字号先在此加 token，组件一律用语义类（text-h1 / text-body / …），
@@ -102,7 +102,9 @@
   --font-sans:
     'Inter', 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI',
     'Microsoft YaHei', sans-serif;
-  --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, monospace;
+  --font-mono:
+    'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'PingFang SC',
+    'Microsoft YaHei UI', 'Microsoft YaHei', monospace;
 
   /* 页面主标题（顶栏） */
   --text-h1: 17px;
@@ -138,6 +140,14 @@
     /* 字号基准 14px：桌面 UI 密度友好（组件层用 DESIGN.md 语义字号覆盖） */
     font-size: 14px;
     line-height: 1.5;
+  }
+
+  /* WebView 原生控件不得使用系统默认字体；统一继承应用无衬线字体栈。 */
+  button,
+  input,
+  textarea,
+  select {
+    font-family: inherit;
   }
 
   ::selection {
