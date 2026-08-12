@@ -56,7 +56,7 @@ function previewLoading() {
         <UiBadge tone="accent">v1</UiBadge>
       </div>
       <p class="mt-xs text-body-sm text-secondary dark:text-secondary-dark">
-        用于统一验收亮色/深色、交互状态、尺寸和常见业务组合；这里不承载真实业务。
+        临时用于验收亮色/深色、交互状态、尺寸和常见业务组合；这里不承载真实业务。
       </p>
     </header>
 

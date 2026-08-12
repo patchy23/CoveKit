@@ -223,7 +223,7 @@
     @apply !border-danger-strong focus:!border-danger-strong dark:!border-danger-dark;
   }
   .ui-badge {
-    @apply inline-flex items-center rounded-full px-[8px] py-[2px] text-caption font-semibold;
+    @apply inline-flex items-center rounded-full px-[8px] py-[2px] text-body-sm font-medium leading-normal;
   }
   .ui-badge-neutral {
     @apply bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark;
