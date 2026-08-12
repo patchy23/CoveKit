@@ -5,13 +5,31 @@
  * 修改视觉规范先改 DESIGN.md，再同步此处；勿在此引入规范外色值。
  * ============================================================ */
 
-/* ── 字体：Inter Variable（本地打包，西文/数字）+ 系统回退 ── */
+/*
+ * 普通文本组合字体：拉丁字符固定使用本地 Inter，CJK 固定使用系统无衬线字体。
+ * 必须在同一个 family 内通过 unicode-range 分流，避免 Windows FontLink 把中文链接到宋体。
+ */
 @font-face {
-  font-family: 'Inter';
+  font-family: 'patchyBox Sans';
   src: url('../fonts/InterVariable.woff2') format('woff2');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
+  unicode-range:
+    U+0000-024F, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-21FF, U+2200-22FF;
+}
+
+@font-face {
+  font-family: 'patchyBox Sans';
+  src:
+    local('PingFang SC'), local('Microsoft YaHei UI'), local('Microsoft YaHei'),
+    local('Noto Sans CJK SC'), local('Noto Sans SC');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+2E80-2EFF, U+2F00-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF;
 }
 
 /*
@@ -118,17 +136,15 @@
   --radius-xl: 16px;
   --radius-full: 9999px;
 
-  /* ── Typography（DESIGN.md typography：Inter 优先，中文回退）──
-   * 西文/数字：本地 Inter Variable；缺失时 Segoe UI Variable（Win11）/ Segoe UI
-   * 中文：PingFang SC（macOS）/ 微软雅黑 UI（Win10+，较旧版雅黑渲染更清晰）
+  /* ── Typography（DESIGN.md typography：组合字体按字符集分流）──
+   * 西文/数字：patchyBox Sans 内的本地 Inter Variable
+   * 中文：patchyBox Sans 内的 PingFang SC / 微软雅黑 UI / Noto Sans CJK SC，禁止 Windows FontLink
    * 等宽：拉丁字符走 Cascadia Code / Consolas；中文必须显式回退无衬线雅黑/PingFang，禁止落到宋体
    *
    * ── 字号规范（单一事实源）──
    * 新增字号先在此加 token，组件一律用语义类（text-h1 / text-body / …），
    * 禁止散落 arbitrary 值（text-[13px]）。字重用 font-*，字距用 tracking-*。 */
-  --font-sans:
-    'Inter', 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI',
-    'Microsoft YaHei', sans-serif;
+  --font-sans: 'patchyBox Sans', sans-serif;
   --font-mono: 'patchyBox Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', monospace;
 
   /* 页面主标题（顶栏） */

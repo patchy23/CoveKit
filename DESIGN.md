@@ -33,30 +33,30 @@ colors:
   success-soft-dark: "#0F2E22"
 typography:
   h1:
-    fontFamily: Inter
+    fontFamily: "patchyBox Sans"
     fontSize: 17px
     fontWeight: 700
     letterSpacing: "-0.02em"
   h2:
-    fontFamily: Inter
+    fontFamily: "patchyBox Sans"
     fontSize: 14px
     fontWeight: 700
     letterSpacing: "-0.01em"
   card-title:
-    fontFamily: Inter
+    fontFamily: "patchyBox Sans"
     fontSize: 14.5px
     fontWeight: 700
     letterSpacing: "-0.01em"
   body-md:
-    fontFamily: Inter
+    fontFamily: "patchyBox Sans"
     fontSize: 13px
     lineHeight: 1.5
   body-sm:
-    fontFamily: Inter
+    fontFamily: "patchyBox Sans"
     fontSize: 12px
     lineHeight: 1.55
   label-caps:
-    fontFamily: Inter
+    fontFamily: "patchyBox Sans"
     fontSize: 10.5px
     fontWeight: 600
     letterSpacing: "0.1em"
@@ -167,7 +167,7 @@ ToolKit 是一个面向大众用户的桌面工具箱：明净、亲和、低学
 
 ## Typography
 
-Inter 全站统一（回退 PingFang SC / Microsoft YaHei 处理中文）。层级靠字重与字号，不换字体族。卡片标题 14.5px/700 与正文 12px 形成明确的主次；`label-caps` 用于侧栏分类小标与页面小标题，强调间距不强调字号。技术字段使用 `patchyBox Mono` 组合字体：拉丁字符通过 unicode-range 使用 Cascadia Code / Consolas，CJK 字符通过独立 unicode-range 使用 PingFang SC / Microsoft YaHei；禁止依赖 Windows FontLink 或 generic monospace 渲染中文，任何位置都不得出现宋体类字形。
+`patchyBox Sans` 全站统一：拉丁字符通过 unicode-range 使用本地 Inter Variable，CJK 字符通过独立 unicode-range 使用 PingFang SC / Microsoft YaHei UI / Noto Sans CJK SC；禁止依赖 Windows FontLink 渲染中文。层级靠字重与字号，不换字体族。卡片标题 14.5px/700 与正文 12px 形成明确的主次；`label-caps` 用于侧栏分类小标与页面小标题，强调间距不强调字号。技术字段使用 `patchyBox Mono` 组合字体：拉丁字符通过 unicode-range 使用 Cascadia Code / Consolas，CJK 字符通过独立 unicode-range 使用 PingFang SC / Microsoft YaHei；禁止依赖 Windows FontLink 或 generic monospace 渲染中文，任何位置都不得出现宋体类字形。
 
 ## Layout
 
