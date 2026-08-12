@@ -172,6 +172,8 @@
    * 禁止散落 arbitrary 值（text-[13px]）。字重用 font-*，字距用 tracking-*。 */
   --font-sans: 'patchyBox Sans', sans-serif;
   --font-mono: 'patchyBox Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', monospace;
+  /* 数据表正文专用：字形与技术区一致，但和终端/代码的语义 token 解耦。 */
+  --font-data: 'patchyBox Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', monospace;
 
   /* 页面主标题（顶栏） */
   --text-h1: 17px;

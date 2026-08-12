@@ -78,18 +78,24 @@ describe('公共 UI 组件', () => {
   })
 
   it.each([
-    ['text', 'font-sans'],
-    ['technical', 'font-sans'],
-    ['numeric', 'font-sans'],
-    ['status', 'font-sans'],
+    ['text', 'font-data'],
+    ['technical', 'font-data'],
+    ['numeric', 'font-data'],
+    ['status', 'font-data'],
     ['action', 'font-sans'],
-    ['code', 'font-sans'],
+    ['code', 'font-data'],
   ] as const)('表格 %s 内容使用约定字体', (content, expectedClass) => {
     const cell = mount(UiTableCell, { props: { content }, slots: { default: '中文 Latin 123' } })
     expect(cell.attributes('data-content-kind')).toBe(content)
     expect(cell.classes()).toContain(expectedClass)
     expect(cell.classes()).not.toContain('font-mono')
     if (content === 'numeric') expect(cell.classes()).toContain('tabular-nums')
+  })
+
+  it('表头使用应用字体而不是数据字体', () => {
+    const header = mount(UiTableCell, { props: { as: 'th' }, slots: { default: '服务名' } })
+    expect(header.classes()).toContain('font-sans')
+    expect(header.classes()).not.toContain('font-data')
   })
 
   it('业务表格不能绕过统一单元格字体契约', () => {
