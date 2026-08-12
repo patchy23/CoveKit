@@ -3,7 +3,7 @@ withDefaults(
   defineProps<{
     title?: string
     description?: string
-    padding?: 'none' | 'sm' | 'md'
+    padding?: 'none' | 'xs' | 'sm' | 'md' | 'lg'
     muted?: boolean
   }>(),
   { title: '', description: '', padding: 'md', muted: false }
@@ -15,7 +15,15 @@ withDefaults(
     class="rounded-lg border border-border dark:border-border-dark"
     :class="[
       muted ? 'bg-surface-muted dark:bg-surface-muted-dark' : 'bg-surface dark:bg-surface-dark',
-      padding === 'none' ? '' : padding === 'sm' ? 'p-[12px]' : 'p-[16px]',
+      padding === 'none'
+        ? ''
+        : padding === 'xs'
+          ? 'p-sm'
+          : padding === 'sm'
+            ? 'p-[12px]'
+            : padding === 'lg'
+              ? 'p-lg'
+              : 'p-[16px]',
     ]"
   >
     <header

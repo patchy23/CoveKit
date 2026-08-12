@@ -187,15 +187,33 @@
 
   /* 幽灵按钮：无边框文字按钮（复制 / 清空 / 链接动作） */
   .btn-ghost {
-    @apply inline-flex min-h-[30px] items-center justify-center gap-[6px] rounded-md px-[10px] py-[3px] text-body-sm font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark;
+    @apply rounded-md px-[10px] py-[3px] text-body-sm font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark;
   }
 
   .btn-danger {
     @apply inline-flex h-[36px] items-center justify-center gap-[7px] rounded-md bg-danger-strong px-[14px] text-body font-medium text-white transition-[filter] duration-150 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-danger-dark dark:text-on-tertiary-dark;
   }
 
-  .ui-button-sm {
-    @apply !h-[30px] !px-[10px] text-body-sm;
+  .ui-button {
+    @apply inline-flex items-center justify-center gap-[7px] whitespace-nowrap !py-0;
+  }
+  .ui-control-xs {
+    @apply !h-[24px] !px-[7px] text-caption;
+  }
+  .ui-control-sm {
+    @apply !h-[28px] !px-[9px] text-body-sm;
+  }
+  .ui-control-md {
+    @apply !h-[36px] !px-[10px] text-body;
+  }
+  .ui-button.ui-control-md {
+    @apply !px-[14px];
+  }
+  .ui-control-lg {
+    @apply !h-[42px] !px-[12px] text-body;
+  }
+  .ui-button.ui-control-lg {
+    @apply !px-[16px];
   }
   .ui-spinner {
     @apply h-[13px] w-[13px] animate-spin rounded-full border-2 border-current border-r-transparent;
@@ -218,12 +236,36 @@
   .field-textarea {
     @apply w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[9px] text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark;
   }
+  .ui-textarea-xs {
+    @apply p-[6px] text-caption;
+  }
+  .ui-textarea-sm {
+    @apply p-[8px] text-body-sm;
+  }
+  .ui-textarea-md {
+    @apply p-[9px] text-body;
+  }
+  .ui-textarea-lg {
+    @apply p-[12px] text-body;
+  }
 
   .ui-field-invalid {
     @apply !border-danger-strong focus:!border-danger-strong dark:!border-danger-dark;
   }
   .ui-badge {
-    @apply inline-flex items-center rounded-full px-[8px] py-[2px] text-body-sm font-medium leading-normal;
+    @apply inline-flex items-center rounded-full font-medium leading-normal;
+  }
+  .ui-badge-xs {
+    @apply px-[6px] py-[1px] text-caption;
+  }
+  .ui-badge-sm {
+    @apply px-[8px] py-[2px] text-body-sm;
+  }
+  .ui-badge-md {
+    @apply px-[10px] py-[3px] text-body;
+  }
+  .ui-badge-lg {
+    @apply px-[12px] py-xs text-body;
   }
   .ui-badge-neutral {
     @apply bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark;
@@ -247,7 +289,19 @@
     @apply bg-purple-soft text-purple-strong dark:bg-purple-soft-dark dark:text-purple-dark;
   }
   .ui-alert {
-    @apply rounded-md border px-[12px] py-[9px] text-body;
+    @apply rounded-md border;
+  }
+  .ui-alert-xs {
+    @apply px-sm py-xs text-caption;
+  }
+  .ui-alert-sm {
+    @apply px-[10px] py-[7px] text-body-sm;
+  }
+  .ui-alert-md {
+    @apply px-[12px] py-[9px] text-body-sm;
+  }
+  .ui-alert-lg {
+    @apply px-[14px] py-[12px] text-body;
   }
   .ui-alert-info {
     @apply border-info/30 bg-info-soft text-info-strong dark:border-info-dark/30 dark:bg-info-soft-dark dark:text-info-dark;
@@ -271,7 +325,19 @@
     @apply gap-[2px] border-b border-border px-sm dark:border-border-dark;
   }
   .ui-tab {
-    @apply relative inline-flex items-center gap-[6px] px-[14px] py-[7px] text-body font-medium text-secondary transition-colors disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-dark;
+    @apply relative inline-flex items-center gap-[6px] font-medium text-secondary transition-colors disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-dark;
+  }
+  .ui-tab-xs {
+    @apply px-[8px] py-xs text-caption;
+  }
+  .ui-tab-sm {
+    @apply px-[10px] py-[5px] text-body-sm;
+  }
+  .ui-tab-md {
+    @apply px-[14px] py-[7px] text-body;
+  }
+  .ui-tab-lg {
+    @apply px-[16px] py-[10px] text-body;
   }
   .ui-tabs-pill .ui-tab {
     @apply rounded-md bg-neutral hover:text-primary dark:bg-neutral-dark dark:hover:text-primary-dark;
@@ -280,7 +346,7 @@
     @apply bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark;
   }
   .ui-tabs-line .ui-tab {
-    @apply rounded-t-md py-sm hover:text-primary dark:hover:text-primary-dark;
+    @apply rounded-t-md hover:text-primary dark:hover:text-primary-dark;
   }
   .ui-tabs-line .ui-tab-active {
     @apply text-tertiary-strong after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-tertiary-strong dark:text-tertiary-dark dark:after:bg-tertiary-dark;

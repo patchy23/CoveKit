@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { UiSize } from './types'
 
 const props = withDefaults(
   defineProps<{
     variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
-    size?: 'sm' | 'md'
+    size?: UiSize
     loading?: boolean
     block?: boolean
     as?: 'button' | 'a'
@@ -18,7 +19,8 @@ const classes = computed(() => [
   props.variant === 'secondary' && 'btn-secondary',
   props.variant === 'ghost' && 'btn-ghost',
   props.variant === 'danger' && 'btn-danger',
-  props.size === 'sm' && 'ui-button-sm',
+  'ui-button',
+  `ui-control-${props.size}`,
   props.block && 'w-full justify-center',
 ])
 </script>

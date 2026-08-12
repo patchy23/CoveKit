@@ -7,10 +7,18 @@ withDefaults(
     title?: string
     description?: string
     width?: string
+    size?: 'sm' | 'md' | 'lg' | 'xl'
     closeOnBackdrop?: boolean
   }>(),
-  { title: '', description: '', width: 'min(560px, 92vw)', closeOnBackdrop: true }
+  { title: '', description: '', width: '', size: 'md', closeOnBackdrop: true }
 )
+
+const sizeWidth = {
+  sm: 'min(420px, 92vw)',
+  md: 'min(560px, 92vw)',
+  lg: 'min(760px, 94vw)',
+  xl: 'min(1040px, 96vw)',
+}
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -30,7 +38,12 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         class="fixed inset-0 z-[180] grid place-items-center bg-[rgba(16,20,28,0.45)] p-md backdrop-blur-[3px]"
         @mousedown.self="closeOnBackdrop && emit('close')"
       >
-        <section class="ui-modal-panel" :style="{ width }" role="dialog" aria-modal="true">
+        <section
+          class="ui-modal-panel"
+          :style="{ width: width || sizeWidth[size] }"
+          role="dialog"
+          aria-modal="true"
+        >
           <header v-if="title || description || $slots.header" class="mb-[18px]">
             <slot name="header">
               <h2 class="text-card-title font-semibold text-primary dark:text-primary-dark">

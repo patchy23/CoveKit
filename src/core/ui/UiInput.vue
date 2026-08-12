@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import type { UiSize } from './types'
 
 const props = withDefaults(
   defineProps<{
     modelValue?: string | number
     type?: string
     invalid?: boolean
+    size?: UiSize
     modelModifiers?: { number?: boolean; trim?: boolean }
   }>(),
-  { modelValue: '', type: 'text', invalid: false, modelModifiers: () => ({}) }
+  { modelValue: '', type: 'text', invalid: false, size: 'md', modelModifiers: () => ({}) }
 )
 
 const emit = defineEmits<{ (event: 'update:modelValue', value: string | number): void }>()
@@ -32,7 +34,7 @@ function onInput(event: Event) {
     ref="input"
     :type="type"
     class="field-input"
-    :class="{ 'ui-field-invalid': invalid }"
+    :class="[`ui-control-${size}`, { 'ui-field-invalid': invalid }]"
     :value="modelValue"
     :aria-invalid="invalid || undefined"
     @input="onInput"

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { UiSize } from './types'
 
 export interface SelectOption {
   value: string
@@ -14,7 +15,7 @@ const props = withDefaults(
     title?: string
     placeholder?: string
     disabled?: boolean
-    size?: 'sm' | 'md'
+    size?: UiSize
     optionClass?: (value: string) => string
     valueClass?: (value: string) => string
   }>(),
@@ -82,7 +83,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentMouseD
       type="button"
       class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] transition-colors hover:border-border-strong disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark"
       :class="[
-        size === 'sm' ? 'h-[30px] text-caption' : 'h-[36px] text-body font-medium',
+        `ui-control-${size}`,
         colorClass(modelValue),
         open ? 'border-tertiary dark:border-tertiary-dark' : '',
       ]"
@@ -120,7 +121,13 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocumentMouseD
         type="button"
         class="flex w-full items-center px-[10px] py-[7px] text-left font-medium transition-colors hover:bg-border disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-border-dark"
         :class="[
-          size === 'sm' ? 'text-caption' : 'text-body',
+          size === 'xs'
+            ? 'py-xs text-caption'
+            : size === 'sm'
+              ? 'py-[6px] text-body-sm'
+              : size === 'lg'
+                ? 'py-[9px] text-body'
+                : 'py-[7px] text-body',
           colorClass(option.value),
           option.value === modelValue ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark' : '',
         ]"

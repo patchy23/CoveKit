@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { UiSize } from './types'
+
 export interface UiTabItem {
   value: string
   label: string
@@ -11,8 +13,9 @@ withDefaults(
     modelValue: string
     items: UiTabItem[]
     variant?: 'pill' | 'line'
+    size?: UiSize
   }>(),
-  { variant: 'pill' }
+  { variant: 'pill', size: 'md' }
 )
 
 const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>()
@@ -25,7 +28,7 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
       :key="item.value"
       type="button"
       class="ui-tab"
-      :class="{ 'ui-tab-active': item.value === modelValue }"
+      :class="[`ui-tab-${size}`, { 'ui-tab-active': item.value === modelValue }]"
       :disabled="item.disabled"
       :aria-selected="item.value === modelValue"
       role="tab"

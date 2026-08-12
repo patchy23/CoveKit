@@ -1,12 +1,15 @@
 <script setup lang="ts">
+import type { UiSize, UiTone } from './types'
+
 withDefaults(
   defineProps<{
-    tone?: 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | 'info' | 'purple'
+    tone?: UiTone
+    size?: UiSize
   }>(),
-  { tone: 'neutral' }
+  { tone: 'neutral', size: 'sm' }
 )
 </script>
 
 <template>
-  <span class="ui-badge" :class="`ui-badge-${tone}`"><slot /></span>
+  <span class="ui-badge" :class="[`ui-badge-${tone}`, `ui-badge-${size}`]"><slot /></span>
 </template>

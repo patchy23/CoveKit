@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import type { UiSize } from './types'
+
 withDefaults(
   defineProps<{
     modelValue?: string
     invalid?: boolean
     resize?: 'none' | 'vertical'
+    size?: UiSize
   }>(),
-  { modelValue: '', invalid: false, resize: 'vertical' }
+  { modelValue: '', invalid: false, resize: 'vertical', size: 'md' }
 )
 
 const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>()
@@ -14,7 +17,11 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
 <template>
   <textarea
     class="field-textarea"
-    :class="[{ 'ui-field-invalid': invalid }, resize === 'none' ? 'resize-none' : 'resize-y']"
+    :class="[
+      `ui-textarea-${size}`,
+      { 'ui-field-invalid': invalid },
+      resize === 'none' ? 'resize-none' : 'resize-y',
+    ]"
     :value="modelValue"
     :aria-invalid="invalid || undefined"
     @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
