@@ -2,7 +2,7 @@
 /** DockerTable · SSH Docker 容器列表与行级操作。 */
 import type { DockerContainer } from './contracts'
 import { shortContainerId } from './useSsh'
-import { UiButton } from '@/core/ui'
+import { UiButton, UiTableCell } from '@/core/ui'
 
 defineProps<{ containers: DockerContainer[]; busyContainerId?: string | null }>()
 const emit = defineEmits<{
@@ -23,18 +23,28 @@ function stateClass(status: string): string {
 
 <template>
   <div class="min-h-0 flex-1 overflow-y-auto">
-    <table class="data-table table-fixed">
+    <table
+      class="w-full table-fixed text-left text-body-sm text-secondary dark:text-secondary-dark"
+    >
       <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
         <tr
           class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
         >
-          <th class="w-[92px] whitespace-nowrap px-[8px] py-[8px] font-medium">容器 ID</th>
-          <th class="w-[110px] px-[8px] py-[8px] font-medium">名称</th>
-          <th class="w-[110px] px-[8px] py-[8px] font-medium">镜像</th>
-          <th class="w-[70px] whitespace-nowrap px-[8px] py-[8px] font-medium">状态</th>
-          <th class="w-[96px] whitespace-nowrap px-[8px] py-[8px] font-medium">运行时间</th>
-          <th class="w-[110px] px-[8px] py-[8px] font-medium">端口</th>
-          <th class="w-[210px] whitespace-nowrap px-[8px] py-[8px] font-medium">操作</th>
+          <UiTableCell as="th" class="w-[92px] whitespace-nowrap px-[8px] py-[8px]"
+            >容器 ID</UiTableCell
+          >
+          <UiTableCell as="th" class="w-[110px] px-[8px] py-[8px]">名称</UiTableCell>
+          <UiTableCell as="th" class="w-[110px] px-[8px] py-[8px]">镜像</UiTableCell>
+          <UiTableCell as="th" class="w-[70px] whitespace-nowrap px-[8px] py-[8px]"
+            >状态</UiTableCell
+          >
+          <UiTableCell as="th" class="w-[96px] whitespace-nowrap px-[8px] py-[8px]"
+            >运行时间</UiTableCell
+          >
+          <UiTableCell as="th" class="w-[110px] px-[8px] py-[8px]">端口</UiTableCell>
+          <UiTableCell as="th" class="w-[210px] whitespace-nowrap px-[8px] py-[8px]"
+            >操作</UiTableCell
+          >
         </tr>
       </thead>
       <tbody>
@@ -43,19 +53,28 @@ function stateClass(status: string): string {
           :key="container.id"
           class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
         >
-          <td
-            class="data-cell-tech w-[92px] whitespace-nowrap px-[8px] py-[8px]"
+          <UiTableCell
+            content="technical"
+            class="w-[92px] whitespace-nowrap px-[8px] py-[8px]"
             :title="container.id"
           >
             {{ shortContainerId(container.id) }}
-          </td>
-          <td class="data-cell-tech truncate px-[8px] py-[8px]" :title="container.name">
+          </UiTableCell>
+          <UiTableCell
+            content="technical"
+            class="truncate px-[8px] py-[8px]"
+            :title="container.name"
+          >
             {{ container.name }}
-          </td>
-          <td class="data-cell-tech truncate px-[8px] py-[8px]" :title="container.image">
+          </UiTableCell>
+          <UiTableCell
+            content="technical"
+            class="truncate px-[8px] py-[8px]"
+            :title="container.image"
+          >
             {{ container.image }}
-          </td>
-          <td class="data-cell-tech whitespace-nowrap px-[8px] py-[8px]">
+          </UiTableCell>
+          <UiTableCell content="status" class="whitespace-nowrap px-[8px] py-[8px]">
             <span
               v-if="busyContainerId === container.id"
               class="animate-pulse font-sans text-tertiary-strong dark:text-tertiary-dark"
@@ -63,17 +82,22 @@ function stateClass(status: string): string {
               更新中
             </span>
             <span v-else :class="stateClass(container.status)">{{ container.status }}</span>
-          </td>
-          <td
-            class="data-cell-tech truncate whitespace-nowrap px-[8px] py-[8px]"
+          </UiTableCell>
+          <UiTableCell
+            content="technical"
+            class="truncate whitespace-nowrap px-[8px] py-[8px]"
             :title="container.uptime"
           >
             {{ container.uptime }}
-          </td>
-          <td class="data-cell-tech truncate px-[8px] py-[8px]" :title="container.ports">
+          </UiTableCell>
+          <UiTableCell
+            content="technical"
+            class="truncate px-[8px] py-[8px]"
+            :title="container.ports"
+          >
             {{ container.ports }}
-          </td>
-          <td class="data-cell-action whitespace-nowrap px-[8px] py-[8px]">
+          </UiTableCell>
+          <UiTableCell content="action" class="whitespace-nowrap px-[8px] py-[8px]">
             <div class="flex items-center justify-end gap-[2px]">
               <UiButton
                 v-if="container.status !== 'running'"
@@ -112,7 +136,7 @@ function stateClass(status: string): string {
                 删除
               </UiButton>
             </div>
-          </td>
+          </UiTableCell>
         </tr>
       </tbody>
     </table>

@@ -435,29 +435,6 @@
   .ui-modal-panel {
     @apply max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-surface p-xl shadow-[0_12px_40px_rgba(16,24,40,0.14)] dark:border-border-dark dark:bg-surface-dark;
   }
-
-  /*
-   * SSH 等数据密集页面的表格排版：中文状态与说明统一使用 patchyBox Sans；
-   * ID、服务名、服务描述、镜像、地址、权限、命令等技术字段统一使用 data-cell-tech。
-   */
-  .data-table {
-    @apply w-full text-left text-body-sm font-normal leading-normal text-secondary dark:text-secondary-dark;
-  }
-  .data-table th {
-    @apply font-sans text-caption font-medium text-text-muted dark:text-text-muted-dark;
-  }
-  .data-table td {
-    @apply font-sans text-body-sm font-normal leading-normal;
-  }
-  .data-table .data-cell-tech {
-    @apply font-mono text-body-sm font-normal leading-normal;
-  }
-  .data-table .data-cell-text {
-    @apply font-sans text-body-sm font-normal leading-normal;
-  }
-  .data-table .data-cell-action {
-    @apply font-sans text-caption font-normal;
-  }
 }
 
 /* ════════════════════════════════════════════════════════════════

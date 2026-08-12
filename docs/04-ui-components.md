@@ -22,7 +22,7 @@
 | `UiModal` | 弹窗壳 | 统一 Esc、遮罩关闭、宽度、标题和 footer |
 | `UiCheckbox / UiRadioGroup / UiSwitch` | 选择控件 | 复选、互斥选择与功能开关 |
 | `UiSearchInput / UiIconButton` | 高频操作 | 搜索清空与纯图标动作 |
-| `UiTable / UiPagination` | 数据页面 | compact/default/comfortable 表格与受控分页 |
+| `UiTable / UiTableCell / UiPagination` | 数据页面 | 表格密度、内容字体语义与受控分页 |
 | `UiProgress / UiSkeleton / UiSpinner` | 加载反馈 | 进度、占位骨架和局部加载 |
 | `UiAvatar / UiKbd / UiDivider` | 信息元素 | 头像、快捷键与内容分隔 |
 
@@ -40,6 +40,21 @@
 | `lg` | 42px | 舒适表单、首次引导和重点操作 |
 
 `UiTable` 使用独立的 `density="compact | default | comfortable"`；数据密集工具不要通过缩小整个页面字号来获得紧凑效果。
+
+### 表格内容字体契约
+
+表格中的 `th/td` 必须使用 `UiTableCell`，页面只能通过 `content` 声明内容类型，不能直接添加 `font-sans` 或 `font-mono`：
+
+| content | 用途 | 字体规则 |
+| --- | --- | --- |
+| `text` | 中文名称、说明、普通文本 | `patchyBox Sans` |
+| `technical` | ID、主机、镜像、服务名、路径 | `patchyBox Mono` |
+| `numeric` | 数量、百分比、延迟、TTL | `patchyBox Sans` + 等宽数字 |
+| `status` | 在线、失败、运行中等状态 | `patchyBox Sans` |
+| `action` | 操作列 | `patchyBox Sans` |
+| `code` | 命令、SQL、原始值 | `patchyBox Mono` |
+
+`patchyBox Sans` 与 `patchyBox Mono` 内部用 Unicode 范围区分中英文，无需页面判断语言。组件决定字号、字重和行高；业务页面只决定内容语义与列布局。
 
 ## 3. 使用规则
 

@@ -7,7 +7,7 @@ import { computed, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { ServerQueryResult } from './contracts'
-import { UiButton, UiInput, UiSelect as Select } from '@/core/ui'
+import { UiButton, UiInput, UiSelect as Select, UiTableCell } from '@/core/ui'
 import {
   DNS_SERVERS,
   RECORD_TYPES,
@@ -188,35 +188,44 @@ async function run() {
             <tr
               class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
             >
-              <th class="py-[4px] pr-[12px] font-medium">类型</th>
-              <th class="py-[4px] pr-[12px] font-medium">名称</th>
-              <th class="py-[4px] pr-[12px] font-medium">TTL</th>
-              <th class="py-[4px] font-medium">值</th>
+              <UiTableCell as="th" class="py-[4px] pr-[12px]">类型</UiTableCell>
+              <UiTableCell as="th" class="py-[4px] pr-[12px]">名称</UiTableCell>
+              <UiTableCell as="th" class="py-[4px] pr-[12px]">TTL</UiTableCell>
+              <UiTableCell as="th" class="py-[4px]">值</UiTableCell>
             </tr>
           </thead>
-          <tbody class="font-mono text-body-sm">
+          <tbody class="text-body-sm">
             <tr
               v-for="(rec, i) in r.records"
               :key="i"
               class="border-b border-border/60 last:border-b-0 dark:border-border-dark/60"
             >
-              <td class="py-[5px] pr-[12px]">
+              <UiTableCell content="technical" class="py-[5px] pr-[12px]">
                 <span
                   class="rounded px-[6px] py-[1px] text-body-sm font-medium"
                   :class="recordTypeBadgeClass(rec.recordType)"
                 >
                   {{ rec.recordType }}
                 </span>
-              </td>
-              <td class="py-[5px] pr-[12px] text-secondary dark:text-secondary-dark">
+              </UiTableCell>
+              <UiTableCell
+                content="technical"
+                class="py-[5px] pr-[12px] text-secondary dark:text-secondary-dark"
+              >
                 {{ rec.name }}
-              </td>
-              <td class="py-[5px] pr-[12px] text-text-muted dark:text-text-muted-dark">
+              </UiTableCell>
+              <UiTableCell
+                content="numeric"
+                class="py-[5px] pr-[12px] text-text-muted dark:text-text-muted-dark"
+              >
                 {{ rec.ttl }}
-              </td>
-              <td class="break-all py-[5px] text-secondary dark:text-secondary-dark">
+              </UiTableCell>
+              <UiTableCell
+                content="code"
+                class="break-all py-[5px] text-secondary dark:text-secondary-dark"
+              >
                 {{ rec.value }}
-              </td>
+              </UiTableCell>
             </tr>
           </tbody>
         </table>

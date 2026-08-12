@@ -10,6 +10,7 @@ import {
   UiSelect,
   UiSkeleton,
   UiTable,
+  UiTableCell,
 } from '@/core/ui'
 
 const density = ref<'compact' | 'default' | 'comfortable'>('compact')
@@ -19,9 +20,9 @@ const densityOptions = [
   { value: 'comfortable', label: '舒适' },
 ]
 const rows = [
-  { name: 'production-api', host: '10.0.0.12', status: '在线', latency: '18 ms' },
-  { name: 'staging-db', host: '10.0.1.24', status: '在线', latency: '32 ms' },
-  { name: 'legacy-worker', host: '10.0.2.08', status: '离线', latency: '—' },
+  { name: 'production-api / 生产接口', host: '10.0.0.12', status: '在线', latency: '18 ms' },
+  { name: 'staging-db / 预发布库', host: '10.0.1.24', status: '在线', latency: '32 ms' },
+  { name: 'legacy-worker / 旧任务', host: '10.0.2.08', status: '离线', latency: '—' },
 ]
 </script>
 
@@ -42,24 +43,28 @@ const rows = [
     <UiTable :density="density" striped>
       <thead>
         <tr>
-          <th>服务器</th>
-          <th>地址</th>
-          <th>状态</th>
-          <th>延迟</th>
-          <th>操作</th>
+          <UiTableCell as="th">服务器</UiTableCell>
+          <UiTableCell as="th">地址</UiTableCell>
+          <UiTableCell as="th">状态</UiTableCell>
+          <UiTableCell as="th">延迟</UiTableCell>
+          <UiTableCell as="th">操作</UiTableCell>
         </tr>
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="row.name">
-          <td class="font-medium text-primary dark:text-primary-dark">{{ row.name }}</td>
-          <td class="font-mono">{{ row.host }}</td>
-          <td>
+          <UiTableCell content="technical" class="text-primary dark:text-primary-dark">
+            {{ row.name }}
+          </UiTableCell>
+          <UiTableCell content="technical">{{ row.host }}</UiTableCell>
+          <UiTableCell content="status">
             <UiBadge :tone="row.status === '在线' ? 'success' : 'danger'" size="xs">{{
               row.status
             }}</UiBadge>
-          </td>
-          <td>{{ row.latency }}</td>
-          <td><UiButton variant="ghost" size="xs">详情</UiButton></td>
+          </UiTableCell>
+          <UiTableCell content="numeric">{{ row.latency }}</UiTableCell>
+          <UiTableCell content="action"
+            ><UiButton variant="ghost" size="xs">详情</UiButton></UiTableCell
+          >
         </tr>
       </tbody>
     </UiTable>

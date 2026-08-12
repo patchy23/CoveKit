@@ -7,6 +7,13 @@ import UiCheckbox from './UiCheckbox.vue'
 import UiPagination from './UiPagination.vue'
 import UiSelect from './UiSelect.vue'
 import UiSwitch from './UiSwitch.vue'
+import UiTableCell from './UiTableCell.vue'
+
+const pluginVueSources = import.meta.glob('../../plugins/**/*.vue', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>
 
 describe('公共 UI 组件', () => {
   it('按钮在加载中自动禁用并显示加载状态', () => {
@@ -68,5 +75,26 @@ describe('公共 UI 组件', () => {
     expect(buttons[0].attributes('disabled')).toBeDefined()
     await buttons[buttons.length - 1].trigger('click')
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([2])
+  })
+
+  it.each([
+    ['text', 'font-sans'],
+    ['technical', 'font-mono'],
+    ['numeric', 'font-sans'],
+    ['status', 'font-sans'],
+    ['action', 'font-sans'],
+    ['code', 'font-mono'],
+  ] as const)('表格 %s 内容使用约定字体', (content, expectedClass) => {
+    const cell = mount(UiTableCell, { props: { content }, slots: { default: '中文 Latin 123' } })
+    expect(cell.attributes('data-content-kind')).toBe(content)
+    expect(cell.classes()).toContain(expectedClass)
+    if (content === 'numeric') expect(cell.classes()).toContain('tabular-nums')
+  })
+
+  it('业务表格不能绕过统一单元格字体契约', () => {
+    const violations = Object.entries(pluginVueSources)
+      .filter(([, source]) => /<t[hd](?:\s|>)/.test(source) || /data-cell-|data-table/.test(source))
+      .map(([path]) => path)
+    expect(violations).toEqual([])
   })
 })

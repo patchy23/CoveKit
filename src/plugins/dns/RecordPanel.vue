@@ -8,7 +8,7 @@ import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { CloudDomain, CloudRecord } from './contracts'
 import { CLOUD_RECORD_TYPES, TTL_PRESETS, recordTypeBadgeClass } from './useDns'
-import { UiSelect as Select } from '@/core/ui'
+import { UiSelect as Select, UiTableCell } from '@/core/ui'
 
 const props = defineProps<{
   platform: 'aliyun' | 'dnspod'
@@ -260,12 +260,12 @@ onMounted(loadRecords)
           <tr
             class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
           >
-            <th class="py-[8px] pl-[12px] pr-[12px] font-medium">主机记录</th>
-            <th class="py-[8px] pr-[12px] font-medium">类型</th>
-            <th class="py-[8px] pr-[12px] font-medium">TTL</th>
-            <th class="py-[8px] pr-[12px] font-medium">记录值</th>
-            <th class="py-[8px] pr-[12px] font-medium">线路</th>
-            <th class="py-[8px] pr-[12px] text-right font-medium">操作</th>
+            <UiTableCell as="th" class="py-[8px] pl-[12px] pr-[12px]">主机记录</UiTableCell>
+            <UiTableCell as="th" class="py-[8px] pr-[12px]">类型</UiTableCell>
+            <UiTableCell as="th" class="py-[8px] pr-[12px]">TTL</UiTableCell>
+            <UiTableCell as="th" class="py-[8px] pr-[12px]">记录值</UiTableCell>
+            <UiTableCell as="th" class="py-[8px] pr-[12px]">线路</UiTableCell>
+            <UiTableCell as="th" align="right" class="py-[8px] pr-[12px]">操作</UiTableCell>
           </tr>
         </thead>
         <tbody class="text-body-sm">
@@ -274,35 +274,43 @@ onMounted(loadRecords)
             :key="r.recordId"
             class="border-b border-border/60 last:border-b-0 dark:border-border-dark/60"
           >
-            <td
-              class="whitespace-nowrap py-[7px] pl-[12px] pr-[12px] font-mono text-secondary dark:text-secondary-dark"
+            <UiTableCell
+              content="technical"
+              class="whitespace-nowrap py-[7px] pl-[12px] pr-[12px] text-secondary dark:text-secondary-dark"
             >
               {{ r.rr === '@' ? '@' : r.rr }}
-            </td>
-            <td class="py-[7px] pr-[12px] font-mono">
+            </UiTableCell>
+            <UiTableCell content="technical" class="py-[7px] pr-[12px]">
               <span
                 class="rounded px-[6px] py-[1px] whitespace-nowrap font-medium"
                 :class="recordTypeBadgeClass(r.recordType)"
               >
                 {{ r.recordType }}
               </span>
-            </td>
-            <td
-              class="whitespace-nowrap py-[7px] pr-[12px] font-mono text-text-muted dark:text-text-muted-dark"
+            </UiTableCell>
+            <UiTableCell
+              content="numeric"
+              class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark"
             >
               {{ r.ttl }}
-            </td>
-            <td
-              class="break-all py-[7px] pr-[12px] font-mono text-secondary dark:text-secondary-dark"
+            </UiTableCell>
+            <UiTableCell
+              content="code"
+              class="break-all py-[7px] pr-[12px] text-secondary dark:text-secondary-dark"
             >
               {{ r.value }}
-            </td>
-            <td
+            </UiTableCell>
+            <UiTableCell
+              content="text"
               class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark"
             >
               {{ r.line }}
-            </td>
-            <td class="whitespace-nowrap py-[7px] pr-[12px] text-right">
+            </UiTableCell>
+            <UiTableCell
+              content="action"
+              align="right"
+              class="whitespace-nowrap py-[7px] pr-[12px]"
+            >
               <button
                 class="mr-[6px] rounded px-[8px] py-[3px] text-body-sm text-info-strong transition-colors hover:bg-info-soft dark:text-info-dark dark:hover:bg-info-soft-dark"
                 @click="openEdit(r)"
@@ -320,7 +328,7 @@ onMounted(loadRecords)
               >
                 {{ confirmDeleteId === r.recordId ? '确认删除？' : '删除' }}
               </button>
-            </td>
+            </UiTableCell>
           </tr>
         </tbody>
       </table>

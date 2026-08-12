@@ -8,7 +8,7 @@ import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
 import { describeResult, displayCell, fileName } from './useSqlite'
-import { UiButton, UiInput } from '@/core/ui'
+import { UiButton, UiInput, UiTableCell } from '@/core/ui'
 
 const ui = useUiStore()
 
@@ -196,13 +196,15 @@ function formatCell(v: string): string {
             >
               <thead class="sticky top-0 bg-surface-muted dark:bg-surface-muted-dark">
                 <tr>
-                  <th
+                  <UiTableCell
                     v-for="c in result.columns"
                     :key="c"
-                    class="border-b border-border px-[10px] py-[7px] text-body-sm font-medium text-secondary dark:border-border-dark dark:text-secondary-dark"
+                    as="th"
+                    content="technical"
+                    class="border-b border-border px-[10px] py-[7px] text-body-sm text-secondary dark:border-border-dark dark:text-secondary-dark"
                   >
                     {{ c }}
-                  </th>
+                  </UiTableCell>
                 </tr>
               </thead>
               <tbody>
@@ -211,10 +213,11 @@ function formatCell(v: string): string {
                   :key="ri"
                   class="odd:bg-surface-muted/40 dark:odd:bg-surface-muted-dark/40"
                 >
-                  <td
+                  <UiTableCell
                     v-for="(cell, ci) in row"
                     :key="ci"
-                    class="max-w-[280px] truncate border-b border-border/60 px-[10px] py-[6px] font-mono text-body-sm text-primary dark:border-border-dark/60 dark:text-primary-dark"
+                    content="code"
+                    class="max-w-[280px] truncate border-b border-border/60 px-[10px] py-[6px] text-body-sm text-primary dark:border-border-dark/60 dark:text-primary-dark"
                     :title="cell"
                   >
                     <span
@@ -224,15 +227,15 @@ function formatCell(v: string): string {
                     >
                       {{ formatCell(cell) }}
                     </span>
-                  </td>
+                  </UiTableCell>
                 </tr>
                 <tr v-if="!result.rows.length">
-                  <td
+                  <UiTableCell
                     :colspan="result.columns.length"
                     class="px-[10px] py-[14px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
                   >
                     0 行
-                  </td>
+                  </UiTableCell>
                 </tr>
               </tbody>
             </table>

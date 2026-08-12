@@ -7,7 +7,7 @@ import type { ServerConnection, ServerProfile, ProcessInfo } from './contracts'
 import { formatBytes } from './useSsh'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiSearchInput, UiSelect as Select } from '@/core/ui'
+import { UiButton, UiSearchInput, UiSelect as Select, UiTableCell } from '@/core/ui'
 import { ipc } from './ipc'
 
 const props = defineProps<{
@@ -123,18 +123,30 @@ watch(
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <table class="data-table">
+      <table class="w-full text-left text-body-sm text-secondary dark:text-secondary-dark">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
           >
-            <th class="w-[70px] whitespace-nowrap px-[12px] py-[8px] font-medium">PID</th>
-            <th class="w-[90px] whitespace-nowrap px-[12px] py-[8px] font-medium">用户</th>
-            <th class="w-[80px] whitespace-nowrap px-[12px] py-[8px] font-medium">CPU%</th>
-            <th class="w-[80px] whitespace-nowrap px-[12px] py-[8px] font-medium">MEM%</th>
-            <th class="w-[100px] whitespace-nowrap px-[12px] py-[8px] font-medium">内存</th>
-            <th class="px-[12px] py-[8px] font-medium">命令</th>
-            <th class="w-[110px] whitespace-nowrap px-[12px] py-[8px] font-medium">操作</th>
+            <UiTableCell as="th" class="w-[70px] whitespace-nowrap px-[12px] py-[8px]"
+              >PID</UiTableCell
+            >
+            <UiTableCell as="th" class="w-[90px] whitespace-nowrap px-[12px] py-[8px]"
+              >用户</UiTableCell
+            >
+            <UiTableCell as="th" class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
+              >CPU%</UiTableCell
+            >
+            <UiTableCell as="th" class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
+              >MEM%</UiTableCell
+            >
+            <UiTableCell as="th" class="w-[100px] whitespace-nowrap px-[12px] py-[8px]"
+              >内存</UiTableCell
+            >
+            <UiTableCell as="th" class="px-[12px] py-[8px]">命令</UiTableCell>
+            <UiTableCell as="th" class="w-[110px] whitespace-nowrap px-[12px] py-[8px]"
+              >操作</UiTableCell
+            >
           </tr>
         </thead>
         <tbody>
@@ -143,19 +155,25 @@ watch(
             :key="p.pid"
             class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
           >
-            <td class="data-cell-tech px-[12px] py-[8px]">{{ p.pid }}</td>
-            <td class="data-cell-tech px-[12px] py-[8px]">{{ p.user }}</td>
-            <td class="data-cell-tech px-[12px] py-[8px]">{{ p.cpuPercent.toFixed(1) }}</td>
-            <td class="data-cell-tech px-[12px] py-[8px]">
+            <UiTableCell content="numeric" class="px-[12px] py-[8px]">{{ p.pid }}</UiTableCell>
+            <UiTableCell content="technical" class="px-[12px] py-[8px]">{{ p.user }}</UiTableCell>
+            <UiTableCell content="numeric" class="px-[12px] py-[8px]">{{
+              p.cpuPercent.toFixed(1)
+            }}</UiTableCell>
+            <UiTableCell content="numeric" class="px-[12px] py-[8px]">
               {{ p.memoryPercent.toFixed(1) }}
-            </td>
-            <td class="data-cell-tech px-[12px] py-[8px]">
+            </UiTableCell>
+            <UiTableCell content="numeric" class="px-[12px] py-[8px]">
               {{ formatBytes(p.memoryBytes) }}
-            </td>
-            <td class="data-cell-tech max-w-[200px] truncate px-[12px] py-[8px]" :title="p.command">
+            </UiTableCell>
+            <UiTableCell
+              content="code"
+              class="max-w-[200px] truncate px-[12px] py-[8px]"
+              :title="p.command"
+            >
               {{ p.command }}
-            </td>
-            <td class="data-cell-action whitespace-nowrap px-[12px] py-[8px]">
+            </UiTableCell>
+            <UiTableCell content="action" class="whitespace-nowrap px-[12px] py-[8px]">
               <div class="flex items-center gap-[4px]">
                 <UiButton variant="ghost" size="xs" @click="requestKill(p.pid)"> 结束 </UiButton>
                 <UiButton
@@ -167,7 +185,7 @@ watch(
                   强杀
                 </UiButton>
               </div>
-            </td>
+            </UiTableCell>
           </tr>
         </tbody>
       </table>

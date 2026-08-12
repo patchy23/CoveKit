@@ -6,7 +6,7 @@ import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, SystemdService } from './contracts'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiSelect } from '@/core/ui'
+import { UiButton, UiSelect, UiTableCell } from '@/core/ui'
 import OutputDialog from './OutputDialog.vue'
 import { ipc } from './ipc'
 
@@ -141,15 +141,15 @@ watch(
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <table class="data-table">
+      <table class="w-full text-left text-body-sm text-secondary dark:text-secondary-dark">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
           >
-            <th class="px-[12px] py-[8px] font-medium">服务名</th>
-            <th class="px-[12px] py-[8px] font-medium">描述</th>
-            <th class="w-[90px] px-[12px] py-[8px] font-medium">状态</th>
-            <th class="w-[140px] px-[12px] py-[8px] font-medium">操作</th>
+            <UiTableCell as="th" class="px-[12px] py-[8px]">服务名</UiTableCell>
+            <UiTableCell as="th" class="px-[12px] py-[8px]">描述</UiTableCell>
+            <UiTableCell as="th" class="w-[90px] px-[12px] py-[8px]">状态</UiTableCell>
+            <UiTableCell as="th" class="w-[140px] px-[12px] py-[8px]">操作</UiTableCell>
           </tr>
         </thead>
         <tbody>
@@ -158,12 +158,14 @@ watch(
             :key="s.name"
             class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
           >
-            <td class="data-cell-tech px-[12px] py-[8px]">{{ s.name }}</td>
-            <td class="data-cell-tech px-[12px] py-[8px]">{{ s.description }}</td>
-            <td class="data-cell-text px-[12px] py-[8px]">
+            <UiTableCell content="technical" class="px-[12px] py-[8px]">{{ s.name }}</UiTableCell>
+            <UiTableCell content="technical" class="px-[12px] py-[8px]">{{
+              s.description
+            }}</UiTableCell>
+            <UiTableCell content="status" class="px-[12px] py-[8px]">
               <span :class="stateClass(s)">{{ stateText(s) }}</span>
-            </td>
-            <td class="data-cell-action px-[12px] py-[8px]">
+            </UiTableCell>
+            <UiTableCell content="action" class="px-[12px] py-[8px]">
               <div class="flex gap-[4px]">
                 <UiButton
                   v-if="s.activeState !== 'active'"
@@ -191,7 +193,7 @@ watch(
                 </UiButton>
                 <UiButton variant="ghost" size="xs" @click="logs(s)"> 日志 </UiButton>
               </div>
-            </td>
+            </UiTableCell>
           </tr>
         </tbody>
       </table>

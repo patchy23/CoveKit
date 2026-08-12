@@ -2,7 +2,7 @@
 /** FileBrowser · SSH 文件页的路径工具栏与远程文件表格。 */
 import type { RemoteFile } from './contracts'
 import { formatBytes, formatTime } from './useSsh'
-import { UiButton, UiInput } from '@/core/ui'
+import { UiButton, UiInput, UiTableCell } from '@/core/ui'
 
 defineProps<{
   currentPath: string
@@ -48,16 +48,16 @@ const emit = defineEmits<{
   </div>
 
   <div class="min-h-0 flex-1 overflow-y-auto" @contextmenu="emit('context', $event, null)">
-    <table class="data-table">
+    <table class="w-full text-left text-body-sm text-secondary dark:text-secondary-dark">
       <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
         <tr
           class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
         >
-          <th class="px-[12px] py-[8px] font-medium">名称</th>
-          <th class="w-[100px] px-[12px] py-[8px] font-medium">大小</th>
-          <th class="w-[120px] px-[12px] py-[8px] font-medium">修改时间</th>
-          <th class="w-[110px] px-[12px] py-[8px] font-medium">权限</th>
-          <th class="w-[80px] px-[12px] py-[8px] font-medium">所有者</th>
+          <UiTableCell as="th" class="px-[12px] py-[8px]">名称</UiTableCell>
+          <UiTableCell as="th" class="w-[100px] px-[12px] py-[8px]">大小</UiTableCell>
+          <UiTableCell as="th" class="w-[120px] px-[12px] py-[8px]">修改时间</UiTableCell>
+          <UiTableCell as="th" class="w-[110px] px-[12px] py-[8px]">权限</UiTableCell>
+          <UiTableCell as="th" class="w-[80px] px-[12px] py-[8px]">所有者</UiTableCell>
         </tr>
       </thead>
       <tbody>
@@ -70,16 +70,20 @@ const emit = defineEmits<{
           @dblclick="emit('open', file)"
           @contextmenu.stop="emit('context', $event, file)"
         >
-          <td class="data-cell-tech px-[12px] py-[7px]">
+          <UiTableCell content="technical" class="px-[12px] py-[7px]">
             <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
             <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
-          </td>
-          <td class="data-cell-tech px-[12px] py-[7px]">
+          </UiTableCell>
+          <UiTableCell content="numeric" class="px-[12px] py-[7px]">
             {{ file.isDir ? '-' : formatBytes(file.size) }}
-          </td>
-          <td class="data-cell-tech px-[12px] py-[7px]">{{ formatTime(file.modifiedAt) }}</td>
-          <td class="data-cell-tech px-[12px] py-[7px]">{{ file.permissions }}</td>
-          <td class="data-cell-tech px-[12px] py-[7px]">{{ file.owner }}</td>
+          </UiTableCell>
+          <UiTableCell content="numeric" class="px-[12px] py-[7px]">{{
+            formatTime(file.modifiedAt)
+          }}</UiTableCell>
+          <UiTableCell content="technical" class="px-[12px] py-[7px]">{{
+            file.permissions
+          }}</UiTableCell>
+          <UiTableCell content="technical" class="px-[12px] py-[7px]">{{ file.owner }}</UiTableCell>
         </tr>
       </tbody>
     </table>

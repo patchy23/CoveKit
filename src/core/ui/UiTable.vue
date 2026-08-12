@@ -27,7 +27,7 @@ withDefaults(
 .ui-data-table :deep(th) {
   background: var(--color-surface-muted);
   color: var(--color-text-muted);
-  font-weight: 600;
+  font-weight: 500;
 }
 .ui-data-table :deep(th),
 .ui-data-table :deep(td) {
