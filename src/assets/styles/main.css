@@ -437,8 +437,8 @@
   }
 
   /*
-   * SSH 等数据密集页面的表格排版：普通数据列统一使用 patchyBox Sans，
-   * 只有 ID、地址、权限、命令等需要字符对齐的技术字段才显式使用 data-cell-tech。
+   * SSH 等数据密集页面的表格排版：中文描述与状态统一使用 patchyBox Sans；
+   * ID、服务名、镜像、地址、权限、命令等技术字段统一使用 data-cell-tech。
    */
   .data-table {
     @apply w-full text-left text-body-sm font-normal leading-normal text-secondary dark:text-secondary-dark;

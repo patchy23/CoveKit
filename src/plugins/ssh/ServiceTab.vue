@@ -158,7 +158,7 @@ watch(
             :key="s.name"
             class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
           >
-            <td class="data-cell-text px-[12px] py-[8px]">{{ s.name }}</td>
+            <td class="data-cell-tech px-[12px] py-[8px]">{{ s.name }}</td>
             <td class="data-cell-text px-[12px] py-[8px]">{{ s.description }}</td>
             <td class="data-cell-text px-[12px] py-[8px]">
               <span :class="stateClass(s)">{{ stateText(s) }}</span>
