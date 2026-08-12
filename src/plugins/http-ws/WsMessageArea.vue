@@ -4,6 +4,7 @@
  */
 import { nextTick, ref, watch } from 'vue'
 import type { WsSession } from './contracts'
+import { UiButton, UiInput } from '@/core/ui'
 
 const props = defineProps<{
   session: WsSession | null
@@ -82,16 +83,18 @@ function formatMsgTime(t: number) {
 
     <!-- 输入行 -->
     <div class="flex shrink-0 items-center gap-[8px]">
-      <input
+      <UiInput
         v-model="text"
-        class="field-input flex-1 font-mono"
+        class="flex-1 font-mono"
         placeholder="输入消息，Enter 发送"
         spellcheck="false"
         :disabled="!connected()"
         @keyup.enter="send"
       />
-      <button class="btn-primary shrink-0" :disabled="!connected()" @click="send">发送</button>
-      <button v-if="connected()" class="btn-secondary shrink-0" @click="emit('close')">断开</button>
+      <UiButton variant="primary" class="shrink-0" :disabled="!connected()" @click="send"
+        >发送</UiButton
+      >
+      <UiButton v-if="connected()" class="shrink-0" @click="emit('close')">断开</UiButton>
     </div>
   </div>
 </template>

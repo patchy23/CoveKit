@@ -14,6 +14,7 @@ import ProcessTab from './ProcessTab.vue'
 import DockerTab from './DockerTab.vue'
 import { statusDotClass, statusText } from './useSsh'
 import { useSshWorkspace } from './useSshWorkspace'
+import { UiTabs } from '@/core/ui'
 
 const {
   profiles,
@@ -43,6 +44,7 @@ const tabs = [
   { id: 'processes', name: '进程', component: ProcessTab },
   { id: 'docker', name: 'Docker', component: DockerTab },
 ] as const
+const tabItems = tabs.map((item) => ({ value: item.id, label: item.name }))
 
 const activeTabId = ref<string>('terminal')
 const visitedProfileIds = ref<string[]>([])
@@ -132,27 +134,7 @@ watch(activeProfileId, (profileId) => {
         </div>
 
         <!-- 子页签条 -->
-        <div
-          class="flex shrink-0 items-center gap-[2px] border-b border-border px-[8px] dark:border-border-dark"
-        >
-          <button
-            v-for="t in tabs"
-            :key="t.id"
-            class="relative rounded-t-md px-[14px] py-[8px] text-body font-medium transition-colors"
-            :class="
-              activeTabId === t.id
-                ? 'text-tertiary-strong dark:text-tertiary-dark'
-                : 'text-secondary hover:text-primary dark:text-secondary-dark dark:hover:text-primary-dark'
-            "
-            @click="activeTabId = t.id"
-          >
-            {{ t.name }}
-            <span
-              v-if="activeTabId === t.id"
-              class="absolute inset-x-0 top-0 h-[2px] bg-tertiary-strong dark:bg-tertiary-dark"
-            />
-          </button>
-        </div>
+        <UiTabs v-model="activeTabId" :items="tabItems" variant="line" />
 
         <!-- 页签内容区 -->
         <div class="min-h-0 flex-1 overflow-hidden">

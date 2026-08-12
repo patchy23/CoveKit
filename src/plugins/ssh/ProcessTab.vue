@@ -7,7 +7,7 @@ import type { ServerConnection, ServerProfile, ProcessInfo } from './contracts'
 import { formatBytes } from './useSsh'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import Select from '@/features/ui/Select.vue'
+import { UiSelect as Select } from '@/core/ui'
 import { ipc } from './ipc'
 
 const props = defineProps<{

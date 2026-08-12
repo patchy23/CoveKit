@@ -7,7 +7,7 @@ import { computed, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { ServerQueryResult } from './contracts'
-import Select from '@/features/ui/Select.vue'
+import { UiButton, UiInput, UiSelect as Select } from '@/core/ui'
 import {
   DNS_SERVERS,
   RECORD_TYPES,
@@ -84,9 +84,9 @@ async function run() {
       class="flex shrink-0 flex-col gap-[10px] border-b border-border pb-[12px] dark:border-border-dark"
     >
       <div class="flex flex-wrap items-center gap-[8px]">
-        <input
+        <UiInput
           v-model="domain"
-          class="field-input min-w-[240px] flex-1 font-mono placeholder:font-sans"
+          class="min-w-[240px] flex-1 font-mono placeholder:font-sans"
           placeholder="域名，如 example.com"
           spellcheck="false"
           @keyup.enter="run"
@@ -97,9 +97,9 @@ async function run() {
           title="记录类型"
           :options="RECORD_TYPES.map((t) => ({ value: t, label: t }))"
         />
-        <button class="btn-primary shrink-0" :disabled="busy" @click="run">
+        <UiButton variant="primary" class="shrink-0" :loading="busy" @click="run">
           {{ busy ? '查询中…' : '查询' }}
-        </button>
+        </UiButton>
       </div>
 
       <!-- 服务器选择：预设 chips + 自定义追加 -->
@@ -135,16 +135,14 @@ async function run() {
           </button>
         </span>
 
-        <input
+        <UiInput
           v-model="customServer"
-          class="field-input w-[160px] !px-[10px] !py-[7px] font-mono placeholder:font-sans"
+          class="w-[160px] font-mono placeholder:font-sans"
           placeholder="自定义 IP:端口"
           spellcheck="false"
           @keyup.enter="addCustom"
         />
-        <button class="btn-ghost shrink-0 px-[10px] py-[5px] text-body-sm" @click="addCustom">
-          添加
-        </button>
+        <UiButton variant="ghost" size="sm" class="shrink-0" @click="addCustom"> 添加 </UiButton>
       </div>
     </div>
 

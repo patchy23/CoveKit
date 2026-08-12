@@ -6,9 +6,8 @@
 import { computed } from 'vue'
 import { getTools } from '@/core/registry/toolRegistry'
 import type { SettingsField } from '@/core/registry/types'
-import BaseModal from '@/features/ui/BaseModal.vue'
+import { UiModal as BaseModal, UiSelect as Select } from '@/core/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
-import Select from '@/features/ui/Select.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 

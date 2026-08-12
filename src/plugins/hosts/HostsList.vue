@@ -6,6 +6,7 @@
 import { computed, ref } from 'vue'
 import type { HostsEntry } from './useHosts'
 import { parseEntries, validateEntry } from './useHosts'
+import { UiButton, UiInput } from '@/core/ui'
 
 const props = defineProps<{ content: string }>()
 const emit = defineEmits<{ (e: 'change', text: string): void }>()
@@ -110,7 +111,7 @@ function addRow() {
           {{ rawCount }} 行注释/空行将原样保留
         </span>
       </div>
-      <button class="btn-ghost" @click="addRow">+ 新增映射</button>
+      <UiButton variant="ghost" @click="addRow">+ 新增映射</UiButton>
     </div>
 
     <!-- 表头（固定） -->
@@ -143,25 +144,24 @@ function addRow() {
           :title="e.enabled ? '点击禁用（行首加 #）' : '点击启用'"
           @change="toggleEnabled(e)"
         />
-        <input
-          :value="e.ip"
-          class="field-input !px-[10px] !py-[7px] font-mono"
+        <UiInput
+          :model-value="e.ip"
+          class="font-mono"
           placeholder="127.0.0.1"
           spellcheck="false"
-          @input="onIpInput(e, ($event.target as HTMLInputElement).value)"
+          @update:model-value="onIpInput(e, String($event))"
         />
-        <input
-          :value="e.hosts.join(' ')"
-          class="field-input !px-[10px] !py-[7px] font-mono"
+        <UiInput
+          :model-value="e.hosts.join(' ')"
+          class="font-mono"
           placeholder="example.com www.example.com"
           spellcheck="false"
-          @input="onHostsInput(e, ($event.target as HTMLInputElement).value)"
+          @update:model-value="onHostsInput(e, String($event))"
         />
-        <input
-          :value="e.comment.replace(/^#\s*/, '')"
-          class="field-input !px-[10px] !py-[7px]"
+        <UiInput
+          :model-value="e.comment.replace(/^#\s*/, '')"
           placeholder="备注（可选）"
-          @input="onCommentInput(e, ($event.target as HTMLInputElement).value)"
+          @update:model-value="onCommentInput(e, String($event))"
         />
         <button
           class="grid h-[30px] w-[30px] place-items-center rounded-md text-text-muted transition-colors hover:bg-tertiary-soft hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark"

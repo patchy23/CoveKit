@@ -9,6 +9,7 @@ import { useCopy } from '@/core/ui/useClipboard'
 import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
 import CodeViewer from '@/core/ui/CodeViewer.vue'
 import { useSettingsStore } from '@/stores/settings'
+import { UiAlert, UiButton, UiToolbar } from '@/core/ui'
 
 const settings = useSettingsStore()
 const { copyText } = useCopy()
@@ -42,21 +43,16 @@ function clearAll() {
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-[10px]">
-    <div class="flex shrink-0 items-center gap-[8px]">
-      <button class="btn-primary" @click="runFormat">格式化</button>
-      <button class="btn-secondary" @click="runMinify">压缩</button>
-      <button class="ml-auto btn-ghost" @click="clearAll">清空</button>
-      <button v-if="output" class="btn-ghost" @click="copyText(output, 'JSON 已复制')">
+    <UiToolbar class="shrink-0">
+      <UiButton variant="primary" @click="runFormat">格式化</UiButton>
+      <UiButton @click="runMinify">压缩</UiButton>
+      <UiButton class="ml-auto" variant="ghost" @click="clearAll">清空</UiButton>
+      <UiButton v-if="output" variant="ghost" @click="copyText(output, 'JSON 已复制')">
         复制结果
-      </button>
-    </div>
+      </UiButton>
+    </UiToolbar>
 
-    <p
-      v-if="errorMsg"
-      class="shrink-0 rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-body text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
-    >
-      {{ errorMsg }}
-    </p>
+    <UiAlert v-if="errorMsg" tone="danger" class="shrink-0">{{ errorMsg }}</UiAlert>
 
     <div class="grid min-h-0 flex-1 grid-cols-2 gap-[12px]">
       <div class="flex min-h-0 flex-col">

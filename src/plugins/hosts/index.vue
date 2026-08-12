@@ -8,6 +8,7 @@ import { useUiStore } from '@/stores/ui'
 import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
 import HostsList from './HostsList.vue'
 import { countErrors, countMappings, parseHostsLines } from './useHosts'
+import { UiButton, UiTabs } from '@/core/ui'
 
 const ui = useUiStore()
 
@@ -16,6 +17,10 @@ const loaded = ref(false)
 const busy = ref(false)
 const status = ref('')
 const mode = ref<'file' | 'list'>('list')
+const modeTabs = [
+  { value: 'list', label: '列表方式' },
+  { value: 'file', label: '源文件' },
+]
 
 const lines = computed(() => parseHostsLines(content.value))
 const errors = computed(() => countErrors(lines.value))
@@ -77,39 +82,21 @@ onMounted(load)
         class="flex flex-col gap-[10px] border-b border-border pb-[12px] dark:border-border-dark"
       >
         <div class="flex flex-wrap items-center gap-[10px]">
-          <button class="btn-secondary shrink-0" :disabled="busy" @click="load">重新读取</button>
-          <button class="btn-primary shrink-0" :disabled="busy || !loaded" @click="save">
+          <UiButton class="shrink-0" :disabled="busy" @click="load">重新读取</UiButton>
+          <UiButton variant="primary" class="shrink-0" :disabled="busy || !loaded" @click="save">
             {{ busy ? '处理中…' : '保存（需管理员授权）' }}
-          </button>
-          <button class="btn-ghost shrink-0" @click="reset">清空编辑区</button>
+          </UiButton>
+          <UiButton variant="ghost" class="shrink-0" @click="reset">清空编辑区</UiButton>
           <span class="truncate text-body-sm text-text-muted dark:text-text-muted-dark">{{
             status
           }}</span>
         </div>
-        <div v-if="loaded" class="flex items-center gap-[8px]">
-          <button
-            class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
-            :class="
-              mode === 'list'
-                ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-                : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
-            "
-            @click="mode = 'list'"
-          >
-            列表方式
-          </button>
-          <button
-            class="rounded-md px-[14px] py-[7px] text-body font-medium transition-colors"
-            :class="
-              mode === 'file'
-                ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-                : 'bg-neutral text-secondary hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:text-primary-dark'
-            "
-            @click="mode = 'file'"
-          >
-            源文件
-          </button>
-        </div>
+        <UiTabs
+          v-if="loaded"
+          :model-value="mode"
+          :items="modeTabs"
+          @update:model-value="mode = $event as 'file' | 'list'"
+        />
       </div>
 
       <!-- 校验状态 -->

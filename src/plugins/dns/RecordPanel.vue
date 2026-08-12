@@ -8,7 +8,7 @@ import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { CloudDomain, CloudRecord } from './contracts'
 import { CLOUD_RECORD_TYPES, TTL_PRESETS, recordTypeBadgeClass } from './useDns'
-import Select from '@/features/ui/Select.vue'
+import { UiSelect as Select } from '@/core/ui'
 
 const props = defineProps<{
   platform: 'aliyun' | 'dnspod'

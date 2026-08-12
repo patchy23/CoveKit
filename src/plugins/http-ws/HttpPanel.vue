@@ -7,7 +7,7 @@
 import { computed, onUnmounted, ref } from 'vue'
 import type { HttpMethod, HttpResponseResult, WsSession } from './contracts'
 import { ipc } from './ipc'
-import Select from '@/features/ui/Select.vue'
+import { UiButton, UiInput, UiSelect as Select } from '@/core/ui'
 import HttpRequestBuilder from './HttpRequestBuilder.vue'
 import HttpResponse from './HttpResponse.vue'
 import WsMessageArea from './WsMessageArea.vue'
@@ -195,29 +195,36 @@ defineExpose({ getDraft, applyDraft })
         :option-class="(v: string) => methodTextClass(v, v === 'WEBSOCKET' ? 'ws' : undefined)"
         :value-class="(v: string) => methodTextClass(v, v === 'WEBSOCKET' ? 'ws' : undefined)"
       />
-      <input
+      <UiInput
         v-model="url"
-        class="field-input min-w-0 flex-1 font-mono"
+        class="min-w-0 flex-1 font-mono"
         :placeholder="isWs ? 'wss://example.com/socket' : 'https://example.com/api'"
         spellcheck="false"
         :disabled="isWs && wsConnected"
         @keyup.enter="sendOrConnect"
       />
-      <button v-if="!isWs" class="btn-primary shrink-0" :disabled="sending" @click="sendOrConnect">
+      <UiButton
+        v-if="!isWs"
+        variant="primary"
+        class="shrink-0"
+        :loading="sending"
+        @click="sendOrConnect"
+      >
         {{ sending ? '发送中…' : '发送' }}
-      </button>
+      </UiButton>
       <template v-else>
-        <button
+        <UiButton
           v-if="!wsConnected"
-          class="btn-primary shrink-0"
-          :disabled="wsConnecting"
+          variant="primary"
+          class="shrink-0"
+          :loading="wsConnecting"
           @click="connectWs"
         >
           {{ wsConnecting ? '连接中…' : '连接' }}
-        </button>
-        <button v-else class="btn-secondary shrink-0" @click="disconnectWs">断开</button>
+        </UiButton>
+        <UiButton v-else class="shrink-0" @click="disconnectWs">断开</UiButton>
       </template>
-      <button class="btn-secondary shrink-0" title="保存为接口" @click="emit('save')">保存</button>
+      <UiButton class="shrink-0" title="保存为接口" @click="emit('save')">保存</UiButton>
       <Select
         v-if="!isWs"
         :model-value="String(timeoutMs)"

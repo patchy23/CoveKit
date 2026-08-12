@@ -177,17 +177,28 @@
 @layer components {
   /* 主按钮：tertiary-strong 底白字（小号白字必须 tertiary-strong，WCAG AA） */
   .btn-primary {
-    @apply flex h-[36px] items-center gap-[7px] rounded-md bg-tertiary-strong px-[14px] text-body font-medium text-on-tertiary transition-[filter] duration-150 hover:brightness-110 dark:bg-tertiary-dark dark:text-on-tertiary-dark;
+    @apply inline-flex h-[36px] items-center justify-center gap-[7px] rounded-md bg-tertiary-strong px-[14px] text-body font-medium text-on-tertiary transition-[filter] duration-150 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-tertiary-dark dark:text-on-tertiary-dark;
   }
 
   /* 次按钮：白底 + 描边 */
   .btn-secondary {
-    @apply flex h-[36px] items-center gap-[7px] rounded-md border border-border-strong bg-surface px-[14px] text-body font-medium text-primary transition-colors duration-150 hover:bg-surface-muted dark:border-border-strong-dark dark:bg-surface-dark dark:text-primary-dark dark:hover:bg-surface-muted-dark;
+    @apply inline-flex h-[36px] items-center justify-center gap-[7px] rounded-md border border-border-strong bg-surface px-[14px] text-body font-medium text-primary transition-colors duration-150 hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50 dark:border-border-strong-dark dark:bg-surface-dark dark:text-primary-dark dark:hover:bg-surface-muted-dark;
   }
 
   /* 幽灵按钮：无边框文字按钮（复制 / 清空 / 链接动作） */
   .btn-ghost {
-    @apply rounded-md px-[10px] py-[3px] text-body-sm font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark;
+    @apply inline-flex min-h-[30px] items-center justify-center gap-[6px] rounded-md px-[10px] py-[3px] text-body-sm font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark;
+  }
+
+  .btn-danger {
+    @apply inline-flex h-[36px] items-center justify-center gap-[7px] rounded-md bg-danger-strong px-[14px] text-body font-medium text-white transition-[filter] duration-150 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-danger-dark dark:text-on-tertiary-dark;
+  }
+
+  .ui-button-sm {
+    @apply !h-[30px] !px-[10px] text-body-sm;
+  }
+  .ui-spinner {
+    @apply h-[13px] w-[13px] animate-spin rounded-full border-2 border-current border-r-transparent;
   }
 
   /* 输入框标题（字段 label） */
@@ -197,7 +208,7 @@
 
   /* 输入框 / 文本域（等宽字体按需追加 font-mono；高度基线 36px 与按钮对齐） */
   .field-input {
-    @apply w-full rounded-md border border-border-strong bg-surface-muted px-[10px] py-[7px] text-body text-primary outline-none transition-colors placeholder:text-text-muted focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-tertiary-dark;
+    @apply h-[36px] w-full rounded-md border border-border-strong bg-surface-muted px-[10px] text-body text-primary outline-none transition-colors placeholder:text-text-muted focus:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-tertiary-dark;
   }
 
   /* 工具内固定工具栏：内容区滚动时始终可见（抵消内容区 px-md/py-md 内边距） */
@@ -206,6 +217,79 @@
   }
   .field-textarea {
     @apply w-full resize-y rounded-md border border-border-strong bg-surface-muted p-[9px] text-body leading-relaxed text-primary outline-none transition-colors focus:border-tertiary dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark;
+  }
+
+  .ui-field-invalid {
+    @apply !border-danger-strong focus:!border-danger-strong dark:!border-danger-dark;
+  }
+  .ui-badge {
+    @apply inline-flex items-center rounded-full px-[8px] py-[2px] text-caption font-semibold;
+  }
+  .ui-badge-neutral {
+    @apply bg-neutral text-secondary dark:bg-neutral-dark dark:text-secondary-dark;
+  }
+  .ui-badge-accent {
+    @apply bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark;
+  }
+  .ui-badge-success {
+    @apply bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark;
+  }
+  .ui-badge-warning {
+    @apply bg-warning-soft text-warning-strong dark:bg-warning-soft-dark dark:text-warning-dark;
+  }
+  .ui-badge-danger {
+    @apply bg-danger-soft text-danger-strong dark:bg-danger-soft-dark dark:text-danger-dark;
+  }
+  .ui-badge-info {
+    @apply bg-info-soft text-info-strong dark:bg-info-soft-dark dark:text-info-dark;
+  }
+  .ui-badge-purple {
+    @apply bg-purple-soft text-purple-strong dark:bg-purple-soft-dark dark:text-purple-dark;
+  }
+  .ui-alert {
+    @apply rounded-md border px-[12px] py-[9px] text-body;
+  }
+  .ui-alert-info {
+    @apply border-info/30 bg-info-soft text-info-strong dark:border-info-dark/30 dark:bg-info-soft-dark dark:text-info-dark;
+  }
+  .ui-alert-success {
+    @apply border-success/30 bg-success-soft text-success-strong dark:border-success-dark/30 dark:bg-success-soft-dark dark:text-success-dark;
+  }
+  .ui-alert-warning {
+    @apply border-warning/30 bg-warning-soft text-warning-strong dark:border-warning-dark/30 dark:bg-warning-soft-dark dark:text-warning-dark;
+  }
+  .ui-alert-danger {
+    @apply border-danger/30 bg-danger-soft text-danger-strong dark:border-danger-dark/30 dark:bg-danger-soft-dark dark:text-danger-dark;
+  }
+  .ui-tabs {
+    @apply flex shrink-0 items-center;
+  }
+  .ui-tabs-pill {
+    @apply gap-sm;
+  }
+  .ui-tabs-line {
+    @apply gap-[2px] border-b border-border px-sm dark:border-border-dark;
+  }
+  .ui-tab {
+    @apply relative inline-flex items-center gap-[6px] px-[14px] py-[7px] text-body font-medium text-secondary transition-colors disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-dark;
+  }
+  .ui-tabs-pill .ui-tab {
+    @apply rounded-md bg-neutral hover:text-primary dark:bg-neutral-dark dark:hover:text-primary-dark;
+  }
+  .ui-tabs-pill .ui-tab-active {
+    @apply bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark;
+  }
+  .ui-tabs-line .ui-tab {
+    @apply rounded-t-md py-sm hover:text-primary dark:hover:text-primary-dark;
+  }
+  .ui-tabs-line .ui-tab-active {
+    @apply text-tertiary-strong after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-tertiary-strong dark:text-tertiary-dark dark:after:bg-tertiary-dark;
+  }
+  .ui-tab-badge {
+    @apply rounded-full bg-border px-[6px] text-caption dark:bg-border-dark;
+  }
+  .ui-modal-panel {
+    @apply max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-surface p-xl shadow-[0_12px_40px_rgba(16,24,40,0.14)] dark:border-border-dark dark:bg-surface-dark;
   }
 }
 

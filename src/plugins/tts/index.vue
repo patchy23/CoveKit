@@ -7,7 +7,8 @@
 import { computed, onMounted, ref } from 'vue'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { useUiStore } from '@/stores/ui'
-import Select from '@/features/ui/Select.vue'
+import { UiButton, UiEmptyState, UiSelect as Select, UiTextarea } from '@/core/ui'
+import AppIcon from '@/features/ui/AppIcon.vue'
 import { ipc } from './ipc'
 import type { TtsVoice } from './contracts'
 
@@ -100,9 +101,10 @@ onMounted(async () => {
     <div class="grid min-h-0 flex-1 grid-cols-2 gap-[14px] p-[14px]">
       <!-- 左：输入与参数 -->
       <div class="flex min-h-0 flex-col gap-[12px]">
-        <textarea
+        <UiTextarea
           v-model="text"
-          class="field-input min-h-0 flex-1 resize-none font-sans !leading-relaxed"
+          class="min-h-0 flex-1 font-sans !leading-relaxed"
+          resize="none"
           placeholder="输入要转成语音的文字（最多 2000 字）…"
           spellcheck="false"
         />
@@ -123,10 +125,10 @@ onMounted(async () => {
           </div>
         </div>
         <div class="flex gap-[10px]">
-          <button class="btn-primary flex-1" :disabled="generating" @click="generate">
+          <UiButton variant="primary" class="flex-1" :loading="generating" @click="generate">
             {{ generating ? '合成中…' : '合成语音' }}
-          </button>
-          <button class="btn-ghost" @click="reset">清空</button>
+          </UiButton>
+          <UiButton variant="ghost" @click="reset">清空</UiButton>
         </div>
       </div>
 
@@ -139,18 +141,17 @@ onMounted(async () => {
           <p class="text-caption text-text-muted dark:text-text-muted-dark">
             已生成 {{ (lastBytes / 1024).toFixed(1) }} KB
           </p>
-          <a :href="audioUrl" class="btn-secondary" :download="`tts-${Date.now()}.mp3`">
+          <UiButton as="a" :href="audioUrl" :download="`tts-${Date.now()}.mp3`">
             下载 MP3
-          </a>
+          </UiButton>
         </template>
-        <template v-else>
-          <span class="text-[56px] leading-none">🔊</span>
-          <p class="text-body-sm text-text-muted dark:text-text-muted-dark">
-            输入文字后点击「合成语音」，
-            <br />
-            生成结果将在此播放
-          </p>
-        </template>
+        <UiEmptyState
+          v-else
+          title="等待合成语音"
+          description="输入文字后点击「合成语音」，生成结果将在此播放。"
+        >
+          <template #icon><AppIcon name="tts" :size="24" /></template>
+        </UiEmptyState>
       </div>
     </div>
   </div>

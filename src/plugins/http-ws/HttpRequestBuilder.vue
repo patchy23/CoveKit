@@ -6,7 +6,7 @@ import { ref } from 'vue'
 import type { KvRow } from './useHttp'
 import { newKvId } from './useHttp'
 import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
-import Select from '@/features/ui/Select.vue'
+import { UiSelect as Select } from '@/core/ui'
 
 const props = defineProps<{
   params: KvRow[]

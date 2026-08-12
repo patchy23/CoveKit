@@ -6,7 +6,7 @@ import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, SystemdService } from './contracts'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import Select from '@/features/ui/Select.vue'
+import { UiSelect as Select } from '@/core/ui'
 import OutputDialog from './OutputDialog.vue'
 import { ipc } from './ipc'
 

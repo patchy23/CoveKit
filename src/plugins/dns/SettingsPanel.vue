@@ -7,6 +7,7 @@ import { onMounted, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { ProviderConfig } from './contracts'
+import { UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
 
 const ui = useUiStore()
 
@@ -54,9 +55,7 @@ onMounted(load)
     </div>
     <div v-else class="flex flex-col gap-[16px]">
       <!-- 阿里云 -->
-      <section
-        class="rounded-lg border border-border bg-surface p-[16px] dark:border-border-dark dark:bg-surface-dark"
-      >
+      <UiPanel>
         <h3 class="mb-[4px] text-body font-medium text-primary dark:text-primary-dark">阿里云</h3>
         <p class="mb-[12px] text-body-sm text-text-muted dark:text-text-muted-dark">
           云解析 DNS 的 AccessKey（RAM 子账号最小授权：AliyunDNSFullAccess）。创建入口：
@@ -69,32 +68,28 @@ onMounted(load)
           >
         </p>
         <div class="flex flex-col gap-[10px]">
-          <label class="flex flex-col gap-[4px]">
-            <span class="field-label">AccessKey ID</span>
-            <input
+          <UiField label="AccessKey ID">
+            <UiInput
               v-model="aliyun.id"
-              class="field-input font-mono"
+              class="font-mono"
               placeholder="LTAI5t…"
               spellcheck="false"
             />
-          </label>
-          <label class="flex flex-col gap-[4px]">
-            <span class="field-label">AccessKey Secret</span>
-            <input
+          </UiField>
+          <UiField label="AccessKey Secret">
+            <UiInput
               v-model="aliyun.key"
-              class="field-input font-mono"
+              class="font-mono"
               type="password"
               placeholder="••••••••"
               spellcheck="false"
             />
-          </label>
+          </UiField>
         </div>
-      </section>
+      </UiPanel>
 
       <!-- 腾讯云 DNSPod -->
-      <section
-        class="rounded-lg border border-border bg-surface p-[16px] dark:border-border-dark dark:bg-surface-dark"
-      >
+      <UiPanel>
         <h3 class="mb-[4px] text-body font-medium text-primary dark:text-primary-dark">
           腾讯云 DNSPod
         </h3>
@@ -109,32 +104,25 @@ onMounted(load)
           >
         </p>
         <div class="flex flex-col gap-[10px]">
-          <label class="flex flex-col gap-[4px]">
-            <span class="field-label">SecretId</span>
-            <input
-              v-model="dnspod.id"
-              class="field-input font-mono"
-              placeholder="AKID…"
-              spellcheck="false"
-            />
-          </label>
-          <label class="flex flex-col gap-[4px]">
-            <span class="field-label">SecretKey</span>
-            <input
+          <UiField label="SecretId">
+            <UiInput v-model="dnspod.id" class="font-mono" placeholder="AKID…" spellcheck="false" />
+          </UiField>
+          <UiField label="SecretKey">
+            <UiInput
               v-model="dnspod.key"
-              class="field-input font-mono"
+              class="font-mono"
               type="password"
               placeholder="••••••••"
               spellcheck="false"
             />
-          </label>
+          </UiField>
         </div>
-      </section>
+      </UiPanel>
 
       <div class="flex items-center gap-[10px]">
-        <button class="btn-primary" :disabled="saving" @click="save">
+        <UiButton variant="primary" :loading="saving" @click="save">
           {{ saving ? '保存中…' : '保存密钥' }}
-        </button>
+        </UiButton>
         <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
           密钥仅保存在本机应用数据目录（M3 起接入强加密存储）
         </span>

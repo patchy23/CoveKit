@@ -148,6 +148,7 @@ Rust：
 4. 所有用户操作必须有可见反馈（toast/错误行），禁止静默 catch。
 5. 提交信息：conventional commits 带插件作用域（`fix(http-ws): ...`；框架用 `core`）。
 6. **代码注释（Rust 强制）**：每个 rs 文件必须有文件头注释（`//!` 说明模块职责）；文件内每个结构体/函数必须有 `///` 用途注释；**结构体每个属性必须注释其作用**（`/// 字段含义`）；函数内关键逻辑/复杂结构（锁、异步任务、迁移、提权等）必须加行注释（`// 说明`）。提交前用 `scripts/check_docs.py` 复查覆盖率。
+7. 前端通用控件必须从 `@/core/ui` 导入，禁止在插件内复制按钮、表单、页签、面板、弹窗和状态反馈样式；完整规范见 `docs/04-ui-components.md`。
 
 ## 6. 新增插件 Check-list
 
@@ -156,4 +157,5 @@ Rust：
 - [ ] `plugins/mod.rs` 一行 + `lib.rs` register/init 各一行 + 前端 `plugins/index.ts` 一行
 - [ ] 数据文件走 `framework::store`；表结构走迁移数组
 - [ ] 命令在 `ipc_registry` 登记；契约 camelCase 同步
+- [ ] 页面通用控件使用 `@/core/ui`，并在“组件实验室”核对亮色/深色和交互状态
 - [ ] 全量验证（§5）通过后提交（conventional commits + 插件作用域）

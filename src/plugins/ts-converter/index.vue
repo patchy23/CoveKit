@@ -5,6 +5,7 @@
 import { ref } from 'vue'
 import { dateToTimestamp, nowSeconds, timestampToResult } from './useConverter'
 import { useCopy } from '@/core/ui/useClipboard'
+import { UiAlert, UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
 
 const { copyText } = useCopy()
 
@@ -36,87 +37,71 @@ function useNow() {
 
 <template>
   <div class="flex flex-col gap-[12px]">
-    <div>
+    <UiField label="时间戳（秒 / 毫秒自动识别）">
       <div class="mb-[6px] flex items-center justify-between">
-        <label class="text-body font-medium text-secondary">时间戳（秒 / 毫秒自动识别）</label>
-        <button
-          class="rounded-md px-[10px] py-[4px] text-body-sm font-medium text-tertiary-strong transition-colors hover:bg-tertiary-soft dark:text-tertiary-dark dark:hover:bg-tertiary-soft-dark"
-          @click="useNow"
-        >
-          填入当前时间
-        </button>
+        <span />
+        <UiButton variant="ghost" size="sm" @click="useNow">填入当前时间</UiButton>
       </div>
-      <input
+      <UiInput
         v-model="tsInput"
-        type="text"
         spellcheck="false"
-        class="field-input font-mono"
+        class="font-mono"
         placeholder="1700000000 或 1700000000000"
       />
-    </div>
+    </UiField>
     <div class="flex items-center gap-[8px]">
-      <button class="btn-primary" @click="convertTs">转换为日期</button>
+      <UiButton variant="primary" @click="convertTs">转换为日期</UiButton>
     </div>
-    <p
-      v-if="tsError"
-      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-body text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
-    >
-      {{ tsError }}
-    </p>
+    <UiAlert v-if="tsError" tone="danger">{{ tsError }}</UiAlert>
     <div v-if="tsResult" class="grid grid-cols-2 gap-[10px]">
-      <div class="rounded-md border border-border p-[12px] dark:border-border-dark">
+      <UiPanel padding="sm">
         <div class="text-caption font-semibold text-text-muted">标准时间</div>
         <div class="mt-[4px] font-mono text-body dark:text-primary-dark">
           {{ tsResult.local }}
         </div>
-        <button
-          class="mt-[6px] text-body-sm text-secondary hover:text-primary dark:text-secondary-dark dark:hover:text-primary-dark"
+        <UiButton
+          class="mt-[6px]"
+          variant="ghost"
+          size="sm"
           @click="copyText(tsResult!.local, '已复制')"
+          >复制</UiButton
         >
-          复制
-        </button>
-      </div>
-      <div class="rounded-md border border-border p-[12px] dark:border-border-dark">
+      </UiPanel>
+      <UiPanel padding="sm">
         <div class="text-caption font-semibold text-text-muted">UTC 时间</div>
         <div class="mt-[4px] font-mono text-body dark:text-primary-dark">{{ tsResult.utc }}</div>
-        <button
-          class="mt-[6px] text-body-sm text-secondary hover:text-primary dark:text-secondary-dark dark:hover:text-primary-dark"
+        <UiButton
+          class="mt-[6px]"
+          variant="ghost"
+          size="sm"
           @click="copyText(tsResult!.utc, '已复制')"
+          >复制</UiButton
         >
-          复制
-        </button>
-      </div>
-      <div class="rounded-md border border-border p-[12px] dark:border-border-dark">
+      </UiPanel>
+      <UiPanel padding="sm">
         <div class="text-caption font-semibold text-text-muted">毫秒</div>
         <div class="mt-[4px] font-mono text-body dark:text-primary-dark">{{ tsResult.ms }}</div>
-      </div>
-      <div class="rounded-md border border-border p-[12px] dark:border-border-dark">
+      </UiPanel>
+      <UiPanel padding="sm">
         <div class="text-caption font-semibold text-text-muted">秒</div>
         <div class="mt-[4px] font-mono text-body dark:text-primary-dark">{{ tsResult.sec }}</div>
-      </div>
+      </UiPanel>
     </div>
 
     <div class="my-[4px] border-t border-border dark:border-border-dark" />
 
-    <div>
-      <label class="mb-[6px] field-label">日期 → 时间戳（毫秒）</label>
-      <input
+    <UiField label="日期 → 时间戳（毫秒）">
+      <UiInput
         v-model="dateInput"
-        type="text"
         spellcheck="false"
-        class="field-input font-mono"
+        class="font-mono"
         placeholder="2023-11-14 22:13:20 或 ISO 字符串"
       />
-    </div>
+    </UiField>
     <div class="flex items-center gap-[8px]">
-      <button class="btn-secondary" @click="convertDate">转换为时间戳</button>
+      <UiButton @click="convertDate">转换为时间戳</UiButton>
     </div>
-    <p
-      v-if="dateError"
-      class="rounded-sm bg-tertiary-soft px-[12px] py-[9px] text-body text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
-    >
-      {{ dateError }}
-    </p>
+    <UiAlert v-if="dateError" tone="danger">{{ dateError }}</UiAlert>
     <div
       v-if="dateResult !== null"
       class="flex items-center justify-between rounded-md border border-border p-[12px] dark:border-border-dark"
@@ -124,12 +109,9 @@ function useNow() {
       <span class="font-mono text-body text-tertiary-strong dark:text-tertiary-dark">{{
         dateResult
       }}</span>
-      <button
-        class="rounded-md px-[10px] py-[4px] text-body-sm font-medium text-secondary hover:text-primary dark:text-secondary-dark dark:hover:text-primary-dark"
-        @click="copyText(String(dateResult), '已复制')"
+      <UiButton variant="ghost" size="sm" @click="copyText(String(dateResult), '已复制')"
+        >复制</UiButton
       >
-        复制
-      </button>
     </div>
   </div>
 </template>

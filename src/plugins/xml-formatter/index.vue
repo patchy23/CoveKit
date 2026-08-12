@@ -7,6 +7,7 @@ import { formatXml, minifyXml } from './useXml'
 import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
 import CodeViewer from '@/core/ui/CodeViewer.vue'
 import { useCopy } from '@/core/ui/useClipboard'
+import { UiAlert, UiButton, UiToolbar } from '@/core/ui'
 
 const { copyText } = useCopy()
 
@@ -40,24 +41,23 @@ function minify() {
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-[10px]">
-    <div class="flex shrink-0 items-center gap-[10px]">
-      <button class="btn-primary" @click="format">格式化</button>
-      <button class="btn-secondary" @click="minify">压缩</button>
-      <button
-        class="ml-auto btn-ghost"
+    <UiToolbar class="shrink-0">
+      <UiButton variant="primary" @click="format">格式化</UiButton>
+      <UiButton @click="minify">压缩</UiButton>
+      <UiButton
+        class="ml-auto"
+        variant="ghost"
         :disabled="!output"
         @click="copyText(output, '已复制格式化结果')"
       >
         复制结果
-      </button>
+      </UiButton>
       <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
         支持声明 / 注释 / 自闭合标签
       </span>
-    </div>
+    </UiToolbar>
 
-    <p v-if="error" class="shrink-0 text-body-sm text-tertiary-strong dark:text-tertiary-dark">
-      {{ error }}
-    </p>
+    <UiAlert v-if="error" tone="warning" class="shrink-0">{{ error }}</UiAlert>
 
     <div class="grid min-h-0 flex-1 grid-cols-2 gap-[12px]">
       <div class="flex min-h-0 flex-col">

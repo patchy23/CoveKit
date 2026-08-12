@@ -5,7 +5,7 @@
  */
 import { reactive, watch } from 'vue'
 import type { ServerProfile, AuthMethod } from './contracts'
-import Select from '@/features/ui/Select.vue'
+import { UiButton, UiField, UiInput, UiModal, UiSelect as Select, UiTextarea } from '@/core/ui'
 
 const props = defineProps<{
   profile: ServerProfile | null
@@ -99,81 +99,67 @@ function submit() {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="fixed inset-0 z-[150] grid place-items-center bg-black/30">
-      <div
-        class="w-[420px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
-      >
-        <h3 class="mb-[14px] text-card-title font-medium text-primary dark:text-primary-dark">
-          {{ props.profile ? '编辑服务器' : '添加服务器' }}
-        </h3>
+  <UiModal
+    :open="true"
+    :title="props.profile ? '编辑服务器' : '添加服务器'"
+    width="min(420px, 92vw)"
+    @close="emit('cancel')"
+  >
+    <div class="space-y-[10px]">
+      <UiField label="名称" required>
+        <UiInput v-model="form.name" placeholder="如：生产服务器" />
+      </UiField>
 
-        <div class="space-y-[10px]">
-          <div>
-            <label class="field-label mb-[4px]">名称</label>
-            <input v-model="form.name" class="field-input" placeholder="如：生产服务器" />
-          </div>
-
-          <div class="grid grid-cols-2 gap-[10px]">
-            <div>
-              <label class="field-label mb-[4px]">主机</label>
-              <input v-model="form.host" class="field-input font-mono" placeholder="192.168.1.1" />
-            </div>
-            <div>
-              <label class="field-label mb-[4px]">端口</label>
-              <input v-model.number="form.port" type="number" class="field-input" />
-            </div>
-          </div>
-
-          <div>
-            <label class="field-label mb-[4px]">用户名</label>
-            <input v-model="form.username" class="field-input" placeholder="root" />
-          </div>
-
-          <div>
-            <label class="field-label mb-[4px]">认证方式</label>
-            <Select
-              :model-value="form.authMethod"
-              :options="[
-                { value: 'password', label: '密码' },
-                { value: 'privateKey', label: '私钥' },
-                { value: 'privateKeyWithPassphrase', label: '私钥 + Passphrase' },
-              ]"
-              @update:model-value="form.authMethod = $event as AuthMethod"
-            />
-          </div>
-
-          <div v-if="form.authMethod === 'password'">
-            <label class="field-label mb-[4px]">密码</label>
-            <input v-model="form.password" type="password" class="field-input" />
-          </div>
-
-          <div v-if="form.authMethod !== 'password'">
-            <label class="field-label mb-[4px]">私钥内容</label>
-            <textarea
-              v-model="form.privateKey"
-              class="field-textarea font-mono text-body-sm"
-              rows="4"
-              placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
-            />
-          </div>
-
-          <div v-if="form.authMethod === 'privateKeyWithPassphrase'">
-            <label class="field-label mb-[4px]">Passphrase</label>
-            <input v-model="form.passphrase" type="password" class="field-input" />
-          </div>
-
-          <div>
-            <label class="field-label mb-[4px]">备注（可选）</label>
-            <input v-model="form.remark" class="field-input" placeholder="用途说明" />
-          </div>
-        </div>
-
-        <div class="mt-[16px] flex justify-end gap-[8px]">
-          <button class="btn-ghost" @click="emit('cancel')">取消</button>
-          <button class="btn-primary" @click="submit">保存</button>
-        </div>
+      <div class="grid grid-cols-2 gap-[10px]">
+        <UiField label="主机" required>
+          <UiInput v-model="form.host" class="font-mono" placeholder="192.168.1.1" />
+        </UiField>
+        <UiField label="端口" required>
+          <UiInput v-model.number="form.port" type="number" />
+        </UiField>
       </div>
+
+      <UiField label="用户名" required>
+        <UiInput v-model="form.username" placeholder="root" />
+      </UiField>
+
+      <UiField label="认证方式">
+        <Select
+          :model-value="form.authMethod"
+          :options="[
+            { value: 'password', label: '密码' },
+            { value: 'privateKey', label: '私钥' },
+            { value: 'privateKeyWithPassphrase', label: '私钥 + Passphrase' },
+          ]"
+          @update:model-value="form.authMethod = $event as AuthMethod"
+        />
+      </UiField>
+
+      <UiField v-if="form.authMethod === 'password'" label="密码">
+        <UiInput v-model="form.password" type="password" />
+      </UiField>
+
+      <UiField v-if="form.authMethod !== 'password'" label="私钥内容">
+        <UiTextarea
+          v-model="form.privateKey"
+          class="font-mono text-body-sm"
+          rows="4"
+          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+        />
+      </UiField>
+
+      <UiField v-if="form.authMethod === 'privateKeyWithPassphrase'" label="Passphrase">
+        <UiInput v-model="form.passphrase" type="password" />
+      </UiField>
+
+      <UiField label="备注（可选）">
+        <UiInput v-model="form.remark" placeholder="用途说明" />
+      </UiField>
     </div>
-  </Teleport>
+
+    <template #footer>
+      <UiButton variant="ghost" @click="emit('cancel')">取消</UiButton>
+      <UiButton variant="primary" @click="submit">保存</UiButton>
+    </template>
+  </UiModal>
 </template>

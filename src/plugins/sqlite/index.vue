@@ -8,6 +8,7 @@ import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
 import { describeResult, displayCell, fileName } from './useSqlite'
+import { UiButton, UiInput } from '@/core/ui'
 
 const ui = useUiStore()
 
@@ -102,18 +103,24 @@ function formatCell(v: string): string {
   <div class="flex max-w-[1100px] flex-col gap-[12px]">
     <!-- 固定连接栏（滚动时始终可见） -->
     <div class="sticky-toolbar">
-      <input
+      <UiInput
         v-model="dbPath"
-        class="field-input min-w-[280px] flex-1 font-mono"
+        class="min-w-[280px] flex-1 font-mono"
         placeholder="数据库文件路径（不存在将自动创建）"
         spellcheck="false"
         :disabled="connected"
         @keyup.enter="openDb"
       />
-      <button v-if="!connected" class="btn-primary shrink-0" :disabled="busy" @click="openDb">
+      <UiButton
+        v-if="!connected"
+        variant="primary"
+        class="shrink-0"
+        :loading="busy"
+        @click="openDb"
+      >
         {{ busy ? '打开中…' : '打开 / 新建' }}
-      </button>
-      <button v-else class="btn-secondary shrink-0" @click="closeDb">断开</button>
+      </UiButton>
+      <UiButton v-else class="shrink-0" @click="closeDb">断开</UiButton>
       <span class="truncate text-body-sm text-text-muted dark:text-text-muted-dark">{{
         status
       }}</span>
@@ -125,7 +132,7 @@ function formatCell(v: string): string {
         <aside class="w-[200px] shrink-0">
           <div class="mb-[6px] flex items-center justify-between">
             <label class="field-label">表（{{ tables.length }}）</label>
-            <button class="btn-ghost" title="刷新" @click="refreshTables">刷新</button>
+            <UiButton variant="ghost" size="sm" title="刷新" @click="refreshTables">刷新</UiButton>
           </div>
           <div class="flex max-h-[420px] flex-col gap-[4px] overflow-y-auto pr-[4px]">
             <button
@@ -157,8 +164,10 @@ function formatCell(v: string): string {
             <div class="flex items-start gap-[8px]">
               <LineNumberTextarea v-model="sql" min-height="120px" class="flex-1" />
               <div class="flex flex-col gap-[6px]">
-                <button class="btn-primary shrink-0" :disabled="busy" @click="runSql">执行</button>
-                <button class="btn-ghost shrink-0" @click="sql = ''">清空</button>
+                <UiButton variant="primary" class="shrink-0" :loading="busy" @click="runSql"
+                  >执行</UiButton
+                >
+                <UiButton variant="ghost" class="shrink-0" @click="sql = ''">清空</UiButton>
               </div>
             </div>
           </div>
