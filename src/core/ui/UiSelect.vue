@@ -48,8 +48,13 @@ const currentLabel = computed(
     props.modelValue ??
     props.placeholder
 )
+const hasCustomValueColor = computed(() => Boolean(props.valueClass || props.optionClass))
 
-function colorClass(value: string) {
+function optionColorClass(value: string) {
+  return props.optionClass?.(value) ?? 'text-primary dark:text-primary-dark'
+}
+
+function valueColorClass(value: string) {
   return (props.valueClass ?? props.optionClass)?.(value) ?? 'text-primary dark:text-primary-dark'
 }
 </script>
@@ -64,7 +69,12 @@ function colorClass(value: string) {
     >
       <SelectTrigger
         class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] outline-none transition-colors hover:border-border-strong focus-visible:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark dark:focus-visible:border-tertiary-dark"
-        :class="[`ui-control-${size}`, colorClass(modelValue)]"
+        :class="[
+          `ui-control-${size}`,
+          hasCustomValueColor
+            ? valueColorClass(modelValue)
+            : 'text-secondary dark:text-secondary-dark',
+        ]"
         :title="title"
       >
         <SelectValue :placeholder="placeholder" class="truncate">{{ currentLabel }}</SelectValue>
@@ -109,7 +119,7 @@ function colorClass(value: string) {
                     : size === 'lg'
                       ? 'py-[9px] text-body'
                       : 'py-[7px] text-body',
-                colorClass(option.value),
+                optionColorClass(option.value),
               ]"
             >
               <SelectItemText>{{ option.label ?? option.value }}</SelectItemText>

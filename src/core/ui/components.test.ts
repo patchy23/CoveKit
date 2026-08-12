@@ -60,6 +60,14 @@ describe('公共 UI 组件', () => {
     ).toContain('ui-control-sm')
   })
 
+  it('下拉框收起值使用次级文字色', () => {
+    const select = mount(UiSelect, {
+      props: { modelValue: 'cpu', options: [{ value: 'cpu', label: '按 CPU' }] },
+    })
+    expect(select.get('[role="combobox"]').classes()).toContain('text-secondary')
+    expect(select.get('[role="combobox"]').classes()).not.toContain('text-primary')
+  })
+
   it('复选框和开关保持受控更新', async () => {
     const checkbox = mount(UiCheckbox, { props: { modelValue: false } })
     await checkbox.get('[role="checkbox"]').trigger('click')
