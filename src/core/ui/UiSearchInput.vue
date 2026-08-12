@@ -34,7 +34,7 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
       :size="size"
       :placeholder="placeholder"
       :disabled="disabled"
-      class="!pl-[32px] !pr-[30px]"
+      class="ui-search-control"
       type="search"
       @update:model-value="emit('update:modelValue', String($event))"
     />

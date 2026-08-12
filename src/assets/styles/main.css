@@ -308,6 +308,11 @@
   .field-input {
     @apply h-[36px] w-full rounded-md border border-border-strong bg-surface-muted px-[10px] text-body text-primary outline-none transition-colors placeholder:text-text-muted focus:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-strong-dark dark:bg-surface-muted-dark dark:text-primary-dark dark:placeholder:text-text-muted-dark dark:focus:border-tertiary-dark;
   }
+  /* 搜索图标和清空按钮的固定占位；优先级高于 ui-control-* 的横向 padding。 */
+  .field-input.ui-search-control {
+    padding-left: 32px !important;
+    padding-right: 30px !important;
+  }
 
   /* 工具内固定工具栏：内容区滚动时始终可见（抵消内容区 px-md/py-md 内边距） */
   .sticky-toolbar {

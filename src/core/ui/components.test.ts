@@ -8,6 +8,7 @@ import UiPagination from './UiPagination.vue'
 import UiSelect from './UiSelect.vue'
 import UiSwitch from './UiSwitch.vue'
 import UiTableCell from './UiTableCell.vue'
+import UiSearchInput from './UiSearchInput.vue'
 
 const pluginVueSources = import.meta.glob('../../plugins/**/*.vue', {
   eager: true,
@@ -103,5 +104,10 @@ describe('公共 UI 组件', () => {
       .filter(([, source]) => /<t[hd](?:\s|>)/.test(source) || /data-cell-|data-table/.test(source))
       .map(([path]) => path)
     expect(violations).toEqual([])
+  })
+
+  it('搜索输入框为图标和清空按钮保留固定空间', () => {
+    const search = mount(UiSearchInput, { props: { modelValue: '' } })
+    expect(search.get('input').classes()).toContain('ui-search-control')
   })
 })
