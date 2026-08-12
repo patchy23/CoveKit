@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import {
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+} from 'reka-ui'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     open: boolean
     title?: string
@@ -22,66 +29,85 @@ const sizeWidth = {
 
 const emit = defineEmits<{ close: [] }>()
 
-function onKeydown(event: KeyboardEvent) {
-  if (event.key === 'Escape') emit('close')
+function onOpenChange(value: boolean) {
+  if (!value) emit('close')
 }
 
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onKeydown))
+function onPointerDownOutside(event: Event) {
+  if (!props.closeOnBackdrop) event.preventDefault()
+}
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="ui-modal">
-      <div
-        v-if="open"
-        class="fixed inset-0 z-[180] grid place-items-center bg-[rgba(16,20,28,0.45)] p-md backdrop-blur-[3px]"
-        @mousedown.self="closeOnBackdrop && emit('close')"
-      >
-        <section
-          class="ui-modal-panel"
+  <DialogRoot :open="open" @update:open="onOpenChange">
+    <DialogPortal>
+      <DialogOverlay
+        class="ui-modal-overlay fixed inset-0 z-[180] bg-[rgba(16,20,28,0.45)] backdrop-blur-[3px]"
+      />
+      <div class="pointer-events-none fixed inset-0 z-[180] grid place-items-center p-md">
+        <DialogContent
+          class="ui-modal-panel pointer-events-auto"
           :style="{ width: width || sizeWidth[size] }"
-          role="dialog"
-          aria-modal="true"
+          @pointer-down-outside="onPointerDownOutside"
         >
           <header v-if="title || description || $slots.header" class="mb-[18px]">
             <slot name="header">
-              <h2 class="text-card-title font-semibold text-primary dark:text-primary-dark">
+              <DialogTitle
+                class="text-card-title font-semibold text-primary dark:text-primary-dark"
+              >
                 {{ title }}
-              </h2>
-              <p
+              </DialogTitle>
+              <DialogDescription
                 v-if="description"
                 class="mt-xs text-body-sm text-secondary dark:text-secondary-dark"
               >
                 {{ description }}
-              </p>
+              </DialogDescription>
             </slot>
           </header>
           <slot />
           <footer v-if="$slots.footer" class="mt-[20px] flex justify-end gap-sm">
             <slot name="footer" />
           </footer>
-        </section>
+        </DialogContent>
       </div>
-    </Transition>
-  </Teleport>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 
 <style scoped>
-.ui-modal-enter-active,
-.ui-modal-leave-active {
-  transition: opacity 0.18s ease;
+.ui-modal-overlay[data-state='open'] {
+  animation: ui-modal-fade-in 0.18s ease;
 }
-.ui-modal-enter-active .ui-modal-panel,
-.ui-modal-leave-active .ui-modal-panel {
-  transition: transform 0.18s ease;
+.ui-modal-overlay[data-state='closed'] {
+  animation: ui-modal-fade-out 0.18s ease;
 }
-.ui-modal-enter-from,
-.ui-modal-leave-to {
-  opacity: 0;
+.ui-modal-panel[data-state='open'] {
+  animation: ui-modal-panel-in 0.18s ease;
 }
-.ui-modal-enter-from .ui-modal-panel,
-.ui-modal-leave-to .ui-modal-panel {
-  transform: translateY(10px) scale(0.98);
+.ui-modal-panel[data-state='closed'] {
+  animation: ui-modal-panel-out 0.18s ease;
+}
+@keyframes ui-modal-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ui-modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+@keyframes ui-modal-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes ui-modal-panel-out {
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
 }
 </style>

@@ -1,6 +1,8 @@
 # 公共前端组件库
 
-公共组件统一位于 `src/core/ui/`，业务插件只能从 `@/core/ui` 导入通用控件。组件库以 `DESIGN.md` token 为视觉单一事实源，不在插件中复制按钮、表单、页签、弹窗和状态色组合。
+公共组件统一位于 `src/core/ui/`，业务插件只能从 `@/core/ui` 导入通用控件。组件库采用 shadcn-vue 的源码所有权与组合方式，Select、Dialog、Tabs、Checkbox、Radio、Switch 等交互由 Reka UI 原语提供；`DESIGN.md` token 仍是视觉单一事实源，不使用 shadcn-vue 默认皮肤，也不在插件中复制按钮、表单、页签、弹窗和状态色组合。
+
+根目录 `components.json` 记录 shadcn-vue CLI 的目录和 Tailwind 4 配置。CLI 只用于按需取得组件源码；生成后必须转换成现有 `Ui*` API，并按组件实验室基线验收，业务插件不得直接导入 `reka-ui`。
 
 ## 1. 组件清单
 
@@ -59,7 +61,7 @@ import { UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
 - 业务页不再直接使用 `btn-*`、`field-*` 组合类；这些类是组件内部实现细节。
 - 原生按钮仅保留在表格行内图标、窗口控制等高度定制场景；可复用的文字操作必须用 `UiButton`。
 - 字段错误通过 `UiField.error + UiInput.invalid` 表达，异步或跨字段反馈使用 `UiAlert` 或 toast。
-- 页签不能在业务页重新拼 active 类；选择器不能退回原生 `select`。
+- 页签不能在业务页重新拼 active 类；选择器不能退回原生 `select`；业务插件禁止直接导入 `reka-ui`。
 - 新增视觉变体前先更新 `DESIGN.md`，再扩展公共组件 API。
 
 ## 4. 验收页面

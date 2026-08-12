@@ -2,3 +2,4 @@
 # 允许构建脚本白名单：esbuild 的 postinstall 验证本地二进制
 allowBuilds:
   esbuild: true
+  vue-demi: true

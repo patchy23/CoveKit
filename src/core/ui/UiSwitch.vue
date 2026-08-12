@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { SwitchRoot, SwitchThumb } from 'reka-ui'
 import { computed } from 'vue'
 import type { UiSize } from './types'
 
@@ -39,9 +40,7 @@ const thumbClass = computed(
     class="inline-flex items-center gap-sm"
     :class="disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
   >
-    <button
-      type="button"
-      role="switch"
+    <SwitchRoot
       class="shrink-0 rounded-full transition-colors"
       :class="[
         trackClass,
@@ -49,15 +48,15 @@ const thumbClass = computed(
           ? 'bg-tertiary-strong dark:bg-tertiary-dark'
           : 'bg-border-strong dark:bg-border-strong-dark',
       ]"
-      :aria-checked="modelValue"
+      :model-value="modelValue"
       :disabled="disabled"
-      @click="emit('update:modelValue', !modelValue)"
+      @update:model-value="emit('update:modelValue', $event)"
     >
-      <span
+      <SwitchThumb
         class="block rounded-full bg-surface shadow-sm transition-transform dark:bg-primary-dark"
         :class="[thumbClass, { '!translate-x-0': !modelValue }]"
       />
-    </button>
+    </SwitchRoot>
     <span v-if="label || description">
       <span v-if="label" class="block text-body font-medium text-primary dark:text-primary-dark">{{
         label

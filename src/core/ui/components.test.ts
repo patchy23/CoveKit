@@ -31,7 +31,8 @@ describe('公共 UI 组件', () => {
         ],
       },
     })
-    await wrapper.get('button:nth-child(2)').trigger('click')
+    const tabs = wrapper.findAll('[role="tab"]')
+    await tabs[1].trigger('mousedown', { button: 0, ctrlKey: false })
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['second'])
   })
 
@@ -53,7 +54,7 @@ describe('公共 UI 组件', () => {
 
   it('复选框和开关保持受控更新', async () => {
     const checkbox = mount(UiCheckbox, { props: { modelValue: false } })
-    await checkbox.get('input').setValue(true)
+    await checkbox.get('[role="checkbox"]').trigger('click')
     expect(checkbox.emitted('update:modelValue')?.[0]).toEqual([true])
 
     const toggle = mount(UiSwitch, { props: { modelValue: false } })

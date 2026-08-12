@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
 import type { UiSize } from './types'
 
 export interface UiTabItem {
@@ -22,20 +23,23 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
 </script>
 
 <template>
-  <div class="ui-tabs" :class="`ui-tabs-${variant}`" role="tablist">
-    <button
-      v-for="item in items"
-      :key="item.value"
-      type="button"
-      class="ui-tab"
-      :class="[`ui-tab-${size}`, { 'ui-tab-active': item.value === modelValue }]"
-      :disabled="item.disabled"
-      :aria-selected="item.value === modelValue"
-      role="tab"
-      @click="emit('update:modelValue', item.value)"
-    >
-      {{ item.label }}
-      <span v-if="item.badge !== undefined" class="ui-tab-badge">{{ item.badge }}</span>
-    </button>
-  </div>
+  <TabsRoot
+    :model-value="modelValue"
+    activation-mode="manual"
+    @update:model-value="emit('update:modelValue', String($event))"
+  >
+    <TabsList class="ui-tabs" :class="`ui-tabs-${variant}`">
+      <TabsTrigger
+        v-for="item in items"
+        :key="item.value"
+        :value="item.value"
+        class="ui-tab"
+        :class="[`ui-tab-${size}`, { 'ui-tab-active': item.value === modelValue }]"
+        :disabled="item.disabled"
+      >
+        {{ item.label }}
+        <span v-if="item.badge !== undefined" class="ui-tab-badge">{{ item.badge }}</span>
+      </TabsTrigger>
+    </TabsList>
+  </TabsRoot>
 </template>

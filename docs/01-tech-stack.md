@@ -49,18 +49,19 @@
 1. 团队（假定中文开发者）查资料成本最低；
 2. Tauri 官方 `create-tauri-app` 的 vue-ts 模板开箱即用；
 3. Pinia + `<script setup>` 组合式 API 与工具注册表这类"可插拔"架构天然契合；
-4. 本项目是自研组件（不依赖重型 UI 库），Vue 的单文件组件粒度正合适。
+4. 本项目采用 shadcn-vue 源码模式（不依赖重型默认皮肤），Vue 的单文件组件粒度正合适。
 
 > 若团队 React 熟练度明显更高，替换成本集中在 `src/features/` 与 `src/stores/`，`core/`、`tools/` 目录结构、IPC 契约、Rust 侧零改动。
 
 ---
 
-## 3. UI 方案：Tailwind CSS 4 + 自研组件库
+## 3. UI 方案：Tailwind CSS 4 + shadcn-vue 源码模式
 
-**不引入 Element Plus / Naive UI 等重型组件库。** 理由：
-- 设计规范（`DESIGN.md`）已锁定视觉语言，组件库默认样式会与规范冲突，改造工作量大于自研；
-- 工具箱的工具界面形态差异大（表单、画布、取色器…），通用组件库帮不上核心部分；
-- 桌面应用无浏览器兼容性包袱，可以放心用现代 CSS。
+**公共组件采用 shadcn-vue 的源码所有权模式，交互原语使用 Reka UI，不引入 Element Plus / Naive UI 等重型默认皮肤。** 理由：
+- `src/core/ui` 持有完整组件源码，AI 可以直接理解、修改和测试，不依赖覆盖第三方内部样式；
+- Reka UI 负责 Select、Dialog、Tabs 等控件的键盘操作、焦点管理与无障碍语义；
+- 设计规范（`DESIGN.md`）继续锁定视觉语言，组件不使用 shadcn-vue 的默认主题；
+- 工具箱的终端、编辑器、文件管理等专业界面仍使用领域组件，通用组件只负责稳定的基础交互。
 
 **Tailwind CSS 4**（CSS-first 配置）与 `DESIGN.md` tokens 无缝对接：
 

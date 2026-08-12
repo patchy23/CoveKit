@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { RadioGroupIndicator, RadioGroupItem, RadioGroupRoot } from 'reka-ui'
 import type { UiSize } from './types'
 
 export interface RadioOption {
@@ -24,16 +25,23 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
 </script>
 
 <template>
-  <div class="flex gap-md" :class="direction === 'column' ? 'flex-col' : 'flex-row flex-wrap'">
+  <RadioGroupRoot
+    :model-value="modelValue"
+    :name="name"
+    :disabled="disabled"
+    class="flex gap-md"
+    :class="direction === 'column' ? 'flex-col' : 'flex-row flex-wrap'"
+    @update:model-value="emit('update:modelValue', String($event))"
+  >
     <label
       v-for="option in options"
       :key="option.value"
       class="inline-flex items-start gap-sm"
       :class="disabled || option.disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
     >
-      <input
-        type="radio"
-        class="mt-[2px] accent-[var(--color-tertiary-strong)]"
+      <RadioGroupItem
+        :value="option.value"
+        class="mt-[2px] grid shrink-0 place-items-center rounded-full border border-border-strong bg-surface outline-none transition-colors data-[state=checked]:border-tertiary-strong focus-visible:ring-2 focus-visible:ring-tertiary/30 dark:border-border-strong-dark dark:bg-surface-dark dark:data-[state=checked]:border-tertiary-dark"
         :class="
           size === 'xs'
             ? 'h-[12px] w-[12px]'
@@ -43,12 +51,13 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
                 ? 'h-[18px] w-[18px]'
                 : 'h-4 w-4'
         "
-        :name="name"
-        :value="option.value"
-        :checked="modelValue === option.value"
         :disabled="disabled || option.disabled"
-        @change="emit('update:modelValue', option.value)"
-      />
+        :aria-label="option.label"
+      >
+        <RadioGroupIndicator
+          class="h-1/2 w-1/2 rounded-full bg-tertiary-strong dark:bg-tertiary-dark"
+        />
+      </RadioGroupItem>
       <span>
         <span
           class="block font-medium text-primary dark:text-primary-dark"
@@ -62,5 +71,5 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
         >
       </span>
     </label>
-  </div>
+  </RadioGroupRoot>
 </template>

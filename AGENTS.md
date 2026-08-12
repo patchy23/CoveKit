@@ -18,7 +18,7 @@
 
 - 容器：Tauri 2.11（Rust）+ 官方插件：clipboard-manager / global-shortcut / store / sql / single-instance / autostart / notification / window-state / updater / dialog / fs / opener
 - 前端：**Vue 3.5 + TypeScript + Vite + Tailwind CSS 4 + Pinia** + fuse.js（搜索）+ vue-i18n（zh-CN 默认）
-- 不引入重型组件库，UI 自研，tokens 以根目录 `DESIGN.md` 为**单一事实源**
+- 公共 UI 采用 **shadcn-vue 源码模式 + Reka UI 无样式原语**，业务仅从 `src/core/ui` 使用 `Ui*`；tokens 仍以根目录 `DESIGN.md` 为**单一事实源**，禁止引入第三方默认皮肤
 - 明确禁用 `tauri-plugin-shell`
 - 第二批技术预备（**第一批不引入依赖**，只留架构边界）：reqwest + tokio-tungstenite（HTTP/WS）、sqlx（DB 三方言）、russh 或 ssh2（SSH，M3 再定）、tauri-plugin-stronghold（凭据加密）、hosts 按需提权助手（UAC）
 
