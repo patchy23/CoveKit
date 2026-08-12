@@ -22,9 +22,35 @@
 @font-face {
   font-family: 'patchyBox Sans';
   src:
+    local('PingFang SC Light'), local('Microsoft YaHei UI Light'), local('Microsoft YaHei Light'),
+    local('Noto Sans SC');
+  font-weight: 100 399;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+2E80-2EFF, U+2F00-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: 'patchyBox Sans';
+  src:
     local('PingFang SC'), local('Microsoft YaHei UI'), local('Microsoft YaHei'),
-    local('Noto Sans CJK SC'), local('Noto Sans SC');
-  font-weight: 100 900;
+    local('Noto Sans SC');
+  font-weight: 400 599;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+2E80-2EFF, U+2F00-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF;
+}
+
+@font-face {
+  font-family: 'patchyBox Sans';
+  src:
+    local('PingFang SC Semibold'), local('PingFang SC Bold'), local('Microsoft YaHei UI Bold'),
+    local('Microsoft YaHei Bold'), local('Noto Sans SC');
+  font-weight: 600 900;
   font-style: normal;
   font-display: swap;
   unicode-range:
@@ -181,6 +207,7 @@
     /* 字号基准 14px：桌面 UI 密度友好（组件层用 DESIGN.md 语义字号覆盖） */
     font-size: 14px;
     line-height: 1.5;
+    font-synthesis: none;
   }
 
   /* WebView 原生控件不得使用系统默认字体；统一继承应用无衬线字体栈。 */
