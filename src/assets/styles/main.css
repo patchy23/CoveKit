@@ -14,6 +14,33 @@
   font-display: swap;
 }
 
+/*
+ * 技术字段组合字体：必须用 unicode-range 在字体选择前拆分拉丁/CJK。
+ * 仅把微软雅黑追加到 Consolas 后面无法阻止 Windows FontLink 把中文链接到宋体。
+ */
+@font-face {
+  font-family: 'patchyBox Mono';
+  src:
+    local('Cascadia Code'), local('Cascadia Mono'), local('Consolas'), local('SF Mono'),
+    local('Menlo');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range:
+    U+0000-024F, U+1E00-1EFF, U+2000-206F, U+20A0-20CF, U+2100-214F, U+2190-21FF, U+2200-22FF;
+}
+
+@font-face {
+  font-family: 'patchyBox Mono';
+  src: local('PingFang SC'), local('Microsoft YaHei UI'), local('Microsoft YaHei');
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  unicode-range:
+    U+2E80-2EFF, U+2F00-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
+    U+FE30-FE4F, U+FF00-FFEF;
+}
+
 @theme {
   /* ── Colors（DESIGN.md colors 全量，浅色 + -dark 变体）── */
   --color-primary: #191d23;
@@ -102,9 +129,7 @@
   --font-sans:
     'Inter', 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei UI',
     'Microsoft YaHei', sans-serif;
-  --font-mono:
-    'Cascadia Code', 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'PingFang SC',
-    'Microsoft YaHei UI', 'Microsoft YaHei', monospace;
+  --font-mono: 'patchyBox Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', monospace;
 
   /* 页面主标题（顶栏） */
   --text-h1: 17px;
