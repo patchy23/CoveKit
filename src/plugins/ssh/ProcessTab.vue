@@ -7,7 +7,7 @@ import type { ServerConnection, ServerProfile, ProcessInfo } from './contracts'
 import { formatBytes } from './useSsh'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiSelect as Select } from '@/core/ui'
+import { UiButton, UiSearchInput, UiSelect as Select } from '@/core/ui'
 import { ipc } from './ipc'
 
 const props = defineProps<{
@@ -99,9 +99,10 @@ watch(
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
         {{ profile?.name ?? '未连接' }} · 进程管理
       </span>
-      <input
+      <UiSearchInput
         v-model="keyword"
-        class="field-input !h-[28px] !w-[180px] !py-[4px] text-caption"
+        size="sm"
+        class="!w-[180px]"
         placeholder="搜索进程/PID/用户"
       />
       <Select
@@ -117,18 +118,12 @@ watch(
         @update:model-value="sortBy = $event as 'cpu' | 'memory' | 'pid'"
       />
       <div class="ml-auto">
-        <button
-          class="btn-ghost !px-[8px] !py-[3px] text-caption"
-          title="刷新进程列表"
-          @click="refresh"
-        >
-          刷新
-        </button>
+        <UiButton variant="ghost" size="sm" title="刷新进程列表" @click="refresh"> 刷新 </UiButton>
       </div>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <table class="w-full text-left text-body">
+      <table class="data-table">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -148,35 +143,29 @@ watch(
             :key="p.pid"
             class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
           >
-            <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ p.pid }}</td>
-            <td class="px-[12px] py-[8px] text-body-sm">{{ p.user }}</td>
-            <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ p.cpuPercent.toFixed(1) }}</td>
-            <td class="px-[12px] py-[8px] font-mono text-body-sm">
+            <td class="data-cell-tech px-[12px] py-[8px]">{{ p.pid }}</td>
+            <td class="data-cell-tech px-[12px] py-[8px]">{{ p.user }}</td>
+            <td class="data-cell-tech px-[12px] py-[8px]">{{ p.cpuPercent.toFixed(1) }}</td>
+            <td class="data-cell-tech px-[12px] py-[8px]">
               {{ p.memoryPercent.toFixed(1) }}
             </td>
-            <td class="px-[12px] py-[8px] font-mono text-body-sm">
+            <td class="data-cell-tech px-[12px] py-[8px]">
               {{ formatBytes(p.memoryBytes) }}
             </td>
-            <td
-              class="max-w-[200px] truncate px-[12px] py-[8px] font-mono text-body-sm"
-              :title="p.command"
-            >
+            <td class="data-cell-tech max-w-[200px] truncate px-[12px] py-[8px]" :title="p.command">
               {{ p.command }}
             </td>
-            <td class="whitespace-nowrap px-[12px] py-[8px]">
+            <td class="data-cell-action whitespace-nowrap px-[12px] py-[8px]">
               <div class="flex items-center gap-[4px]">
-                <button
-                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
-                  @click="requestKill(p.pid)"
-                >
-                  结束
-                </button>
-                <button
-                  class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption text-danger-strong dark:text-danger-dark"
+                <UiButton variant="ghost" size="xs" @click="requestKill(p.pid)"> 结束 </UiButton>
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  class="text-danger-strong dark:text-danger-dark"
                   @click="requestKill(p.pid, true)"
                 >
                   强杀
-                </button>
+                </UiButton>
               </div>
             </td>
           </tr>

@@ -6,7 +6,7 @@ import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, SystemdService } from './contracts'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiSelect as Select } from '@/core/ui'
+import { UiButton, UiSelect as Select } from '@/core/ui'
 import OutputDialog from './OutputDialog.vue'
 import { ipc } from './ipc'
 
@@ -136,18 +136,12 @@ watch(
         @update:model-value="filter = $event as 'all' | 'active' | 'inactive' | 'failed'"
       />
       <div class="ml-auto">
-        <button
-          class="btn-ghost !px-[8px] !py-[3px] text-caption"
-          title="刷新服务列表"
-          @click="refresh"
-        >
-          刷新
-        </button>
+        <UiButton variant="ghost" size="sm" title="刷新服务列表" @click="refresh"> 刷新 </UiButton>
       </div>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <table class="w-full text-left text-body">
+      <table class="data-table">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -164,37 +158,38 @@ watch(
             :key="s.name"
             class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
           >
-            <td class="px-[12px] py-[8px] font-mono text-body-sm">{{ s.name }}</td>
-            <td class="px-[12px] py-[8px] text-body-sm">{{ s.description }}</td>
-            <td class="px-[12px] py-[8px]">
+            <td class="data-cell-tech px-[12px] py-[8px]">{{ s.name }}</td>
+            <td class="data-cell-text px-[12px] py-[8px]">{{ s.description }}</td>
+            <td class="data-cell-text px-[12px] py-[8px]">
               <span :class="stateClass(s)">{{ stateText(s) }}</span>
             </td>
-            <td class="px-[12px] py-[8px]">
+            <td class="data-cell-action px-[12px] py-[8px]">
               <div class="flex gap-[4px]">
-                <button
+                <UiButton
                   v-if="s.activeState !== 'active'"
-                  class="btn-ghost !px-[6px] !py-[2px] text-caption"
+                  variant="ghost"
+                  size="xs"
                   @click="requestAction(s, 'start')"
                 >
                   启动
-                </button>
-                <button
+                </UiButton>
+                <UiButton
                   v-if="s.activeState === 'active'"
-                  class="btn-ghost !px-[6px] !py-[2px] text-caption"
+                  variant="ghost"
+                  size="xs"
                   @click="requestAction(s, 'stop')"
                 >
                   停止
-                </button>
-                <button
+                </UiButton>
+                <UiButton
                   v-if="s.activeState === 'active'"
-                  class="btn-ghost !px-[6px] !py-[2px] text-caption"
+                  variant="ghost"
+                  size="xs"
                   @click="requestAction(s, 'restart')"
                 >
                   重启
-                </button>
-                <button class="btn-ghost !px-[6px] !py-[2px] text-caption" @click="logs(s)">
-                  日志
-                </button>
+                </UiButton>
+                <UiButton variant="ghost" size="xs" @click="logs(s)"> 日志 </UiButton>
               </div>
             </td>
           </tr>

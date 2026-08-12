@@ -7,7 +7,7 @@ import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, DockerContainer } from './contracts'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiSelect as Select } from '@/core/ui'
+import { UiButton, UiSearchInput, UiSelect as Select } from '@/core/ui'
 import TerminalTab from './TerminalTab.vue'
 import OutputDialog from './OutputDialog.vue'
 import DockerTable from './DockerTable.vue'
@@ -150,9 +150,10 @@ watch(
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
         {{ profile?.name ?? '未连接' }} · Docker 容器
       </span>
-      <input
+      <UiSearchInput
         v-model="keyword"
-        class="field-input !h-[28px] !w-[180px] !py-[4px] text-caption"
+        size="sm"
+        class="!w-[180px]"
         placeholder="搜索名称/ID/镜像"
       />
       <Select
@@ -168,13 +169,7 @@ watch(
         @update:model-value="statusFilter = $event as 'all' | 'running' | 'exited'"
       />
       <div class="ml-auto">
-        <button
-          class="btn-ghost !px-[8px] !py-[3px] text-caption"
-          title="刷新容器列表"
-          @click="refresh"
-        >
-          刷新
-        </button>
+        <UiButton variant="ghost" size="sm" title="刷新容器列表" @click="refresh"> 刷新 </UiButton>
       </div>
     </div>
 
@@ -202,7 +197,7 @@ watch(
           class="flex h-full w-full max-w-[900px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
         >
           <div class="flex justify-end border-b border-border p-[6px] dark:border-border-dark">
-            <button class="btn-ghost text-body-sm" @click="terminalContainer = null">关闭</button>
+            <UiButton variant="ghost" size="sm" @click="terminalContainer = null">关闭</UiButton>
           </div>
           <TerminalTab
             :key="terminalContainer.id"

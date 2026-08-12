@@ -2,6 +2,7 @@
 /** DockerTable · SSH Docker 容器列表与行级操作。 */
 import type { DockerContainer } from './contracts'
 import { shortContainerId } from './useSsh'
+import { UiButton } from '@/core/ui'
 
 defineProps<{ containers: DockerContainer[]; busyContainerId?: string | null }>()
 const emit = defineEmits<{
@@ -22,7 +23,7 @@ function stateClass(status: string): string {
 
 <template>
   <div class="min-h-0 flex-1 overflow-y-auto">
-    <table class="w-full table-fixed text-left text-body">
+    <table class="data-table table-fixed">
       <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
         <tr
           class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -43,76 +44,73 @@ function stateClass(status: string): string {
           class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
         >
           <td
-            class="w-[92px] whitespace-nowrap px-[8px] py-[8px] font-mono text-body-sm"
+            class="data-cell-tech w-[92px] whitespace-nowrap px-[8px] py-[8px]"
             :title="container.id"
           >
             {{ shortContainerId(container.id) }}
           </td>
-          <td class="truncate px-[8px] py-[8px] text-body-sm" :title="container.name">
+          <td class="data-cell-tech truncate px-[8px] py-[8px]" :title="container.name">
             {{ container.name }}
           </td>
-          <td class="truncate px-[8px] py-[8px] font-mono text-body-sm" :title="container.image">
+          <td class="data-cell-tech truncate px-[8px] py-[8px]" :title="container.image">
             {{ container.image }}
           </td>
-          <td class="whitespace-nowrap px-[8px] py-[8px]">
+          <td class="data-cell-tech whitespace-nowrap px-[8px] py-[8px]">
             <span
               v-if="busyContainerId === container.id"
-              class="animate-pulse text-tertiary-strong dark:text-tertiary-dark"
+              class="animate-pulse font-sans text-tertiary-strong dark:text-tertiary-dark"
             >
               更新中
             </span>
             <span v-else :class="stateClass(container.status)">{{ container.status }}</span>
           </td>
           <td
-            class="truncate whitespace-nowrap px-[8px] py-[8px] font-mono text-body-sm"
+            class="data-cell-tech truncate whitespace-nowrap px-[8px] py-[8px]"
             :title="container.uptime"
           >
             {{ container.uptime }}
           </td>
-          <td class="truncate px-[8px] py-[8px] font-mono text-body-sm" :title="container.ports">
+          <td class="data-cell-tech truncate px-[8px] py-[8px]" :title="container.ports">
             {{ container.ports }}
           </td>
-          <td class="whitespace-nowrap px-[8px] py-[8px]">
+          <td class="data-cell-action whitespace-nowrap px-[8px] py-[8px]">
             <div class="flex items-center justify-end gap-[2px]">
-              <button
+              <UiButton
                 v-if="container.status !== 'running'"
-                class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
+                variant="ghost"
+                size="xs"
                 @click="emit('action', container, 'start')"
               >
                 启动
-              </button>
-              <button
+              </UiButton>
+              <UiButton
                 v-if="container.status === 'running'"
-                class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
+                variant="ghost"
+                size="xs"
                 @click="emit('action', container, 'stop')"
               >
                 停止
-              </button>
-              <button
+              </UiButton>
+              <UiButton
                 v-if="container.status === 'running'"
-                class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
+                variant="ghost"
+                size="xs"
                 @click="emit('action', container, 'restart')"
               >
                 重启
-              </button>
-              <button
-                class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
-                @click="emit('logs', container)"
-              >
-                日志
-              </button>
-              <button
-                class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption"
-                @click="emit('terminal', container)"
-              >
+              </UiButton>
+              <UiButton variant="ghost" size="xs" @click="emit('logs', container)"> 日志 </UiButton>
+              <UiButton variant="ghost" size="xs" @click="emit('terminal', container)">
                 终端
-              </button>
-              <button
-                class="btn-ghost shrink-0 whitespace-nowrap !px-[6px] !py-[2px] text-caption text-danger-strong dark:text-danger-dark"
+              </UiButton>
+              <UiButton
+                variant="ghost"
+                size="xs"
+                class="text-danger-strong dark:text-danger-dark"
                 @click="emit('action', container, 'remove')"
               >
                 删除
-              </button>
+              </UiButton>
             </div>
           </td>
         </tr>

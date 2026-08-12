@@ -2,6 +2,7 @@
 /** FileBrowser · SSH 文件页的路径工具栏与远程文件表格。 */
 import type { RemoteFile } from './contracts'
 import { formatBytes, formatTime } from './useSsh'
+import { UiButton, UiInput } from '@/core/ui'
 
 defineProps<{
   currentPath: string
@@ -29,29 +30,25 @@ const emit = defineEmits<{
   <div
     class="flex shrink-0 items-center gap-[8px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
   >
-    <button class="btn-ghost !px-[6px] !py-[3px] text-caption" title="上级目录" @click="emit('up')">
-      ↑ 上级
-    </button>
-    <input
-      :value="currentPath"
-      class="field-input !h-[28px] flex-1 !py-[4px] font-mono text-body-sm"
+    <UiButton variant="ghost" size="sm" title="上级目录" @click="emit('up')"> ↑ 上级 </UiButton>
+    <UiInput
+      :model-value="currentPath"
+      size="sm"
+      class="flex-1 font-mono"
       spellcheck="false"
-      @input="emit('update:currentPath', ($event.target as HTMLInputElement).value)"
-      @keyup.enter="emit('navigate', ($event.target as HTMLInputElement).value)"
+      @update:model-value="emit('update:currentPath', String($event))"
+      @keyup.enter="emit('navigate', currentPath)"
     />
-    <button class="btn-secondary !px-[12px] text-body-sm" @click="emit('upload')">上传</button>
-    <button class="btn-secondary !px-[12px] text-body-sm" @click="emit('download')">下载</button>
-    <button class="btn-secondary !px-[12px] text-body-sm" @click="emit('rename')">重命名</button>
-    <button
-      class="btn-secondary !px-[12px] text-body-sm text-danger-strong dark:text-danger-dark"
-      @click="emit('delete')"
-    >
+    <UiButton size="sm" @click="emit('upload')">上传</UiButton>
+    <UiButton size="sm" @click="emit('download')">下载</UiButton>
+    <UiButton size="sm" @click="emit('rename')">重命名</UiButton>
+    <UiButton size="sm" class="text-danger-strong dark:text-danger-dark" @click="emit('delete')">
       删除
-    </button>
+    </UiButton>
   </div>
 
   <div class="min-h-0 flex-1 overflow-y-auto" @contextmenu="emit('context', $event, null)">
-    <table class="w-full text-left text-body">
+    <table class="data-table">
       <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
         <tr
           class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -73,16 +70,16 @@ const emit = defineEmits<{
           @dblclick="emit('open', file)"
           @contextmenu.stop="emit('context', $event, file)"
         >
-          <td class="px-[12px] py-[7px]">
+          <td class="data-cell-tech px-[12px] py-[7px]">
             <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
             <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
           </td>
-          <td class="px-[12px] py-[7px] font-mono text-body-sm">
+          <td class="data-cell-tech px-[12px] py-[7px]">
             {{ file.isDir ? '-' : formatBytes(file.size) }}
           </td>
-          <td class="px-[12px] py-[7px] text-body-sm">{{ formatTime(file.modifiedAt) }}</td>
-          <td class="px-[12px] py-[7px] font-mono text-body-sm">{{ file.permissions }}</td>
-          <td class="px-[12px] py-[7px] text-body-sm">{{ file.owner }}</td>
+          <td class="data-cell-tech px-[12px] py-[7px]">{{ formatTime(file.modifiedAt) }}</td>
+          <td class="data-cell-tech px-[12px] py-[7px]">{{ file.permissions }}</td>
+          <td class="data-cell-tech px-[12px] py-[7px]">{{ file.owner }}</td>
         </tr>
       </tbody>
     </table>
