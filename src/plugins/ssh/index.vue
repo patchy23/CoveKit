@@ -3,7 +3,7 @@
  * SSH 工具 · 主容器（服务器列表 + 页签工作区）
  * 连接/断开/凭证走真实 IPC；状态经事件 ssh://connection-status 同步。
  */
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import ServerList from './ServerList.vue'
 import ServerForm from './ServerForm.vue'
 import TerminalTab from './TerminalTab.vue'
@@ -49,6 +49,14 @@ const tabItems = tabs.map((item) => ({ value: item.id, label: item.name }))
 const activeTabId = ref<string>('terminal')
 const visitedProfileIds = ref<string[]>([])
 const terminalConnectRequests = ref<Record<string, number>>({})
+const activeProfile = computed(() =>
+  profiles.value.find((item) => item.id === activeProfileId.value)
+)
+const showConnectionHost = computed(
+  () =>
+    Boolean(activeConnection.value?.host) &&
+    activeConnection.value?.host !== activeProfile.value?.name
+)
 
 /** 记录已打开过的服务器工作区，使不同服务器的终端与页签状态独立保活。 */
 function selectProfile(profileId: string) {
@@ -120,9 +128,12 @@ watch(activeProfileId, (profileId) => {
             :class="statusDotClass(activeConnection?.status ?? 'disconnected')"
           />
           <span class="text-body font-medium text-primary dark:text-primary-dark">
-            {{ profiles.find((p) => p.id === activeProfileId)?.name }}
+            {{ activeProfile?.name }}
           </span>
-          <span class="font-mono text-body-sm text-text-muted dark:text-text-muted-dark">
+          <span
+            v-if="showConnectionHost"
+            class="font-mono text-body-sm text-text-muted dark:text-text-muted-dark"
+          >
             {{ activeConnection?.host ?? '—' }}
           </span>
           <span class="text-caption text-text-muted dark:text-text-muted-dark">

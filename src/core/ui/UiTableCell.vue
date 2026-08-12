@@ -13,9 +13,7 @@ const props = withDefaults(
 )
 
 const classes = computed(() =>
-  cn('leading-normal', props.as === 'th' ? 'font-sans font-medium' : 'font-normal', {
-    'font-sans': ['text', 'numeric', 'status', 'action'].includes(props.content),
-    'font-mono': props.content === 'technical' || props.content === 'code',
+  cn('font-sans leading-normal', props.as === 'th' ? 'font-medium' : 'font-normal', {
     'tabular-nums': props.content === 'numeric',
     'text-left': props.align === 'left',
     'text-center': props.align === 'center',

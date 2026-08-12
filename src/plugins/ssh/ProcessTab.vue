@@ -96,9 +96,7 @@ watch(
     <div
       class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
     >
-      <span class="text-body-sm text-secondary dark:text-secondary-dark">
-        {{ profile?.name ?? '未连接' }} · 进程管理
-      </span>
+      <span class="text-body-sm text-secondary dark:text-secondary-dark"> 进程管理 </span>
       <UiSearchInput
         v-model="keyword"
         size="sm"

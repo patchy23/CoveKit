@@ -264,7 +264,7 @@ watch(
       class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
     >
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
-        {{ profile?.name ?? '未连接' }} · {{ dockerContainerId ? '容器终端' : '终端' }}
+        {{ dockerContainerId ? '容器终端' : '终端' }}
       </span>
       <span class="font-mono text-caption text-text-muted dark:text-text-muted-dark">
         {{ statusLine }}

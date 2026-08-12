@@ -79,15 +79,16 @@ describe('公共 UI 组件', () => {
 
   it.each([
     ['text', 'font-sans'],
-    ['technical', 'font-mono'],
+    ['technical', 'font-sans'],
     ['numeric', 'font-sans'],
     ['status', 'font-sans'],
     ['action', 'font-sans'],
-    ['code', 'font-mono'],
+    ['code', 'font-sans'],
   ] as const)('表格 %s 内容使用约定字体', (content, expectedClass) => {
     const cell = mount(UiTableCell, { props: { content }, slots: { default: '中文 Latin 123' } })
     expect(cell.attributes('data-content-kind')).toBe(content)
     expect(cell.classes()).toContain(expectedClass)
+    expect(cell.classes()).not.toContain('font-mono')
     if (content === 'numeric') expect(cell.classes()).toContain('tabular-nums')
   })
 

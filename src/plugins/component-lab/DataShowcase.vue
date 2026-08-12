@@ -20,9 +20,27 @@ const densityOptions = [
   { value: 'comfortable', label: '舒适' },
 ]
 const rows = [
-  { name: 'production-api / 生产接口', host: '10.0.0.12', status: '在线', latency: '18 ms' },
-  { name: 'staging-db / 预发布库', host: '10.0.1.24', status: '在线', latency: '32 ms' },
-  { name: 'legacy-worker / 旧任务', host: '10.0.2.08', status: '离线', latency: '—' },
+  {
+    name: 'production-api / 生产接口',
+    host: '10.0.0.12',
+    command: '/usr/local/bin/api --port 8080',
+    status: '在线',
+    latency: '18 ms',
+  },
+  {
+    name: 'staging-db / 预发布库',
+    host: '10.0.1.24',
+    command: 'postgres -D /var/lib/postgresql',
+    status: '在线',
+    latency: '32 ms',
+  },
+  {
+    name: 'legacy-worker / 旧任务',
+    host: '10.0.2.08',
+    command: 'python worker.py --legacy',
+    status: '离线',
+    latency: '—',
+  },
 ]
 </script>
 
@@ -45,6 +63,7 @@ const rows = [
         <tr>
           <UiTableCell as="th">服务器</UiTableCell>
           <UiTableCell as="th">地址</UiTableCell>
+          <UiTableCell as="th">命令</UiTableCell>
           <UiTableCell as="th">状态</UiTableCell>
           <UiTableCell as="th">延迟</UiTableCell>
           <UiTableCell as="th">操作</UiTableCell>
@@ -56,6 +75,9 @@ const rows = [
             {{ row.name }}
           </UiTableCell>
           <UiTableCell content="technical">{{ row.host }}</UiTableCell>
+          <UiTableCell content="code" class="max-w-[220px] truncate" :title="row.command">
+            {{ row.command }}
+          </UiTableCell>
           <UiTableCell content="status">
             <UiBadge :tone="row.status === '在线' ? 'success' : 'danger'" size="xs">{{
               row.status

@@ -147,9 +147,7 @@ watch(
     <div
       class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
     >
-      <span class="text-body-sm text-secondary dark:text-secondary-dark">
-        {{ profile?.name ?? '未连接' }} · Docker 容器
-      </span>
+      <span class="text-body-sm text-secondary dark:text-secondary-dark"> Docker 容器 </span>
       <UiSearchInput
         v-model="keyword"
         size="sm"

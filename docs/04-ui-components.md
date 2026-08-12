@@ -48,13 +48,13 @@
 | content | 用途 | 字体规则 |
 | --- | --- | --- |
 | `text` | 中文名称、说明、普通文本 | `patchyBox Sans` |
-| `technical` | ID、主机、镜像、服务名、路径 | `patchyBox Mono` |
+| `technical` | ID、主机、镜像、服务名、路径 | `patchyBox Sans` |
 | `numeric` | 数量、百分比、延迟、TTL | `patchyBox Sans` + 等宽数字 |
 | `status` | 在线、失败、运行中等状态 | `patchyBox Sans` |
 | `action` | 操作列 | `patchyBox Sans` |
-| `code` | 命令、SQL、原始值 | `patchyBox Mono` |
+| `code` | 表格内的命令、SQL、原始值 | `patchyBox Sans` |
 
-`patchyBox Sans` 与 `patchyBox Mono` 内部用 Unicode 范围区分中英文，无需页面判断语言。组件决定字号、字重和行高；业务页面只决定内容语义与列布局。
+表格所有列统一使用 `patchyBox Sans`，其中拉丁字符/数字使用 Inter，中文使用系统无衬线中文字体，无需页面判断语言。`technical` 和 `code` 只描述内容含义，不改变表格字体族；等宽字体仅用于终端、日志、代码编辑器等独立代码区域。组件决定字号、字重和行高，业务页面只决定内容语义与列布局。
 
 ## 3. 使用规则
 

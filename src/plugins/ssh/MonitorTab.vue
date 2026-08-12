@@ -75,9 +75,7 @@ function sparkline(values: number[], width = 80, height = 24): string {
     <div
       class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
     >
-      <span class="text-body-sm text-secondary dark:text-secondary-dark">
-        {{ profile?.name ?? '未连接' }} · 资源监控
-      </span>
+      <span class="text-body-sm text-secondary dark:text-secondary-dark"> 资源监控 </span>
       <span class="text-caption text-text-muted dark:text-text-muted-dark"> 每 3s 自动刷新 </span>
       <span v-if="errorMessage" class="text-caption text-danger-strong dark:text-danger-dark">
         {{ errorMessage }}
