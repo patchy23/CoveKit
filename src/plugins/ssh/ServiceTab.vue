@@ -6,7 +6,7 @@ import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, SystemdService } from './contracts'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiSelect as Select } from '@/core/ui'
+import { UiButton, UiSelect } from '@/core/ui'
 import OutputDialog from './OutputDialog.vue'
 import { ipc } from './ipc'
 
@@ -122,7 +122,7 @@ watch(
       <span class="text-body-sm text-secondary dark:text-secondary-dark">
         {{ profile?.name ?? '未连接' }} · 服务管理
       </span>
-      <Select
+      <UiSelect
         :model-value="filter"
         size="sm"
         class="!w-[110px] shrink-0"
@@ -158,7 +158,7 @@ watch(
             :key="s.name"
             class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
           >
-            <td class="data-cell-tech px-[12px] py-[8px]">{{ s.name }}</td>
+            <td class="data-cell-text px-[12px] py-[8px]">{{ s.name }}</td>
             <td class="data-cell-text px-[12px] py-[8px]">{{ s.description }}</td>
             <td class="data-cell-text px-[12px] py-[8px]">
               <span :class="stateClass(s)">{{ stateText(s) }}</span>

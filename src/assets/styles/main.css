@@ -409,7 +409,10 @@
     @apply max-h-[85vh] overflow-y-auto rounded-xl border border-border bg-surface p-xl shadow-[0_12px_40px_rgba(16,24,40,0.14)] dark:border-border-dark dark:bg-surface-dark;
   }
 
-  /* SSH 等数据密集页面的表格排版：中文说明走 sans，技术字段走 mono。 */
+  /*
+   * SSH 等数据密集页面的表格排版：普通数据列统一使用 patchyBox Sans，
+   * 只有 ID、地址、权限、命令等需要字符对齐的技术字段才显式使用 data-cell-tech。
+   */
   .data-table {
     @apply w-full text-left text-body-sm font-normal leading-normal text-secondary dark:text-secondary-dark;
   }
