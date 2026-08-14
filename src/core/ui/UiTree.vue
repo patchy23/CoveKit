@@ -26,23 +26,12 @@ const emit = defineEmits<{
   (event: 'context', mouse: MouseEvent, item: UiTreeItem): void
 }>()
 
-function kindGlyph(kind?: string): string {
-  switch (kind) {
-    case 'database':
-      return '◈'
-    case 'schema':
-      return '◇'
-    case 'table':
-      return '▦'
-    case 'view':
-      return '◫'
-    case 'function':
-      return 'ƒ'
-    case 'group':
-      return '⌘'
-    default:
-      return '◇'
-  }
+/**
+ * 默认节点图标（业务方可通过 #icon 插槽整体覆盖，如 database 插件的对象图标）
+ * group/分组类 → 文件夹；其余 → 小方块
+ */
+function isGroupKind(kind?: string): boolean {
+  return !!kind && (kind === 'group' || kind.startsWith('group-'))
 }
 </script>
 
@@ -104,7 +93,23 @@ function kindGlyph(kind?: string): string {
         </svg>
       </span>
       <slot name="icon" :item="item">
-        <span class="w-[15px] shrink-0 text-center text-caption">{{ kindGlyph(item.kind) }}</span>
+        <svg
+          class="h-[12px] w-[12px] shrink-0 text-text-muted dark:text-text-muted-dark"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.8"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <!-- 分组：文件夹；叶子：小方块 -->
+          <path
+            v-if="isGroupKind(item.kind)"
+            d="M4 6.75A1.75 1.75 0 0 1 5.75 5h3.4l1.9 2.25h7.2A1.75 1.75 0 0 1 20 9v8.25A1.75 1.75 0 0 1 18.25 19H5.75A1.75 1.75 0 0 1 4 17.25Z"
+          />
+          <rect v-else x="7" y="7" width="10" height="10" rx="2" />
+        </svg>
       </slot>
       <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
       <span

@@ -30,6 +30,7 @@ import {
 } from '@/core/ui'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import DbObjectIcon from './DbObjectIcon.vue'
 import type { UiTabItem } from '@/core/ui'
 import {
   useDatabaseMock,
@@ -293,7 +294,7 @@ function showHint(text: string) {
           @toggle="toggleTree"
           @context="onTreeContext"
         >
-          <!-- 连接节点：数据库 logo + 状态点；叶子按对象类型给字形图标 -->
+          <!-- 连接节点：数据库 logo + 状态点；其余节点用自绘对象图标 -->
           <template #icon="{ item }">
             <img
               v-if="item.depth === 0"
@@ -302,25 +303,10 @@ function showHint(text: string) {
               class="h-[16px] w-[16px] shrink-0 object-contain"
             />
             <span
-              v-else-if="item.kind === 'table'"
-              class="w-[16px] shrink-0 text-center text-caption text-text-muted dark:text-text-muted-dark"
-              >▦</span
-            >
-            <span
-              v-else-if="item.kind === 'view'"
-              class="w-[16px] shrink-0 text-center text-caption text-text-muted dark:text-text-muted-dark"
-              >◫</span
-            >
-            <span
-              v-else-if="item.kind === 'key'"
-              class="w-[16px] shrink-0 text-center text-caption text-text-muted dark:text-text-muted-dark"
-              >⚿</span
-            >
-            <span
               v-else
-              class="w-[16px] shrink-0 text-center text-caption text-text-muted dark:text-text-muted-dark"
+              class="grid w-[16px] shrink-0 place-items-center text-text-muted dark:text-text-muted-dark"
             >
-              {{ item.kind === 'database' ? '◈' : item.kind === 'schema' ? '◇' : '▸' }}
+              <DbObjectIcon :kind="item.kind" />
             </span>
           </template>
           <template #suffix="{ item }">

@@ -634,7 +634,7 @@ export function useDatabaseMock() {
           `${prefix}::${group.key}`,
           group.label,
           depth,
-          'group',
+          `group-${group.key}`,
           group.children?.length ?? group.count
         )
       )
