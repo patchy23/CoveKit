@@ -364,17 +364,38 @@ function showHint(text: string) {
           <div
             class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
           >
-            <!-- 运行：绿色实心三角（明显图标，不用大按钮） -->
+            <!-- 运行：空闲=绿色实心三角；运行中=转圈等待且禁用 -->
             <UiIconButton
-              label="运行（Ctrl+Enter）"
-              size="xs"
+              :label="queryState.status === 'running' ? '运行中…' : '运行（Ctrl+Enter）'"
+              size="sm"
               :disabled="!canExecute"
-              class="text-success-strong hover:!bg-success-soft disabled:opacity-40 dark:text-success-dark dark:hover:!bg-success-soft-dark"
+              class="text-success-strong dark:text-success-dark"
+              :class="
+                queryState.status === 'running'
+                  ? ''
+                  : 'hover:!bg-success-soft disabled:opacity-40 dark:hover:!bg-success-soft-dark'
+              "
               @click="onRunQuery"
             >
+              <!-- 运行中：旋转圆弧（等待语义，不可点击） -->
               <svg
-                width="12"
-                height="12"
+                v-if="queryState.status === 'running'"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                class="animate-spin text-text-muted dark:text-text-muted-dark"
+                aria-hidden="true"
+              >
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              <svg
+                v-else
+                width="14"
+                height="14"
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 aria-hidden="true"
@@ -384,17 +405,21 @@ function showHint(text: string) {
                 />
               </svg>
             </UiIconButton>
-            <!-- 停止：红色实心方块（仅运行中出现） -->
+            <!-- 停止：常驻展示；默认灰色禁用，运行中还原为红色可点击 -->
             <UiIconButton
-              v-if="queryState.status === 'running'"
               label="停止（Esc）"
-              size="xs"
-              class="text-danger-strong hover:!bg-danger-soft dark:text-danger-dark dark:hover:!bg-danger-soft-dark"
+              size="sm"
+              :disabled="queryState.status !== 'running'"
+              :class="
+                queryState.status === 'running'
+                  ? 'text-danger-strong hover:!bg-danger-soft dark:text-danger-dark dark:hover:!bg-danger-soft-dark'
+                  : 'text-text-muted opacity-40 dark:text-text-muted-dark'
+              "
               @click="cancelQuery"
             >
               <svg
-                width="12"
-                height="12"
+                width="14"
+                height="14"
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 aria-hidden="true"
