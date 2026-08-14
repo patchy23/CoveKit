@@ -1,6 +1,8 @@
 /**
  * database 插件入口
- * 说明：数据库工作台 UI（设计稿），当前为纯前端模拟（不连接真实数据库）
+ * 多连接数据库工作台：对象树导航、SQL 查询、结果浏览与表结构查看。
+ * 驱动：mysql/polardb（mysql_async）、postgresql（tokio-postgres）、
+ * sqlite（rusqlite）、redis（redis crate）、oracle/vastbase/kingbase（agent 侧车）。
  */
 import { registerTool } from '@/core/registry/toolRegistry'
 
@@ -23,5 +25,5 @@ registerTool({
   ],
   presentation: 'workspace',
   component: () => import('./DatabaseWorkbench.vue'),
-  tags: ['第二批', '模拟数据'],
+  tags: ['第二批'],
 })
