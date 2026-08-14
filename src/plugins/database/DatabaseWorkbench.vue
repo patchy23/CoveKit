@@ -3,7 +3,7 @@
  * database 工作台主容器
  * 风格对齐 patchyBox 其他工具（http-ws / ssh）：
  *   - 顶层 flex 三栏，无卡片壳、无 UiStatusBar、无 UiSplitPane
- *   - 左栏 w-[200px] border-r：搜索 + 连接列表（带类型徽章 + 状态点）
+ *   - 左栏 w-[200px] border-r：搜索 + 连接列表（数据库 logo 图标 + 状态点）
  *   - 中栏 flex-1 flex-col：连接页签（UiTabs）→ SQL 编辑器 + 结果（上下 flex）
  *   - 右栏 w-[220px] border-l：摘要（仅在有活动连接时显示，可整栏收起）
  *   - 图标按钮内嵌 SVG；危险操作走 ContextMenu + ConfirmDialog
@@ -33,6 +33,8 @@ import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import type { UiTabItem } from '@/core/ui'
 import {
   useDatabaseMock,
+  DB_TYPE_META,
+  DB_TYPE_OPTIONS,
   type V2Connection,
   type V2HistoryEntry,
   type V2SavedEntry,
@@ -86,22 +88,10 @@ const {
 const inspectorOpen = ref(true) // 右侧摘要栏开关
 
 // ──────────────────────────────────────────────────────────────────────────
-// 连接类型徽章配色（左栏树连接节点）
+// 连接类型图标（左栏树连接节点，logo 来自 dbx 项目）
 // ──────────────────────────────────────────────────────────────────────────
-function connectionBadgeClass(connection: V2Connection): string {
-  const map: Record<string, string> = {
-    mysql: 'bg-[#00758f]/10 text-[#00758f] dark:bg-[#00758f]/20 dark:text-[#5fc4de]',
-    postgresql: 'bg-[#336791]/10 text-[#336791] dark:bg-[#336791]/20 dark:text-[#8fb4d9]',
-    sqlite: 'bg-[#003b57]/10 text-[#003b57] dark:bg-[#003b57]/20 dark:text-[#7cb3d4]',
-    oracle: 'bg-[#c74634]/10 text-[#c74634] dark:bg-[#c74634]/20 dark:text-[#f0937e]',
-    sqlserver: 'bg-[#cc2927]/10 text-[#cc2927] dark:bg-[#cc2927]/20 dark:text-[#f08585]',
-    redis: 'bg-[#dc382d]/10 text-[#dc382d] dark:bg-[#dc382d]/20 dark:text-[#f1918a]',
-    mongodb: 'bg-[#47a248]/10 text-[#47a248] dark:bg-[#47a248]/20 dark:text-[#8fce91]',
-  }
-  return (
-    map[connection.type] ??
-    'bg-surface-muted text-secondary dark:bg-surface-muted-dark dark:text-secondary-dark'
-  )
+function connectionIcon(connection: V2Connection): string {
+  return DB_TYPE_META[connection.type]?.icon ?? ''
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -293,7 +283,7 @@ function showHint(text: string) {
         </UiButton>
       </div>
 
-      <!-- 对象树（连接 → 数据库 → schema → 表/视图/函数） -->
+      <!-- 对象树（层级随数据库类型：mysql/sqlite/redis 无 schema 层；oracle/dameng 连接直挂 schema；PG 系 库→schema→分组） -->
       <div class="min-h-0 flex-1 overflow-y-auto px-[4px] pb-[8px]">
         <UiTree
           v-model="selectedResource"
@@ -303,20 +293,14 @@ function showHint(text: string) {
           @toggle="toggleTree"
           @context="onTreeContext"
         >
-          <!-- 连接节点：类型徽章 + 状态点 -->
+          <!-- 连接节点：数据库 logo + 状态点；叶子按对象类型给字形图标 -->
           <template #icon="{ item }">
-            <span
+            <img
               v-if="item.depth === 0"
-              class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded font-mono text-[9px] font-bold"
-              :class="
-                connectionBadgeClass(connections.find((c) => c.id === item.id) ?? connections[0])
-              "
-              >{{
-                (connections.find((c) => c.id === item.id) ?? connections[0]).type
-                  .slice(0, 1)
-                  .toUpperCase()
-              }}</span
-            >
+              :src="connectionIcon(connections.find((c) => c.id === item.id) ?? connections[0])"
+              :alt="(connections.find((c) => c.id === item.id) ?? connections[0]).type"
+              class="h-[16px] w-[16px] shrink-0 object-contain"
+            />
             <span
               v-else-if="item.kind === 'table'"
               class="w-[16px] shrink-0 text-center text-caption text-text-muted dark:text-text-muted-dark"
@@ -326,6 +310,11 @@ function showHint(text: string) {
               v-else-if="item.kind === 'view'"
               class="w-[16px] shrink-0 text-center text-caption text-text-muted dark:text-text-muted-dark"
               >◫</span
+            >
+            <span
+              v-else-if="item.kind === 'key'"
+              class="w-[16px] shrink-0 text-center text-caption text-text-muted dark:text-text-muted-dark"
+              >⚿</span
             >
             <span
               v-else
@@ -800,7 +789,9 @@ Index Scan using users_pkey
         class="flex h-[28px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
       >
         <span class="text-caption font-semibold text-primary dark:text-primary-dark">摘要</span>
-        <UiBadge tone="neutral" size="xs">{{ activeTabConnection.type.toUpperCase() }}</UiBadge>
+        <UiBadge tone="neutral" size="xs">{{
+          DB_TYPE_META[activeTabConnection.type].label
+        }}</UiBadge>
         <UiIconButton label="收起" size="xs" class="ml-auto" @click="inspectorOpen = false">
           <svg
             width="12"
@@ -1041,24 +1032,19 @@ Index Scan using users_pkey
             class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
             >数据库类型</label
           >
-          <div class="grid grid-cols-4 gap-[6px]">
+          <div class="grid grid-cols-3 gap-[6px]">
             <UiButton
-              v-for="item in [
-                { value: 'mysql', label: 'MySQL' },
-                { value: 'postgresql', label: 'PostgreSQL' },
-                { value: 'sqlite', label: 'SQLite' },
-                { value: 'oracle', label: 'Oracle' },
-                { value: 'sqlserver', label: 'SQL Server' },
-                { value: 'redis', label: 'Redis' },
-                { value: 'mongodb', label: 'MongoDB' },
-              ]"
+              v-for="item in DB_TYPE_OPTIONS"
               :key="item.value"
               size="xs"
               :variant="newConnectionType === item.value ? 'primary' : 'secondary'"
               block
-              @click="newConnectionType = item.value as typeof newConnectionType"
+              @click="newConnectionType = item.value"
             >
-              {{ item.label }}
+              <span class="inline-flex items-center gap-[6px]">
+                <img :src="item.icon" :alt="item.label" class="h-[14px] w-[14px] object-contain" />
+                {{ item.label }}
+              </span>
             </UiButton>
           </div>
         </div>

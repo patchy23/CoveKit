@@ -11,9 +11,74 @@
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
 import type { UiDataGridColumn, UiTabItem, UiTreeItem, UiWorkbenchTab } from '@/core/ui'
+import mysqlIcon from '@/assets/db-icons/mysql.svg'
+import postgresqlIcon from '@/assets/db-icons/postgresql.svg'
+import oracleIcon from '@/assets/db-icons/oracle.svg'
+import sqliteIcon from '@/assets/db-icons/sqlite.svg'
+import redisIcon from '@/assets/db-icons/redis.svg'
+import damengIcon from '@/assets/db-icons/dameng.svg'
+import vastbaseIcon from '@/assets/db-icons/vastbase.svg'
+import kingbaseIcon from '@/assets/db-icons/kingbase.svg'
+import polardbIcon from '@/assets/db-icons/polardb.webp'
 
+/** 支持的数据库类型（图标资源来自 dbx 项目 apps/desktop/public/icons/database） */
 export type V2DbType =
-  'mysql' | 'postgresql' | 'sqlite' | 'oracle' | 'sqlserver' | 'redis' | 'mongodb'
+  | 'mysql'
+  | 'postgresql'
+  | 'oracle'
+  | 'dameng'
+  | 'vastbase'
+  | 'kingbase'
+  | 'polardb'
+  | 'redis'
+  | 'sqlite'
+
+/** 类型元信息：显示名 + logo 图标（新建对话框、树节点、工具栏徽标共用） */
+export const DB_TYPE_META: Record<V2DbType, { label: string; icon: string }> = {
+  mysql: { label: 'MySQL', icon: mysqlIcon },
+  postgresql: { label: 'PostgreSQL', icon: postgresqlIcon },
+  oracle: { label: 'Oracle', icon: oracleIcon },
+  dameng: { label: '达梦', icon: damengIcon },
+  vastbase: { label: 'Vastbase', icon: vastbaseIcon },
+  kingbase: { label: 'Kingbase', icon: kingbaseIcon },
+  polardb: { label: 'PolarDB', icon: polardbIcon },
+  redis: { label: 'Redis', icon: redisIcon },
+  sqlite: { label: 'SQLite', icon: sqliteIcon },
+}
+
+/** 新建连接对话框的类型选项（九宫格，含图标） */
+export const DB_TYPE_OPTIONS = (Object.keys(DB_TYPE_META) as V2DbType[]).map((value) => ({
+  value,
+  ...DB_TYPE_META[value],
+}))
+
+// ──────────────────────────────────────────────────────────────────────────
+// 树层级能力（参考 dbx lib/database/databaseCapabilitySets.ts）
+// ──────────────────────────────────────────────────────────────────────────
+
+/** 数据库 → schema → 对象分组（PG 系：TREE_SCHEMA_TYPES） */
+const SCHEMA_TREE_TYPES = new Set<V2DbType>(['postgresql', 'polardb', 'kingbase', 'vastbase'])
+/** 连接根直接挂 schema/用户，无 database 层（CONNECTION_ROOT_SCHEMA_TYPES + SINGLE_DATABASE_TYPES） */
+const CONNECTION_ROOT_SCHEMA_TYPES = new Set<V2DbType>(['oracle', 'dameng'])
+
+/** PG 系：连接 → 数据库 → schema → 分组 */
+export function usesSchemaTree(type: V2DbType): boolean {
+  return SCHEMA_TREE_TYPES.has(type)
+}
+
+/** Oracle/达梦：单库，连接 → schema（用户）→ 分组 */
+export function usesConnectionRootSchema(type: V2DbType): boolean {
+  return CONNECTION_ROOT_SCHEMA_TYPES.has(type)
+}
+
+/** 各类型新建连接的默认数据库名 */
+export function defaultDatabaseFor(type: V2DbType): string {
+  if (type === 'sqlite') return 'main'
+  if (type === 'redis') return 'db0'
+  if (type === 'oracle') return 'ORCL'
+  if (type === 'dameng') return 'DAMENG'
+  return 'patchybox'
+}
 export type V2Env = '生产' | '测试' | '开发'
 export type V2Status = 'online' | 'offline' | 'connecting'
 export type V2TabKind = 'query' | 'data' | 'structure'
@@ -121,17 +186,6 @@ const CONNECTIONS_SEED: V2Connection[] = [
     database: 'patchybox',
   },
   {
-    id: 'sqlite-local',
-    label: '本地 SQLite',
-    type: 'sqlite',
-    env: '开发',
-    status: 'online',
-    version: '3.46',
-    latency: 1,
-    host: 'file:./data/app.db',
-    database: 'main',
-  },
-  {
     id: 'oracle-test',
     label: '测试 · Oracle',
     type: 'oracle',
@@ -143,6 +197,51 @@ const CONNECTIONS_SEED: V2Connection[] = [
     database: 'ORCL',
   },
   {
+    id: 'dameng-test',
+    label: '测试 · 达梦',
+    type: 'dameng',
+    env: '测试',
+    status: 'online',
+    version: 'DM8',
+    latency: 12,
+    host: 'dm-test.internal:5236',
+    database: 'DAMENG',
+  },
+  {
+    id: 'kingbase-dev',
+    label: '开发 · 人大金仓',
+    type: 'kingbase',
+    env: '开发',
+    status: 'online',
+    version: 'V8R6',
+    latency: 9,
+    host: '127.0.0.1:54321',
+    database: 'patchybox',
+  },
+  {
+    id: 'vastbase-dev',
+    label: '开发 · Vastbase',
+    type: 'vastbase',
+    env: '开发',
+    status: 'online',
+    version: 'G100 2.2',
+    latency: 11,
+    host: '127.0.0.1:5434',
+    database: 'patchybox',
+  },
+  {
+    id: 'polardb-prod',
+    label: '生产 · PolarDB',
+    type: 'polardb',
+    env: '生产',
+    status: 'online',
+    version: '2.0 (PG 14)',
+    latency: 22,
+    readonly: true,
+    host: 'polardb-prod.rds.aliyuncs.com:5432',
+    database: 'patchybox',
+  },
+  {
     id: 'redis-cache',
     label: '缓存 · Redis',
     type: 'redis',
@@ -152,6 +251,17 @@ const CONNECTIONS_SEED: V2Connection[] = [
     latency: 2,
     host: '127.0.0.1:6379',
     database: 'db0',
+  },
+  {
+    id: 'sqlite-local',
+    label: '本地 SQLite',
+    type: 'sqlite',
+    env: '开发',
+    status: 'online',
+    version: '3.46',
+    latency: 1,
+    host: 'file:./data/app.db',
+    database: 'main',
   },
 ]
 
@@ -392,17 +502,98 @@ export function useDatabaseMock() {
     'mysql-prod': ['users', 'orders', 'audit_logs', 'sessions', 'payments'],
     'pg-dev': ['users', 'orders', 'products', 'inventory', 'pg_stat_activity'],
     'sqlite-local': ['app_config', 'cache_entries', 'download_tasks'],
-    'oracle-test': ['EMP', 'DEPT', 'V$SESSION'],
-    'redis-cache': ['key_space'],
+    'oracle-test': ['EMP', 'DEPT', 'BONUS'],
+    'dameng-test': ['SYS_USER', 'ORDERS', 'PRODUCTS'],
+    'kingbase-dev': ['users', 'orders', 'products'],
+    'vastbase-dev': ['users', 'orders', 'products'],
+    'polardb-prod': ['users', 'orders', 'audit_logs'],
+  }
+
+  /** Redis 示例键（redis 连接无表结构，叶子为 key） */
+  const REDIS_KEYS = [
+    'session:1001',
+    'session:1002',
+    'cache:hot-list',
+    'queue:jobs',
+    'lock:order:8123',
+  ]
+
+  /** schema 集（oracle/dameng 的 schema 即用户；PG 系为数据库内 schema） */
+  const SCHEMA_SETS: Partial<Record<V2DbType, string[]>> = {
+    postgresql: ['public', 'audit'],
+    polardb: ['public', 'audit'],
+    kingbase: ['public', 'audit'],
+    vastbase: ['public', 'audit'],
+    oracle: ['SCOTT', 'HR'],
+    dameng: ['SYSDBA', 'TEST'],
   }
 
   function tablesFor(connection: V2Connection): string[] {
     return TABLE_SETS[connection.id] ?? ['users', 'orders', 'audit_logs']
   }
 
+  function schemasFor(connection: V2Connection): string[] {
+    return SCHEMA_SETS[connection.type] ?? ['public']
+  }
+
+  /**
+   * 对象分组（参考 dbx TreeNodeType 的 group-*：按数据库类型裁剪）
+   * children 为空的分组仅展示数量徽标（模拟数据不展开明细）
+   */
+  interface V2ObjectGroup {
+    key: string
+    label: string
+    childKind: string
+    children?: string[]
+    count?: number
+  }
+
+  function objectGroupsFor(connection: V2Connection): V2ObjectGroup[] {
+    const tables = tablesFor(connection)
+    switch (connection.type) {
+      case 'mysql':
+        return [
+          { key: 'tables', label: '表', childKind: 'table', children: tables },
+          { key: 'views', label: '视图', childKind: 'view', count: 2 },
+          { key: 'funcs', label: '函数', childKind: 'function', count: 5 },
+          { key: 'events', label: '事件', childKind: 'event', count: 1 },
+        ]
+      case 'postgresql':
+      case 'polardb':
+      case 'kingbase':
+      case 'vastbase':
+        return [
+          { key: 'tables', label: '表', childKind: 'table', children: tables },
+          { key: 'views', label: '视图', childKind: 'view', count: 2 },
+          { key: 'funcs', label: '函数', childKind: 'function', count: 5 },
+          { key: 'seqs', label: '序列', childKind: 'sequence', count: 3 },
+        ]
+      case 'oracle':
+      case 'dameng':
+        return [
+          { key: 'tables', label: '表', childKind: 'table', children: tables },
+          { key: 'views', label: '视图', childKind: 'view', count: 2 },
+          { key: 'funcs', label: '函数', childKind: 'function', count: 5 },
+          { key: 'procs', label: '存储过程', childKind: 'procedure', count: 3 },
+          { key: 'packages', label: '包', childKind: 'package', count: 4 },
+          { key: 'seqs', label: '序列', childKind: 'sequence', count: 3 },
+          { key: 'synonyms', label: '同义词', childKind: 'synonym', count: 2 },
+        ]
+      case 'sqlite':
+        return [
+          { key: 'tables', label: '表', childKind: 'table', children: tables },
+          { key: 'views', label: '视图', childKind: 'view', count: 1 },
+          { key: 'indexes', label: '索引', childKind: 'index', count: 4 },
+          { key: 'triggers', label: '触发器', childKind: 'trigger', count: 2 },
+        ]
+      case 'redis':
+        return [{ key: 'keys', label: '键', childKind: 'key', children: REDIS_KEYS }]
+    }
+  }
+
   /** 树节点展开状态（独立持久化，避免 computed 重建丢失） */
   const expandedIds = ref<Set<string>>(
-    new Set(['mysql-prod', 'mysql-prod::db', 'mysql-prod::schema:public', 'mysql-prod::tables'])
+    new Set(['mysql-prod', 'mysql-prod::db', 'mysql-prod::tables'])
   )
 
   function isExpanded(id: string): boolean {
@@ -419,6 +610,51 @@ export function useDatabaseMock() {
     expandedIds.value = next
   }
 
+  /** 生成一个可展开节点（展开状态走 expandedIds） */
+  function branch(
+    id: string,
+    label: string,
+    depth: number,
+    kind: string,
+    badge?: string | number
+  ): UiTreeItem {
+    return { id, label, depth, kind, badge, expandable: true, expanded: isExpanded(id) }
+  }
+
+  /** 在 items 末尾追加一组对象分组及其叶子（scope 用于 schema 层连接的 id 隔离） */
+  function pushGroups(
+    items: UiTreeItem[],
+    prefix: string,
+    depth: number,
+    connection: V2Connection
+  ) {
+    for (const group of objectGroupsFor(connection)) {
+      items.push(
+        branch(
+          `${prefix}::${group.key}`,
+          group.label,
+          depth,
+          'group',
+          group.children?.length ?? group.count
+        )
+      )
+      for (const name of group.children ?? []) {
+        items.push({
+          id: `${prefix}::${group.childKind}:${name}`,
+          label: name,
+          depth: depth + 1,
+          kind: group.childKind,
+        })
+      }
+    }
+  }
+
+  /**
+   * 单连接树（层级随数据库类型变化，参考 dbx ConnectionTree 分派）：
+   *  - mysql / sqlite / redis：连接 → 数据库 → 分组
+   *  - postgresql / polardb / kingbase / vastbase：连接 → 数据库 → schema → 分组
+   *  - oracle / dameng（单库）：连接 → schema（用户）→ 分组
+   */
   function buildTreeForConnection(connection: V2Connection): UiTreeItem[] {
     const prefix = connection.id
     const headerBadge =
@@ -426,68 +662,47 @@ export function useDatabaseMock() {
         ? '断开'
         : connection.readonly
           ? '只读'
-          : connection.type.toUpperCase()
-    const tables = tablesFor(connection)
+          : DB_TYPE_META[connection.type].label
     const connected = connection.status === 'online'
-    return [
+    const items: UiTreeItem[] = [
       {
         id: prefix,
         label: connection.label,
         depth: 0,
-        kind: 'database',
+        kind: 'connection',
         expandable: true,
         expanded: isExpanded(prefix),
         badge: headerBadge,
         muted: !connected,
       },
-      {
-        id: `${prefix}::db`,
-        label: connection.database,
-        depth: 1,
-        kind: 'database',
-        expandable: true,
-        expanded: isExpanded(`${prefix}::db`),
-      },
-      {
-        id: `${prefix}::schema:public`,
-        label: 'public',
-        depth: 2,
-        kind: 'schema',
-        expandable: true,
-        expanded: isExpanded(`${prefix}::schema:public`),
-      },
-      {
-        id: `${prefix}::tables`,
-        label: '表',
-        depth: 3,
-        kind: 'group',
-        badge: tables.length,
-        expandable: true,
-        expanded: isExpanded(`${prefix}::tables`),
-      },
-      ...tables.map((table) => ({
-        id: `${prefix}::table:${table}`,
-        label: table,
-        depth: 4,
-        kind: 'table',
-      })),
-      {
-        id: `${prefix}::views`,
-        label: '视图',
-        depth: 3,
-        kind: 'group',
-        badge: 2,
-        expandable: true,
-      },
-      {
-        id: `${prefix}::funcs`,
-        label: '函数',
-        depth: 3,
-        kind: 'group',
-        badge: 5,
-        expandable: true,
-      },
     ]
+
+    if (usesConnectionRootSchema(connection.type)) {
+      // Oracle / 达梦：连接根直接挂 schema（用户）
+      for (const schema of schemasFor(connection)) {
+        const scope = `${prefix}::${schema}`
+        items.push(branch(scope, schema, 1, 'schema'))
+        pushGroups(items, scope, 2, connection)
+      }
+      return items
+    }
+
+    // 其余类型：连接 → 数据库
+    items.push(branch(`${prefix}::db`, connection.database, 1, 'database'))
+
+    if (usesSchemaTree(connection.type)) {
+      // PG 系：数据库 → schema → 分组
+      for (const schema of schemasFor(connection)) {
+        const scope = `${prefix}::${schema}`
+        items.push(branch(scope, schema, 2, 'schema'))
+        pushGroups(items, scope, 3, connection)
+      }
+      return items
+    }
+
+    // MySQL / SQLite / Redis：数据库下直接挂分组（redis 的分组即键）
+    pushGroups(items, prefix, 2, connection)
+    return items
   }
 
   const treeItems = computed<UiTreeItem[]>(() =>
@@ -571,14 +786,16 @@ export function useDatabaseMock() {
 
   function selectResource(id: string) {
     selectedResource.value = id
-    const [connectionId, resourceId] = id.split('::')
+    const connectionId = id.split('::')[0]
     if (connections.value.some((connection) => connection.id === connectionId)) {
       activeConnectionId.value = connectionId
     }
-    if (resourceId?.startsWith('table:')) {
-      const table = resourceId.replace('table:', '')
+    // 叶子 id 末段固定为 ::table:<名> 或 ::key:<名>（schema 层连接的 id 带 schema 前缀）
+    const leaf = id.match(/::(table|key):(.+)$/)
+    if (leaf) {
+      const name = leaf[2]
       // tab id 带连接前缀，避免不同连接的同名表互相覆盖
-      openOrFocusTab(`data-${connectionId}-${table}`, `${table} · 数据`, 'data', connectionId)
+      openOrFocusTab(`data-${connectionId}-${name}`, `${name} · 数据`, 'data', connectionId)
     }
   }
 
@@ -749,7 +966,7 @@ export function useDatabaseMock() {
       version: '演示驱动',
       latency: 24,
       host: '127.0.0.1',
-      database: 'patchybox',
+      database: defaultDatabaseFor(newConnectionType.value),
     })
     activeConnectionId.value = id
     showConnectionDialog.value = false
