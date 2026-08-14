@@ -4,8 +4,9 @@
  * 用法：父组件监听 @contextmenu.prevent 记录坐标，渲染 <ContextMenu :x :y :items @close>。
  * 点击外部 / 菜单项后自动关闭；菜单项支持分隔线与危险样式（红色）。
  * hover 高亮统一 bg-border（与 Select 下拉一致）。
+ * size：md（默认，w-150/text-body，SSH 文件等场景）；sm（w-124/text-body-sm，树节点等紧凑场景）
  */
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 
 export interface ContextMenuItem {
   /** 菜单项文字 */
@@ -20,13 +21,18 @@ export interface ContextMenuItem {
   onClick?: () => void
 }
 
-defineProps<{
-  /** 菜单位置（视口坐标，父组件需自行收拢在视口内） */
-  x: number
-  y: number
-  /** 菜单项列表 */
-  items: ContextMenuItem[]
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** 菜单位置（视口坐标，父组件需自行收拢在视口内） */
+    x: number
+    y: number
+    /** 菜单项列表 */
+    items: ContextMenuItem[]
+    /** 尺寸：md 默认 / sm 紧凑（树、列表内嵌场景） */
+    size?: 'md' | 'sm'
+  }>(),
+  { size: 'md' }
+)
 
 const emit = defineEmits<{
   (e: 'close'): void
@@ -42,6 +48,17 @@ function handleClick(item: ContextMenuItem) {
   close()
 }
 
+/** 面板尺寸类（宽/圆角/纵向间距随档位） */
+const panelClass = computed(() =>
+  props.size === 'sm' ? 'w-[124px] py-[3px]' : 'w-[150px] py-[4px]'
+)
+/** 菜单项尺寸类 */
+const itemClass = computed(() =>
+  props.size === 'sm' ? 'px-[10px] py-[5px] text-body-sm' : 'px-[12px] py-[7px] text-body'
+)
+/** 分隔线间距 */
+const separatorClass = computed(() => (props.size === 'sm' ? 'my-[3px]' : 'my-[4px]'))
+
 onMounted(() => document.addEventListener('mousedown', close))
 onUnmounted(() => document.removeEventListener('mousedown', close))
 </script>
@@ -49,26 +66,29 @@ onUnmounted(() => document.removeEventListener('mousedown', close))
 <template>
   <Teleport to="body">
     <div
-      class="fixed z-[200] w-[150px] overflow-hidden rounded-md border border-border bg-surface py-[4px] shadow-[0_8px_24px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+      class="fixed z-[200] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_24px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+      :class="panelClass"
       :style="{ left: `${x}px`, top: `${y}px` }"
       @mousedown.stop
     >
       <template v-for="(item, i) in items" :key="i">
         <div
           v-if="item.separator"
-          class="my-[4px] border-t border-border dark:border-border-dark"
+          class="border-t border-border dark:border-border-dark"
+          :class="separatorClass"
         />
         <button
           v-else
-          class="flex w-full items-center px-[12px] py-[7px] text-body transition-colors"
-          :disabled="item.disabled"
-          :class="
+          class="flex w-full items-center transition-colors"
+          :class="[
+            itemClass,
             item.disabled
               ? 'cursor-not-allowed text-text-muted opacity-60 dark:text-text-muted-dark'
               : item.danger
                 ? 'text-danger-strong hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark'
-                : 'text-primary hover:bg-border dark:text-primary-dark dark:hover:bg-border-dark'
-          "
+                : 'text-primary hover:bg-border dark:text-primary-dark dark:hover:bg-border-dark',
+          ]"
+          :disabled="item.disabled"
           @click="handleClick(item)"
         >
           {{ item.label }}

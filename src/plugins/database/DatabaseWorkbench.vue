@@ -103,9 +103,10 @@ const deleteTarget = ref<V2Connection | null>(null)
 
 function openMenu(event: MouseEvent, connection: V2Connection) {
   event.preventDefault()
+  // 紧凑菜单（size=sm：宽 124、5 项高约 150）在视口内收拢
   menu.value = {
-    x: Math.min(event.clientX, window.innerWidth - 158),
-    y: Math.min(event.clientY, window.innerHeight - 180),
+    x: Math.min(event.clientX, window.innerWidth - 132),
+    y: Math.min(event.clientY, window.innerHeight - 158),
     connection,
   }
 }
@@ -1052,7 +1053,14 @@ Index Scan using users_pkey
       @confirm="confirmDelete"
     />
 
-    <!-- 右键菜单 -->
-    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
+    <!-- 右键菜单（树节点用紧凑档） -->
+    <ContextMenu
+      v-if="menu"
+      :x="menu.x"
+      :y="menu.y"
+      :items="menuItems"
+      size="sm"
+      @close="menu = null"
+    />
   </div>
 </template>
