@@ -23,6 +23,8 @@ import {
   UiSearchInput,
   UiSelect,
   UiSpinner,
+  UiTable,
+  UiTableCell,
   UiTabs,
   UiTree,
 } from '@/core/ui'
@@ -757,45 +759,33 @@ Index Scan using users_pkey
               >生成查询</UiButton
             >
           </div>
-          <table class="w-full border-collapse text-body-sm">
+          <UiTable density="compact" :hoverable="true" :striped="true">
             <thead>
-              <tr
-                class="border-b border-border text-left text-label-caps text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-              >
-                <th class="py-[6px] pr-[12px]">字段</th>
-                <th class="py-[6px] pr-[12px]">类型</th>
-                <th class="py-[6px] pr-[12px]">可空</th>
-                <th class="py-[6px] pr-[12px]">默认值</th>
-                <th class="py-[6px] pr-[12px]">键</th>
-                <th class="py-[6px]">注释</th>
+              <tr>
+                <UiTableCell as="th">字段</UiTableCell>
+                <UiTableCell as="th">类型</UiTableCell>
+                <UiTableCell as="th">可空</UiTableCell>
+                <UiTableCell as="th">默认值</UiTableCell>
+                <UiTableCell as="th">键</UiTableCell>
+                <UiTableCell as="th">注释</UiTableCell>
               </tr>
             </thead>
             <tbody>
-              <tr
-                v-for="column in structureColumns"
-                :key="column.name"
-                class="border-b border-border/50 dark:border-border-dark/50"
-              >
-                <td class="py-[5px] pr-[12px] font-mono">{{ column.name }}</td>
-                <td class="py-[5px] pr-[12px] font-mono text-secondary dark:text-secondary-dark">
-                  {{ column.type }}
-                </td>
-                <td class="py-[5px] pr-[12px]">{{ column.nullable }}</td>
-                <td class="py-[5px] pr-[12px] font-mono text-secondary dark:text-secondary-dark">
-                  {{ column.defaultValue }}
-                </td>
-                <td class="py-[5px] pr-[12px]">
+              <tr v-for="column in structureColumns" :key="column.name">
+                <UiTableCell content="technical">{{ column.name }}</UiTableCell>
+                <UiTableCell content="technical">{{ column.type }}</UiTableCell>
+                <UiTableCell>{{ column.nullable }}</UiTableCell>
+                <UiTableCell content="technical">{{ column.defaultValue }}</UiTableCell>
+                <UiTableCell>
                   <UiBadge v-if="column.key !== '—'" tone="info" size="xs">{{
                     column.key
                   }}</UiBadge>
                   <span v-else class="text-text-muted">—</span>
-                </td>
-                <td class="py-[5px] text-secondary dark:text-secondary-dark">
-                  {{ column.comment ?? '' }}
-                </td>
+                </UiTableCell>
+                <UiTableCell>{{ column.comment ?? '' }}</UiTableCell>
               </tr>
             </tbody>
-          </table>
+          </UiTable>
         </div>
       </template>
     </main>
@@ -897,38 +887,29 @@ Index Scan using users_pkey
               >
             </div>
             <div class="overflow-hidden rounded border border-border dark:border-border-dark">
-              <table class="w-full border-collapse text-caption">
+              <UiTable density="compact" :framed="false">
                 <tbody>
-                  <tr
-                    v-for="column in structureColumns"
-                    :key="column.name"
-                    class="border-b border-border/50 last:border-0 dark:border-border-dark/50"
-                  >
-                    <td class="px-[6px] py-[3px] font-mono text-primary dark:text-primary-dark">
-                      {{ column.name }}
-                    </td>
-                    <td class="px-[6px] py-[3px] font-mono text-secondary dark:text-secondary-dark">
-                      {{ column.type }}
-                    </td>
-                    <td class="px-[6px] py-[3px] text-right">
+                  <tr v-for="column in structureColumns" :key="column.name">
+                    <UiTableCell content="technical">{{ column.name }}</UiTableCell>
+                    <UiTableCell content="technical">{{ column.type }}</UiTableCell>
+                    <UiTableCell align="right">
                       <UiBadge v-if="column.key !== '—'" tone="info" size="xs">{{
                         column.key
                       }}</UiBadge>
-                    </td>
+                    </UiTableCell>
                   </tr>
                 </tbody>
-              </table>
+              </UiTable>
             </div>
           </section>
         </div>
 
         <!-- 历史 -->
         <div v-else-if="inspectorSection === 'history'" class="space-y-[2px]">
-          <button
+          <div
             v-for="entry in history"
             :key="entry.id"
-            type="button"
-            class="flex w-full flex-col gap-[2px] rounded px-[6px] py-[4px] text-left hover:bg-border dark:hover:bg-border-dark"
+            class="flex w-full cursor-pointer flex-col gap-[2px] rounded px-[6px] py-[4px] text-left hover:bg-border dark:hover:bg-border-dark"
             @click="onApplyHistory(entry)"
           >
             <div class="flex items-center gap-[4px]">
@@ -946,7 +927,7 @@ Index Scan using users_pkey
             <div class="line-clamp-2 font-mono text-caption text-primary dark:text-primary-dark">
               {{ entry.sql }}
             </div>
-          </button>
+          </div>
         </div>
 
         <!-- 收藏 -->
@@ -956,7 +937,7 @@ Index Scan using users_pkey
             :key="entry.id"
             class="group flex items-start gap-[4px] rounded px-[6px] py-[4px] hover:bg-border dark:hover:bg-border-dark"
           >
-            <button type="button" class="min-w-0 flex-1 text-left" @click="onApplySaved(entry)">
+            <div class="min-w-0 flex-1 cursor-pointer text-left" @click="onApplySaved(entry)">
               <div class="text-caption font-semibold text-primary dark:text-primary-dark">
                 {{ entry.title }}
               </div>
@@ -965,7 +946,7 @@ Index Scan using users_pkey
               >
                 {{ entry.sql }}
               </div>
-            </button>
+            </div>
             <UiIconButton
               label="删除"
               size="xs"
@@ -1061,7 +1042,7 @@ Index Scan using users_pkey
             >数据库类型</label
           >
           <div class="grid grid-cols-4 gap-[6px]">
-            <button
+            <UiButton
               v-for="item in [
                 { value: 'mysql', label: 'MySQL' },
                 { value: 'postgresql', label: 'PostgreSQL' },
@@ -1072,17 +1053,13 @@ Index Scan using users_pkey
                 { value: 'mongodb', label: 'MongoDB' },
               ]"
               :key="item.value"
-              type="button"
-              class="rounded-md border px-[8px] py-[6px] text-center text-body-sm transition-colors"
-              :class="
-                newConnectionType === item.value
-                  ? 'border-tertiary-strong bg-tertiary-soft text-tertiary-strong dark:border-tertiary-dark dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-                  : 'border-border bg-surface text-primary hover:bg-surface-muted dark:border-border-dark dark:bg-surface-dark dark:text-primary-dark dark:hover:bg-surface-muted-dark'
-              "
+              size="xs"
+              :variant="newConnectionType === item.value ? 'primary' : 'secondary'"
+              block
               @click="newConnectionType = item.value as typeof newConnectionType"
             >
               {{ item.label }}
-            </button>
+            </UiButton>
           </div>
         </div>
       </div>
