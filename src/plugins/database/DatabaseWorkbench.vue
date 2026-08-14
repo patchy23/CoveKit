@@ -364,22 +364,44 @@ function showHint(text: string) {
           <div
             class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
           >
-            <UiButton
-              variant="primary"
+            <!-- 运行：绿色实心三角（明显图标，不用大按钮） -->
+            <UiIconButton
+              label="运行（Ctrl+Enter）"
               size="xs"
               :disabled="!canExecute"
-              :loading="queryState.status === 'running'"
+              class="text-success-strong hover:!bg-success-soft disabled:opacity-40 dark:text-success-dark dark:hover:!bg-success-soft-dark"
               @click="onRunQuery"
             >
-              ▶ 运行
-            </UiButton>
-            <UiButton
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  d="M8.5 5.8v12.4c0 .8.9 1.3 1.6.9l10-6.2c.6-.4.6-1.4 0-1.8l-10-6.2c-.7-.4-1.6.1-1.6.9Z"
+                />
+              </svg>
+            </UiIconButton>
+            <!-- 停止：红色实心方块（仅运行中出现） -->
+            <UiIconButton
               v-if="queryState.status === 'running'"
-              variant="danger"
+              label="停止（Esc）"
               size="xs"
+              class="text-danger-strong hover:!bg-danger-soft dark:text-danger-dark dark:hover:!bg-danger-soft-dark"
               @click="cancelQuery"
-              >■ 停止</UiButton
             >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <rect x="6.5" y="6.5" width="11" height="11" rx="2" />
+              </svg>
+            </UiIconButton>
             <UiIconButton label="执行计划" size="xs" @click="showHint('执行计划（模拟）')">
               <svg
                 width="12"
