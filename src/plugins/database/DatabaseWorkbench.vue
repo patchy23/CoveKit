@@ -779,7 +779,8 @@ Index Scan using users_pkey
         <UiBadge tone="neutral" size="xs">{{
           DB_TYPE_META[activeTabConnection.type].label
         }}</UiBadge>
-        <UiIconButton label="收起" size="xs" class="ml-auto" @click="inspectorOpen = false">
+        <UiIconButton label="收起摘要" size="xs" class="ml-auto" @click="inspectorOpen = false">
+          <!-- 双 chevron 向右：收起到右缘 -->
           <svg
             width="12"
             height="12"
@@ -787,8 +788,10 @@ Index Scan using users_pkey
             fill="none"
             stroke="currentColor"
             stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
           >
-            <path d="M18 6L6 18M6 6l12 12" />
+            <path d="M8 6l6 6-6 6M13 6l6 6-6 6" />
           </svg>
         </UiIconButton>
       </div>
@@ -946,6 +949,32 @@ Index Scan using users_pkey
         </div>
       </div>
     </aside>
+
+    <!-- 右栏收起态：细轨道条，任意页签下都可一键展开 -->
+    <div
+      v-else-if="tabs.length"
+      class="flex w-[28px] shrink-0 flex-col items-center gap-[6px] border-l border-border py-[6px] dark:border-border-dark"
+    >
+      <UiIconButton label="展开摘要" size="xs" @click="inspectorOpen = true">
+        <!-- 双 chevron 向左：从右缘展开 -->
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M16 6l-6 6 6 6M11 6l-6 6 6 6" />
+        </svg>
+      </UiIconButton>
+      <span
+        class="text-caption text-text-muted [writing-mode:vertical-rl] dark:text-text-muted-dark"
+        >摘要</span
+      >
+    </div>
 
     <!-- ═══════════ 提示条 ═══════════ -->
     <div
