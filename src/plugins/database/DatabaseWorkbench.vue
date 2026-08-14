@@ -360,14 +360,14 @@ function showHint(text: string) {
       <template v-else-if="activeTabKind === 'query'">
         <!-- SQL 编辑器（约 40% 高度） -->
         <div class="flex min-h-0 flex-col" style="flex: 0 0 38%">
-          <!-- 编辑器工具栏 -->
+          <!-- 编辑器工具栏（36px 基线高度，容纳大号运行/停止键） -->
           <div
-            class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
+            class="flex h-[36px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
           >
-            <!-- 运行：空闲=绿色实心三角；运行中=转圈等待且禁用 -->
+            <!-- 运行：空闲=绿色大三角；运行中=转圈等待且禁用 -->
             <UiIconButton
               :label="queryState.status === 'running' ? '运行中…' : '运行（Ctrl+Enter）'"
-              size="sm"
+              size="md"
               :disabled="!canExecute"
               class="text-success-strong dark:text-success-dark"
               :class="
@@ -380,8 +380,8 @@ function showHint(text: string) {
               <!-- 运行中：旋转圆弧（等待语义，不可点击） -->
               <svg
                 v-if="queryState.status === 'running'"
-                width="18"
-                height="18"
+                width="22"
+                height="22"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -394,21 +394,21 @@ function showHint(text: string) {
               </svg>
               <svg
                 v-else
-                width="18"
-                height="18"
+                width="22"
+                height="22"
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 aria-hidden="true"
               >
                 <path
-                  d="M7.5 4.9v14.2c0 .9 1 1.5 1.8 1L20.5 13a1.16 1.16 0 0 0 0-2L9.3 3.9c-.8-.5-1.8.1-1.8 1Z"
+                  d="M6.5 4.2v15.6c0 1 1.1 1.6 1.9 1.1L21 13a1.3 1.3 0 0 0 0-2.2L8.4 3.2c-.8-.5-1.9.1-1.9 1Z"
                 />
               </svg>
             </UiIconButton>
             <!-- 停止：常驻展示；默认灰色禁用，运行中还原为红色可点击 -->
             <UiIconButton
               label="停止（Esc）"
-              size="sm"
+              size="md"
               :disabled="queryState.status !== 'running'"
               :class="
                 queryState.status === 'running'
@@ -418,13 +418,13 @@ function showHint(text: string) {
               @click="cancelQuery"
             >
               <svg
-                width="18"
-                height="18"
+                width="22"
+                height="22"
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 aria-hidden="true"
               >
-                <rect x="5" y="5" width="14" height="14" rx="2" />
+                <rect x="4.5" y="4.5" width="15" height="15" rx="2" />
               </svg>
             </UiIconButton>
             <UiIconButton label="执行计划" size="xs" @click="showHint('执行计划（模拟）')">
