@@ -10,15 +10,18 @@ import { Terminal } from 'xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import type { ServerConnection, ServerProfile } from './contracts'
+import { UiButton } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import { ipc, onTerminalData } from './ipc'
+import { createTerminalResizeController } from './useTerminalResize'
 
 const props = defineProps<{
   connection?: ServerConnection
   profile?: ServerProfile
   dockerContainerId?: string
   connectRequest?: number
+  active?: boolean
 }>()
 
 const ui = useUiStore()
@@ -39,22 +42,16 @@ let terminalGeneration = 0
 let handledConnectRequest = 0
 let disposed = false
 
-/** fit 终端并兜底：fit 的行高度量与渲染行高（line-height: normal）存在亚像素偏差，
- *  行数偏大时最后一行会被容器裁掉半截（最大化时最明显），溢出则减一行。 */
-function fitTerminal() {
-  if (!term || !fitAddon) return
-  fitAddon.fit()
-  const hostEl = termHost.value
-  const screenEl = term.element?.querySelector('.xterm-screen')
-  if (hostEl && screenEl) {
-    const cs = getComputedStyle(hostEl)
-    const availH =
-      hostEl.clientHeight - parseInt(cs.paddingTop || '0') - parseInt(cs.paddingBottom || '0')
-    if (screenEl.scrollHeight > availH + 1) {
-      term.resize(term.cols, Math.max(1, term.rows - 1))
-    }
-  }
-}
+const terminalResize = createTerminalResizeController({
+  getTerminal: () => term,
+  getFitAddon: () => fitAddon,
+  getHost: () => termHost.value,
+  getTerminalId: () => terminalId,
+  resize: ipc.sshTerminalResize,
+  onError: (id, error) => {
+    if (terminalId === id) statusLine.value = `终端尺寸同步失败：${error}`
+  },
+})
 
 /** 打开终端通道（连接建立/重连时调用） */
 async function openTerminal() {
@@ -87,6 +84,8 @@ async function openTerminal() {
     terminalId = t.id
     terminalActive.value = true
     statusLine.value = `已连接 ${props.connection.host ?? ''} · ${t.cols}×${t.rows}`
+    // 连接可能在隐藏页签或窗口初始布局尚未稳定时建立；此处必须再按当前可见尺寸同步一次。
+    terminalResize.scheduleFitAndSync()
     ui.toast('终端已打开')
   } catch (e) {
     if (generation === terminalGeneration) {
@@ -182,7 +181,7 @@ onMounted(async () => {
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
   term.open(termHost.value)
-  fitTerminal()
+  terminalResize.scheduleFitAndSync()
 
   // 用户输入 → 后端
   term.onData((data) => {
@@ -207,17 +206,10 @@ onMounted(async () => {
   }
 
   // 窗口尺寸同步（xterm → SSH PTY）
-  resizeObserver = new ResizeObserver(() => {
-    if (!term || !fitAddon || !terminalId) return
-    fitTerminal()
-    const { cols, rows } = term
-    if (cols > 0 && rows > 0) {
-      ipc.sshTerminalResize(terminalId, cols, rows).catch((e) => {
-        statusLine.value = `终端尺寸同步失败：${e}`
-      })
-    }
-  })
+  resizeObserver = new ResizeObserver(() => terminalResize.scheduleFitAndSync())
   resizeObserver.observe(termHost.value)
+  window.addEventListener('resize', terminalResize.scheduleFitAndSync)
+  terminalResize.scheduleFitAndSync()
 
   // 主终端仅响应左侧服务器的显式连接请求；容器终端由“终端”按钮显式打开。
   const request = props.connectRequest ?? 0
@@ -230,6 +222,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   disposed = true
   resizeObserver?.disconnect()
+  window.removeEventListener('resize', terminalResize.scheduleFitAndSync)
+  terminalResize.cancelScheduledFit()
   unlistenData?.()
   closeTerminal()
   term?.dispose()
@@ -255,6 +249,13 @@ watch(
     }
   }
 )
+
+watch(
+  () => props.active,
+  (active) => {
+    if (active) terminalResize.scheduleFitAndSync()
+  }
+)
 </script>
 
 <template>
@@ -270,20 +271,24 @@ watch(
         {{ statusLine }}
       </span>
       <div class="ml-auto flex gap-[6px]">
-        <button
-          class="btn-ghost !px-[8px] !py-[3px] text-caption"
+        <UiButton
+          variant="ghost"
+          size="xs"
+          class="!h-auto !px-[8px] !py-[3px] text-caption"
           title="清空终端"
           @click="term?.clear()"
         >
           清空
-        </button>
-        <button
-          class="btn-ghost !px-[8px] !py-[3px] text-caption"
+        </UiButton>
+        <UiButton
+          variant="ghost"
+          size="xs"
+          class="!h-auto !px-[8px] !py-[3px] text-caption"
           :title="terminalActive ? '重连终端' : '连接终端'"
           @click="terminalActive ? reconnect() : openTerminal()"
         >
           {{ terminalActive ? '重连' : '连接' }}
-        </button>
+        </UiButton>
       </div>
     </div>
 
