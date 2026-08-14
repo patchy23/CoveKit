@@ -380,8 +380,8 @@ function showHint(text: string) {
               <!-- 运行中：旋转圆弧（等待语义，不可点击） -->
               <svg
                 v-if="queryState.status === 'running'"
-                width="14"
-                height="14"
+                width="18"
+                height="18"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -394,14 +394,14 @@ function showHint(text: string) {
               </svg>
               <svg
                 v-else
-                width="14"
-                height="14"
+                width="18"
+                height="18"
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 aria-hidden="true"
               >
                 <path
-                  d="M8.5 5.8v12.4c0 .8.9 1.3 1.6.9l10-6.2c.6-.4.6-1.4 0-1.8l-10-6.2c-.7-.4-1.6.1-1.6.9Z"
+                  d="M7.5 4.9v14.2c0 .9 1 1.5 1.8 1L20.5 13a1.16 1.16 0 0 0 0-2L9.3 3.9c-.8-.5-1.8.1-1.8 1Z"
                 />
               </svg>
             </UiIconButton>
@@ -418,13 +418,13 @@ function showHint(text: string) {
               @click="cancelQuery"
             >
               <svg
-                width="14"
-                height="14"
+                width="18"
+                height="18"
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 aria-hidden="true"
               >
-                <rect x="6.5" y="6.5" width="11" height="11" rx="2" />
+                <rect x="5" y="5" width="14" height="14" rx="2" />
               </svg>
             </UiIconButton>
             <UiIconButton label="执行计划" size="xs" @click="showHint('执行计划（模拟）')">
