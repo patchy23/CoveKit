@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * database-v2 工作台主容器
+ * database 工作台主容器
  * 风格对齐 patchyBox 其他工具（http-ws / ssh）：
  *   - 顶层 flex 三栏，无卡片壳、无 UiStatusBar、无 UiSplitPane
  *   - 左栏 w-[200px] border-r：搜索 + 连接列表（带类型徽章 + 状态点）
@@ -32,11 +32,11 @@ import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import type { UiTabItem } from '@/core/ui'
 import {
-  useDatabaseV2Mock,
+  useDatabaseMock,
   type V2Connection,
   type V2HistoryEntry,
   type V2SavedEntry,
-} from './useDatabaseV2Mock'
+} from './useDatabaseMock'
 
 const {
   connections,
@@ -78,7 +78,7 @@ const {
   databaseOptions,
   schemaOptions,
   removeConnection,
-} = useDatabaseV2Mock()
+} = useDatabaseMock()
 
 // ──────────────────────────────────────────────────────────────────────────
 // 布局状态

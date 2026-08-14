@@ -1,6 +1,6 @@
 /**
- * database-v2 模拟数据层
- * 作用：驱动 DatabaseV2Workbench 的纯前端交互，不连接任何真实数据库
+ * database 模拟数据层
+ * 作用：驱动 DatabaseWorkbench 的纯前端交互，不连接任何真实数据库
  * 数据模型：
  *  - V2Connection       连接（含环境/类型/状态/时延）
  *  - V2Tab              工作台页签（query/data/structure 三种）
@@ -280,7 +280,7 @@ const SAVED_SEED: V2SavedEntry[] = [
   { id: 's3', title: '锁表排查', sql: 'SELECT * FROM pg_locks WHERE NOT granted;' },
 ]
 
-export function useDatabaseV2Mock() {
+export function useDatabaseMock() {
   const connections = ref<V2Connection[]>(CONNECTIONS_SEED.map((item) => ({ ...item })))
   const activeConnectionId = ref('mysql-prod')
   const selectedResource = ref('mysql-prod::table:users')
