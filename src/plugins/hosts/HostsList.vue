@@ -6,7 +6,7 @@
 import { computed, ref } from 'vue'
 import type { HostsEntry } from './useHosts'
 import { parseEntries, validateEntry } from './useHosts'
-import { UiButton, UiInput } from '@/core/ui'
+import { UiButton, UiCheckbox, UiIconButton, UiInput } from '@/core/ui'
 
 const props = defineProps<{ content: string }>()
 const emit = defineEmits<{ (e: 'change', text: string): void }>()
@@ -137,12 +137,10 @@ function addRow() {
             : 'border-tertiary/40 bg-tertiary-soft/30 dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30'
         "
       >
-        <input
-          type="checkbox"
-          class="h-4 w-4 accent-[var(--color-tertiary)]"
-          :checked="e.enabled"
+        <UiCheckbox
+          :model-value="e.enabled"
           :title="e.enabled ? '点击禁用（行首加 #）' : '点击启用'"
-          @change="toggleEnabled(e)"
+          @update:model-value="toggleEnabled(e)"
         />
         <UiInput
           :model-value="e.ip"
@@ -163,11 +161,7 @@ function addRow() {
           placeholder="备注（可选）"
           @update:model-value="onCommentInput(e, String($event))"
         />
-        <button
-          class="grid h-[30px] w-[30px] place-items-center rounded-md text-text-muted transition-colors hover:bg-tertiary-soft hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark"
-          title="删除此条"
-          @click="remove(e)"
-        >
+        <UiIconButton label="删除此条" size="sm" @click="remove(e)">
           <svg
             width="14"
             height="14"
@@ -179,7 +173,7 @@ function addRow() {
           >
             <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
           </svg>
-        </button>
+        </UiIconButton>
       </div>
 
       <p

@@ -198,6 +198,21 @@
 /* 深色模式：切换 document.documentElement[data-theme=dark] */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
+/* 表格交互色由主题统一提供，业务表格不再自行声明 hover/selected 背景。 */
+:root {
+  --ui-table-row-hover: var(--color-surface-muted);
+  --ui-table-row-selected: var(--color-tertiary-soft);
+}
+
+[data-theme='dark'] {
+  --ui-table-row-hover: color-mix(
+    in srgb,
+    var(--color-surface-muted-dark) 72%,
+    var(--color-surface-dark)
+  );
+  --ui-table-row-selected: var(--color-tertiary-soft-dark);
+}
+
 @layer base {
   html,
   body,
@@ -313,6 +328,15 @@
     padding-left: 32px !important;
     padding-right: 30px !important;
   }
+  .ui-range {
+    height: 20px;
+    cursor: pointer;
+    accent-color: var(--color-tertiary-strong);
+  }
+  .ui-range:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
 
   /* 工具内固定工具栏：内容区滚动时始终可见（抵消内容区 px-md/py-md 内边距） */
   .sticky-toolbar {
@@ -401,7 +425,7 @@
     @apply border-danger/30 bg-danger-soft text-danger-strong dark:border-danger-dark/30 dark:bg-danger-soft-dark dark:text-danger-dark;
   }
   .ui-tabs {
-    @apply flex shrink-0 items-center;
+    @apply flex shrink-0 items-center overflow-x-auto;
   }
   .ui-tabs-pill {
     @apply gap-sm;

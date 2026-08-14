@@ -7,7 +7,14 @@ import { computed, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { ServerQueryResult } from './contracts'
-import { UiButton, UiInput, UiSelect as Select, UiTableCell } from '@/core/ui'
+import {
+  UiButton,
+  UiIconButton,
+  UiInput,
+  UiSelect as Select,
+  UiTable,
+  UiTableCell,
+} from '@/core/ui'
 import {
   DNS_SERVERS,
   RECORD_TYPES,
@@ -105,10 +112,11 @@ async function run() {
       <!-- 服务器选择：预设 chips + 自定义追加 -->
       <div class="flex flex-wrap items-center gap-[8px]">
         <span class="text-body-sm text-text-muted dark:text-text-muted-dark">服务器</span>
-        <button
+        <UiButton
           v-for="s in DNS_SERVERS"
           :key="s.addr"
-          class="rounded-md px-[10px] py-[5px] text-body-sm font-medium transition-colors"
+          variant="ghost"
+          size="sm"
           :class="
             selected.includes(s.addr)
               ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
@@ -121,7 +129,7 @@ async function run() {
           "
         >
           {{ s.label }}
-        </button>
+        </UiButton>
 
         <!-- 自定义服务器 chip（可移除） -->
         <span
@@ -130,9 +138,14 @@ async function run() {
           class="flex items-center gap-[6px] rounded-md bg-purple-soft px-[10px] py-[5px] font-mono text-body-sm text-purple-strong dark:bg-purple-soft-dark dark:text-purple-dark"
         >
           {{ c }}
-          <button class="text-purple-strong/70 hover:text-purple-strong" @click="removeCustom(c)">
+          <UiIconButton
+            label="移除自定义服务器"
+            size="xs"
+            class="!h-[18px] !w-[18px] text-purple-strong/70 hover:text-purple-strong"
+            @click="removeCustom(c)"
+          >
             ✕
-          </button>
+          </UiIconButton>
         </span>
 
         <UiInput
@@ -183,7 +196,7 @@ async function run() {
         </p>
 
         <!-- 成功：记录表格 -->
-        <table v-else-if="r.records.length > 0" class="w-full border-collapse">
+        <UiTable v-else-if="r.records.length > 0" :framed="false" :styled="false">
           <thead>
             <tr
               class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -228,7 +241,7 @@ async function run() {
               </UiTableCell>
             </tr>
           </tbody>
-        </table>
+        </UiTable>
         <p v-else class="text-body-sm text-text-muted dark:text-text-muted-dark">
           查询成功，无应答记录。
         </p>

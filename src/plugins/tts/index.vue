@@ -7,7 +7,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { useUiStore } from '@/stores/ui'
-import { UiButton, UiEmptyState, UiSelect as Select, UiTextarea } from '@/core/ui'
+import { UiButton, UiEmptyState, UiField, UiRange, UiSelect as Select, UiTextarea } from '@/core/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import { ipc } from './ipc'
 import type { TtsVoice } from './contracts'
@@ -108,21 +108,16 @@ onMounted(async () => {
           placeholder="输入要转成语音的文字（最多 2000 字）…"
           spellcheck="false"
         />
-        <div class="flex items-center gap-[10px]">
-          <label class="field-label shrink-0">音色</label>
-          <Select v-model="voiceName" class="w-[220px]" :options="voiceOptions" />
-        </div>
+        <UiField label="音色" class="max-w-[320px]">
+          <Select v-model="voiceName" :options="voiceOptions" />
+        </UiField>
         <div class="grid grid-cols-2 gap-[14px]">
-          <div>
-            <label class="field-label mb-[4px]">语速（{{ rate > 0 ? '+' : '' }}{{ rate }}%）</label>
-            <input v-model.number="rate" type="range" min="-50" max="50" step="5" class="w-full" />
-          </div>
-          <div>
-            <label class="field-label mb-[4px]"
-              >音调（{{ pitch > 0 ? '+' : '' }}{{ pitch }}Hz）</label
-            >
-            <input v-model.number="pitch" type="range" min="-50" max="50" step="5" class="w-full" />
-          </div>
+          <UiField :label="`语速（${rate > 0 ? '+' : ''}${rate}%）`">
+            <UiRange v-model="rate" :min="-50" :max="50" :step="5" />
+          </UiField>
+          <UiField :label="`音调（${pitch > 0 ? '+' : ''}${pitch}Hz）`">
+            <UiRange v-model="pitch" :min="-50" :max="50" :step="5" />
+          </UiField>
         </div>
         <div class="flex gap-[10px]">
           <UiButton variant="primary" class="flex-1" :loading="generating" @click="generate">

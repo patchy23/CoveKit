@@ -44,6 +44,17 @@ describe('公共 UI 组件', () => {
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['second'])
   })
 
+  it('可关闭页签通过统一事件请求关闭', async () => {
+    const wrapper = mount(UiTabs, {
+      props: {
+        modelValue: 'terminal-1',
+        items: [{ value: 'terminal-1', label: '生产服务器', closable: true }],
+      },
+    })
+    await wrapper.get('[aria-label="关闭生产服务器"]').trigger('click')
+    expect(wrapper.emitted('close')?.[0]).toEqual(['terminal-1'])
+  })
+
   it('基础控件输出统一尺寸类', () => {
     expect(mount(UiButton, { props: { size: 'xs' } }).classes()).toContain('ui-control-xs')
     expect(
@@ -110,6 +121,14 @@ describe('公共 UI 组件', () => {
   it('业务表格不能绕过统一单元格字体契约', () => {
     const violations = Object.entries(pluginVueSources)
       .filter(([, source]) => /<t[hd](?:\s|>)/.test(source) || /data-cell-|data-table/.test(source))
+      .map(([path]) => path)
+    expect(violations).toEqual([])
+  })
+
+  it('工具页面不能绕过公共组件使用原生表单和表格控件', () => {
+    const nativeControls = /<(?:button|input|select|textarea|table)(?:\s|>)/
+    const violations = Object.entries(pluginVueSources)
+      .filter(([, source]) => nativeControls.test(source))
       .map(([path]) => path)
     expect(violations).toEqual([])
   })

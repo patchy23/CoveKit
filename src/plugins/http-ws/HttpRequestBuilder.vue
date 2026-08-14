@@ -6,7 +6,7 @@ import { ref } from 'vue'
 import type { KvRow } from './useHttp'
 import { newKvId } from './useHttp'
 import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
-import { UiSelect as Select } from '@/core/ui'
+import { UiButton, UiIconButton, UiInput, UiSelect as Select, UiTabs } from '@/core/ui'
 
 const props = defineProps<{
   params: KvRow[]
@@ -51,31 +51,22 @@ function setRow(
   if (kind === 'params') emit('update:params', next)
   else emit('update:headers', next)
 }
-
-const tabClass = (active: boolean) =>
-  active
-    ? 'border-b-[2px] border-tertiary-strong pb-[6px] font-medium text-tertiary-strong dark:border-tertiary-dark dark:text-tertiary-dark'
-    : 'border-b-[2px] border-transparent pb-[6px] text-secondary hover:text-primary dark:text-secondary-dark dark:hover:text-primary-dark'
 </script>
 
 <template>
   <div class="flex flex-col gap-[10px]">
     <!-- 分页签（WS 模式隐藏，仅显示 Headers） -->
-    <div v-if="!props.headersOnly" class="flex shrink-0 gap-[16px] text-body">
-      <button class="transition-colors" :class="tabClass(tab === 'params')" @click="tab = 'params'">
-        Params
-      </button>
-      <button
-        class="transition-colors"
-        :class="tabClass(tab === 'headers')"
-        @click="tab = 'headers'"
-      >
-        Headers
-      </button>
-      <button class="transition-colors" :class="tabClass(tab === 'body')" @click="tab = 'body'">
-        Body
-      </button>
-    </div>
+    <UiTabs
+      v-if="!props.headersOnly"
+      v-model="tab"
+      variant="line"
+      size="sm"
+      :items="[
+        { value: 'params', label: 'Params' },
+        { value: 'headers', label: 'Headers' },
+        { value: 'body', label: 'Body' },
+      ]"
+    />
 
     <!-- Params：键值表格，自动拼接到 URL query -->
     <div v-if="!props.headersOnly && tab === 'params'">
@@ -91,29 +82,23 @@ const tabClass = (active: boolean) =>
         :key="r.id"
         class="mb-[6px] grid grid-cols-[1fr_1fr_36px] gap-[8px]"
       >
-        <input
+        <UiInput
           :value="r.key"
-          class="field-input !px-[10px] !py-[7px] font-mono"
+          size="sm"
+          class="font-mono"
           placeholder="key"
           spellcheck="false"
-          @input="
-            setRow(props.params, r.id, 'key', ($event.target as HTMLInputElement).value, 'params')
-          "
+          @update:model-value="setRow(props.params, r.id, 'key', String($event), 'params')"
         />
-        <input
+        <UiInput
           :value="r.value"
-          class="field-input !px-[10px] !py-[7px] font-mono"
+          size="sm"
+          class="font-mono"
           placeholder="value"
           spellcheck="false"
-          @input="
-            setRow(props.params, r.id, 'value', ($event.target as HTMLInputElement).value, 'params')
-          "
+          @update:model-value="setRow(props.params, r.id, 'value', String($event), 'params')"
         />
-        <button
-          class="grid h-[34px] place-items-center rounded-md text-text-muted transition-colors hover:bg-tertiary-soft hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark"
-          title="删除"
-          @click="removeRow(props.params, r.id, 'params')"
-        >
+        <UiIconButton label="删除参数" size="sm" @click="removeRow(props.params, r.id, 'params')">
           <svg
             width="13"
             height="13"
@@ -125,11 +110,11 @@ const tabClass = (active: boolean) =>
           >
             <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
           </svg>
-        </button>
+        </UiIconButton>
       </div>
-      <button class="btn-ghost text-body-sm" @click="addRow(props.params, 'params')">
+      <UiButton variant="ghost" size="sm" @click="addRow(props.params, 'params')">
         + 添加参数
-      </button>
+      </UiButton>
     </div>
 
     <!-- Headers：键值表格（HTTP 与 WS 共用） -->
@@ -146,33 +131,25 @@ const tabClass = (active: boolean) =>
         :key="r.id"
         class="mb-[6px] grid grid-cols-[1fr_1fr_36px] gap-[8px]"
       >
-        <input
+        <UiInput
           :value="r.key"
-          class="field-input !px-[10px] !py-[7px] font-mono"
+          size="sm"
+          class="font-mono"
           placeholder="Accept"
           spellcheck="false"
-          @input="
-            setRow(props.headers, r.id, 'key', ($event.target as HTMLInputElement).value, 'headers')
-          "
+          @update:model-value="setRow(props.headers, r.id, 'key', String($event), 'headers')"
         />
-        <input
+        <UiInput
           :value="r.value"
-          class="field-input !px-[10px] !py-[7px] font-mono"
+          size="sm"
+          class="font-mono"
           placeholder="application/json"
           spellcheck="false"
-          @input="
-            setRow(
-              props.headers,
-              r.id,
-              'value',
-              ($event.target as HTMLInputElement).value,
-              'headers'
-            )
-          "
+          @update:model-value="setRow(props.headers, r.id, 'value', String($event), 'headers')"
         />
-        <button
-          class="grid h-[34px] place-items-center rounded-md text-text-muted transition-colors hover:bg-tertiary-soft hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark"
-          title="删除"
+        <UiIconButton
+          label="删除 Header"
+          size="sm"
           @click="removeRow(props.headers, r.id, 'headers')"
         >
           <svg
@@ -186,11 +163,11 @@ const tabClass = (active: boolean) =>
           >
             <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
           </svg>
-        </button>
+        </UiIconButton>
       </div>
-      <button class="btn-ghost text-body-sm" @click="addRow(props.headers, 'headers')">
+      <UiButton variant="ghost" size="sm" @click="addRow(props.headers, 'headers')">
         + 添加 Header
-      </button>
+      </UiButton>
     </div>
 
     <!-- Body：模式选择 + 内容 -->

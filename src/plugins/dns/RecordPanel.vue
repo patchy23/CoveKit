@@ -8,7 +8,15 @@ import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { CloudDomain, CloudRecord } from './contracts'
 import { CLOUD_RECORD_TYPES, TTL_PRESETS, recordTypeBadgeClass } from './useDns'
-import { UiSelect as Select, UiTableCell } from '@/core/ui'
+import {
+  UiButton,
+  UiInput,
+  UiPagination,
+  UiSearchInput,
+  UiSelect as Select,
+  UiTable,
+  UiTableCell,
+} from '@/core/ui'
 
 const props = defineProps<{
   platform: 'aliyun' | 'dnspod'
@@ -170,24 +178,22 @@ onMounted(loadRecords)
   <div class="flex min-h-0 flex-col gap-[10px]">
     <!-- 面包屑 + 搜索 + 操作 -->
     <div class="flex shrink-0 items-center gap-[8px]">
-      <button class="btn-ghost shrink-0 px-[10px] py-[6px] text-body-sm" @click="emit('back')">
-        ← 返回
-      </button>
+      <UiButton variant="ghost" size="sm" class="shrink-0" @click="emit('back')"> ← 返回 </UiButton>
       <span class="font-mono text-body font-medium text-primary dark:text-primary-dark">
         {{ domain.domainName }}
       </span>
       <span class="whitespace-nowrap text-body-sm text-text-muted dark:text-text-muted-dark">
         {{ total }} 条记录
       </span>
-      <input
+      <UiSearchInput
         v-model="searchQuery"
-        class="field-input ml-auto w-[180px] !px-[10px] !py-[7px]"
+        size="sm"
+        class="ml-auto w-[180px]"
         placeholder="搜索主机记录 / 记录值…"
-        spellcheck="false"
       />
-      <button class="btn-primary shrink-0 px-[12px] py-[6px] text-body-sm" @click="openAdd">
+      <UiButton variant="primary" size="sm" class="shrink-0" @click="openAdd">
         + 添加记录
-      </button>
+      </UiButton>
     </div>
 
     <!-- 行内表单（新增/编辑共用；控件统一 field-input 压缩高度，与 HTTP 工具一致） -->
@@ -197,9 +203,10 @@ onMounted(loadRecords)
     >
       <label class="flex flex-col gap-[4px]">
         <span class="field-label text-body-sm">主机记录</span>
-        <input
+        <UiInput
           v-model="formRr"
-          class="field-input w-[130px] !px-[10px] !py-[7px] font-mono"
+          size="sm"
+          class="w-[130px] font-mono"
           placeholder="@ / www"
           spellcheck="false"
         />
@@ -215,9 +222,10 @@ onMounted(loadRecords)
       </label>
       <label class="flex min-w-[180px] flex-1 flex-col gap-[4px]">
         <span class="field-label text-body-sm">记录值</span>
-        <input
+        <UiInput
           v-model="formValue"
-          class="field-input !px-[10px] !py-[7px] font-mono placeholder:font-sans"
+          size="sm"
+          class="font-mono placeholder:font-sans"
           placeholder="目标 IP / 域名"
           spellcheck="false"
         />
@@ -232,16 +240,10 @@ onMounted(loadRecords)
         />
       </label>
       <div class="flex gap-[8px]">
-        <button
-          class="btn-primary px-[12px] py-[7px] text-body-sm"
-          :disabled="saving"
-          @click="saveForm"
-        >
+        <UiButton variant="primary" size="sm" :loading="saving" @click="saveForm">
           {{ saving ? '保存中…' : '保存' }}
-        </button>
-        <button class="btn-ghost px-[12px] py-[7px] text-body-sm" @click="formOpen = null">
-          取消
-        </button>
+        </UiButton>
+        <UiButton variant="ghost" size="sm" @click="formOpen = null"> 取消 </UiButton>
       </div>
     </div>
 
@@ -255,7 +257,7 @@ onMounted(loadRecords)
       >
         暂无解析记录，点击「添加记录」创建。
       </p>
-      <table v-else class="w-full min-w-[520px] border-collapse">
+      <UiTable v-else :framed="false" :styled="false" table-class="min-w-[520px]">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -311,14 +313,17 @@ onMounted(loadRecords)
               align="right"
               class="whitespace-nowrap py-[7px] pr-[12px]"
             >
-              <button
-                class="mr-[6px] rounded px-[8px] py-[3px] text-body-sm text-info-strong transition-colors hover:bg-info-soft dark:text-info-dark dark:hover:bg-info-soft-dark"
+              <UiButton
+                variant="ghost"
+                size="xs"
+                class="mr-[2px] text-info-strong dark:text-info-dark"
                 @click="openEdit(r)"
               >
                 编辑
-              </button>
-              <button
-                class="rounded px-[8px] py-[3px] text-body-sm transition-colors"
+              </UiButton>
+              <UiButton
+                variant="ghost"
+                size="xs"
                 :class="
                   confirmDeleteId === r.recordId
                     ? 'bg-danger-soft text-danger-strong dark:bg-danger-soft-dark dark:text-danger-dark'
@@ -327,29 +332,20 @@ onMounted(loadRecords)
                 @click="deleteRecord(r)"
               >
                 {{ confirmDeleteId === r.recordId ? '确认删除？' : '删除' }}
-              </button>
+              </UiButton>
             </UiTableCell>
           </tr>
         </tbody>
-      </table>
+      </UiTable>
     </div>
 
     <!-- 分页 -->
-    <div
+    <UiPagination
       v-if="totalPages > 1"
-      class="flex shrink-0 items-center justify-end gap-[8px] text-body-sm"
-    >
-      <button class="btn-ghost px-[10px] py-[5px]" :disabled="page <= 1" @click="goto(page - 1)">
-        上一页
-      </button>
-      <span class="text-text-muted dark:text-text-muted-dark">{{ page }} / {{ totalPages }}</span>
-      <button
-        class="btn-ghost px-[10px] py-[5px]"
-        :disabled="page >= totalPages"
-        @click="goto(page + 1)"
-      >
-        下一页
-      </button>
-    </div>
+      :model-value="page"
+      :total-pages="totalPages"
+      size="sm"
+      @update:model-value="goto"
+    />
   </div>
 </template>

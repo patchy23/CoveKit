@@ -4,6 +4,7 @@
  */
 import type { ApiRecord } from './contracts'
 import { formatRelativeTime, methodBadgeClass } from './useHttp'
+import { UiBadge, UiButton, UiIconButton } from '@/core/ui'
 
 defineProps<{
   apis: ApiRecord[]
@@ -25,13 +26,14 @@ const emit = defineEmits<{
         接口列表（{{ apis.length }}）
       </span>
       <div class="flex items-center gap-[4px]">
-        <button
-          class="btn-secondary !px-[8px] !py-[2px] text-body-sm"
+        <UiButton
+          variant="secondary"
+          size="xs"
           title="新建接口（清空当前表单）"
           @click="emit('new')"
         >
           + 新建
-        </button>
+        </UiButton>
       </div>
     </div>
 
@@ -49,19 +51,21 @@ const emit = defineEmits<{
         @click="emit('select', a)"
       >
         <div class="flex items-center gap-[8px]">
-          <span
+          <UiBadge
+            size="xs"
             class="w-[46px] shrink-0 rounded-[4px] px-[4px] py-[1px] text-center font-mono text-caption font-medium"
             :class="methodBadgeClass(a.method, a.type)"
-            >{{ a.type === 'ws' ? 'WS' : a.method }}</span
+            >{{ a.type === 'ws' ? 'WS' : a.method }}</UiBadge
           >
           <span
             class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
           >
             {{ a.name || '(未命名)' }}
           </span>
-          <button
-            class="hidden shrink-0 text-text-muted transition-colors hover:text-info-strong group-hover:block dark:text-text-muted-dark dark:hover:text-info-dark"
-            title="重命名接口"
+          <UiIconButton
+            label="重命名接口"
+            size="xs"
+            class="hidden shrink-0 text-text-muted hover:text-info-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-info-dark"
             @click.stop="emit('rename', a)"
           >
             <svg
@@ -76,10 +80,11 @@ const emit = defineEmits<{
             >
               <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
             </svg>
-          </button>
-          <button
-            class="hidden shrink-0 text-text-muted transition-colors hover:text-tertiary-strong group-hover:block dark:text-text-muted-dark dark:hover:text-tertiary-dark"
-            title="删除接口"
+          </UiIconButton>
+          <UiIconButton
+            label="删除接口"
+            size="xs"
+            class="hidden shrink-0 text-text-muted hover:text-tertiary-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-tertiary-dark"
             @click.stop="emit('delete', a.id)"
           >
             <svg
@@ -93,7 +98,7 @@ const emit = defineEmits<{
             >
               <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
             </svg>
-          </button>
+          </UiIconButton>
         </div>
         <div class="flex items-center gap-[6px]">
           <span class="truncate font-mono text-body-sm text-secondary dark:text-secondary-dark">

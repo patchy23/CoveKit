@@ -6,6 +6,7 @@ import { computed, ref } from 'vue'
 import hljs from 'highlight.js'
 import type { HttpResponseResult } from './contracts'
 import { formatBytes, formatHeaders, looksLikeJson } from './useHttp'
+import { UiBadge, UiTabs } from '@/core/ui'
 
 const props = defineProps<{
   response: HttpResponseResult
@@ -32,20 +33,15 @@ const highlighted = computed(() => {
     return ''
   }
 })
-
-const tabClass = (active: boolean) =>
-  active
-    ? 'border-b-[2px] border-tertiary-strong pb-[6px] font-medium text-tertiary-strong dark:border-tertiary-dark dark:text-tertiary-dark'
-    : 'border-b-[2px] border-transparent pb-[6px] text-secondary hover:text-primary dark:text-secondary-dark dark:hover:text-primary-dark'
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col gap-[10px]">
     <!-- 元信息 -->
     <div class="flex flex-wrap items-center gap-[10px]">
-      <span class="rounded-full px-[10px] py-[3px] text-caption font-medium" :class="statusClass">
+      <UiBadge size="sm" :class="statusClass">
         {{ response.ok ? `HTTP ${response.status}` : response.statusText || '请求失败' }}
-      </span>
+      </UiBadge>
       <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
         {{ response.durationMs }} ms
       </span>
@@ -63,29 +59,16 @@ const tabClass = (active: boolean) =>
     </div>
 
     <!-- 响应查看分页签 -->
-    <div class="flex shrink-0 gap-[16px] text-body">
-      <button
-        class="transition-colors"
-        :class="tabClass(viewTab === 'pretty')"
-        @click="viewTab = 'pretty'"
-      >
-        Pretty
-      </button>
-      <button
-        class="transition-colors"
-        :class="tabClass(viewTab === 'raw')"
-        @click="viewTab = 'raw'"
-      >
-        Raw
-      </button>
-      <button
-        class="transition-colors"
-        :class="tabClass(viewTab === 'headers')"
-        @click="viewTab = 'headers'"
-      >
-        响应头（{{ response.headers.length }}）
-      </button>
-    </div>
+    <UiTabs
+      v-model="viewTab"
+      variant="line"
+      size="sm"
+      :items="[
+        { value: 'pretty', label: 'Pretty' },
+        { value: 'raw', label: 'Raw' },
+        { value: 'headers', label: `响应头（${response.headers.length}）` },
+      ]"
+    />
 
     <!-- 响应体：Pretty（JSON 高亮）/ Raw（原样） -->
     <div

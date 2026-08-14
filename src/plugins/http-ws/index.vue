@@ -10,6 +10,7 @@ import HttpPanel from './HttpPanel.vue'
 import ApiSidebar from './ApiSidebar.vue'
 import type { ApiDraft } from './useHttp'
 import { useUiStore } from '@/stores/ui'
+import { UiButton, UiInput, UiModal } from '@/core/ui'
 
 const ui = useUiStore()
 
@@ -162,33 +163,28 @@ onMounted(loadApis)
     </div>
 
     <!-- 命名对话框（保存新接口 / 更新接口） -->
-    <Teleport to="body">
-      <div v-if="saveNameOpen" class="fixed inset-0 z-[150] grid place-items-center bg-black/30">
-        <div
-          class="w-[400px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
-        >
-          <h3 class="mb-[6px] text-body font-medium text-primary dark:text-primary-dark">
-            {{ renameMode ? '重命名接口' : activeApiId ? '更新接口' : '保存为接口' }}
-          </h3>
-          <p
-            class="mb-[12px] truncate font-mono text-body-sm text-text-muted dark:text-text-muted-dark"
-          >
-            {{ draftSummary() }}
-          </p>
-          <input
-            v-model="saveName"
-            class="field-input"
-            placeholder="接口名称，如：获取用户列表"
-            spellcheck="false"
-            autofocus
-            @keyup.enter="saveApi"
-          />
-          <div class="mt-[14px] flex justify-end gap-[8px]">
-            <button class="btn-ghost" @click="saveNameOpen = false">取消</button>
-            <button class="btn-primary" @click="saveApi">保存</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <UiModal
+      :open="saveNameOpen"
+      size="sm"
+      :title="renameMode ? '重命名接口' : activeApiId ? '更新接口' : '保存为接口'"
+      @close="saveNameOpen = false"
+    >
+      <p
+        class="mb-[12px] truncate font-mono text-body-sm text-text-muted dark:text-text-muted-dark"
+      >
+        {{ draftSummary() }}
+      </p>
+      <UiInput
+        v-model="saveName"
+        placeholder="接口名称，如：获取用户列表"
+        spellcheck="false"
+        autofocus
+        @keyup.enter="saveApi"
+      />
+      <template #footer>
+        <UiButton variant="ghost" @click="saveNameOpen = false">取消</UiButton>
+        <UiButton variant="primary" @click="saveApi">保存</UiButton>
+      </template>
+    </UiModal>
   </div>
 </template>

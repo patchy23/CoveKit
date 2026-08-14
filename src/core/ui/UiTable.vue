@@ -1,26 +1,53 @@
 <script setup lang="ts">
 withDefaults(
   defineProps<{
-    density?: 'compact' | 'default' | 'comfortable'
+    density?: 'compact' | 'default' | 'comfortable' | 'custom'
     striped?: boolean
     hoverable?: boolean
+    framed?: boolean
+    tableClass?: string
+    styled?: boolean
   }>(),
-  { density: 'default', striped: false, hoverable: true }
+  {
+    density: 'default',
+    striped: false,
+    hoverable: true,
+    framed: true,
+    tableClass: '',
+    styled: true,
+  }
 )
 </script>
 
 <template>
-  <div class="overflow-x-auto rounded-lg border border-border dark:border-border-dark">
+  <div
+    v-if="framed"
+    class="overflow-x-auto rounded-lg border border-border dark:border-border-dark"
+  >
     <table
-      class="ui-data-table w-full border-collapse text-left text-secondary dark:text-secondary-dark"
+      class="w-full border-collapse text-left text-secondary dark:text-secondary-dark"
       :class="[
-        `ui-data-table-${density}`,
+        tableClass,
+        { 'ui-data-table': styled },
+        styled ? `ui-data-table-${density}` : '',
         { 'ui-data-table-striped': striped, 'ui-data-table-hoverable': hoverable },
       ]"
     >
       <slot />
     </table>
   </div>
+  <table
+    v-else
+    class="w-full border-collapse text-left text-secondary dark:text-secondary-dark"
+    :class="[
+      tableClass,
+      { 'ui-data-table': styled },
+      styled ? `ui-data-table-${density}` : '',
+      { 'ui-data-table-striped': striped, 'ui-data-table-hoverable': hoverable },
+    ]"
+  >
+    <slot />
+  </table>
 </template>
 
 <style scoped>
@@ -55,7 +82,11 @@ withDefaults(
   background: var(--color-surface-muted);
 }
 .ui-data-table-hoverable :deep(tbody tr:hover) {
-  background: var(--color-tertiary-soft);
+  background: var(--ui-table-row-hover);
+}
+.ui-data-table-hoverable :deep(tbody tr[data-selected='true']),
+.ui-data-table-hoverable :deep(tbody tr[data-selected='true']:hover) {
+  background: var(--ui-table-row-selected);
 }
 :global([data-theme='dark']) .ui-data-table :deep(th),
 :global([data-theme='dark']) .ui-data-table-striped :deep(tbody tr:nth-child(even)) {
@@ -64,8 +95,5 @@ withDefaults(
 :global([data-theme='dark']) .ui-data-table :deep(th),
 :global([data-theme='dark']) .ui-data-table :deep(td) {
   border-color: var(--color-border-dark);
-}
-:global([data-theme='dark']) .ui-data-table-hoverable :deep(tbody tr:hover) {
-  background: var(--color-tertiary-soft-dark);
 }
 </style>

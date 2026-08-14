@@ -8,7 +8,7 @@ import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
 import { describeResult, displayCell, fileName } from './useSqlite'
-import { UiButton, UiInput, UiTableCell } from '@/core/ui'
+import { UiButton, UiInput, UiTable, UiTableCell } from '@/core/ui'
 
 const ui = useUiStore()
 
@@ -135,10 +135,11 @@ function formatCell(v: string): string {
             <UiButton variant="ghost" size="sm" title="刷新" @click="refreshTables">刷新</UiButton>
           </div>
           <div class="flex max-h-[420px] flex-col gap-[4px] overflow-y-auto pr-[4px]">
-            <button
+            <UiButton
               v-for="t in tables"
               :key="t"
-              class="rounded-md px-[10px] py-[7px] text-left text-body transition-colors"
+              variant="ghost"
+              class="!h-auto w-full !justify-start rounded-md !px-[10px] !py-[7px] text-left text-body"
               :class="
                 activeTable === t
                   ? 'bg-tertiary-soft font-medium text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
@@ -147,7 +148,7 @@ function formatCell(v: string): string {
               @click="browseTable(t)"
             >
               <span class="truncate font-mono">{{ t }}</span>
-            </button>
+            </UiButton>
             <p
               v-if="!tables.length"
               class="px-[10px] py-[8px] text-body-sm text-text-muted dark:text-text-muted-dark"
@@ -190,9 +191,10 @@ function formatCell(v: string): string {
           <div
             class="min-h-[160px] flex-1 overflow-auto rounded-md border border-border dark:border-border-dark"
           >
-            <table
+            <UiTable
               v-if="result && result.ok && result.columns.length"
-              class="w-full border-collapse text-left"
+              :framed="false"
+              :styled="false"
             >
               <thead class="sticky top-0 bg-surface-muted dark:bg-surface-muted-dark">
                 <tr>
@@ -238,7 +240,7 @@ function formatCell(v: string): string {
                   </UiTableCell>
                 </tr>
               </tbody>
-            </table>
+            </UiTable>
             <p
               v-else-if="result && !result.ok"
               class="px-[12px] py-[14px] font-mono text-body-sm text-tertiary-strong dark:text-tertiary-dark"
