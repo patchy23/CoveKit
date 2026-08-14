@@ -3,7 +3,7 @@
 // 新增插件 = plugins/<id>/ 目录 + 本文件一行 + lib.rs register/init 各一行。
 // 框架级能力（设置/快捷键/窗口/数据管理）在 framework/，不属于插件。
 pub mod api;
-pub mod db;
+pub mod database;
 pub mod dns;
 pub mod hosts;
 pub mod http_ws;
@@ -15,7 +15,7 @@ pub(crate) fn is_command(command: &str) -> bool {
     command.starts_with("http_")
         || command.starts_with("ws_")
         || command.starts_with("api_")
-        || command.starts_with("db_")
+        || command.starts_with("dbc_")
         || command.starts_with("hosts_")
         || command.starts_with("dns_")
         || command.starts_with("ssh_")
@@ -29,7 +29,7 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
             http_ws::invoke_handler(invoke)
         }
         command if command.starts_with("api_") => api::invoke_handler(invoke),
-        command if command.starts_with("db_") => db::invoke_handler(invoke),
+        command if command.starts_with("dbc_") => database::invoke_handler(invoke),
         command if command.starts_with("hosts_") => hosts::invoke_handler(invoke),
         command if command.starts_with("dns_") => dns::invoke_handler(invoke),
         command if command.starts_with("ssh_") => ssh::invoke_handler(invoke),

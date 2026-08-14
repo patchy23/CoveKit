@@ -29,9 +29,12 @@ tauri-plugin-dialog = "2"
 tauri-plugin-window-state = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+zeroize = "1"
+webpki-roots = "0.26"
 rusqlite = { version = "0.32", features = ["bundled"] }
 reqwest = { version = "0.12", features = ["json"] }
-tokio = { version = "1", features = ["sync", "macros", "rt", "fs", "io-util", "time"] }
+tokio = { version = "1", features = ["sync", "macros", "rt", "fs", "io-util", "time", "process"] }
 tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 futures-util = "0.3"
@@ -41,7 +44,7 @@ aliyun-openapi-core-rust-sdk = "1.1"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
-time = { version = "0.3", features = ["formatting", "parsing"] }
+time = { version = "0.3", features = ["formatting", "parsing", "local-offset"] }
 # SSH 插件：russh 客户端 + SFTP + 凭证 AES-GCM 加密（ssh-key 由 russh 依赖提供）
 # ring 后端：避免 aws-lc-rs 在 Windows 依赖 NASM 汇编器
 russh = { version = "0.62.5", default-features = false, features = ["flate2", "ring", "rsa"] }
@@ -49,6 +52,18 @@ russh-sftp = "2.4.0"
 aes-gcm = "0.10"
 rand = "0.8"
 base64 = "0.22"
+# 数据库工作台（database 插件）：驱动与 dbx 项目同款
+# mysql: mysql_async（default-rustls 若触发 aws-lc-rs 编译，Windows 需 NASM，见实施记录）
+mysql_async = { version = "0.37", default-features = false, features = ["default-rustls", "client_ed25519", "chrono", "rust_decimal"] }
+# postgresql: tokio-postgres + deadpool 连接池（与 dbx 同款）；TLS 走 rustls ring（与 http_ws 一致）
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
+tokio-postgres-rustls = "0.13"
+deadpool-postgres = { version = "0.14", features = ["rt_tokio_1"] }
+# redis: 连接管理器 + 暂不开 TLS feature（避免 rustls 后端与现有 ring 构建冲突，需要时再开）
+redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
+# 凭据加密：iota_stronghold（tauri-plugin-stronghold 的 Rust 侧 API 是前端导向的，
+# 插件内部即用本引擎；数据库插件在 Rust 侧直连引擎，密钥不进前端）
+iota_stronghold = "2.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

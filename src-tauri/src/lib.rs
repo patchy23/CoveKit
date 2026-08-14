@@ -60,7 +60,7 @@ pub fn run() {
     let builder = framework::settings::register(builder);
     let builder = plugins::http_ws::register(builder);
     let builder = plugins::api::register(builder);
-    let builder = plugins::db::register(builder);
+    let builder = plugins::database::register(builder);
     let builder = plugins::hosts::register(builder);
     let builder = plugins::dns::register(builder);
     let builder = plugins::ssh::register(builder);
