@@ -10,7 +10,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, watch};
 
 use crate::plugins::ssh::conn::{now_ms, resource_id, SshState};
-use crate::plugins::ssh::models::{SshActionResult, TerminalData, TerminalSession};
+use crate::plugins::ssh::models::{SshActionResult, TerminalClosed, TerminalData, TerminalSession};
 
 /// 终端指令（前端 → 后台任务）
 pub(crate) enum TerminalCmd {
@@ -90,6 +90,12 @@ pub(crate) fn spawn_channel_task(
         if let Ok(mut m) = app.state::<TerminalState>().0.lock() {
             m.remove(&terminal_id);
         }
+        let _ = app.emit(
+            "ssh://terminal-closed",
+            &TerminalClosed {
+                terminal_id: terminal_id.clone(),
+            },
+        );
     });
 }
 
@@ -120,7 +126,7 @@ pub async fn ssh_terminal_open(
     let (session, _host, _profile_id) = handle;
 
     // 开通道 + PTY + shell（xterm 终端类型）
-    let mut channel = session
+    let channel = session
         .channel_open_session()
         .await
         .map_err(|e| format!("打开通道失败: {e}"))?;
@@ -134,8 +140,8 @@ pub async fn ssh_terminal_open(
         .map_err(|e| format!("shell 启动失败: {e}"))?;
 
     let terminal_id = resource_id("term");
-    let (tx, mut rx) = mpsc::channel::<TerminalCmd>(128);
-    let (cancel, mut cancel_rx) = watch::channel(false);
+    let (tx, rx) = mpsc::channel::<TerminalCmd>(128);
+    let (cancel, cancel_rx) = watch::channel(false);
 
     // 登记句柄（先插入，任务退出时移除）
     state.0.lock().map_err(|e| e.to_string())?.insert(
@@ -151,51 +157,7 @@ pub async fn ssh_terminal_open(
         },
     );
 
-    // 后台读写任务：指令下发 + 输出推送
-    let app2 = app.clone();
-    let task_id = terminal_id.clone();
-    let title_for_task = task_id.clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
-            tokio::select! {
-                changed = cancel_rx.changed() => {
-                    if changed.is_err() || *cancel_rx.borrow() { break; }
-                }
-                // 前端指令
-                cmd = rx.recv() => {
-                    match cmd {
-                        Some(TerminalCmd::Write(data)) => {
-                            if channel.data_bytes(data).await.is_err() { break; }
-                        }
-                        Some(TerminalCmd::Resize(c, r)) => {
-                            let _ = channel.window_change(c, r, 0, 0).await;
-                        }
-                        None => break,
-                    }
-                }
-                // 通道输出（服务端推送）
-                msg = channel.wait() => {
-                    match msg {
-                        Some(ChannelMsg::Data { data }) => {
-                            let payload = TerminalData {
-                                terminal_id: task_id.clone(),
-                                data: String::from_utf8_lossy(&data).to_string(),
-                                time: now_ms(),
-                            };
-                            let _ = app2.emit("ssh://terminal-data", &payload);
-                        }
-                        Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
-                        _ => {}
-                    }
-                }
-            }
-        }
-        // 任务退出：标记非活跃并从注册表移除
-        if let Ok(mut m) = app2.state::<TerminalState>().0.lock() {
-            m.remove(&task_id);
-        }
-        let _ = title_for_task;
-    });
+    spawn_channel_task(app.clone(), terminal_id.clone(), channel, rx, cancel_rx);
 
     Ok(TerminalSession {
         id: terminal_id,

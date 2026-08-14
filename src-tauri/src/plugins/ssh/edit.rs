@@ -10,7 +10,7 @@ use crate::plugins::ssh::file::replace_remote_file;
 use crate::plugins::ssh::models::{RemoteFileContent, SshActionResult};
 
 /// 远程编辑器最大文件大小，避免一次性读取超大文件耗尽内存。
-const MAX_EDIT_BYTES: u64 = 5 * 1024 * 1024;
+const MAX_EDIT_BYTES: u64 = 10 * 1024 * 1024;
 
 /// 临时 SFTP 会话（与 file.rs 同构，避免跨文件依赖）
 async fn sftp_session(
@@ -49,7 +49,7 @@ pub async fn ssh_edit_open(
         .await
         .map_err(|e| format!("打开文件失败: {e}"))?;
     if meta.size.unwrap_or(0) > MAX_EDIT_BYTES {
-        return Err("远程编辑仅支持不超过 5 MiB 的文本文件".into());
+        return Err("远程编辑仅支持不超过 10 MiB 的文件".into());
     }
     let mut buf = Vec::new();
     file.take(MAX_EDIT_BYTES + 1)
@@ -57,7 +57,7 @@ pub async fn ssh_edit_open(
         .await
         .map_err(|e| format!("读取内容失败: {e}"))?;
     if buf.len() as u64 > MAX_EDIT_BYTES {
-        return Err("远程编辑仅支持不超过 5 MiB 的文本文件".into());
+        return Err("远程编辑仅支持不超过 10 MiB 的文件".into());
     }
     let size = meta.size.unwrap_or(buf.len() as u64);
     // 编辑器仅支持 UTF-8；拒绝有损解码，避免保存时静默破坏原文件字节。

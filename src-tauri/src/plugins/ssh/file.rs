@@ -3,6 +3,7 @@
 //! 上传/下载为后台任务分块传输，进度经事件 ssh://transfer-progress 推送。
 
 use russh_sftp::protocol::FileAttributes;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -10,6 +11,92 @@ use crate::plugins::ssh::conn::{get_session, resource_id, SshState};
 use crate::plugins::ssh::models::{
     FileListResult, FileTransferProgress, RemoteFile, SshActionResult,
 };
+
+struct LocalUploadEntry {
+    local_path: PathBuf,
+    remote_path: String,
+    is_dir: bool,
+    size: u64,
+}
+
+/// 展开本地上传目标；目录按父目录优先排列，符号链接不跟随，避免越出用户选择范围。
+fn collect_upload_entries(
+    local_path: &str,
+    remote_path: &str,
+) -> Result<Vec<LocalUploadEntry>, String> {
+    let root = PathBuf::from(local_path);
+    let root_meta = std::fs::symlink_metadata(&root).map_err(|e| format!("本地路径不可读: {e}"))?;
+    if root_meta.file_type().is_symlink() {
+        return Err("暂不支持上传符号链接".into());
+    }
+    if root_meta.is_file() {
+        return Ok(vec![LocalUploadEntry {
+            local_path: root,
+            remote_path: remote_path.to_string(),
+            is_dir: false,
+            size: root_meta.len(),
+        }]);
+    }
+    if !root_meta.is_dir() {
+        return Err("仅支持上传普通文件或目录".into());
+    }
+
+    let mut entries = vec![LocalUploadEntry {
+        local_path: root.clone(),
+        remote_path: remote_path.to_string(),
+        is_dir: true,
+        size: 0,
+    }];
+    let mut pending = vec![root.clone()];
+    while let Some(directory) = pending.pop() {
+        let children = std::fs::read_dir(&directory)
+            .map_err(|e| format!("无法读取目录 {}: {e}", directory.display()))?;
+        for child in children {
+            let child = child.map_err(|e| format!("读取目录项失败: {e}"))?;
+            let path = child.path();
+            let file_type = child
+                .file_type()
+                .map_err(|e| format!("读取 {} 类型失败: {e}", path.display()))?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let metadata = child
+                .metadata()
+                .map_err(|e| format!("读取 {} 元数据失败: {e}", path.display()))?;
+            let relative = path
+                .strip_prefix(&root)
+                .map_err(|e| format!("计算相对路径失败: {e}"))?;
+            let remote = join_remote_path(remote_path, relative);
+            if metadata.is_dir() {
+                entries.push(LocalUploadEntry {
+                    local_path: path.clone(),
+                    remote_path: remote,
+                    is_dir: true,
+                    size: 0,
+                });
+                pending.push(path);
+            } else if metadata.is_file() {
+                entries.push(LocalUploadEntry {
+                    local_path: path,
+                    remote_path: remote,
+                    is_dir: false,
+                    size: metadata.len(),
+                });
+            }
+        }
+    }
+    Ok(entries)
+}
+
+fn join_remote_path(root: &str, relative: &Path) -> String {
+    relative
+        .components()
+        .fold(root.trim_end_matches('/').to_string(), |mut path, part| {
+            path.push('/');
+            path.push_str(&part.as_os_str().to_string_lossy());
+            path
+        })
+}
 
 /// 从连接会话建立 SFTP 会话（临时通道，用完即弃）
 async fn sftp_session(
@@ -174,9 +261,8 @@ pub async fn ssh_file_upload(
 ) -> Result<FileTransferProgress, String> {
     let transfer_id = resource_id("up");
     let event_connection_id = connection_id.clone();
-    let total = std::fs::metadata(&local_path)
-        .map_err(|e| format!("本地文件不可读: {e}"))?
-        .len();
+    let entries = collect_upload_entries(&local_path, &remote_path)?;
+    let total = entries.iter().map(|entry| entry.size).sum();
     let session = get_session(&ssh_state, &connection_id)?;
 
     let app2 = app.clone();
@@ -197,80 +283,99 @@ pub async fn ssh_file_upload(
             let sftp = russh_sftp::client::SftpSession::new(stream)
                 .await
                 .map_err(|e| e.to_string())?;
-            let target_exists = sftp
-                .try_exists(&rpath)
-                .await
-                .map_err(|e| format!("检查远程目标失败: {e}"))?;
-            let target_path = if target_exists {
-                sftp.canonicalize(&rpath)
-                    .await
-                    .map_err(|e| format!("解析远程目标失败: {e}"))?
-            } else {
-                rpath.clone()
-            };
-            let target_permissions = if target_exists {
-                sftp.metadata(&target_path)
-                    .await
-                    .map_err(|e| format!("读取远程目标权限失败: {e}"))?
-                    .permissions
-            } else {
-                None
-            };
-            let temp_path = format!("{target_path}.patchybox-upload-{}", resource_id("file"));
-            let mut remote = sftp
-                .create(&temp_path)
-                .await
-                .map_err(|e| format!("创建远程文件失败: {e}"))?;
-            let mut local = tokio::fs::File::open(&lpath)
-                .await
-                .map_err(|e| e.to_string())?;
-            let mut buf = vec![0u8; 64 * 1024];
             let mut transferred: u64 = 0;
-            loop {
-                let n = local.read(&mut buf).await.map_err(|e| e.to_string())?;
-                if n == 0 {
-                    break;
+            for entry in entries {
+                let target_exists = sftp
+                    .try_exists(&entry.remote_path)
+                    .await
+                    .map_err(|e| format!("检查远程目标失败: {e}"))?;
+                if entry.is_dir {
+                    if target_exists {
+                        let metadata = sftp
+                            .metadata(&entry.remote_path)
+                            .await
+                            .map_err(|e| format!("读取远程目录元数据失败: {e}"))?;
+                        if !metadata.is_dir() {
+                            return Err(format!("远程目标已存在且不是目录：{}", entry.remote_path));
+                        }
+                    } else {
+                        sftp.create_dir(&entry.remote_path)
+                            .await
+                            .map_err(|e| format!("创建远程目录 {} 失败: {e}", entry.remote_path))?;
+                    }
+                    continue;
+                }
+
+                let target_path = if target_exists {
+                    sftp.canonicalize(&entry.remote_path)
+                        .await
+                        .map_err(|e| format!("解析远程目标失败: {e}"))?
+                } else {
+                    entry.remote_path.clone()
+                };
+                let target_permissions = if target_exists {
+                    sftp.metadata(&target_path)
+                        .await
+                        .map_err(|e| format!("读取远程目标权限失败: {e}"))?
+                        .permissions
+                } else {
+                    None
+                };
+                let temp_path = format!("{target_path}.patchybox-upload-{}", resource_id("file"));
+                let mut remote = sftp
+                    .create(&temp_path)
+                    .await
+                    .map_err(|e| format!("创建远程文件失败: {e}"))?;
+                let mut local = tokio::fs::File::open(&entry.local_path)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let mut buf = vec![0u8; 64 * 1024];
+                loop {
+                    let n = local.read(&mut buf).await.map_err(|e| e.to_string())?;
+                    if n == 0 {
+                        break;
+                    }
+                    remote
+                        .write_all(&buf[..n])
+                        .await
+                        .map_err(|e| format!("写入远程文件失败: {e}"))?;
+                    transferred += n as u64;
+                    let _ = app2.emit(
+                        "ssh://transfer-progress",
+                        &FileTransferProgress {
+                            transfer_id: tid.clone(),
+                            connection_id: event_connection_id.clone(),
+                            local_path: lpath.clone(),
+                            remote_path: rpath.clone(),
+                            transferred,
+                            total,
+                            done: false,
+                            error: None,
+                        },
+                    );
                 }
                 remote
-                    .write_all(&buf[..n])
+                    .flush()
                     .await
-                    .map_err(|e| format!("写入远程文件失败: {e}"))?;
-                transferred += n as u64;
-                // 进度事件（≥256KB 或最后一块）
-                let _ = app2.emit(
-                    "ssh://transfer-progress",
-                    &FileTransferProgress {
-                        transfer_id: tid.clone(),
-                        connection_id: event_connection_id.clone(),
-                        local_path: lpath.clone(),
-                        remote_path: rpath.clone(),
-                        transferred,
-                        total,
-                        done: false,
-                        error: None,
-                    },
-                );
+                    .map_err(|e| format!("刷新远程文件失败: {e}"))?;
+                remote
+                    .shutdown()
+                    .await
+                    .map_err(|e| format!("关闭远程文件失败: {e}"))?;
+                if let Some(permissions) = target_permissions {
+                    sftp.set_metadata(
+                        &temp_path,
+                        FileAttributes {
+                            permissions: Some(permissions),
+                            ..FileAttributes::default()
+                        },
+                    )
+                    .await
+                    .map_err(|e| format!("保留远程文件权限失败: {e}"))?;
+                }
+                replace_remote_file(&sftp, &temp_path, &target_path).await?;
             }
-            remote
-                .flush()
-                .await
-                .map_err(|e| format!("刷新远程文件失败: {e}"))?;
-            remote
-                .shutdown()
-                .await
-                .map_err(|e| format!("关闭远程文件失败: {e}"))?;
-            if let Some(permissions) = target_permissions {
-                sftp.set_metadata(
-                    &temp_path,
-                    FileAttributes {
-                        permissions: Some(permissions),
-                        ..FileAttributes::default()
-                    },
-                )
-                .await
-                .map_err(|e| format!("保留远程文件权限失败: {e}"))?;
-            }
-            replace_remote_file(&sftp, &temp_path, &target_path).await
+            Ok(())
         }
         .await;
         let _ = app2.emit(

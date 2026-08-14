@@ -127,6 +127,14 @@ pub struct TerminalData {
     pub(crate) time: u64,
 }
 
+/// 终端 PTY 通道关闭通知。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalClosed {
+    /// 已关闭的终端 id。
+    pub(crate) terminal_id: String,
+}
+
 /* ── 文件管理 ── */
 
 /// 远程文件条目
