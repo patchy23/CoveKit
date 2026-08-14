@@ -2,7 +2,7 @@
 /** DockerTable · SSH Docker 容器列表与行级操作。 */
 import type { DockerContainer } from './contracts'
 import { shortContainerId } from './useSsh'
-import { UiButton, UiTableCell } from '@/core/ui'
+import { UiButton, UiTable, UiTableCell } from '@/core/ui'
 
 defineProps<{ containers: DockerContainer[]; busyContainerId?: string | null }>()
 const emit = defineEmits<{
@@ -23,9 +23,7 @@ function stateClass(status: string): string {
 
 <template>
   <div class="min-h-0 flex-1 overflow-y-auto">
-    <table
-      class="w-full table-fixed text-left text-body-sm text-secondary dark:text-secondary-dark"
-    >
+    <UiTable :framed="false" :styled="false" table-class="table-fixed text-body-sm">
       <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
         <tr
           class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -51,7 +49,7 @@ function stateClass(status: string): string {
         <tr
           v-for="container in containers"
           :key="container.id"
-          class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
+          class="border-b border-border/50 transition-colors dark:border-border-dark/50"
         >
           <UiTableCell
             content="technical"
@@ -139,6 +137,6 @@ function stateClass(status: string): string {
           </UiTableCell>
         </tr>
       </tbody>
-    </table>
+    </UiTable>
   </div>
 </template>

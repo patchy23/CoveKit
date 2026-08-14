@@ -89,6 +89,11 @@ export interface TerminalData {
   time: number
 }
 
+/** 后端 PTY 通道已经关闭。 */
+export interface TerminalClosed {
+  terminalId: string
+}
+
 /* ── 文件管理 ── */
 
 /** 远程文件条目 */
@@ -456,6 +461,7 @@ export type Results = {
 export const sshEvents = {
   /** 终端输出推送（含 ANSI 转义序列，xterm.js 直接渲染） */
   terminalData: 'ssh://terminal-data',
+  terminalClosed: 'ssh://terminal-closed',
   /** 上传/下载进度推送 */
   transferProgress: 'ssh://transfer-progress',
   /** 连接/断开/重连状态变化推送 */
@@ -465,6 +471,7 @@ export const sshEvents = {
 /** 事件负载类型（与命令出参类型同源） */
 export type SshEventPayloads = {
   'ssh://terminal-data': TerminalData
+  'ssh://terminal-closed': TerminalClosed
   'ssh://transfer-progress': FileTransferProgress
   'ssh://connection-status': ServerConnection
 }

@@ -202,69 +202,7 @@ export function shortContainerId(id: string): string {
   return id.slice(0, 12)
 }
 
-const EDITABLE_EXTENSIONS = new Set([
-  'txt',
-  'md',
-  'json',
-  'jsonc',
-  'yaml',
-  'yml',
-  'toml',
-  'ini',
-  'conf',
-  'cfg',
-  'xml',
-  'html',
-  'htm',
-  'css',
-  'scss',
-  'less',
-  'js',
-  'mjs',
-  'cjs',
-  'ts',
-  'tsx',
-  'jsx',
-  'vue',
-  'py',
-  'rs',
-  'go',
-  'java',
-  'kt',
-  'c',
-  'cc',
-  'cpp',
-  'h',
-  'hpp',
-  'cs',
-  'php',
-  'rb',
-  'sh',
-  'bash',
-  'zsh',
-  'fish',
-  'sql',
-  'log',
-  'env',
-  'properties',
-  'service',
-  'desktop',
-])
-
-const EDITABLE_NAMES = new Set([
-  'readme',
-  'license',
-  'makefile',
-  'dockerfile',
-  '.env',
-  '.gitignore',
-  '.editorconfig',
-])
-
-/** 远程编辑仅开放给不超过后端 5 MiB 上限的常见文本文件。 */
+/** 文件名和后缀不参与判断；不超过 10 MiB 的普通文件均可尝试按 UTF-8 打开。 */
 export function canEditRemoteFile(file: RemoteFile): boolean {
-  if (file.isDir || file.size > 5 * 1024 * 1024) return false
-  const name = file.name.toLowerCase()
-  const extension = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : ''
-  return EDITABLE_NAMES.has(name) || EDITABLE_EXTENSIONS.has(extension)
+  return !file.isDir && file.size <= 10 * 1024 * 1024
 }

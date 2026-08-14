@@ -119,7 +119,7 @@ describe('SSH 资源展示与文件菜单判定', () => {
     expect(shortContainerId('abc123')).toBe('abc123')
   })
 
-  it('仅允许不超过 5 MiB 的常见文本文件进入远程编辑', () => {
+  it('允许不超过 10 MiB 的任意后缀文件尝试进入远程编辑', () => {
     const base = {
       path: '/tmp/config.json',
       name: 'config.json',
@@ -132,8 +132,10 @@ describe('SSH 资源展示与文件菜单判定', () => {
     }
     expect(canEditRemoteFile(base)).toBe(true)
     expect(canEditRemoteFile({ ...base, name: 'README', path: '/tmp/README' })).toBe(true)
-    expect(canEditRemoteFile({ ...base, name: 'image.png', path: '/tmp/image.png' })).toBe(false)
-    expect(canEditRemoteFile({ ...base, size: 5 * 1024 * 1024 + 1 })).toBe(false)
+    expect(
+      canEditRemoteFile({ ...base, name: 'custom.unknown', path: '/tmp/custom.unknown' })
+    ).toBe(true)
+    expect(canEditRemoteFile({ ...base, size: 10 * 1024 * 1024 + 1 })).toBe(false)
     expect(canEditRemoteFile({ ...base, isDir: true })).toBe(false)
   })
 })

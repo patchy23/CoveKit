@@ -12,6 +12,8 @@ export interface AppSettings {
   language: 'zh-CN' | 'en-US'
   globalHotkey: string
   launchAtStartup: boolean
+  /** 工具箱级默认下载目录；各工具的保存对话框优先从这里打开。 */
+  defaultDownloadDirectory: string
   recentTools: string[]
   tools: Record<string, Record<string, unknown>>
 }

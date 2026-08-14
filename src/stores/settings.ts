@@ -17,6 +17,7 @@ const DEFAULTS: AppSettings = {
   language: 'zh-CN',
   globalHotkey: 'Ctrl+Shift+Space',
   launchAtStartup: false,
+  defaultDownloadDirectory: '',
   recentTools: [],
   tools: {},
 }

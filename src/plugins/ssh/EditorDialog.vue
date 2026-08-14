@@ -12,6 +12,7 @@ import { tags as t } from '@lezer/highlight'
 import { json } from '@codemirror/lang-json'
 import { xml } from '@codemirror/lang-xml'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiButton } from '@/core/ui'
 
 const props = defineProps<{
   /** 远程文件完整路径 */
@@ -130,16 +131,10 @@ onUnmounted(() => view?.destroy())
             已修改
           </span>
           <div class="ml-auto flex items-center gap-[8px]">
-            <button
-              class="btn-ghost !px-[10px] !py-[4px] text-body-sm"
-              :disabled="saving"
-              @click="cancel"
-            >
-              取消
-            </button>
-            <button class="btn-primary text-body-sm" :disabled="saving" @click="save">
+            <UiButton variant="ghost" size="sm" :disabled="saving" @click="cancel"> 取消 </UiButton>
+            <UiButton variant="primary" size="sm" :loading="saving" @click="save">
               {{ saving ? '保存中…' : '保存' }}
-            </button>
+            </UiButton>
           </div>
         </div>
 

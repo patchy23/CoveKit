@@ -4,7 +4,12 @@
  */
 import { invokeCommand } from '@/core/ipc/ipc'
 import { listen } from '@tauri-apps/api/event'
-import type { FileTransferProgress, ServerConnection, TerminalData } from './contracts'
+import type {
+  FileTransferProgress,
+  ServerConnection,
+  TerminalClosed,
+  TerminalData,
+} from './contracts'
 import { commands, sshEvents } from './contracts'
 import type { InvokePayloads, Payloads, Results } from './contracts'
 
@@ -78,6 +83,11 @@ export const ipc = {
 /** 订阅终端数据（返回取消订阅函数） */
 export function onTerminalData(fn: (d: TerminalData) => void): Promise<() => void> {
   return listen<TerminalData>(sshEvents.terminalData, (e) => fn(e.payload))
+}
+
+/** 订阅终端 PTY 通道关闭。 */
+export function onTerminalClosed(fn: (d: TerminalClosed) => void): Promise<() => void> {
+  return listen<TerminalClosed>(sshEvents.terminalClosed, (e) => fn(e.payload))
 }
 
 /** 订阅文件传输进度（返回取消订阅函数） */

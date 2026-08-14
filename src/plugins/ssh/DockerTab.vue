@@ -9,7 +9,7 @@ import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import { UiButton, UiSearchInput, UiSelect as Select } from '@/core/ui'
 import TerminalTab from './TerminalTab.vue'
-import OutputDialog from './OutputDialog.vue'
+import LiveLogDialog from './LiveLogDialog.vue'
 import DockerTable from './DockerTable.vue'
 import { ipc } from './ipc'
 
@@ -24,7 +24,7 @@ const containers = ref<DockerContainer[]>([])
 const keyword = ref('')
 const statusFilter = ref<'all' | 'running' | 'exited'>('all')
 const terminalContainer = ref<DockerContainer | null>(null)
-const logOutput = ref<{ title: string; content: string } | null>(null)
+const logTarget = ref<DockerContainer | null>(null)
 const busyContainerId = ref<string | null>(null)
 const pendingAction = ref<{
   container: DockerContainer
@@ -112,19 +112,8 @@ const pendingActionText = computed(() => {
   return { title: `${verb}容器`, message: `确定${verb}容器「${name}」吗？`, label: verb }
 })
 
-async function logs(c: DockerContainer) {
-  if (!props.connection?.sessionId) return
-  try {
-    const r = await ipc.sshDockerLogs({
-      connectionId: props.connection.sessionId,
-      containerId: c.id,
-      lines: 100,
-    })
-    if (r.ok) logOutput.value = { title: `${c.name} · 最近日志`, content: r.logs }
-    else ui.toast(`日志获取失败：${r.error ?? '未知错误'}`)
-  } catch (e) {
-    ui.toast(`日志获取失败：${e}`)
-  }
+function logs(container: DockerContainer) {
+  logTarget.value = container
 }
 
 function exec(c: DockerContainer) {
@@ -207,11 +196,13 @@ watch(
         </div>
       </div>
     </Teleport>
-    <OutputDialog
-      v-if="logOutput"
-      :title="logOutput.title"
-      :content="logOutput.content"
-      @close="logOutput = null"
+    <LiveLogDialog
+      v-if="logTarget && connection"
+      :title="`${logTarget.name} · 实时日志`"
+      :connection-id="connection.sessionId"
+      kind="docker"
+      :target-id="logTarget.id"
+      @close="logTarget = null"
     />
     <ConfirmDialog
       :open="pendingAction !== null"

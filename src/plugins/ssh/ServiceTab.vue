@@ -6,8 +6,8 @@ import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, SystemdService } from './contracts'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiSelect, UiTableCell } from '@/core/ui'
-import OutputDialog from './OutputDialog.vue'
+import { UiButton, UiSelect, UiTable, UiTableCell } from '@/core/ui'
+import LiveLogDialog from './LiveLogDialog.vue'
 import { ipc } from './ipc'
 
 const props = defineProps<{
@@ -20,7 +20,7 @@ const ui = useUiStore()
 const filter = ref<'all' | 'active' | 'inactive' | 'failed'>('all')
 const services = ref<SystemdService[]>([])
 const loading = ref(false)
-const logOutput = ref<{ title: string; content: string } | null>(null)
+const logTarget = ref<SystemdService | null>(null)
 const pendingAction = ref<{ service: SystemdService; action: 'stop' | 'restart' } | null>(null)
 
 /** 按状态筛选后的服务列表（computed 自动响应 filter 变化） */
@@ -76,19 +76,8 @@ function confirmAction() {
   if (pending) void action(pending.service, pending.action)
 }
 
-async function logs(svc: SystemdService) {
-  if (!props.connection?.sessionId) return
-  try {
-    const r = await ipc.sshServiceLogs({
-      connectionId: props.connection.sessionId,
-      serviceName: svc.name,
-      lines: 100,
-    })
-    if (r.ok) logOutput.value = { title: `${svc.name} · 最近日志`, content: r.logs }
-    else ui.toast(`日志获取失败：${r.error ?? '未知错误'}`)
-  } catch (e) {
-    ui.toast(`日志获取失败：${e}`)
-  }
+function logs(service: SystemdService) {
+  logTarget.value = service
 }
 
 function stateClass(s: SystemdService): string {
@@ -139,7 +128,7 @@ watch(
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <table class="w-full text-left text-body-sm text-secondary dark:text-secondary-dark">
+      <UiTable :framed="false" :styled="false" table-class="text-body-sm">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -154,7 +143,7 @@ watch(
           <tr
             v-for="s in filtered"
             :key="s.name"
-            class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
+            class="border-b border-border/50 transition-colors dark:border-border-dark/50"
           >
             <UiTableCell content="technical" class="px-[12px] py-[8px]">{{ s.name }}</UiTableCell>
             <UiTableCell content="technical" class="px-[12px] py-[8px]">{{
@@ -194,7 +183,7 @@ watch(
             </UiTableCell>
           </tr>
         </tbody>
-      </table>
+      </UiTable>
     </div>
 
     <div
@@ -203,11 +192,13 @@ watch(
       <span>共 {{ filtered.length }} 个服务</span>
       <span class="ml-auto">{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
     </div>
-    <OutputDialog
-      v-if="logOutput"
-      :title="logOutput.title"
-      :content="logOutput.content"
-      @close="logOutput = null"
+    <LiveLogDialog
+      v-if="logTarget && connection"
+      :title="`${logTarget.name} · 实时日志`"
+      :connection-id="connection.sessionId"
+      kind="service"
+      :target-id="logTarget.name"
+      @close="logTarget = null"
     />
     <ConfirmDialog
       :open="pendingAction !== null"

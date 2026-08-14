@@ -4,9 +4,10 @@
  * 外观 / 快捷键 / 通用 / 剪贴板策略 / 工具级设置（settingsSchema 自动渲染表单，架构 §8）
  */
 import { computed } from 'vue'
+import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { getTools } from '@/core/registry/toolRegistry'
 import type { SettingsField } from '@/core/registry/types'
-import { UiModal as BaseModal, UiSelect as Select } from '@/core/ui'
+import { UiButton, UiCheckbox, UiInput, UiModal as BaseModal, UiSelect as Select } from '@/core/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
@@ -21,6 +22,15 @@ function fieldValue(field: SettingsField, toolId: string) {
 }
 function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
   settings.setToolSetting(toolId, field.key, value)
+}
+
+async function chooseDownloadDirectory() {
+  const selected = await dialogOpen({
+    directory: true,
+    multiple: false,
+    defaultPath: settings.settings.defaultDownloadDirectory || undefined,
+  })
+  if (typeof selected === 'string') await settings.set('defaultDownloadDirectory', selected)
 }
 </script>
 
@@ -107,12 +117,25 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
             class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"
           >
             <span class="dark:text-primary-dark">开机自启</span>
-            <input
-              type="checkbox"
-              class="h-4 w-4 accent-[var(--color-tertiary)]"
-              :checked="settings.settings.launchAtStartup"
-              @change="settings.set('launchAtStartup', ($event.target as HTMLInputElement).checked)"
+            <UiCheckbox
+              :model-value="settings.settings.launchAtStartup"
+              @update:model-value="settings.set('launchAtStartup', $event)"
             />
+          </label>
+          <label class="field-label flex flex-col gap-[6px]">
+            默认下载目录
+            <div class="flex gap-[8px]">
+              <UiInput
+                :model-value="settings.settings.defaultDownloadDirectory"
+                class="flex-1 font-mono"
+                placeholder="未设置时使用系统保存位置"
+                @update:model-value="settings.set('defaultDownloadDirectory', String($event))"
+              />
+              <UiButton @click="chooseDownloadDirectory">选择目录</UiButton>
+            </div>
+            <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
+              SSH 下载及后续支持下载的工具会默认从此目录保存
+            </span>
           </label>
         </div>
       </section>
@@ -140,27 +163,21 @@ function onFieldChange(field: SettingsField, toolId: string, value: unknown) {
               :options="field.options ?? []"
               @update:model-value="onFieldChange(field, t.id, $event)"
             />
-            <input
+            <UiCheckbox
               v-else-if="field.type === 'toggle'"
-              type="checkbox"
-              class="h-4 w-4 accent-[var(--color-tertiary)]"
-              :checked="Boolean(fieldValue(field, t.id))"
-              @change="onFieldChange(field, t.id, ($event.target as HTMLInputElement).checked)"
+              :model-value="Boolean(fieldValue(field, t.id))"
+              @update:model-value="onFieldChange(field, t.id, $event)"
             />
-            <input
+            <UiInput
               v-else-if="field.type === 'number'"
               type="number"
-              class="field-input"
-              :value="String(fieldValue(field, t.id))"
-              @change="
-                onFieldChange(field, t.id, Number(($event.target as HTMLInputElement).value))
-              "
+              :model-value="Number(fieldValue(field, t.id))"
+              @update:model-value="onFieldChange(field, t.id, Number($event))"
             />
-            <input
+            <UiInput
               v-else
-              class="field-input"
-              :value="String(fieldValue(field, t.id))"
-              @change="onFieldChange(field, t.id, ($event.target as HTMLInputElement).value)"
+              :model-value="String(fieldValue(field, t.id))"
+              @update:model-value="onFieldChange(field, t.id, $event)"
             />
           </label>
         </div>

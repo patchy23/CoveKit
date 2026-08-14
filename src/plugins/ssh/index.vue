@@ -1,8 +1,5 @@
 <script setup lang="ts">
-/**
- * SSH 工具 · 主容器（服务器列表 + 页签工作区）
- * 连接/断开/凭证走真实 IPC；状态经事件 ssh://connection-status 同步。
- */
+/** SSH 工具主容器：服务器配置列表 + 多连接页签；每条连接拥有完整运维功能区。 */
 import { computed, ref, watch } from 'vue'
 import ServerList from './ServerList.vue'
 import ServerForm from './ServerForm.vue'
@@ -12,195 +9,241 @@ import MonitorTab from './MonitorTab.vue'
 import ServiceTab from './ServiceTab.vue'
 import ProcessTab from './ProcessTab.vue'
 import DockerTab from './DockerTab.vue'
-import { statusDotClass, statusText } from './useSsh'
-import { useSshWorkspace } from './useSshWorkspace'
-import { UiTabs } from '@/core/ui'
+import {
+  useSshWorkspace,
+  type SshConnectionWorkspace,
+  type SshWorkspaceSection,
+} from './useSshWorkspace'
+import { UiTabs, type UiTabItem } from '@/core/ui'
+import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
+const workspace = useSshWorkspace()
 const {
   profiles,
-  connections,
+  connectionWorkspaces,
   activeProfileId,
   searchKeyword,
   filteredProfiles,
-  activeConnection,
   formOpen,
   editingProfile,
   deleteTarget,
-  openAddForm,
-  openEditForm,
-  showError,
-  saveProfile,
-  requestDelete,
-  confirmDelete,
-  connect,
-  disconnect,
-} = useSshWorkspace()
+} = workspace
 
-const tabs = [
-  { id: 'terminal', name: '终端', component: TerminalTab },
-  { id: 'files', name: '文件', component: FileManagerTab },
-  { id: 'monitor', name: '监控', component: MonitorTab },
-  { id: 'services', name: '服务', component: ServiceTab },
-  { id: 'processes', name: '进程', component: ProcessTab },
-  { id: 'docker', name: 'Docker', component: DockerTab },
-] as const
-const tabItems = tabs.map((item) => ({ value: item.id, label: item.name }))
+const sectionTabs: UiTabItem[] = [
+  { value: 'terminal', label: '终端' },
+  { value: 'files', label: '文件' },
+  { value: 'monitor', label: '监控' },
+  { value: 'services', label: '服务' },
+  { value: 'processes', label: '进程' },
+  { value: 'docker', label: 'Docker' },
+]
 
-const activeTabId = ref<string>('terminal')
-const visitedProfileIds = ref<string[]>([])
-const terminalConnectRequests = ref<Record<string, number>>({})
+const activeWorkspaceId = ref<string | null>(null)
+const closingWorkspaceId = ref<string | null>(null)
+const openingProfileId = ref<string | null>(null)
+const activeWorkspace = computed(() =>
+  connectionWorkspaces.value.find((item) => item.id === activeWorkspaceId.value)
+)
 const activeProfile = computed(() =>
-  profiles.value.find((item) => item.id === activeProfileId.value)
+  profiles.value.find(
+    (item) => item.id === (activeWorkspace.value?.profileId ?? activeProfileId.value)
+  )
 )
-const showConnectionHost = computed(
-  () =>
-    Boolean(activeConnection.value?.host) &&
-    activeConnection.value?.host !== activeProfile.value?.name
+const connectionTabItems = computed<UiTabItem[]>(() =>
+  connectionWorkspaces.value.map((item) => ({
+    value: item.id,
+    label: item.title,
+    closable: true,
+    status:
+      item.connection.status === 'connected'
+        ? ('success' as const)
+        : item.connection.status === 'reconnecting'
+          ? ('neutral' as const)
+          : ('danger' as const),
+  }))
+)
+const closingWorkspace = computed(() =>
+  connectionWorkspaces.value.find((item) => item.id === closingWorkspaceId.value)
 )
 
-/** 记录已打开过的服务器工作区，使不同服务器的终端与页签状态独立保活。 */
-function selectProfile(profileId: string) {
-  activeProfileId.value = profileId
-  if (!visitedProfileIds.value.includes(profileId)) visitedProfileIds.value.push(profileId)
+async function createConnection(profileId: string) {
+  if (openingProfileId.value) return
+  openingProfileId.value = profileId
+  const remote = await workspace.openConnection(profileId)
+  openingProfileId.value = null
+  if (remote) activeWorkspaceId.value = remote.id
 }
 
-/** 返回指定服务器当前可用的连接，而不是复用当前选中服务器的连接。 */
-function usableConnectionFor(profileId: string) {
-  const connection = connections.value.find((item) => item.profileId === profileId)
-  return connection?.status === 'connected' ? connection : undefined
+function requestCloseWorkspace(id: string) {
+  if (connectionWorkspaces.value.some((item) => item.id === id)) closingWorkspaceId.value = id
 }
 
-/** 左侧服务器连接属于显式操作：连接成功后同步打开该服务器终端。 */
-async function connectAndOpenTerminal(profileId: string) {
-  selectProfile(profileId)
-  activeTabId.value = 'terminal'
-  await connect(profileId)
-  terminalConnectRequests.value = {
-    ...terminalConnectRequests.value,
-    [profileId]: (terminalConnectRequests.value[profileId] ?? 0) + 1,
+function selectSection(remote: SshConnectionWorkspace, section: string) {
+  const next = section as SshWorkspaceSection
+  remote.activeSection = next
+  if (!remote.visitedSections.includes(next)) remote.visitedSections.push(next)
+  workspace.touchWorkspace(remote.id)
+}
+
+async function confirmCloseWorkspace() {
+  const id = closingWorkspaceId.value
+  closingWorkspaceId.value = null
+  if (!id) return
+  const index = connectionWorkspaces.value.findIndex((item) => item.id === id)
+  if (activeWorkspaceId.value === id) {
+    activeWorkspaceId.value =
+      connectionWorkspaces.value[index + 1]?.id ?? connectionWorkspaces.value[index - 1]?.id ?? null
   }
+  await workspace.closeConnectionWorkspace(id)
 }
 
-watch(activeProfileId, (profileId) => {
-  if (profileId && !visitedProfileIds.value.includes(profileId)) {
-    visitedProfileIds.value.push(profileId)
-  }
+watch(activeWorkspaceId, (id) => {
+  const remote = connectionWorkspaces.value.find((item) => item.id === id)
+  if (remote) activeProfileId.value = remote.profileId
 })
+
+watch(
+  () => connectionWorkspaces.value.map((item) => item.id),
+  (ids) => {
+    if (activeWorkspaceId.value && !ids.includes(activeWorkspaceId.value)) {
+      activeWorkspaceId.value = ids[ids.length - 1] ?? null
+    }
+  }
+)
 </script>
 
 <template>
   <div class="flex h-full min-h-0 w-full">
-    <!-- 左侧：服务器列表 -->
     <ServerList
       :profiles="filteredProfiles"
-      :connections="connections"
-      :active-profile-id="activeProfileId"
       :search-keyword="searchKeyword"
       @update:search-keyword="searchKeyword = $event"
-      @select="selectProfile"
-      @connect="connectAndOpenTerminal"
-      @disconnect="disconnect"
-      @add="openAddForm"
-      @edit="openEditForm"
-      @delete-request="requestDelete"
+      @open-connection="createConnection"
+      @add="workspace.openAddForm"
+      @edit="workspace.openEditForm"
+      @delete-request="workspace.requestDelete"
     />
 
-    <!-- 右侧：页签工作区 -->
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-      <!-- 无选中服务器时的空态 -->
+      <!-- 第一层：完整 SSH 连接页签。关闭它才释放连接及其全部任务。 -->
+      <UiTabs
+        v-if="connectionTabItems.length"
+        :model-value="activeWorkspaceId ?? ''"
+        :items="connectionTabItems"
+        variant="line"
+        size="sm"
+        @update:model-value="activeWorkspaceId = $event"
+        @close="requestCloseWorkspace"
+      />
+
       <div
-        v-if="!activeProfileId"
+        v-if="!activeWorkspace"
         class="grid flex-1 place-items-center text-text-muted dark:text-text-muted-dark"
       >
         <div class="text-center">
-          <p class="text-h2 mb-[8px]">选择或添加一台服务器</p>
-          <p class="text-body-sm">从左侧列表选择，或点击「+ 添加服务器」新建配置</p>
+          <p class="mb-[8px] text-h2">
+            {{ activeProfile ? '双击服务器建立连接' : '选择或添加一台服务器' }}
+          </p>
+          <p class="text-body-sm">
+            {{
+              activeProfile
+                ? '每个连接页签都包含终端、文件、监控、服务、进程与 Docker。'
+                : '从左侧选择服务器配置。'
+            }}
+          </p>
         </div>
       </div>
 
-      <template v-else>
-        <!-- 当前服务器信息条 -->
+      <template v-for="remote in connectionWorkspaces" :key="remote.id">
         <div
-          class="flex shrink-0 items-center gap-[10px] border-b border-border px-[16px] py-[10px] dark:border-border-dark"
+          v-show="activeWorkspaceId === remote.id"
+          class="flex min-h-0 flex-1 flex-col"
+          @mousedown.capture="workspace.touchWorkspace(remote.id)"
         >
-          <span
-            class="inline-block h-[8px] w-[8px] rounded-full"
-            :class="statusDotClass(activeConnection?.status ?? 'disconnected')"
+          <!-- 第二层：当前连接内部的功能页签。 -->
+          <UiTabs
+            :model-value="remote.activeSection"
+            :items="sectionTabs"
+            variant="line"
+            @update:model-value="selectSection(remote, $event)"
           />
-          <span class="text-body font-medium text-primary dark:text-primary-dark">
-            {{ activeProfile?.name }}
-          </span>
-          <span
-            v-if="showConnectionHost"
-            class="font-mono text-body-sm text-text-muted dark:text-text-muted-dark"
-          >
-            {{ activeConnection?.host ?? '—' }}
-          </span>
-          <span class="text-caption text-text-muted dark:text-text-muted-dark">
-            {{ statusText(activeConnection?.status ?? 'disconnected') }}
-            <template v-if="activeConnection?.latencyMs">
-              · {{ activeConnection.latencyMs }}ms
-            </template>
-          </span>
-        </div>
-
-        <!-- 子页签条 -->
-        <UiTabs v-model="activeTabId" :items="tabItems" variant="line" />
-
-        <!-- 页签内容区 -->
-        <div class="min-h-0 flex-1 overflow-hidden">
-          <template
-            v-for="profile in profiles.filter((item) => visitedProfileIds.includes(item.id))"
-            :key="profile.id"
-          >
-            <component
-              :is="tab.component"
-              v-for="tab in tabs"
-              v-show="activeProfileId === profile.id && activeTabId === tab.id"
-              :key="`${profile.id}:${tab.id}`"
-              :connection="usableConnectionFor(profile.id)"
-              :profile="profile"
-              v-bind="
-                tab.id === 'terminal'
-                  ? { connectRequest: terminalConnectRequests[profile.id] ?? 0 }
-                  : {}
+          <div class="min-h-0 flex-1 overflow-hidden">
+            <TerminalTab
+              v-if="remote.visitedSections.includes('terminal')"
+              v-show="remote.activeSection === 'terminal'"
+              :connection="remote.connection"
+              :profile="profiles.find((profile) => profile.id === remote.profileId)"
+              :connect-request="1"
+              :active="activeWorkspaceId === remote.id && remote.activeSection === 'terminal'"
+              class="h-full"
+              @activity="workspace.touchWorkspace(remote.id)"
+              @reconnect="workspace.reconnectWorkspace(remote.id)"
+            />
+            <FileManagerTab
+              v-if="
+                remote.connection.status === 'connected' && remote.visitedSections.includes('files')
               "
+              v-show="remote.activeSection === 'files'"
+              :connection="remote.connection"
+              :profile="profiles.find((profile) => profile.id === remote.profileId)"
+              :active="activeWorkspaceId === remote.id && remote.activeSection === 'files'"
               class="h-full"
             />
-          </template>
+            <MonitorTab
+              v-if="remote.connection.status === 'connected' && remote.activeSection === 'monitor'"
+              :connection="remote.connection"
+              :profile="profiles.find((profile) => profile.id === remote.profileId)"
+              class="h-full"
+            />
+            <ServiceTab
+              v-if="remote.connection.status === 'connected' && remote.activeSection === 'services'"
+              :connection="remote.connection"
+              :profile="profiles.find((profile) => profile.id === remote.profileId)"
+              class="h-full"
+            />
+            <ProcessTab
+              v-if="
+                remote.connection.status === 'connected' && remote.activeSection === 'processes'
+              "
+              :connection="remote.connection"
+              :profile="profiles.find((profile) => profile.id === remote.profileId)"
+              class="h-full"
+            />
+            <DockerTab
+              v-if="remote.connection.status === 'connected' && remote.activeSection === 'docker'"
+              :connection="remote.connection"
+              :profile="profiles.find((profile) => profile.id === remote.profileId)"
+              class="h-full"
+            />
+          </div>
         </div>
       </template>
     </div>
 
-    <!-- 服务器表单弹窗 -->
     <ServerForm
       v-if="formOpen"
       :profile="editingProfile"
-      @save="saveProfile"
-      @error="showError"
+      @save="workspace.saveProfile"
+      @error="workspace.showError"
       @cancel="formOpen = false"
     />
 
-    <!-- 删除确认弹窗 -->
-    <Teleport to="body">
-      <div v-if="deleteTarget" class="fixed inset-0 z-[160] grid place-items-center bg-black/30">
-        <div
-          class="w-[380px] rounded-lg border border-border bg-surface p-[18px] shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
-        >
-          <h3 class="mb-[8px] text-card-title font-medium text-primary dark:text-primary-dark">
-            删除服务器连接信息
-          </h3>
-          <p class="mb-[16px] text-body text-secondary dark:text-secondary-dark">
-            确定删除「{{ deleteTarget.name }}」（{{
-              deleteTarget.host
-            }}）的连接信息？此操作不可撤销。
-          </p>
-          <div class="flex justify-end gap-[8px]">
-            <button class="btn-ghost" @click="deleteTarget = null">取消</button>
-            <button class="btn-primary !bg-danger-strong" @click="confirmDelete">删除</button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+    <ConfirmDialog
+      :open="closingWorkspaceId !== null"
+      title="关闭 SSH 连接"
+      :message="`确定关闭连接「${closingWorkspace?.title ?? ''}」吗？该连接下的终端、文件传输、监控与日志任务都会结束。`"
+      confirm-label="关闭连接"
+      @close="closingWorkspaceId = null"
+      @confirm="confirmCloseWorkspace"
+    />
+    <ConfirmDialog
+      :open="deleteTarget !== null"
+      title="删除服务器连接信息"
+      :message="`确定删除「${deleteTarget?.name ?? ''}」（${deleteTarget?.host ?? ''}）的连接信息？该服务器已打开的全部连接也会关闭。`"
+      confirm-label="删除"
+      danger
+      @close="deleteTarget = null"
+      @confirm="workspace.confirmDelete"
+    />
   </div>
 </template>

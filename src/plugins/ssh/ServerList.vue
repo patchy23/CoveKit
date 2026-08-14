@@ -1,121 +1,71 @@
 <script setup lang="ts">
-/**
- * ServerList · SSH 服务器列表侧栏
- * 列表项仅显示状态点 + 名称（防误触删除）；右键菜单控制连接/断开、编辑、删除；
- * 删除操作由父组件弹确认框（emit deleteRequest）。
- */
+/** SSH 服务器配置列表；连接由右侧连接页签持有，列表不展示连接状态。 */
 import { computed, ref } from 'vue'
-import type { ServerProfile, ServerConnection } from './contracts'
-import { statusDotClass, statusText } from './useSsh'
+import type { ServerProfile } from './contracts'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import { UiButton, UiSearchInput } from '@/core/ui'
 
-const props = defineProps<{
+defineProps<{
   profiles: ServerProfile[]
-  connections: ServerConnection[]
-  activeProfileId: string | null
   searchKeyword: string
 }>()
 
 const emit = defineEmits<{
-  (e: 'update:searchKeyword', v: string): void
-  (e: 'select', profileId: string): void
-  (e: 'connect', profileId: string): void
-  (e: 'disconnect', profileId: string): void
-  (e: 'add'): void
-  (e: 'edit', p: ServerProfile): void
-  (e: 'deleteRequest', p: ServerProfile): void
+  (event: 'update:searchKeyword', value: string): void
+  (event: 'openConnection', profileId: string): void
+  (event: 'add'): void
+  (event: 'edit', profile: ServerProfile): void
+  (event: 'deleteRequest', profile: ServerProfile): void
 }>()
 
-function connOf(profileId: string): ServerConnection | undefined {
-  return props.connections.find((c) => c.profileId === profileId)
-}
-
-/* ── 右键菜单状态 ── */
 const menu = ref<{ profile: ServerProfile; x: number; y: number } | null>(null)
 
-/** 右键打开菜单（限制在视口内，避免溢出） */
-function openMenu(e: MouseEvent, p: ServerProfile) {
-  e.preventDefault()
-  const MENU_W = 150
-  const MENU_H = 132
-  const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8)
-  const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8)
-  menu.value = { profile: p, x, y }
+function openMenu(event: MouseEvent, profile: ServerProfile) {
+  event.preventDefault()
+  menu.value = {
+    profile,
+    x: Math.min(event.clientX, window.innerWidth - 158),
+    y: Math.min(event.clientY, window.innerHeight - 132),
+  }
 }
 
-function closeMenu() {
-  menu.value = null
-}
-
-const menuStatus = computed(() => {
-  if (!menu.value) return 'disconnected'
-  return connOf(menu.value.profile.id)?.status ?? 'disconnected'
-})
-
-/** 组装菜单项（依据连接状态动态显示 连接/断开） */
-const menuItems = computed(() => {
-  if (!menu.value) return [] as ContextMenuItem[]
-  const id = menu.value.profile.id
-  const connected = menuStatus.value === 'connected'
+const menuItems = computed<ContextMenuItem[]>(() => {
+  if (!menu.value) return []
+  const profile = menu.value.profile
   return [
-    {
-      label: connected ? '断开连接' : '连接',
-      onClick: () => {
-        if (connected) emit('disconnect', id)
-        else emit('connect', id)
-      },
-    },
-    { label: '编辑', onClick: () => emit('edit', menu.value!.profile) },
-    { separator: true },
-    { label: '删除', danger: true, onClick: () => emit('deleteRequest', menu.value!.profile) },
-  ] as ContextMenuItem[]
+    { label: '新建连接', onClick: () => emit('openConnection', profile.id) },
+    { label: '编辑', onClick: () => emit('edit', profile) },
+    { label: '', separator: true },
+    { label: '删除', danger: true, onClick: () => emit('deleteRequest', profile) },
+  ]
 })
 </script>
 
 <template>
   <div class="flex w-[180px] shrink-0 flex-col border-r border-border dark:border-border-dark">
-    <!-- 搜索 + 添加 -->
     <div class="shrink-0 space-y-[8px] px-[12px] py-[10px]">
-      <input
-        :value="searchKeyword"
-        class="field-input !py-[7px] text-body-sm"
+      <UiSearchInput
+        :model-value="searchKeyword"
+        size="sm"
         placeholder="搜索服务器..."
-        spellcheck="false"
-        @input="emit('update:searchKeyword', ($event.target as HTMLInputElement).value)"
+        @update:model-value="emit('update:searchKeyword', $event)"
       />
-      <button class="btn-secondary w-full text-body-sm" @click="emit('add')">+ 添加服务器</button>
+      <UiButton variant="secondary" size="sm" block @click="emit('add')">+ 添加服务器</UiButton>
     </div>
 
-    <!-- 服务器列表（仅名称，右键菜单操作） -->
     <div class="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[8px]">
       <div
-        v-for="p in profiles"
-        :key="p.id"
-        class="mb-[2px] flex cursor-pointer items-center gap-[8px] rounded-md px-[8px] py-[8px] transition-colors"
-        :class="
-          p.id === activeProfileId
-            ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
-            : 'hover:bg-border dark:hover:bg-border-dark'
-        "
-        :title="`${p.username}@${p.host}:${p.port}（双击连接，右键操作）`"
-        @click="emit('select', p.id)"
-        @dblclick="emit('connect', p.id)"
-        @contextmenu="openMenu($event, p)"
+        v-for="profile in profiles"
+        :key="profile.id"
+        class="mb-[2px] flex cursor-default items-center rounded-md px-[8px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+        :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接）`"
+        @dblclick="emit('openConnection', profile.id)"
+        @contextmenu="openMenu($event, profile)"
       >
-        <span
-          class="inline-block h-[8px] w-[8px] shrink-0 rounded-full"
-          :class="statusDotClass(connOf(p.id)?.status ?? 'disconnected')"
-        />
         <span
           class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
         >
-          {{ p.name }}
-        </span>
-        <span
-          class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
-          :class="{ 'animate-pulse': connOf(p.id)?.status === 'connecting' }"
-        >
-          {{ statusText(connOf(p.id)?.status ?? 'disconnected') }}
+          {{ profile.name }}
         </span>
       </div>
 
@@ -127,7 +77,6 @@ const menuItems = computed(() => {
       </p>
     </div>
 
-    <!-- 右键菜单（公共组件，点外部/菜单项自动关闭） -->
-    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="closeMenu" />
+    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
   </div>
 </template>

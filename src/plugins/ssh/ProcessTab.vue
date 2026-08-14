@@ -7,7 +7,7 @@ import type { ServerConnection, ServerProfile, ProcessInfo } from './contracts'
 import { formatBytes } from './useSsh'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiSearchInput, UiSelect as Select, UiTableCell } from '@/core/ui'
+import { UiButton, UiSearchInput, UiSelect as Select, UiTable, UiTableCell } from '@/core/ui'
 import { ipc } from './ipc'
 
 const props = defineProps<{
@@ -121,7 +121,7 @@ watch(
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <table class="w-full text-left text-body-sm text-secondary dark:text-secondary-dark">
+      <UiTable :framed="false" :styled="false" table-class="text-body-sm">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -151,7 +151,7 @@ watch(
           <tr
             v-for="p in filtered"
             :key="p.pid"
-            class="border-b border-border/50 transition-colors hover:bg-surface-muted dark:border-border-dark/50 dark:hover:bg-surface-muted-dark"
+            class="border-b border-border/50 transition-colors dark:border-border-dark/50"
           >
             <UiTableCell content="numeric" class="px-[12px] py-[8px]">{{ p.pid }}</UiTableCell>
             <UiTableCell content="technical" class="px-[12px] py-[8px]">{{ p.user }}</UiTableCell>
@@ -186,7 +186,7 @@ watch(
             </UiTableCell>
           </tr>
         </tbody>
-      </table>
+      </UiTable>
     </div>
 
     <div

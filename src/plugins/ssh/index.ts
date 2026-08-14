@@ -12,5 +12,20 @@ registerTool({
   keywords: ['ssh', 'terminal', 'sftp', '远程', '服务器', 'linux', '终端'],
   presentation: 'workspace',
   component: () => import('./index.vue'),
+  settingsSchema: [
+    {
+      key: 'idleDisconnectMinutes',
+      type: 'select',
+      label: '空闲自动断开',
+      default: '10',
+      options: [
+        { value: '10', label: '10 分钟' },
+        { value: '30', label: '30 分钟' },
+        { value: '60', label: '1 小时' },
+        { value: '120', label: '2 小时' },
+        { value: '0', label: '永不自动断开' },
+      ],
+    },
+  ],
   tags: ['网络', '热门'],
 })

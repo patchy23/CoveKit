@@ -6,7 +6,8 @@ import { canEditRemoteFile } from './useSsh'
 
 interface FileMenuActions {
   refresh: () => void
-  upload: () => void
+  upload: (target: RemoteFile | null) => void
+  uploadDirectory: (target: RemoteFile | null) => void
   download: (file: RemoteFile) => void
   edit: (file: RemoteFile) => void
   rename: (file: RemoteFile) => void
@@ -21,7 +22,7 @@ export function useFileContextMenu(actions: FileMenuActions) {
     event.preventDefault()
     if (target) actions.select(target)
     const width = 150
-    const itemCount = target?.isDir ? 2 : target ? 4 : 2
+    const itemCount = target?.isDir ? 4 : target ? (canEditRemoteFile(target) ? 6 : 5) : 3
     menu.value = {
       target,
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
@@ -34,17 +35,22 @@ export function useFileContextMenu(actions: FileMenuActions) {
     if (!target) {
       return [
         { label: '刷新', onClick: actions.refresh },
-        { label: '上传', onClick: actions.upload },
+        { label: '上传文件', onClick: () => actions.upload(null) },
+        { label: '上传目录', onClick: () => actions.uploadDirectory(null) },
       ]
     }
     if (target.isDir) {
       return [
         { label: '刷新', onClick: actions.refresh },
+        { label: '上传文件到此目录', onClick: () => actions.upload(target) },
+        { label: '上传目录到此目录', onClick: () => actions.uploadDirectory(target) },
         { label: '重命名', onClick: () => actions.rename(target) },
       ]
     }
     const items: ContextMenuItem[] = [
-      { label: '上传', onClick: actions.upload },
+      { label: '刷新', onClick: actions.refresh },
+      { label: '上传文件', onClick: () => actions.upload(target) },
+      { label: '上传目录', onClick: () => actions.uploadDirectory(target) },
       { label: '下载', onClick: () => actions.download(target) },
     ]
     if (canEditRemoteFile(target)) {
