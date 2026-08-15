@@ -1,8 +1,10 @@
 //! 框架层：窗口控制命令 + 外链打开（托盘/快捷键/前端共用）
 //! 设置存储与全局快捷键（framework/settings.rs）
 //! IPC 接口入库（ipc_registry）与插件数据管理（store）
+//! 本地凭证管理（credentials）：插件按命名空间+键存取，不关心存储实现
 //! 框架能力不属于业务插件（插件 = 工具，框架 = 基建）。
 
+pub mod credentials;
 pub mod ipc_registry;
 pub mod settings;
 pub mod store;
