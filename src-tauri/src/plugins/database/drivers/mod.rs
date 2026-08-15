@@ -203,6 +203,8 @@ pub async fn test_connection(
                 .await
                 .map_err(|e| e.to_string())?
                 .ok_or("版本探测无结果")?;
+            // 必须先归还连接再关闭池：disconnect 会等待所有连接归还，conn 未 drop 时挂起
+            drop(conn);
             let _ = pool.disconnect().await;
             Ok(version)
         }

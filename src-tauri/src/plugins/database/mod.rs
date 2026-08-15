@@ -110,9 +110,15 @@ pub async fn dbc_test(
             .iter()
             .any(|c| c.id == config.id);
         if existed {
-            secrets::secret_get(&app, &secrets_state, &config.id)?
+            let saved = secrets::secret_get(&app, &secrets_state, &config.id)?;
+            if saved.is_empty() {
+                return Err(
+                    "密码为空且没有已保存的密码：请在编辑连接时重新填写密码后再测试".into(),
+                );
+            }
+            saved
         } else {
-            password
+            return Err("密码为空：请填写密码后再测试连接".into());
         }
     } else {
         password
