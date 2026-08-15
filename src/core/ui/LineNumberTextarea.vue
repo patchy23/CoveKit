@@ -33,6 +33,9 @@ function syncScroll() {
 function onInput(e: Event) {
   emit('update:modelValue', (e.target as HTMLTextAreaElement).value)
 }
+
+/** 暴露原生 textarea（选区/光标位置读取，如 SQL 编辑器按选区或当前行执行） */
+defineExpose({ textarea: ta })
 </script>
 
 <template>

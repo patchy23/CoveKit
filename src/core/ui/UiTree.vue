@@ -36,7 +36,7 @@ function isGroupKind(kind?: string): boolean {
 </script>
 
 <template>
-  <div role="tree" class="min-h-0 overflow-auto py-[3px] text-body-sm">
+  <div role="tree" class="min-h-0 overflow-y-auto overflow-x-hidden py-[3px] text-body-sm">
     <button
       v-for="item in items"
       :key="item.id"
@@ -53,7 +53,7 @@ function isGroupKind(kind?: string): boolean {
       :aria-selected="modelValue === item.id"
       :aria-expanded="item.expandable ? item.expanded : undefined"
       @click="emit('update:modelValue', item.id)"
-      @dblclick="item.expandable && emit('toggle', item)"
+      @dblclick="emit('toggle', item)"
       @contextmenu.prevent="emit('context', $event, item)"
     >
       <span

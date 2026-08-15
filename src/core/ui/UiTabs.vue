@@ -9,6 +9,8 @@ export interface UiTabItem {
   badge?: string | number
   closable?: boolean
   status?: 'success' | 'danger' | 'neutral'
+  /** 状态点 tooltip（默认按连接语义：已连接/已断开/连接中） */
+  statusTitle?: string
 }
 
 withDefaults(
@@ -24,6 +26,7 @@ withDefaults(
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'close', value: string): void
+  (event: 'contextmenu', value: string, mouse: MouseEvent): void
 }>()
 </script>
 
@@ -41,6 +44,7 @@ const emit = defineEmits<{
         class="ui-tab"
         :class="[`ui-tab-${size}`, { 'ui-tab-active': item.value === modelValue }]"
         :disabled="item.disabled"
+        @contextmenu="emit('contextmenu', item.value, $event)"
       >
         <span
           v-if="item.status"
@@ -51,7 +55,12 @@ const emit = defineEmits<{
             'bg-text-muted dark:bg-text-muted-dark': item.status === 'neutral',
           }"
           :title="
-            item.status === 'success' ? '已连接' : item.status === 'danger' ? '已断开' : '连接中'
+            item.statusTitle ??
+            (item.status === 'success'
+              ? '已连接'
+              : item.status === 'danger'
+                ? '已断开'
+                : '连接中')
           "
           aria-hidden="true"
         />
