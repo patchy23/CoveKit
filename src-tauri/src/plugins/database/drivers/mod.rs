@@ -1,12 +1,6 @@
-//! 数据库会话注册表（多连接管理）
-//! 结构：DbState(Mutex<HashMap<conn_id, DbSessionEntry>>)，会话类型按数据库驱动区分：
-//! - mysql/polardb → mysql_async 连接池
-//! - postgresql → deadpool-postgres 连接池（TLS 走 rustls ring）
-//! - sqlite → rusqlite 单连接（Mutex 串行化）
-//! - redis → redis crate ConnectionManager（多路复用）
-//! - oracle/vastbase/kingbase → agent 侧车进程会话（Arc 共享进程客户端）
-//!
-//! 查询取消：DbCancelState 记录进行中查询的取消句柄（pg CancelToken / mysql KILL / agent cancel_session）。
+//! 数据库驱动层：会话注册表 + 连接生命周期 + 查询执行与取消
+//! mod.rs：会话注册表（DbState/会话条目/取消句柄）与连接/断开/快照/探测；
+//! 各驱动文件：连接构建 + 查询执行 + 单元格字符串化。
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -14,13 +8,19 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mysql_async::prelude::Queryable;
-use mysql_async::{Opts, OptsBuilder};
 use rusqlite::Connection as SqliteConn;
 use tauri::State;
 
 use crate::plugins::database::agent::{AgentClient, AgentConnectParams, DriverStore};
 use crate::plugins::database::dialect::dialect_for;
-use crate::plugins::database::models::{ConnConfig, ConnStatus, DbConnectionInfo, DbType};
+use crate::plugins::database::models::{
+    ConnConfig, ConnStatus, DbConnectionInfo, DbType, QueryResult,
+};
+
+pub mod mysql;
+pub mod postgres;
+pub mod redis;
+pub mod sqlite;
 
 /// agent 运行时共享表：driver key → 进程客户端（同驱动多会话共享一个进程）
 pub struct AgentRuntimeState(pub Mutex<HashMap<&'static str, Arc<AgentClient>>>);
@@ -41,7 +41,7 @@ pub enum DbSession {
     /// rusqlite 单连接（SQLite 文件库，Arc 共享 + 锁内串行；会话表按值克隆）
     Sqlite(Arc<Mutex<SqliteConn>>),
     /// redis 连接管理器（多路复用）
-    Redis(redis::aio::ConnectionManager),
+    Redis(::redis::aio::ConnectionManager),
     /// agent 侧车会话（进程客户端 + 会话 id）
     Agent {
         /// 进程客户端（与同驱动其它会话共享）
@@ -149,9 +149,11 @@ pub async fn connect(
     let config = normalize_config(config);
     let started = Instant::now();
     let session = match config.db_type {
-        DbType::Mysql | DbType::Polardb => DbSession::Mysql(mysql_pool(&config, password).await?),
-        DbType::Postgresql => DbSession::Postgres(pg_pool(&config, password).await?),
-        DbType::Sqlite => DbSession::Sqlite(sqlite_conn(&config)?),
+        DbType::Mysql | DbType::Polardb => {
+            DbSession::Mysql(mysql::mysql_pool(&config, password).await?)
+        }
+        DbType::Postgresql => DbSession::Postgres(postgres::pg_pool(&config, password).await?),
+        DbType::Sqlite => DbSession::Sqlite(sqlite::sqlite_conn(&config)?),
         DbType::Redis => DbSession::Redis(redis_mgr(&config, password).await?),
         DbType::Oracle | DbType::Vastbase | DbType::Kingbase => {
             let (client, session_id) = agent_session(app, runtimes, &config, password).await?;
@@ -191,7 +193,7 @@ pub async fn test_connection(
     let config = normalize_config(config);
     match config.db_type {
         DbType::Mysql | DbType::Polardb => {
-            let pool = mysql_pool(&config, password).await?;
+            let pool = mysql::mysql_pool(&config, password).await?;
             let mut conn = pool
                 .get_conn()
                 .await
@@ -205,7 +207,7 @@ pub async fn test_connection(
             Ok(version)
         }
         DbType::Postgresql => {
-            let pool = pg_pool(&config, password).await?;
+            let pool = postgres::pg_pool(&config, password).await?;
             let client = pool.get().await.map_err(|e| format!("连接失败: {e}"))?;
             let version: String = client
                 .query_one("SELECT version()", &[])
@@ -215,7 +217,7 @@ pub async fn test_connection(
             Ok(version)
         }
         DbType::Sqlite => {
-            let conn = sqlite_conn(&config)?;
+            let conn = sqlite::sqlite_conn(&config)?;
             let version: String = conn
                 .lock()
                 .map_err(|e| e.to_string())?
@@ -225,7 +227,7 @@ pub async fn test_connection(
         }
         DbType::Redis => {
             let mgr = redis_mgr(&config, password).await?;
-            let info: String = redis::cmd("INFO")
+            let info: String = ::redis::cmd("INFO")
                 .arg("server")
                 .query_async::<String>(&mut mgr.clone())
                 .await
@@ -348,150 +350,6 @@ pub async fn snapshot(state: &State<'_, DbState>, configs: &[ConnConfig]) -> Vec
 // 各驱动连接构建
 // ──────────────────────────────────────────────────────────────────────────
 
-/// 构建 mysql_async 连接池（mysql/polardb；TLS 由驱动 rustls 特性支持）
-async fn mysql_pool(config: &ConnConfig, password: &str) -> Result<mysql_async::Pool, String> {
-    // mysql_async 0.37 无 connect_timeout 构建项（使用驱动默认连接超时）
-    let mut builder = OptsBuilder::default()
-        .ip_or_hostname(config.host.clone())
-        .tcp_port(config.port)
-        .user(Some(config.username.clone()))
-        .pass(Some(password.to_string()))
-        .db_name(Some(config.database.clone()))
-        .prefer_socket(false);
-    if config.ssl {
-        builder = builder.ssl_opts(Some(mysql_async::SslOpts::default()));
-    }
-    let opts: Opts = builder.into();
-    let pool = mysql_async::Pool::new(opts);
-    // 预检一条查询，验证凭据
-    let mut conn = pool
-        .get_conn()
-        .await
-        .map_err(|e| format!("MySQL 连接失败: {e}"))?;
-    let _: String = conn
-        .query_first::<String, _>("SELECT 1")
-        .await
-        .map_err(|e| format!("MySQL 预检失败: {e}"))?
-        .ok_or("预检无结果")?;
-    Ok(pool)
-}
-
-/// 构建 deadpool-postgres 连接池（TLS 走 rustls ring，与 http_ws 一致）
-async fn pg_pool(config: &ConnConfig, password: &str) -> Result<deadpool_postgres::Pool, String> {
-    use tokio_postgres::NoTls;
-
-    let mut builder = tokio_postgres::Config::new();
-    builder
-        .host(&config.host)
-        .port(config.port)
-        .user(&config.username)
-        .password(password)
-        .dbname(&config.database)
-        .connect_timeout(Duration::from_millis(config.connect_timeout_ms.max(1000)));
-
-    if config.ssl {
-        // TLS：rustls ring 后端（tokio-postgres-rustls 默认 feature 即 ring）
-        let config_ref = builder;
-        let mut roots = rustls::RootCertStore::empty();
-        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-        let tls_config = rustls::ClientConfig::builder()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-        let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
-        let manager = deadpool_postgres::Manager::new(config_ref, tls);
-        let pool = deadpool_postgres::Pool::builder(manager)
-            .max_size(4)
-            .build()
-            .map_err(|e| format!("PG 连接池构建失败: {e}"))?;
-        // 借出一个连接校验连通性（校验后自动归还池）
-        let _check = pool
-            .get()
-            .await
-            .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
-        return Ok(pool);
-    }
-
-    let manager = deadpool_postgres::Manager::new(builder.clone(), NoTls);
-    let pool = deadpool_postgres::Pool::builder(manager)
-        .max_size(4)
-        .build()
-        .map_err(|e| format!("PG 连接池构建失败: {e}"))?;
-    // 借出一个连接校验连通性（校验后自动归还池）
-    let _check = pool
-        .get()
-        .await
-        .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
-    Ok(pool)
-}
-
-/// 打开 SQLite 文件（路径不存在自动创建；Arc 共享供会话表按值克隆）
-fn sqlite_conn(config: &ConnConfig) -> Result<Arc<Mutex<SqliteConn>>, String> {
-    let path = &config.host;
-    if path.trim().is_empty() {
-        return Err("SQLite 文件路径不能为空".to_string());
-    }
-    let conn = SqliteConn::open(path).map_err(|e| format!("SQLite 打开失败（{path}）: {e}"))?;
-    Ok(Arc::new(Mutex::new(conn)))
-}
-
-/// 构建 redis 连接管理器（多路复用；db 索引来自 database 字段的 db0/db1 形式）
-async fn redis_mgr(
-    config: &ConnConfig,
-    password: &str,
-) -> Result<redis::aio::ConnectionManager, String> {
-    let db_index = config
-        .database
-        .trim_start_matches("db")
-        .parse::<u8>()
-        .unwrap_or(0);
-    let url = if password.is_empty() {
-        format!("redis://{}:{}/{}", config.host, config.port, db_index)
-    } else {
-        format!(
-            "redis://:{}@{}:{}/{}",
-            urlencode(password),
-            config.host,
-            config.port,
-            db_index
-        )
-    };
-    let client =
-        redis::Client::open(url.as_str()).map_err(|e| format!("Redis 地址解析失败: {e}"))?;
-    let mgr = redis::aio::ConnectionManager::new(client)
-        .await
-        .map_err(|e| format!("Redis 连接失败: {e}"))?;
-    // 预检 PING
-    let pong: String = redis::cmd("PING")
-        .query_async::<String>(&mut mgr.clone())
-        .await
-        .map_err(|e| format!("Redis 预检失败: {e}"))?;
-    if pong != "PONG" {
-        return Err(format!("Redis PING 异常: {pong}"));
-    }
-    Ok(mgr)
-}
-
-/// 简单 URL 编码（redis 密码含特殊字符时转义）
-fn urlencode(input: &str) -> String {
-    input
-        .chars()
-        .flat_map(|c| match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => vec![c],
-            other => {
-                let bytes = other.to_string().into_bytes();
-                bytes
-                    .iter()
-                    .map(|b| format!("%{b:02X}"))
-                    .collect::<Vec<_>>()
-                    .join("")
-                    .chars()
-                    .collect()
-            }
-        })
-        .collect()
-}
-
-/// 建立 agent 会话（进程复用 + open_session）
 async fn agent_session(
     app: &tauri::AppHandle,
     runtimes: &State<'_, AgentRuntimeState>,
@@ -570,7 +428,7 @@ async fn probe_version(session: &DbSession, config: &ConnConfig) -> (String, Opt
         }),
         DbSession::Redis(mgr) => {
             let mut mgr = mgr.clone();
-            redis::cmd("INFO")
+            ::redis::cmd("INFO")
                 .arg("server")
                 .query_async::<String>(&mut mgr)
                 .await
@@ -625,6 +483,164 @@ async fn query_first_string_mysql(pool: &mysql_async::Pool, sql: &str) -> Option
 async fn query_first_string_pg(pool: &deadpool_postgres::Pool, sql: &str) -> Option<String> {
     let client = pool.get().await.ok()?;
     client.query_one(sql, &[]).await.ok().map(|row| row.get(0))
+}
+
+pub(crate) fn build_cancel_handle(entry: &DbSessionEntry) -> CancelHandle {
+    match &entry.session {
+        DbSession::Postgres(_) => CancelHandle {
+            aborted: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pg_cancel: None,
+            pg_ssl: entry.config.ssl,
+            mysql_thread_id: None,
+            mysql_conn: None,
+            agent: None,
+        },
+        DbSession::Mysql(_) => CancelHandle {
+            aborted: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pg_cancel: None,
+            pg_ssl: false,
+            mysql_thread_id: None,
+            mysql_conn: Some((
+                entry.config.host.clone(),
+                entry.config.port,
+                entry.config.username.clone(),
+                String::new(),
+            )),
+            agent: None,
+        },
+        DbSession::Agent { client, session_id } => CancelHandle {
+            aborted: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pg_cancel: None,
+            pg_ssl: false,
+            mysql_thread_id: None,
+            mysql_conn: None,
+            agent: Some((client.clone(), session_id.clone())),
+        },
+        _ => CancelHandle {
+            aborted: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            pg_cancel: None,
+            pg_ssl: false,
+            mysql_thread_id: None,
+            mysql_conn: None,
+            agent: None,
+        },
+    }
+}
+
+pub(crate) async fn execute_agent(
+    client: &AgentClient,
+    session_id: &str,
+    sql: &str,
+    max_rows: u64,
+) -> Result<QueryResult, String> {
+    let value = client.execute_query(session_id, sql, max_rows).await?;
+    let columns = value
+        .get("columns")
+        .and_then(|c| c.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let rows = value
+        .get("rows")
+        .and_then(|r| r.as_array())
+        .map(|arr| {
+            arr.iter()
+                .map(|row| {
+                    row.as_array()
+                        .map(|cells| cells.iter().map(json_cell_str).collect::<Vec<_>>())
+                        .unwrap_or_default()
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let affected = value
+        .get("affected_rows")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let truncated = value
+        .get("truncated")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    Ok(QueryResult {
+        ok: true,
+        columns,
+        rows,
+        rows_affected: affected,
+        is_query: true,
+        duration_ms: 0,
+        truncated,
+        error: None,
+    })
+}
+
+pub(crate) fn json_cell_str(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "NULL".to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// PostgreSQL 键标记探测（PK/UK）
+async fn redis_mgr(
+    config: &ConnConfig,
+    password: &str,
+) -> Result<::redis::aio::ConnectionManager, String> {
+    let db_index = config
+        .database
+        .trim_start_matches("db")
+        .parse::<u8>()
+        .unwrap_or(0);
+    let url = if password.is_empty() {
+        format!("redis://{}:{}/{}", config.host, config.port, db_index)
+    } else {
+        format!(
+            "redis://:{}@{}:{}/{}",
+            urlencode(password),
+            config.host,
+            config.port,
+            db_index
+        )
+    };
+    let client =
+        ::redis::Client::open(url.as_str()).map_err(|e| format!("Redis 地址解析失败: {e}"))?;
+    let mgr = ::redis::aio::ConnectionManager::new(client)
+        .await
+        .map_err(|e| format!("Redis 连接失败: {e}"))?;
+    // 预检 PING
+    let pong: String = ::redis::cmd("PING")
+        .query_async::<String>(&mut mgr.clone())
+        .await
+        .map_err(|e| format!("Redis 预检失败: {e}"))?;
+    if pong != "PONG" {
+        return Err(format!("Redis PING 异常: {pong}"));
+    }
+    Ok(mgr)
+}
+
+/// 简单 URL 编码（redis 密码含特殊字符时转义）
+fn urlencode(input: &str) -> String {
+    input
+        .chars()
+        .flat_map(|c| match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => vec![c],
+            other => {
+                let bytes = other.to_string().into_bytes();
+                bytes
+                    .iter()
+                    .map(|b| format!("%{b:02X}"))
+                    .collect::<Vec<_>>()
+                    .join("")
+                    .chars()
+                    .collect()
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

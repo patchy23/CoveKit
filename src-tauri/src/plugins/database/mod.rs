@@ -1,19 +1,14 @@
 //! 数据库工作台插件 · 门面（命令薄层 + 插件装配）
 //! 命令前缀 `dbc_`（与既有 sqlite 插件的 `db_` 前缀区分；注册表全局唯一）。
-//! 结构：models.rs（契约）/ dialect.rs + mysql.rs + postgres.rs + sqlite.rs（方言）/
-//! conn.rs（会话注册表）/ catalog.rs（查询与元数据）/ redis.rs（键浏览）/
-//! store.rs（本地库）/ secrets.rs（stronghold 凭据）/ agent/（侧车驱动）。
+//! 结构：models.rs（契约）/ dialect/（方言纯函数）/ drivers/（会话注册表 + 驱动执行）/
+//! catalog.rs（查询与元数据命令）/ store.rs（本地库）/ secrets.rs（stronghold 凭据）/ agent/（侧车驱动）。
 
 pub(crate) mod agent;
 pub(crate) mod catalog;
-pub(crate) mod conn;
 pub(crate) mod dialect;
+pub(crate) mod drivers;
 pub(crate) mod models;
-pub(crate) mod mysql;
-pub(crate) mod postgres;
-pub(crate) mod redis;
 pub(crate) mod secrets;
-pub(crate) mod sqlite;
 pub(crate) mod store;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -62,10 +57,10 @@ pub async fn dbc_connection_delete(
 pub async fn dbc_connections(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
-    session_state: State<'_, conn::DbState>,
+    session_state: State<'_, drivers::DbState>,
 ) -> Result<Vec<models::DbConnectionInfo>, String> {
     let configs = store::list_connections(&app, &store_state)?;
-    Ok(conn::snapshot(&session_state, &configs).await)
+    Ok(drivers::snapshot(&session_state, &configs).await)
 }
 
 /// 建立连接（读取 stronghold 凭据；成功后探测版本与时延）
@@ -74,8 +69,8 @@ pub async fn dbc_connect(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
     secrets_state: State<'_, secrets::SecretsState>,
-    session_state: State<'_, conn::DbState>,
-    runtimes: State<'_, conn::AgentRuntimeState>,
+    session_state: State<'_, drivers::DbState>,
+    runtimes: State<'_, drivers::AgentRuntimeState>,
     id: String,
 ) -> Result<models::DbConnectionInfo, String> {
     let configs = store::list_connections(&app, &store_state)?;
@@ -85,18 +80,18 @@ pub async fn dbc_connect(
         .cloned()
         .ok_or_else(|| format!("连接配置不存在：{id}"))?;
     let password = secrets::secret_get(&app, &secrets_state, &id)?;
-    let entry = conn::connect(&app, &session_state, &runtimes, &config, &password).await?;
+    let entry = drivers::connect(&app, &session_state, &runtimes, &config, &password).await?;
     Ok(entry.to_info())
 }
 
 /// 断开连接
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_disconnect(
-    session_state: State<'_, conn::DbState>,
-    runtimes: State<'_, conn::AgentRuntimeState>,
+    session_state: State<'_, drivers::DbState>,
+    runtimes: State<'_, drivers::AgentRuntimeState>,
     id: String,
 ) -> Result<(), String> {
-    conn::disconnect(&session_state, &runtimes, &id).await
+    drivers::disconnect(&session_state, &runtimes, &id).await
 }
 
 /// 测试连接（不保存、不落会话；返回版本信息）
@@ -106,7 +101,7 @@ pub async fn dbc_test(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
     secrets_state: State<'_, secrets::SecretsState>,
-    runtimes: State<'_, conn::AgentRuntimeState>,
+    runtimes: State<'_, drivers::AgentRuntimeState>,
     config: ConnConfig,
     password: String,
 ) -> Result<String, String> {
@@ -122,7 +117,7 @@ pub async fn dbc_test(
     } else {
         password
     };
-    conn::test_connection(&app, &runtimes, &config, &password).await
+    drivers::test_connection(&app, &runtimes, &config, &password).await
 }
 
 /// 查询历史与收藏 ─────────────────────────────────────────────────────────
@@ -290,9 +285,9 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     ])
     .expect("IPC 命令重复注册");
     builder
-        .manage(conn::DbState(Mutex::new(HashMap::new())))
-        .manage(conn::DbCancelState(Mutex::new(HashMap::new())))
-        .manage(conn::AgentRuntimeState(Mutex::new(HashMap::new())))
+        .manage(drivers::DbState(Mutex::new(HashMap::new())))
+        .manage(drivers::DbCancelState(Mutex::new(HashMap::new())))
+        .manage(drivers::AgentRuntimeState(Mutex::new(HashMap::new())))
         .manage(StoreState(Mutex::new(None)))
         .manage(secrets::SecretsState(Mutex::new(None)))
 }

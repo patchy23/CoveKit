@@ -3,10 +3,14 @@
 //! 全部可单测（不依赖真实数据库）。agent 类型（oracle/vastbase/kingbase）
 //! 的元数据由 agent 进程提供，不实现本 trait。
 
-use crate::plugins::database::models::DbType;
-use crate::plugins::database::{
+use crate::plugins::database::dialect::{
     mysql::MySqlDialect, postgres::PostgresDialect, sqlite::SqliteDialect,
 };
+use crate::plugins::database::models::DbType;
+
+pub mod mysql;
+pub mod postgres;
+pub mod sqlite;
 
 /// 方言能力接口：native 数据库（mysql/polardb/postgresql/sqlite）各自实现
 pub trait DbDialect: Send + Sync {

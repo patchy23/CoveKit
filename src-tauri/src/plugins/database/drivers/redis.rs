@@ -5,7 +5,7 @@ use redis::aio::ConnectionManager;
 use redis::Value as RedisValue;
 
 /// SCAN 键列表（游标分页；pattern 为空时全量）
-pub async fn scan_keys(
+pub(crate) async fn scan_keys(
     mgr: &mut ConnectionManager,
     pattern: &str,
     cursor: u64,
@@ -26,7 +26,10 @@ pub async fn scan_keys(
 }
 
 /// 键信息：TYPE + TTL + 值预览（集合类返回条数与前若干元素）
-pub async fn key_info(mgr: &mut ConnectionManager, key: &str) -> Result<RedisKeyInfo, String> {
+pub(crate) async fn key_info(
+    mgr: &mut ConnectionManager,
+    key: &str,
+) -> Result<RedisKeyInfo, String> {
     let kind: String = redis::cmd("TYPE")
         .arg(key)
         .query_async(mgr)
@@ -47,7 +50,10 @@ pub async fn key_info(mgr: &mut ConnectionManager, key: &str) -> Result<RedisKey
 }
 
 /// 执行一条 Redis 命令（查询页签输入行，如 `GET user:1`）；返回格式化结果
-pub async fn exec_command(mgr: &mut ConnectionManager, line: &str) -> Result<String, String> {
+pub(crate) async fn exec_command(
+    mgr: &mut ConnectionManager,
+    line: &str,
+) -> Result<String, String> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
         return Err("命令不能为空".to_string());
