@@ -11,6 +11,7 @@ import {
   type V2QueryStatus,
   type V2Tab,
   type V2TabKind,
+  isSystemSchema,
   usesConnectionRootSchema,
   usesSchemaTree,
 } from './useDatabaseMeta'
@@ -214,20 +215,42 @@ export function useDatabase() {
     return queryStates.value[activeTabId.value]
   })
 
+  /** 每连接「显示系统库」开关（默认隐藏；右键菜单切换） */
+  const showSystemSchemas = ref<Record<string, boolean>>({})
+
+  function toggleSystemSchemas(connId: string) {
+    showSystemSchemas.value = {
+      ...showSystemSchemas.value,
+      [connId]: !showSystemSchemas.value[connId],
+    }
+  }
+
+  /** 系统库过滤（仅隐藏开关关闭且命中系统清单时过滤） */
+  function filterSystem(connId: string, dbType: string, names: string[]): string[] {
+    if (showSystemSchemas.value[connId]) return names
+    return names.filter((n) => !isSystemSchema(dbType, n))
+  }
+
   const connectionOptions = computed(() =>
     connections.value.map((c) => ({ value: c.id, label: c.label }))
   )
 
   const databaseOptions = computed(() => {
-    const meta = metas.value[activeTabContext.value.connectionId]
+    const connId = activeTabContext.value.connectionId
+    const meta = metas.value[connId]
     if (!meta || meta.databases.length === 0) return []
-    return meta.databases.map((name) => ({ value: name, label: name }))
+    const conn = connections.value.find((c) => c.id === connId)
+    const names = conn ? filterSystem(connId, conn.dbType, meta.databases) : meta.databases
+    return names.map((name) => ({ value: name, label: name }))
   })
 
   const schemaOptions = computed(() => {
-    const meta = metas.value[activeTabContext.value.connectionId]
+    const connId = activeTabContext.value.connectionId
+    const meta = metas.value[connId]
     if (!meta || meta.schemas.length === 0) return []
-    return meta.schemas.map((name) => ({ value: name, label: name }))
+    const conn = connections.value.find((c) => c.id === connId)
+    const names = conn ? filterSystem(connId, conn.dbType, meta.schemas) : meta.schemas
+    return names.map((name) => ({ value: name, label: name }))
   })
 
   /** SQL 编辑器补全元数据：当前连接已加载的表/视图（列暂不缓存，先补表名） */
@@ -524,8 +547,9 @@ export function useDatabase() {
       const meta = metaFor(conn.id)
 
       if (usesConnectionRootSchema(conn.dbType as V2DbType)) {
-        // oracle/dameng：连接 → schema（用户）→ 分组
-        for (const schema of meta.schemas.length ? meta.schemas : [conn.database]) {
+        // oracle/dameng：连接 → schema（用户）→ 分组（系统 schema 默认隐藏）
+        const schemas = meta.schemas.length ? meta.schemas : [conn.database]
+        for (const schema of filterSystem(conn.id, conn.dbType, schemas)) {
           const scope = `${prefix}::${schema}`
           items.push(branch(scope, schema, 1, 'schema'))
           items.push(...objectGroups(conn, scope, 2))
@@ -534,8 +558,9 @@ export function useDatabase() {
       }
 
       if (conn.dbType === 'mysql' || conn.dbType === 'polardb') {
-        // MySQL：连接 → 全部库 → 分组（库列表来自元数据，未加载时回退配置库名）
-        const databases = meta.databases.length ? meta.databases : [conn.database || '默认']
+        // MySQL：连接 → 全部库 → 分组（系统库默认隐藏；未加载时回退配置库名不过滤）
+        const raw = meta.databases.length ? meta.databases : [conn.database || '默认']
+        const databases = meta.databases.length ? filterSystem(conn.id, conn.dbType, raw) : raw
         for (const db of databases) {
           const scope = `${prefix}::${db}`
           items.push(branch(scope, db, 1, 'database'))
@@ -549,8 +574,10 @@ export function useDatabase() {
       items.push(branch(`${prefix}::db`, database, 1, 'database'))
 
       if (usesSchemaTree(conn.dbType as V2DbType)) {
-        // PG 系：数据库 → schema → 分组
-        for (const schema of meta.schemas.length ? meta.schemas : ['public']) {
+        // PG 系：数据库 → schema → 分组（系统 schema 默认隐藏；未加载时回退 public 不过滤）
+        const raw = meta.schemas.length ? meta.schemas : ['public']
+        const schemas = meta.schemas.length ? filterSystem(conn.id, conn.dbType, raw) : raw
+        for (const schema of schemas) {
           const scope = `${prefix}::${schema}`
           items.push(branch(scope, schema, 2, 'schema'))
           items.push(...objectGroups(conn, scope, 3))
@@ -671,6 +698,133 @@ export function useDatabase() {
       schema: '',
     }
     activeTabId.value = id
+  }
+
+  /** 打开带预置 SQL 的新编辑器（建表模板等），并指定库/schema 上下文 */
+  function openSqlEditorWithSql(
+    connectionId: string,
+    sql: string,
+    database?: string,
+    schema?: string
+  ) {
+    openSqlEditor(connectionId)
+    const id = activeTabId.value
+    const ctx = tabContexts.value[id]
+    if (database !== undefined) ctx.database = database
+    if (schema !== undefined) ctx.schema = schema
+    queryStates.value[id].sql = sql
+  }
+
+  /** 树节点 scope（库名/schema 名）→ 页签上下文（database/schema 字段映射随类型） */
+  function scopeContext(
+    conn: DbConnectionInfo,
+    scope: string
+  ): { database: string; schema: string } {
+    const type = conn.dbType as V2DbType
+    if (usesConnectionRootSchema(type)) return { database: conn.database, schema: scope }
+    if (type === 'mysql' || type === 'polardb') return { database: scope, schema: '' }
+    if (usesSchemaTree(type)) return { database: conn.database, schema: scope }
+    return { database: conn.database || 'main', schema: '' }
+  }
+
+  /** 解析树叶子节点 id（`<conn>::<scope>::<kind>:<name>`） */
+  function parseLeafId(
+    id: string
+  ): { connId: string; scope: string; kind: string; name: string } | null {
+    const m = id.match(/^(.+?)::(.*)::([a-z_]+):(.+)$/)
+    if (!m) return null
+    return { connId: m[1], scope: m[2], kind: m[3], name: m[4] }
+  }
+
+  /** 打开表/视图结构页签（树右键、Ctrl+点击表名共用入口） */
+  function openStructureTab(
+    connectionId: string,
+    table: string,
+    database?: string,
+    schema?: string
+  ) {
+    const id = `structure-${connectionId}-${table}`
+    openOrFocusTab(id, `${table} · 结构`, 'structure', connectionId, table)
+    if (database !== undefined) tabContexts.value[id].database = database
+    if (schema !== undefined) tabContexts.value[id].schema = schema
+    void loadColumns(id)
+  }
+
+  /** Ctrl+点击编辑器内表名：按当前页签上下文打开表结构 */
+  function openStructureForTable(table: string) {
+    const ctx = activeTabContext.value
+    if (!ctx.connectionId) return
+    openStructureTab(ctx.connectionId, table, ctx.database, ctx.schema)
+  }
+
+  /** 建表模板 SQL（按类型给最小骨架，在编辑器中由用户补全后执行） */
+  function createTableTemplate(conn: DbConnectionInfo, database: string, schema: string): string {
+    const type = conn.dbType as V2DbType
+    if (type === 'mysql' || type === 'polardb') {
+      const db = database ? `\`${database}\`.` : ''
+      return `CREATE TABLE ${db}\`new_table\` (\n  \`id\` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',\n  \`name\` VARCHAR(255) NOT NULL DEFAULT '',\n  \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,\n  PRIMARY KEY (\`id\`)\n);`
+    }
+    if (type === 'sqlite') {
+      return `CREATE TABLE "new_table" (\n  "id" INTEGER PRIMARY KEY AUTOINCREMENT,\n  "name" TEXT NOT NULL\n);`
+    }
+    const schemaPrefix = schema ? `"${schema}".` : ''
+    return `CREATE TABLE ${schemaPrefix}"new_table" (\n  "id" BIGINT PRIMARY KEY,\n  "name" VARCHAR(255) NOT NULL\n);`
+  }
+
+  /** 在指定库/schema 下新建表：打开带模板的 SQL 编辑器（用户确认后自行执行） */
+  function openCreateTableEditor(connId: string, scope: string) {
+    const conn = connections.value.find((c) => c.id === connId)
+    if (!conn) return
+    const { database, schema } = scopeContext(conn, scope)
+    openSqlEditorWithSql(connId, createTableTemplate(conn, database, schema), database, schema)
+  }
+
+  /** 新建数据库（mysql/polardb/PG 系）：执行 CREATE DATABASE 后刷新元数据 */
+  async function createDatabase(connId: string, name: string): Promise<boolean> {
+    const conn = connections.value.find((c) => c.id === connId)
+    if (!conn) return false
+    const trimmed = name.trim()
+    if (!/^[A-Za-z_][\w$]{0,63}$/.test(trimmed)) {
+      showError('库名仅支持字母、数字、下划线与 $，且需以字母或下划线开头')
+      return false
+    }
+    const quoted =
+      conn.dbType === 'mysql' || conn.dbType === 'polardb' ? `\`${trimmed}\`` : `"${trimmed}"`
+    try {
+      const result = await queryIpc.execute(connId, `CREATE DATABASE ${quoted}`, 1)
+      if (!result.ok) throw new Error(result.error ?? '创建数据库失败')
+      // 库列表失效后重取（对象缓存一并清掉）
+      const meta = metaFor(connId)
+      meta.loaded = false
+      meta.objects = {}
+      await ensureMeta(connId)
+      return true
+    } catch (err) {
+      showError(err)
+      return false
+    }
+  }
+
+  /** 刷新树节点：连接=库/schema 列表+对象缓存全清；库/schema/分组=清该 scope 对象缓存重取 */
+  async function refreshTreeNode(item: UiTreeItem) {
+    const connId = item.id.split('::')[0]
+    const meta = metaFor(connId)
+    if (item.kind === 'connection') {
+      meta.loaded = false
+      meta.objects = {}
+      meta.redisKeys = []
+      await ensureMeta(connId)
+      return
+    }
+    const scope = item.id.split('::')[1]
+    if (!scope) return
+    if (scope === 'redis') {
+      meta.redisKeys = []
+      await ensureRedisKeys(connId)
+      return
+    }
+    delete meta.objects[`${connId}::${scope}`]
+    await ensureObjects(connId, scope)
   }
 
   /** 重命名当前页签别名（仅本地；已保存的编辑器下次保存时同步到库） */
@@ -1050,6 +1204,8 @@ export function useDatabase() {
     completionTables,
     resolveEditorColumns,
     ensureMeta,
+    showSystemSchemas,
+    toggleSystemSchemas,
     // 页签
     tabs,
     activeTab,
@@ -1059,6 +1215,14 @@ export function useDatabase() {
     activeTabConnection,
     tabContexts,
     openSqlEditor,
+    openSqlEditorWithSql,
+    openStructureTab,
+    openStructureForTable,
+    openCreateTableEditor,
+    createDatabase,
+    refreshTreeNode,
+    scopeContext,
+    parseLeafId,
     closeTab,
     renameActiveTab,
     saveQueryToDisk,

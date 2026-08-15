@@ -270,6 +270,7 @@ async function exportCsv() {
       :tables="editorTables"
       :resolve-columns="db.resolveEditorColumns"
       :on-run-statement="(sql) => db.runQuery(sql)"
+      :on-table-click="(t) => db.openStructureForTable(t)"
       class="min-h-0 flex-1"
       placeholder="-- 有选中执行选中段，否则执行光标所在语句"
       @update:model-value="(v) => patchQueryState({ sql: v, dirty: true })"

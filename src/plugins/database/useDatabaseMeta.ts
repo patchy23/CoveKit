@@ -118,3 +118,20 @@ export function isAgentType(type: V2DbType): boolean {
 export function isUnsupportedType(type: V2DbType): boolean {
   return type === 'dameng'
 }
+
+/** 系统库 / 系统 schema 清单（小写比较）：默认在对象树与编辑器下拉中隐藏，可按连接右键切换显示 */
+const SYSTEM_SCHEMAS: Partial<Record<V2DbType, Set<string>>> = {
+  mysql: new Set(['information_schema', 'mysql', 'performance_schema', 'sys']),
+  polardb: new Set(['information_schema', 'mysql', 'performance_schema', 'sys']),
+  postgresql: new Set(['pg_catalog', 'information_schema', 'pg_toast']),
+  kingbase: new Set(['pg_catalog', 'information_schema', 'pg_toast']),
+  vastbase: new Set(['pg_catalog', 'information_schema', 'pg_toast']),
+  oracle: new Set(['sys', 'system', 'outln', 'dbsnmp', 'xdb', 'ctxsys', 'mdsys']),
+  dameng: new Set(['sys', 'system', 'sysdba', 'syssso', 'sysauditor', 'ctisys']),
+}
+
+/** 判断某库/schema 是否为系统对象（大小写不敏感；无清单的类型一律视为业务对象） */
+export function isSystemSchema(type: string, name: string): boolean {
+  const set = SYSTEM_SCHEMAS[type as V2DbType]
+  return !!set && set.has(name.toLowerCase())
+}

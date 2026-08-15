@@ -39,6 +39,8 @@ const props = defineProps<{
   resolveColumns?: (table: string) => Promise<string[]>
   /** 语句行前 ▶ 点击：执行该条语句 */
   onRunStatement?: (sql: string) => void
+  /** Ctrl+点击已知表名：查看表结构（仅命中已加载元数据的表名时触发） */
+  onTableClick?: (table: string) => void
 }>()
 
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
@@ -255,11 +257,49 @@ function createState(): EditorState {
       themeCompartment.of(isDark() ? darkTheme : lightTheme),
       EditorView.lineWrapping,
       cmPlaceholder(props.placeholder ?? ''),
+      // Ctrl+点击已知表名 → 查看表结构（命中才拦截，未命中不影响正常点选）
+      EditorView.domEventHandlers({
+        mousedown: (event, view) => {
+          if (!props.onTableClick || !(event.ctrlKey || event.metaKey) || event.button !== 0)
+            return false
+          const table = knownTableAt(view, event)
+          if (!table) return false
+          event.preventDefault()
+          props.onTableClick(table)
+          return true
+        },
+        mousemove: (event, view) => {
+          if (!props.onTableClick) return
+          const pointer =
+            (event.ctrlKey || event.metaKey) && knownTableAt(view, event) ? 'pointer' : ''
+          if (view.dom.style.cursor !== pointer) view.dom.style.cursor = pointer
+        },
+      }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) emit('update:modelValue', update.state.doc.toString())
       }),
     ],
   })
+}
+
+/** 鼠标位置下的词若为已知表名（含反引号/双引号包裹），返回表名；否则空串 */
+function knownTableAt(view: EditorView, event: MouseEvent): string {
+  const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+  if (pos == null) return ''
+  // 词可能带引号（`table`/"table"）：先取词，再向两侧扩一个引号字符
+  const word = view.state.wordAt(pos)
+  if (!word) return ''
+  let { from, to } = word
+  const doc = view.state.doc
+  const charBefore = from > 0 ? doc.sliceString(from - 1, from) : ''
+  const charAfter = to < doc.length ? doc.sliceString(to, to + 1) : ''
+  if ((charBefore === '`' || charBefore === '"') && charAfter === charBefore) {
+    from -= 1
+    to += 1
+  }
+  const raw = doc.sliceString(from, to).replace(/^["'`]|["'`]$/g, '')
+  const hit = (props.tables ?? []).find((t) => t.name.toLowerCase() === raw.toLowerCase())
+  return hit?.name ?? ''
 }
 
 onMounted(() => {

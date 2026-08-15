@@ -4,8 +4,15 @@
 import { describe, expect, it } from 'vitest'
 import type { UiTreeItem } from '@/core/ui'
 import { extractExecSql, filterTreeItems } from './useDatabase'
+import { isSystemSchema } from './useDatabaseMeta'
 
-function node(id: string, label: string, depth: number, expandable = false, expanded = false): UiTreeItem {
+function node(
+  id: string,
+  label: string,
+  depth: number,
+  expandable = false,
+  expanded = false
+): UiTreeItem {
   return { id, label, depth, kind: 'table', expandable, expanded }
 }
 
@@ -75,5 +82,25 @@ describe('extractExecSql', () => {
 
   it('单行文本无换行时返回整行', () => {
     expect(extractExecSql('SELECT 42', 5, 5)).toBe('SELECT 42')
+  })
+})
+
+describe('isSystemSchema', () => {
+  it('mysql 系统库命中（大小写不敏感）', () => {
+    for (const name of ['information_schema', 'mysql', 'performance_schema', 'sys', 'MySQL']) {
+      expect(isSystemSchema('mysql', name)).toBe(true)
+    }
+  })
+
+  it('PG 系系统 schema 命中', () => {
+    expect(isSystemSchema('postgresql', 'pg_catalog')).toBe(true)
+    expect(isSystemSchema('kingbase', 'information_schema')).toBe(true)
+  })
+
+  it('业务库不命中；无清单类型一律不命中', () => {
+    expect(isSystemSchema('mysql', 'patchybox')).toBe(false)
+    expect(isSystemSchema('postgresql', 'public')).toBe(false)
+    expect(isSystemSchema('sqlite', 'main')).toBe(false)
+    expect(isSystemSchema('redis', 'db0')).toBe(false)
   })
 })
