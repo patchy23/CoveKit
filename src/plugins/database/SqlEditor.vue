@@ -12,7 +12,7 @@ import { Compartment, EditorState } from '@codemirror/state'
 import { keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorView } from '@codemirror/view'
 import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
-import { currentStatementExtension, sqlCompletionExtension, sqlEditorBasics } from './sqlEditorExtensions'
+import { sqlCompletionExtension, sqlEditorBasics } from './sqlEditorExtensions'
 import { statementRangeAtCursor, statementExecutableSql, type SqlTextRange } from './sqlStatementRanges'
 
 /** 补全用表结构（列名数组） */
@@ -86,10 +86,6 @@ const lightTheme = EditorView.theme({
     color: 'var(--color-tertiary-strong)',
   },
   '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--font-mono)' },
-  '.cm-current-statement': {
-    boxShadow: 'inset 0 0 0 1px var(--color-tertiary)',
-    borderRadius: '2px',
-  },
   '.cm-searchMatch': { backgroundColor: 'var(--color-tertiary-soft)' },
   '.cm-selectionMatch': { backgroundColor: 'var(--color-tertiary-soft)' },
 })
@@ -134,10 +130,6 @@ const darkTheme = EditorView.theme(
       color: 'var(--color-tertiary-dark)',
     },
     '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--font-mono)' },
-    '.cm-current-statement': {
-      boxShadow: 'inset 0 0 0 1px var(--color-tertiary-dark)',
-      borderRadius: '2px',
-    },
     '.cm-searchMatch': { backgroundColor: 'var(--color-tertiary-soft-dark)' },
     '.cm-selectionMatch': { backgroundColor: 'var(--color-tertiary-soft-dark)' },
   },
@@ -174,7 +166,6 @@ function createState(): EditorState {
     extensions: [
       langCompartment.of(langExtension()),
       ...sqlEditorBasics(),
-      currentStatementExtension(),
       keymap.of([
         { key: 'Mod-Enter', run: () => (props.onRun?.(), true) },
         { key: 'Mod-s', run: () => (props.onSave?.(), true) },

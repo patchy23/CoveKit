@@ -4,8 +4,7 @@
  * 当前语句框选（光标所在完整语句高亮）、snippet 补全、表名点列名异步补全。
  */
 import type { Extension } from '@codemirror/state'
-import { StateField } from '@codemirror/state'
-import { Decoration, EditorView, keymap, type DecorationSet } from '@codemirror/view'
+import { keymap } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from '@codemirror/commands'
 import { HighlightStyle, bracketMatching, foldGutter, foldKeymap, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
@@ -25,8 +24,6 @@ import {
   type SQLDialect,
   type SQLNamespace,
 } from '@codemirror/lang-sql'
-import { statementRangeAtCursor } from './sqlStatementRanges'
-
 /** 常用 SQL 模板（snippet 占位符 Tab 跳转） */
 const SQL_SNIPPETS = [
   snippetCompletion('SELECT * FROM ${table}', { label: 'SELECT * FROM', type: 'keyword', detail: '模板' }),
@@ -132,26 +129,4 @@ export function sqlCompletionExtension(
       schemaCompletionSource({ dialect, schema }),
     ],
   })
-}
-
-/** 当前语句框选：光标所在完整语句加边框高亮（对齐 dbx 的 currentStatementFrame） */
-const currentStatementField = StateField.define<DecorationSet>({
-  create() {
-    return Decoration.none
-  },
-  update(deco, tr) {
-    // 文档或选区变化时重算光标所在语句范围
-    if (!tr.docChanged && !tr.selection) return deco
-    const head = tr.state.selection.main.head
-    const target = statementRangeAtCursor(tr.state.doc.toString(), head)
-    if (!target) return Decoration.none
-    const mark = Decoration.mark({ class: 'cm-current-statement' })
-    return Decoration.set([mark.range(target.from, target.to)])
-  },
-  provide: (field) => EditorView.decorations.from(field),
-})
-
-/** 当前语句框选扩展 */
-export function currentStatementExtension(): Extension {
-  return currentStatementField
 }
