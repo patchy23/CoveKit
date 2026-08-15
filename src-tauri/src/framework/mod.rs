@@ -2,12 +2,14 @@
 //! 设置存储与全局快捷键（framework/settings.rs）
 //! IPC 接口入库（ipc_registry）与插件数据管理（store）
 //! 本地凭证管理（credentials）：插件按命名空间+键存取，不关心存储实现
+//! Vault 凭证管理（vault）：统一凭证库（keyring 主密钥 + AES-256-GCM + Argon2id 备份）
 //! 框架能力不属于业务插件（插件 = 工具，框架 = 基建）。
 
 pub mod credentials;
 pub mod ipc_registry;
 pub mod settings;
 pub mod store;
+pub mod vault;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, WebviewWindow};
@@ -21,6 +23,12 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         ipc_registry::framework_commands,
         settings::settings_get,
         settings::settings_set,
+        vault::vault_list,
+        vault::vault_save,
+        vault::vault_delete,
+        vault::vault_reveal,
+        vault::vault_export,
+        vault::vault_import,
     ];
     handler(invoke)
 }

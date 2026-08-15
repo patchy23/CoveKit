@@ -19,6 +19,8 @@ import {
   ChevronsRight,
   Copy,
   Download,
+  Eye,
+  EyeOff,
   LayoutGrid,
   LoaderCircle,
   Minus,
@@ -58,6 +60,9 @@ export const UI_ICONS = {
   /** 重命名/编辑 */
   pencil: Pencil,
   trash: Trash2,
+  /** 秘密字段显示/隐藏（眼睛切换） */
+  eye: Eye,
+  'eye-off': EyeOff,
 } as const
 
 export type UiIconName = keyof typeof UI_ICONS

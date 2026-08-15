@@ -4,7 +4,7 @@
  * - 业务插件在各自 ipc.ts 用 invokeCommand 封装自己的命令（命令名/类型见插件 contracts.ts）。
  */
 import { invoke } from '@tauri-apps/api/core'
-import type { FrameworkPayloads, FrameworkResults } from './contracts'
+import type { CredentialSavePayload, FrameworkPayloads, FrameworkResults } from './contracts'
 
 /** 归一化 IPC 错误：Tauri 侧错误可能是任意字符串/对象 */
 export class IpcError extends Error {
@@ -34,7 +34,7 @@ async function call<K extends keyof FrameworkPayloads & keyof FrameworkResults>(
   return invokeCommand<FrameworkPayloads[K], FrameworkResults[K]>(command, payload)
 }
 
-/** 框架命令封装（设置/窗口/外链/命令清单） */
+/** 框架命令封装（设置/窗口/外链/命令清单/Vault 凭证） */
 export const ipc = {
   settingsGet: (key?: string) => call('settings_get', { key }),
   settingsSet: (key: string, value: unknown) => call('settings_set', { key, value }),
@@ -42,4 +42,11 @@ export const ipc = {
   windowHide: () => call('window_hide', {}),
   openExternal: (url: string) => call('open_external', { url }),
   frameworkCommandsList: () => call('framework_commands', {}),
+  vaultList: () => call('vault_list', {}),
+  vaultSave: (payload: CredentialSavePayload) => call('vault_save', { payload }),
+  vaultDelete: (id: string) => call('vault_delete', { id }),
+  vaultReveal: (id: string) => call('vault_reveal', { id }),
+  vaultExport: (path: string, password: string) => call('vault_export', { path, password }),
+  vaultImport: (path: string, password: string, overwrite: boolean) =>
+    call('vault_import', { path, password, overwrite }),
 }

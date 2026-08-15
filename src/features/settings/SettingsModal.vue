@@ -3,7 +3,7 @@
  * SettingsModal · 设置弹窗
  * 外观 / 快捷键 / 通用 / 剪贴板策略 / 工具级设置（settingsSchema 自动渲染表单，架构 §8）
  */
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { getTools } from '@/core/registry/toolRegistry'
 import type { SettingsField } from '@/core/registry/types'
@@ -11,9 +11,31 @@ import { UiButton, UiCheckbox, UiInput, UiModal as BaseModal, UiSelect as Select
 import AppIcon from '@/features/ui/AppIcon.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
+import { ipc } from '@/core/ipc/ipc'
 
 const ui = useUiStore()
 const settings = useSettingsStore()
+
+/** 凭证库条数（打开设置弹窗时刷新；获取失败显示「—」） */
+const vaultCount = ref<number | null>(null)
+watch(
+  () => ui.settingsVisible,
+  async (visible) => {
+    if (!visible) return
+    try {
+      vaultCount.value = (await ipc.vaultList()).length
+    } catch {
+      vaultCount.value = null
+    }
+  },
+  { immediate: true }
+)
+
+/** 打开凭证管理页（隐藏工具 vault 的 workspace 页签）并关闭设置弹窗 */
+function openVault() {
+  ui.openTool('vault')
+  ui.settingsVisible = false
+}
 
 const toolsWithSettings = computed(() => getTools().filter((t) => t.settingsSchema?.length))
 
@@ -137,6 +159,21 @@ async function chooseDownloadDirectory() {
               SSH 下载及后续支持下载的工具会默认从此目录保存
             </span>
           </label>
+        </div>
+      </section>
+
+      <!-- 凭证管理（框架级 vault；管理页走隐藏工具 workspace 页签） -->
+      <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
+        <h3 class="flex items-center gap-[8px] text-h2 font-bold dark:text-primary-dark">
+          <AppIcon name="lock" :size="15" class="text-tertiary-strong dark:text-tertiary-dark" />
+          凭证管理
+        </h3>
+        <div class="mt-sm flex items-center justify-between gap-sm">
+          <p class="text-body-sm text-text-muted dark:text-text-muted-dark">
+            密码 / 私钥 / Token 加密存本机（keyring 主密钥），插件只引用凭证 ID。已存
+            <span class="font-mono">{{ vaultCount ?? '—' }}</span> 条。
+          </p>
+          <UiButton @click="openVault">管理凭证</UiButton>
         </div>
       </section>
 

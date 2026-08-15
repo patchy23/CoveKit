@@ -58,6 +58,8 @@ pub fn run() {
 
     // ── 业务插件装配（每个插件一行，互不影响）──
     let builder = framework::settings::register(builder);
+    // 框架级 Vault 凭证库（6 命令入 ipc_registry，命令走框架总 handler）
+    let builder = framework::vault::register(builder);
     let builder = plugins::http_ws::register(builder);
     let builder = plugins::api::register(builder);
     let builder = plugins::database::register(builder);

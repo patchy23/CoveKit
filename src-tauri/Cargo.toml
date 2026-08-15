@@ -50,6 +50,10 @@ russh = { version = "0.62.5", default-features = false, features = ["flate2", "r
 russh-sftp = "2.4.0"
 aes-gcm = "0.10"
 rand = "0.8"
+# Vault 凭证库（framework/vault）：系统密钥库存主密钥 + Argon2id 导出备份派生密钥
+keyring = "3"
+argon2 = "0.5"
+uuid = { version = "1", features = ["v4"] }
 # 数据库工作台（database 插件）：驱动与 dbx 项目同款
 # mysql: mysql_async（TLS 走 rustls ring 后端，与 http_ws 一致；default-rustls 会拉 aws-lc-rs 需 NASM）
 mysql_async = { version = "0.37", default-features = false, features = ["default-rustls-ring", "client_ed25519", "chrono", "rust_decimal"] }
