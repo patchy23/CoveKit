@@ -33,18 +33,28 @@ pub(crate) async fn mysql_pool(
     let pool = mysql_async::Pool::new(opts);
     // 预检一条查询，验证凭据（带连接超时，防挂起）
     let timeout_ms = config.connect_timeout_ms.max(30000);
+    eprintln!(
+        "[mysql] 开始连接 {}:{} user={} db={:?}（超时 {timeout_ms} ms）",
+        config.host, config.port, config.username, database
+    );
+    let t0 = std::time::Instant::now();
     let mut conn = tokio::time::timeout(
         std::time::Duration::from_millis(timeout_ms),
         pool.get_conn(),
     )
     .await
     .map_err(|_| format!("MySQL 连接超时（{timeout_ms} ms）"))?
-    .map_err(|e| format!("MySQL 连接失败: {e}"))?;
+    .map_err(|e| {
+        eprintln!("[mysql] 连接失败：{e}");
+        format!("MySQL 连接失败: {e}")
+    })?;
+    eprintln!("[mysql] 连接建立耗时 {:?}，预检查询...", t0.elapsed());
     let _: String = conn
         .query_first::<String, _>("SELECT 1")
         .await
         .map_err(|e| format!("MySQL 预检失败: {e}"))?
         .ok_or("预检无结果")?;
+    eprintln!("[mysql] 预检完成，总耗时 {:?}", t0.elapsed());
     Ok(pool)
 }
 
