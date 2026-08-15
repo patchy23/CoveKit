@@ -134,8 +134,10 @@ async function onSave(connectAfter: boolean) {
   saveError.value = ''
   try {
     const { connectionIpc } = await import('./ipc')
-    await connectionIpc.save(buildConfig(), form.password)
-    emit('saved', buildConfig(), form.password)
+    // buildConfig 只取一次：保存与回传必须是同一份表单快照
+    const config = buildConfig()
+    await connectionIpc.save(config, form.password)
+    emit('saved', config, form.password)
     if (connectAfter) {
       // 容器侧在 saved 事件里处理连接
     }

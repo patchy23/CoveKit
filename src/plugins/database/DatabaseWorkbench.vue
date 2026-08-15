@@ -123,8 +123,9 @@ function onEditConnection(connection: DbConnectionInfo) {
   dialogOpen.value = true
 }
 
-function onSaved(config: ConnConfig) {
-  // 保存成功后立即连接（无真实数据库时错误在树节点展示）
+async function onSaved(config: ConnConfig) {
+  // 先刷新列表（保存后列表/右键菜单/编辑预填必须是最新配置），再连接
+  await db.refreshConnections()
   const conn = db.connections.value.find((c) => c.id === config.id)
   if (conn) void db.connect(conn).catch(() => {})
 }
