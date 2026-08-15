@@ -7,7 +7,8 @@ import type { Extension } from '@codemirror/state'
 import { StateField } from '@codemirror/state'
 import { Decoration, EditorView, keymap, type DecorationSet } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from '@codemirror/commands'
-import { bracketMatching, foldGutter, foldKeymap } from '@codemirror/language'
+import { HighlightStyle, bracketMatching, foldGutter, foldKeymap, syntaxHighlighting } from '@codemirror/language'
+import { tags } from '@lezer/highlight'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import {
   autocompletion,
@@ -52,9 +53,25 @@ const SQL_SNIPPETS = [
   }),
 ]
 
+/** SQL 语法高亮（CSS 变量 → 深浅色自动跟随；对齐 dbx 配色语义） */
+const sqlHighlightStyle = HighlightStyle.define([
+  { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.operatorKeyword, tags.modifier, tags.bool, tags.null], color: 'var(--color-tertiary-strong)' },
+  { tag: [tags.string, tags.special(tags.string)], color: 'var(--color-success-strong)' },
+  { tag: [tags.number, tags.integer, tags.float], color: 'var(--color-info-strong)' },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: 'var(--color-text-muted)', fontStyle: 'italic' },
+  { tag: tags.typeName, color: 'var(--color-tertiary-strong)' },
+  { tag: tags.variableName, color: 'var(--color-primary)' },
+  { tag: tags.function(tags.variableName), color: 'var(--color-info-strong)' },
+  { tag: [tags.operator, tags.compareOperator, tags.logicOperator, tags.arithmeticOperator], color: 'var(--color-secondary)' },
+  { tag: [tags.punctuation, tags.paren, tags.brace, tags.bracket], color: 'var(--color-secondary)' },
+  { tag: tags.invalid, color: 'var(--color-danger-strong)', textDecoration: 'underline' },
+])
+
 /** 基础编辑扩展（对齐 dbx 编辑器基础能力） */
 export function sqlEditorBasics(): Extension[] {
   return [
+    // SQL 语法高亮（深浅色随主题）
+    syntaxHighlighting(sqlHighlightStyle),
     // 撤销/重做历史
     history(),
     // 括号匹配 + 折叠
