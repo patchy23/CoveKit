@@ -180,29 +180,33 @@ async function exportCsv() {
       >
         <svg
           v-if="queryState.status === 'running'"
-          width="20"
-          height="20"
+          width="16"
+          height="16"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
           stroke-width="2.5"
           stroke-linecap="round"
           class="animate-spin"
-          style="width: 20px; height: 20px; flex: none;"
+          style="width: 16px; height: 16px; flex: none;"
           aria-hidden="true"
         >
           <path d="M21 12a9 9 0 1 1-6.219-8.56" />
         </svg>
         <svg
           v-else
-          width="20"
-          height="20"
+          width="16"
+          height="16"
           viewBox="0 0 24 24"
-          fill="currentColor"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
           aria-hidden="true"
-          style="width: 20px; height: 20px; flex: none;"
+          style="width: 16px; height: 16px; flex: none;"
         >
-          <path d="M7.5 4.9v14.2c0 .9 1 1.5 1.8 1L20.5 13a1.16 1.16 0 0 0 0-2L9.3 3.9c-.8-.5-1.8.1-1.8 1Z" />
+          <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" />
         </svg>
       </UiIconButton>
       <UiIconButton
@@ -212,8 +216,8 @@ async function exportCsv() {
         class="text-danger-strong dark:text-danger-dark"
         @click="db.cancelQuery"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="width: 18px; height: 18px; flex: none;">
-          <rect x="5" y="5" width="14" height="14" rx="2" />
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 16px; height: 16px; flex: none;">
+          <rect x="6" y="6" width="12" height="12" rx="2" />
         </svg>
       </UiIconButton>
       <UiIconButton
@@ -222,9 +226,9 @@ async function exportCsv() {
         class="text-success-strong dark:text-success-dark"
         @click="runAll"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width: 16px; height: 16px; flex: none;">
-          <path d="M4 5v14l12-7L4 5Z" />
-          <path d="M19 5v14" />
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 16px; height: 16px; flex: none;">
+          <path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z" />
+          <path d="M21 4v16" />
         </svg>
       </UiIconButton>
       <UiIconButton label="执行计划" size="sm" @click="db.runExplain">
