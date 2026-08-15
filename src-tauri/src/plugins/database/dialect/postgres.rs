@@ -67,10 +67,6 @@ impl DbDialect for PostgresDialect {
         format!("{trimmed} LIMIT {limit} OFFSET {offset}")
     }
 
-    fn explain_sql(&self, sql: &str) -> String {
-        format!("EXPLAIN (FORMAT TEXT) {sql}")
-    }
-
     fn is_query_sql(&self, sql: &str) -> bool {
         let upper = sql.trim_start().to_uppercase();
         ["SELECT", "WITH", "SHOW", "EXPLAIN", "TABLE", "VALUES"]

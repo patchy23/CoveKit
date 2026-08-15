@@ -33,8 +33,7 @@ export const connectionIpc = {
   disconnect: (id: string): Promise<void> => call('dbc_disconnect', { id }),
   test: (config: ConnConfig, password: string): Promise<string> =>
     call('dbc_test', { config, password }),
-  driverStatus: (dbType: string): Promise<DriverStatus> =>
-    call('dbc_driver_status', { dbType }),
+  driverStatus: (dbType: string): Promise<DriverStatus> => call('dbc_driver_status', { dbType }),
 }
 
 /** 查询与元数据 */
@@ -46,11 +45,19 @@ export const queryIpc = {
   schemas: (connId: string): Promise<string[]> => call('dbc_schemas', { connId }),
   objects: (connId: string, schema?: string): Promise<DbObjectInfo[]> =>
     call('dbc_objects', { connId, schema }),
-  columns: (connId: string, table: string, schema?: string): Promise<import('./contracts').DbColumnInfo[]> =>
+  columns: (
+    connId: string,
+    table: string,
+    schema?: string
+  ): Promise<import('./contracts').DbColumnInfo[]> =>
     call('dbc_columns', { connId, schema, table }),
-  tableData: (connId: string, table: string, page: number, pageSize: number, schema?: string): Promise<DbTablePage> =>
-    call('dbc_table_data', { connId, schema, table, page, pageSize }),
-  explain: (connId: string, sql: string): Promise<string[]> => call('dbc_explain', { connId, sql }),
+  tableData: (
+    connId: string,
+    table: string,
+    page: number,
+    pageSize: number,
+    schema?: string
+  ): Promise<DbTablePage> => call('dbc_table_data', { connId, schema, table, page, pageSize }),
   redisKeys: (connId: string, pattern: string, cursor: number): Promise<[number, string[]]> =>
     call('dbc_redis_keys', { connId, pattern, cursor }),
   redisKeyInfo: (connId: string, key: string): Promise<RedisKeyInfo> =>

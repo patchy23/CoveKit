@@ -169,7 +169,6 @@ export const commands = {
   dbcObjects: 'dbc_objects',
   dbcColumns: 'dbc_columns',
   dbcTableData: 'dbc_table_data',
-  dbcExplain: 'dbc_explain',
   dbcExportCsv: 'dbc_export_csv',
   dbcRedisKeys: 'dbc_redis_keys',
   dbcRedisKeyInfo: 'dbc_redis_key_info',
@@ -198,7 +197,6 @@ export type Payloads = {
   dbc_objects: { connId: string; schema?: string }
   dbc_columns: { connId: string; schema?: string; table: string }
   dbc_table_data: { connId: string; schema?: string; table: string; page: number; pageSize: number }
-  dbc_explain: { connId: string; sql: string }
   dbc_export_csv: { path: string; text: string }
   dbc_redis_keys: { connId: string; pattern: string; cursor: number }
   dbc_redis_key_info: { connId: string; key: string }
@@ -227,7 +225,6 @@ export type Results = {
   dbc_objects: DbObjectInfo[]
   dbc_columns: DbColumnInfo[]
   dbc_table_data: DbTablePage
-  dbc_explain: string[]
   dbc_export_csv: void
   dbc_redis_keys: [number, string[]]
   dbc_redis_key_info: RedisKeyInfo

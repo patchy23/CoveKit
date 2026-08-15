@@ -39,9 +39,6 @@ pub trait DbDialect: Send + Sync {
     /// 分页包装：`SELECT ...` → `SELECT ... LIMIT n OFFSET m`
     fn paginate(&self, sql: &str, limit: u64, offset: u64) -> String;
 
-    /// 执行计划 SQL（explain 前缀；返回带列的结果）
-    fn explain_sql(&self, sql: &str) -> String;
-
     /// 是否为查询语句（SELECT/WITH/SHOW/EXPLAIN/PRAGMA/DESC 前缀）
     fn is_query_sql(&self, sql: &str) -> bool;
 

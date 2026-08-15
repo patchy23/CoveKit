@@ -2,7 +2,12 @@
  * sqlStatementRanges 纯函数单测（分号分割 / 光标语句定位）
  */
 import { describe, expect, it } from 'vitest'
-import { splitSqlStatements, statementExecutableSql, statementRangeAtCursor } from './sqlStatementRanges'
+import {
+  splitSqlStatements,
+  statementExecutableSql,
+  statementRangeAtCursor,
+  statementStartOffset,
+} from './sqlStatementRanges'
 
 describe('splitSqlStatements', () => {
   it('按分号分割多语句', () => {
@@ -79,5 +84,23 @@ describe('statementRangeAtCursor', () => {
 describe('statementExecutableSql', () => {
   it('去除首尾空白与结尾分号', () => {
     expect(statementExecutableSql({ from: 0, to: 10, sql: '  SELECT 1;  ' })).toBe('SELECT 1')
+  })
+})
+
+describe('statementStartOffset', () => {
+  it('分号后换行的语句：起始偏移跳过换行，指向自身首个字符', () => {
+    // 回归：gutter 按钮曾用 range.from 定位，第二条语句的按钮错位到第一行
+    const text = 'SELECT 1;\nSELECT 2;'
+    const ranges = splitSqlStatements(text)
+    expect(ranges).toHaveLength(2)
+    expect(statementStartOffset(ranges[0])).toBe(0)
+    // ranges[1].from=9 指向上一条的换行符；首个非空白字符在 10
+    expect(ranges[1].from).toBe(9)
+    expect(statementStartOffset(ranges[1])).toBe(10)
+  })
+
+  it('带缩进的语句：起始偏移跳过缩进空白', () => {
+    const ranges = splitSqlStatements('SELECT 1;\n  SELECT 2;')
+    expect(statementStartOffset(ranges[1])).toBe(12)
   })
 })

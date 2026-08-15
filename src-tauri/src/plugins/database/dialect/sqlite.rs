@@ -45,10 +45,6 @@ impl DbDialect for SqliteDialect {
         format!("{trimmed} LIMIT {limit} OFFSET {offset}")
     }
 
-    fn explain_sql(&self, sql: &str) -> String {
-        format!("EXPLAIN QUERY PLAN {sql}")
-    }
-
     fn is_query_sql(&self, sql: &str) -> bool {
         let upper = sql.trim_start().to_uppercase();
         ["SELECT", "WITH", "EXPLAIN", "PRAGMA", "TABLE", "VALUES"]
@@ -75,14 +71,6 @@ mod tests {
     fn pagination_appends_limit_and_offset() {
         let sql = SqliteDialect.paginate("SELECT * FROM t", 10, 30);
         assert_eq!(sql, "SELECT * FROM t LIMIT 10 OFFSET 30");
-    }
-
-    #[test]
-    fn explain_prefix() {
-        assert_eq!(
-            SqliteDialect.explain_sql("SELECT * FROM t"),
-            "EXPLAIN QUERY PLAN SELECT * FROM t"
-        );
     }
 
     #[test]

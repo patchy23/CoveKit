@@ -1,19 +1,26 @@
 <script setup lang="ts">
 /**
  * SqlEditor · CodeMirror 6 SQL 编辑器
- * 高亮（方言语法）+ 补全（关键字/表/列/snippet 模板）+ 当前语句框选 + 查找替换。
+ * 高亮（方言语法）+ 补全（关键字/表/列/snippet 模板）+ 行号 + 语句折叠 + 当前语句框选 + 查找替换。
  * 主题跟随应用 data-theme（浅色/深色 token 复用项目 CSS 变量）；
- * 快捷键：Ctrl+Enter 执行（由上层 onRun 决定执行范围）、Ctrl+S 保存、Esc 取消、
- * Ctrl+F 查找替换、Ctrl+/ 注释、Tab 缩进、Ctrl+Z 撤销。
+ * 编辑类按键：Ctrl+F 查找替换、Ctrl+/ 注释、Tab 缩进、Ctrl+Z 撤销（执行/保存一律走工具栏按钮）。
  * 选区/光标/语句范围通过 defineExpose 暴露（执行"选中段/当前语句/全部"语义）。
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Compartment, EditorState } from '@codemirror/state'
-import { keymap, placeholder as cmPlaceholder } from '@codemirror/view'
+import { placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorView } from '@codemirror/view'
 import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
-import { sqlCompletionExtension, sqlEditorBasics, statementRunGutterExtension } from './sqlEditorExtensions'
-import { statementRangeAtCursor, statementExecutableSql, type SqlTextRange } from './sqlStatementRanges'
+import {
+  sqlCompletionExtension,
+  sqlEditorBasics,
+  statementRunGutterExtension,
+} from './sqlEditorExtensions'
+import {
+  statementRangeAtCursor,
+  statementExecutableSql,
+  type SqlTextRange,
+} from './sqlStatementRanges'
 
 /** 补全用表结构（列名数组） */
 export interface SqlEditorTable {
@@ -30,11 +37,8 @@ const props = defineProps<{
   dialect?: string
   /** 表名 → 列名异步解析（表. 后补全列；未提供则仅 schema 已有列） */
   resolveColumns?: (table: string) => Promise<string[]>
-  onRun?: () => void
   /** 语句行前 ▶ 点击：执行该条语句 */
   onRunStatement?: (sql: string) => void
-  onSave?: () => void
-  onCancel?: () => void
 }>()
 
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
@@ -73,6 +77,21 @@ const lightTheme = EditorView.theme({
   },
   '.cm-activeLine': { backgroundColor: 'var(--color-border)' },
   '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--color-tertiary-strong)' },
+  '.cm-lineNumbers .cm-gutterElement': { padding: '0 6px 0 2px', minWidth: '26px' },
+  '.cm-foldGutter': { minWidth: '14px' },
+  '.cm-foldGutter .cm-gutterElement': {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+  },
+  '.cm-fold-marker': {
+    display: 'inline-flex',
+    color: 'var(--color-text-muted)',
+    opacity: '0.55',
+    transition: 'opacity 0.12s',
+  },
+  '.cm-fold-marker:hover': { opacity: '1', color: 'var(--color-secondary)' },
   '.cm-selectionBackground': { backgroundColor: 'var(--color-tertiary-soft)' },
   '&.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--color-tertiary-soft)' },
   '.cm-cursor': { borderLeftColor: 'var(--color-tertiary-strong)' },
@@ -144,6 +163,21 @@ const darkTheme = EditorView.theme(
     },
     '.cm-activeLine': { backgroundColor: 'var(--color-border-dark)' },
     '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--color-tertiary-dark)' },
+    '.cm-lineNumbers .cm-gutterElement': { padding: '0 6px 0 2px', minWidth: '26px' },
+    '.cm-foldGutter': { minWidth: '14px' },
+    '.cm-foldGutter .cm-gutterElement': {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      cursor: 'pointer',
+    },
+    '.cm-fold-marker': {
+      display: 'inline-flex',
+      color: 'var(--color-text-muted-dark)',
+      opacity: '0.55',
+      transition: 'opacity 0.12s',
+    },
+    '.cm-fold-marker:hover': { opacity: '1', color: 'var(--color-secondary-dark)' },
     '.cm-selectionBackground': { backgroundColor: 'var(--color-tertiary-soft-dark)' },
     '&.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--color-tertiary-soft-dark)' },
     '.cm-cursor': { borderLeftColor: 'var(--color-tertiary-dark)' },
@@ -218,11 +252,6 @@ function createState(): EditorState {
     extensions: [
       langCompartment.of(langExtension()),
       ...sqlEditorBasics(),
-      keymap.of([
-        { key: 'Mod-Enter', run: () => (props.onRun?.(), true) },
-        { key: 'Mod-s', run: () => (props.onSave?.(), true) },
-        { key: 'Escape', run: () => (props.onCancel?.(), true) },
-      ]),
       themeCompartment.of(isDark() ? darkTheme : lightTheme),
       EditorView.lineWrapping,
       cmPlaceholder(props.placeholder ?? ''),

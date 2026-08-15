@@ -6,8 +6,21 @@
 import type { Extension } from '@codemirror/state'
 import { Range, RangeSet } from '@codemirror/state'
 import { GutterMarker, gutter, keymap } from '@codemirror/view'
-import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from '@codemirror/commands'
-import { HighlightStyle, bracketMatching, foldGutter, foldKeymap, syntaxHighlighting } from '@codemirror/language'
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentWithTab,
+  toggleComment,
+} from '@codemirror/commands'
+import {
+  HighlightStyle,
+  bracketMatching,
+  foldGutter,
+  foldKeymap,
+  syntaxHighlighting,
+} from '@codemirror/language'
+import { lineNumbers } from '@codemirror/view'
 import { tags } from '@lezer/highlight'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import {
@@ -25,10 +38,18 @@ import {
   type SQLDialect,
   type SQLNamespace,
 } from '@codemirror/lang-sql'
-import { splitSqlStatements, statementExecutableSql, statementRangeAtCursor } from './sqlStatementRanges'
+import {
+  splitSqlStatements,
+  statementExecutableSql,
+  statementStartOffset,
+} from './sqlStatementRanges'
 /** 常用 SQL 模板（snippet 占位符 Tab 跳转） */
 const SQL_SNIPPETS = [
-  snippetCompletion('SELECT * FROM ${table}', { label: 'SELECT * FROM', type: 'keyword', detail: '模板' }),
+  snippetCompletion('SELECT * FROM ${table}', {
+    label: 'SELECT * FROM',
+    type: 'keyword',
+    detail: '模板',
+  }),
   snippetCompletion('SELECT ${columns} FROM ${table} WHERE ${condition}', {
     label: 'SELECT … FROM … WHERE',
     type: 'keyword',
@@ -44,38 +65,79 @@ const SQL_SNIPPETS = [
     type: 'keyword',
     detail: '模板',
   }),
-  snippetCompletion('DELETE FROM ${table} WHERE ${condition}', { label: 'DELETE FROM', type: 'keyword', detail: '模板' }),
-  snippetCompletion('CREATE TABLE ${table} (\n  ${id} ${type} PRIMARY KEY,\n  ${column} ${type2}\n)', {
-    label: 'CREATE TABLE',
+  snippetCompletion('DELETE FROM ${table} WHERE ${condition}', {
+    label: 'DELETE FROM',
     type: 'keyword',
     detail: '模板',
   }),
+  snippetCompletion(
+    'CREATE TABLE ${table} (\n  ${id} ${type} PRIMARY KEY,\n  ${column} ${type2}\n)',
+    {
+      label: 'CREATE TABLE',
+      type: 'keyword',
+      detail: '模板',
+    }
+  ),
 ]
 
 /** SQL 语法高亮（CSS 变量 → 深浅色自动跟随；对齐 dbx 配色语义） */
 const sqlHighlightStyle = HighlightStyle.define([
-  { tag: [tags.keyword, tags.controlKeyword, tags.definitionKeyword, tags.operatorKeyword, tags.modifier, tags.bool, tags.null], color: 'var(--color-tertiary-strong)' },
+  {
+    tag: [
+      tags.keyword,
+      tags.controlKeyword,
+      tags.definitionKeyword,
+      tags.operatorKeyword,
+      tags.modifier,
+      tags.bool,
+      tags.null,
+    ],
+    color: 'var(--color-tertiary-strong)',
+  },
   { tag: [tags.string, tags.special(tags.string)], color: 'var(--color-success-strong)' },
   { tag: [tags.number, tags.integer, tags.float], color: 'var(--color-info-strong)' },
-  { tag: [tags.comment, tags.lineComment, tags.blockComment], color: 'var(--color-text-muted)', fontStyle: 'italic' },
+  {
+    tag: [tags.comment, tags.lineComment, tags.blockComment],
+    color: 'var(--color-text-muted)',
+    fontStyle: 'italic',
+  },
   { tag: tags.typeName, color: 'var(--color-tertiary-strong)' },
   { tag: tags.variableName, color: 'var(--color-primary)' },
   { tag: tags.function(tags.variableName), color: 'var(--color-info-strong)' },
-  { tag: [tags.operator, tags.compareOperator, tags.logicOperator, tags.arithmeticOperator], color: 'var(--color-secondary)' },
-  { tag: [tags.punctuation, tags.paren, tags.brace, tags.bracket], color: 'var(--color-secondary)' },
+  {
+    tag: [tags.operator, tags.compareOperator, tags.logicOperator, tags.arithmeticOperator],
+    color: 'var(--color-secondary)',
+  },
+  {
+    tag: [tags.punctuation, tags.paren, tags.brace, tags.bracket],
+    color: 'var(--color-secondary)',
+  },
   { tag: tags.invalid, color: 'var(--color-danger-strong)', textDecoration: 'underline' },
 ])
+
+/** 折叠 gutter 标记：chevron 图标（展开=向下，收起=向右），替代默认文本符号 */
+function foldMarkerDom(open: boolean): HTMLElement {
+  const el = document.createElement('span')
+  el.className = `cm-fold-marker${open ? ' cm-fold-open' : ''}`
+  el.title = open ? '折叠' : '展开'
+  el.innerHTML = open
+    ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>'
+    : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>'
+  return el
+}
 
 /** 基础编辑扩展（对齐 dbx 编辑器基础能力） */
 export function sqlEditorBasics(): Extension[] {
   return [
     // SQL 语法高亮（深浅色随主题）
     syntaxHighlighting(sqlHighlightStyle),
+    // 行号
+    lineNumbers(),
     // 撤销/重做历史
     history(),
-    // 括号匹配 + 折叠
+    // 括号匹配 + 折叠（chevron 标记，样式走主题）
     bracketMatching(),
-    foldGutter(),
+    foldGutter({ markerDOM: foldMarkerDom }),
     // 查找替换（Mod-f）+ 选中词高亮
     search({ top: true }),
     highlightSelectionMatches(),
@@ -159,7 +221,8 @@ export function statementRunGutterExtension(onRun?: (sql: string) => void): Exte
       const entries: Range<GutterMarker>[] = []
       for (const range of ranges) {
         if (!range.sql.trim()) continue
-        const line = view.state.doc.lineAt(range.from)
+        // 定位到语句首个非空白字符所在行（否则上一条语句分号后的换行会把按钮错位到上一行）
+        const line = view.state.doc.lineAt(statementStartOffset(range))
         entries.push(new RunStatementMarker().range(line.from))
       }
       return RangeSet.of(entries, true)
@@ -168,8 +231,11 @@ export function statementRunGutterExtension(onRun?: (sql: string) => void): Exte
       mousedown: (view, line, event) => {
         if (!(event instanceof MouseEvent) || event.button !== 0) return false
         const doc = view.state.doc.toString()
-        const range = statementRangeAtCursor(doc, line.from)
-        if (!range || !range.sql.trim()) return false
+        // 找到起始行与点击行一致的语句（与 markers 的定位逻辑保持一致）
+        const range = splitSqlStatements(doc).find(
+          (r) => r.sql.trim() && view.state.doc.lineAt(statementStartOffset(r)).from === line.from
+        )
+        if (!range) return false
         event.preventDefault()
         onRun?.(statementExecutableSql(range))
         view.focus()

@@ -14,8 +14,16 @@ import {
   usesConnectionRootSchema,
   usesSchemaTree,
 } from './useDatabaseMeta'
-import type { ConnConfig, DbColumnInfo, DbConnectionInfo, DbObjectInfo, HistoryEntry, SavedEntry } from './contracts'
+import type {
+  ConnConfig,
+  DbColumnInfo,
+  DbConnectionInfo,
+  DbObjectInfo,
+  HistoryEntry,
+  SavedEntry,
+} from './contracts'
 import { connectionIpc, historyIpc, queryIpc, savedIpc } from './ipc'
+import { formatSql } from './sqlFormat'
 
 /**
  * 树过滤纯函数：关键字命中保留祖先链；无关键字时按展开状态裁剪子树
@@ -71,9 +79,7 @@ export interface QueryState {
   total: number
   /** 是否截断 */
   truncated: boolean
-  /** 执行计划行 */
-  plan: string[]
-  /** 已保存的收藏 id（Ctrl+S 二次保存直接 update，无需再确认） */
+  /** 已保存的收藏 id（二次保存直接 update，无需再确认） */
   savedId?: number
   /** 保存用的标题（首次保存确认后写入；重命名别名优先） */
   savedTitle?: string
@@ -84,8 +90,14 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, message: string)
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), ms)
     promise.then(
-      (v) => { clearTimeout(timer); resolve(v) },
-      (e) => { clearTimeout(timer); reject(e) }
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        clearTimeout(timer)
+        reject(e)
+      }
     )
   })
 }
@@ -116,7 +128,6 @@ function makeQueryState(sql = ''): QueryState {
     rows: [],
     total: 0,
     truncated: false,
-    plan: [],
   }
 }
 
@@ -274,7 +285,11 @@ export function useDatabase() {
     connectError.value[conn.id] = ''
     cancelledConnect.value[conn.id] = false
     try {
-      const info = await withTimeout(connectionIpc.connect(conn.id), 30000, '连接超时（30 秒）：请检查网络与服务器配置')
+      const info = await withTimeout(
+        connectionIpc.connect(conn.id),
+        30000,
+        '连接超时（30 秒）：请检查网络与服务器配置'
+      )
       // 连接过程中被取消：立即断开，避免留下幽灵会话
       if (cancelledConnect.value[conn.id]) {
         cancelledConnect.value[conn.id] = false
@@ -441,7 +456,13 @@ export function useDatabase() {
     expandedIds.value = next
   }
 
-  function branch(id: string, label: string, depth: number, kind: string, badge?: string | number): UiTreeItem {
+  function branch(
+    id: string,
+    label: string,
+    depth: number,
+    kind: string,
+    badge?: string | number
+  ): UiTreeItem {
     return { id, label, depth, kind, badge, expandable: true, expanded: isExpanded(id) }
   }
 
@@ -466,7 +487,9 @@ export function useDatabase() {
     for (const group of groups) {
       const members = objects.filter((o) => group.kinds.includes(o.kind))
       const groupId = `${schemaKey}::${group.key}`
-      items.push(branch(groupId, group.label, depth, `group-${group.key}`, members.length || undefined))
+      items.push(
+        branch(groupId, group.label, depth, `group-${group.key}`, members.length || undefined)
+      )
       for (const obj of members) {
         const itemId = `${schemaKey}::${obj.kind}:${obj.name}`
         items.push(leaf(itemId, obj.name, depth + 1, obj.kind))
@@ -484,7 +507,7 @@ export function useDatabase() {
         conn.status === 'online'
           ? conn.readonly
             ? '只读'
-            : DB_TYPE_META[conn.dbType as V2DbType]?.label ?? conn.dbType
+            : (DB_TYPE_META[conn.dbType as V2DbType]?.label ?? conn.dbType)
           : undefined
       items.push({
         id: prefix,
@@ -582,7 +605,7 @@ export function useDatabase() {
     if (item.kind === 'database' && item.expandable && !item.expanded) {
       const connId = item.id.split('::')[0]
       const dbMatch = item.id.match(/::db:(.+)$/)
-      const schema = dbMatch ? dbMatch[1] : item.id.split('::')[1] ?? 'main'
+      const schema = dbMatch ? dbMatch[1] : (item.id.split('::')[1] ?? 'main')
       void ensureObjects(connId, schema)
     }
     // 展开 redis 数据库节点 → 加载键
@@ -617,7 +640,13 @@ export function useDatabase() {
   // 页签
   // ──────────────────────────────────────────────────────────────────────
 
-  function openOrFocusTab(id: string, label: string, kind: V2TabKind, connectionId: string, table?: string) {
+  function openOrFocusTab(
+    id: string,
+    label: string,
+    kind: V2TabKind,
+    connectionId: string,
+    table?: string
+  ) {
     if (!tabs.value.some((t) => t.id === id)) {
       tabs.value.push({ id, label, kind })
     }
@@ -666,7 +695,7 @@ export function useDatabase() {
    */
   async function saveQueryToDisk(title?: string) {
     const tabId = activeTabId.value
-    const state = queryStates.value[tabId] ??= makeQueryState()
+    const state = (queryStates.value[tabId] ??= makeQueryState())
     const sql = state.sql.trim()
     if (!sql) {
       showError('没有可保存的 SQL 内容')
@@ -714,7 +743,7 @@ export function useDatabase() {
    */
   async function runQuery(sqlOverride?: string) {
     const tabId = activeTabId.value
-    const state = queryStates.value[tabId] ??= makeQueryState()
+    const state = (queryStates.value[tabId] ??= makeQueryState())
     if (state.status === 'running') return
     const conn = activeTabConnection.value
     if (!conn || conn.status !== 'online') {
@@ -735,7 +764,7 @@ export function useDatabase() {
       return
     }
     const startedAt = Date.now()
-    patchQueryState({ status: 'running', error: '', page: 1, columns: [], rows: [], total: 0, plan: [] })
+    patchQueryState({ status: 'running', error: '', page: 1, columns: [], rows: [], total: 0 })
     try {
       const result = await queryIpc.execute(conn.id, sql, 1000)
       const durationMs = Date.now() - startedAt
@@ -784,30 +813,9 @@ export function useDatabase() {
     }
   }
 
-  async function runExplain() {
-    const conn = activeTabConnection.value
-    const sql = queryState.value.sql.trim()
-    if (!conn || !sql) return
-    try {
-      const plan = await queryIpc.explain(conn.id, sql)
-      patchQueryState({ plan, resultTab: 'plan', status: 'success' })
-    } catch (err) {
-      patchQueryState({ status: 'error', error: String(err), resultTab: 'message' })
-    }
-  }
-
   function onFormatSql() {
     const sql = queryState.value.sql
-    patchQueryState({
-      sql: sql
-        .replace(/\s+/g, ' ')
-        .replace(
-          / (FROM|WHERE|ORDER BY|GROUP BY|LIMIT|JOIN|LEFT JOIN|RIGHT JOIN|INNER JOIN) /g,
-          '\n$1 '
-        )
-        .trim(),
-      dirty: true,
-    })
+    patchQueryState({ sql: formatSql(sql), dirty: true })
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -817,7 +825,7 @@ export function useDatabase() {
   /** 数据页签：从树节点上下文推断 schema/表名，后端分页 */
   async function loadTableData(tabId: string) {
     const ctx = tabContexts.value[tabId]
-    const state = queryStates.value[tabId] ??= makeQueryState()
+    const state = (queryStates.value[tabId] ??= makeQueryState())
     if (!ctx) return
     const table = ctx.table ?? tabTableName(tabId)
     if (!table) return
@@ -830,7 +838,10 @@ export function useDatabase() {
         table,
         state.page,
         PAGE_SIZE,
-        conn.dbType === 'postgresql' || conn.dbType === 'kingbase' || conn.dbType === 'vastbase' || conn.dbType === 'polardb'
+        conn.dbType === 'postgresql' ||
+          conn.dbType === 'kingbase' ||
+          conn.dbType === 'vastbase' ||
+          conn.dbType === 'polardb'
           ? ctx.schema || 'public'
           : ctx.database || conn.database
       )
@@ -865,7 +876,11 @@ export function useDatabase() {
     const table = ctx.table ?? tabTableName(tabId)
     if (!table) return
     try {
-      structureColumns.value[tabId] = await queryIpc.columns(ctx.connectionId, table, ctx.schema || undefined)
+      structureColumns.value[tabId] = await queryIpc.columns(
+        ctx.connectionId,
+        table,
+        ctx.schema || undefined
+      )
     } catch (err) {
       showError(err)
     }
@@ -875,7 +890,7 @@ export function useDatabase() {
   async function loadRedisKeyInfo(tabId: string, key: string) {
     const ctx = tabContexts.value[tabId]
     if (!ctx) return
-    const state = queryStates.value[tabId] ??= makeQueryState()
+    const state = (queryStates.value[tabId] ??= makeQueryState())
     try {
       const info = await queryIpc.redisKeyInfo(ctx.connectionId, key)
       state.columns = ['键', '类型', 'TTL', '值']
@@ -931,7 +946,7 @@ export function useDatabase() {
     }
     if (activeTabKind.value !== 'query' || queryState.value.sql.trim()) openSqlEditor()
     const tabId = activeTabId.value
-    const state = queryStates.value[tabId] ??= makeQueryState()
+    const state = (queryStates.value[tabId] ??= makeQueryState())
     Object.assign(state, {
       sql: entry.sql,
       dirty: false,
@@ -995,7 +1010,6 @@ export function useDatabase() {
         badge: state.status === 'success' ? state.total : undefined,
       },
       { value: 'message', label: '消息' },
-      { value: 'plan', label: '计划' },
     ]
   })
 
@@ -1054,7 +1068,6 @@ export function useDatabase() {
     patchQueryState,
     runQuery,
     cancelQuery,
-    runExplain,
     onFormatSql,
     // 树
     treeItems,

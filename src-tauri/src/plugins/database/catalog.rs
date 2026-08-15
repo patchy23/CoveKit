@@ -1,4 +1,4 @@
-//! 元数据与查询执行命令（catalog / execute / cancel / explain / redis 键浏览）
+//! 元数据与查询执行命令（catalog / execute / cancel / redis 键浏览）
 //! 每个命令先取会话再分派驱动；单元格值统一字符串化（NULL → "NULL"，
 //! 二进制 → <blob N bytes>）；查询取消按驱动能力实现（pg CancelToken /
 //! mysql KILL QUERY / agent cancel_session / 其余仅标志位）。
@@ -578,33 +578,6 @@ pub async fn dbc_table_data(
         duration_ms: started.elapsed().as_millis() as u64,
         error: None,
     })
-}
-
-/// 执行计划（方言前缀包装；oracle agent 不支持）
-#[tauri::command(rename_all = "camelCase")]
-pub async fn dbc_explain(
-    state: State<'_, DbState>,
-    conn_id: String,
-    sql: String,
-) -> Result<Vec<String>, String> {
-    let entry = session(&state, &conn_id)?;
-    let dialect = dialect_for(entry.config.db_type);
-    let Some(dialect) = dialect else {
-        return Err("该数据库类型暂不支持执行计划".to_string());
-    };
-    let explain_sql = dialect.explain_sql(&sql);
-    let result = match &entry.session {
-        DbSession::Mysql(pool) => drivers::mysql::execute_mysql(pool, &explain_sql, 200).await?,
-        DbSession::Postgres(pool) => {
-            drivers::postgres::execute_postgres(pool, &explain_sql, 200).await?
-        }
-        DbSession::Sqlite(conn) => drivers::sqlite::execute_sqlite(conn, &explain_sql, 200)?,
-        _ => return Err("该数据库类型暂不支持执行计划".to_string()),
-    };
-    if !result.ok {
-        return Err(result.error.unwrap_or_else(|| "执行计划失败".to_string()));
-    }
-    Ok(result.rows.iter().map(|row| row.join(" | ")).collect())
 }
 
 /// 导出 CSV 文件（结果集导出；路径由前端对话框选定）

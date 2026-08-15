@@ -71,6 +71,12 @@ export function splitSqlStatements(text: string): SqlTextRange[] {
   return ranges
 }
 
+/** 语句起始非空白字符的文档偏移（gutter 标记定位：range.from 可能落在上一条语句的行尾换行处） */
+export function statementStartOffset(range: SqlTextRange): number {
+  const leading = range.sql.length - range.sql.trimStart().length
+  return range.from + leading
+}
+
 /** 光标所在语句范围（光标在语句内空白/结尾处也算；无语句返回 null） */
 export function statementRangeAtCursor(text: string, cursorPos: number): SqlTextRange | null {
   const ranges = splitSqlStatements(text)

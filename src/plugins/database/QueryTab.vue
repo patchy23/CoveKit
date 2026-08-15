@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * SQL 编辑器页签：编辑器（工具栏 + 错误条 + CodeMirror 编辑器）与结果区（数据/消息/计划）
- * 执行语义：有选中文本执行选中段；无选中执行光标所在完整语句（分号分隔）；Ctrl+Shift+Enter 全部执行。
- * 保存语义：Ctrl+S 持久化（首次弹窗确认别名，已保存直接更新）；页签显示未保存/已保存状态。
+ * SQL 编辑器页签：编辑器（工具栏 + CodeMirror 编辑器）与结果区（数据/消息）
+ * 执行语义：有选中文本执行选中段；无选中执行光标所在完整语句（分号分隔）；「全部执行」按钮执行全文。
+ * 保存语义：已保存直接更新；未保存弹窗确认别名；页签显示未保存/已保存状态。
  */
 import { computed, onMounted, ref } from 'vue'
 import {
@@ -175,9 +175,7 @@ async function exportCsv() {
       class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
     >
       <UiIconButton
-        :label="
-          queryState.status === 'running' ? '运行中…' : '运行选中 / 光标所在语句（Ctrl+Enter）'
-        "
+        :label="queryState.status === 'running' ? '运行中…' : '运行选中 / 光标所在语句'"
         size="sm"
         :disabled="!canExecute"
         class="text-success-strong dark:text-success-dark"
@@ -193,7 +191,7 @@ async function exportCsv() {
         <UiIcon v-else name="play" :size="16" class="shrink-0" />
       </UiIconButton>
       <UiIconButton
-        label="停止（Esc）"
+        label="停止"
         size="sm"
         :disabled="queryState.status !== 'running'"
         class="text-danger-strong dark:text-danger-dark"
@@ -216,32 +214,18 @@ async function exportCsv() {
         </svg>
       </UiIconButton>
       <UiIconButton
-        label="全部执行（Ctrl+Shift+Enter）"
+        label="全部执行"
         size="sm"
         class="text-success-strong dark:text-success-dark"
         @click="runAll"
       >
         <UiIcon name="play-all" :size="16" class="shrink-0" />
       </UiIconButton>
-      <UiIconButton label="执行计划" size="sm" @click="db.runExplain">
-        <!-- 定稿图形：准星线（lucide Crosshair 多一圈外圆，保持自定义） -->
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          style="width: 16px; height: 16px; flex: none"
-        >
-          <path d="M12 2v6m0 8v6M2 12h6m8 0h6" />
-        </svg>
-      </UiIconButton>
       <UiIconButton label="格式化" size="sm" @click="db.onFormatSql">
         <UiIcon name="format" :size="16" class="shrink-0" />
       </UiIconButton>
       <UiIconButton
-        :label="queryState.savedId ? '保存（Ctrl+S）' : '保存（Ctrl+S，首次需确认）'"
+        :label="queryState.savedId ? '保存' : '保存（首次需确认别名）'"
         size="sm"
         class="text-success-strong dark:text-success-dark"
         @click="onSave"
@@ -277,23 +261,7 @@ async function exportCsv() {
         title="Schema"
         @update:model-value="(v) => (activeTabContext.schema = String(v))"
       />
-
-      <span
-        class="ml-auto shrink-0 font-mono text-caption text-text-muted dark:text-text-muted-dark"
-        :title="'有选中文本时执行选中段，否则执行光标所在完整语句；Ctrl+Shift+Enter 全部执行'"
-      >
-        Ctrl+Enter · Ctrl+Shift+Enter 全部
-      </span>
     </div>
-
-    <UiAlert
-      v-if="queryState.error && queryState.resultTab === 'message'"
-      class="mx-[8px] mt-[6px]"
-      tone="danger"
-      title="查询失败"
-      size="sm"
-      >{{ queryState.error }}</UiAlert
-    >
 
     <SqlEditor
       ref="editorRef"
@@ -303,10 +271,7 @@ async function exportCsv() {
       :resolve-columns="db.resolveEditorColumns"
       :on-run-statement="(sql) => db.runQuery(sql)"
       class="min-h-0 flex-1"
-      placeholder="-- 有选中执行选中段，否则执行光标所在行；Ctrl+S 保存"
-      :on-run="runCurrent"
-      :on-save="onSave"
-      :on-cancel="() => queryState.status === 'running' && db.cancelQuery()"
+      placeholder="-- 有选中执行选中段，否则执行光标所在语句"
       @update:model-value="(v) => patchQueryState({ sql: v, dirty: true })"
     />
   </div>
@@ -383,12 +348,6 @@ async function exportCsv() {
       }}
     </UiAlert>
 
-    <div v-else-if="queryState.resultTab === 'plan'" class="min-h-0 flex-1 overflow-auto p-[8px]">
-      <pre class="font-mono text-caption leading-relaxed text-secondary dark:text-secondary-dark">{{
-        queryState.plan.join('\n') || '（无执行计划输出）'
-      }}</pre>
-    </div>
-
     <UiEmptyState
       v-else-if="queryState.status === 'empty' || gridRows.length === 0"
       :title="queryState.filter ? '无匹配结果' : '暂无结果'"
@@ -444,7 +403,7 @@ async function exportCsv() {
   >
     <div class="space-y-[8px]">
       <p class="text-body-sm text-secondary dark:text-secondary-dark">
-        首次保存需要确认名称，之后 Ctrl+S 将直接更新该编辑器。
+        首次保存需要确认名称，之后保存将直接更新该编辑器。
       </p>
       <UiInput
         v-model="saveTitle"
