@@ -79,6 +79,17 @@ export interface QueryState {
   savedTitle?: string
 }
 
+/** 给 Promise 加超时兜底（后端挂起时前端也能报错收尾） */
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms)
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v) },
+      (e) => { clearTimeout(timer); reject(e) }
+    )
+  })
+}
+
 /** 提取待执行 SQL：有选区取选区文本；无选区取光标所在整行（不含行尾换行） */
 export function extractExecSql(text: string, start: number, end: number): string {
   if (start !== end) return text.slice(start, end)
@@ -243,7 +254,7 @@ export function useDatabase() {
     connectError.value[conn.id] = ''
     cancelledConnect.value[conn.id] = false
     try {
-      const info = await connectionIpc.connect(conn.id)
+      const info = await withTimeout(connectionIpc.connect(conn.id), 30000, '连接超时（30 秒）：请检查网络与服务器配置')
       // 连接过程中被取消：立即断开，避免留下幽灵会话
       if (cancelledConnect.value[conn.id]) {
         cancelledConnect.value[conn.id] = false
@@ -261,7 +272,7 @@ export function useDatabase() {
       const expanded = new Set(expandedIds.value)
       expanded.add(info.id)
       expandedIds.value = expanded
-      await ensureMeta(info.id)
+      void ensureMeta(info.id)
     } catch (err) {
       const wasCancelled = cancelledConnect.value[conn.id]
       cancelledConnect.value[conn.id] = false

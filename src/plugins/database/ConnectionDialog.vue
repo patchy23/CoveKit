@@ -116,7 +116,12 @@ async function onTest() {
   testResult.value = null
   try {
     const { connectionIpc } = await import('./ipc')
-    const version = await connectionIpc.test(buildConfig(), form.password)
+    const { withTimeout } = await import('./useDatabase')
+    const version = await withTimeout(
+      connectionIpc.test(buildConfig(), form.password),
+      30000,
+      '测试连接超时（30 秒）：请检查网络与服务器配置'
+    )
     testResult.value = { ok: true, message: `连接成功 · ${version}` }
   } catch (err) {
     testResult.value = { ok: false, message: String(err) }

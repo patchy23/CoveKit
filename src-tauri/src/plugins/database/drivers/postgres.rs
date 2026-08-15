@@ -34,11 +34,19 @@ pub(crate) async fn pg_pool(
             .max_size(4)
             .build()
             .map_err(|e| format!("PG 连接池构建失败: {e}"))?;
-        // 借出一个连接校验连通性（校验后自动归还池）
-        let _check = pool
-            .get()
-            .await
-            .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
+        // 借出一个连接校验连通性（校验后自动归还池；带超时防挂起）
+        let _check = tokio::time::timeout(
+            Duration::from_millis(config.connect_timeout_ms.max(1000)),
+            pool.get(),
+        )
+        .await
+        .map_err(|_| {
+            format!(
+                "PostgreSQL 连接超时（{} ms）",
+                config.connect_timeout_ms.max(1000)
+            )
+        })?
+        .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
         return Ok(pool);
     }
 
@@ -47,11 +55,19 @@ pub(crate) async fn pg_pool(
         .max_size(4)
         .build()
         .map_err(|e| format!("PG 连接池构建失败: {e}"))?;
-    // 借出一个连接校验连通性（校验后自动归还池）
-    let _check = pool
-        .get()
-        .await
-        .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
+    // 借出一个连接校验连通性（校验后自动归还池；带超时防挂起）
+    let _check = tokio::time::timeout(
+        Duration::from_millis(config.connect_timeout_ms.max(1000)),
+        pool.get(),
+    )
+    .await
+    .map_err(|_| {
+        format!(
+            "PostgreSQL 连接超时（{} ms）",
+            config.connect_timeout_ms.max(1000)
+        )
+    })?
+    .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
     Ok(pool)
 }
 

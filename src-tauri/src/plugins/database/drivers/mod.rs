@@ -609,9 +609,14 @@ async fn redis_mgr(
     };
     let client =
         ::redis::Client::open(url.as_str()).map_err(|e| format!("Redis 地址解析失败: {e}"))?;
-    let mgr = ::redis::aio::ConnectionManager::new(client)
-        .await
-        .map_err(|e| format!("Redis 连接失败: {e}"))?;
+    // 连接管理器建立带超时（防挂起）
+    let mgr = tokio::time::timeout(
+        std::time::Duration::from_millis(config.connect_timeout_ms.max(1000)),
+        ::redis::aio::ConnectionManager::new(client),
+    )
+    .await
+    .map_err(|_| format!("Redis 连接超时（{} ms）", config.connect_timeout_ms.max(1000)))?
+    .map_err(|e| format!("Redis 连接失败: {e}"))?;
     // 预检 PING
     let pong: String = ::redis::cmd("PING")
         .query_async::<String>(&mut mgr.clone())
