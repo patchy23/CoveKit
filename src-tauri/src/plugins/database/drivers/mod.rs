@@ -615,7 +615,12 @@ async fn redis_mgr(
         ::redis::aio::ConnectionManager::new(client),
     )
     .await
-    .map_err(|_| format!("Redis 连接超时（{} ms）", config.connect_timeout_ms.max(30000)))?
+    .map_err(|_| {
+        format!(
+            "Redis 连接超时（{} ms）",
+            config.connect_timeout_ms.max(30000)
+        )
+    })?
     .map_err(|e| format!("Redis 连接失败: {e}"))?;
     // 预检 PING
     let pong: String = ::redis::cmd("PING")
