@@ -110,6 +110,10 @@ impl DbSessionEntry {
             database: self.config.database.clone(),
             error: None,
             connected_at: self.connected_at,
+            port: self.config.port,
+            username: self.config.username.clone(),
+            ssl: self.config.ssl,
+            connect_timeout_ms: self.config.connect_timeout_ms,
         }
     }
 
@@ -329,6 +333,10 @@ pub async fn snapshot(state: &State<'_, DbState>, configs: &[ConnConfig]) -> Vec
                 database: config.database.clone(),
                 error: None,
                 connected_at: 0,
+                port: config.port,
+                username: config.username.clone(),
+                ssl: config.ssl,
+                connect_timeout_ms: config.connect_timeout_ms,
             },
         };
         out.push(info);

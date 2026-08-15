@@ -25,6 +25,7 @@ use crate::plugins::database::store::StoreState;
 
 /// 连接管理命令 ───────────────────────────────────────────────────────────
 /// 保存连接配置（含密码 → stronghold；已连接则更新会话配置）
+/// 密码留空且连接已存在时保留原密码（编辑模式不修改密码）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_connection_save(
     app: tauri::AppHandle,
@@ -33,8 +34,13 @@ pub async fn dbc_connection_save(
     config: ConnConfig,
     password: String,
 ) -> Result<(), String> {
+    let existed = store::list_connections(&app, &store_state)?
+        .iter()
+        .any(|c| c.id == config.id);
     store::save_connection(&app, &store_state, &config)?;
-    secrets::secret_save(&app, &secrets_state, &config.id, &password)?;
+    if !password.is_empty() || !existed {
+        secrets::secret_save(&app, &secrets_state, &config.id, &password)?;
+    }
     Ok(())
 }
 
@@ -145,15 +151,27 @@ pub async fn dbc_saved(
     store::list_saved(&app, &store_state)
 }
 
-/// 添加收藏
+/// 添加收藏（返回新记录 id）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_saved_add(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
     title: String,
     sql: String,
-) -> Result<(), String> {
+) -> Result<i64, String> {
     store::add_saved(&app, &store_state, &title, &sql)
+}
+
+/// 更新收藏（SQL 编辑器二次保存）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn dbc_saved_update(
+    app: tauri::AppHandle,
+    store_state: State<'_, StoreState>,
+    id: i64,
+    title: String,
+    sql: String,
+) -> Result<(), String> {
+    store::update_saved(&app, &store_state, id, &title, &sql)
 }
 
 /// 删除收藏
@@ -205,6 +223,7 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         dbc_history_clear,
         dbc_saved,
         dbc_saved_add,
+        dbc_saved_update,
         dbc_saved_delete,
         dbc_driver_status,
         catalog::dbc_execute,
@@ -239,6 +258,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("dbc_history_clear", "清空查询历史"),
         ("dbc_saved", "收藏 SQL 列表"),
         ("dbc_saved_add", "添加收藏 SQL"),
+        ("dbc_saved_update", "更新收藏 SQL（编辑器二次保存）"),
         ("dbc_saved_delete", "删除收藏 SQL"),
         ("dbc_driver_status", "agent 驱动就绪状态（含目录指引）"),
         ("dbc_execute", "执行 SQL（多语句拆分，查询返回表格）"),

@@ -221,19 +221,41 @@ pub fn list_saved(app: &tauri::AppHandle, state: &StoreState) -> Result<Vec<Save
     })
 }
 
-/// 添加收藏
+/// 添加收藏；返回新记录 id（SQL 编辑器首次保存后用于二次保存定位）
 pub fn add_saved(
     app: &tauri::AppHandle,
     state: &StoreState,
     title: &str,
     sql: &str,
-) -> Result<(), String> {
+) -> Result<i64, String> {
     db(app, state)?.with_conn(|conn| {
         conn.execute(
             "INSERT INTO saved_sql (title, sql, at) VALUES (?1, ?2, ?3)",
             rusqlite::params![title, sql, now_text()],
         )
         .map_err(|e| e.to_string())?;
+        Ok(conn.last_insert_rowid())
+    })
+}
+
+/// 更新收藏（SQL 编辑器二次保存：仅更新内容与时间，别名以用户重命名为准）
+pub fn update_saved(
+    app: &tauri::AppHandle,
+    state: &StoreState,
+    id: i64,
+    title: &str,
+    sql: &str,
+) -> Result<(), String> {
+    db(app, state)?.with_conn(|conn| {
+        let affected = conn
+            .execute(
+                "UPDATE saved_sql SET title = ?1, sql = ?2, at = ?3 WHERE id = ?4",
+                rusqlite::params![title, sql, now_text(), id],
+            )
+            .map_err(|e| e.to_string())?;
+        if affected == 0 {
+            return Err(format!("收藏不存在或已被删除（id={id}）"));
+        }
         Ok(())
     })
 }

@@ -174,6 +174,14 @@ pub struct DbConnectionInfo {
     pub error: Option<String>,
     /// 建立连接时间（epoch 秒；未连接为 0）
     pub connected_at: u64,
+    /// 端口（sqlite 为 0；编辑对话框回填用）
+    pub port: u16,
+    /// 用户名（编辑对话框回填用）
+    pub username: String,
+    /// 是否启用 TLS（编辑对话框回填用）
+    pub ssl: bool,
+    /// 连接超时（毫秒；编辑对话框回填用）
+    pub connect_timeout_ms: u64,
 }
 
 /// 对象树叶子信息（表/视图/函数/序列等；分组由前端按类型固定生成）
