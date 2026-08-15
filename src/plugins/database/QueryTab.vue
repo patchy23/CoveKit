@@ -92,7 +92,7 @@ function runCurrent() {
   void db.runQuery(currentExecSql())
 }
 
-/** 全部执行：执行整个编辑器内容（Ctrl+Shift+Enter） */
+/** 全部执行：执行整个编辑器内容 */
 function runAll() {
   if (!canExecute.value) return
   const ed = editorRef.value

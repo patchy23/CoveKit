@@ -158,7 +158,7 @@ onMounted(() => {
         <UiButton
           size="xs"
           variant="ghost"
-          title="新建 SQL 编辑器（Ctrl+S 保存）"
+          title="新建 SQL 编辑器"
           class="shrink-0"
           @click="db.openSqlEditor()"
         >
