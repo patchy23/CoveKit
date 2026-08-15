@@ -147,17 +147,24 @@ onMounted(() => {
 
     <!-- 中栏：页签工作区 -->
     <main class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <!-- 独立工具栏：不随页签存在与否显示/隐藏 -->
       <div
-        v-if="db.tabs.value.length"
         class="flex h-[32px] shrink-0 items-center gap-[2px] border-b border-border px-[6px] dark:border-border-dark"
       >
-        <UiButton size="xs" variant="ghost" title="新建 SQL 编辑器（Ctrl+S 保存）" @click="db.openSqlEditor()">
+        <UiButton
+          size="xs"
+          variant="ghost"
+          title="新建 SQL 编辑器（Ctrl+S 保存）"
+          class="shrink-0"
+          @click="db.openSqlEditor()"
+        >
           打开SQL编辑器
         </UiButton>
         <UiIconButton
           v-if="db.savedSql.value.length"
           label="打开已保存的 SQL 编辑器"
           size="xs"
+          class="shrink-0"
           @click="openEditorMenu($event)"
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -165,6 +172,7 @@ onMounted(() => {
           </svg>
         </UiIconButton>
         <UiTabs
+          v-if="db.tabs.value.length"
           :model-value="db.activeTabId.value"
           :items="tabItems"
           variant="line"

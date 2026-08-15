@@ -3,7 +3,15 @@
  * 右侧摘要面板：概览（连接信息 + 当前表）+ 历史 + 收藏
  */
 import { computed, ref } from 'vue'
-import { UiBadge, UiIconButton, UiTable, UiTableCell, UiTabs, UiButton } from '@/core/ui'
+import {
+  UiBadge,
+  UiButton,
+  UiIconButton,
+  UiTable,
+  UiTableCell,
+  UiTabs,
+} from '@/core/ui'
+import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import { DB_TYPE_META } from './useDatabaseMeta'
 import type { HistoryEntry, SavedEntry } from './contracts'
 import type { useDatabase } from './useDatabase'
@@ -18,6 +26,16 @@ const section = ref<'overview' | 'history' | 'saved'>('overview')
 
 const conn = computed(() => db.activeTabConnection.value)
 
+/** 收藏删除确认（提示不可恢复） */
+const deleteTarget = ref<SavedEntry | null>(null)
+
+function confirmDeleteSaved() {
+  if (deleteTarget.value) {
+    void db.removeSaved(deleteTarget.value.id)
+    deleteTarget.value = null
+  }
+}
+
 function onHistory(entry: HistoryEntry) {
   db.applyHistory(entry)
   db.showError('已恢复到当前查询')
@@ -25,7 +43,7 @@ function onHistory(entry: HistoryEntry) {
 
 function onSaved(entry: SavedEntry) {
   db.applySaved(entry)
-  db.showError(`已加载「${entry.title}」`)
+  db.showError(`已打开「${entry.title}」`)
 }
 
 /** 连接时间展示（epoch 秒 → 本地时间字符串） */
@@ -161,7 +179,7 @@ function formatConnectedAt(epochSeconds: number): string {
           label="删除"
           size="xs"
           class="shrink-0 opacity-0 group-hover:opacity-100"
-          @click.stop="db.removeSaved(entry.id)"
+          @click.stop="deleteTarget = entry"
         >
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 6L6 18M6 6l12 12" />
@@ -172,6 +190,17 @@ function formatConnectedAt(epochSeconds: number): string {
         暂无收藏 SQL
       </p>
     </div>
+
+    <!-- 收藏删除确认 -->
+    <ConfirmDialog
+      :open="deleteTarget !== null"
+      title="删除收藏"
+      :message="`确定删除「${deleteTarget?.title ?? ''}」吗？删除后不可恢复。`"
+      confirm-label="删除"
+      danger
+      @close="deleteTarget = null"
+      @confirm="confirmDeleteSaved"
+    />
   </div>
 
   <!-- 连接详情小表（概览底部：字段列表） -->
