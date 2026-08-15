@@ -1,12 +1,11 @@
 <script setup lang="ts">
 /**
- * SQL 编辑器页签：编辑器（工具栏 + 错误条 + 行号编辑器）与结果区（数据/消息/计划）
+ * SQL 编辑器页签：编辑器（工具栏 + 错误条 + CodeMirror 编辑器）与结果区（数据/消息/计划）
  * 执行语义：有选中文本执行选中段；无选中执行光标所在行；不提供全部执行（需要全量先全选）。
  * 保存语义：Ctrl+S 持久化（首次弹窗确认别名，已保存直接更新）；页签显示未保存/已保存状态。
  */
 import { computed, ref } from 'vue'
 import {
-  LineNumberTextarea,
   UiAlert,
   UiButton,
   UiEmptyState,
@@ -19,6 +18,7 @@ import {
   UiTabs,
   UiDataGrid,
 } from '@/core/ui'
+import SqlEditor from './SqlEditor.vue'
 import { extractExecSql } from './useDatabase'
 import type { useDatabase } from './useDatabase'
 
@@ -29,12 +29,16 @@ const props = defineProps<{
 const { db } = props
 const { queryState, patchQueryState, activeTabContext, activeTabConnection } = db
 
-/** 行号编辑器实例（读取选区/光标位置） */
-const editorRef = ref<InstanceType<typeof LineNumberTextarea> | null>(null)
+/** SQL 编辑器实例（读取选区/光标位置） */
+const editorRef = ref<InstanceType<typeof SqlEditor> | null>(null)
 
 /** 首次保存确认弹窗 */
 const saveConfirmOpen = ref(false)
 const saveTitle = ref('')
+
+/** 编辑器方言与补全元数据（跟随当前连接） */
+const editorDialect = computed(() => activeTabConnection.value?.dbType)
+const editorTables = computed(() => db.completionTables.value)
 
 const canExecute = computed(
   () => activeTabConnection.value?.status === 'online' && queryState.value.status !== 'running'
@@ -60,26 +64,15 @@ const statusText = computed(() => {
 
 /** 提取本次执行范围：选中文本 / 光标所在行 */
 function currentExecSql(): string {
-  const ta = editorRef.value?.textarea
-  if (!ta) return queryState.value.sql
-  return extractExecSql(ta.value, ta.selectionStart, ta.selectionEnd)
+  const ed = editorRef.value
+  if (!ed) return queryState.value.sql
+  const { from, to } = ed.getSelection()
+  return extractExecSql(ed.getDoc(), from, to)
 }
 
 function runCurrent() {
   if (!canExecute.value) return
   void db.runQuery(currentExecSql())
-}
-
-function onEditorKeydown(event: KeyboardEvent) {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-    event.preventDefault()
-    runCurrent()
-  } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
-    event.preventDefault()
-    onSave()
-  } else if (event.key === 'Escape' && queryState.value.status === 'running') {
-    void db.cancelQuery()
-  }
 }
 
 /** 保存：已保存直接更新；未保存弹窗确认别名 */
@@ -270,13 +263,17 @@ async function exportCsv() {
       >{{ queryState.error }}</UiAlert
     >
 
-    <LineNumberTextarea
+    <SqlEditor
       ref="editorRef"
       :model-value="queryState.sql"
-      class="min-h-0 flex-1 rounded-none border-0 font-mono"
+      :dialect="editorDialect"
+      :tables="editorTables"
+      class="min-h-0 flex-1"
       placeholder="-- 有选中执行选中段，否则执行光标所在行；Ctrl+S 保存"
+      :on-run="runCurrent"
+      :on-save="onSave"
+      :on-cancel="() => queryState.status === 'running' && db.cancelQuery()"
       @update:model-value="(v) => patchQueryState({ sql: v, dirty: true })"
-      @keydown="onEditorKeydown"
     />
   </div>
 

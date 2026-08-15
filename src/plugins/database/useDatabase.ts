@@ -208,6 +208,19 @@ export function useDatabase() {
     return meta.schemas.map((name) => ({ value: name, label: name }))
   })
 
+  /** SQL 编辑器补全元数据：当前连接已加载的表/视图（列暂不缓存，先补表名） */
+  const completionTables = computed<{ name: string; columns: { name: string }[] }[]>(() => {
+    const meta = metas.value[activeTabContext.value.connectionId]
+    if (!meta) return []
+    const names = new Set<string>()
+    for (const objects of Object.values(meta.objects)) {
+      for (const obj of objects) {
+        if ((obj.kind === 'table' || obj.kind === 'view') && obj.name) names.add(obj.name)
+      }
+    }
+    return [...names].map((name) => ({ name, columns: [] }))
+  })
+
   const rowLimitOptions = ['50', '100', '500', '1000'].map((v) => ({ value: v, label: v }))
 
   // ──────────────────────────────────────────────────────────────────────
@@ -858,8 +871,15 @@ export function useDatabase() {
     patchQueryState({ sql: entry.sql, dirty: true })
   }
 
-  /** 打开已保存的 SQL 编辑器：复用空页签或新开；记住 savedId（Ctrl+S 直接更新） */
+  /** 打开已保存的 SQL 编辑器：同一收藏只保留一个页签（已打开则聚焦）；记住 savedId（Ctrl+S 直接更新） */
   function applySaved(entry: SavedEntry) {
+    const existing = tabs.value.find(
+      (t) => t.kind === 'query' && queryStates.value[t.id]?.savedId === entry.id
+    )
+    if (existing) {
+      activeTabId.value = existing.id
+      return
+    }
     if (activeTabKind.value !== 'query' || queryState.value.sql.trim()) openSqlEditor()
     const tabId = activeTabId.value
     const state = queryStates.value[tabId] ??= makeQueryState()
@@ -964,6 +984,7 @@ export function useDatabase() {
     databaseOptions,
     schemaOptions,
     rowLimitOptions,
+    completionTables,
     ensureMeta,
     // 页签
     tabs,
