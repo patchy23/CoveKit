@@ -19,7 +19,7 @@ const tableName = computed(() => {
 })
 
 function genQuery() {
-  db.createQuery()
+  db.openSqlEditor()
   db.patchQueryState({ sql: `SELECT * FROM ${tableName.value} LIMIT 100;` })
 }
 </script>

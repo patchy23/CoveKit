@@ -67,6 +67,8 @@ export const historyIpc = {
 
 export const savedIpc = {
   list: (): Promise<SavedEntry[]> => call('dbc_saved', {}),
-  add: (title: string, sql: string): Promise<void> => call('dbc_saved_add', { title, sql }),
+  add: (title: string, sql: string): Promise<number> => call('dbc_saved_add', { title, sql }),
+  update: (id: number, title: string, sql: string): Promise<void> =>
+    call('dbc_saved_update', { id, title, sql }),
   remove: (id: number): Promise<void> => call('dbc_saved_delete', { id }),
 }

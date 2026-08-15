@@ -1,9 +1,9 @@
 /**
- * useDatabase 纯函数单测（filterTreeItems 等）
+ * useDatabase 纯函数单测（filterTreeItems / extractExecSql 等）
  */
 import { describe, expect, it } from 'vitest'
 import type { UiTreeItem } from '@/core/ui'
-import { filterTreeItems } from './useDatabase'
+import { extractExecSql, filterTreeItems } from './useDatabase'
 
 function node(id: string, label: string, depth: number, expandable = false, expanded = false): UiTreeItem {
   return { id, label, depth, kind: 'table', expandable, expanded }
@@ -49,5 +49,31 @@ describe('filterTreeItems', () => {
 
   it('无命中返回空数组', () => {
     expect(filterTreeItems(tree, '不存在')).toEqual([])
+  })
+})
+
+describe('extractExecSql', () => {
+  const sql = 'SELECT 1;\nSELECT 2;\nSELECT 3;'
+
+  it('有选区时返回选中文本', () => {
+    // 选中 "SELECT 2"（第 2 行）
+    expect(extractExecSql(sql, 10, 18)).toBe('SELECT 2')
+  })
+
+  it('无选区时返回光标所在整行', () => {
+    // 光标在第 1 行中间
+    expect(extractExecSql(sql, 4, 4)).toBe('SELECT 1;')
+    // 光标在第 3 行
+    expect(extractExecSql(sql, 20, 20)).toBe('SELECT 3;')
+  })
+
+  it('光标在行首与行尾边界正确', () => {
+    expect(extractExecSql(sql, 10, 10)).toBe('SELECT 2;')
+    expect(extractExecSql(sql, 9, 9)).toBe('SELECT 1;')
+    expect(extractExecSql(sql, 0, 0)).toBe('SELECT 1;')
+  })
+
+  it('单行文本无换行时返回整行', () => {
+    expect(extractExecSql('SELECT 42', 5, 5)).toBe('SELECT 42')
   })
 })

@@ -60,6 +60,14 @@ export interface DbConnectionInfo {
   error?: string | null
   /** 建立连接时间（epoch 秒；未连接为 0） */
   connectedAt: number
+  /** 端口（sqlite 为 0；编辑对话框回填用） */
+  port: number
+  /** 用户名（编辑对话框回填用） */
+  username: string
+  /** 是否启用 TLS（编辑对话框回填用） */
+  ssl: boolean
+  /** 连接超时（毫秒；编辑对话框回填用） */
+  connectTimeoutMs: number
 }
 
 /** 对象树叶子信息 */
@@ -151,6 +159,7 @@ export const commands = {
   dbcHistoryClear: 'dbc_history_clear',
   dbcSaved: 'dbc_saved',
   dbcSavedAdd: 'dbc_saved_add',
+  dbcSavedUpdate: 'dbc_saved_update',
   dbcSavedDelete: 'dbc_saved_delete',
   dbcDriverStatus: 'dbc_driver_status',
   dbcExecute: 'dbc_execute',
@@ -179,6 +188,7 @@ export type Payloads = {
   dbc_history_clear: Record<string, never>
   dbc_saved: Record<string, never>
   dbc_saved_add: { title: string; sql: string }
+  dbc_saved_update: { id: number; title: string; sql: string }
   dbc_saved_delete: { id: number }
   dbc_driver_status: { dbType: string }
   dbc_execute: { connId: string; sql: string; maxRows?: number }
@@ -206,7 +216,8 @@ export type Results = {
   dbc_history_add: void
   dbc_history_clear: void
   dbc_saved: SavedEntry[]
-  dbc_saved_add: void
+  dbc_saved_add: number
+  dbc_saved_update: void
   dbc_saved_delete: void
   dbc_driver_status: DriverStatus
   dbc_execute: QueryResult

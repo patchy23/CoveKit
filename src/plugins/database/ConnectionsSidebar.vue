@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
- * 左侧连接栏：搜索 + 新建连接 + 对象树（懒加载元数据；离线连接点击即连接）
+ * 左侧连接栏：搜索 + 新建连接 + 对象树（懒加载元数据）
+ * 交互约定：未连接节点无折叠箭头，单击仅选中，双击连接并展开；
+ * 已连接节点双击折叠/展开（不重新连接）；错误提示走状态点 tooltip，名字始终完整。
  */
 import { computed, ref } from 'vue'
-import { UiButton, UiSearchInput, UiSpinner, UiTree } from '@/core/ui'
+import { UiButton, UiIconButton, UiSearchInput, UiSpinner, UiTree } from '@/core/ui'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import DbObjectIcon from './DbObjectIcon.vue'
@@ -17,12 +19,33 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   newConnection: []
+  editConnection: [connection: DbConnectionInfo]
 }>()
 
 const { db } = props
 
 const menu = ref<{ x: number; y: number; connection: DbConnectionInfo } | null>(null)
 const deleteTarget = ref<DbConnectionInfo | null>(null)
+
+/** 侧栏宽度（可拖拽，默认 200，范围 168–340） */
+const sidebarWidth = ref(200)
+let dragging = false
+
+function onDragStart(event: MouseEvent) {
+  event.preventDefault()
+  dragging = true
+  const onMove = (move: MouseEvent) => {
+    if (!dragging) return
+    sidebarWidth.value = Math.min(340, Math.max(168, move.clientX - 12))
+  }
+  const onUp = () => {
+    dragging = false
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
 
 const menuItems = computed<ContextMenuItem[]>(() => {
   const connection = menu.value?.connection
@@ -36,7 +59,8 @@ const menuItems = computed<ContextMenuItem[]>(() => {
         else void db.connect(connection).catch(() => {})
       },
     },
-    { label: '新建查询', onClick: () => db.createQuery(connection.id) },
+    { label: '编辑连接', onClick: () => emit('editConnection', connection) },
+    { label: '打开SQL编辑器', onClick: () => db.openSqlEditor(connection.id) },
     { label: '刷新元数据', onClick: () => void db.ensureMeta(connection.id) },
     { label: '', separator: true },
     { label: '删除连接', danger: true, onClick: () => (deleteTarget.value = connection) },
@@ -62,13 +86,8 @@ function confirmDelete() {
 function onTreeSelect(id: string) {
   const item = db.visibleTreeItems.value.find((node) => node.id === id)
   if (!item) return
-  if (item.depth === 0) {
-    const conn = db.connections.value.find((c) => c.id === id)
-    if (!conn) return
-    if (conn.status === 'online') db.createQuery(conn.id)
-    else void db.connect(conn).catch(() => {})
-    return
-  }
+  // 连接节点单击仅选中；连接/展开/新建页签分别由双击与菜单承担
+  if (item.depth === 0) return
   if (item.kind === 'table' || item.kind === 'view' || item.kind === 'materialized_view' || item.kind === 'key') {
     void db.selectResource(id)
   }
@@ -83,7 +102,10 @@ function onTreeContext(mouse: MouseEvent, item: { id: string; depth: number }) {
 </script>
 
 <template>
-  <aside class="flex w-[200px] shrink-0 flex-col border-r border-border dark:border-border-dark">
+  <aside
+    class="relative flex shrink-0 flex-col border-r border-border dark:border-border-dark"
+    :style="{ width: `${sidebarWidth}px` }"
+  >
     <div class="shrink-0 space-y-[8px] px-[10px] py-[10px]">
       <UiSearchInput v-model="db.keyword.value" size="sm" placeholder="搜索连接…" />
       <UiButton variant="secondary" size="sm" block @click="emit('newConnection')">
@@ -115,16 +137,40 @@ function onTreeContext(mouse: MouseEvent, item: { id: string; depth: number }) {
           </span>
         </template>
         <template #suffix="{ item }">
-          <UiSpinner v-if="item.depth === 0 && db.connecting.value[item.id]" size="xs" />
-          <span
-            v-else-if="item.depth === 0"
-            class="h-[6px] w-[6px] rounded-full"
-            :class="
-              item.badge === '断开' || db.connectError.value[item.id]
-                ? 'bg-danger-strong dark:bg-danger-dark'
-                : 'bg-success-strong dark:bg-success-dark'
-            "
-          />
+          <template v-if="item.depth === 0">
+            <!-- 连接中：spinner + 取消按钮 -->
+            <template v-if="db.connecting.value[item.id]">
+              <UiSpinner size="xs" />
+              <UiIconButton
+                label="取消连接"
+                size="xs"
+                class="text-text-muted dark:text-text-muted-dark"
+                @click.stop="db.cancelConnect(item.id)"
+              >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </UiIconButton>
+            </template>
+            <!-- 状态点：在线绿 / 离线灰红，错误 hover 提示 -->
+            <span
+              v-else
+              class="h-[6px] w-[6px] shrink-0 rounded-full"
+              :class="
+                db.connectError.value[item.id]
+                  ? 'bg-danger-strong dark:bg-danger-dark'
+                  : db.connections.value.find((c) => c.id === item.id)?.status === 'online'
+                    ? 'bg-success-strong dark:bg-success-dark'
+                    : 'bg-text-muted/40 dark:bg-text-muted-dark/40'
+              "
+              :title="
+                db.connectError.value[item.id] ||
+                (db.connections.value.find((c) => c.id === item.id)?.status === 'online'
+                  ? '已连接'
+                  : '未连接')
+              "
+            />
+          </template>
         </template>
       </UiTree>
 
@@ -135,6 +181,12 @@ function onTreeContext(mouse: MouseEvent, item: { id: string; depth: number }) {
         {{ db.keyword.value ? '无匹配对象' : '暂无连接，点击上方新建' }}
       </p>
     </div>
+
+    <!-- 宽度拖拽手柄 -->
+    <div
+      class="absolute -right-[3px] top-0 z-10 h-full w-[6px] cursor-col-resize hover:bg-tertiary/30"
+      @mousedown="onDragStart"
+    />
 
     <ConfirmDialog
       :open="deleteTarget !== null"

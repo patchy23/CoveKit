@@ -203,7 +203,12 @@ async function onSave(connectAfter: boolean) {
           </div>
           <div>
             <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">密码</label>
-            <UiInput v-model="form.password" size="sm" type="password" placeholder="••••••" />
+            <UiInput
+              v-model="form.password"
+              size="sm"
+              type="password"
+              :placeholder="editing ? '留空表示不修改密码' : '••••••'"
+            />
           </div>
         </div>
         <div class="grid grid-cols-2 gap-[8px]">

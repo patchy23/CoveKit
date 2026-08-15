@@ -1,20 +1,25 @@
 <script setup lang="ts">
 /**
- * 查询页签：SQL 编辑器（工具栏 + 错误条 + 行号编辑器）与结果区（数据/消息/计划）
+ * SQL 编辑器页签：编辑器（工具栏 + 错误条 + 行号编辑器）与结果区（数据/消息/计划）
+ * 执行语义：有选中文本执行选中段；无选中执行光标所在行；不提供全部执行（需要全量先全选）。
+ * 保存语义：Ctrl+S 持久化（首次弹窗确认别名，已保存直接更新）；页签显示未保存/已保存状态。
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import {
   LineNumberTextarea,
   UiAlert,
+  UiButton,
   UiEmptyState,
   UiIconButton,
   UiInput,
+  UiModal,
   UiPagination,
   UiSelect,
   UiSpinner,
   UiTabs,
   UiDataGrid,
 } from '@/core/ui'
+import { extractExecSql } from './useDatabase'
 import type { useDatabase } from './useDatabase'
 
 const props = defineProps<{
@@ -23,6 +28,13 @@ const props = defineProps<{
 
 const { db } = props
 const { queryState, patchQueryState, activeTabContext, activeTabConnection } = db
+
+/** 行号编辑器实例（读取选区/光标位置） */
+const editorRef = ref<InstanceType<typeof LineNumberTextarea> | null>(null)
+
+/** 首次保存确认弹窗 */
+const saveConfirmOpen = ref(false)
+const saveTitle = ref('')
 
 const canExecute = computed(
   () => activeTabConnection.value?.status === 'online' && queryState.value.status !== 'running'
@@ -46,13 +58,48 @@ const statusText = computed(() => {
   }
 })
 
+/** 提取本次执行范围：选中文本 / 光标所在行 */
+function currentExecSql(): string {
+  const ta = editorRef.value?.textarea
+  if (!ta) return queryState.value.sql
+  return extractExecSql(ta.value, ta.selectionStart, ta.selectionEnd)
+}
+
+function runCurrent() {
+  if (!canExecute.value) return
+  void db.runQuery(currentExecSql())
+}
+
 function onEditorKeydown(event: KeyboardEvent) {
   if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
     event.preventDefault()
-    if (canExecute.value) void db.runQuery()
+    runCurrent()
+  } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault()
+    onSave()
   } else if (event.key === 'Escape' && queryState.value.status === 'running') {
     void db.cancelQuery()
   }
+}
+
+/** 保存：已保存直接更新；未保存弹窗确认别名 */
+function onSave() {
+  const state = queryState.value
+  if (!state.sql.trim()) {
+    db.showError('没有可保存的 SQL 内容')
+    return
+  }
+  if (state.savedId) {
+    void db.saveQueryToDisk().catch((err) => db.showError(err))
+  } else {
+    saveTitle.value = db.activeTab.value?.label ?? 'SQL编辑器'
+    saveConfirmOpen.value = true
+  }
+}
+
+function confirmSave() {
+  saveConfirmOpen.value = false
+  void db.saveQueryToDisk(saveTitle.value).catch((err) => db.showError(err))
 }
 
 /** 动态行对象（UiDataGrid 按 key 渲染；__row 作 row-key） */
@@ -105,12 +152,16 @@ async function exportCsv() {
       class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
     >
       <UiIconButton
-        :label="queryState.status === 'running' ? '运行中…' : '运行（Ctrl+Enter）'"
+        :label="
+          queryState.status === 'running'
+            ? '运行中…'
+            : '运行选中 / 光标所在行（Ctrl+Enter）'
+        "
         size="sm"
         :disabled="!canExecute"
         class="text-success-strong dark:text-success-dark"
         :class="queryState.status === 'running' ? '' : 'hover:!bg-success-soft disabled:opacity-40 dark:hover:!bg-success-soft-dark'"
-        @click="db.runQuery"
+        @click="runCurrent"
       >
         <svg
           v-if="queryState.status === 'running'"
@@ -162,9 +213,14 @@ async function exportCsv() {
           <path d="M4 6h16M4 12h16M4 18h10" />
         </svg>
       </UiIconButton>
-      <UiIconButton label="收藏 SQL" size="xs" @click="db.saveCurrentSql('')">
+      <UiIconButton
+        :label="queryState.savedId ? '保存（Ctrl+S）' : '保存（Ctrl+S，首次需确认）'"
+        size="xs"
+        class="text-success-strong dark:text-success-dark"
+        @click="onSave"
+      >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8" />
         </svg>
       </UiIconButton>
 
@@ -197,7 +253,10 @@ async function exportCsv() {
         @update:model-value="(v) => (activeTabContext.schema = String(v))"
       />
 
-      <span class="ml-auto font-mono text-caption text-text-muted dark:text-text-muted-dark">
+      <span
+        class="ml-auto shrink-0 font-mono text-caption text-text-muted dark:text-text-muted-dark"
+        :title="'有选中文本时执行选中段，否则执行光标所在行；需要全量执行请先全选（Ctrl+A）'"
+      >
         Ctrl+Enter
       </span>
     </div>
@@ -212,8 +271,10 @@ async function exportCsv() {
     >
 
     <LineNumberTextarea
+      ref="editorRef"
       :model-value="queryState.sql"
       class="min-h-0 flex-1 rounded-none border-0 font-mono"
+      placeholder="-- 有选中执行选中段，否则执行光标所在行；Ctrl+S 保存"
       @update:model-value="(v) => patchQueryState({ sql: v, dirty: true })"
       @keydown="onEditorKeydown"
     />
@@ -261,14 +322,18 @@ async function exportCsv() {
           ? 'danger'
           : queryState.status === 'cancelled'
             ? 'warning'
-            : 'success'
+            : queryState.status === 'idle'
+              ? 'info'
+              : 'success'
       "
       :title="
         queryState.status === 'error'
           ? '查询失败'
           : queryState.status === 'cancelled'
             ? '已取消'
-            : '执行完成'
+            : queryState.status === 'idle'
+              ? '没有可执行的 SQL'
+              : '执行完成'
       "
       size="sm"
     >
@@ -277,7 +342,9 @@ async function exportCsv() {
           ? queryState.error
           : queryState.status === 'cancelled'
             ? '本次查询已停止。'
-            : `返回 ${queryState.total} 行，耗时 ${queryState.durationMs} ms。`
+            : queryState.status === 'idle'
+              ? '请选中一段文本，或将光标置于某一行的任意位置后重试。'
+              : `返回 ${queryState.total} 行，耗时 ${queryState.durationMs} ms。`
       }}
     </UiAlert>
 
@@ -330,4 +397,23 @@ async function exportCsv() {
       />
     </div>
   </div>
+
+  <!-- 首次保存确认 -->
+  <UiModal :open="saveConfirmOpen" title="保存 SQL 编辑器" size="sm" @close="saveConfirmOpen = false">
+    <div class="space-y-[8px]">
+      <p class="text-body-sm text-secondary dark:text-secondary-dark">
+        首次保存需要确认名称，之后 Ctrl+S 将直接更新该编辑器。
+      </p>
+      <UiInput
+        v-model="saveTitle"
+        size="sm"
+        placeholder="编辑器名称（别名）"
+        @keydown.enter="confirmSave"
+      />
+    </div>
+    <template #footer>
+      <UiButton size="sm" variant="ghost" @click="saveConfirmOpen = false">取消</UiButton>
+      <UiButton size="sm" variant="primary" @click="confirmSave">保存</UiButton>
+    </template>
+  </UiModal>
 </template>

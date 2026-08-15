@@ -73,6 +73,19 @@ export interface QueryState {
   truncated: boolean
   /** 执行计划行 */
   plan: string[]
+  /** 已保存的收藏 id（Ctrl+S 二次保存直接 update，无需再确认） */
+  savedId?: number
+  /** 保存用的标题（首次保存确认后写入；重命名别名优先） */
+  savedTitle?: string
+}
+
+/** 提取待执行 SQL：有选区取选区文本；无选区取光标所在整行（不含行尾换行） */
+export function extractExecSql(text: string, start: number, end: number): string {
+  if (start !== end) return text.slice(start, end)
+  const lineStart = text.lastIndexOf('\n', Math.max(0, start - 1)) + 1
+  const lineEndIdx = text.indexOf('\n', start)
+  const lineEnd = lineEndIdx === -1 ? text.length : lineEndIdx
+  return text.slice(lineStart, lineEnd)
 }
 
 function makeQueryState(sql = ''): QueryState {
@@ -124,6 +137,8 @@ export function useDatabase() {
   const activeConnectionId = ref('')
   const connecting = ref<Record<string, boolean>>({})
   const connectError = ref<Record<string, string>>({})
+  /** 连接取消标记（cancelConnect 置位；连接结果返回后据此丢弃并断开） */
+  const cancelledConnect = ref<Record<string, boolean>>({})
 
   // ── 元数据缓存 ──────────────────────────────────────────────────────────
   const metas = ref<Record<string, ConnMeta>>({})
@@ -213,14 +228,31 @@ export function useDatabase() {
   async function connect(conn: DbConnectionInfo) {
     connecting.value[conn.id] = true
     connectError.value[conn.id] = ''
+    cancelledConnect.value[conn.id] = false
     try {
       const info = await connectionIpc.connect(conn.id)
+      // 连接过程中被取消：立即断开，避免留下幽灵会话
+      if (cancelledConnect.value[conn.id]) {
+        cancelledConnect.value[conn.id] = false
+        try {
+          await connectionIpc.disconnect(conn.id)
+        } catch {
+          // 忽略断开失败（会话可能尚未建立）
+        }
+        return
+      }
       const index = connections.value.findIndex((c) => c.id === info.id)
       if (index >= 0) connections.value[index] = info
       activeConnectionId.value = info.id
-      // 连接成功后预取库/schema 列表
+      // 连接成功后展开树节点并预取库/schema 列表
+      const expanded = new Set(expandedIds.value)
+      expanded.add(info.id)
+      expandedIds.value = expanded
       await ensureMeta(info.id)
     } catch (err) {
+      const wasCancelled = cancelledConnect.value[conn.id]
+      cancelledConnect.value[conn.id] = false
+      if (wasCancelled) return
       connectError.value[conn.id] = String(err)
       const index = connections.value.findIndex((c) => c.id === conn.id)
       if (index >= 0) connections.value[index] = { ...conn, status: 'offline', error: String(err) }
@@ -228,6 +260,13 @@ export function useDatabase() {
     } finally {
       connecting.value[conn.id] = false
     }
+  }
+
+  /** 取消进行中的连接（结果返回后自动断开，UI 立即复位） */
+  function cancelConnect(connId: string) {
+    cancelledConnect.value[connId] = true
+    connecting.value[connId] = false
+    connectError.value[connId] = ''
   }
 
   async function disconnect(conn: DbConnectionInfo) {
@@ -396,18 +435,20 @@ export function useDatabase() {
     const items: UiTreeItem[] = []
     for (const conn of connections.value) {
       const prefix = conn.id
+      // 徽标只放类型/只读；错误信息不进徽标（名字始终完整显示，错误走状态点 tooltip）
       const badge =
-        conn.status === 'offline'
-          ? connectError.value[conn.id] || '断开'
-          : conn.readonly
+        conn.status === 'online'
+          ? conn.readonly
             ? '只读'
             : DB_TYPE_META[conn.dbType as V2DbType]?.label ?? conn.dbType
+          : undefined
       items.push({
         id: prefix,
         label: conn.label,
         depth: 0,
         kind: 'connection',
-        expandable: true,
+        // 未连接时无折叠箭头（双击连接后展开）；已连接可折叠/展开
+        expandable: conn.status === 'online',
         expanded: isExpanded(prefix),
         badge,
         muted: conn.status !== 'online',
@@ -461,17 +502,21 @@ export function useDatabase() {
   // ──────────────────────────────────────────────────────────────────────
 
   function toggleTree(item: UiTreeItem) {
-    toggleExpanded(item.id)
-    // 展开连接节点时懒加载元数据
+    // 连接节点：已连接 → 折叠/展开（不重新连接）；未连接 → 连接并在成功后展开
     const conn = connections.value.find((c) => c.id === item.id)
-    if (conn && item.expandable && !item.expanded) {
-      if (conn.status === 'online') void ensureMeta(conn.id)
-      else if (conn.dbType === 'dameng') {
+    if (conn) {
+      if (conn.status === 'online') {
+        const willExpand = !isExpanded(item.id)
+        toggleExpanded(item.id)
+        if (willExpand) void ensureMeta(conn.id)
+      } else if (conn.dbType === 'dameng') {
         connectError.value[conn.id] = '达梦驱动暂未支持（本版本未实现）'
       } else {
         void connect(conn).catch(() => {})
       }
+      return
     }
+    toggleExpanded(item.id)
     // 展开 schema 节点 → 加载对象
     if (item.kind === 'schema' && item.expandable && !item.expanded) {
       const connId = item.id.split('::')[0]
@@ -479,8 +524,9 @@ export function useDatabase() {
       void ensureObjects(connId, schema)
     }
     // 展开 redis 数据库节点 → 加载键
-    if (item.kind === 'database' && conn?.dbType === 'redis' && item.expandable && !item.expanded) {
-      void ensureRedisKeys(conn.id)
+    if (item.kind === 'database' && item.expandable && !item.expanded) {
+      const redisConn = connections.value.find((c) => c.id === item.id.split('::')[0])
+      if (redisConn?.dbType === 'redis') void ensureRedisKeys(redisConn.id)
     }
   }
 
@@ -522,10 +568,11 @@ export function useDatabase() {
     activeTabId.value = id
   }
 
-  function createQuery(connectionId?: string) {
+  /** 打开新的 SQL 编辑器（页签名「SQL编辑器 N」；可指定连接） */
+  function openSqlEditor(connectionId?: string) {
     tabSequence += 1
     const id = `q${tabSequence}`
-    tabs.value.push({ id, label: `查询 ${tabSequence}`, kind: 'query' })
+    tabs.value.push({ id, label: `SQL编辑器 ${tabSequence}`, kind: 'query' })
     queryStates.value[id] = makeQueryState()
     tabContexts.value[id] = {
       connectionId: connectionId ?? activeConnectionId.value,
@@ -533,6 +580,52 @@ export function useDatabase() {
       schema: '',
     }
     activeTabId.value = id
+  }
+
+  /** 重命名当前页签别名（仅本地；已保存的编辑器下次保存时同步到库） */
+  function renameActiveTab(label: string) {
+    const tabId = activeTabId.value
+    const tab = tabs.value.find((t) => t.id === tabId)
+    if (!tab || !label.trim()) return
+    tab.label = label.trim()
+    const state = queryStates.value[tabId]
+    if (state) state.savedTitle = label.trim()
+    // 已保存的编辑器：别名立即同步到库
+    if (state?.savedId && state.savedTitle) {
+      void savedIpc.update(state.savedId, state.savedTitle, state.sql).catch(() => {})
+    }
+  }
+
+  /**
+   * 持久化保存当前 SQL 编辑器：
+   * - 已保存过 → 直接 update（无弹窗）
+   * - 未保存过 → 需先经 UI 弹窗确认别名（组件层调用本函数时传入）
+   * 首次保存后页签更名为别名
+   */
+  async function saveQueryToDisk(title?: string) {
+    const tabId = activeTabId.value
+    const state = queryStates.value[tabId] ??= makeQueryState()
+    const sql = state.sql.trim()
+    if (!sql) {
+      showError('没有可保存的 SQL 内容')
+      return
+    }
+    if (state.savedId) {
+      await savedIpc.update(state.savedId, state.savedTitle ?? tabLabel(tabId), sql)
+    } else {
+      const resolved = (title ?? tabLabel(tabId)).trim() || `SQL编辑器 ${tabSequence}`
+      state.savedId = await savedIpc.add(resolved, sql)
+      state.savedTitle = resolved
+      const tab = tabs.value.find((t) => t.id === tabId)
+      if (tab) tab.label = resolved
+    }
+    state.dirty = false
+    await refreshSaved()
+  }
+
+  /** 页签显示名 */
+  function tabLabel(tabId: string): string {
+    return tabs.value.find((t) => t.id === tabId)?.label ?? 'SQL编辑器'
   }
 
   function closeTab(id: string) {
@@ -553,7 +646,11 @@ export function useDatabase() {
     Object.assign(queryStates.value[id], patch)
   }
 
-  async function runQuery() {
+  /**
+   * 执行 SQL：传入 sqlOverride 则只执行该段（组件层按"选中文本 / 光标所在行"提取）；
+   * 不提供"全部执行"（避免误操作，需要全量先全选）。
+   */
+  async function runQuery(sqlOverride?: string) {
     const tabId = activeTabId.value
     const state = queryStates.value[tabId] ??= makeQueryState()
     if (state.status === 'running') return
@@ -566,8 +663,15 @@ export function useDatabase() {
       })
       return
     }
-    const sql = state.sql.trim()
-    if (!sql) return
+    const sql = (sqlOverride ?? state.sql).trim()
+    if (!sql) {
+      patchQueryState({
+        status: 'idle',
+        error: '没有可执行的 SQL：请选中一段文本，或将光标置于某一行的任意位置。',
+        resultTab: 'message',
+      })
+      return
+    }
     const startedAt = Date.now()
     patchQueryState({ status: 'running', error: '', page: 1, columns: [], rows: [], total: 0, plan: [] })
     try {
@@ -750,20 +854,23 @@ export function useDatabase() {
   }
 
   function applyHistory(entry: HistoryEntry) {
-    if (activeTabKind.value !== 'query') createQuery()
+    if (activeTabKind.value !== 'query' || queryState.value.sql.trim()) openSqlEditor()
     patchQueryState({ sql: entry.sql, dirty: true })
   }
 
+  /** 打开已保存的 SQL 编辑器：复用空页签或新开；记住 savedId（Ctrl+S 直接更新） */
   function applySaved(entry: SavedEntry) {
-    if (activeTabKind.value !== 'query') createQuery()
-    patchQueryState({ sql: entry.sql, dirty: true })
-  }
-
-  async function saveCurrentSql(title: string) {
-    const sql = queryState.value.sql.trim()
-    if (!sql) return
-    await savedIpc.add(title || `未命名 · ${new Date().toTimeString().slice(0, 5)}`, sql)
-    await refreshSaved()
+    if (activeTabKind.value !== 'query' || queryState.value.sql.trim()) openSqlEditor()
+    const tabId = activeTabId.value
+    const state = queryStates.value[tabId] ??= makeQueryState()
+    Object.assign(state, {
+      sql: entry.sql,
+      dirty: false,
+      savedId: entry.id,
+      savedTitle: entry.title,
+    })
+    const tab = tabs.value.find((t) => t.id === tabId)
+    if (tab) tab.label = entry.title
   }
 
   async function removeSaved(id: number) {
@@ -848,6 +955,7 @@ export function useDatabase() {
     connectError,
     connectionOptions,
     connect,
+    cancelConnect,
     disconnect,
     saveConnection,
     removeConnection,
@@ -865,10 +973,13 @@ export function useDatabase() {
     activeTabContext,
     activeTabConnection,
     tabContexts,
-    createQuery,
+    openSqlEditor,
     closeTab,
+    renameActiveTab,
+    saveQueryToDisk,
     // 查询
     queryState,
+    queryStates,
     patchQueryState,
     runQuery,
     cancelQuery,
@@ -898,7 +1009,6 @@ export function useDatabase() {
     refreshSaved,
     applyHistory,
     applySaved,
-    saveCurrentSql,
     removeSaved,
     clearHistory,
     // 通用
