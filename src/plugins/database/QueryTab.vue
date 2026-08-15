@@ -35,13 +35,12 @@ const editorRef = ref<InstanceType<typeof SqlEditor> | null>(null)
 /** 编辑器区域容器（用于计算可拖高度上限） */
 const editorPaneRef = ref<HTMLElement | null>(null)
 
-/** 编辑器高度（px）：默认按容器 38%，可拖拽；不持久化 */
-const editorHeight = ref(320)
+/** 编辑器高度（px）：默认按容器 38%，可拖拽；不持久化（分隔条在面板下方，正向） */
 const editorSplit = useSplitPane({ initial: 320, min: 120, max: 100000 }, true)
 
 onMounted(() => {
   const parent = editorPaneRef.value?.parentElement
-  if (parent) editorHeight.value = Math.round(parent.clientHeight * 0.38)
+  if (parent) editorSplit.size.value = Math.round(parent.clientHeight * 0.38)
 })
 
 /** 拖拽上限：给结果区至少留 140px */
@@ -164,7 +163,7 @@ async function exportCsv() {
 
 <template>
   <!-- SQL 编辑器（默认 38% 高度，可拖拽调整） -->
-  <div ref="editorPaneRef" class="flex min-h-0 flex-col" :style="{ flex: `0 0 ${editorHeight}px` }">
+  <div ref="editorPaneRef" class="flex min-h-0 flex-col" :style="{ flex: `0 0 ${editorSplit.size.value}px` }">
     <div
       class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
     >

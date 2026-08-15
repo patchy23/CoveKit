@@ -23,7 +23,7 @@ const db = useDatabase()
 const inspectorOpen = ref(true)
 
 /** 右侧摘要宽度（默认 220，可拖拽；不持久化） */
-const inspectorSplit = useSplitPane({ initial: 220, min: 160, max: 480 })
+const inspectorSplit = useSplitPane({ initial: 220, min: 160, max: 480, reverse: true })
 const dialogOpen = ref(false)
 const editingConnection = ref<ConnConfig | null>(null)
 

@@ -9,6 +9,7 @@ import { UiButton, UiIconButton, UiSearchInput, UiSpinner, UiTree } from '@/core
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import DbObjectIcon from './DbObjectIcon.vue'
+import { useSplitPane } from './useSplitPane'
 import { DB_TYPE_META } from './useDatabaseMeta'
 import type { DbConnectionInfo } from './contracts'
 import type { useDatabase } from './useDatabase'
@@ -27,25 +28,12 @@ const { db } = props
 const menu = ref<{ x: number; y: number; connection: DbConnectionInfo } | null>(null)
 const deleteTarget = ref<DbConnectionInfo | null>(null)
 
-/** 侧栏宽度（可拖拽，默认 200，范围 168–340） */
-const sidebarWidth = ref(200)
-let dragging = false
-
-function onDragStart(event: MouseEvent) {
-  event.preventDefault()
-  dragging = true
-  const onMove = (move: MouseEvent) => {
-    if (!dragging) return
-    sidebarWidth.value = Math.min(340, Math.max(168, move.clientX - 12))
-  }
-  const onUp = () => {
-    dragging = false
-    window.removeEventListener('mousemove', onMove)
-    window.removeEventListener('mouseup', onUp)
-  }
-  window.addEventListener('mousemove', onMove)
-  window.addEventListener('mouseup', onUp)
-}
+/** 侧栏宽度（可拖拽，默认 200，范围 168–340；分隔条在面板右侧，正向） */
+const { size: sidebarWidth, onPointerDown: onDragStart } = useSplitPane({
+  initial: 200,
+  min: 168,
+  max: 340,
+})
 
 const menuItems = computed<ContextMenuItem[]>(() => {
   const connection = menu.value?.connection
