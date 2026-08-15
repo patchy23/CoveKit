@@ -32,7 +32,7 @@ pub(crate) async fn mysql_pool(
     let opts: Opts = builder.into();
     let pool = mysql_async::Pool::new(opts);
     // 预检一条查询，验证凭据（带连接超时，防挂起）
-    let timeout_ms = config.connect_timeout_ms.max(1000);
+    let timeout_ms = config.connect_timeout_ms.max(30000);
     let mut conn = tokio::time::timeout(
         std::time::Duration::from_millis(timeout_ms),
         pool.get_conn(),

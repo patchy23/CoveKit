@@ -18,7 +18,7 @@ pub(crate) async fn pg_pool(
         .user(&config.username)
         .password(password)
         .dbname(&config.database)
-        .connect_timeout(Duration::from_millis(config.connect_timeout_ms.max(1000)));
+        .connect_timeout(Duration::from_millis(config.connect_timeout_ms.max(30000)));
 
     if config.ssl {
         // TLS：rustls ring 后端（tokio-postgres-rustls 默认 feature 即 ring）
@@ -36,14 +36,14 @@ pub(crate) async fn pg_pool(
             .map_err(|e| format!("PG 连接池构建失败: {e}"))?;
         // 借出一个连接校验连通性（校验后自动归还池；带超时防挂起）
         let _check = tokio::time::timeout(
-            Duration::from_millis(config.connect_timeout_ms.max(1000)),
+            Duration::from_millis(config.connect_timeout_ms.max(30000)),
             pool.get(),
         )
         .await
         .map_err(|_| {
             format!(
                 "PostgreSQL 连接超时（{} ms）",
-                config.connect_timeout_ms.max(1000)
+                config.connect_timeout_ms.max(30000)
             )
         })?
         .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
@@ -57,14 +57,14 @@ pub(crate) async fn pg_pool(
         .map_err(|e| format!("PG 连接池构建失败: {e}"))?;
     // 借出一个连接校验连通性（校验后自动归还池；带超时防挂起）
     let _check = tokio::time::timeout(
-        Duration::from_millis(config.connect_timeout_ms.max(1000)),
+        Duration::from_millis(config.connect_timeout_ms.max(30000)),
         pool.get(),
     )
     .await
     .map_err(|_| {
         format!(
             "PostgreSQL 连接超时（{} ms）",
-            config.connect_timeout_ms.max(1000)
+            config.connect_timeout_ms.max(30000)
         )
     })?
     .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;

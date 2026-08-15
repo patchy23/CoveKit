@@ -2,7 +2,7 @@
 /**
  * 新建/编辑连接对话框
  * 按类型切换表单形态：sqlite 文件路径；redis 数据库索引；其余 host/port/账号。
- * 保存并连接 / 仅保存 / 测试连接三动作；测试连接不落库。
+ * 保存 / 测试连接两动作（保存后由左侧列表双击连接）；测试连接不落库。
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { UiAlert, UiButton, UiInput, UiModal, UiSpinner, UiSwitch } from '@/core/ui'
@@ -32,7 +32,7 @@ const form = reactive({
   env: '开发',
   readonly: false,
   ssl: false,
-  connectTimeoutMs: 10000,
+  connectTimeoutMs: 30000,
 })
 
 const testing = ref(false)
@@ -75,7 +75,7 @@ watch(
         env: '开发',
         readonly: false,
         ssl: false,
-        connectTimeoutMs: 10000,
+        connectTimeoutMs: 30000,
       })
     }
   }
@@ -130,7 +130,7 @@ async function onTest() {
   }
 }
 
-async function onSave(connectAfter: boolean) {
+async function onSave() {
   if (unsupported.value) {
     saveError.value = '达梦驱动暂未支持（本版本未实现），无法保存连接。'
     return
@@ -143,9 +143,6 @@ async function onSave(connectAfter: boolean) {
     const config = buildConfig()
     await connectionIpc.save(config, form.password)
     emit('saved', config, form.password)
-    if (connectAfter) {
-      // 容器侧在 saved 事件里处理连接
-    }
     emit('close')
   } catch (err) {
     saveError.value = String(err)
@@ -278,9 +275,9 @@ async function onSave(connectAfter: boolean) {
         <UiSpinner v-if="testing" size="xs" label="测试中" />
         <template v-else>测试连接</template>
       </UiButton>
-      <UiButton size="sm" variant="primary" :disabled="saving || testing" @click="onSave(true)">
+      <UiButton size="sm" variant="primary" :disabled="saving || testing" @click="onSave()">
         <UiSpinner v-if="saving" size="xs" label="保存中" />
-        <template v-else>保存并连接</template>
+        <template v-else>保存</template>
       </UiButton>
     </template>
   </UiModal>

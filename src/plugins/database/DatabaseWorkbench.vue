@@ -124,10 +124,10 @@ function onEditConnection(connection: DbConnectionInfo) {
 }
 
 async function onSaved(config: ConnConfig) {
-  // 先刷新列表（保存后列表/右键菜单/编辑预填必须是最新配置），再连接
+  // 只刷新列表（保存后列表/右键菜单/编辑预填必须是最新配置）；
+  // 不自动连接——用户双击左侧列表再连接
   await db.refreshConnections()
-  const conn = db.connections.value.find((c) => c.id === config.id)
-  if (conn) void db.connect(conn).catch(() => {})
+  void config
 }
 
 onMounted(() => {

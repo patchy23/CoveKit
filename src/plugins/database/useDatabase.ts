@@ -490,7 +490,18 @@ export function useDatabase() {
         continue
       }
 
-      // 其余：连接 → 数据库
+      if (conn.dbType === 'mysql' || conn.dbType === 'polardb') {
+        // MySQL：连接 → 全部库 → 分组（库列表来自元数据，未加载时回退配置库名）
+        const databases = meta.databases.length ? meta.databases : [conn.database || '默认']
+        for (const db of databases) {
+          const scope = `${prefix}::${db}`
+          items.push(branch(scope, db, 1, 'database'))
+          items.push(...objectGroups(conn, scope, 2))
+        }
+        continue
+      }
+
+      // 其余（sqlite）：连接 → 数据库 → 分组
       const database = conn.database
       items.push(branch(`${prefix}::db`, database, 1, 'database'))
 
@@ -509,7 +520,7 @@ export function useDatabase() {
         continue
       }
 
-      // mysql / sqlite：数据库下直接挂分组（objects 的 schemaKey 用连接前缀）
+      // sqlite：数据库下直接挂分组
       items.push(...objectGroups(conn, `${prefix}::objects`, 2))
     }
     return items
@@ -545,6 +556,13 @@ export function useDatabase() {
     if (item.kind === 'schema' && item.expandable && !item.expanded) {
       const connId = item.id.split('::')[0]
       const schema = item.id.split('::')[1]
+      void ensureObjects(connId, schema)
+    }
+    // 展开 database 节点（mysql 库 / sqlite main）→ 加载该库对象
+    if (item.kind === 'database' && item.expandable && !item.expanded) {
+      const connId = item.id.split('::')[0]
+      const dbMatch = item.id.match(/::db:(.+)$/)
+      const schema = dbMatch ? dbMatch[1] : item.id.split('::')[1] ?? 'main'
       void ensureObjects(connId, schema)
     }
     // 展开 redis 数据库节点 → 加载键
