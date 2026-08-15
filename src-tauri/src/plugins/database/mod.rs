@@ -100,13 +100,28 @@ pub async fn dbc_disconnect(
 }
 
 /// 测试连接（不保存、不落会话；返回版本信息）
+/// 密码为空且该连接已存在时，使用 stronghold 已保存密码（编辑模式「留空=不修改」对称语义）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_test(
     app: tauri::AppHandle,
+    store_state: State<'_, StoreState>,
+    secrets_state: State<'_, secrets::SecretsState>,
     runtimes: State<'_, conn::AgentRuntimeState>,
     config: ConnConfig,
     password: String,
 ) -> Result<String, String> {
+    let password = if password.is_empty() {
+        let existed = store::list_connections(&app, &store_state)?
+            .iter()
+            .any(|c| c.id == config.id);
+        if existed {
+            secrets::secret_get(&app, &secrets_state, &config.id)?
+        } else {
+            password
+        }
+    } else {
+        password
+    };
     conn::test_connection(&app, &runtimes, &config, &password).await
 }
 

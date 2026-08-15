@@ -263,7 +263,13 @@ async function onSave(connectAfter: boolean) {
 
     <template #footer>
       <UiButton size="sm" variant="ghost" :disabled="saving" @click="emit('close')">取消</UiButton>
-      <UiButton size="sm" variant="secondary" :disabled="testing || saving" @click="onTest">
+      <UiButton
+        size="sm"
+        variant="secondary"
+        :disabled="testing || saving"
+        :title="editing && !form.password ? '密码留空时使用已保存密码测试' : undefined"
+        @click="onTest"
+      >
         <UiSpinner v-if="testing" size="xs" label="测试中" />
         <template v-else>测试连接</template>
       </UiButton>
