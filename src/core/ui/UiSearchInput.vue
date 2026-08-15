@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiIcon from './UiIcon.vue'
 import UiInput from './UiInput.vue'
 import type { UiSize } from './types'
 
@@ -17,18 +18,11 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
 
 <template>
   <div class="relative">
-    <svg
+    <UiIcon
+      name="search"
+      :size="14"
       class="pointer-events-none absolute left-[10px] top-1/2 -translate-y-1/2 text-text-muted"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="m16 16 5 5" />
-    </svg>
+    />
     <UiInput
       :model-value="modelValue"
       :size="size"

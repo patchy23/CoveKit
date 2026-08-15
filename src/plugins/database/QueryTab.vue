@@ -9,6 +9,7 @@ import {
   UiAlert,
   UiButton,
   UiEmptyState,
+  UiIcon,
   UiIconButton,
   UiInput,
   UiModal,
@@ -123,7 +124,9 @@ type GridRow = { __row: string } & Record<string, string>
 const gridRows = computed<GridRow[]>(() =>
   queryState.value.rows.map((row, index) => ({
     __row: String(index),
-    ...Object.fromEntries(queryState.value.columns.map((_, colIndex) => [`c${colIndex}`, row[colIndex] ?? ''])),
+    ...Object.fromEntries(
+      queryState.value.columns.map((_, colIndex) => [`c${colIndex}`, row[colIndex] ?? ''])
+    ),
   }))
 )
 
@@ -163,51 +166,31 @@ async function exportCsv() {
 
 <template>
   <!-- SQL 编辑器（默认 38% 高度，可拖拽调整） -->
-  <div ref="editorPaneRef" class="flex min-h-0 flex-col" :style="{ flex: `0 0 ${editorSplit.size.value}px` }">
+  <div
+    ref="editorPaneRef"
+    class="flex min-h-0 flex-col"
+    :style="{ flex: `0 0 ${editorSplit.size.value}px` }"
+  >
     <div
       class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
     >
       <UiIconButton
         :label="
-          queryState.status === 'running'
-            ? '运行中…'
-            : '运行选中 / 光标所在语句（Ctrl+Enter）'
+          queryState.status === 'running' ? '运行中…' : '运行选中 / 光标所在语句（Ctrl+Enter）'
         "
         size="sm"
         :disabled="!canExecute"
         class="text-success-strong dark:text-success-dark"
         @click="runCurrent"
       >
-        <svg
+        <UiIcon
           v-if="queryState.status === 'running'"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-          stroke-linecap="round"
-          class="animate-spin"
-          style="width: 16px; height: 16px; flex: none;"
-          aria-hidden="true"
-        >
-          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-        </svg>
-        <svg
-          v-else
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-          style="width: 16px; height: 16px; flex: none;"
-        >
-          <path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" />
-        </svg>
+          name="loading"
+          :size="16"
+          :stroke-width="2.5"
+          class="shrink-0 animate-spin"
+        />
+        <UiIcon v-else name="play" :size="16" class="shrink-0" />
       </UiIconButton>
       <UiIconButton
         label="停止（Esc）"
@@ -216,7 +199,19 @@ async function exportCsv() {
         class="text-danger-strong dark:text-danger-dark"
         @click="db.cancelQuery"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 16px; height: 16px; flex: none;">
+        <!-- 定稿图形：12x12 居中描边方块（lucide Square 为 18x18，比例不同，保持自定义） -->
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+          style="width: 16px; height: 16px; flex: none"
+        >
           <rect x="6" y="6" width="12" height="12" rx="2" />
         </svg>
       </UiIconButton>
@@ -226,20 +221,24 @@ async function exportCsv() {
         class="text-success-strong dark:text-success-dark"
         @click="runAll"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="width: 16px; height: 16px; flex: none;">
-          <path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z" />
-          <path d="M21 4v16" />
-        </svg>
+        <UiIcon name="play-all" :size="16" class="shrink-0" />
       </UiIconButton>
       <UiIconButton label="执行计划" size="sm" @click="db.runExplain">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; flex: none;">
+        <!-- 定稿图形：准星线（lucide Crosshair 多一圈外圆，保持自定义） -->
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          style="width: 16px; height: 16px; flex: none"
+        >
           <path d="M12 2v6m0 8v6M2 12h6m8 0h6" />
         </svg>
       </UiIconButton>
       <UiIconButton label="格式化" size="sm" @click="db.onFormatSql">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; flex: none;">
-          <path d="M4 6h16M4 12h16M4 18h10" />
-        </svg>
+        <UiIcon name="format" :size="16" class="shrink-0" />
       </UiIconButton>
       <UiIconButton
         :label="queryState.savedId ? '保存（Ctrl+S）' : '保存（Ctrl+S，首次需确认）'"
@@ -247,9 +246,7 @@ async function exportCsv() {
         class="text-success-strong dark:text-success-dark"
         @click="onSave"
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; flex: none;">
-          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8" />
-        </svg>
+        <UiIcon name="save" :size="16" class="shrink-0" />
       </UiIconButton>
 
       <span class="mx-[4px] h-[14px] w-px bg-border dark:bg-border-dark" />
@@ -333,17 +330,14 @@ async function exportCsv() {
         size="xs"
         @update:model-value="(v) => patchQueryState({ resultTab: String(v) })"
       />
-      <span class="ml-auto text-caption text-text-muted dark:text-text-muted-dark">{{ statusText }}</span>
+      <span class="ml-auto text-caption text-text-muted dark:text-text-muted-dark">{{
+        statusText
+      }}</span>
       <UiIconButton label="复制结果" size="xs" @click="copyResult">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="9" y="9" width="13" height="13" rx="2" />
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-        </svg>
+        <UiIcon name="copy" :size="12" />
       </UiIconButton>
       <UiIconButton label="导出 CSV" size="xs" @click="exportCsv">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
-        </svg>
+        <UiIcon name="download" :size="12" />
       </UiIconButton>
     </div>
 
@@ -390,9 +384,9 @@ async function exportCsv() {
     </UiAlert>
 
     <div v-else-if="queryState.resultTab === 'plan'" class="min-h-0 flex-1 overflow-auto p-[8px]">
-      <pre class="font-mono text-caption leading-relaxed text-secondary dark:text-secondary-dark">
-{{ queryState.plan.join('\n') || '（无执行计划输出）' }}</pre
-      >
+      <pre class="font-mono text-caption leading-relaxed text-secondary dark:text-secondary-dark">{{
+        queryState.plan.join('\n') || '（无执行计划输出）'
+      }}</pre>
     </div>
 
     <UiEmptyState
@@ -429,7 +423,9 @@ async function exportCsv() {
         placeholder="过滤结果…"
         @update:model-value="(v) => patchQueryState({ filter: String(v), page: 1 })"
       />
-      <span v-if="queryState.truncated" class="text-caption text-warning-strong">结果已截断（仅显示前 1000 行）</span>
+      <span v-if="queryState.truncated" class="text-caption text-warning-strong"
+        >结果已截断（仅显示前 1000 行）</span
+      >
       <UiPagination
         :model-value="queryState.page"
         :total-pages="db.totalPages.value"
@@ -440,7 +436,12 @@ async function exportCsv() {
   </div>
 
   <!-- 首次保存确认 -->
-  <UiModal :open="saveConfirmOpen" title="保存 SQL 编辑器" size="sm" @close="saveConfirmOpen = false">
+  <UiModal
+    :open="saveConfirmOpen"
+    title="保存 SQL 编辑器"
+    size="sm"
+    @close="saveConfirmOpen = false"
+  >
     <div class="space-y-[8px]">
       <p class="text-body-sm text-secondary dark:text-secondary-dark">
         首次保存需要确认名称，之后 Ctrl+S 将直接更新该编辑器。

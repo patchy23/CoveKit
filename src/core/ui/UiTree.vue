@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import UiIcon from './UiIcon.vue'
+
 export interface UiTreeItem {
   id: string
   label: string
@@ -65,32 +67,22 @@ function isGroupKind(kind?: string): boolean {
         "
         @click.stop="item.expandable && emit('toggle', item)"
       >
-        <!-- loading：旋转圆弧（参考 dbx Loader2） -->
-        <svg
+        <!-- loading：旋转圆弧 -->
+        <UiIcon
           v-if="item.loading"
-          class="h-[12px] w-[12px] animate-spin"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-          stroke-linecap="round"
-        >
-          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-        </svg>
-        <!-- 可展开：chevron（参考 dbx ChevronRight/ChevronDown，旋转过渡） -->
-        <svg
+          name="loading"
+          :size="12"
+          :stroke-width="2.5"
+          class="animate-spin"
+        />
+        <!-- 可展开：chevron（展开时旋转 90°） -->
+        <UiIcon
           v-else-if="item.expandable"
-          class="h-[12px] w-[12px] transition-transform duration-150"
+          name="chevron-right"
+          :size="12"
+          class="transition-transform duration-150"
           :class="{ 'rotate-90': item.expanded }"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="m9 18 6-6-6-6" />
-        </svg>
+        />
       </span>
       <slot name="icon" :item="item">
         <svg

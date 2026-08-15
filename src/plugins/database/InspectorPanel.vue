@@ -3,14 +3,7 @@
  * 右侧摘要面板：概览（连接信息 + 当前表）+ 历史 + 收藏
  */
 import { computed, ref } from 'vue'
-import {
-  UiBadge,
-  UiButton,
-  UiIconButton,
-  UiTable,
-  UiTableCell,
-  UiTabs,
-} from '@/core/ui'
+import { UiBadge, UiButton, UiIcon, UiIconButton, UiTable, UiTableCell, UiTabs } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import { DB_TYPE_META } from './useDatabaseMeta'
 import type { HistoryEntry, SavedEntry } from './contracts'
@@ -109,13 +102,17 @@ function formatConnectedAt(epochSeconds: number): string {
         </div>
       </section>
       <section v-else>
-        <div class="rounded border border-border p-[8px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark">
+        <div
+          class="rounded border border-border p-[8px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
+        >
           暂无活动连接
         </div>
       </section>
 
       <section>
-        <div class="mb-[4px] text-label-caps text-text-muted dark:text-text-muted-dark">当前页签</div>
+        <div class="mb-[4px] text-label-caps text-text-muted dark:text-text-muted-dark">
+          当前页签
+        </div>
         <div class="space-y-[3px] rounded border border-border p-[6px] dark:border-border-dark">
           <div class="font-mono text-body-sm font-medium text-primary dark:text-primary-dark">
             {{ db.activeTab.value?.label ?? '—' }}
@@ -123,7 +120,7 @@ function formatConnectedAt(epochSeconds: number): string {
           <div class="flex items-center gap-[6px] text-caption">
             <span class="text-text-muted dark:text-text-muted-dark">类型</span>
             <UiBadge tone="neutral" size="xs">{{
-              conn ? DB_TYPE_META[conn.dbType]?.label ?? conn.dbType : '—'
+              conn ? (DB_TYPE_META[conn.dbType]?.label ?? conn.dbType) : '—'
             }}</UiBadge>
           </div>
         </div>
@@ -155,7 +152,10 @@ function formatConnectedAt(epochSeconds: number): string {
           {{ entry.sql }}
         </div>
       </div>
-      <p v-if="!db.history.value.length" class="py-[16px] text-center text-caption text-text-muted dark:text-text-muted-dark">
+      <p
+        v-if="!db.history.value.length"
+        class="py-[16px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+      >
         暂无查询历史
       </p>
     </div>
@@ -181,12 +181,13 @@ function formatConnectedAt(epochSeconds: number): string {
           class="shrink-0 opacity-0 group-hover:opacity-100"
           @click.stop="deleteTarget = entry"
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M18 6L6 18M6 6l12 12" />
-          </svg>
+          <UiIcon name="x" :size="10" />
         </UiIconButton>
       </div>
-      <p v-if="!db.savedSql.value.length" class="py-[16px] text-center text-caption text-text-muted dark:text-text-muted-dark">
+      <p
+        v-if="!db.savedSql.value.length"
+        class="py-[16px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+      >
         暂无收藏 SQL
       </p>
     </div>
@@ -204,7 +205,12 @@ function formatConnectedAt(epochSeconds: number): string {
   </div>
 
   <!-- 连接详情小表（概览底部：字段列表） -->
-  <UiTable v-if="section === 'overview' && conn" density="compact" :framed="false" class="border-t border-border dark:border-border-dark">
+  <UiTable
+    v-if="section === 'overview' && conn"
+    density="compact"
+    :framed="false"
+    class="border-t border-border dark:border-border-dark"
+  >
     <tbody>
       <tr>
         <UiTableCell>库</UiTableCell>

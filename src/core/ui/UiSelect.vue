@@ -11,6 +11,7 @@ import {
   SelectViewport,
 } from 'reka-ui'
 import { computed } from 'vue'
+import UiIcon from './UiIcon.vue'
 import type { UiSize } from './types'
 
 export interface SelectOption {
@@ -79,19 +80,12 @@ function valueColorClass(value: string) {
       >
         <SelectValue :placeholder="placeholder" class="truncate">{{ currentLabel }}</SelectValue>
         <SelectIcon as-child>
-          <svg
+          <UiIcon
+            name="chevron-down"
+            :size="12"
             class="shrink-0 transition-transform duration-150"
             :class="{ 'rotate-180': open }"
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            aria-hidden="true"
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
+          />
         </SelectIcon>
       </SelectTrigger>
 

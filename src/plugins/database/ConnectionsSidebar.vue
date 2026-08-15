@@ -5,7 +5,7 @@
  * 已连接节点双击折叠/展开（不重新连接）；错误提示走状态点 tooltip，名字始终完整。
  */
 import { computed, ref } from 'vue'
-import { UiButton, UiIconButton, UiSearchInput, UiSpinner, UiTree } from '@/core/ui'
+import { UiButton, UiIcon, UiIconButton, UiSearchInput, UiSpinner, UiTree } from '@/core/ui'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import DbObjectIcon from './DbObjectIcon.vue'
@@ -76,7 +76,12 @@ function onTreeSelect(id: string) {
   if (!item) return
   // 连接节点单击仅选中；连接/展开/新建页签分别由双击与菜单承担
   if (item.depth === 0) return
-  if (item.kind === 'table' || item.kind === 'view' || item.kind === 'materialized_view' || item.kind === 'key') {
+  if (
+    item.kind === 'table' ||
+    item.kind === 'view' ||
+    item.kind === 'materialized_view' ||
+    item.kind === 'key'
+  ) {
     void db.selectResource(id)
   }
 }
@@ -113,7 +118,12 @@ function onTreeContext(mouse: MouseEvent, item: { id: string; depth: number }) {
         <template #icon="{ item }">
           <img
             v-if="item.depth === 0"
-            :src="DB_TYPE_META[db.connections.value.find((c) => c.id === item.id)?.dbType as keyof typeof DB_TYPE_META]?.icon ?? ''"
+            :src="
+              DB_TYPE_META[
+                db.connections.value.find((c) => c.id === item.id)
+                  ?.dbType as keyof typeof DB_TYPE_META
+              ]?.icon ?? ''
+            "
             :alt="item.id"
             class="h-[16px] w-[16px] shrink-0 object-contain"
           />
@@ -135,9 +145,7 @@ function onTreeContext(mouse: MouseEvent, item: { id: string; depth: number }) {
                 class="text-text-muted dark:text-text-muted-dark"
                 @click.stop="db.cancelConnect(item.id)"
               >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
+                <UiIcon name="x" :size="10" :stroke-width="2.5" />
               </UiIconButton>
             </template>
             <!-- 状态点：在线绿 / 离线灰红，错误 hover 提示 -->

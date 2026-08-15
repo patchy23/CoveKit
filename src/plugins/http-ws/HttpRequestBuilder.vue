@@ -6,7 +6,7 @@ import { ref } from 'vue'
 import type { KvRow } from './useHttp'
 import { newKvId } from './useHttp'
 import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
-import { UiButton, UiIconButton, UiInput, UiSelect as Select, UiTabs } from '@/core/ui'
+import { UiButton, UiIcon, UiIconButton, UiInput, UiSelect as Select, UiTabs } from '@/core/ui'
 
 const props = defineProps<{
   params: KvRow[]
@@ -99,17 +99,7 @@ function setRow(
           @update:model-value="setRow(props.params, r.id, 'value', String($event), 'params')"
         />
         <UiIconButton label="删除参数" size="sm" @click="removeRow(props.params, r.id, 'params')">
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-          >
-            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-          </svg>
+          <UiIcon name="trash" :size="13" />
         </UiIconButton>
       </div>
       <UiButton variant="ghost" size="sm" @click="addRow(props.params, 'params')">
@@ -152,17 +142,7 @@ function setRow(
           size="sm"
           @click="removeRow(props.headers, r.id, 'headers')"
         >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-          >
-            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-          </svg>
+          <UiIcon name="trash" :size="13" />
         </UiIconButton>
       </div>
       <UiButton variant="ghost" size="sm" @click="addRow(props.headers, 'headers')">

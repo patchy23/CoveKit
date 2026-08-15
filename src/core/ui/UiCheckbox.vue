@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CheckboxIndicator, CheckboxRoot } from 'reka-ui'
 import { computed } from 'vue'
+import UiIcon from './UiIcon.vue'
 import type { UiSize } from './types'
 
 const props = withDefaults(
@@ -45,12 +46,8 @@ function updateValue(value: boolean | 'indeterminate') {
       @update:model-value="updateValue"
     >
       <CheckboxIndicator class="grid place-items-center">
-        <svg v-if="indeterminate" width="8" height="8" viewBox="0 0 8 8" aria-hidden="true">
-          <path d="M1 4h6" fill="none" stroke="currentColor" stroke-width="1.5" />
-        </svg>
-        <svg v-else width="9" height="9" viewBox="0 0 10 10" aria-hidden="true">
-          <path d="M2 5l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.5" />
-        </svg>
+        <UiIcon v-if="indeterminate" name="minus" :size="8" :stroke-width="1.5" />
+        <UiIcon v-else name="check" :size="9" :stroke-width="1.5" />
       </CheckboxIndicator>
     </CheckboxRoot>
     <span v-if="label || description" class="min-w-0">

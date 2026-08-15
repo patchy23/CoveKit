@@ -6,7 +6,7 @@
 import { computed, ref } from 'vue'
 import type { HostsEntry } from './useHosts'
 import { parseEntries, validateEntry } from './useHosts'
-import { UiButton, UiCheckbox, UiIconButton, UiInput } from '@/core/ui'
+import { UiButton, UiCheckbox, UiIcon, UiIconButton, UiInput } from '@/core/ui'
 
 const props = defineProps<{ content: string }>()
 const emit = defineEmits<{ (e: 'change', text: string): void }>()
@@ -162,17 +162,7 @@ function addRow() {
           @update:model-value="onCommentInput(e, String($event))"
         />
         <UiIconButton label="删除此条" size="sm" @click="remove(e)">
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-          >
-            <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-          </svg>
+          <UiIcon name="trash" :size="14" />
         </UiIconButton>
       </div>
 

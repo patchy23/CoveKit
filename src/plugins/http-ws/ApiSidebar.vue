@@ -4,7 +4,7 @@
  */
 import type { ApiRecord } from './contracts'
 import { formatRelativeTime, methodBadgeClass } from './useHttp'
-import { UiBadge, UiButton, UiIconButton } from '@/core/ui'
+import { UiBadge, UiButton, UiIcon, UiIconButton } from '@/core/ui'
 
 defineProps<{
   apis: ApiRecord[]
@@ -68,18 +68,7 @@ const emit = defineEmits<{
             class="hidden shrink-0 text-text-muted hover:text-info-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-info-dark"
             @click.stop="emit('rename', a)"
           >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-            </svg>
+            <UiIcon name="pencil" :size="12" />
           </UiIconButton>
           <UiIconButton
             label="删除接口"
@@ -87,17 +76,7 @@ const emit = defineEmits<{
             class="hidden shrink-0 text-text-muted hover:text-tertiary-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-tertiary-dark"
             @click.stop="emit('delete', a.id)"
           >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-            >
-              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
-            </svg>
+            <UiIcon name="trash" :size="12" />
           </UiIconButton>
         </div>
         <div class="flex items-center gap-[6px]">

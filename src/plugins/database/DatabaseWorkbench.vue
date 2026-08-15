@@ -6,7 +6,7 @@
  * 页签语义：SQL 编辑器是可保存的工作区（未保存灰点 / 已保存绿点）；右键可改别名。
  */
 import { computed, onMounted, ref } from 'vue'
-import { UiButton, UiIconButton, UiInput, UiModal, UiTabs } from '@/core/ui'
+import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiTabs } from '@/core/ui'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import { useDatabase } from './useDatabase'
 import { useSplitPane } from './useSplitPane'
@@ -171,9 +171,7 @@ onMounted(() => {
           class="shrink-0"
           @click="openEditorMenu($event)"
         >
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <path d="m6 9 6 6 6-6" />
-          </svg>
+          <UiIcon name="chevron-down" :size="10" :stroke-width="2.5" />
         </UiIconButton>
         <UiTabs
           v-if="db.tabs.value.length"
@@ -234,18 +232,7 @@ onMounted(() => {
       >
         <span class="text-caption font-semibold text-primary dark:text-primary-dark">摘要</span>
         <UiIconButton label="收起摘要" size="xs" class="ml-auto" @click="inspectorOpen = false">
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <path d="M8 6l6 6-6 6M13 6l6 6-6 6" />
-          </svg>
+          <UiIcon name="chevrons-right" :size="12" />
         </UiIconButton>
       </div>
       <InspectorPanel :db="db" />
@@ -257,18 +244,7 @@ onMounted(() => {
       class="flex w-[28px] shrink-0 flex-col items-center gap-[6px] border-l border-border py-[6px] dark:border-border-dark"
     >
       <UiIconButton label="展开摘要" size="xs" @click="inspectorOpen = true">
-        <svg
-          width="12"
-          height="12"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M16 6l-6 6 6 6M11 6l-6 6 6 6" />
-        </svg>
+        <UiIcon name="chevrons-left" :size="12" />
       </UiIconButton>
       <span
         class="text-caption text-text-muted [writing-mode:vertical-rl] dark:text-text-muted-dark"
@@ -303,8 +279,18 @@ onMounted(() => {
     />
 
     <!-- 重命名页签 -->
-    <UiModal :open="renameDialogOpen" title="重命名页签" size="sm" @close="renameDialogOpen = false">
-      <UiInput v-model="renameValue" size="sm" placeholder="输入页签名（别名）" @keydown.enter="confirmRename" />
+    <UiModal
+      :open="renameDialogOpen"
+      title="重命名页签"
+      size="sm"
+      @close="renameDialogOpen = false"
+    >
+      <UiInput
+        v-model="renameValue"
+        size="sm"
+        placeholder="输入页签名（别名）"
+        @keydown.enter="confirmRename"
+      />
       <template #footer>
         <UiButton size="sm" variant="ghost" @click="renameDialogOpen = false">取消</UiButton>
         <UiButton size="sm" variant="primary" @click="confirmRename">确定</UiButton>
