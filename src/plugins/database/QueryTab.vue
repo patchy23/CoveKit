@@ -155,7 +155,7 @@ async function exportCsv() {
             ? '运行中…'
             : '运行选中 / 光标所在语句（Ctrl+Enter）'
         "
-        size="sm"
+        size="md"
         :disabled="!canExecute"
         class="text-success-strong dark:text-success-dark"
         :class="queryState.status === 'running' ? '' : 'hover:!bg-success-soft disabled:opacity-40 dark:hover:!bg-success-soft-dark'"
@@ -163,8 +163,8 @@ async function exportCsv() {
       >
         <svg
           v-if="queryState.status === 'running'"
-          width="18"
-          height="18"
+          width="20"
+          height="20"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -177,8 +177,8 @@ async function exportCsv() {
         </svg>
         <svg
           v-else
-          width="18"
-          height="18"
+          width="20"
+          height="20"
           viewBox="0 0 24 24"
           fill="currentColor"
           aria-hidden="true"
@@ -188,7 +188,7 @@ async function exportCsv() {
       </UiIconButton>
       <UiIconButton
         label="停止（Esc）"
-        size="sm"
+        size="md"
         :disabled="queryState.status !== 'running'"
         :class="
           queryState.status === 'running'
@@ -197,7 +197,7 @@ async function exportCsv() {
         "
         @click="db.cancelQuery"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <rect x="5" y="5" width="14" height="14" rx="2" />
         </svg>
       </UiIconButton>

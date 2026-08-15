@@ -53,7 +53,9 @@ const lightTheme = EditorView.theme({
     backgroundColor: 'var(--color-surface-muted)',
     color: 'var(--color-primary)',
     fontSize: '13px',
+    height: '100%',
   },
+  '.cm-scroller': { overflow: 'auto' },
   '.cm-content': {
     fontFamily: 'var(--font-mono)',
     caretColor: 'var(--color-tertiary)',
@@ -99,7 +101,9 @@ const darkTheme = EditorView.theme(
       backgroundColor: 'var(--color-surface-muted-dark)',
       color: 'var(--color-primary-dark)',
       fontSize: '13px',
+      height: '100%',
     },
+    '.cm-scroller': { overflow: 'auto' },
     '.cm-content': {
       fontFamily: 'var(--font-mono)',
       caretColor: 'var(--color-tertiary-dark)',
