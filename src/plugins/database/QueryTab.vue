@@ -167,85 +167,83 @@ async function exportCsv() {
     <div
       class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
     >
-      <UiButton
-        size="md"
-        variant="secondary"
-        :disabled="!canExecute"
-        class="shrink-0 border-transparent !bg-success-soft text-success-strong hover:!bg-success-soft disabled:opacity-40 dark:!bg-success-soft-dark dark:text-success-dark dark:hover:!bg-success-soft-dark"
-        :title="
+      <UiIconButton
+        :label="
           queryState.status === 'running'
             ? '运行中…'
             : '运行选中 / 光标所在语句（Ctrl+Enter）'
         "
+        size="sm"
+        :disabled="!canExecute"
+        class="text-success-strong dark:text-success-dark"
         @click="runCurrent"
       >
         <svg
           v-if="queryState.status === 'running'"
-          width="16"
-          height="16"
+          width="20"
+          height="20"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
           stroke-width="2.5"
           stroke-linecap="round"
           class="animate-spin"
+          style="width: 20px; height: 20px; flex: none;"
           aria-hidden="true"
         >
           <path d="M21 12a9 9 0 1 1-6.219-8.56" />
         </svg>
         <svg
           v-else
-          width="16"
-          height="16"
+          width="20"
+          height="20"
           viewBox="0 0 24 24"
           fill="currentColor"
           aria-hidden="true"
+          style="width: 20px; height: 20px; flex: none;"
         >
           <path d="M7.5 4.9v14.2c0 .9 1 1.5 1.8 1L20.5 13a1.16 1.16 0 0 0 0-2L9.3 3.9c-.8-.5-1.8.1-1.8 1Z" />
         </svg>
-        {{ queryState.status === 'running' ? '运行中' : '运行' }}
-      </UiButton>
-      <UiButton
-        size="md"
-        variant="secondary"
+      </UiIconButton>
+      <UiIconButton
+        label="停止（Esc）"
+        size="sm"
         :disabled="queryState.status !== 'running'"
-        class="shrink-0 border-transparent !bg-danger-soft text-danger-strong hover:!bg-danger-soft disabled:opacity-40 dark:!bg-danger-soft-dark dark:text-danger-dark dark:hover:!bg-danger-soft-dark"
-        :title="'停止（Esc）'"
+        class="text-danger-strong dark:text-danger-dark"
         @click="db.cancelQuery"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" style="width: 18px; height: 18px; flex: none;">
           <rect x="5" y="5" width="14" height="14" rx="2" />
         </svg>
-        停止
-      </UiButton>
+      </UiIconButton>
       <UiIconButton
         label="全部执行（Ctrl+Shift+Enter）"
-        size="xs"
+        size="sm"
         class="text-success-strong dark:text-success-dark"
         @click="runAll"
       >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width: 16px; height: 16px; flex: none;">
           <path d="M4 5v14l12-7L4 5Z" />
           <path d="M19 5v14" />
         </svg>
       </UiIconButton>
-      <UiIconButton label="执行计划" size="xs" @click="db.runExplain">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <UiIconButton label="执行计划" size="sm" @click="db.runExplain">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; flex: none;">
           <path d="M12 2v6m0 8v6M2 12h6m8 0h6" />
         </svg>
       </UiIconButton>
-      <UiIconButton label="格式化" size="xs" @click="db.onFormatSql">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <UiIconButton label="格式化" size="sm" @click="db.onFormatSql">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; flex: none;">
           <path d="M4 6h16M4 12h16M4 18h10" />
         </svg>
       </UiIconButton>
       <UiIconButton
         :label="queryState.savedId ? '保存（Ctrl+S）' : '保存（Ctrl+S，首次需确认）'"
-        size="xs"
+        size="sm"
         class="text-success-strong dark:text-success-dark"
         @click="onSave"
       >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 16px; height: 16px; flex: none;">
           <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8" />
         </svg>
       </UiIconButton>
