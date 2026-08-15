@@ -146,6 +146,41 @@ export interface DriverStatus {
   note?: string
 }
 
+/** 字符集选项（新建数据库对话框；collationsByCharset 用于字符集→排序规则联动） */
+export interface DbCharsetOptions {
+  charsets: string[]
+  collationsByCharset: Record<string, string[]>
+}
+
+/** 数据库用户（授权选择） */
+export interface DbUserInfo {
+  user: string
+  host: string
+}
+
+/** 授权目标（建库授权入参；privilege 白名单：all/readwrite/readonly） */
+export interface DbGrantInput {
+  user: string
+  host: string
+  privilege: 'all' | 'readwrite' | 'readonly'
+}
+
+/** 分步执行结果（建库+授权逐步反馈） */
+export interface DbStepResult {
+  label: string
+  sql: string
+  ok: boolean
+  error?: string | null
+}
+
+/** 索引信息（结构页签 · 索引子页签） */
+export interface DbIndexInfo {
+  name: string
+  columns: string[]
+  nonUnique: boolean
+  definition: string
+}
+
 /** 命令清单 */
 export const commands = {
   dbcConnectionSave: 'dbc_connection_save',
@@ -172,6 +207,13 @@ export const commands = {
   dbcExportCsv: 'dbc_export_csv',
   dbcRedisKeys: 'dbc_redis_keys',
   dbcRedisKeyInfo: 'dbc_redis_key_info',
+  dbcCharsetOptions: 'dbc_charset_options',
+  dbcUsers: 'dbc_users',
+  dbcCreateDatabase: 'dbc_create_database',
+  dbcDropDatabase: 'dbc_drop_database',
+  dbcTableAdmin: 'dbc_table_admin',
+  dbcTableDdl: 'dbc_table_ddl',
+  dbcTableIndexes: 'dbc_table_indexes',
 } as const
 
 /** 命令入参 */
@@ -200,6 +242,26 @@ export type Payloads = {
   dbc_export_csv: { path: string; text: string }
   dbc_redis_keys: { connId: string; pattern: string; cursor: number }
   dbc_redis_key_info: { connId: string; key: string }
+  dbc_charset_options: { connId: string }
+  dbc_users: { connId: string }
+  dbc_create_database: {
+    connId: string
+    name: string
+    charset?: string
+    collation?: string
+    grants?: DbGrantInput[]
+  }
+  dbc_drop_database: { connId: string; name: string }
+  dbc_table_admin: {
+    connId: string
+    schema?: string
+    table: string
+    action: 'rename' | 'truncate' | 'drop'
+    newName?: string
+    kind?: string
+  }
+  dbc_table_ddl: { connId: string; schema?: string; table: string }
+  dbc_table_indexes: { connId: string; schema?: string; table: string }
 }
 
 /** 命令返回 */
@@ -228,4 +290,11 @@ export type Results = {
   dbc_export_csv: void
   dbc_redis_keys: [number, string[]]
   dbc_redis_key_info: RedisKeyInfo
+  dbc_charset_options: DbCharsetOptions
+  dbc_users: DbUserInfo[]
+  dbc_create_database: DbStepResult[]
+  dbc_drop_database: string
+  dbc_table_admin: string
+  dbc_table_ddl: string
+  dbc_table_indexes: DbIndexInfo[]
 }

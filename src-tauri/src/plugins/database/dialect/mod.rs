@@ -44,6 +44,103 @@ pub trait DbDialect: Send + Sync {
 
     /// 多语句拆分（分号分隔，跳过引号/注释内的分号；空语句丢弃）
     fn split_statements(&self, sql: &str) -> Vec<String>;
+
+    // ── 管理操作（v2：建库/授权/DDL/索引/表维护；默认不支持，方言按需覆盖）──
+
+    /// 字符串字面量引用（单引号转义，用于无参数绑定的 SHOW/PRAGMA 类语句）
+    fn quote_literal(&self, value: &str) -> String {
+        format!("'{}'", value.replace('\'', "''"))
+    }
+
+    /// schema 限定名（schema 为空时只引用对象名）
+    fn qualified(&self, schema: &str, name: &str) -> String {
+        if schema.is_empty() {
+            self.quote_ident(name)
+        } else {
+            format!("{}.{}", self.quote_ident(schema), self.quote_ident(name))
+        }
+    }
+
+    /// 建库 SQL（charset/collation 仅 mysql 系用；None = 该类型不支持在线建库）
+    fn create_database_sql(
+        &self,
+        _name: &str,
+        _charset: Option<&str>,
+        _collation: Option<&str>,
+    ) -> Option<String> {
+        None
+    }
+
+    /// 字符集清单 SQL（返回单列字符集名；None = 不支持）
+    fn charsets_sql(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// 排序规则清单 SQL（返回 (charset, collation) 两列；None = 不支持）
+    fn collations_sql(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// 数据库用户清单 SQL（返回 (user, host) 两列；None = 不支持）
+    fn users_sql(&self) -> Option<&'static str> {
+        None
+    }
+
+    /// 库级授权 SQL（对 'user'@'host' 授予指定权限；None = 不支持）
+    fn grant_sql(
+        &self,
+        _database: &str,
+        _user: &str,
+        _host: &str,
+        _privilege: &str,
+    ) -> Option<String> {
+        None
+    }
+
+    /// 表 DDL 查询 SQL（None = 该类型暂不支持查看 DDL）
+    fn table_ddl_sql(&self, _schema: &str, _table: &str) -> Option<String> {
+        None
+    }
+
+    /// 索引清单 SQL（返回 (name, columns, non_unique, definition) 四列；None = 不支持）
+    fn indexes_sql(&self, _schema: &str, _table: &str) -> Option<String> {
+        None
+    }
+
+    /// 重命名表 SQL（三方言同为 ALTER TABLE ... RENAME TO ...）
+    fn rename_table_sql(&self, schema: &str, old: &str, new: &str) -> Option<String> {
+        Some(format!(
+            "ALTER TABLE {} RENAME TO {}",
+            self.qualified(schema, old),
+            self.quote_ident(new)
+        ))
+    }
+
+    /// 清空表 SQL（默认 TRUNCATE；sqlite 无 TRUNCATE 覆盖为 DELETE）
+    fn truncate_table_sql(&self, schema: &str, table: &str) -> Option<String> {
+        Some(format!("TRUNCATE TABLE {}", self.qualified(schema, table)))
+    }
+
+    /// 删除对象 SQL（kind = table/view）
+    fn drop_object_sql(&self, schema: &str, kind: &str, name: &str) -> Option<String> {
+        let kw = match kind {
+            "table" => "TABLE",
+            "view" | "materialized_view" => "VIEW",
+            _ => return None,
+        };
+        Some(format!(
+            "DROP {kw} IF EXISTS {}",
+            self.qualified(schema, name)
+        ))
+    }
+
+    /// 删除库 SQL（sqlite 无库概念返回 None）
+    fn drop_database_sql(&self, name: &str) -> Option<String> {
+        Some(format!(
+            "DROP DATABASE IF EXISTS {}",
+            self.quote_ident(name)
+        ))
+    }
 }
 
 /// 按类型取方言实例（agent/redis 返回 None）

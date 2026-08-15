@@ -96,7 +96,7 @@ export interface V2Tab {
 /** 新建连接对话框的类型选项（九宫格，含图标） */
 export type V2Env = '生产' | '测试' | '开发'
 export type V2Status = 'online' | 'offline' | 'connecting'
-export type V2TabKind = 'query' | 'data' | 'structure' | 'redis'
+export type V2TabKind = 'query' | 'data' | 'structure' | 'redis' | 'create-table'
 export type V2QueryStatus = 'idle' | 'running' | 'success' | 'error' | 'empty' | 'cancelled'
 
 /** 是否 SQLite（新建对话框切换为文件选择） */
@@ -117,6 +117,62 @@ export function isAgentType(type: V2DbType): boolean {
 /** 是否 dameng（后端暂未实现，连接时提示） */
 export function isUnsupportedType(type: V2DbType): boolean {
   return type === 'dameng'
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 可视化建表（MySQL 系）
+// ──────────────────────────────────────────────────────────────────────────
+
+/** 是否支持可视化建表页签（v1 仅 mysql/polardb；其余类型回退 SQL 模板） */
+export function supportsVisualCreateTable(type: V2DbType): boolean {
+  return type === 'mysql' || type === 'polardb'
+}
+
+/** MySQL 列类型选项（可视化建表下拉；覆盖开发常用类型） */
+export const MYSQL_COLUMN_TYPES = [
+  'INT',
+  'BIGINT',
+  'TINYINT',
+  'SMALLINT',
+  'VARCHAR',
+  'CHAR',
+  'TEXT',
+  'MEDIUMTEXT',
+  'LONGTEXT',
+  'DECIMAL',
+  'FLOAT',
+  'DOUBLE',
+  'DATE',
+  'DATETIME',
+  'TIMESTAMP',
+  'TIME',
+  'JSON',
+  'BLOB',
+] as const
+
+/** 需要长度参数的列类型（DECIMAL 允许 "10,2"） */
+export const MYSQL_TYPES_WITH_LENGTH = new Set([
+  'INT',
+  'BIGINT',
+  'TINYINT',
+  'SMALLINT',
+  'VARCHAR',
+  'CHAR',
+  'DECIMAL',
+])
+
+/** MySQL 存储引擎选项 */
+export const MYSQL_ENGINES = ['InnoDB', 'MyISAM', 'Memory'] as const
+
+/** 字符集兜底清单（建库对话框在查询失败/空结果时使用） */
+export const FALLBACK_CHARSETS = ['utf8mb4', 'utf8', 'gbk', 'latin1'] as const
+
+/** 字符集兜底排序规则（与 FALLBACK_CHARSETS 对应） */
+export const FALLBACK_COLLATIONS: Record<string, string[]> = {
+  utf8mb4: ['utf8mb4_unicode_ci', 'utf8mb4_general_ci', 'utf8mb4_bin'],
+  utf8: ['utf8_general_ci', 'utf8_unicode_ci', 'utf8_bin'],
+  gbk: ['gbk_chinese_ci', 'gbk_bin'],
+  latin1: ['latin1_swedish_ci', 'latin1_bin'],
 }
 
 /** 系统库 / 系统 schema 清单（小写比较）：默认在对象树与编辑器下拉中隐藏，可按连接右键切换显示 */

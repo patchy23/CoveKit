@@ -1,9 +1,12 @@
 <script setup lang="ts">
 /**
- * 表结构页签：列信息表格（字段/类型/可空/默认值/键/注释）+ 生成查询
+ * 表结构页签：子页签多维信息（列 / 索引 / DDL）
+ * 列=字段表格；索引=名称/列/唯一性/类型；DDL=建表语句原文（可复制）。
+ * 数据在打开页签时由 openStructureTab 一次性加载（loadColumns + loadStructureExtras）。
  */
-import { computed } from 'vue'
-import { UiBadge, UiButton, UiTable, UiTableCell } from '@/core/ui'
+import { computed, ref } from 'vue'
+import { UiBadge, UiButton, UiIcon, UiIconButton, UiTable, UiTableCell, UiTabs } from '@/core/ui'
+import { useCopy } from '@/core/ui/useClipboard'
 import type { useDatabase } from './useDatabase'
 
 const props = defineProps<{
@@ -11,8 +14,19 @@ const props = defineProps<{
 }>()
 
 const { db } = props
+const { copyText } = useCopy()
+
+/** 子页签：列 / 索引 / DDL */
+const subTab = ref<'columns' | 'indexes' | 'ddl'>('columns')
+const subTabs = [
+  { value: 'columns', label: '列' },
+  { value: 'indexes', label: '索引' },
+  { value: 'ddl', label: 'DDL' },
+]
 
 const columns = computed(() => db.structureColumns.value[db.activeTabId.value] ?? [])
+const indexes = computed(() => db.structureIndexes.value[db.activeTabId.value] ?? [])
+const ddl = computed(() => db.structureDdl.value[db.activeTabId.value] ?? '')
 const tableName = computed(() => {
   const m = db.activeTabId.value.match(/^structure-(?:[^-]+)-(.*)$/)
   return m?.[1] ?? ''
@@ -25,47 +39,120 @@ function genQuery() {
 </script>
 
 <template>
-  <div class="min-h-0 flex-1 overflow-auto p-[12px]">
-    <div class="mb-[12px] flex items-center justify-between">
-      <div>
-        <h2 class="text-card-title font-semibold text-primary dark:text-primary-dark">
-          {{ tableName }} · 表结构
-        </h2>
-        <p class="mt-[2px] font-mono text-caption text-secondary dark:text-secondary-dark">
-          {{ db.activeTabConnection.value?.label ?? '' }} · {{ columns.length }} 个字段
-        </p>
+  <div class="flex min-h-0 flex-1 flex-col">
+    <div
+      class="flex h-[36px] shrink-0 items-center gap-[8px] border-b border-border px-[12px] dark:border-border-dark"
+    >
+      <div class="min-w-0">
+        <span class="text-card-title font-semibold text-primary dark:text-primary-dark">{{
+          tableName
+        }}</span>
+        <span class="ml-[8px] font-mono text-caption text-secondary dark:text-secondary-dark">
+          {{ db.activeTabConnection.value?.label ?? '' }}
+        </span>
       </div>
-      <UiButton size="xs" variant="primary" @click="genQuery">生成查询</UiButton>
+      <UiTabs
+        :model-value="subTab"
+        :items="subTabs"
+        variant="line"
+        size="xs"
+        class="ml-[8px]"
+        @update:model-value="(v) => (subTab = v as typeof subTab)"
+      />
+      <div class="ml-auto flex items-center gap-[4px]">
+        <UiIconButton
+          v-if="subTab === 'ddl' && ddl"
+          label="复制 DDL"
+          size="xs"
+          @click="copyText(ddl)"
+        >
+          <UiIcon name="copy" :size="12" />
+        </UiIconButton>
+        <UiButton size="xs" variant="primary" @click="genQuery">生成查询</UiButton>
+      </div>
     </div>
 
-    <UiTable v-if="columns.length" density="compact" :hoverable="true" :striped="true">
-      <thead>
-        <tr>
-          <UiTableCell as="th">字段</UiTableCell>
-          <UiTableCell as="th">类型</UiTableCell>
-          <UiTableCell as="th">可空</UiTableCell>
-          <UiTableCell as="th">默认值</UiTableCell>
-          <UiTableCell as="th">键</UiTableCell>
-          <UiTableCell as="th">注释</UiTableCell>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="column in columns" :key="column.name">
-          <UiTableCell content="technical">{{ column.name }}</UiTableCell>
-          <UiTableCell content="technical">{{ column.dataType }}</UiTableCell>
-          <UiTableCell>{{ column.nullable }}</UiTableCell>
-          <UiTableCell content="technical">{{ column.defaultValue || '—' }}</UiTableCell>
-          <UiTableCell>
-            <UiBadge v-if="column.key && column.key !== '—'" tone="info" size="xs">{{ column.key }}</UiBadge>
-            <span v-else class="text-text-muted">—</span>
-          </UiTableCell>
-          <UiTableCell>{{ column.comment }}</UiTableCell>
-        </tr>
-      </tbody>
-    </UiTable>
+    <!-- 列 -->
+    <div v-if="subTab === 'columns'" class="min-h-0 flex-1 overflow-auto p-[12px]">
+      <UiTable v-if="columns.length" density="compact" :hoverable="true" :striped="true">
+        <thead>
+          <tr>
+            <UiTableCell as="th">字段</UiTableCell>
+            <UiTableCell as="th">类型</UiTableCell>
+            <UiTableCell as="th">可空</UiTableCell>
+            <UiTableCell as="th">默认值</UiTableCell>
+            <UiTableCell as="th">键</UiTableCell>
+            <UiTableCell as="th">注释</UiTableCell>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="column in columns" :key="column.name">
+            <UiTableCell content="technical">{{ column.name }}</UiTableCell>
+            <UiTableCell content="technical">{{ column.dataType }}</UiTableCell>
+            <UiTableCell>{{ column.nullable }}</UiTableCell>
+            <UiTableCell content="technical">{{ column.defaultValue || '—' }}</UiTableCell>
+            <UiTableCell>
+              <UiBadge v-if="column.key && column.key !== '—'" tone="info" size="xs">{{
+                column.key
+              }}</UiBadge>
+              <span v-else class="text-text-muted">—</span>
+            </UiTableCell>
+            <UiTableCell>{{ column.comment }}</UiTableCell>
+          </tr>
+        </tbody>
+      </UiTable>
+      <div
+        v-else
+        class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+      >
+        加载结构中…
+      </div>
+    </div>
 
-    <div v-else class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark">
-      加载结构中…
+    <!-- 索引 -->
+    <div v-else-if="subTab === 'indexes'" class="min-h-0 flex-1 overflow-auto p-[12px]">
+      <UiTable v-if="indexes.length" density="compact" :hoverable="true" :striped="true">
+        <thead>
+          <tr>
+            <UiTableCell as="th">索引名</UiTableCell>
+            <UiTableCell as="th">列</UiTableCell>
+            <UiTableCell as="th">唯一</UiTableCell>
+            <UiTableCell as="th">类型/定义</UiTableCell>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="index in indexes" :key="index.name">
+            <UiTableCell content="technical">{{ index.name }}</UiTableCell>
+            <UiTableCell content="technical">{{ index.columns.join(', ') || '—' }}</UiTableCell>
+            <UiTableCell>
+              <UiBadge :tone="index.nonUnique ? 'neutral' : 'success'" size="xs">
+                {{ index.nonUnique ? '否' : '是' }}
+              </UiBadge>
+            </UiTableCell>
+            <UiTableCell content="technical">{{ index.definition || '—' }}</UiTableCell>
+          </tr>
+        </tbody>
+      </UiTable>
+      <div
+        v-else
+        class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+      >
+        无索引或该类型暂不支持
+      </div>
+    </div>
+
+    <!-- DDL -->
+    <div v-else class="min-h-0 flex-1 overflow-auto p-[12px]">
+      <pre
+        v-if="ddl"
+        class="whitespace-pre-wrap rounded-[8px] border border-border bg-surface-muted p-[12px] font-mono text-body-sm text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+        >{{ ddl }}</pre>
+      <div
+        v-else
+        class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+      >
+        加载 DDL 中…
+      </div>
     </div>
   </div>
 </template>

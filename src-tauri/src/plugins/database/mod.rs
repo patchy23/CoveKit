@@ -3,6 +3,7 @@
 //! 结构：models.rs（契约）/ dialect/（方言纯函数）/ drivers/（会话注册表 + 驱动执行）/
 //! catalog.rs（查询与元数据命令）/ store.rs（本地库）/ secrets.rs（stronghold 凭据）/ agent/（侧车驱动）。
 
+pub(crate) mod admin;
 pub(crate) mod agent;
 pub(crate) mod catalog;
 pub(crate) mod dialect;
@@ -252,6 +253,13 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         catalog::dbc_export_csv,
         catalog::dbc_redis_keys,
         catalog::dbc_redis_key_info,
+        admin::dbc_charset_options,
+        admin::dbc_users,
+        admin::dbc_create_database,
+        admin::dbc_drop_database,
+        admin::dbc_table_admin,
+        admin::dbc_table_ddl,
+        admin::dbc_table_indexes,
     ];
     handler(invoke)
 }
@@ -286,6 +294,13 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ("dbc_export_csv", "导出 CSV 文件（结果集导出）"),
         ("dbc_redis_keys", "Redis 键列表（SCAN）"),
         ("dbc_redis_key_info", "Redis 键信息（TYPE/TTL/预览）"),
+        ("dbc_charset_options", "字符集与排序规则选项（建库对话框）"),
+        ("dbc_users", "数据库用户清单（授权选择）"),
+        ("dbc_create_database", "新建数据库（含可选分步授权）"),
+        ("dbc_drop_database", "删除数据库（前端确认后调用）"),
+        ("dbc_table_admin", "表维护（重命名/清空/删除）"),
+        ("dbc_table_ddl", "表 DDL 查看"),
+        ("dbc_table_indexes", "表索引清单"),
     ])
     .expect("IPC 命令重复注册");
     builder

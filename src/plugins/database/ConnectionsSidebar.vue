@@ -19,9 +19,10 @@ import {
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import { useCopy } from '@/core/ui/useClipboard'
+import CreateDatabaseDialog from './CreateDatabaseDialog.vue'
 import DbObjectIcon from './DbObjectIcon.vue'
 import { useSplitPane } from './useSplitPane'
-import { DB_TYPE_META } from './useDatabaseMeta'
+import { DB_TYPE_META, supportsVisualCreateTable, type V2DbType } from './useDatabaseMeta'
 import type { DbConnectionInfo } from './contracts'
 import type { useDatabase } from './useDatabase'
 
@@ -42,9 +43,19 @@ const menu = ref<{ x: number; y: number; connection?: DbConnectionInfo; item?: U
   null
 )
 const deleteTarget = ref<DbConnectionInfo | null>(null)
-/** 新建数据库弹窗状态 */
+/** 新建数据库弹窗（分类型表单组件 CreateDatabaseDialog） */
 const createDbFor = ref<DbConnectionInfo | null>(null)
-const createDbName = ref('')
+/** 删除数据库确认（mysql/PG 系库节点） */
+const dropDbTarget = ref<{ connId: string; name: string } | null>(null)
+/** 表维护动作（重命名输入 / 清空、删除确认） */
+const tableAction = ref<{
+  mode: 'rename' | 'truncate' | 'drop'
+  connId: string
+  scope: string
+  name: string
+  kind: string
+} | null>(null)
+const renameValue = ref('')
 
 /** 侧栏宽度（可拖拽，默认 200，范围 168–340；分隔条在面板右侧，正向） */
 const { size: sidebarWidth, onPointerDown: onDragStart } = useSplitPane({
@@ -77,10 +88,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     if (online && CREATE_DB_TYPES.has(connection.dbType)) {
       items.push({
         label: '新建数据库',
-        onClick: () => {
-          createDbFor.value = connection
-          createDbName.value = ''
-        },
+        onClick: () => (createDbFor.value = connection),
       })
     }
     items.push({
@@ -122,23 +130,38 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     return [{ label: '刷新键列表', onClick: () => void db.refreshTreeNode(item) }]
   }
   if (item.kind === 'database' || item.kind === 'schema' || item.kind?.startsWith('group')) {
-    return [
+    const { database, schema } = db.scopeContext(conn, scope)
+    const items: ContextMenuItem[] = [
       {
         label: '打开SQL编辑器',
-        onClick: () => {
-          const { database, schema } = db.scopeContext(conn, scope)
-          db.openSqlEditorWithSql(connId, '', database, schema)
-        },
+        onClick: () => db.openSqlEditorWithSql(connId, '', database, schema),
       },
-      { label: '新建表', onClick: () => db.openCreateTableEditor(connId, scope) },
+      // mysql 系走可视化建表页签；其余类型回退 SQL 模板编辑器
+      {
+        label: '新建表',
+        onClick: () =>
+          supportsVisualCreateTable(conn.dbType as V2DbType)
+            ? db.openCreateTableTab(connId, scope)
+            : db.openCreateTableEditor(connId, scope),
+      },
       { label: '刷新', onClick: () => void db.refreshTreeNode(item) },
     ]
+    // 库节点（非 schema/分组）：mysql/PG 系可删库
+    if (item.kind === 'database' && CREATE_DB_TYPES.has(conn.dbType)) {
+      items.push({ label: '', separator: true })
+      items.push({
+        label: '删除数据库',
+        danger: true,
+        onClick: () => (dropDbTarget.value = { connId, name: scope }),
+      })
+    }
+    return items
   }
   const leaf = db.parseLeafId(item.id)
   if (!leaf) return []
   if (leaf.kind === 'table' || leaf.kind === 'view' || leaf.kind === 'materialized_view') {
     const { database, schema } = db.scopeContext(conn, leaf.scope)
-    return [
+    const items: ContextMenuItem[] = [
       { label: '查看数据', onClick: () => void db.selectResource(item.id) },
       {
         label: '查看结构',
@@ -146,6 +169,48 @@ const menuItems = computed<ContextMenuItem[]>(() => {
       },
       { label: '复制名称', onClick: () => void copyText(leaf.name) },
     ]
+    // 表维护仅表支持（视图无重命名/清空）
+    if (leaf.kind === 'table') {
+      items.push({ label: '', separator: true })
+      items.push({
+        label: '重命名',
+        onClick: () => {
+          tableAction.value = {
+            mode: 'rename',
+            connId,
+            scope: leaf.scope,
+            name: leaf.name,
+            kind: leaf.kind,
+          }
+          renameValue.value = leaf.name
+        },
+      })
+      items.push({
+        label: '清空表',
+        danger: true,
+        onClick: () =>
+          (tableAction.value = {
+            mode: 'truncate',
+            connId,
+            scope: leaf.scope,
+            name: leaf.name,
+            kind: leaf.kind,
+          }),
+      })
+      items.push({
+        label: '删除表',
+        danger: true,
+        onClick: () =>
+          (tableAction.value = {
+            mode: 'drop',
+            connId,
+            scope: leaf.scope,
+            name: leaf.name,
+            kind: leaf.kind,
+          }),
+      })
+    }
+    return items
   }
   if (leaf.kind === 'key') {
     return [
@@ -169,11 +234,28 @@ function openMenu(
   }
 }
 
-async function confirmCreateDb() {
-  const conn = createDbFor.value
-  if (!conn) return
-  const ok = await db.createDatabase(conn.id, createDbName.value)
-  if (ok) createDbFor.value = null
+/** 删除数据库确认执行 */
+async function confirmDropDb() {
+  const target = dropDbTarget.value
+  if (!target) return
+  const ok = await db.dropDatabase(target.connId, target.name)
+  if (ok) dropDbTarget.value = null
+}
+
+/** 表维护确认执行（重命名走输入值；清空/删除直接执行） */
+async function confirmTableAction() {
+  const action = tableAction.value
+  if (!action) return
+  if (action.mode === 'rename' && !renameValue.value.trim()) return
+  const ok = await db.tableAdminAction(
+    action.connId,
+    action.scope,
+    action.name,
+    action.mode,
+    action.mode === 'rename' ? renameValue.value.trim() : undefined,
+    action.kind
+  )
+  if (ok) tableAction.value = null
 }
 
 function confirmDelete() {
@@ -314,31 +396,63 @@ function onTreeContext(mouse: MouseEvent, item: UiTreeItem) {
       @confirm="confirmDelete"
     />
 
-    <!-- 新建数据库 -->
-    <UiModal :open="createDbFor !== null" title="新建数据库" size="sm" @close="createDbFor = null">
-      <div class="space-y-[8px]">
-        <p class="text-body-sm text-secondary dark:text-secondary-dark">
-          在「{{ createDbFor?.label ?? '' }}」上执行 CREATE DATABASE，创建成功后自动刷新库列表。
-        </p>
-        <UiInput
-          v-model="createDbName"
-          size="sm"
-          placeholder="数据库名（字母开头，可含数字/下划线/$）"
-          @keydown.enter="confirmCreateDb"
-        />
-      </div>
+    <!-- 新建数据库（分类型表单：字符集/排序规则/授权/SQL 预览） -->
+    <CreateDatabaseDialog :db="db" :connection="createDbFor" @close="createDbFor = null" />
+
+    <!-- 删除数据库确认 -->
+    <ConfirmDialog
+      :open="dropDbTarget !== null"
+      title="删除数据库"
+      :message="`确定删除数据库「${dropDbTarget?.name ?? ''}」吗？库内所有表与数据将被删除，不可恢复。`"
+      confirm-label="删除"
+      danger
+      @close="dropDbTarget = null"
+      @confirm="confirmDropDb"
+    />
+
+    <!-- 表维护：重命名输入 / 清空、删除确认 -->
+    <UiModal
+      :open="tableAction?.mode === 'rename'"
+      title="重命名表"
+      size="sm"
+      @close="tableAction = null"
+    >
+      <UiInput
+        v-model="renameValue"
+        size="sm"
+        placeholder="新表名"
+        @keydown.enter="confirmTableAction"
+      />
       <template #footer>
-        <UiButton size="sm" variant="ghost" @click="createDbFor = null">取消</UiButton>
+        <UiButton size="sm" variant="ghost" @click="tableAction = null">取消</UiButton>
         <UiButton
           size="sm"
           variant="primary"
-          :disabled="!createDbName.trim()"
-          @click="confirmCreateDb"
+          :disabled="!renameValue.trim()"
+          @click="confirmTableAction"
         >
-          创建
+          确定
         </UiButton>
       </template>
     </UiModal>
+    <ConfirmDialog
+      :open="tableAction?.mode === 'truncate'"
+      title="清空表"
+      :message="`确定清空「${tableAction?.name ?? ''}」吗？表内所有数据将被删除，不可恢复。`"
+      confirm-label="清空"
+      danger
+      @close="tableAction = null"
+      @confirm="confirmTableAction"
+    />
+    <ConfirmDialog
+      :open="tableAction?.mode === 'drop'"
+      title="删除表"
+      :message="`确定删除表「${tableAction?.name ?? ''}」吗？表结构与数据将被删除，不可恢复。`"
+      confirm-label="删除"
+      danger
+      @close="tableAction = null"
+      @confirm="confirmTableAction"
+    />
 
     <ContextMenu
       v-if="menu"

@@ -3,6 +3,7 @@
 //! 字段含义注释见各属性；错误统一走 `{ ok: false, error }` 结构，不抛错给前端。
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 
 /// 数据库类型（与前端 V2DbType 一一对应；达梦 UI 保留入口但后端暂不支持）
@@ -298,4 +299,68 @@ pub struct SavedEntry {
     pub sql: String,
     /// 创建时间
     pub at: String,
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 管理操作（建库/授权/DDL/索引/表维护）
+// ──────────────────────────────────────────────────────────────────────────
+
+/// 字符集选项（新建数据库对话框；collationsByCharset 用于字符集→排序规则联动）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbCharsetOptions {
+    /// 字符集清单
+    pub charsets: Vec<String>,
+    /// 字符集 → 排序规则清单
+    pub collations_by_charset: HashMap<String, Vec<String>>,
+}
+
+/// 数据库用户（授权选择列表）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbUserInfo {
+    /// 用户名
+    pub user: String,
+    /// 主机（mysql 账号的 host 段）
+    pub host: String,
+}
+
+/// 授权目标（建库授权入参；privilege 白名单：all/readwrite/readonly）
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbGrantInput {
+    /// 用户名
+    pub user: String,
+    /// 主机
+    pub host: String,
+    /// 权限级别：all/readwrite/readonly
+    pub privilege: String,
+}
+
+/// 分步执行结果（建库+授权逐步反馈，前端逐步打勾/报错）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbStepResult {
+    /// 步骤名（如「创建数据库」「授权 root@%」）
+    pub label: String,
+    /// 实际执行的 SQL
+    pub sql: String,
+    /// 是否成功
+    pub ok: bool,
+    /// 错误信息（失败时）
+    pub error: Option<String>,
+}
+
+/// 索引信息（结构页签 · 索引子页签）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbIndexInfo {
+    /// 索引名
+    pub name: String,
+    /// 覆盖列（按索引内顺序）
+    pub columns: Vec<String>,
+    /// 是否非唯一索引（true = 允许重复）
+    pub non_unique: bool,
+    /// 索引类型/定义（mysql 为 BTREE 等；pg 为完整 indexdef）
+    pub definition: String,
 }

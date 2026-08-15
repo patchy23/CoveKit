@@ -77,6 +77,34 @@ impl DbDialect for PostgresDialect {
     fn split_statements(&self, sql: &str) -> Vec<String> {
         split_sql_statements(sql)
     }
+
+    // ── 管理操作（pg 差异点）──
+
+    /// PG 建库支持 ENCODING（charset 入参映射为 encoding 字面量，白名单字符防注入）
+    fn create_database_sql(
+        &self,
+        name: &str,
+        charset: Option<&str>,
+        _collation: Option<&str>,
+    ) -> Option<String> {
+        let mut sql = format!("CREATE DATABASE {}", self.quote_ident(name));
+        if let Some(enc) = charset
+            .filter(|v| !v.is_empty() && v.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        {
+            sql.push_str(&format!(" ENCODING {}", self.quote_literal(enc)));
+        }
+        Some(sql)
+    }
+
+    /// 索引清单走 pg_indexes（无参数绑定，schema/表名用字面量引用）
+    fn indexes_sql(&self, schema: &str, table: &str) -> Option<String> {
+        Some(format!(
+            "SELECT indexname, '', 0, indexdef FROM pg_indexes \
+             WHERE schemaname = {} AND tablename = {} ORDER BY indexname",
+            self.quote_literal(schema),
+            self.quote_literal(table)
+        ))
+    }
 }
 
 #[cfg(test)]

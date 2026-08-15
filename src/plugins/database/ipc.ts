@@ -4,9 +4,14 @@
 import { invokeCommand } from '@/core/ipc/ipc'
 import type {
   ConnConfig,
+  DbCharsetOptions,
   DbConnectionInfo,
+  DbGrantInput,
+  DbIndexInfo,
   DbObjectInfo,
+  DbStepResult,
   DbTablePage,
+  DbUserInfo,
   DriverStatus,
   HistoryEntry,
   Payloads,
@@ -62,6 +67,41 @@ export const queryIpc = {
     call('dbc_redis_keys', { connId, pattern, cursor }),
   redisKeyInfo: (connId: string, key: string): Promise<RedisKeyInfo> =>
     call('dbc_redis_key_info', { connId, key }),
+}
+
+/** 管理操作（建库/授权/DDL/索引/表维护；SQL 由后端方言构造，前端只传选项） */
+export const adminIpc = {
+  charsetOptions: (connId: string): Promise<DbCharsetOptions> =>
+    call('dbc_charset_options', { connId }),
+  users: (connId: string): Promise<DbUserInfo[]> => call('dbc_users', { connId }),
+  createDatabase: (
+    connId: string,
+    name: string,
+    charset?: string,
+    collation?: string,
+    grants?: DbGrantInput[]
+  ): Promise<DbStepResult[]> =>
+    call('dbc_create_database', { connId, name, charset, collation, grants }),
+  dropDatabase: (connId: string, name: string): Promise<string> =>
+    call('dbc_drop_database', { connId, name }),
+  tableAdmin: (
+    connId: string,
+    table: string,
+    action: 'rename' | 'truncate' | 'drop',
+    options?: { schema?: string; newName?: string; kind?: string }
+  ): Promise<string> =>
+    call('dbc_table_admin', {
+      connId,
+      schema: options?.schema,
+      table,
+      action,
+      newName: options?.newName,
+      kind: options?.kind,
+    }),
+  tableDdl: (connId: string, table: string, schema?: string): Promise<string> =>
+    call('dbc_table_ddl', { connId, schema, table }),
+  tableIndexes: (connId: string, table: string, schema?: string): Promise<DbIndexInfo[]> =>
+    call('dbc_table_indexes', { connId, schema, table }),
 }
 
 /** 历史与收藏 */

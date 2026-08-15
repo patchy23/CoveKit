@@ -5,6 +5,7 @@
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
 import type { UiDataGridColumn, UiTabItem, UiTreeItem } from '@/core/ui'
+import { useUiStore } from '@/stores/ui'
 import {
   DB_TYPE_META,
   type V2DbType,
@@ -19,11 +20,14 @@ import type {
   ConnConfig,
   DbColumnInfo,
   DbConnectionInfo,
+  DbGrantInput,
+  DbIndexInfo,
   DbObjectInfo,
+  DbStepResult,
   HistoryEntry,
   SavedEntry,
 } from './contracts'
-import { connectionIpc, historyIpc, queryIpc, savedIpc } from './ipc'
+import { adminIpc, connectionIpc, historyIpc, queryIpc, savedIpc } from './ipc'
 import { formatSql } from './sqlFormat'
 
 /**
@@ -172,6 +176,10 @@ export function useDatabase() {
   const tabContexts = ref<Record<string, TabContext>>({})
   const queryStates = ref<Record<string, QueryState>>({})
   const structureColumns = ref<Record<string, DbColumnInfo[]>>({})
+  /** 结构页签 · 索引子页签数据 */
+  const structureIndexes = ref<Record<string, DbIndexInfo[]>>({})
+  /** 结构页签 · DDL 子页签（错误信息也写入，前端展示「暂不支持」） */
+  const structureDdl = ref<Record<string, string>>({})
   let tabSequence = 0
 
   // ── 历史 / 收藏 ─────────────────────────────────────────────────────────
@@ -743,7 +751,7 @@ export function useDatabase() {
     return { connId: m[1], scope: m[2], kind: m[3], name: m[4] }
   }
 
-  /** 打开表/视图结构页签（树右键、Ctrl+点击表名共用入口） */
+  /** 打开表/视图结构页签（树右键、Ctrl+点击表名共用入口）；列/索引/DDL 一并加载 */
   function openStructureTab(
     connectionId: string,
     table: string,
@@ -755,6 +763,7 @@ export function useDatabase() {
     if (database !== undefined) tabContexts.value[id].database = database
     if (schema !== undefined) tabContexts.value[id].schema = schema
     void loadColumns(id)
+    void loadStructureExtras(id)
   }
 
   /** Ctrl+点击编辑器内表名：按当前页签上下文打开表结构 */
@@ -778,7 +787,7 @@ export function useDatabase() {
     return `CREATE TABLE ${schemaPrefix}"new_table" (\n  "id" BIGINT PRIMARY KEY,\n  "name" VARCHAR(255) NOT NULL\n);`
   }
 
-  /** 在指定库/schema 下新建表：打开带模板的 SQL 编辑器（用户确认后自行执行） */
+  /** 在指定库/schema 下新建表：打开带模板的 SQL 编辑器（非 mysql 系类型的回退路径） */
   function openCreateTableEditor(connId: string, scope: string) {
     const conn = connections.value.find((c) => c.id === connId)
     if (!conn) return
@@ -786,25 +795,125 @@ export function useDatabase() {
     openSqlEditorWithSql(connId, createTableTemplate(conn, database, schema), database, schema)
   }
 
-  /** 新建数据库（mysql/polardb/PG 系）：执行 CREATE DATABASE 后刷新元数据 */
-  async function createDatabase(connId: string, name: string): Promise<boolean> {
+  /** 可视化建表页签（mysql 系）：CreateTableTab 按 ctx 渲染列编辑器 */
+  function openCreateTableTab(connId: string, scope: string) {
     const conn = connections.value.find((c) => c.id === connId)
-    if (!conn) return false
+    if (!conn) return
+    const { database, schema } = scopeContext(conn, scope)
+    tabSequence += 1
+    const id = `ct${tabSequence}`
+    tabs.value.push({
+      id,
+      label: `新建表 · ${scope || conn.database || '未选库'}`,
+      kind: 'create-table',
+    })
+    tabContexts.value[id] = { connectionId: connId, database, schema }
+    activeTabId.value = id
+  }
+
+  /** 新建数据库（字符集/排序规则/授权可选）：分步执行，逐步结果由调用方展示 */
+  async function createDatabaseFull(
+    connId: string,
+    name: string,
+    charset?: string,
+    collation?: string,
+    grants?: DbGrantInput[]
+  ): Promise<DbStepResult[] | null> {
     const trimmed = name.trim()
     if (!/^[A-Za-z_][\w$]{0,63}$/.test(trimmed)) {
       showError('库名仅支持字母、数字、下划线与 $，且需以字母或下划线开头')
-      return false
+      return null
     }
-    const quoted =
-      conn.dbType === 'mysql' || conn.dbType === 'polardb' ? `\`${trimmed}\`` : `"${trimmed}"`
     try {
-      const result = await queryIpc.execute(connId, `CREATE DATABASE ${quoted}`, 1)
-      if (!result.ok) throw new Error(result.error ?? '创建数据库失败')
-      // 库列表失效后重取（对象缓存一并清掉）
+      const steps = await adminIpc.createDatabase(connId, trimmed, charset, collation, grants)
+      if (steps.every((s) => s.ok)) {
+        // 库列表失效后重取（对象缓存一并清掉）
+        const meta = metaFor(connId)
+        meta.loaded = false
+        meta.objects = {}
+        await ensureMeta(connId)
+      }
+      return steps
+    } catch (err) {
+      showError(err)
+      return null
+    }
+  }
+
+  /** 删除数据库（前端确认后调用）：执行后刷新元数据 */
+  async function dropDatabase(connId: string, name: string): Promise<boolean> {
+    try {
+      const sql = await adminIpc.dropDatabase(connId, name)
+      useUiStore().toast(`已删除数据库 ${name}`)
+      void sql
       const meta = metaFor(connId)
       meta.loaded = false
       meta.objects = {}
       await ensureMeta(connId)
+      return true
+    } catch (err) {
+      showError(err)
+      return false
+    }
+  }
+
+  /** 执行 DDL（可视化建表等）：成功 toast + 刷新指定 scope 对象缓存 */
+  async function executeDdl(connId: string, sql: string, scope?: string): Promise<boolean> {
+    try {
+      const result = await queryIpc.execute(connId, sql, 1)
+      if (!result.ok) throw new Error(result.error ?? '执行失败')
+      useUiStore().toast('执行成功')
+      if (scope) {
+        await refreshTreeNode({
+          id: `${connId}::${scope}`,
+          kind: 'database',
+          label: scope,
+          depth: 1,
+          expandable: true,
+          expanded: true,
+        })
+      }
+      return true
+    } catch (err) {
+      showError(err)
+      return false
+    }
+  }
+
+  /** 表维护（重命名/清空/删除）：执行后刷新该 scope 对象缓存，并关闭受影响页签 */
+  async function tableAdminAction(
+    connId: string,
+    scope: string,
+    table: string,
+    action: 'rename' | 'truncate' | 'drop',
+    newName?: string,
+    kind?: string
+  ): Promise<boolean> {
+    const conn = connections.value.find((c) => c.id === connId)
+    if (!conn) return false
+    const { database, schema } = scopeContext(conn, scope)
+    try {
+      const sql = await adminIpc.tableAdmin(connId, table, action, {
+        schema: ipcScopeArg(conn, { connectionId: connId, database, schema }),
+        newName,
+        kind,
+      })
+      useUiStore().toast(action === 'rename' ? `已重命名为 ${newName}` : '执行成功')
+      void sql
+      await refreshTreeNode({
+        id: `${connId}::${scope}`,
+        kind: 'database',
+        label: scope,
+        depth: 1,
+        expandable: true,
+        expanded: true,
+      })
+      if (action === 'drop' || action === 'rename') {
+        // 关闭指向旧表的页签（数据/结构）
+        for (const suffix of [`data-${connId}-${table}`, `structure-${connId}-${table}`]) {
+          if (tabs.value.some((t) => t.id === suffix)) closeTab(suffix)
+        }
+      }
       return true
     } catch (err) {
       showError(err)
@@ -985,11 +1094,7 @@ export function useDatabase() {
 
   /** 页签上下文 → 后端 schema 入参（mysql/polardb 传库名；PG 系传 schema；sqlite/redis 不用） */
   function ipcScopeArg(conn: DbConnectionInfo, ctx: TabContext): string | undefined {
-    if (
-      conn.dbType === 'postgresql' ||
-      conn.dbType === 'kingbase' ||
-      conn.dbType === 'vastbase'
-    ) {
+    if (conn.dbType === 'postgresql' || conn.dbType === 'kingbase' || conn.dbType === 'vastbase') {
       return ctx.schema || 'public'
     }
     if (conn.dbType === 'oracle' || conn.dbType === 'dameng') return ctx.schema || undefined
@@ -1054,6 +1159,27 @@ export function useDatabase() {
       )
     } catch (err) {
       showError(err)
+    }
+  }
+
+  /** 结构页签：加载索引与 DDL（失败降级为提示文本，不阻塞列信息展示） */
+  async function loadStructureExtras(tabId: string) {
+    const ctx = tabContexts.value[tabId]
+    if (!ctx) return
+    const table = ctx.table ?? tabTableName(tabId)
+    if (!table) return
+    const conn = connections.value.find((c) => c.id === ctx.connectionId)
+    if (!conn) return
+    const scope = ipcScopeArg(conn, ctx)
+    try {
+      structureIndexes.value[tabId] = await adminIpc.tableIndexes(ctx.connectionId, table, scope)
+    } catch {
+      structureIndexes.value[tabId] = []
+    }
+    try {
+      structureDdl.value[tabId] = await adminIpc.tableDdl(ctx.connectionId, table, scope)
+    } catch (err) {
+      structureDdl.value[tabId] = `-- ${String(err)}`
     }
   }
 
@@ -1236,7 +1362,11 @@ export function useDatabase() {
     openStructureTab,
     openStructureForTable,
     openCreateTableEditor,
-    createDatabase,
+    openCreateTableTab,
+    createDatabaseFull,
+    dropDatabase,
+    tableAdminAction,
+    executeDdl,
     refreshTreeNode,
     scopeContext,
     parseLeafId,
@@ -1265,7 +1395,10 @@ export function useDatabase() {
     resultTabs,
     tableColumns,
     structureColumns,
+    structureIndexes,
+    structureDdl,
     loadColumns,
+    loadStructureExtras,
     loadTableData,
     // 历史/收藏
     history,

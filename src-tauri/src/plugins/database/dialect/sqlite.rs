@@ -55,6 +55,26 @@ impl DbDialect for SqliteDialect {
     fn split_statements(&self, sql: &str) -> Vec<String> {
         split_sql_statements(sql)
     }
+
+    // ── 管理操作（sqlite 差异点）──
+
+    /// sqlite 无 TRUNCATE，用 DELETE FROM 兜底
+    fn truncate_table_sql(&self, schema: &str, table: &str) -> Option<String> {
+        Some(format!("DELETE FROM {}", self.qualified(schema, table)))
+    }
+
+    /// sqlite 是单文件库，无 DROP DATABASE
+    fn drop_database_sql(&self, _name: &str) -> Option<String> {
+        None
+    }
+
+    /// DDL 直接取 sqlite_master.sql（建表/建视图原文）
+    fn table_ddl_sql(&self, _schema: &str, table: &str) -> Option<String> {
+        Some(format!(
+            "SELECT sql FROM sqlite_master WHERE name = {} AND sql IS NOT NULL",
+            self.quote_literal(table)
+        ))
+    }
 }
 
 #[cfg(test)]

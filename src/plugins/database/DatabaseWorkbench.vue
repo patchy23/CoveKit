@@ -14,6 +14,7 @@ import ConnectionsSidebar from './ConnectionsSidebar.vue'
 import QueryTab from './QueryTab.vue'
 import DataTab from './DataTab.vue'
 import StructureTab from './StructureTab.vue'
+import CreateTableTab from './CreateTableTab.vue'
 import RedisTab from './RedisTab.vue'
 import InspectorPanel from './InspectorPanel.vue'
 import ConnectionDialog from './ConnectionDialog.vue'
@@ -207,6 +208,9 @@ onMounted(() => {
       </template>
       <template v-else-if="db.activeTabKind.value === 'structure'">
         <StructureTab :db="db" />
+      </template>
+      <template v-else-if="db.activeTabKind.value === 'create-table'">
+        <CreateTableTab :db="db" />
       </template>
       <template v-else-if="db.activeTabKind.value === 'redis'">
         <RedisTab :db="db" />
