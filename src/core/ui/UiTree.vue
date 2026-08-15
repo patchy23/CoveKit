@@ -26,6 +26,8 @@ const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'toggle', item: UiTreeItem): void
   (event: 'context', mouse: MouseEvent, item: UiTreeItem): void
+  /** 双击不可展开的叶子节点（业务打开语义，如查看结构）；可展开节点双击仍为折叠/展开 */
+  (event: 'open', item: UiTreeItem): void
 }>()
 
 /**
@@ -55,7 +57,7 @@ function isGroupKind(kind?: string): boolean {
       :aria-selected="modelValue === item.id"
       :aria-expanded="item.expandable ? item.expanded : undefined"
       @click="emit('update:modelValue', item.id)"
-      @dblclick="emit('toggle', item)"
+      @dblclick="item.expandable ? emit('toggle', item) : emit('open', item)"
       @contextmenu.prevent="emit('context', $event, item)"
     >
       <span

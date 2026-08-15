@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
  * 左侧连接栏：搜索 + 新建连接 + 对象树（懒加载元数据）
- * 交互约定：未连接节点无折叠箭头，单击仅选中，双击连接并展开；
- * 已连接节点双击折叠/展开（不重新连接）；错误提示走状态点 tooltip，名字始终完整。
+ * 交互约定：单击仅选中；双击可展开节点折叠/展开，双击叶子打开（表→结构页签，键→键详情）；
+ * 右键按层级出菜单（连接/库/分组/对象）；错误提示走状态点 tooltip，名字始终完整。
  */
 import { computed, ref } from 'vue'
 import {
@@ -184,18 +184,23 @@ function confirmDelete() {
 }
 
 function onTreeSelect(id: string) {
-  const item = db.visibleTreeItems.value.find((node) => node.id === id)
-  if (!item) return
-  // 连接节点单击仅选中；连接/展开/新建页签分别由双击与菜单承担
-  if (item.depth === 0) return
-  if (
-    item.kind === 'table' ||
-    item.kind === 'view' ||
-    item.kind === 'materialized_view' ||
-    item.kind === 'key'
-  ) {
-    void db.selectResource(id)
+  // 单击仅选中（并同步活动连接）；打开页签由双击（open）与右键菜单承担
+  const connId = id.split('::')[0]
+  if (db.connections.value.some((c) => c.id === connId)) db.activeConnectionId.value = connId
+}
+
+/** 双击叶子节点：表/视图 → 结构页签；Redis 键 → 键详情页签 */
+function onTreeOpen(item: UiTreeItem) {
+  const leaf = db.parseLeafId(item.id)
+  if (!leaf) return
+  const conn = db.connections.value.find((c) => c.id === leaf.connId)
+  if (!conn) return
+  if (leaf.kind === 'table' || leaf.kind === 'view' || leaf.kind === 'materialized_view') {
+    const { database, schema } = db.scopeContext(conn, leaf.scope)
+    db.openStructureTab(leaf.connId, leaf.name, database, schema)
+    return
   }
+  if (leaf.kind === 'key') void db.selectResource(item.id)
 }
 
 function onTreeContext(mouse: MouseEvent, item: UiTreeItem) {
@@ -227,6 +232,7 @@ function onTreeContext(mouse: MouseEvent, item: UiTreeItem) {
         :row-height="24"
         @update:model-value="onTreeSelect"
         @toggle="db.toggleTree"
+        @open="onTreeOpen"
         @context="onTreeContext"
       >
         <template #icon="{ item }">

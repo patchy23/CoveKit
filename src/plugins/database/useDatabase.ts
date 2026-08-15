@@ -642,24 +642,31 @@ export function useDatabase() {
     }
   }
 
+  /** 树选中/右键「查看数据」入口：打开数据页签并按叶子 scope 设置库/schema 上下文 */
   async function selectResource(id: string) {
     selectedResource.value = id
     const connId = id.split('::')[0]
-    if (connections.value.some((c) => c.id === connId)) {
-      activeConnectionId.value = connId
-    }
-    const tableMatch = id.match(/::(?:table|view|materialized_view|sequence|function):(.+)$/)
-    if (tableMatch) {
-      const name = tableMatch[1]
-      openOrFocusTab(`data-${connId}-${name}`, `${name} · 数据`, 'data', connId, name)
-      void loadTableData(`data-${connId}-${name}`)
+    const conn = connections.value.find((c) => c.id === connId)
+    if (conn) activeConnectionId.value = connId
+    const leaf = parseLeafId(id)
+    if (
+      leaf &&
+      conn &&
+      ['table', 'view', 'materialized_view', 'sequence', 'function'].includes(leaf.kind)
+    ) {
+      // 数据页签必须落在叶子所在的库/schema，不能用连接默认库（MySQL 默认库可空）
+      const { database, schema } = scopeContext(conn, leaf.scope)
+      const tabId = `data-${connId}-${leaf.name}`
+      openOrFocusTab(tabId, `${leaf.name} · 数据`, 'data', connId, leaf.name)
+      tabContexts.value[tabId].database = database
+      tabContexts.value[tabId].schema = schema
+      void loadTableData(tabId)
       return
     }
-    const keyMatch = id.match(/::key:(.+)$/)
-    if (keyMatch) {
-      const key = keyMatch[1]
-      openOrFocusTab(`redis-${connId}-${key}`, `${key} · 键`, 'redis', connId, key)
-      void loadRedisKeyInfo(`redis-${connId}-${key}`, key)
+    if (leaf?.kind === 'key') {
+      const tabId = `redis-${connId}-${leaf.name}`
+      openOrFocusTab(tabId, `${leaf.name} · 键`, 'redis', connId, leaf.name)
+      void loadRedisKeyInfo(tabId, leaf.name)
     }
   }
 
@@ -976,7 +983,20 @@ export function useDatabase() {
   // 数据浏览 / 结构 / Redis 键
   // ──────────────────────────────────────────────────────────────────────
 
-  /** 数据页签：从树节点上下文推断 schema/表名，后端分页 */
+  /** 页签上下文 → 后端 schema 入参（mysql/polardb 传库名；PG 系传 schema；sqlite/redis 不用） */
+  function ipcScopeArg(conn: DbConnectionInfo, ctx: TabContext): string | undefined {
+    if (
+      conn.dbType === 'postgresql' ||
+      conn.dbType === 'kingbase' ||
+      conn.dbType === 'vastbase'
+    ) {
+      return ctx.schema || 'public'
+    }
+    if (conn.dbType === 'oracle' || conn.dbType === 'dameng') return ctx.schema || undefined
+    return ctx.database || conn.database || undefined
+  }
+
+  /** 数据页签：从页签上下文取库/schema 与表名，后端分页 */
   async function loadTableData(tabId: string) {
     const ctx = tabContexts.value[tabId]
     const state = (queryStates.value[tabId] ??= makeQueryState())
@@ -992,12 +1012,7 @@ export function useDatabase() {
         table,
         state.page,
         PAGE_SIZE,
-        conn.dbType === 'postgresql' ||
-          conn.dbType === 'kingbase' ||
-          conn.dbType === 'vastbase' ||
-          conn.dbType === 'polardb'
-          ? ctx.schema || 'public'
-          : ctx.database || conn.database
+        ipcScopeArg(conn, ctx)
       )
       state.columns = page.columns
       state.rows = page.rows
@@ -1023,17 +1038,19 @@ export function useDatabase() {
     }
   }
 
-  /** 结构页签：加载列信息 */
+  /** 结构页签：加载列信息（schema 入参与数据页签同规则，否则 MySQL 非默认库查不到列） */
   async function loadColumns(tabId: string) {
     const ctx = tabContexts.value[tabId]
     if (!ctx) return
     const table = ctx.table ?? tabTableName(tabId)
     if (!table) return
+    const conn = connections.value.find((c) => c.id === ctx.connectionId)
+    if (!conn) return
     try {
       structureColumns.value[tabId] = await queryIpc.columns(
         ctx.connectionId,
         table,
-        ctx.schema || undefined
+        ipcScopeArg(conn, ctx)
       )
     } catch (err) {
       showError(err)
