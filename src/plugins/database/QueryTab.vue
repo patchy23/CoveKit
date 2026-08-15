@@ -4,7 +4,7 @@
  * 执行语义：有选中文本执行选中段；无选中执行光标所在完整语句（分号分隔）；Ctrl+Shift+Enter 全部执行。
  * 保存语义：Ctrl+S 持久化（首次弹窗确认别名，已保存直接更新）；页签显示未保存/已保存状态。
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import {
   UiAlert,
   UiButton,
@@ -19,6 +19,7 @@ import {
   UiDataGrid,
 } from '@/core/ui'
 import SqlEditor from './SqlEditor.vue'
+import { useSplitPane } from './useSplitPane'
 import type { useDatabase } from './useDatabase'
 
 const props = defineProps<{
@@ -30,6 +31,24 @@ const { queryState, patchQueryState, activeTabContext, activeTabConnection } = d
 
 /** SQL 编辑器实例（读取选区/光标位置） */
 const editorRef = ref<InstanceType<typeof SqlEditor> | null>(null)
+
+/** 编辑器区域容器（用于计算可拖高度上限） */
+const editorPaneRef = ref<HTMLElement | null>(null)
+
+/** 编辑器高度（px）：默认按容器 38%，可拖拽；不持久化 */
+const editorHeight = ref(320)
+const editorSplit = useSplitPane({ initial: 320, min: 120, max: 100000 }, true)
+
+onMounted(() => {
+  const parent = editorPaneRef.value?.parentElement
+  if (parent) editorHeight.value = Math.round(parent.clientHeight * 0.38)
+})
+
+/** 拖拽上限：给结果区至少留 140px */
+function editorMax(): number {
+  const parent = editorPaneRef.value?.parentElement
+  return (parent ? parent.clientHeight : 800) - 140
+}
 
 /** 首次保存确认弹窗 */
 const saveConfirmOpen = ref(false)
@@ -144,8 +163,8 @@ async function exportCsv() {
 </script>
 
 <template>
-  <!-- SQL 编辑器（约 38% 高度） -->
-  <div class="flex min-h-0 flex-col" style="flex: 0 0 38%">
+  <!-- SQL 编辑器（默认 38% 高度，可拖拽调整） -->
+  <div ref="editorPaneRef" class="flex min-h-0 flex-col" :style="{ flex: `0 0 ${editorHeight}px` }">
     <div
       class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
     >
@@ -293,6 +312,13 @@ async function exportCsv() {
       @update:model-value="(v) => patchQueryState({ sql: v, dirty: true })"
     />
   </div>
+
+  <!-- 编辑器/结果区分隔条（可拖拽） -->
+  <div
+    class="h-[5px] shrink-0 cursor-row-resize border-t border-border bg-surface-muted transition-colors hover:bg-tertiary/40 dark:border-border-dark dark:bg-surface-muted-dark"
+    title="拖拽调整编辑器高度"
+    @mousedown="(e) => editorSplit.onPointerDown(e, editorMax)"
+  />
 
   <!-- 结果区 -->
   <div class="flex min-h-0 flex-1 flex-col border-t border-border dark:border-border-dark">

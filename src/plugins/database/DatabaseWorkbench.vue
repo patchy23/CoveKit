@@ -9,6 +9,7 @@ import { computed, onMounted, ref } from 'vue'
 import { UiButton, UiIconButton, UiInput, UiModal, UiTabs } from '@/core/ui'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import { useDatabase } from './useDatabase'
+import { useSplitPane } from './useSplitPane'
 import ConnectionsSidebar from './ConnectionsSidebar.vue'
 import QueryTab from './QueryTab.vue'
 import DataTab from './DataTab.vue'
@@ -20,6 +21,9 @@ import type { ConnConfig, DbConnectionInfo } from './contracts'
 
 const db = useDatabase()
 const inspectorOpen = ref(true)
+
+/** 右侧摘要宽度（默认 220，可拖拽；不持久化） */
+const inspectorSplit = useSplitPane({ initial: 220, min: 160, max: 480 })
 const dialogOpen = ref(false)
 const editingConnection = ref<ConnConfig | null>(null)
 
@@ -211,10 +215,19 @@ onMounted(() => {
       </template>
     </main>
 
+    <!-- 中栏/摘要分隔条（可拖拽） -->
+    <div
+      v-if="inspectorOpen && db.tabs.value.length"
+      class="w-[5px] shrink-0 cursor-col-resize bg-surface-muted transition-colors hover:bg-tertiary/40 dark:bg-surface-muted-dark"
+      title="拖拽调整摘要宽度"
+      @mousedown="(e) => inspectorSplit.onPointerDown(e)"
+    />
+
     <!-- 右栏：摘要 -->
     <aside
       v-if="inspectorOpen && db.tabs.value.length"
-      class="flex w-[220px] shrink-0 flex-col border-l border-border dark:border-border-dark"
+      :style="{ width: `${inspectorSplit.size.value}px` }"
+      class="flex shrink-0 flex-col border-l border-border dark:border-border-dark"
     >
       <div
         class="flex h-[28px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
