@@ -232,6 +232,26 @@ export function useDatabase() {
     return [...names].map((name) => ({ name, columns: [] }))
   })
 
+  /** 编辑器补全列缓存（表名 → 列名，跨 schema 以连接为界） */
+  const editorColumnCache = new Map<string, string[]>()
+
+  /** 编辑器「表.」后补全：查列（带缓存，命中直接返回） */
+  async function resolveEditorColumns(table: string): Promise<string[]> {
+    const connId = activeTabContext.value.connectionId
+    const cacheKey = `${connId}::${table.toLowerCase()}`
+    const cached = editorColumnCache.get(cacheKey)
+    if (cached) return cached
+    try {
+      const cols = await queryIpc.columns(connId, table, activeTabContext.value.schema || undefined)
+      const names = cols.map((c) => c.name)
+      editorColumnCache.set(cacheKey, names)
+      return names
+    } catch {
+      editorColumnCache.set(cacheKey, [])
+      return []
+    }
+  }
+
   const rowLimitOptions = ['50', '100', '500', '1000'].map((v) => ({ value: v, label: v }))
 
   // ──────────────────────────────────────────────────────────────────────
@@ -1014,6 +1034,7 @@ export function useDatabase() {
     schemaOptions,
     rowLimitOptions,
     completionTables,
+    resolveEditorColumns,
     ensureMeta,
     // 页签
     tabs,

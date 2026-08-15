@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * SQL 编辑器页签：编辑器（工具栏 + 错误条 + CodeMirror 编辑器）与结果区（数据/消息/计划）
- * 执行语义：有选中文本执行选中段；无选中执行光标所在行；不提供全部执行（需要全量先全选）。
+ * 执行语义：有选中文本执行选中段；无选中执行光标所在完整语句（分号分隔）；Ctrl+Shift+Enter 全部执行。
  * 保存语义：Ctrl+S 持久化（首次弹窗确认别名，已保存直接更新）；页签显示未保存/已保存状态。
  */
 import { computed, ref } from 'vue'
@@ -19,7 +19,6 @@ import {
   UiDataGrid,
 } from '@/core/ui'
 import SqlEditor from './SqlEditor.vue'
-import { extractExecSql } from './useDatabase'
 import type { useDatabase } from './useDatabase'
 
 const props = defineProps<{
@@ -62,17 +61,23 @@ const statusText = computed(() => {
   }
 })
 
-/** 提取本次执行范围：选中文本 / 光标所在行 */
+/** 提取本次执行范围：有选区执行选中段；否则执行光标所在完整语句 */
 function currentExecSql(): string {
   const ed = editorRef.value
   if (!ed) return queryState.value.sql
-  const { from, to } = ed.getSelection()
-  return extractExecSql(ed.getDoc(), from, to)
+  return ed.getExecutableSql()
 }
 
 function runCurrent() {
   if (!canExecute.value) return
   void db.runQuery(currentExecSql())
+}
+
+/** 全部执行：执行整个编辑器内容（Ctrl+Shift+Enter） */
+function runAll() {
+  if (!canExecute.value) return
+  const ed = editorRef.value
+  void db.runQuery(ed ? ed.getDoc() : queryState.value.sql)
 }
 
 /** 保存：已保存直接更新；未保存弹窗确认别名 */
@@ -148,7 +153,7 @@ async function exportCsv() {
         :label="
           queryState.status === 'running'
             ? '运行中…'
-            : '运行选中 / 光标所在行（Ctrl+Enter）'
+            : '运行选中 / 光标所在语句（Ctrl+Enter）'
         "
         size="sm"
         :disabled="!canExecute"
@@ -194,6 +199,17 @@ async function exportCsv() {
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <rect x="5" y="5" width="14" height="14" rx="2" />
+        </svg>
+      </UiIconButton>
+      <UiIconButton
+        label="全部执行（Ctrl+Shift+Enter）"
+        size="xs"
+        class="text-success-strong dark:text-success-dark"
+        @click="runAll"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M4 5v14l12-7L4 5Z" />
+          <path d="M19 5v14" />
         </svg>
       </UiIconButton>
       <UiIconButton label="执行计划" size="xs" @click="db.runExplain">
@@ -248,9 +264,9 @@ async function exportCsv() {
 
       <span
         class="ml-auto shrink-0 font-mono text-caption text-text-muted dark:text-text-muted-dark"
-        :title="'有选中文本时执行选中段，否则执行光标所在行；需要全量执行请先全选（Ctrl+A）'"
+        :title="'有选中文本时执行选中段，否则执行光标所在完整语句；Ctrl+Shift+Enter 全部执行'"
       >
-        Ctrl+Enter
+        Ctrl+Enter · Ctrl+Shift+Enter 全部
       </span>
     </div>
 
@@ -268,6 +284,7 @@ async function exportCsv() {
       :model-value="queryState.sql"
       :dialect="editorDialect"
       :tables="editorTables"
+      :resolve-columns="db.resolveEditorColumns"
       class="min-h-0 flex-1"
       placeholder="-- 有选中执行选中段，否则执行光标所在行；Ctrl+S 保存"
       :on-run="runCurrent"

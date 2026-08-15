@@ -1,16 +1,19 @@
 <script setup lang="ts">
 /**
- * SqlEditor · CodeMirror 6 SQL 编辑器（高亮 + 关键字/元数据补全）
+ * SqlEditor · CodeMirror 6 SQL 编辑器
+ * 高亮（方言语法）+ 补全（关键字/表/列/snippet 模板）+ 当前语句框选 + 查找替换。
  * 主题跟随应用 data-theme（浅色/深色 token 复用项目 CSS 变量）；
- * 快捷键：Ctrl+Enter 执行（由上层 onRun 决定执行范围）、Ctrl+S 保存、Esc 取消。
- * 选区/光标位置通过 defineExpose 暴露（执行"选中段/当前行"语义）。
+ * 快捷键：Ctrl+Enter 执行（由上层 onRun 决定执行范围）、Ctrl+S 保存、Esc 取消、
+ * Ctrl+F 查找替换、Ctrl+/ 注释、Tab 缩进、Ctrl+Z 撤销。
+ * 选区/光标/语句范围通过 defineExpose 暴露（执行"选中段/当前语句/全部"语义）。
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Compartment, EditorState } from '@codemirror/state'
 import { keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorView } from '@codemirror/view'
-import { autocompletion } from '@codemirror/autocomplete'
 import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
+import { currentStatementExtension, sqlCompletionExtension, sqlEditorBasics } from './sqlEditorExtensions'
+import { statementRangeAtCursor, statementExecutableSql, type SqlTextRange } from './sqlStatementRanges'
 
 /** 补全用表结构（列名数组） */
 export interface SqlEditorTable {
@@ -25,6 +28,8 @@ const props = defineProps<{
   tables?: SqlEditorTable[]
   /** 方言：mysql/postgresql/sqlite；其余走标准 SQL */
   dialect?: string
+  /** 表名 → 列名异步解析（表. 后补全列；未提供则仅 schema 已有列） */
+  resolveColumns?: (table: string) => Promise<string[]>
   onRun?: () => void
   onSave?: () => void
   onCancel?: () => void
@@ -36,6 +41,7 @@ const host = ref<HTMLElement | null>(null)
 let view: EditorView | null = null
 let observer: MutationObserver | null = null
 const themeCompartment = new Compartment()
+const langCompartment = new Compartment()
 
 function isDark(): boolean {
   return document.documentElement.dataset.theme === 'dark'
@@ -78,6 +84,12 @@ const lightTheme = EditorView.theme({
     color: 'var(--color-tertiary-strong)',
   },
   '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--font-mono)' },
+  '.cm-current-statement': {
+    boxShadow: 'inset 0 0 0 1px var(--color-tertiary)',
+    borderRadius: '2px',
+  },
+  '.cm-searchMatch': { backgroundColor: 'var(--color-tertiary-soft)' },
+  '.cm-selectionMatch': { backgroundColor: 'var(--color-tertiary-soft)' },
 })
 
 /** 深色主题 */
@@ -118,6 +130,12 @@ const darkTheme = EditorView.theme(
       color: 'var(--color-tertiary-dark)',
     },
     '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--font-mono)' },
+    '.cm-current-statement': {
+      boxShadow: 'inset 0 0 0 1px var(--color-tertiary-dark)',
+      borderRadius: '2px',
+    },
+    '.cm-searchMatch': { backgroundColor: 'var(--color-tertiary-soft-dark)' },
+    '.cm-selectionMatch': { backgroundColor: 'var(--color-tertiary-soft-dark)' },
   },
   { dark: true }
 )
@@ -140,14 +158,19 @@ function completionSchema() {
   return Object.keys(ns).length ? ns : undefined
 }
 
-function createState(): EditorState {
+function langExtension() {
   const dialect = pickDialect()
-  const lang = dialect ? sql({ dialect, schema: completionSchema() }) : sql({ schema: completionSchema() })
+  const lang = dialect ? sql({ dialect }) : sql()
+  return [lang, sqlCompletionExtension(dialect, completionSchema(), props.resolveColumns)]
+}
+
+function createState(): EditorState {
   return EditorState.create({
     doc: props.modelValue,
     extensions: [
-      lang,
-      autocompletion(),
+      langCompartment.of(langExtension()),
+      ...sqlEditorBasics(),
+      currentStatementExtension(),
       keymap.of([
         { key: 'Mod-Enter', run: () => (props.onRun?.(), true) },
         { key: 'Mod-s', run: () => (props.onSave?.(), true) },
@@ -196,19 +219,35 @@ watch(
   }
 )
 
-/** 元数据变化（连接切换/对象加载完成）→ 刷新补全 schema */
+/** 元数据/方言/列解析变化（连接切换/对象加载完成）→ 刷新语言与补全 */
 watch(
-  () => props.tables,
+  [() => props.dialect, () => props.tables, () => props.resolveColumns],
   () => {
-    // 无需重建编辑器：lang-sql 的 schema 在激活补全时读取（轻量场景足够）
+    if (!view) return
+    view.dispatch({ effects: langCompartment.reconfigure(langExtension()) })
   },
   { deep: true }
 )
 
-/** 选区/光标（供上层计算"选中段/当前行"执行范围） */
+/** 选区/光标（供上层计算"选中段/当前语句"执行范围） */
 function getSelection(): { from: number; to: number } {
   const sel = view?.state.selection.main
   return { from: sel?.from ?? 0, to: sel?.to ?? 0 }
+}
+
+/** 光标所在完整语句范围（无选区时执行语义） */
+function getCursorStatement(): SqlTextRange | null {
+  const doc = getDoc()
+  const head = view?.state.selection.main.head ?? 0
+  return statementRangeAtCursor(doc, head)
+}
+
+/** 可执行文本：有选区取选区；否则取光标所在语句（去除结尾分号） */
+function getExecutableSql(): string {
+  const { from, to } = getSelection()
+  if (from !== to) return getDoc().slice(from, to)
+  const stmt = getCursorStatement()
+  return stmt ? statementExecutableSql(stmt) : ''
 }
 
 /** 当前文档全文（供上层兜底） */
@@ -220,7 +259,7 @@ function focusEditor() {
   view?.focus()
 }
 
-defineExpose({ getSelection, getDoc, focusEditor })
+defineExpose({ getSelection, getCursorStatement, getExecutableSql, getDoc, focusEditor })
 </script>
 
 <template>
