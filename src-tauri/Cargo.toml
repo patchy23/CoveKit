@@ -53,8 +53,8 @@ aes-gcm = "0.10"
 rand = "0.8"
 base64 = "0.22"
 # 数据库工作台（database 插件）：驱动与 dbx 项目同款
-# mysql: mysql_async（default-rustls 若触发 aws-lc-rs 编译，Windows 需 NASM，见实施记录）
-mysql_async = { version = "0.37", default-features = false, features = ["default-rustls", "client_ed25519", "chrono", "rust_decimal"] }
+# mysql: mysql_async（TLS 走 rustls ring 后端，与 http_ws 一致；default-rustls 会拉 aws-lc-rs 需 NASM）
+mysql_async = { version = "0.37", default-features = false, features = ["default-rustls-ring", "client_ed25519", "chrono", "rust_decimal"] }
 # postgresql: tokio-postgres + deadpool 连接池（与 dbx 同款）；TLS 走 rustls ring（与 http_ws 一致）
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
 tokio-postgres-rustls = "0.13"
