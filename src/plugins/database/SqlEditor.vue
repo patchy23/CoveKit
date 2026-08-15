@@ -12,7 +12,7 @@ import { Compartment, EditorState } from '@codemirror/state'
 import { keymap, placeholder as cmPlaceholder } from '@codemirror/view'
 import { EditorView } from '@codemirror/view'
 import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
-import { sqlCompletionExtension, sqlEditorBasics } from './sqlEditorExtensions'
+import { sqlCompletionExtension, sqlEditorBasics, statementRunGutterExtension } from './sqlEditorExtensions'
 import { statementRangeAtCursor, statementExecutableSql, type SqlTextRange } from './sqlStatementRanges'
 
 /** 补全用表结构（列名数组） */
@@ -31,6 +31,8 @@ const props = defineProps<{
   /** 表名 → 列名异步解析（表. 后补全列；未提供则仅 schema 已有列） */
   resolveColumns?: (table: string) => Promise<string[]>
   onRun?: () => void
+  /** 语句行前 ▶ 点击：执行该条语句 */
+  onRunStatement?: (sql: string) => void
   onSave?: () => void
   onCancel?: () => void
 }>()
@@ -81,6 +83,33 @@ const lightTheme = EditorView.theme({
     borderRadius: '6px',
     boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
   },
+  '.cm-run-statement-gutter': { minWidth: '24px' },
+  '.cm-run-statement-gutter .cm-gutterElement': {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: '24px',
+    padding: '0 2px',
+  },
+  '.cm-run-statement-btn': {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '20px',
+    height: '20px',
+    margin: '0',
+    padding: '0',
+    border: 'none',
+    borderRadius: '4px',
+    background: 'transparent',
+    color: 'var(--color-success-strong)',
+    cursor: 'pointer',
+    opacity: '0',
+    transition: 'opacity 0.12s, background-color 0.12s',
+  },
+  '.cm-run-statement-btn:hover': { background: 'var(--color-success-soft)', opacity: '1' },
+  '&.cm-editor:hover .cm-run-statement-btn': { opacity: '0.55' },
+  '&.cm-editor:hover .cm-run-statement-btn:hover': { opacity: '1' },
   '.cm-tooltip-autocomplete > ul > li[aria-selected]': {
     backgroundColor: 'var(--color-tertiary-soft)',
     color: 'var(--color-tertiary-strong)',
@@ -125,6 +154,25 @@ const darkTheme = EditorView.theme(
       borderRadius: '6px',
       boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
     },
+    '.cm-run-statement-btn': {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '20px',
+      height: '20px',
+      margin: '0',
+      padding: '0',
+      border: 'none',
+      borderRadius: '4px',
+      background: 'transparent',
+      color: 'var(--color-success-dark)',
+      cursor: 'pointer',
+      opacity: '0',
+      transition: 'opacity 0.12s, background-color 0.12s',
+    },
+    '.cm-run-statement-btn:hover': { background: 'var(--color-success-soft-dark)', opacity: '1' },
+    '&.cm-editor:hover .cm-run-statement-btn': { opacity: '0.55' },
+    '&.cm-editor:hover .cm-run-statement-btn:hover': { opacity: '1' },
     '.cm-tooltip-autocomplete > ul > li[aria-selected]': {
       backgroundColor: 'var(--color-tertiary-soft-dark)',
       color: 'var(--color-tertiary-dark)',
@@ -157,7 +205,11 @@ function completionSchema() {
 function langExtension() {
   const dialect = pickDialect()
   const lang = dialect ? sql({ dialect }) : sql()
-  return [lang, sqlCompletionExtension(dialect, completionSchema(), props.resolveColumns)]
+  return [
+    lang,
+    sqlCompletionExtension(dialect, completionSchema(), props.resolveColumns),
+    statementRunGutterExtension(props.onRunStatement),
+  ]
 }
 
 function createState(): EditorState {

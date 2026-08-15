@@ -4,7 +4,8 @@
  * 当前语句框选（光标所在完整语句高亮）、snippet 补全、表名点列名异步补全。
  */
 import type { Extension } from '@codemirror/state'
-import { keymap } from '@codemirror/view'
+import { Range, RangeSet } from '@codemirror/state'
+import { GutterMarker, gutter, keymap } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab, toggleComment } from '@codemirror/commands'
 import { HighlightStyle, bracketMatching, foldGutter, foldKeymap, syntaxHighlighting } from '@codemirror/language'
 import { tags } from '@lezer/highlight'
@@ -24,6 +25,7 @@ import {
   type SQLDialect,
   type SQLNamespace,
 } from '@codemirror/lang-sql'
+import { splitSqlStatements, statementExecutableSql, statementRangeAtCursor } from './sqlStatementRanges'
 /** 常用 SQL 模板（snippet 占位符 Tab 跳转） */
 const SQL_SNIPPETS = [
   snippetCompletion('SELECT * FROM ${table}', { label: 'SELECT * FROM', type: 'keyword', detail: '模板' }),
@@ -128,5 +130,51 @@ export function sqlCompletionExtension(
       keywordCompletionSource(dialect ?? StandardSQL),
       schemaCompletionSource({ dialect, schema }),
     ],
+  })
+}
+/** 语句执行按钮：每条语句起始行前显示 ▶（对齐 dbx runStatementGutter） */
+class RunStatementMarker extends GutterMarker {
+  eq(other: GutterMarker): boolean {
+    return other instanceof RunStatementMarker
+  }
+
+  toDOM() {
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'cm-run-statement-btn'
+    btn.setAttribute('aria-label', '执行此语句')
+    btn.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"></path></svg>'
+    return btn
+  }
+}
+
+/** 每条语句的执行按钮 gutter；点击执行该条语句（onRun 回调由上层接） */
+export function statementRunGutterExtension(onRun?: (sql: string) => void): Extension {
+  return gutter({
+    class: 'cm-run-statement-gutter',
+    markers: (view) => {
+      const doc = view.state.doc.toString()
+      const ranges = splitSqlStatements(doc)
+      const entries: Range<GutterMarker>[] = []
+      for (const range of ranges) {
+        if (!range.sql.trim()) continue
+        const line = view.state.doc.lineAt(range.from)
+        entries.push(new RunStatementMarker().range(line.from))
+      }
+      return RangeSet.of(entries, true)
+    },
+    domEventHandlers: {
+      mousedown: (view, line, event) => {
+        if (!(event instanceof MouseEvent) || event.button !== 0) return false
+        const doc = view.state.doc.toString()
+        const range = statementRangeAtCursor(doc, line.from)
+        if (!range || !range.sql.trim()) return false
+        event.preventDefault()
+        onRun?.(statementExecutableSql(range))
+        view.focus()
+        return true
+      },
+    },
   })
 }
