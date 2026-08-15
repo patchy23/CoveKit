@@ -93,10 +93,10 @@ impl DbType {
         }
     }
 
-    /// 默认数据库名（新建连接对话框预填）
+    /// 默认数据库名（新建连接对话框预填；mysql/polardb 可空——库不存在会导致连接失败）
     pub fn default_database(self) -> &'static str {
         match self {
-            Self::Mysql | Self::Polardb => "patchybox",
+            Self::Mysql | Self::Polardb => "",
             Self::Postgresql | Self::Vastbase | Self::Kingbase => "postgres",
             Self::Oracle => "ORCL",
             Self::Dameng => "DAMENG",

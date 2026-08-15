@@ -71,13 +71,14 @@ export function usesConnectionRootSchema(type: V2DbType): boolean {
   return CONNECTION_ROOT_SCHEMA_TYPES.has(type)
 }
 
-/** 各类型新建连接的默认数据库名 */
+/** 各类型新建连接的默认数据库名（mysql/polardb 可空：库不存在会导致连接失败；与后端 models.rs 一致） */
 export function defaultDatabaseFor(type: V2DbType): string {
+  if (type === 'mysql' || type === 'polardb') return ''
   if (type === 'sqlite') return 'main'
   if (type === 'redis') return 'db0'
   if (type === 'oracle') return 'ORCL'
   if (type === 'dameng') return 'DAMENG'
-  return 'patchybox'
+  return 'postgres'
 }
 
 /** 工作台页签（id/label/kind；kind 支持 redis 键页签） */

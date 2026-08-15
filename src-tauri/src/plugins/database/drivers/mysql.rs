@@ -12,24 +12,34 @@ pub(crate) async fn mysql_pool(
     config: &ConnConfig,
     password: &str,
 ) -> Result<mysql_async::Pool, String> {
-    // mysql_async 0.37 无 connect_timeout 构建项（使用驱动默认连接超时）
+    // 连接参数对齐 dbx：库名可空（空则不 USE，避免「Unknown database」拒连）；
+    // tcp keepalive 30s + nodelay；超时由下方预检的 tokio timeout 兜底
     let mut builder = OptsBuilder::default()
         .ip_or_hostname(config.host.clone())
         .tcp_port(config.port)
         .user(Some(config.username.clone()))
         .pass(Some(password.to_string()))
-        .db_name(Some(config.database.clone()))
-        .prefer_socket(false);
+        .prefer_socket(false)
+        .tcp_keepalive(Some(std::time::Duration::from_secs(30)))
+        .tcp_nodelay(true);
+    let database = config.database.trim();
+    if !database.is_empty() {
+        builder = builder.db_name(Some(database.to_string()));
+    }
     if config.ssl {
         builder = builder.ssl_opts(Some(mysql_async::SslOpts::default()));
     }
     let opts: Opts = builder.into();
     let pool = mysql_async::Pool::new(opts);
-    // 预检一条查询，验证凭据
-    let mut conn = pool
-        .get_conn()
-        .await
-        .map_err(|e| format!("MySQL 连接失败: {e}"))?;
+    // 预检一条查询，验证凭据（带连接超时，防挂起）
+    let timeout_ms = config.connect_timeout_ms.max(1000);
+    let mut conn = tokio::time::timeout(
+        std::time::Duration::from_millis(timeout_ms),
+        pool.get_conn(),
+    )
+    .await
+    .map_err(|_| format!("MySQL 连接超时（{timeout_ms} ms）"))?
+    .map_err(|e| format!("MySQL 连接失败: {e}"))?;
     let _: String = conn
         .query_first::<String, _>("SELECT 1")
         .await
