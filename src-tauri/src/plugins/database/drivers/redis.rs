@@ -241,7 +241,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 命令行拆分支持引号() {
+    fn command_split_keeps_quoted_args() {
         assert_eq!(
             split_command("SET user:1 \"hello world\""),
             vec!["SET", "user:1", "hello world"]
@@ -266,7 +266,7 @@ mod tests {
     }
 
     #[test]
-    fn 值渲染() {
+    fn value_rendering() {
         assert_eq!(render_value(&RedisValue::Nil), "(nil)");
         assert_eq!(render_value(&RedisValue::Int(7)), "7");
         assert_eq!(render_value(&RedisValue::Okay), "OK");

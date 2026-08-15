@@ -70,7 +70,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 迁移按版本顺序执行且只追加() {
+    fn migration_runs_in_version_order_and_only_appends() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         migrate(&conn, &["CREATE TABLE t1 (id INTEGER);"]).unwrap();
         // 已应用的不再执行

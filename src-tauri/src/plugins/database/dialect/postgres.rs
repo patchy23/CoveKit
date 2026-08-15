@@ -88,19 +88,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 双引号引用标识符() {
+    fn double_quote_quoted_identifiers() {
         assert_eq!(PostgresDialect.quote_ident("users"), "\"users\"");
         assert_eq!(PostgresDialect.quote_ident("a\"b"), "\"a\"\"b\"");
     }
 
     #[test]
-    fn 分页追加limit与offset() {
+    fn pagination_appends_limit_and_offset() {
         let sql = PostgresDialect.paginate("SELECT * FROM users", 50, 100);
         assert_eq!(sql, "SELECT * FROM users LIMIT 50 OFFSET 100");
     }
 
     #[test]
-    fn 查询语句识别() {
+    fn query_statement_detection() {
         assert!(PostgresDialect.is_query_sql("SELECT 1"));
         assert!(PostgresDialect.is_query_sql("WITH x AS (SELECT 1) SELECT * FROM x"));
         assert!(!PostgresDialect.is_query_sql("UPDATE t SET a = 1"));
@@ -108,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn 对象sql含schema参数占位() {
+    fn object_sql_has_schema_placeholder() {
         let sql = PostgresDialect.objects_sql();
         assert!(sql.contains("n.nspname = ?"));
     }

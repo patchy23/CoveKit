@@ -146,7 +146,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 驱动目录按类型命名() {
+    fn driver_dir_named_by_type() {
         assert_eq!(driver_key(DbType::Oracle), "oracle");
         assert_eq!(driver_key(DbType::Kingbase), "kingbase");
         assert_eq!(driver_key(DbType::Vastbase), "vastbase");
@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn 镜像url模板替换() {
+    fn mirror_url_template_replacement() {
         let url = "https://mirror.example.com/{type}/{version}/agent"
             .replace("{type}", "oracle")
             .replace("{version}", "0.1.48");

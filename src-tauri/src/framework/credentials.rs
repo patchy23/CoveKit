@@ -212,7 +212,7 @@ mod tests {
 
     /// 加解密往返 + 错误密钥/损坏密文校验
     #[test]
-    fn 加解密往返() {
+    fn encrypt_decrypt_roundtrip() {
         let key = [7u8; 32];
         let plain = b"{\"conn-1\":\"s3cret\"}";
         let ct = encrypt_payload(&key, plain).unwrap();
@@ -224,7 +224,7 @@ mod tests {
 
     /// 命名空间白名单
     #[test]
-    fn 命名空间白名单() {
+    fn namespace_whitelist() {
         assert!(valid_namespace("database"));
         assert!(valid_namespace("ssh-profile"));
         assert!(valid_namespace("a_b-c1"));
@@ -238,7 +238,7 @@ mod tests {
 
     /// 完整链路：主密钥生成复用 + 保存/读取/删除往返 + 命名空间隔离
     #[test]
-    fn 凭证保存读取删除往返() {
+    fn credential_save_read_delete_roundtrip() {
         let dir = std::env::temp_dir().join(format!("cred-store-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
 
@@ -272,7 +272,7 @@ mod tests {
 
     /// 损坏主密钥报错
     #[test]
-    fn 损坏主密钥报错() {
+    fn corrupt_master_key_errors() {
         let dir = std::env::temp_dir().join(format!("cred-badkey-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(MASTER_KEY_FILE), b"short").unwrap();

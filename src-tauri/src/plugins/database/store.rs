@@ -287,7 +287,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 时间文本格式为19位() {
+    fn timestamp_text_is_19_chars() {
         let text = now_text();
         assert_eq!(text.len(), 19);
         assert_eq!(&text[4..5], "-");

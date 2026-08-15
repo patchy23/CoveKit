@@ -66,19 +66,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 双引号引用标识符() {
+    fn double_quote_quoted_identifiers() {
         assert_eq!(SqliteDialect.quote_ident("users"), "\"users\"");
         assert_eq!(SqliteDialect.quote_ident("a\"b"), "\"a\"\"b\"");
     }
 
     #[test]
-    fn 分页追加limit与offset() {
+    fn pagination_appends_limit_and_offset() {
         let sql = SqliteDialect.paginate("SELECT * FROM t", 10, 30);
         assert_eq!(sql, "SELECT * FROM t LIMIT 10 OFFSET 30");
     }
 
     #[test]
-    fn 执行计划前缀() {
+    fn explain_prefix() {
         assert_eq!(
             SqliteDialect.explain_sql("SELECT * FROM t"),
             "EXPLAIN QUERY PLAN SELECT * FROM t"
@@ -86,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn 查询语句识别() {
+    fn query_statement_detection() {
         assert!(SqliteDialect.is_query_sql("PRAGMA table_info(users)"));
         assert!(SqliteDialect.is_query_sql("EXPLAIN QUERY PLAN SELECT 1"));
         assert!(!SqliteDialect.is_query_sql("INSERT INTO t VALUES (1)"));

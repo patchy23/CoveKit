@@ -409,7 +409,7 @@ mod tests {
     /// 用当前测试二进制自身模拟 agent 进程（环境变量触发 agent 模式）
     /// 模拟协议：ready 首行 → 回显 handshake/open_session/execute_query 等方法的固定结果。
     #[tokio::test]
-    async fn 与模拟agent进程完成rpc往返() {
+    async fn rpc_roundtrip_with_mock_agent_process() {
         // 测试二进制重入：DBX_MOCK_AGENT=1 时本进程扮演 agent
         if std::env::var("DBX_MOCK_AGENT").is_ok() {
             mock_agent_main();
@@ -425,7 +425,7 @@ mod tests {
             .skip(1)
             .collect::<Vec<_>>()
             .join("::");
-        let test_path = format!("{module}::与模拟agent进程完成rpc往返");
+        let test_path = format!("{module}::rpc_roundtrip_with_mock_agent_process");
         let client = AgentClient::spawn_with_env_and_args(
             &exe,
             &dir,

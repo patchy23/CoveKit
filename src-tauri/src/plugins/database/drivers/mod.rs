@@ -666,7 +666,7 @@ mod tests {
     }
 
     #[test]
-    fn 连接参数组装使用snake_case() {
+    fn connect_params_use_snake_case() {
         let config = ConnConfig {
             id: "c1".into(),
             label: "测试".into(),

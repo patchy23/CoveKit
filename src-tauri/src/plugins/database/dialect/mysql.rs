@@ -70,25 +70,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 反引号引用标识符() {
+    fn backtick_quoted_identifiers() {
         assert_eq!(MySqlDialect.quote_ident("users"), "`users`");
         assert_eq!(MySqlDialect.quote_ident("we`ird"), "`we``ird`");
     }
 
     #[test]
-    fn 分页追加limit与offset() {
+    fn pagination_appends_limit_and_offset() {
         let sql = MySqlDialect.paginate("SELECT * FROM users ORDER BY id", 20, 40);
         assert_eq!(sql, "SELECT * FROM users ORDER BY id LIMIT 20 OFFSET 40");
     }
 
     #[test]
-    fn 尾部分号被清理() {
+    fn trailing_semicolon_cleaned() {
         let sql = MySqlDialect.paginate("SELECT * FROM t;", 10, 0);
         assert_eq!(sql, "SELECT * FROM t LIMIT 10 OFFSET 0");
     }
 
     #[test]
-    fn 查询语句识别() {
+    fn query_statement_detection() {
         assert!(MySqlDialect.is_query_sql("SELECT 1"));
         assert!(MySqlDialect.is_query_sql("  with t as (select 1) select * from t"));
         assert!(MySqlDialect.is_query_sql("SHOW TABLES"));

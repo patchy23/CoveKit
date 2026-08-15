@@ -132,7 +132,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn 拆分多语句并跳过引号与注释() {
+    fn split_statements_skips_quotes_and_comments() {
         let sql =
             "SELECT ';' AS a; -- 注释;注释\nUPDATE t SET v = 'x;y'; /* 块;注释 */ DELETE FROM t;";
         let parts = split_sql_statements(sql);
@@ -143,20 +143,20 @@ mod tests {
     }
 
     #[test]
-    fn 空语句与尾部分号被忽略() {
+    fn empty_statements_and_trailing_semicolons_ignored() {
         let parts = split_sql_statements(";;; SELECT 1 ;;;");
         assert_eq!(parts, vec!["SELECT 1"]);
     }
 
     #[test]
-    fn 转义引号不截断字符串() {
+    fn escaped_quotes_do_not_break_strings() {
         let parts = split_sql_statements("SELECT 'it''s; ok'");
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0], "SELECT 'it''s; ok'");
     }
 
     #[test]
-    fn 方言分发只覆盖native类型() {
+    fn dialect_dispatch_covers_native_types_only() {
         assert!(dialect_for(DbType::Mysql).is_some());
         assert!(dialect_for(DbType::Polardb).is_some());
         assert!(dialect_for(DbType::Postgresql).is_some());
