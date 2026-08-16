@@ -29,7 +29,6 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
       :placeholder="placeholder"
       :disabled="disabled"
       class="ui-search-control"
-      type="search"
       @update:model-value="emit('update:modelValue', String($event))"
     />
     <button

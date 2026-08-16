@@ -328,6 +328,12 @@
     padding-left: 32px !important;
     padding-right: 30px !important;
   }
+  /* 隐藏 WebView2/Chromium 原生密码眼睛与清除按钮（组件自带显式切换，避免双眼睛/双 X） */
+  .field-input::-ms-reveal,
+  .field-input::-ms-clear,
+  .field-input::-webkit-search-cancel-button {
+    display: none;
+  }
   .ui-range {
     height: 20px;
     cursor: pointer;

@@ -149,15 +149,17 @@ async function save() {
         </label>
       </div>
 
-      <!-- 按 kind 动态渲染的字段（秘密字段带眼睛切换） -->
+      <!-- 按 kind 动态渲染的字段（单行秘密字段带眼睛切换；私钥多行不脱敏） -->
       <div v-for="f in formFieldsFor(state.kind)" :key="f.key" class="flex flex-col gap-[6px]">
         <div class="flex items-center justify-between">
           <span class="field-label">
             {{ f.label }}
-            <span v-if="f.optional" class="text-text-muted dark:text-text-muted-dark">（可选）</span>
+            <span v-if="f.optional" class="text-text-muted dark:text-text-muted-dark"
+              >（可选）</span
+            >
           </span>
           <UiIconButton
-            v-if="f.secret"
+            v-if="f.secret && !f.multiline"
             :label="shown[f.key] ? '隐藏' : '显示'"
             size="xs"
             @click="toggleShown(f.key)"
@@ -165,11 +167,10 @@ async function save() {
             <UiIcon :name="shown[f.key] ? 'eye-off' : 'eye'" :size="13" />
           </UiIconButton>
         </div>
-        <!-- 多行秘密（私钥）：隐藏态渲染掩码占位，显示态可编辑 -->
+        <!-- 多行秘密（私钥）：不脱敏直接可编辑（PEM 需要全文可见核对） -->
         <UiTextarea
           v-if="f.multiline"
-          :model-value="shown[f.key] || !f.secret ? state.values[f.key] : '••••••••••••••••'"
-          :disabled="f.secret && !shown[f.key]"
+          :model-value="state.values[f.key]"
           class="font-mono"
           resize="vertical"
           placeholder="粘贴 PEM / OpenSSH 私钥全文"
@@ -187,11 +188,7 @@ async function save() {
       <!-- custom：键值条目编辑器 -->
       <div v-if="state.kind === 'custom'" class="flex flex-col gap-[6px]">
         <span class="field-label">字段</span>
-        <div
-          v-for="(entry, i) in state.entries"
-          :key="i"
-          class="flex items-center gap-[6px]"
-        >
+        <div v-for="(entry, i) in state.entries" :key="i" class="flex items-center gap-[6px]">
           <UiInput
             :model-value="entry.key"
             class="w-[140px] shrink-0"

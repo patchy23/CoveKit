@@ -5,6 +5,8 @@
  * 点击外部 / 菜单项后自动关闭；菜单项支持分隔线与危险样式（红色）。
  * hover 高亮统一 bg-border（与 Select 下拉一致）。
  * size：md（默认，w-150/text-body，SSH 文件等场景）；sm（w-124/text-body-sm，树节点等紧凑场景）
+ * 注意：面板必须 pointer-events-auto——reka 模态弹窗会把 body 置 pointer-events:none，
+ * Teleport 到 body 的菜单若不加会整体点不动（弹窗内右键菜单失效的根因）。
  */
 import { computed, onMounted, onUnmounted } from 'vue'
 
@@ -66,7 +68,7 @@ onUnmounted(() => document.removeEventListener('mousedown', close))
 <template>
   <Teleport to="body">
     <div
-      class="fixed z-[200] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_24px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+      class="pointer-events-auto fixed z-[200] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_24px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
       :class="panelClass"
       :style="{ left: `${x}px`, top: `${y}px` }"
       @mousedown.stop
