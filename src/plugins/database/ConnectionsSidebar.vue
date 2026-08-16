@@ -271,8 +271,16 @@ function onTreeSelect(id: string) {
   if (db.connections.value.some((c) => c.id === connId)) db.activeConnectionId.value = connId
 }
 
-/** 双击叶子节点：表/视图 → 结构页签；Redis 键 → 键详情页签 */
+/** 双击：连接节点 → 离线即连接（在线无操作）；叶子：表/视图 → 结构页签；Redis 键 → 键详情页签 */
 function onTreeOpen(item: UiTreeItem) {
+  // 连接节点（depth 0，id 即连接 id）：双击直接连接
+  const connection = db.connections.value.find((c) => c.id === item.id)
+  if (connection) {
+    if (connection.status !== 'online' && !db.connecting.value[connection.id]) {
+      void db.connect(connection).catch(() => {})
+    }
+    return
+  }
   const leaf = db.parseLeafId(item.id)
   if (!leaf) return
   const conn = db.connections.value.find((c) => c.id === leaf.connId)

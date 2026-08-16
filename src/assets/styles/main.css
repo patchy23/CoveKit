@@ -429,7 +429,8 @@
     @apply border-danger/30 bg-danger-soft text-danger-strong dark:border-danger-dark/30 dark:bg-danger-soft-dark dark:text-danger-dark;
   }
   .ui-tabs {
-    @apply flex shrink-0 items-center overflow-x-auto;
+    /* 页签永不换行：超出由 UiTabsOverflow 收纳（父级负责切分可见/隐藏） */
+    @apply flex shrink-0 items-center overflow-hidden;
   }
   .ui-tabs-pill {
     @apply gap-sm;
@@ -438,7 +439,11 @@
     @apply gap-[2px] border-b border-border px-sm dark:border-border-dark;
   }
   .ui-tab {
-    @apply relative inline-flex items-center gap-[6px] font-medium text-secondary transition-colors disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-dark;
+    @apply relative inline-flex shrink-0 items-center gap-[6px] whitespace-nowrap font-medium text-secondary transition-colors disabled:cursor-not-allowed disabled:opacity-50 dark:text-secondary-dark;
+  }
+  /* 页签文字单行省略（超长不撑破页签条） */
+  .ui-tab-label {
+    @apply max-w-[160px] truncate;
   }
   .ui-tab-xs {
     @apply px-[8px] py-xs text-caption;

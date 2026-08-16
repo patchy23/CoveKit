@@ -56,15 +56,11 @@ const emit = defineEmits<{
           }"
           :title="
             item.statusTitle ??
-            (item.status === 'success'
-              ? '已连接'
-              : item.status === 'danger'
-                ? '已断开'
-                : '连接中')
+            (item.status === 'success' ? '已连接' : item.status === 'danger' ? '已断开' : '连接中')
           "
           aria-hidden="true"
         />
-        {{ item.label }}
+        <span class="ui-tab-label">{{ item.label }}</span>
         <span v-if="item.badge !== undefined" class="ui-tab-badge">{{ item.badge }}</span>
         <span
           v-if="item.closable"

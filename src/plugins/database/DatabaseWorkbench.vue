@@ -6,8 +6,9 @@
  * 页签语义：SQL 编辑器是可保存的工作区（未保存灰点 / 已保存绿点）；右键可改别名。
  */
 import { computed, onMounted, ref } from 'vue'
-import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiTabs } from '@/core/ui'
+import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiTabs, UiTabsOverflow } from '@/core/ui'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import { useDatabase } from './useDatabase'
 import { useSplitPane } from './useSplitPane'
 import ConnectionsSidebar from './ConnectionsSidebar.vue'
@@ -42,6 +43,16 @@ const tabItems = computed(() =>
       statusTitle: isQuery ? (unsaved ? '未保存' : '已保存') : undefined,
     }
   })
+)
+
+/** 页签条溢出：按容器宽度切分可见/收纳（为「打开SQL编辑器」按钮与触发器预留 150px） */
+const tabBarRef = ref<HTMLElement | null>(null)
+const activeTabValue = computed(() => db.activeTabId.value)
+const { visibleItems: visibleTabs, hiddenItems: hiddenTabs } = useTabsOverflow(
+  tabBarRef,
+  tabItems,
+  activeTabValue,
+  150
 )
 
 /** 页签右键菜单（重命名/关闭） */
@@ -174,17 +185,26 @@ onMounted(() => {
         >
           <UiIcon name="chevron-down" :size="10" :stroke-width="2.5" />
         </UiIconButton>
-        <UiTabs
-          v-if="db.tabs.value.length"
-          :model-value="db.activeTabId.value"
-          :items="tabItems"
-          variant="line"
-          size="sm"
-          class="min-w-0 flex-1"
-          @update:model-value="(v) => (db.activeTabId.value = String(v))"
-          @close="db.closeTab"
-          @contextmenu="onTabContext"
-        />
+        <div ref="tabBarRef" class="flex min-w-0 flex-1 items-center">
+          <UiTabs
+            v-if="db.tabs.value.length"
+            :model-value="db.activeTabId.value"
+            :items="visibleTabs"
+            variant="line"
+            size="sm"
+            class="min-w-0 flex-1"
+            @update:model-value="(v) => (db.activeTabId.value = String(v))"
+            @close="db.closeTab"
+            @contextmenu="onTabContext"
+          />
+          <UiTabsOverflow
+            v-if="hiddenTabs.length"
+            :items="hiddenTabs"
+            :model-value="db.activeTabId.value"
+            @select="(v) => (db.activeTabId.value = v)"
+            @close="db.closeTab"
+          />
+        </div>
       </div>
 
       <div

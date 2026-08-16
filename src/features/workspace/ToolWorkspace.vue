@@ -6,6 +6,7 @@
  */
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, type Component } from 'vue'
 import { getTool } from '@/core/registry/toolRegistry'
+import { UiTabsOverflow } from '@/core/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import RecentStrip from '@/features/recent/RecentStrip.vue'
 import ToolGrid from '@/features/grid/ToolGrid.vue'
@@ -36,11 +37,15 @@ function tabIcon(id: string) {
   return getTool(id)?.icon ?? 'all'
 }
 
-/** 从溢出下拉打开页签：打开后收起下拉 */
+/** 从溢出下拉打开页签 */
 function openHiddenTool(id: string) {
   ui.openTool(id)
-  overflowOpen.value = false
 }
+
+/** 收纳页签（公共 UiTabsOverflow 的 items 形态） */
+const hiddenTabItems = computed(() =>
+  hiddenTabs.value.map((id) => ({ value: id, label: tabTitle(id), closable: true }))
+)
 
 /* ── 页签溢出收纳：按页签条宽度估算可见页签数，其余进「···」下拉 ── */
 // 估算值取页签上限宽（图标15 + 间距 + 文字120 + 关闭18 + padding ≈ 190px），
@@ -48,7 +53,6 @@ function openHiddenTool(id: string) {
 const MIN_TAB_WIDTH = 190 // px
 const RESERVED_WIDTH = 150 // px（首页页签 + 溢出按钮 + 尾部留白）
 const tabBar = ref<HTMLElement | null>(null)
-const overflowOpen = ref(false)
 const visibleTabCount = ref(5)
 let ro: ResizeObserver | null = null
 
@@ -62,20 +66,14 @@ const visibleTabs = computed(() => ui.openTabs.slice(0, Math.max(0, visibleTabCo
 /** 收纳进下拉的页签 */
 const hiddenTabs = computed(() => ui.openTabs.slice(Math.max(0, visibleTabCount.value - 1)))
 
-function onDocMouseDown() {
-  overflowOpen.value = false
-}
-
 onMounted(() => {
   calcVisible()
   ro = new ResizeObserver(calcVisible)
   if (tabBar.value) ro.observe(tabBar.value)
-  document.addEventListener('mousedown', onDocMouseDown)
 })
 
 onUnmounted(() => {
   ro?.disconnect()
-  document.removeEventListener('mousedown', onDocMouseDown)
 })
 </script>
 
@@ -135,48 +133,14 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- 溢出省略号：显示未收纳的页签 -->
-      <div v-if="hiddenTabs.length" class="relative">
-        <button
-          class="flex h-[38px] shrink-0 items-center gap-[4px] rounded-t-[8px] px-[10px] text-body font-medium text-secondary transition-colors hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-          :title="`更多页签（${hiddenTabs.length}）`"
-          @mousedown.stop
-          @click.stop="overflowOpen = !overflowOpen"
-        >
-          ···
-        </button>
-        <div
-          v-if="overflowOpen"
-          class="absolute left-0 top-full z-50 mt-[4px] max-h-[320px] w-[230px] overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
-          @mousedown.stop
-        >
-          <div
-            v-for="id in hiddenTabs"
-            :key="id"
-            class="flex cursor-pointer items-center gap-[10px] px-[10px] py-[8px] text-body transition-colors hover:bg-border"
-            :class="
-              ui.activeTab === id
-                ? 'bg-tertiary-soft font-medium text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-                : 'text-secondary dark:text-secondary-dark'
-            "
-            @click="openHiddenTool(id)"
-          >
-            <AppIcon
-              :name="tabIcon(id)"
-              :size="15"
-              class="shrink-0 text-tertiary-strong dark:text-tertiary-dark"
-            />
-            <span class="min-w-0 flex-1 truncate">{{ tabTitle(id) }}</span>
-            <button
-              class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] text-text-muted hover:bg-border hover:text-tertiary-strong dark:text-text-muted-dark dark:hover:bg-border-dark"
-              title="关闭页签"
-              @click.stop="ui.closeTab(id)"
-            >
-              <AppIcon name="close" :size="11" />
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- 溢出收纳：公共组件（··· 触发器 + 下拉） -->
+      <UiTabsOverflow
+        v-if="hiddenTabItems.length"
+        :items="hiddenTabItems"
+        :model-value="ui.activeTab ?? ''"
+        @select="openHiddenTool"
+        @close="ui.closeTab"
+      />
       <div class="flex-1" />
     </div>
 
