@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * CredentialForm · 凭证编辑表单弹窗（框架级，core/vault）
- * 按 kind 动态渲染字段（formFieldsFor），秘密字段 password 输入 + 眼睛切换；
+ * 按 kind 动态渲染字段（formFieldsFor），秘密字段用 type=password（明文切换走输入框自带眼睛）；
  * custom 类型用键值条目编辑器。被凭证管理页与 CredentialPicker（+ 新建凭证）共用。
  */
 import { reactive, ref, watch } from 'vue'
@@ -52,8 +52,6 @@ const ui = useUiStore()
 
 /** 表单状态（打开时按 credential/initialKind 重建） */
 const state = reactive<CredentialFormState>(emptyFormState())
-/** 秘密字段显示状态（字段 key → 是否明文显示） */
-const shown = ref<Record<string, boolean>>({})
 /** 提交中与校验错误 */
 const saving = ref(false)
 const error = ref('')
@@ -70,7 +68,6 @@ watch(
       ? formStateFromCredential(props.credential)
       : emptyFormState(props.initialKind)
     Object.assign(state, fresh)
-    shown.value = {}
     error.value = ''
   }
 )
@@ -81,12 +78,6 @@ function onKindChange(kind: string) {
   next.name = state.name
   next.note = state.note
   Object.assign(state, next)
-  shown.value = {}
-}
-
-/** 切换秘密字段明文显示 */
-function toggleShown(key: string) {
-  shown.value[key] = !shown.value[key]
 }
 
 /** 自定义条目增删 */
@@ -149,24 +140,12 @@ async function save() {
         </label>
       </div>
 
-      <!-- 按 kind 动态渲染的字段（单行秘密字段带眼睛切换；私钥多行不脱敏） -->
+      <!-- 按 kind 动态渲染的字段（秘密用 type=password，明文切换走输入框自带眼睛；私钥多行不脱敏） -->
       <div v-for="f in formFieldsFor(state.kind)" :key="f.key" class="flex flex-col gap-[6px]">
-        <div class="flex items-center justify-between">
-          <span class="field-label">
-            {{ f.label }}
-            <span v-if="f.optional" class="text-text-muted dark:text-text-muted-dark"
-              >（可选）</span
-            >
-          </span>
-          <UiIconButton
-            v-if="f.secret && !f.multiline"
-            :label="shown[f.key] ? '隐藏' : '显示'"
-            size="xs"
-            @click="toggleShown(f.key)"
-          >
-            <UiIcon :name="shown[f.key] ? 'eye-off' : 'eye'" :size="13" />
-          </UiIconButton>
-        </div>
+        <span class="field-label">
+          {{ f.label }}
+          <span v-if="f.optional" class="text-text-muted dark:text-text-muted-dark">（可选）</span>
+        </span>
         <!-- 多行秘密（私钥）：不脱敏直接可编辑（PEM 需要全文可见核对） -->
         <UiTextarea
           v-if="f.multiline"
@@ -179,7 +158,7 @@ async function save() {
         <UiInput
           v-else
           :model-value="state.values[f.key]"
-          :type="f.secret && !shown[f.key] ? 'password' : 'text'"
+          :type="f.secret ? 'password' : 'text'"
           :class="{ 'font-mono': f.secret }"
           @update:model-value="state.values[f.key] = String($event)"
         />
@@ -197,18 +176,11 @@ async function save() {
           />
           <UiInput
             :model-value="entry.value"
-            :type="entry.secret && !shown[`entry-${i}`] ? 'password' : 'text'"
+            :type="entry.secret ? 'password' : 'text'"
             class="flex-1"
             placeholder="值"
             @update:model-value="entry.value = String($event)"
           />
-          <UiIconButton
-            :label="shown[`entry-${i}`] ? '隐藏' : '显示'"
-            size="xs"
-            @click="shown[`entry-${i}`] = !shown[`entry-${i}`]"
-          >
-            <UiIcon :name="shown[`entry-${i}`] ? 'eye-off' : 'eye'" :size="13" />
-          </UiIconButton>
           <label
             class="flex shrink-0 cursor-pointer items-center gap-[4px] text-caption text-secondary dark:text-secondary-dark"
             title="秘密值在列表中掩码"
