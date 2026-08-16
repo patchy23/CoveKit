@@ -14,9 +14,8 @@ export function registerTool(m: ToolManifest): void {
   manifests.set(m.id, m)
 }
 
-/** 可见工具清单（hidden 框架页如凭证管理不进网格/搜索/计数） */
 export function getTools(): ToolManifest[] {
-  return [...manifests.values()].filter((t) => !t.hidden)
+  return [...manifests.values()]
 }
 
 export function getTool(id: string): ToolManifest | undefined {

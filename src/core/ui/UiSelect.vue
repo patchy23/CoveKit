@@ -94,7 +94,7 @@ function valueColorClass(value: string) {
           position="popper"
           align="start"
           :side-offset="4"
-          class="z-50 min-w-[var(--reka-select-trigger-width)] overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+          class="z-[220] min-w-[var(--reka-select-trigger-width)] overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
         >
           <SelectViewport
             class="max-h-[min(280px,var(--reka-select-content-available-height))] overflow-y-auto py-xs"

@@ -36,8 +36,6 @@ export interface ToolManifest {
   component: () => Promise<{ default: Component }>
   /** 后台服务型工具（剪贴板/番茄钟），第二批用 */
   background?: boolean
-  /** 隐藏工具：不进工具库网格/搜索/分类计数，仅可用 openTool 打开页签（如凭证管理） */
-  hidden?: boolean
   settingsSchema?: SettingsField[]
   tags?: string[]
 }

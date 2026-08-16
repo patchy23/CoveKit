@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 凭证管理页（框架级 workspace 页签，隐藏工具 id=vault）
+ * 凭证管理面板（框架功能；由 SettingsModal「凭证管理 → 管理凭证」以 xl 弹窗承载）
  * 类型筛选 chip + 搜索 + 列表（名称/类型/掩码摘要/备注/更新时间）；
  * 行内无操作按钮，编辑/复制值/删除走右键菜单（删除弹窗确认）；
  * 导出/导入 .pbvault（密码 + 合并/覆盖）。明文只在 reveal 后短暂存在于前端内存。
@@ -209,21 +209,16 @@ async function confirmTransfer() {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col p-[12px]">
-    <!-- 头部：说明 + 搜索 + 操作 -->
+  <div class="flex h-[56vh] min-h-[320px] flex-col">
+    <!-- 工具条：搜索 + 导入/导出/新建 -->
     <div class="mb-[10px] flex items-center gap-[8px]">
-      <div class="min-w-0 flex-1">
-        <h2 class="text-h2 text-primary dark:text-primary-dark">凭证管理</h2>
-        <p class="mt-[2px] text-caption text-text-muted dark:text-text-muted-dark">
-          秘密加密存储在本机凭证库（keyring 主密钥），插件只引用凭证 ID，明文不出后端
-        </p>
-      </div>
       <UiSearchInput
         v-model="query"
         size="sm"
         placeholder="搜索名称 / 备注 / 摘要…"
         class="w-[220px]"
       />
+      <div class="flex-1"></div>
       <UiButton size="sm" variant="secondary" @click="startImport">导入</UiButton>
       <UiButton size="sm" variant="secondary" @click="startExport">导出</UiButton>
       <UiButton size="sm" variant="primary" @click="startCreate">+ 新建凭证</UiButton>

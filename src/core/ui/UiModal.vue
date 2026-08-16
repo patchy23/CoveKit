@@ -17,7 +17,7 @@ const props = withDefaults(
     size?: 'sm' | 'md' | 'lg' | 'xl'
     closeOnBackdrop?: boolean
   }>(),
-  { title: '', description: '', width: '', size: 'md', closeOnBackdrop: true }
+  { title: '', description: '', width: '', size: 'md', closeOnBackdrop: false }
 )
 
 const sizeWidth = {

@@ -12,9 +12,13 @@ import AppIcon from '@/features/ui/AppIcon.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '@/core/ipc/ipc'
+import CredentialManagerPage from '@/features/vault/CredentialManagerPage.vue'
 
 const ui = useUiStore()
 const settings = useSettingsStore()
+
+/** 凭证管理弹窗开关（框架功能，不走工具页签） */
+const vaultVisible = ref(false)
 
 /** 凭证库条数（打开设置弹窗时刷新；获取失败显示「—」） */
 const vaultCount = ref<number | null>(null)
@@ -31,10 +35,9 @@ watch(
   { immediate: true }
 )
 
-/** 打开凭证管理页（隐藏工具 vault 的 workspace 页签）并关闭设置弹窗 */
+/** 打开凭证管理弹窗（凭证库是框架功能，独立于工具页签体系） */
 function openVault() {
-  ui.openTool('vault')
-  ui.settingsVisible = false
+  vaultVisible.value = true
 }
 
 const toolsWithSettings = computed(() => getTools().filter((t) => t.settingsSchema?.length))
@@ -66,12 +69,12 @@ async function chooseDownloadDirectory() {
       <div
         class="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
       >
-        <AppIcon name="gear" :size="23" class="text-tertiary-strong dark:text-tertiary-dark" />
+        <AppIcon name="sliders" :size="23" class="text-tertiary-strong dark:text-tertiary-dark" />
       </div>
       <div>
-        <h2 class="text-h1 font-extrabold tracking-[-0.02em] dark:text-primary-dark">偏好设置</h2>
+        <h2 class="text-h1 font-extrabold tracking-[-0.02em] dark:text-primary-dark">设置</h2>
         <p class="mt-[3px] text-body text-secondary dark:text-secondary-dark">
-          外观、快捷键与工具级配置
+          外观、快捷键、凭证与工具级配置
         </p>
       </div>
       <button
@@ -224,5 +227,15 @@ async function chooseDownloadDirectory() {
         暂无带设置项的工具（首批工具设置将由 M1 工具声明 settingsSchema 后出现）
       </p>
     </div>
+    <!-- 凭证管理（框架功能，弹窗展示；点开后再关设置不影响） -->
+    <UiModal
+      :open="vaultVisible"
+      title="凭证管理"
+      description="秘密加密存储在本机凭证库（keyring 主密钥），插件只引用凭证 ID，明文不出后端"
+      size="xl"
+      @close="vaultVisible = false"
+    >
+      <CredentialManagerPage />
+    </UiModal>
   </BaseModal>
 </template>
