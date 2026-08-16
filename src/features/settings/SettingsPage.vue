@@ -1,41 +1,39 @@
 <script setup lang="ts">
 /**
- * SettingsModal · 设置弹窗
- * 外观 / 快捷键 / 通用 / 剪贴板策略 / 工具级设置（settingsSchema 自动渲染表单，架构 §8）
+ * SettingsPage · 设置页（工作区框架页，id=settings，铺满右侧内容区）
+ * 外观 / 快捷键与通用 / 凭证管理 / 工具级设置（settingsSchema 自动渲染表单，架构 §8）
+ * 凭证管理弹窗由本页承载（vault 是框架功能，独立于工具体系）。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { getTools } from '@/core/registry/toolRegistry'
 import type { SettingsField } from '@/core/registry/types'
-import { UiButton, UiCheckbox, UiInput, UiModal as BaseModal, UiSelect as Select } from '@/core/ui'
+import { UiButton, UiCheckbox, UiInput, UiModal, UiSelect as Select } from '@/core/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import { useSettingsStore } from '@/stores/settings'
-import { useUiStore } from '@/stores/ui'
 import { ipc } from '@/core/ipc/ipc'
 import CredentialManagerPage from '@/features/vault/CredentialManagerPage.vue'
 
-const ui = useUiStore()
 const settings = useSettingsStore()
 
 /** 凭证管理弹窗开关（框架功能，不走工具页签） */
 const vaultVisible = ref(false)
 
-/** 凭证库条数（打开设置弹窗时刷新；获取失败显示「—」） */
+/** 凭证库条数（进入页面与关闭管理弹窗时刷新；获取失败显示「—」） */
 const vaultCount = ref<number | null>(null)
-watch(
-  () => ui.settingsVisible,
-  async (visible) => {
-    if (!visible) return
-    try {
-      vaultCount.value = (await ipc.vaultList()).length
-    } catch {
-      vaultCount.value = null
-    }
-  },
-  { immediate: true }
-)
+async function refreshVaultCount() {
+  try {
+    vaultCount.value = (await ipc.vaultList()).length
+  } catch {
+    vaultCount.value = null
+  }
+}
+onMounted(refreshVaultCount)
+watch(vaultVisible, (v) => {
+  if (!v) void refreshVaultCount()
+})
 
-/** 打开凭证管理弹窗（凭证库是框架功能，独立于工具页签体系） */
+/** 打开凭证管理弹窗 */
 function openVault() {
   vaultVisible.value = true
 }
@@ -60,11 +58,8 @@ async function chooseDownloadDirectory() {
 </script>
 
 <template>
-  <BaseModal
-    :open="ui.settingsVisible"
-    width="min(640px, 92vw)"
-    @close="ui.settingsVisible = false"
-  >
+  <div class="mx-auto w-full max-w-[760px]">
+    <!-- 页头 -->
     <div class="flex items-center gap-[12px]">
       <div
         class="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
@@ -77,16 +72,9 @@ async function chooseDownloadDirectory() {
           外观、快捷键、凭证与工具级配置
         </p>
       </div>
-      <button
-        class="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-[9px] bg-neutral text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        title="关闭"
-        @click="ui.settingsVisible = false"
-      >
-        <AppIcon name="close" :size="14" />
-      </button>
     </div>
 
-    <div class="mt-[20px] flex flex-col gap-md">
+    <div class="mt-[20px] flex flex-col gap-md pb-[24px]">
       <!-- 外观 -->
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
         <h3 class="text-h2 font-bold dark:text-primary-dark">外观</h3>
@@ -165,7 +153,7 @@ async function chooseDownloadDirectory() {
         </div>
       </section>
 
-      <!-- 凭证管理（框架级 vault；管理页走隐藏工具 workspace 页签） -->
+      <!-- 凭证管理（框架功能，弹窗承载） -->
       <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
         <h3 class="flex items-center gap-[8px] text-h2 font-bold dark:text-primary-dark">
           <AppIcon name="lock" :size="15" class="text-tertiary-strong dark:text-tertiary-dark" />
@@ -224,10 +212,11 @@ async function chooseDownloadDirectory() {
       </section>
 
       <p v-if="!toolsWithSettings.length" class="text-body-sm text-text-muted">
-        暂无带设置项的工具（首批工具设置将由 M1 工具声明 settingsSchema 后出现）
+        暂无带设置项的工具
       </p>
     </div>
-    <!-- 凭证管理（框架功能，弹窗展示；点开后再关设置不影响） -->
+
+    <!-- 凭证管理弹窗（xl；框架功能，独立于工具页签体系） -->
     <UiModal
       :open="vaultVisible"
       title="凭证管理"
@@ -237,5 +226,5 @@ async function chooseDownloadDirectory() {
     >
       <CredentialManagerPage />
     </UiModal>
-  </BaseModal>
+  </div>
 </template>

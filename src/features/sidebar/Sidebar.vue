@@ -102,7 +102,7 @@ function selectCategory(item: { id: string }) {
       </button>
       <button
         class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        @click="ui.settingsVisible = true"
+        @click="ui.openTool('settings')"
       >
         <AppIcon name="sliders" :size="16" class="shrink-0" />
         设置

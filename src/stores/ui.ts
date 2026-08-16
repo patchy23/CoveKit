@@ -11,8 +11,6 @@ export const useUiStore = defineStore('ui', () => {
   const listView = ref(false)
   /** 顶栏搜索词 */
   const searchQuery = ref('')
-  /** 设置弹窗 */
-  const settingsVisible = ref(false)
   /** 侧栏折叠（标题栏按钮切换，内容区最大化） */
   const sidebarCollapsed = ref(false)
   /** 沉浸模式（隐藏工具标题栏 TopBar + 侧栏，退出时恢复侧栏展开） */
@@ -82,7 +80,6 @@ export const useUiStore = defineStore('ui', () => {
     activeCategory,
     listView,
     searchQuery,
-    settingsVisible,
     sidebarCollapsed,
     immersive,
     toggleImmersive,

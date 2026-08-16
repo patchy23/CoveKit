@@ -11,7 +11,6 @@ import Sidebar from '@/features/sidebar/Sidebar.vue'
 import TopBar from '@/features/topbar/TopBar.vue'
 import ToolWorkspace from '@/features/workspace/ToolWorkspace.vue'
 import TitleBar from '@/features/ui/TitleBar.vue'
-import SettingsModal from '@/features/settings/SettingsModal.vue'
 import Toast from '@/features/ui/Toast.vue'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useSettingsStore } from '@/stores/settings'
@@ -39,7 +38,6 @@ onMounted(async () => {
       </main>
     </div>
 
-    <SettingsModal />
     <Toast />
   </div>
 </template>
