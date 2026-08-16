@@ -102,12 +102,28 @@ impl MasterKeyStore for KeyringStore {
 // 主密钥解析（keyring 优先 → 降级文件 → 首次生成；vault.dat 存在而无密钥时宁可锁死）
 // ──────────────────────────────────────────────────────────────────────────
 
-/// 生成 32B 随机主密钥并写入外部存储；keyring 写失败时降级本地文件并告警
+/// 生成 32B 随机主密钥并写入外部存储；keyring 写失败或写后回读校验不过时降级本地文件并告警
 fn create_master_key(dir: &Path, store: &dyn MasterKeyStore) -> Result<[u8; 32], String> {
     let mut key = [0u8; 32];
     rand::rngs::OsRng.fill_bytes(&mut key);
-    if let Err(e) = store.write(&key) {
-        eprintln!("[vault] 密钥库写入失败（{e}），主密钥降级为本地文件存储");
+    // 写入后立刻回读校验：Windows 凭据管理器存在「写返回成功但条目没落库」的静默丢失场景，
+    // 不校验的话 vault.dat 会用一把没存住的密钥加密，下次启动永远无法解锁（死数据）
+    let persisted = match store.write(&key) {
+        Ok(()) => match store.read() {
+            Ok(Some(readback)) if readback == key => true,
+            other => {
+                eprintln!(
+                    "[vault] 密钥库写入后回读校验失败（{other:?}），主密钥降级为本地文件存储"
+                );
+                false
+            }
+        },
+        Err(e) => {
+            eprintln!("[vault] 密钥库写入失败（{e}），主密钥降级为本地文件存储");
+            false
+        }
+    };
+    if !persisted {
         replace_file(&dir.join(FALLBACK_KEY_FILE), &key)
             .map_err(|e| format!("降级主密钥写入失败: {e}"))?;
     }
@@ -357,6 +373,8 @@ mod tests {
         fail_read: bool,
         /// 注入写失败
         fail_write: bool,
+        /// 注入静默丢写（write 返回 Ok 但不落库，模拟 Windows 凭据管理器丢失场景）
+        lose_writes: bool,
     }
 
     impl MemStore {
@@ -366,6 +384,7 @@ mod tests {
                 key: RefCell::new(None),
                 fail_read: false,
                 fail_write: false,
+                lose_writes: false,
             }
         }
     }
@@ -381,7 +400,9 @@ mod tests {
             if self.fail_write {
                 return Err("注入的写失败".into());
             }
-            *self.key.borrow_mut() = Some(*key);
+            if !self.lose_writes {
+                *self.key.borrow_mut() = Some(*key);
+            }
             Ok(())
         }
     }
@@ -478,6 +499,7 @@ mod tests {
             key: RefCell::new(None),
             fail_read: true,
             fail_write: false,
+            lose_writes: false,
         };
         assert_eq!(master_key_at(&dir2, &failing).unwrap(), fallback_key);
 
@@ -487,6 +509,25 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
         std::fs::remove_dir_all(&dir2).ok();
+    }
+
+    /// 密钥库静默丢写（write 返回 Ok 但回读无记录）→ 回读校验失败必须降级文件，
+    /// 否则 vault.dat 会用没存住的密钥加密成死数据（Windows 凭据管理器真实场景回归）
+    #[test]
+    fn silent_write_loss_falls_back_to_file() {
+        let dir = temp_dir("silent-loss");
+        let store = MemStore {
+            lose_writes: true,
+            ..MemStore::new()
+        };
+
+        // 生成主密钥：密钥库没存住 → 降级文件兜底，且两次解析拿到同一把
+        let k1 = master_key_at(&dir, &store).unwrap();
+        assert!(dir.join(FALLBACK_KEY_FILE).exists());
+        let k2 = master_key_at(&dir, &store).unwrap();
+        assert_eq!(k1, k2);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// 密钥丢失宁可锁死：vault.dat 存在而密钥库与降级文件都没有密钥 → 报「无法解锁」，不重新生成
