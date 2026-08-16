@@ -7,6 +7,7 @@ import {
   DialogRoot,
   DialogTitle,
 } from 'reka-ui'
+import UiIcon from './UiIcon.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -46,11 +47,20 @@ function onPointerDownOutside(event: Event) {
       />
       <div class="pointer-events-none fixed inset-0 z-[180] grid place-items-center p-md">
         <DialogContent
-          class="ui-modal-panel pointer-events-auto"
+          class="ui-modal-panel pointer-events-auto relative"
           :style="{ width: width || sizeWidth[size] }"
           @pointer-down-outside="onPointerDownOutside"
         >
-          <header v-if="title || description || $slots.header" class="mb-[18px]">
+          <!-- 右上角关闭（遮罩点击默认已禁用，所有弹窗必须有可见出口） -->
+          <button
+            type="button"
+            class="absolute right-[14px] top-[14px] grid h-[26px] w-[26px] place-items-center rounded-[6px] text-text-muted transition-colors hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+            title="关闭"
+            @click="emit('close')"
+          >
+            <UiIcon name="x" :size="12" />
+          </button>
+          <header v-if="title || description || $slots.header" class="mb-[18px] pr-[30px]">
             <slot name="header">
               <DialogTitle
                 class="text-card-title font-semibold text-primary dark:text-primary-dark"
