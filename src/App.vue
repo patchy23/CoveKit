@@ -10,6 +10,7 @@ import { onMounted } from 'vue'
 import Sidebar from '@/features/sidebar/Sidebar.vue'
 import TopBar from '@/features/topbar/TopBar.vue'
 import ToolWorkspace from '@/features/workspace/ToolWorkspace.vue'
+import SettingsPage from '@/features/settings/SettingsPage.vue'
 import TitleBar from '@/features/ui/TitleBar.vue'
 import Toast from '@/features/ui/Toast.vue'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -33,8 +34,10 @@ onMounted(async () => {
     <div class="flex min-h-0 flex-1">
       <Sidebar v-if="!ui.sidebarCollapsed" />
       <main class="flex min-w-0 flex-1 flex-col">
-        <TopBar v-if="!ui.immersive" />
-        <ToolWorkspace />
+        <TopBar v-if="!ui.immersive" v-show="!ui.settingsOpen" />
+        <!-- 设置页：框架级整页模式（v-show 保留工作区页签状态） -->
+        <SettingsPage v-if="ui.settingsOpen" />
+        <ToolWorkspace v-show="!ui.settingsOpen" />
       </main>
     </div>
 

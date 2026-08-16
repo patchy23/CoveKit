@@ -13,39 +13,27 @@ import ToolList from '@/features/grid/ToolList.vue'
 import { useToolsStore } from '@/stores/tools'
 import { useUiStore } from '@/stores/ui'
 
-/** 框架页（非工具注册表：设置等）；id → 页签标题/图标/组件 */
-const FRAMEWORK_PAGES: Record<
-  string,
-  { name: string; icon: string; component: () => Promise<{ default: Component }> }
-> = {
-  settings: {
-    name: '设置',
-    icon: 'sliders',
-    component: () => import('@/features/settings/SettingsPage.vue'),
-  },
-}
-
 const ui = useUiStore()
 const tools = useToolsStore()
 
 const hasTools = computed(() => tools.tools.length > 0)
 const searching = computed(() => ui.searchQuery.trim().length > 0)
 
-// 页签组件缓存：同一页签只创建一次异步组件（v-show 保持实例状态）
+// 页签组件缓存：同一工具只创建一次异步组件（v-show 保持组件状态，切换不销毁）
 const compCache = new Map<string, Component>()
 function compFor(id: string): Component | null {
-  const factory = getTool(id)?.component ?? FRAMEWORK_PAGES[id]?.component
-  if (!factory) return null
-  if (!compCache.has(id)) compCache.set(id, defineAsyncComponent(factory))
+  const m = getTool(id)
+  if (!m) return null
+  if (!compCache.has(id)) compCache.set(id, defineAsyncComponent(m.component))
   return compCache.get(id)!
 }
 
 function tabTitle(id: string) {
-  return getTool(id)?.name ?? FRAMEWORK_PAGES[id]?.name ?? id
+  return getTool(id)?.name ?? id
 }
 
 function tabIcon(id: string) {
-  return getTool(id)?.icon ?? FRAMEWORK_PAGES[id]?.icon ?? 'all'
+  return getTool(id)?.icon ?? 'all'
 }
 
 /** 从溢出下拉打开页签：打开后收起下拉 */

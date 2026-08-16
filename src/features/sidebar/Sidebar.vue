@@ -101,8 +101,13 @@ function selectCategory(item: { id: string }) {
         {{ settings.settings.theme === 'dark' ? '浅色模式' : '深色模式' }}
       </button>
       <button
-        class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        @click="ui.openTool('settings')"
+        class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium transition-colors duration-150 hover:bg-border hover:text-primary dark:hover:bg-border-dark dark:hover:text-primary-dark"
+        :class="
+          ui.settingsOpen
+            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+            : 'text-secondary dark:text-secondary-dark'
+        "
+        @click="ui.openSettings()"
       >
         <AppIcon name="sliders" :size="16" class="shrink-0" />
         设置

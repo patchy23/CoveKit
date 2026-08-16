@@ -1,5 +1,5 @@
 /**
- * UI 状态（Pinia）：当前分类 / 视图模式 / 搜索词 / 多页签工作区 / 设置弹窗 / 全局 toast
+ * UI 状态（Pinia）：当前分类 / 视图模式 / 搜索词 / 多页签工作区 / 设置页 / 全局 toast
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -15,6 +15,18 @@ export const useUiStore = defineStore('ui', () => {
   const sidebarCollapsed = ref(false)
   /** 沉浸模式（隐藏工具标题栏 TopBar + 侧栏，退出时恢复侧栏展开） */
   const immersive = ref(false)
+  /** 设置页开关（框架级整页模式：打开时右侧整体切换为设置页，不占工具页签） */
+  const settingsOpen = ref(false)
+
+  /** 打开设置页（整页铺满右侧，工具页签状态保留在后台） */
+  function openSettings() {
+    settingsOpen.value = true
+  }
+
+  /** 关闭设置页，回到之前的工具视图 */
+  function closeSettings() {
+    settingsOpen.value = false
+  }
 
   /** 切换沉浸模式：进入收起侧栏，退出恢复侧栏展开 */
   function toggleImmersive() {
@@ -83,6 +95,9 @@ export const useUiStore = defineStore('ui', () => {
     sidebarCollapsed,
     immersive,
     toggleImmersive,
+    settingsOpen,
+    openSettings,
+    closeSettings,
     openTabs,
     activeTab,
     openTool,
