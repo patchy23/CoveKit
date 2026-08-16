@@ -28,6 +28,11 @@ export const useUiStore = defineStore('ui', () => {
     settingsOpen.value = false
   }
 
+  /** 切换设置页（侧栏「设置」入口：打开态再点一次即退出） */
+  function toggleSettings() {
+    settingsOpen.value = !settingsOpen.value
+  }
+
   /** 切换沉浸模式：进入收起侧栏，退出恢复侧栏展开 */
   function toggleImmersive() {
     if (immersive.value) {
@@ -45,12 +50,13 @@ export const useUiStore = defineStore('ui', () => {
   /** 当前激活的工具 id（null = 工具库首页） */
   const activeTab = ref<string | null>(null)
 
-  /** 打开工具页签：新页签插到首页后的第一位（已打开则仅激活） */
+  /** 打开工具页签：新页签插到首页后的第一位（已打开则仅激活）；自动退出设置页 */
   function openTool(id: string) {
     if (!openTabs.value.includes(id)) {
       openTabs.value.splice(1, 0, id)
     }
     activeTab.value = id
+    settingsOpen.value = false
   }
 
   /** 关闭页签；关闭激活页签时切到相邻页签或首页 */
@@ -98,6 +104,7 @@ export const useUiStore = defineStore('ui', () => {
     settingsOpen,
     openSettings,
     closeSettings,
+    toggleSettings,
     openTabs,
     activeTab,
     openTool,

@@ -25,11 +25,12 @@ const navItems = [
 function toggleTheme() {
   settings.set('theme', settings.settings.theme === 'dark' ? 'light' : 'dark')
 }
-/** 分类导航：切换分类并回到工具库首页 */
+/** 分类导航：切换分类并回到工具库首页（退出设置页） */
 function selectCategory(item: { id: string }) {
   ui.activeCategory = item.id
   ui.searchQuery = ''
   ui.goHome()
+  ui.closeSettings()
 }
 </script>
 
@@ -107,7 +108,7 @@ function selectCategory(item: { id: string }) {
             ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
             : 'text-secondary dark:text-secondary-dark'
         "
-        @click="ui.openSettings()"
+        @click="ui.toggleSettings()"
       >
         <AppIcon name="sliders" :size="16" class="shrink-0" />
         设置
