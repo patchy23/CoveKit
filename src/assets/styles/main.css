@@ -328,6 +328,10 @@
     padding-left: 32px !important;
     padding-right: 30px !important;
   }
+  /* 隐藏 WebView2 原生密码 reveal 眼睛：UiInput type=password 已自带输入框内眼睛，双开会重合 */
+  .field-input::-ms-reveal {
+    display: none;
+  }
   .ui-range {
     height: 20px;
     cursor: pointer;
