@@ -159,7 +159,6 @@ async function save() {
           v-else
           :model-value="state.values[f.key]"
           :type="f.secret ? 'password' : 'text'"
-          :class="{ 'font-mono': f.secret }"
           @update:model-value="state.values[f.key] = String($event)"
         />
       </div>

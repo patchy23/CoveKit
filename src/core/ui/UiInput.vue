@@ -2,6 +2,8 @@
 /**
  * UiInput · 文本输入（field-input 样式，高度基线随 ui-control-* 档位）
  * type="password" 时自带输入框内眼睛切换明文（不依赖 WebView2 原生 reveal，行为确定）。
+ * 约定：密码框一律用本组件且不加 font-mono（掩码圆点与普通输入框视觉一致）；
+ * font-mono 只用于明文数据/代码内容（域名、AKID、私钥全文等）。
  */
 import { computed, ref } from 'vue'
 import UiIcon from './UiIcon.vue'

@@ -79,7 +79,6 @@ onMounted(load)
           <UiField label="AccessKey Secret">
             <UiInput
               v-model="aliyun.key"
-              class="font-mono"
               type="password"
               placeholder="••••••••"
               spellcheck="false"
@@ -110,7 +109,6 @@ onMounted(load)
           <UiField label="SecretKey">
             <UiInput
               v-model="dnspod.key"
-              class="font-mono"
               type="password"
               placeholder="••••••••"
               spellcheck="false"
