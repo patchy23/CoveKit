@@ -52,10 +52,7 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMouseDown))
       @mousedown.stop
       @click.stop="open = !open"
     >
-      <UiIcon name="chevron-down" :size="11" :stroke-width="2.5" />
-      <span class="rounded-full bg-border px-[6px] text-caption dark:bg-border-dark">{{
-        items.length
-      }}</span>
+      <UiIcon name="dots" :size="14" />
     </button>
 
     <div

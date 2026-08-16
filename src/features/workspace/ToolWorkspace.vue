@@ -4,9 +4,10 @@
  * 页签条 + 内容区：首页（工具库）/ 各工具页签（v-show 保持组件状态，切换不销毁）。
  * 页签过多时：新页签在首页后第一位，超出显示宽度的页签收纳进「···」下拉。
  */
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, type Component } from 'vue'
+import { computed, defineAsyncComponent, ref, type Component } from 'vue'
 import { getTool } from '@/core/registry/toolRegistry'
 import { UiTabsOverflow } from '@/core/ui'
+import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import RecentStrip from '@/features/recent/RecentStrip.vue'
 import ToolGrid from '@/features/grid/ToolGrid.vue'
@@ -42,39 +43,22 @@ function openHiddenTool(id: string) {
   ui.openTool(id)
 }
 
-/** 收纳页签（公共 UiTabsOverflow 的 items 形态） */
-const hiddenTabItems = computed(() =>
-  hiddenTabs.value.map((id) => ({ value: id, label: tabTitle(id), closable: true }))
-)
-
-/* ── 页签溢出收纳：按页签条宽度估算可见页签数，其余进「···」下拉 ── */
-// 估算值取页签上限宽（图标15 + 间距 + 文字120 + 关闭18 + padding ≈ 190px），
-// 并为「首页」与「···」按钮预留固定空间，避免溢出时省略号不出现。
-const MIN_TAB_WIDTH = 190 // px
-const RESERVED_WIDTH = 150 // px（首页页签 + 溢出按钮 + 尾部留白）
+/* ── 页签溢出收纳：按页签条可用宽度逐页签估算，放得下几个显示几个，其余进「···」下拉 ── */
+// extra=60：图标15 + 间距12 + 关闭18 + padding 15；maxLabel=120 与页签 max-w-[120px] 对齐。
+// reserved=150：「首页」页签 + 「···」触发器 + 尾部留白，避免溢出时三点不出现。
 const tabBar = ref<HTMLElement | null>(null)
-const visibleTabCount = ref(5)
-let ro: ResizeObserver | null = null
-
-function calcVisible() {
-  const w = tabBar.value?.clientWidth ?? 0
-  visibleTabCount.value = Math.max(1, Math.floor((w - RESERVED_WIDTH) / MIN_TAB_WIDTH))
-}
-
-/** 页签条直接显示的页签（首页占 1 个位置） */
-const visibleTabs = computed(() => ui.openTabs.slice(0, Math.max(0, visibleTabCount.value - 1)))
-/** 收纳进下拉的页签 */
-const hiddenTabs = computed(() => ui.openTabs.slice(Math.max(0, visibleTabCount.value - 1)))
-
-onMounted(() => {
-  calcVisible()
-  ro = new ResizeObserver(calcVisible)
-  if (tabBar.value) ro.observe(tabBar.value)
+const tabItems = computed(() =>
+  ui.openTabs.map((id) => ({ value: id, label: tabTitle(id), closable: true }))
+)
+const activeTabValue = computed(() => ui.activeTab ?? '')
+const { visibleItems, hiddenItems } = useTabsOverflow(tabBar, tabItems, activeTabValue, 150, {
+  extra: 60,
+  maxLabel: 120,
 })
-
-onUnmounted(() => {
-  ro?.disconnect()
-})
+/** 页签条直接显示的页签 id */
+const visibleTabs = computed(() => visibleItems.value.map((t) => t.value))
+/** 收纳进下拉的页签（UiTabsOverflow items 形态） */
+const hiddenTabItems = computed(() => hiddenItems.value)
 </script>
 
 <template>

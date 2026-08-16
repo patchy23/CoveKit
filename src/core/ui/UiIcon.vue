@@ -19,6 +19,7 @@ import {
   ChevronsRight,
   Copy,
   Download,
+  Ellipsis,
   Eye,
   EyeOff,
   LayoutGrid,
@@ -57,6 +58,8 @@ export const UI_ICONS = {
   save: Save,
   copy: Copy,
   download: Download,
+  /** 更多/溢出（横向三点） */
+  dots: Ellipsis,
   /** 重命名/编辑 */
   pencil: Pencil,
   trash: Trash2,
@@ -69,13 +72,10 @@ export type UiIconName = keyof typeof UI_ICONS
 </script>
 
 <script setup lang="ts">
-withDefaults(
-  defineProps<{ name: UiIconName; size?: number; strokeWidth?: number | string }>(),
-  {
-    size: 14,
-    strokeWidth: 2,
-  }
-)
+withDefaults(defineProps<{ name: UiIconName; size?: number; strokeWidth?: number | string }>(), {
+  size: 14,
+  strokeWidth: 2,
+})
 </script>
 
 <template>
