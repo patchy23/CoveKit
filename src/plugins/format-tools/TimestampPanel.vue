@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 时间戳转换 · 秒/毫秒自动识别，时间戳 ⇄ 日期双向互转
+ * 时间戳面板 · 秒/毫秒自动识别，时间戳 ⇄ 日期双向互转（格式转换工具子页签）
  */
 import { ref } from 'vue'
 import { dateToTimestamp, nowSeconds, timestampToResult } from './useConverter'

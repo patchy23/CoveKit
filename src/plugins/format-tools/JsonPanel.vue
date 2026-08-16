@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * JSON 格式化 · 格式化/压缩/校验 + 错误行号定位
- * 布局：输入/输出左右分栏，占满工作区高度；文本框内部滚动（不拉长页面）。
+ * JSON 面板 · 格式化/压缩/校验 + 错误行号定位（格式转换工具子页签）
+ * 布局：输入/输出左右分栏，占满高度；文本框内部滚动。缩进宽度走工具级设置。
  */
 import { ref } from 'vue'
 import { formatJson, minifyJson } from './useFormat'
@@ -19,7 +19,7 @@ const output = ref('')
 const errorMsg = ref('')
 
 function runFormat() {
-  const r = formatJson(input.value, settings.getToolSetting('json-formatter', 'indent', 2))
+  const r = formatJson(input.value, settings.getToolSetting('format-tools', 'indent', 2))
   errorMsg.value = r.error
     ? `${r.error.message}（第 ${r.error.line} 行，第 ${r.error.col} 列）`
     : ''

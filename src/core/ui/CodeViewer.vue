@@ -14,7 +14,7 @@ import { xml } from '@codemirror/lang-xml'
 
 const props = defineProps<{
   doc: string
-  lang: 'json' | 'xml'
+  lang: 'json' | 'xml' | 'text'
 }>()
 
 const host = ref<HTMLElement | null>(null)
@@ -63,7 +63,7 @@ function buildIndentGuides(view: EditorView) {
 
 /* ── 初始化 / 内容同步 / 销毁 ── */
 function createEditor() {
-  const langExt = props.lang === 'json' ? json() : xml()
+  const langExt = props.lang === 'json' ? json() : props.lang === 'xml' ? xml() : []
   view = new EditorView({
     parent: host.value!,
     state: EditorState.create({

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * XML 格式化 · 格式化/压缩/校验（与 JSON 格式化同款布局：占满工作区 + 内部滚动）
+ * XML 面板 · 格式化/压缩/校验（格式转换工具子页签；与 JSON 面板同款分栏布局）
  */
 import { ref } from 'vue'
 import { formatXml, minifyXml } from './useXml'
