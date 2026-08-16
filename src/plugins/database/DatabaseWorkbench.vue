@@ -239,7 +239,7 @@ onMounted(() => {
 
     <!-- 中栏/摘要分隔条（可拖拽） -->
     <div
-      v-if="inspectorOpen && db.tabs.value.length"
+      v-if="inspectorOpen"
       class="w-[5px] shrink-0 cursor-col-resize bg-surface-muted transition-colors hover:bg-tertiary/40 dark:bg-surface-muted-dark"
       title="拖拽调整摘要宽度"
       @mousedown="(e) => inspectorSplit.onPointerDown(e)"
@@ -247,7 +247,7 @@ onMounted(() => {
 
     <!-- 右栏：摘要 -->
     <aside
-      v-if="inspectorOpen && db.tabs.value.length"
+      v-if="inspectorOpen"
       :style="{ width: `${inspectorSplit.size.value}px` }"
       class="flex shrink-0 flex-col border-l border-border dark:border-border-dark"
     >
@@ -262,9 +262,9 @@ onMounted(() => {
       <InspectorPanel :db="db" />
     </aside>
 
-    <!-- 右栏收起态轨道条 -->
+    <!-- 右栏收起态轨道条（与左栏连接列表同层级，常驻） -->
     <div
-      v-else-if="db.tabs.value.length"
+      v-else
       class="flex w-[28px] shrink-0 flex-col items-center gap-[6px] border-l border-border py-[6px] dark:border-border-dark"
     >
       <UiIconButton label="展开摘要" size="xs" @click="inspectorOpen = true">
