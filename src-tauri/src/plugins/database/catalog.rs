@@ -439,15 +439,18 @@ pub async fn dbc_table_data(
                 .await
                 .map_err(|e| format!("取连接失败: {e}"))?;
             let result = drivers::mysql::execute_mysql(pool, &sql, page_size as u64).await?;
-            // 行数：information_schema.TABLES.TABLE_ROWS（估算；该列为字符串类型）
+            // 行数：information_schema.TABLES.TABLE_ROWS（估算；预编译语句下该列是 BIGINT
+            // 而非字符串，直接取 String 会 FromRow panic——按 Value 取再转字符串，NULL 走兜底）
             let count_row = conn
-                .exec_first::<String, _, _>(
+                .exec_first::<Option<mysql_async::Value>, _, _>(
                     dialect.row_count_sql(),
                     (database.clone(), table.clone()),
                 )
                 .await
                 .ok()
                 .flatten()
+                .flatten()
+                .map(drivers::mysql::mysql_value_str)
                 .and_then(|s| s.parse::<u64>().ok())
                 .unwrap_or(result.rows.len() as u64);
             (result.columns, result.rows, count_row)

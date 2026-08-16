@@ -144,11 +144,16 @@ pub(crate) async fn execute_mysql(
     Ok(result)
 }
 
-/// PostgreSQL：查询走 client.query，非查询走 client.execute
+/// MySQL 单元格 → 展示字符串（NULL 显示 "NULL"；Bytes 按 UTF-8，其余走 as_sql）
 pub(crate) fn mysql_cell_str(row: &mysql_async::Row, index: usize) -> String {
     let Some(value) = row.get::<MysqlValue, usize>(index) else {
         return "NULL".to_string();
     };
+    mysql_value_str(value)
+}
+
+/// MySQL Value → 字符串（类型无关，供单元格/标量取值共用；NULL → "NULL"）
+pub(crate) fn mysql_value_str(value: MysqlValue) -> String {
     match value {
         MysqlValue::NULL => "NULL".to_string(),
         MysqlValue::Bytes(bytes) => String::from_utf8(bytes).unwrap_or_else(|_| "NULL".to_string()),
