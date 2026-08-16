@@ -185,7 +185,7 @@ onMounted(() => {
         >
           <UiIcon name="chevron-down" :size="10" :stroke-width="2.5" />
         </UiIconButton>
-        <div ref="tabBarRef" class="flex min-w-0 flex-1 items-center">
+        <div ref="tabBarRef" class="flex min-w-0 flex-1 items-center overflow-hidden">
           <UiTabs
             v-if="db.tabs.value.length"
             :model-value="db.activeTabId.value"
