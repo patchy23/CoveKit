@@ -1,9 +1,4 @@
 <script setup lang="ts">
-/**
- * TerminalTab · SSH 交互式终端（xterm.js）
- * 连接会话 → 打开 PTY 通道；输出走 ssh://terminal-data 事件推送，
- * 输入走 ssh_terminal_write；ResizeObserver 同步窗口大小。
- */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { Terminal } from 'xterm'

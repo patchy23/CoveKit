@@ -1,24 +1,21 @@
 <script setup lang="ts">
-/**
- * 新建/编辑连接对话框
- * 按类型切换表单形态：sqlite 文件路径；redis 数据库索引；其余 host/port/账号。
- * 保存 / 测试连接两动作（保存后由左侧列表双击连接）；测试连接不落库。
- */
 import { computed, reactive, ref, watch } from 'vue'
+import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { UiAlert, UiButton, UiInput, UiModal, UiSpinner, UiSwitch } from '@/core/ui'
+import { connectionIpc } from './ipc'
+import { withTimeout } from './useDatabase'
 import {
   DB_TYPE_META,
-  DB_TYPE_OPTIONS,
   DEFAULT_PORT,
   defaultDatabaseFor,
   isFileType,
   isUnsupportedType,
   type V2DbType,
 } from './useDatabaseMeta'
+import ConnectionBasicsFields from './ConnectionBasicsFields.vue'
 
 const props = defineProps<{
   open: boolean
-  /** 编辑模式：传入连接配置 */
   editing?: import('./contracts').ConnConfig | null
 }>()
 
@@ -123,8 +120,6 @@ async function onTest() {
   testing.value = true
   testResult.value = null
   try {
-    const { connectionIpc } = await import('./ipc')
-    const { withTimeout } = await import('./useDatabase')
     const version = await withTimeout(
       connectionIpc.test(buildConfig(), form.password),
       30000,
@@ -146,7 +141,6 @@ async function onSave() {
   saving.value = true
   saveError.value = ''
   try {
-    const { connectionIpc } = await import('./ipc')
     // buildConfig 只取一次：保存与回传必须是同一份表单快照
     const config = buildConfig()
     await connectionIpc.save(config, form.password)
@@ -167,44 +161,14 @@ async function onSave() {
         达梦（DM8）驱动本版本未实现，可先选择其它数据库类型。
       </UiAlert>
 
-      <div class="grid grid-cols-2 gap-[8px]">
-        <div>
-          <label
-            class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
-            >连接名称</label
-          >
-          <UiInput v-model="form.label" size="sm" placeholder="例如：开发 · PG 主库" />
-        </div>
-        <div>
-          <label
-            class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
-            >环境</label
-          >
-          <UiInput v-model="form.env" size="sm" placeholder="开发" />
-        </div>
-      </div>
-
-      <div>
-        <label
-          class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
-          >数据库类型</label
-        >
-        <div class="grid grid-cols-3 gap-[6px]">
-          <UiButton
-            v-for="item in DB_TYPE_OPTIONS"
-            :key="item.value"
-            size="xs"
-            :variant="form.dbType === item.value ? 'primary' : 'secondary'"
-            block
-            @click="pickType(item.value)"
-          >
-            <span class="inline-flex items-center gap-[6px]">
-              <img :src="item.icon" :alt="item.label" class="h-[14px] w-[14px] object-contain" />
-              {{ item.label }}
-            </span>
-          </UiButton>
-        </div>
-      </div>
+      <ConnectionBasicsFields
+        :label="form.label"
+        :env="form.env"
+        :db-type="form.dbType"
+        @update:label="form.label = $event"
+        @update:env="form.env = $event"
+        @update:db-type="pickType"
+      />
 
       <template v-if="!fileType">
         <div class="grid grid-cols-[1fr_96px] gap-[8px]">
@@ -289,8 +253,7 @@ async function onSave() {
             variant="secondary"
             @click="
               (async () => {
-                const { open } = await import('@tauri-apps/plugin-dialog')
-                const picked = await open({
+                const picked = await dialogOpen({
                   multiple: false,
                   filters: [{ name: 'SQLite', extensions: ['db', 'sqlite', 'sqlite3'] }],
                 })

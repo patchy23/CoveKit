@@ -3,10 +3,13 @@
  * HttpResponse · 响应查看区（Postman 式：元信息 + Pretty/Raw + 响应头分页签）
  */
 import { computed, ref } from 'vue'
-import hljs from 'highlight.js'
+import hljs from 'highlight.js/lib/core'
+import json from 'highlight.js/lib/languages/json'
 import type { HttpResponseResult } from './contracts'
 import { formatBytes, formatHeaders, looksLikeJson } from './useHttp'
 import { UiBadge, UiTabs } from '@/core/ui'
+
+hljs.registerLanguage('json', json)
 
 const props = defineProps<{
   response: HttpResponseResult

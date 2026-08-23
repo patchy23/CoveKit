@@ -1,22 +1,11 @@
 <script setup lang="ts">
-/**
- * 云解析记录管理 · 记录表格 + 行内添加/编辑表单 + 分页
- * 删除采用两段式确认（再次点击执行，3s 后复原），避免弹窗打断。
- */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { CloudDomain, CloudRecord, DnsPlatform } from './contracts'
-import { CLOUD_RECORD_TYPES, TTL_PRESETS, recordTypeBadgeClass } from './useDns'
-import {
-  UiButton,
-  UiInput,
-  UiPagination,
-  UiSearchInput,
-  UiSelect as Select,
-  UiTable,
-  UiTableCell,
-} from '@/core/ui'
+import { recordTypeBadgeClass } from './useDns'
+import DnsRecordForm from './DnsRecordForm.vue'
+import { UiButton, UiPagination, UiSearchInput, UiTable, UiTableCell } from '@/core/ui'
 
 const props = defineProps<{
   platform: DnsPlatform
@@ -32,9 +21,7 @@ const total = ref(0)
 const page = ref(1)
 const pageSize = 50
 const busy = ref(false)
-/** 记录搜索词（服务端模糊搜索：主机记录/记录值） */
 const searchQuery = ref('')
-/** 搜索防抖定时器（输入停顿 300ms 才发起请求） */
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 /** 输入防抖后搜索：重置到第一页并携带关键词重新拉取 */
@@ -176,7 +163,6 @@ onMounted(loadRecords)
 
 <template>
   <div class="flex min-h-0 flex-col gap-[10px]">
-    <!-- 面包屑 + 搜索 + 操作 -->
     <div class="flex shrink-0 items-center gap-[8px]">
       <UiButton variant="ghost" size="sm" class="shrink-0" @click="emit('back')"> ← 返回 </UiButton>
       <span class="font-mono text-body font-medium text-primary dark:text-primary-dark">
@@ -196,58 +182,21 @@ onMounted(loadRecords)
       </UiButton>
     </div>
 
-    <!-- 行内表单（新增/编辑共用；控件统一 field-input 压缩高度，与 HTTP 工具一致） -->
-    <div
+    <DnsRecordForm
       v-if="formOpen"
-      class="flex shrink-0 flex-wrap items-end gap-[10px] rounded-md border border-tertiary/40 bg-tertiary-soft/30 p-[10px] dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30"
-    >
-      <label class="flex flex-col gap-[4px]">
-        <span class="field-label text-body-sm">主机记录</span>
-        <UiInput
-          v-model="formRr"
-          size="sm"
-          class="w-[130px] font-mono"
-          placeholder="@ / www"
-          spellcheck="false"
-        />
-      </label>
-      <label class="flex flex-col gap-[4px]">
-        <span class="field-label text-body-sm">类型</span>
-        <Select
-          :model-value="formType"
-          class="!w-[100px]"
-          :options="CLOUD_RECORD_TYPES.map((t) => ({ value: t, label: t }))"
-          @update:model-value="formType = $event"
-        />
-      </label>
-      <label class="flex min-w-[180px] flex-1 flex-col gap-[4px]">
-        <span class="field-label text-body-sm">记录值</span>
-        <UiInput
-          v-model="formValue"
-          size="sm"
-          class="font-mono placeholder:font-sans"
-          placeholder="目标 IP / 域名"
-          spellcheck="false"
-        />
-      </label>
-      <label class="flex flex-col gap-[4px]">
-        <span class="field-label text-body-sm">TTL</span>
-        <Select
-          :model-value="String(formTtl)"
-          class="!w-[100px]"
-          :options="TTL_PRESETS.map((t) => ({ value: String(t), label: `${t}s` }))"
-          @update:model-value="formTtl = Number($event)"
-        />
-      </label>
-      <div class="flex gap-[8px]">
-        <UiButton variant="primary" size="sm" :loading="saving" @click="saveForm">
-          {{ saving ? '保存中…' : '保存' }}
-        </UiButton>
-        <UiButton variant="ghost" size="sm" @click="formOpen = null"> 取消 </UiButton>
-      </div>
-    </div>
+      :rr="formRr"
+      :record-type="formType"
+      :value="formValue"
+      :ttl="formTtl"
+      :saving="saving"
+      @cancel="formOpen = null"
+      @save="saveForm"
+      @update:rr="formRr = $event"
+      @update:record-type="formType = $event"
+      @update:value="formValue = $event"
+      @update:ttl="formTtl = $event"
+    />
 
-    <!-- 记录表格（主机记录列只显示 rr，域名在标题栏；线路/操作列不换行） -->
     <div
       class="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface pr-[2px] dark:border-border-dark dark:bg-surface-dark"
     >
@@ -339,7 +288,6 @@ onMounted(loadRecords)
       </UiTable>
     </div>
 
-    <!-- 分页 -->
     <UiPagination
       v-if="totalPages > 1"
       :model-value="page"

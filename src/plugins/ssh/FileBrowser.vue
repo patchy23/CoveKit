@@ -1,17 +1,10 @@
 <script setup lang="ts">
 /** FileBrowser · SSH 文件页的路径工具栏、远程文件表格与键盘首字母定位。 */
-import {
-  computed,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  watch,
-  type ComponentPublicInstance,
-} from 'vue'
+import { nextTick, onMounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import type { RemoteFile } from './contracts'
 import { formatBytes, formatTime } from './useSsh'
-import { UiButton, UiInput, UiTable, UiTableCell } from '@/core/ui'
+import { UiButton, UiTable, UiTableCell } from '@/core/ui'
+import RemotePathToolbar from './RemotePathToolbar.vue'
 
 const props = defineProps<{
   currentPath: string
@@ -42,60 +35,6 @@ const emit = defineEmits<{
 
 const listViewport = ref<HTMLElement | null>(null)
 const rowElements = new Map<string, HTMLElement>()
-const editingPath = ref(false)
-const pathDraft = ref(props.currentPath)
-const pathInput = ref<{ focus: () => void; select: () => void } | null>(null)
-const pathViewport = ref<HTMLElement | null>(null)
-const pathContent = ref<HTMLElement | null>(null)
-const pathOverflowing = ref(false)
-let pathResizeObserver: ResizeObserver | null = null
-
-const pathSegments = computed(() => {
-  const parts = props.currentPath.split('/').filter(Boolean)
-  return [
-    { label: '/', path: '/' },
-    ...parts.map((part, index) => ({
-      label: part,
-      path: `/${parts.slice(0, index + 1).join('/')}`,
-    })),
-  ]
-})
-
-function beginPathEdit() {
-  pathDraft.value = props.currentPath
-  editingPath.value = true
-  nextTick(() => {
-    pathInput.value?.focus()
-    pathInput.value?.select()
-  })
-}
-
-function updatePathOverflow() {
-  const viewport = pathViewport.value
-  const content = pathContent.value
-  pathOverflowing.value = Boolean(
-    viewport && content && content.scrollWidth > viewport.clientWidth + 1
-  )
-}
-
-function cancelPathEdit() {
-  pathDraft.value = props.currentPath
-  editingPath.value = false
-  nextTick(updatePathOverflow)
-}
-
-function submitPath() {
-  const value = pathDraft.value.trim()
-  if (!value) return
-  const normalized = value.startsWith('/') ? value : `/${value}`
-  editingPath.value = false
-  emit('navigate', normalized)
-}
-
-function navigateSegment(path: string) {
-  editingPath.value = false
-  emit('navigate', path)
-}
 
 function setRowElement(path: string, element: Element | ComponentPublicInstance | null) {
   if (element instanceof HTMLElement) rowElements.set(path, element)
@@ -143,17 +82,6 @@ function selectFile(file: RemoteFile) {
 
 onMounted(() => {
   if (props.active !== false) nextTick(focusList)
-  pathResizeObserver = new ResizeObserver(updatePathOverflow)
-  if (pathViewport.value) pathResizeObserver.observe(pathViewport.value)
-  nextTick(updatePathOverflow)
-})
-
-onBeforeUnmount(() => pathResizeObserver?.disconnect())
-
-watch(pathViewport, (element, previous) => {
-  if (previous) pathResizeObserver?.unobserve(previous)
-  if (element) pathResizeObserver?.observe(element)
-  nextTick(updatePathOverflow)
 })
 
 watch(
@@ -162,96 +90,21 @@ watch(
     if (active) nextTick(focusList)
   }
 )
-
-watch(
-  () => props.currentPath,
-  (path) => {
-    pathDraft.value = path
-    editingPath.value = false
-    nextTick(updatePathOverflow)
-  }
-)
 </script>
 
 <template>
-  <div
-    class="flex shrink-0 items-center gap-[8px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
-  >
-    <UiButton
-      variant="ghost"
-      size="sm"
-      title="返回上一次目录"
-      :disabled="!canGoBack"
-      @click="emit('back')"
-    >
-      ← 后退
-    </UiButton>
-    <UiButton variant="ghost" size="sm" title="上级目录" @click="emit('up')"> ↑ 上级 </UiButton>
-    <UiInput
-      v-if="editingPath"
-      ref="pathInput"
-      v-model="pathDraft"
-      size="sm"
-      class="flex-1 font-mono"
-      spellcheck="false"
-      aria-label="输入远程目录路径"
-      @blur="cancelPathEdit"
-      @keyup.enter="submitPath"
-      @keyup.esc="cancelPathEdit"
-    />
-    <div
-      v-else
-      class="flex h-[30px] min-w-0 flex-1 cursor-text items-center overflow-hidden rounded-md border border-border-strong bg-surface-muted pl-[4px] dark:border-border-strong-dark dark:bg-surface-muted-dark"
-      title="点击空白处输入完整路径"
-      @click="beginPathEdit"
-    >
-      <div
-        ref="pathViewport"
-        class="relative flex min-w-0 flex-1 overflow-hidden"
-        :class="pathOverflowing ? 'justify-end' : 'justify-start'"
-      >
-        <span
-          v-if="pathOverflowing"
-          class="absolute inset-y-0 left-0 z-10 flex items-center bg-surface-muted px-[6px] text-body-sm text-text-muted dark:bg-surface-muted-dark dark:text-text-muted-dark"
-          aria-hidden="true"
-        >
-          …
-        </span>
-        <nav
-          ref="pathContent"
-          class="flex min-w-max shrink-0 items-center"
-          aria-label="远程目录路径"
-        >
-          <template v-for="(segment, index) in pathSegments" :key="segment.path">
-            <span
-              v-if="index > 0"
-              class="px-[1px] text-caption text-text-muted dark:text-text-muted-dark"
-              aria-hidden="true"
-            >
-              ›
-            </span>
-            <UiButton
-              variant="ghost"
-              size="xs"
-              class="font-mono"
-              :title="`进入 ${segment.path}`"
-              @click.stop="navigateSegment(segment.path)"
-            >
-              {{ segment.label }}
-            </UiButton>
-          </template>
-        </nav>
-      </div>
-      <span class="h-full w-[36px] shrink-0" aria-hidden="true" />
-    </div>
-    <UiButton size="sm" @click="emit('upload')">上传文件</UiButton>
-    <UiButton size="sm" @click="emit('uploadDirectory')">上传目录</UiButton>
-    <UiButton size="sm" @click="emit('download')">下载</UiButton>
-    <UiButton size="sm" @click="emit('rename')">重命名</UiButton>
-    <UiButton size="sm" class="text-danger-strong dark:text-danger-dark" @click="emit('delete')">
-      删除
-    </UiButton>
-  </div>
+  <RemotePathToolbar
+    :current-path="currentPath"
+    :can-go-back="canGoBack"
+    @navigate="emit('navigate', $event)"
+    @back="emit('back')"
+    @up="emit('up')"
+    @upload="emit('upload')"
+    @upload-directory="emit('uploadDirectory')"
+    @download="emit('download')"
+    @rename="emit('rename')"
+    @delete="emit('delete')"
+  />
 
   <div
     ref="listViewport"

@@ -37,4 +37,31 @@ export default defineConfig(async () => ({
       ignored: ['**/src-tauri/**'],
     },
   },
+
+  build: {
+    rollupOptions: {
+      output: {
+        /** 将稳定的大型依赖从应用入口拆开，降低主包下载与解析成本。 */
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined
+          if (id.includes('@codemirror') || id.includes('@lezer') || id.includes('/codemirror/')) {
+            return 'vendor-editor'
+          }
+          if (id.includes('@xterm') || id.includes('/xterm/')) return 'vendor-terminal'
+          if (id.includes('highlight.js') || id.includes('/marked/')) return 'vendor-markdown'
+          if (
+            id.includes('/vue/') ||
+            id.includes('/@vue/') ||
+            id.includes('/pinia/') ||
+            id.includes('/vue-i18n/') ||
+            id.includes('/reka-ui/')
+          ) {
+            return 'vendor-vue'
+          }
+          if (id.includes('/@tauri-apps/')) return 'vendor-tauri'
+          return undefined
+        },
+      },
+    },
+  },
 }))

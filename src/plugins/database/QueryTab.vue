@@ -1,25 +1,9 @@
 <script setup lang="ts">
-/**
- * SQL 编辑器页签：编辑器（工具栏 + CodeMirror 编辑器）与结果区（数据/消息）
- * 执行语义：有选中文本执行选中段；无选中执行光标所在完整语句（分号分隔）；「全部执行」按钮执行全文。
- * 保存语义：已保存直接更新；未保存弹窗确认别名；页签显示未保存/已保存状态。
- */
 import { computed, onMounted, ref } from 'vue'
-import {
-  UiAlert,
-  UiButton,
-  UiEmptyState,
-  UiIcon,
-  UiIconButton,
-  UiInput,
-  UiModal,
-  UiPagination,
-  UiSelect,
-  UiSpinner,
-  UiTabs,
-  UiDataGrid,
-} from '@/core/ui'
+import { save as dialogSave } from '@tauri-apps/plugin-dialog'
+import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiSelect } from '@/core/ui'
 import SqlEditor from './SqlEditor.vue'
+import QueryResultPane from './QueryResultPane.vue'
 import { useSplitPane } from './useSplitPane'
 import type { useDatabase } from './useDatabase'
 
@@ -30,10 +14,8 @@ const props = defineProps<{
 const { db } = props
 const { queryState, patchQueryState, activeTabContext, activeTabConnection } = db
 
-/** SQL 编辑器实例（读取选区/光标位置） */
 const editorRef = ref<InstanceType<typeof SqlEditor> | null>(null)
 
-/** 编辑器区域容器（用于计算可拖高度上限） */
 const editorPaneRef = ref<HTMLElement | null>(null)
 
 /** 编辑器高度（px）：默认按容器 38%，可拖拽；不持久化（分隔条在面板下方，正向） */
@@ -152,8 +134,7 @@ async function exportCsv() {
       .join(',')
   )
   const csv = [queryState.value.columns.join(','), ...rows].join('\n')
-  const { save } = await import('@tauri-apps/plugin-dialog')
-  const path = await save({
+  const path = await dialogSave({
     defaultPath: 'result.csv',
     filters: [{ name: 'CSV', extensions: ['csv'] }],
   })
@@ -165,7 +146,6 @@ async function exportCsv() {
 </script>
 
 <template>
-  <!-- SQL 编辑器（默认 38% 高度，可拖拽调整） -->
   <div
     ref="editorPaneRef"
     class="flex min-h-0 flex-col"
@@ -277,123 +257,21 @@ async function exportCsv() {
     />
   </div>
 
-  <!-- 编辑器/结果区分隔条（可拖拽） -->
   <div
     class="h-[5px] shrink-0 cursor-row-resize border-t border-border bg-surface-muted transition-colors hover:bg-tertiary/40 dark:border-border-dark dark:bg-surface-muted-dark"
     title="拖拽调整编辑器高度"
     @mousedown="(e) => editorSplit.onPointerDown(e, editorMax)"
   />
 
-  <!-- 结果区 -->
-  <div class="flex min-h-0 flex-1 flex-col border-t border-border dark:border-border-dark">
-    <div
-      class="flex h-[28px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
-    >
-      <UiTabs
-        :model-value="queryState.resultTab"
-        :items="db.resultTabs.value"
-        variant="line"
-        size="xs"
-        @update:model-value="(v) => patchQueryState({ resultTab: String(v) })"
-      />
-      <span class="ml-auto text-caption text-text-muted dark:text-text-muted-dark">{{
-        statusText
-      }}</span>
-      <UiIconButton label="复制结果" size="xs" @click="copyResult">
-        <UiIcon name="copy" :size="12" />
-      </UiIconButton>
-      <UiIconButton label="导出 CSV" size="xs" @click="exportCsv">
-        <UiIcon name="download" :size="12" />
-      </UiIconButton>
-    </div>
-
-    <div
-      v-if="queryState.status === 'running'"
-      class="flex min-h-0 flex-1 flex-col items-center justify-center gap-[8px]"
-    >
-      <UiSpinner size="md" label="执行中" />
-      <p class="text-caption text-secondary dark:text-secondary-dark">正在执行 SQL…</p>
-    </div>
-
-    <UiAlert
-      v-else-if="queryState.resultTab === 'message'"
-      class="m-[8px]"
-      :tone="
-        queryState.status === 'error'
-          ? 'danger'
-          : queryState.status === 'cancelled'
-            ? 'warning'
-            : queryState.status === 'idle'
-              ? 'info'
-              : 'success'
-      "
-      :title="
-        queryState.status === 'error'
-          ? '查询失败'
-          : queryState.status === 'cancelled'
-            ? '已取消'
-            : queryState.status === 'idle'
-              ? '没有可执行的 SQL'
-              : '执行完成'
-      "
-      size="sm"
-    >
-      {{
-        queryState.status === 'error'
-          ? queryState.error
-          : queryState.status === 'cancelled'
-            ? '本次查询已停止。'
-            : queryState.status === 'idle'
-              ? '请选中一段文本，或将光标置于某一行的任意位置后重试。'
-              : `返回 ${queryState.total} 行，耗时 ${queryState.durationMs} ms。`
-      }}
-    </UiAlert>
-
-    <UiEmptyState
-      v-else-if="queryState.status === 'empty' || gridRows.length === 0"
-      :title="queryState.filter ? '无匹配结果' : '暂无结果'"
-      :description="queryState.filter ? '过滤后 0 条' : '当前查询未返回数据'"
-    >
-      <UiButton
-        v-if="queryState.filter"
-        size="sm"
-        variant="secondary"
-        @click="patchQueryState({ filter: '', page: 1 })"
-        >清除过滤</UiButton
-      >
-    </UiEmptyState>
-
-    <UiDataGrid
-      v-else
-      :model-value="queryState.selectedRow"
-      class="min-h-0 flex-1"
-      :columns="db.tableColumns.value"
-      :rows="gridRows"
-      row-key="__row"
-      height="100%"
-      @update:model-value="(v) => patchQueryState({ selectedRow: String(v) })"
-    />
-    <div
-      class="flex h-[28px] shrink-0 items-center justify-between gap-[8px] border-t border-border px-[8px] dark:border-border-dark"
-    >
-      <UiInput
-        :model-value="queryState.filter"
-        class="w-[160px]"
-        size="xs"
-        placeholder="过滤结果…"
-        @update:model-value="(v) => patchQueryState({ filter: String(v), page: 1 })"
-      />
-      <span v-if="queryState.truncated" class="text-caption text-warning-strong"
-        >结果已截断（仅显示前 1000 行）</span
-      >
-      <UiPagination
-        :model-value="queryState.page"
-        :total-pages="db.totalPages.value"
-        size="xs"
-        @update:model-value="db.setPage"
-      />
-    </div>
-  </div>
+  <QueryResultPane
+    :db="db"
+    :query-state="queryState"
+    :rows="gridRows"
+    :status-text="statusText"
+    @copy="copyResult"
+    @export="exportCsv"
+    @patch="patchQueryState"
+  />
 
   <!-- 首次保存确认 -->
   <UiModal

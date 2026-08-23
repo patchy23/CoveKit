@@ -6,33 +6,24 @@
  * 导出/导入 .pbvault（密码 + 合并/覆盖）。明文只在 reveal 后短暂存在于前端内存。
  */
 import { computed, onMounted, ref } from 'vue'
-import {
-  UiBadge,
-  UiButton,
-  UiInput,
-  UiModal,
-  UiRadioGroup,
-  UiSearchInput,
-  UiTable,
-  UiTableCell,
-} from '@/core/ui'
+import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import { useCopy } from '@/core/ui/useClipboard'
 import { useUiStore } from '@/stores/ui'
-import AppIcon from '@/features/ui/AppIcon.vue'
 import { ipc } from '@/core/ipc/ipc'
 import type { Credential, CredentialKind, CredentialSummary } from '@/core/ipc/contracts'
 import {
   CREDENTIAL_KINDS,
   KIND_LABEL,
-  KIND_TONE,
   filterCredentials,
-  formatTimestamp,
   primarySecret,
 } from '@/core/vault/useVault'
 import CredentialForm from '@/core/vault/CredentialForm.vue'
 import { clientCredentialReferenceCount } from '@/core/vault/references'
+import VaultTransferDialog from './VaultTransferDialog.vue'
+import VaultToolbar from './VaultToolbar.vue'
+import VaultCredentialTable from './VaultCredentialTable.vue'
 
 const ui = useUiStore()
 const { copyText } = useCopy()
@@ -173,8 +164,7 @@ const transferPassword = ref('')
 const importOverwrite = ref('merge')
 
 async function startExport() {
-  const { save } = await import('@tauri-apps/plugin-dialog')
-  const path = await save({
+  const path = await dialogSave({
     title: '导出凭证备份',
     defaultPath: 'patchybox-vault.pbvault',
     filters: [{ name: 'patchyBox 凭证备份', extensions: ['pbvault'] }],
@@ -185,8 +175,7 @@ async function startExport() {
 }
 
 async function startImport() {
-  const { open } = await import('@tauri-apps/plugin-dialog')
-  const path = await open({
+  const path = await dialogOpen({
     title: '导入凭证备份',
     multiple: false,
     filters: [{ name: 'patchyBox 凭证备份', extensions: ['pbvault'] }],
@@ -226,83 +215,24 @@ async function confirmTransfer() {
 
 <template>
   <div class="flex h-[56vh] min-h-[320px] flex-col">
-    <!-- 工具条：搜索 + 导入/导出/新建 -->
-    <div class="mb-[10px] flex items-center gap-[8px]">
-      <UiSearchInput
-        v-model="query"
-        size="sm"
-        placeholder="搜索名称 / 备注 / 摘要…"
-        class="w-[220px]"
-      />
-      <div class="flex-1"></div>
-      <UiButton size="sm" variant="secondary" @click="startImport">导入</UiButton>
-      <UiButton size="sm" variant="secondary" @click="startExport">导出</UiButton>
-      <UiButton size="sm" variant="primary" @click="startCreate">+ 新建凭证</UiButton>
-    </div>
+    <VaultToolbar
+      :query="query"
+      :kind-filter="kindFilter"
+      :chips="kindChips"
+      @create="startCreate"
+      @export="startExport"
+      @import="startImport"
+      @update:query="query = $event"
+      @update:kind-filter="kindFilter = $event"
+    />
 
-    <!-- 类型筛选 chip -->
-    <div class="mb-[8px] flex flex-wrap gap-[6px]">
-      <button
-        v-for="chip in kindChips"
-        :key="chip.value"
-        type="button"
-        class="rounded-full border px-[10px] py-[2px] text-caption transition-colors"
-        :class="
-          kindFilter === chip.value
-            ? 'border-tertiary-strong bg-tertiary-strong/10 text-tertiary-strong'
-            : 'border-border text-secondary hover:bg-border/50 dark:border-border-dark dark:text-secondary-dark'
-        "
-        @click="kindFilter = chip.value"
-      >
-        {{ chip.label }}
-      </button>
-    </div>
-
-    <!-- 列表 -->
-    <div class="min-h-0 flex-1 overflow-auto">
-      <UiTable v-if="filtered.length" density="compact" :hoverable="true">
-        <thead>
-          <tr>
-            <UiTableCell as="th">名称</UiTableCell>
-            <UiTableCell as="th" class="w-[110px]">类型</UiTableCell>
-            <UiTableCell as="th">摘要</UiTableCell>
-            <UiTableCell as="th">备注</UiTableCell>
-            <UiTableCell as="th" class="w-[130px]">更新时间</UiTableCell>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="item in filtered"
-            :key="item.id"
-            class="cursor-context-menu"
-            @contextmenu="openMenu($event, item)"
-          >
-            <UiTableCell>{{ item.name }}</UiTableCell>
-            <UiTableCell>
-              <UiBadge :tone="KIND_TONE[item.kind]" size="xs">{{ KIND_LABEL[item.kind] }}</UiBadge>
-            </UiTableCell>
-            <UiTableCell content="technical">{{ item.masked }}</UiTableCell>
-            <UiTableCell>{{ item.note || '—' }}</UiTableCell>
-            <UiTableCell content="technical">{{ formatTimestamp(item.updatedAt) }}</UiTableCell>
-          </tr>
-        </tbody>
-      </UiTable>
-      <div
-        v-else
-        class="flex flex-col items-center gap-[8px] py-[60px] text-caption text-text-muted dark:text-text-muted-dark"
-      >
-        <AppIcon name="lock" :size="28" />
-        <p>
-          {{
-            loading
-              ? '加载中…'
-              : query || kindFilter !== 'all'
-                ? '无匹配凭证'
-                : '暂无凭证，点击右上角新建'
-          }}
-        </p>
-      </div>
-    </div>
+    <VaultCredentialTable
+      :items="filtered"
+      :loading="loading"
+      :query="query"
+      :kind-filter="kindFilter"
+      @context="openMenu"
+    />
 
     <!-- 右键菜单 -->
     <ContextMenu
@@ -338,42 +268,15 @@ async function confirmTransfer() {
       @confirm="confirmDelete"
     />
 
-    <!-- 导出/导入密码弹窗 -->
-    <UiModal
-      :open="transfer !== null"
-      :title="transfer?.mode === 'export' ? '导出凭证备份' : '导入凭证备份'"
-      size="sm"
+    <VaultTransferDialog
+      :transfer="transfer"
+      :password="transferPassword"
+      :import-mode="importOverwrite"
+      :valid="transferValid"
       @close="transfer = null"
-    >
-      <div class="flex flex-col gap-[10px]">
-        <p class="text-body-sm text-secondary dark:text-secondary-dark">
-          {{
-            transfer?.mode === 'export'
-              ? '备份文件使用独立密码加密（Argon2id + AES-256-GCM），导入时需输入同一密码。'
-              : `从 ${transfer?.path ?? ''} 导入，需输入导出时设置的密码。`
-          }}
-        </p>
-        <label class="field-label flex flex-col gap-[6px]">
-          备份密码（至少 4 位）
-          <UiInput v-model="transferPassword" type="password" placeholder="备份密码" />
-        </label>
-        <UiRadioGroup
-          v-if="transfer?.mode === 'import'"
-          v-model="importOverwrite"
-          name="import-mode"
-          size="sm"
-          :options="[
-            { value: 'merge', label: '合并', description: '保留现有凭证，同 ID 跳过' },
-            { value: 'overwrite', label: '覆盖', description: '清空现有凭证后整体替换' },
-          ]"
-        />
-      </div>
-      <template #footer>
-        <UiButton size="sm" variant="ghost" @click="transfer = null">取消</UiButton>
-        <UiButton size="sm" variant="primary" :disabled="!transferValid" @click="confirmTransfer">
-          {{ transfer?.mode === 'export' ? '导出' : '导入' }}
-        </UiButton>
-      </template>
-    </UiModal>
+      @confirm="confirmTransfer"
+      @update:password="transferPassword = $event"
+      @update:import-mode="importOverwrite = $event"
+    />
   </div>
 </template>

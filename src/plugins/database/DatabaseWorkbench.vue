@@ -1,10 +1,4 @@
 <script setup lang="ts">
-/**
- * database 工作台主容器（状态中枢 + 三栏布局）
- * 左栏 ConnectionsSidebar（连接树）→ 中栏页签区（SQL 编辑器/数据/结构/Redis 键）→
- * 右栏 InspectorPanel（概览/历史/收藏）；所有状态在 useDatabase。
- * 页签语义：SQL 编辑器是可保存的工作区（未保存灰点 / 已保存绿点）；右键可改别名。
- */
 import { computed, onMounted, ref } from 'vue'
 import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiTabs, UiTabsOverflow } from '@/core/ui'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
@@ -17,7 +11,7 @@ import DataTab from './DataTab.vue'
 import StructureTab from './StructureTab.vue'
 import CreateTableTab from './CreateTableTab.vue'
 import RedisTab from './RedisTab.vue'
-import InspectorPanel from './InspectorPanel.vue'
+import DatabaseInspectorPane from './DatabaseInspectorPane.vue'
 import ConnectionDialog from './ConnectionDialog.vue'
 import type { ConnConfig, DbConnectionInfo } from './contracts'
 
@@ -237,44 +231,13 @@ onMounted(() => {
       </template>
     </main>
 
-    <!-- 中栏/摘要分隔条（可拖拽） -->
-    <div
-      v-if="inspectorOpen"
-      class="w-[5px] shrink-0 cursor-col-resize bg-surface-muted transition-colors hover:bg-tertiary/40 dark:bg-surface-muted-dark"
-      title="拖拽调整摘要宽度"
-      @mousedown="(e) => inspectorSplit.onPointerDown(e)"
+    <DatabaseInspectorPane
+      :db="db"
+      :open="inspectorOpen"
+      :width="inspectorSplit.size.value"
+      @resize="inspectorSplit.onPointerDown"
+      @update:open="inspectorOpen = $event"
     />
-
-    <!-- 右栏：摘要 -->
-    <aside
-      v-if="inspectorOpen"
-      :style="{ width: `${inspectorSplit.size.value}px` }"
-      class="flex shrink-0 flex-col border-l border-border dark:border-border-dark"
-    >
-      <div
-        class="flex h-[28px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
-      >
-        <span class="text-caption font-semibold text-primary dark:text-primary-dark">摘要</span>
-        <UiIconButton label="收起摘要" size="xs" class="ml-auto" @click="inspectorOpen = false">
-          <UiIcon name="chevrons-right" :size="12" />
-        </UiIconButton>
-      </div>
-      <InspectorPanel :db="db" />
-    </aside>
-
-    <!-- 右栏收起态轨道条（与左栏连接列表同层级，常驻） -->
-    <div
-      v-else
-      class="flex w-[28px] shrink-0 flex-col items-center gap-[6px] border-l border-border py-[6px] dark:border-border-dark"
-    >
-      <UiIconButton label="展开摘要" size="xs" @click="inspectorOpen = true">
-        <UiIcon name="chevrons-left" :size="12" />
-      </UiIconButton>
-      <span
-        class="text-caption text-text-muted [writing-mode:vertical-rl] dark:text-text-muted-dark"
-        >摘要</span
-      >
-    </div>
 
     <!-- 提示条 -->
     <div
