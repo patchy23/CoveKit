@@ -93,5 +93,11 @@ export function recordTypeBadgeClass(rtype: string): string {
 
 /** 平台显示名 */
 export function platformLabel(platform: string): string {
-  return platform === 'aliyun' ? '阿里云' : platform === 'dnspod' ? '腾讯云 DNSPod' : platform
+  return platform === 'aliyun'
+    ? '阿里云'
+    : platform === 'dnspod'
+      ? '腾讯云 DNSPod'
+      : platform === 'cloudflare'
+        ? 'Cloudflare'
+        : platform
 }

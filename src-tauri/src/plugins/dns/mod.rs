@@ -1,9 +1,10 @@
 //! DNS 插件 · 门面
 //! 能力一：DNS 查询（query.rs，hickory-resolver，支持指定服务器/多服务器对比）
-//! 能力二：云解析管理（alidns.rs 阿里云 / dnspod.rs 腾讯云 DNSPod API 3.0）
+//! 能力二：云解析管理（阿里云 / 腾讯云 DNSPod / Cloudflare）
 //! 配置：dns.db 保存手工密钥与可选 Vault 引用；Vault 引用存在时由 Rust 后端解析并优先使用
 
 mod alidns;
+mod cloudflare;
 mod dnspod;
 mod models;
 mod query;
@@ -21,7 +22,7 @@ pub struct DnsState(pub Mutex<Option<PluginDb>>);
 
 /// 数据表迁移（只追加；v1 = 云平台密钥配置表，v2 = 公共 Vault 引用）
 const MIGRATIONS: &[&str] = &[
-    // 云平台密钥（platform 主键，两行：aliyun / dnspod）
+    // 云平台密钥（platform 主键；新增平台只追加配置行）
     "CREATE TABLE IF NOT EXISTS dns_config (
         platform TEXT PRIMARY KEY,
         id TEXT NOT NULL DEFAULT '',
@@ -42,7 +43,7 @@ fn db<'a>(
     Ok(guard)
 }
 
-/// 读取两平台密钥配置（供云解析命令使用；先取出再 await，避免持锁跨 await）
+/// 读取三平台密钥配置（供云解析命令使用；先取出再 await，避免持锁跨 await）
 fn load_config(app: &AppHandle, state: &State<'_, DnsState>) -> Result<DnsConfig, String> {
     let guard = db(app, state)?;
     let conn = guard.as_ref().unwrap();
@@ -79,11 +80,29 @@ fn load_config(app: &AppHandle, state: &State<'_, DnsState>) -> Result<DnsConfig
                         credential_ref,
                     };
                 }
+                models::PLATFORM_CLOUDFLARE => {
+                    cfg.cloudflare = models::CloudflareConfig {
+                        token: key,
+                        credential_ref,
+                    };
+                }
                 _ => {}
             }
         }
         Ok(cfg)
     })
+}
+
+/// 将公共 Vault 的 API Token 映射为 Cloudflare 配置。
+fn apply_vault_api_token(
+    mut config: models::CloudflareConfig,
+    credential: Credential,
+) -> Result<models::CloudflareConfig, String> {
+    let CredentialFields::ApiToken { token } = credential.fields else {
+        return Err("Cloudflare 所选 Vault 凭证不是“API Token”类型".into());
+    };
+    config.token = token;
+    Ok(config)
 }
 
 /// 将公共 Vault 的 AccessKey 对映射为云平台配置。
@@ -124,6 +143,23 @@ fn resolve_provider_config(
     apply_vault_credential(config, credential, platform_label)
 }
 
+/// 解析 Cloudflare 有效配置：Vault API Token 优先，未选择时保留手工 Token。
+fn resolve_cloudflare_config(
+    app: &AppHandle,
+    config: models::CloudflareConfig,
+) -> Result<models::CloudflareConfig, String> {
+    let Some(credential_ref) = config
+        .credential_ref
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+    else {
+        return Ok(config);
+    };
+    let credential = vault::resolve(app, credential_ref)
+        .map_err(|e| format!("Cloudflare Vault 凭据读取失败: {e}"))?;
+    apply_vault_api_token(config, credential)
+}
+
 /// 云 API 使用的有效配置；Vault 明文只在 Rust 内存在，不经配置 IPC 返回。
 fn load_effective_config(
     app: &AppHandle,
@@ -133,6 +169,7 @@ fn load_effective_config(
     Ok(DnsConfig {
         aliyun: resolve_provider_config(app, config.aliyun, "阿里云")?,
         dnspod: resolve_provider_config(app, config.dnspod, "腾讯云 DNSPod")?,
+        cloudflare: resolve_cloudflare_config(app, config.cloudflare)?,
     })
 }
 
@@ -144,7 +181,7 @@ pub fn dns_config_get(app: AppHandle, state: State<'_, DnsState>) -> Result<DnsC
     load_config(&app, &state)
 }
 
-/// 保存云平台密钥配置（upsert 两平台；保存后立即生效）
+/// 保存云平台密钥配置（upsert 三平台；保存后立即生效）
 #[tauri::command]
 pub fn dns_config_set(
     app: AppHandle,
@@ -165,6 +202,16 @@ pub fn dns_config_set(
             )
             .map_err(|e| e.to_string())?;
         }
+        c.execute(
+            "INSERT INTO dns_config (platform, id, key, credential_ref) VALUES (?1, '', ?2, ?3)
+             ON CONFLICT(platform) DO UPDATE SET id = '', key = ?2, credential_ref = ?3",
+            rusqlite::params![
+                models::PLATFORM_CLOUDFLARE,
+                config.cloudflare.token,
+                config.cloudflare.credential_ref
+            ],
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     })
 }
@@ -205,7 +252,7 @@ pub async fn dns_query(
 
 /* ── 云解析命令 ── */
 
-/// 云解析域名列表（platform: aliyun / dnspod）
+/// 云解析域名列表（platform: aliyun / dnspod / cloudflare）
 #[tauri::command]
 pub async fn dns_domains(
     app: AppHandle,
@@ -216,6 +263,11 @@ pub async fn dns_domains(
     match platform.as_str() {
         models::PLATFORM_ALIYUN => alidns::AliyunDns::new(&cfg.aliyun)?.get_domains().await,
         models::PLATFORM_DNSPOD => dnspod::TencentDns::new(&cfg.dnspod)?.get_domains().await,
+        models::PLATFORM_CLOUDFLARE => {
+            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
+                .get_domains()
+                .await
+        }
         _ => Err(format!("不支持的平台: {platform}")),
     }
 }
@@ -240,6 +292,11 @@ pub async fn dns_records(
         }
         models::PLATFORM_DNSPOD => {
             dnspod::TencentDns::new(&cfg.dnspod)?
+                .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
+                .await
+        }
+        models::PLATFORM_CLOUDFLARE => {
+            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
                 .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
                 .await
         }
@@ -272,6 +329,17 @@ pub async fn dns_add_record(
         }
         models::PLATFORM_DNSPOD => {
             dnspod::TencentDns::new(&cfg.dnspod)?
+                .add_record(
+                    &payload.domain,
+                    payload.rr.trim(),
+                    &payload.rtype,
+                    payload.value.trim(),
+                    payload.ttl,
+                )
+                .await
+        }
+        models::PLATFORM_CLOUDFLARE => {
+            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
                 .add_record(
                     &payload.domain,
                     payload.rr.trim(),
@@ -318,6 +386,18 @@ pub async fn dns_update_record(
                 )
                 .await
         }
+        models::PLATFORM_CLOUDFLARE => {
+            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
+                .update_record(
+                    &payload.domain,
+                    &payload.record_id,
+                    payload.rr.trim(),
+                    &payload.rtype,
+                    payload.value.trim(),
+                    payload.ttl,
+                )
+                .await
+        }
         _ => Err(format!("不支持的平台: {}", payload.platform)),
     }
 }
@@ -340,6 +420,11 @@ pub async fn dns_delete_record(
         }
         models::PLATFORM_DNSPOD => {
             dnspod::TencentDns::new(&cfg.dnspod)?
+                .delete_record(&domain, &record_id)
+                .await
+        }
+        models::PLATFORM_CLOUDFLARE => {
+            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
                 .delete_record(&domain, &record_id)
                 .await
         }
@@ -366,7 +451,7 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     crate::framework::ipc_registry::register(&[
         ("dns_query", "DNS 查询（指定服务器/多服务器对比）"),
-        ("dns_domains", "云解析域名列表（aliyun/dnspod）"),
+        ("dns_domains", "云解析域名列表（aliyun/dnspod/cloudflare）"),
         ("dns_records", "云解析记录列表（分页）"),
         ("dns_add_record", "云解析添加记录"),
         ("dns_update_record", "云解析更新记录"),
@@ -382,7 +467,10 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
 mod tests {
     use crate::framework::vault::{Credential, CredentialFields};
 
-    use super::{apply_vault_credential, models::ProviderConfig};
+    use super::{
+        apply_vault_api_token, apply_vault_credential,
+        models::{CloudflareConfig, ProviderConfig},
+    };
 
     fn credential(fields: CredentialFields) -> Credential {
         Credential {
@@ -430,6 +518,35 @@ mod tests {
                 token: "token".into(),
             }),
             "腾讯云 DNSPod",
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn vault_api_token_overrides_manual_cloudflare_token() {
+        let config = CloudflareConfig {
+            token: "manual-token".into(),
+            credential_ref: Some("vault-dns".into()),
+        };
+        let resolved = apply_vault_api_token(
+            config,
+            credential(CredentialFields::ApiToken {
+                token: "vault-token".into(),
+            }),
+        )
+        .unwrap();
+        assert_eq!(resolved.token, "vault-token");
+        assert_eq!(resolved.credential_ref.as_deref(), Some("vault-dns"));
+    }
+
+    #[test]
+    fn vault_cloudflare_credential_must_be_api_token() {
+        let result = apply_vault_api_token(
+            CloudflareConfig::default(),
+            credential(CredentialFields::AccessKeyPair {
+                access_key_id: "id".into(),
+                access_key_secret: "secret".into(),
+            }),
         );
         assert!(result.is_err());
     }

@@ -20,11 +20,11 @@ patchyBox 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，�
 
 ## 当前进度
 
-截至 2026-08-23，项目处于 **M3 收尾 / M4 发布准备**阶段：
+截至 2026-08-24，项目已完成 **M3**，进入 **M4 发布准备**阶段：
 
 - M0–M2 已完成，HTTP/WS、hosts、格式转换等工具可用。
 - 数据库工作台已支持 MySQL、PostgreSQL、SQLite、Redis、Oracle、PolarDB、Vastbase、Kingbase；达梦入口暂未实现后端驱动。
-- DNS 已支持查询、阿里云和腾讯云 DNSPod 解析管理；Cloudflare 尚待接入。
+- DNS 已支持查询及阿里云、腾讯云 DNSPod、Cloudflare 解析管理，三平台均支持 Vault 或手工凭据。
 - SSH 已支持终端、SFTP、远程编辑、资源监控、进程、systemd 服务和 Docker 管理。
 - 框架级 Vault 已采用系统 keyring + AES-256-GCM 落地；数据库、SSH、DNS 均可引用 Vault，SSH/DNS 同时保留原手工凭据方式。
 - CI 已覆盖前端检查、Rust 检查以及 Windows/macOS 安装包构建；英文 i18n、自动更新和代码签名尚未完成。

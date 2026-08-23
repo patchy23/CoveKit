@@ -1,18 +1,19 @@
 <script setup lang="ts">
 /**
- * 密钥设置 · 阿里云 AccessKey + DNSPod CAM
+ * 密钥设置 · 阿里云 AccessKey + DNSPod CAM + Cloudflare API Token
  * 每个平台可选择公共 Vault 凭证，或继续使用原有手工输入。
  */
 import { onMounted, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
-import type { ProviderConfig } from './contracts'
+import type { CloudflareConfig, ProviderConfig } from './contracts'
 import { CredentialPicker, UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
 
 const ui = useUiStore()
 
 const aliyun = ref<ProviderConfig>({ id: '', key: '', credentialRef: '' })
 const dnspod = ref<ProviderConfig>({ id: '', key: '', credentialRef: '' })
+const cloudflare = ref<CloudflareConfig>({ token: '', credentialRef: '' })
 const loaded = ref(false)
 const saving = ref(false)
 
@@ -29,6 +30,10 @@ async function load() {
       id: cfg.dnspod.id,
       key: cfg.dnspod.key,
       credentialRef: cfg.dnspod.credentialRef ?? '',
+    }
+    cloudflare.value = {
+      token: cfg.cloudflare.token,
+      credentialRef: cfg.cloudflare.credentialRef ?? '',
     }
   } catch (e) {
     ui.toast('读取配置失败：' + (e instanceof Error ? e.message : String(e)))
@@ -51,6 +56,10 @@ async function save() {
         id: dnspod.value.id.trim(),
         key: dnspod.value.key.trim(),
         credentialRef: dnspod.value.credentialRef || undefined,
+      },
+      cloudflare: {
+        token: cloudflare.value.token.trim(),
+        credentialRef: cloudflare.value.credentialRef || undefined,
       },
     })
     ui.toast('密钥配置已保存')
@@ -114,6 +123,44 @@ onMounted(load)
         </div>
       </UiPanel>
 
+      <!-- Cloudflare -->
+      <UiPanel>
+        <h3 class="mb-[4px] text-body font-medium text-primary dark:text-primary-dark">
+          Cloudflare
+        </h3>
+        <p class="mb-[12px] text-body-sm text-text-muted dark:text-text-muted-dark">
+          使用 API Token Bearer 鉴权。Token 至少需要 Zone:Read 与 DNS:Edit 权限。创建入口：
+          <a
+            class="text-info-strong underline dark:text-info-dark"
+            href="https://dash.cloudflare.com/profile/api-tokens"
+            target="_blank"
+            rel="noreferrer"
+            >Cloudflare API Tokens</a
+          >
+        </p>
+        <div class="flex flex-col gap-[10px]">
+          <UiField
+            label="凭证库（可选）"
+            description="选择后优先使用 Vault API Token；清空选择即可回退下方手工 Token。"
+          >
+            <CredentialPicker
+              :model-value="cloudflare.credentialRef ?? ''"
+              kind="api-token"
+              placeholder="选择 Cloudflare API Token 凭证"
+              @update:model-value="cloudflare.credentialRef = $event"
+            />
+          </UiField>
+          <UiField label="手工 API Token">
+            <UiInput
+              v-model="cloudflare.token"
+              type="password"
+              placeholder="••••••••"
+              spellcheck="false"
+            />
+          </UiField>
+        </div>
+      </UiPanel>
+
       <!-- 腾讯云 DNSPod -->
       <UiPanel>
         <h3 class="mb-[4px] text-body font-medium text-primary dark:text-primary-dark">
@@ -160,7 +207,7 @@ onMounted(load)
           {{ saving ? '保存中…' : '保存密钥' }}
         </UiButton>
         <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-          Vault 凭证加密保存；手工密钥继续沿用原 dns.db 存储。
+          Vault 凭证加密保存；手工密钥与 Token 继续沿用原 dns.db 存储。
         </span>
       </div>
     </div>

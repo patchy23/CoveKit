@@ -9,6 +9,9 @@ pub const PLATFORM_ALIYUN: &str = "aliyun";
 /// 云平台标识：DNSPod
 pub const PLATFORM_DNSPOD: &str = "dnspod";
 
+/// 云平台标识：Cloudflare
+pub const PLATFORM_CLOUDFLARE: &str = "cloudflare";
+
 /// 单平台密钥配置（阿里云 AccessKey / DNSPod Token）
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
@@ -22,7 +25,18 @@ pub struct ProviderConfig {
     pub credential_ref: Option<String>,
 }
 
-/// DNS 插件全局配置（两平台密钥）
+/// Cloudflare API Token 配置
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudflareConfig {
+    /// 手工 API Token；选择 Vault 后仍保留，清空引用即可回退
+    pub token: String,
+    /// 公共 Vault 的 API Token 凭证 id
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_ref: Option<String>,
+}
+
+/// DNS 插件全局配置（三平台密钥）
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct DnsConfig {
@@ -30,6 +44,8 @@ pub struct DnsConfig {
     pub aliyun: ProviderConfig,
     /// DNSPod Token 配置
     pub dnspod: ProviderConfig,
+    /// Cloudflare API Token 配置
+    pub cloudflare: CloudflareConfig,
 }
 
 /// 域名条目（云解析侧）
@@ -42,7 +58,7 @@ pub struct Domain {
     pub domain_name: String,
     /// 解析记录数量
     pub record_total: u32,
-    /// 所属平台（aliyun / dnspod）
+    /// 所属平台（aliyun / dnspod / cloudflare）
     pub platform: String,
     /// 创建时间（平台格式）
     pub create_time: String,
@@ -120,7 +136,7 @@ pub struct ServerQueryResult {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AddRecordPayload {
-    /// 云平台（aliyun / dnspod）
+    /// 云平台（aliyun / dnspod / cloudflare）
     pub platform: String,
     /// 域名
     pub domain: String,
@@ -138,7 +154,7 @@ pub struct AddRecordPayload {
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRecordPayload {
-    /// 云平台（aliyun / dnspod）
+    /// 云平台（aliyun / dnspod / cloudflare）
     pub platform: String,
     /// 域名
     pub domain: String,

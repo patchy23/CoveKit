@@ -6,14 +6,14 @@
 import { onMounted, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
-import type { CloudDomain } from './contracts'
+import type { CloudDomain, DnsPlatform } from './contracts'
 import { platformLabel } from './useDns'
 import RecordPanel from './RecordPanel.vue'
 import { UiAlert, UiButton, UiTabs } from '@/core/ui'
 
 const ui = useUiStore()
 
-const platform = ref<'aliyun' | 'dnspod'>('aliyun')
+const platform = ref<DnsPlatform>('aliyun')
 const domains = ref<CloudDomain[]>([])
 const busy = ref(false)
 const configured = ref(true)
@@ -22,7 +22,7 @@ const configured = ref(true)
 const activeDomain = ref<CloudDomain | null>(null)
 
 /** 切换平台：重新拉取域名列表 */
-async function switchPlatform(p: 'aliyun' | 'dnspod') {
+async function switchPlatform(p: DnsPlatform) {
   if (platform.value === p) return
   platform.value = p
   activeDomain.value = null
@@ -33,8 +33,11 @@ async function switchPlatform(p: 'aliyun' | 'dnspod') {
 async function ensureConfigured(): Promise<boolean> {
   try {
     const cfg = await ipc.dnsConfigGet()
-    const c = platform.value === 'aliyun' ? cfg.aliyun : cfg.dnspod
-    const ok = Boolean(c.id.trim() && c.key.trim())
+    const c = cfg[platform.value]
+    const ok =
+      platform.value === 'cloudflare'
+        ? Boolean(cfg.cloudflare.credentialRef || cfg.cloudflare.token.trim())
+        : Boolean(c.credentialRef || ('id' in c && c.id.trim() && c.key.trim()))
     configured.value = ok
     return ok
   } catch {
@@ -82,8 +85,9 @@ onMounted(loadDomains)
         :items="[
           { value: 'aliyun', label: platformLabel('aliyun') },
           { value: 'dnspod', label: platformLabel('dnspod') },
+          { value: 'cloudflare', label: platformLabel('cloudflare') },
         ]"
-        @update:model-value="switchPlatform($event as 'aliyun' | 'dnspod')"
+        @update:model-value="switchPlatform($event as DnsPlatform)"
       />
       <UiButton variant="ghost" size="sm" class="shrink-0" :loading="busy" @click="loadDomains">
         {{ busy ? '加载中…' : '刷新' }}
@@ -127,7 +131,9 @@ onMounted(loadDomains)
           <span
             class="flex items-center gap-[10px] text-body-sm text-text-muted dark:text-text-muted-dark"
           >
-            <span>{{ d.recordTotal }} 条记录</span>
+            <span>{{
+              platform === 'cloudflare' ? '进入查看记录' : `${d.recordTotal} 条记录`
+            }}</span>
             <span v-if="d.createTime" class="truncate">{{ d.createTime }}</span>
           </span>
         </UiButton>

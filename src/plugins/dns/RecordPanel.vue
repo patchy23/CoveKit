@@ -6,7 +6,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
-import type { CloudDomain, CloudRecord } from './contracts'
+import type { CloudDomain, CloudRecord, DnsPlatform } from './contracts'
 import { CLOUD_RECORD_TYPES, TTL_PRESETS, recordTypeBadgeClass } from './useDns'
 import {
   UiButton,
@@ -19,7 +19,7 @@ import {
 } from '@/core/ui'
 
 const props = defineProps<{
-  platform: 'aliyun' | 'dnspod'
+  platform: DnsPlatform
   domain: CloudDomain
 }>()
 

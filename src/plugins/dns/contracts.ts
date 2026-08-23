@@ -13,11 +13,22 @@ export interface ProviderConfig {
   credentialRef?: string
 }
 
-/** DNS 插件全局配置（两平台密钥） */
+/** Cloudflare API Token 配置（可选公共 Vault；未选择时使用手工 Token） */
+export interface CloudflareConfig {
+  token: string
+  /** 公共 Vault 的 API Token 凭证 id */
+  credentialRef?: string
+}
+
+/** DNS 插件全局配置（三平台密钥） */
 export interface DnsConfig {
   aliyun: ProviderConfig
   dnspod: ProviderConfig
+  cloudflare: CloudflareConfig
 }
+
+/** 云解析平台标识 */
+export type DnsPlatform = 'aliyun' | 'dnspod' | 'cloudflare'
 
 /** 域名条目（云解析侧） */
 export interface CloudDomain {

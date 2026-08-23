@@ -1,7 +1,7 @@
 # patchyBox · 项目简报（AGENTS.md）
 
 > 本文件在会话打开 `G:\workspace\patchyBox` 时自动注入，先读它再动手。
-> 设计阶段已完成（2026-08-02）；**M0–M2 已完成，M3 主体已落地**，当前目标：**M3 收尾（Cloudflare）与 M4 发布准备**。
+> 设计阶段已完成（2026-08-02）；**M0–M3 已完成**，当前目标：**M4 发布准备**。
 
 ## 项目是什么
 
@@ -66,12 +66,12 @@
 5. 第二批凭据：已定 **系统 keyring 保存主密钥 + AES-256-GCM 加密凭据文件**；Stronghold 已弃用
 6. hosts 提权：默认**按需提权助手**（UAC 最小授权），应用本体不常驻管理员
 
-## 下一步：M3 收尾与 M4 发布准备
+## 下一步：M4 发布准备
 
-截至 2026-08-23：
+截至 2026-08-24：
 
 1. **数据库工作台主体已完成**：MySQL、PostgreSQL、SQLite、Redis、Oracle、PolarDB、Vastbase、Kingbase 已接入；达梦仅保留 UI 入口。
-2. **DNS 主体已完成**：DNS 查询、阿里云、腾讯云 DNSPod 可用；Cloudflare Adapter 尚未接入。阿里/腾讯均可选择公共 Vault 的 AccessKey 对，也保留原手工密钥输入与 `dns.db` 存储。
+2. **DNS 已完成**：DNS 查询、阿里云、腾讯云 DNSPod、Cloudflare 均可用。阿里/腾讯可选择 Vault AccessKey 对，Cloudflare 可选择 Vault API Token；三者均保留原手工输入与 `dns.db` 存储。
 3. **SSH 主体已完成**：russh 会话、终端、SFTP/远程编辑、监控、进程、systemd、Docker 管理均已落地；连接可选择公共 Vault 的用户名密码/SSH 私钥，也保留插件私有 AES 手工凭据。
 4. **公共 Vault 已完成**：系统 keyring 保存主密钥，AES-256-GCM 保存凭据本体，并支持 Argon2id 加密备份；数据库、SSH、DNS 均已接入可选引用；删除前汇总 DNS/SSH 引用，失效与类型不匹配由前后端双重提示。
 5. **M4 待办**：英文语言包、自动更新、代码签名与发布候选版验证。
@@ -82,7 +82,7 @@
 - **SSH 工具**：`plugins/ssh` 使用 russh，覆盖连接配置、主机密钥校验、PTY 终端、SFTP、远程编辑、文件传输、资源监控、进程、systemd 服务和 Docker 管理；认证支持公共 Vault 可选引用与原手工输入双路径；真实服务器集成测试默认 `#[ignore]`，通过 `SSH_TEST_*` 环境变量手动运行。
 - **公共 Vault**：`framework/vault` 提供凭证 CRUD、脱敏摘要、导入导出和加密备份；主密钥优先存系统 keyring，不可用时回退本地密钥文件并告警。数据库旧 Stronghold/AES 存储已迁移到公共凭证命名空间。
 
-- **DNS 工具**：`plugins/dns`（Rust `src-tauri/src/plugins/dns/`：mod.rs 门面 + models.rs + query.rs + alidns.rs + dnspod.rs）。DNS 查询用 hickory-resolver 0.26（feature `tokio`+`system-config`；**API 与旧版差异大：类型是 `TokioResolver`/`Resolver<TokioRuntimeProvider>` Builder 模式、`ResolverConfig::from_parts` 3 参、`NameServerConfig::udp(ip)`、Record 的 name/ttl/data 是公开字段、`Lookup::answers()`、TXT 用 `.txt_data` 字段**）；云解析：阿里云走 aliyun-openapi-core-rust-sdk 1.1（同参考项目 DnsAnalysisTools），腾讯云 DNSPod 走 **API 3.0（dnspod.tencentcloudapi.com，CAM SecretId/SecretKey + TC3-HMAC-SHA256 自实现签名，依赖 hmac/sha2/hex/time；参考项目用的是 tencentcloud-sdk-rs 0.1，dnspod.cn 老 Token API 已弃用为备选）**；**TC3 签名单测与官方 Python SDK（sign_tc3）交叉验证**。8 命令 dns_query/dns_domains/dns_records/dns_add_record/dns_update_record/dns_delete_record/dns_config_get/dns_config_set 全量入库；add/update 用 payload 结构体打包（规避 clippy too_many_arguments）；配置支持公共 Vault AccessKey 对或原手工密钥双路径，手工密钥继续存 `dns.db`。前端 plugins/dns/：三页签（DNS 查询/解析管理/密钥设置），查询面板多服务器对比 + 自定义服务器，解析管理两段式删除确认 + 行内表单 + 分页；recordTypeBadgeClass 色标在 useDns.ts。**dnsapi.cn 的 status.code 是字符串（as_i64 会解析失败误判成功为失败），腾讯云错误统一在 Response.Error**。
+- **DNS 工具**：`plugins/dns`（Rust `src-tauri/src/plugins/dns/`：mod.rs 门面 + models.rs + query.rs + alidns.rs + dnspod.rs + cloudflare.rs）。DNS 查询用 hickory-resolver 0.26；云解析覆盖阿里云 OpenAPI、腾讯云 DNSPod API 3.0 与 Cloudflare API v4。Cloudflare 使用推荐的 Bearer API Token，Zone 列表完整分页，记录管理按 Zone ID 执行。8 个 DNS 命令全量入库；配置支持 Vault 或手工输入双路径，阿里/腾讯使用 AccessKey 对，Cloudflare 使用 API Token，手工值继续存 `dns.db`。前端保持查询/解析管理/密钥设置三页签，并支持三平台切换、搜索、分页、行内增改与两段式删除确认。
 
 ### M2 已完成记录（2026-08-02）
 

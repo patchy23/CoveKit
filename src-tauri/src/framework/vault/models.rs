@@ -14,7 +14,7 @@ pub enum CredentialKind {
     SshKey,
     /// 单 token（HTTP 调试 Bearer、开放平台 token）
     ApiToken,
-    /// AccessKey 对（阿里云、腾讯云 CAM、CF API）
+    /// AccessKey 对（阿里云、腾讯云 CAM）
     AccessKeyPair,
     /// 任意键值对（兜底结构）
     Custom,

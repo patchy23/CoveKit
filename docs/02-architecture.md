@@ -294,14 +294,14 @@ App.vue
 
 ## 10. 里程碑路线图
 
-> 状态更新（2026-08-24）：M0–M2 已完成；M3 主体已落地，剩余 Cloudflare Adapter；项目已开始 M4 发布准备。凭据方案已由 Stronghold 调整为系统 keyring + AES-256-GCM，数据库、SSH、DNS 均已支持 Vault 引用。
+> 状态更新（2026-08-24）：M0–M3 已完成，项目进入 M4 发布准备。凭据方案已由 Stronghold 调整为系统 keyring + AES-256-GCM，数据库、SSH、DNS 均已支持 Vault 引用。
 
 | 阶段 | 状态 | 周期 | 交付物 | 验收标准 |
 |------|------|------|--------|---------|
 | **M0 脚手架** | 已完成 | 1–2 天 | create-tauri-app(vue-ts) + Tailwind 4 接 DESIGN.md tokens + ESLint/Prettier/rustfmt + CI | `pnpm tauri dev` 出方向二主界面（空数据版），CI 绿 |
 | **M1 框架 + 第一批** | 已完成 | 5–8 天 | 整体 UI（§6 全部组件）+ 后端框架（§1 框架层 + 托盘/快捷键/单实例）+ 文本工具 | 浏览、搜索、收藏、换肤、设置持久化闭环；质量门槛全绿 |
 | **M2 第二批 I** | 已完成 | 5–7 天 | HTTP/WS 调试、SQLite 数据库工具、hosts 修改 + 轻量工具 | workspace 载体上线；三工具可用；hosts 提权流程走通 |
-| **M3 第二批 II** | 收尾中 | 7–10 天 | 多驱动数据库工作台、DNS 管理、SSH 远程管理、公共 Vault | 数据库、SSH、阿里/腾讯 DNS 与可选 Vault 引用完成；待 Cloudflare |
+| **M3 第二批 II** | 已完成 | 7–10 天 | 多驱动数据库工作台、DNS 管理、SSH 远程管理、公共 Vault | 数据库、SSH、阿里/腾讯/Cloudflare DNS 与可选 Vault 引用完成 |
 | **M4 打磨发布** | 进行中 | 持续 | 扩展工具、i18n 英文、自动更新、代码签名、发布验证 | CI 已配置 Windows/macOS 产物构建；其余发布能力待完成 |
 
 **第一批工具清单（8 个，全为文本类）：** JSON 格式化、时间戳转换、Base64 编解码、URL 编解码、字符统计、文本对比、Markdown 预览、正则测试。

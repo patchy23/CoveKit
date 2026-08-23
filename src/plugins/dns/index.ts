@@ -8,7 +8,7 @@ registerTool({
   name: 'DNS 解析',
   category: 'net',
   icon: 'dns',
-  description: '多类型、多服务器 DNS 查询对比，阿里云 / 腾讯云解析记录一站式管理。',
+  description: '多类型、多服务器 DNS 查询对比，阿里云 / 腾讯云 / Cloudflare 解析管理。',
   keywords: [
     'dns',
     '域名',
@@ -23,6 +23,7 @@ registerTool({
     '阿里云',
     'dnspod',
     '腾讯云',
+    'cloudflare',
     '云解析',
   ],
   presentation: 'workspace',
