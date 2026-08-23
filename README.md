@@ -16,6 +16,7 @@ patchyBox 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，�
 | [DESIGN.md](DESIGN.md)                                           | 设计规范（颜色 / 字体 / 组件 tokens，单一事实源） |
 | [docs/01-tech-stack.md](docs/01-tech-stack.md)                   | 技术选型分析                                      |
 | [docs/02-architecture.md](docs/02-architecture.md)               | 详细设计（架构 / IPC 契约 / 数据模型 / 路线图）   |
+| [docs/04-release.md](docs/04-release.md)                         | 发布、自动更新与代码签名配置                 |
 | [sketches/002-clean-light/](sketches/002-clean-light/index.html) | 已采纳 UI 方向的交互原型（浏览器直接打开）        |
 
 ## 当前进度
@@ -27,7 +28,7 @@ patchyBox 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，�
 - DNS 已支持查询及阿里云、腾讯云 DNSPod、Cloudflare 解析管理，三平台均支持 Vault 或手工凭据。
 - SSH 已支持终端、SFTP、远程编辑、资源监控、进程、systemd 服务和 Docker 管理。
 - 框架级 Vault 已采用系统 keyring + AES-256-GCM 落地；数据库、SSH、DNS 均可引用 Vault，SSH/DNS 同时保留原手工凭据方式。
-- CI 已覆盖前端检查、Rust 检查以及 Windows/macOS 安装包构建；英文 i18n、自动更新和代码签名尚未完成。
+- 中英文核心界面可在运行时切换；已接入 Tauri 自动更新与 GitHub Release 工作流，实际签名发布需在 GitHub 配置私钥和平台证书。
 
 ## 开发
 

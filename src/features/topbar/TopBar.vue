@@ -5,6 +5,7 @@
  * 工具页签激活：显示工具名 + 描述（搜索框聚焦时自动回到工具库）。
  */
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import { getTool } from '@/core/registry/toolRegistry'
 import { useToolsStore } from '@/stores/tools'
@@ -12,23 +13,24 @@ import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
 const tools = useToolsStore()
+const { t } = useI18n()
 
-const titleMap: Record<string, string> = {
-  all: '全部工具',
-  dev: '开发工具',
-  text: '文本处理',
-  image: '图片工具',
-  net: '网络工具',
-  sys: '系统工具',
-  fav: '我的收藏',
+const titleKeys: Record<string, string> = {
+  all: 'nav.all',
+  dev: 'nav.dev',
+  text: 'nav.text',
+  image: 'nav.image',
+  net: 'nav.net',
+  sys: 'nav.sys',
+  fav: 'nav.fav',
 }
 
 const activeTool = computed(() => (ui.activeTab ? getTool(ui.activeTab) : undefined))
-const title = computed(() => activeTool.value?.name ?? titleMap[ui.activeCategory] ?? '全部工具')
+const title = computed(() => activeTool.value?.name ?? t(titleKeys[ui.activeCategory] ?? 'nav.all'))
 const subtitle = computed(() =>
   activeTool.value
     ? activeTool.value.description
-    : `共 ${tools.filtered.length} 个工具 · 点击卡片即可使用`
+    : t('topbar.summary', { count: tools.filtered.length })
 )
 
 /** 聚焦搜索时若在工具页签，切回工具库首页 */
@@ -62,7 +64,7 @@ function onSearchFocus() {
         v-model="ui.searchQuery"
         class="flex-1 bg-transparent text-body text-primary outline-none placeholder:text-text-muted dark:text-primary-dark dark:placeholder:text-text-muted-dark"
         type="text"
-        placeholder="搜索工具…"
+        :placeholder="t('topbar.search')"
         spellcheck="false"
         @focus="onSearchFocus"
       />
@@ -70,7 +72,7 @@ function onSearchFocus() {
     <button
       v-if="!activeTool"
       class="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-md border border-border bg-surface text-secondary transition-colors duration-150 hover:border-border-strong hover:bg-surface-muted hover:text-primary dark:border-border-dark dark:bg-surface-dark dark:text-secondary-dark dark:hover:border-border-strong-dark dark:hover:bg-surface-muted-dark dark:hover:text-primary-dark"
-      title="视图切换"
+      :title="t('topbar.switchView')"
       @click="ui.listView = !ui.listView"
     >
       <AppIcon :name="ui.listView ? 'list' : 'grid'" :size="17" />

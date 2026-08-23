@@ -5,6 +5,7 @@
  * 右上角返回按钮退出。外观 / 快捷键与通用 / 凭证管理 / 工具级设置（settingsSchema 自动渲染）。
  */
 import { computed, ref, watch, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { getTools } from '@/core/registry/toolRegistry'
 import type { SettingsField } from '@/core/registry/types'
@@ -14,9 +15,20 @@ import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '@/core/ipc/ipc'
 import CredentialManagerPage from '@/features/vault/CredentialManagerPage.vue'
+import UpdateSettingsCard from './UpdateSettingsCard.vue'
 
 const settings = useSettingsStore()
 const ui = useUiStore()
+const { t } = useI18n()
+const themeOptions = computed(() => [
+  { value: 'system', label: t('settings.themeSystem') },
+  { value: 'light', label: t('settings.themeLight') },
+  { value: 'dark', label: t('settings.themeDark') },
+])
+const languageOptions = [
+  { value: 'zh-CN', label: '简体中文' },
+  { value: 'en-US', label: 'English' },
+]
 
 /** 凭证管理弹窗开关（框架功能，不走工具页签） */
 const vaultVisible = ref(false)
@@ -71,14 +83,16 @@ async function chooseDownloadDirectory() {
           <AppIcon name="sliders" :size="23" class="text-tertiary-strong dark:text-tertiary-dark" />
         </div>
         <div>
-          <h2 class="text-h1 font-extrabold tracking-[-0.02em] dark:text-primary-dark">设置</h2>
+          <h2 class="text-h1 font-extrabold tracking-[-0.02em] dark:text-primary-dark">
+            {{ t('common.settings') }}
+          </h2>
           <p class="mt-[3px] text-body text-secondary dark:text-secondary-dark">
-            外观、快捷键、凭证与工具级配置
+            {{ t('settings.subtitle') }}
           </p>
         </div>
         <button
           class="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-[9px] bg-neutral text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-          title="返回"
+          :title="t('common.back')"
           @click="ui.closeSettings()"
         >
           <AppIcon name="close" :size="14" />
@@ -88,28 +102,21 @@ async function chooseDownloadDirectory() {
       <div class="mt-[20px] flex flex-col gap-md pb-[24px]">
         <!-- 外观 -->
         <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-          <h3 class="text-h2 font-bold dark:text-primary-dark">外观</h3>
+          <h3 class="text-h2 font-bold dark:text-primary-dark">{{ t('settings.appearance') }}</h3>
           <div class="mt-sm grid grid-cols-2 gap-sm">
             <label class="field-label flex flex-col gap-[6px]">
-              主题
+              {{ t('settings.theme') }}
               <Select
                 :model-value="settings.settings.theme"
-                :options="[
-                  { value: 'system', label: '跟随系统' },
-                  { value: 'light', label: '浅色' },
-                  { value: 'dark', label: '深色' },
-                ]"
+                :options="themeOptions"
                 @update:model-value="settings.set('theme', $event as 'light' | 'dark' | 'system')"
               />
             </label>
             <label class="field-label flex flex-col gap-[6px]">
-              语言
+              {{ t('settings.language') }}
               <Select
                 :model-value="settings.settings.language"
-                :options="[
-                  { value: 'zh-CN', label: '简体中文' },
-                  { value: 'en-US', label: 'English（M4）' },
-                ]"
+                :options="languageOptions"
                 @update:model-value="settings.set('language', $event as 'zh-CN' | 'en-US')"
               />
             </label>
@@ -118,10 +125,10 @@ async function chooseDownloadDirectory() {
 
         <!-- 快捷键与通用 -->
         <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-          <h3 class="text-h2 font-bold dark:text-primary-dark">快捷键与通用</h3>
+          <h3 class="text-h2 font-bold dark:text-primary-dark">{{ t('settings.general') }}</h3>
           <div class="mt-sm flex flex-col gap-sm">
             <label class="field-label flex flex-col gap-[6px]">
-              全局唤起快捷键
+              {{ t('settings.hotkey') }}
               <Select
                 :model-value="settings.settings.globalHotkey"
                 :options="[
@@ -134,31 +141,33 @@ async function chooseDownloadDirectory() {
                 @update:model-value="settings.set('globalHotkey', $event)"
               />
               <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-                保存后立即生效；被系统占用时自动降级并提示
+                {{ t('settings.hotkeyHint') }}
               </span>
             </label>
             <label
               class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"
             >
-              <span class="dark:text-primary-dark">开机自启</span>
+              <span class="dark:text-primary-dark">{{ t('settings.launchAtStartup') }}</span>
               <UiCheckbox
                 :model-value="settings.settings.launchAtStartup"
                 @update:model-value="settings.set('launchAtStartup', $event)"
               />
             </label>
             <label class="field-label flex flex-col gap-[6px]">
-              默认下载目录
+              {{ t('settings.downloadDirectory') }}
               <div class="flex gap-[8px]">
                 <UiInput
                   :model-value="settings.settings.defaultDownloadDirectory"
                   class="flex-1 font-mono"
-                  placeholder="未设置时使用系统保存位置"
+                  :placeholder="t('settings.downloadPlaceholder')"
                   @update:model-value="settings.set('defaultDownloadDirectory', String($event))"
                 />
-                <UiButton @click="chooseDownloadDirectory">选择目录</UiButton>
+                <UiButton @click="chooseDownloadDirectory">{{
+                  t('settings.chooseDirectory')
+                }}</UiButton>
               </div>
               <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-                SSH 下载及后续支持下载的工具会默认从此目录保存
+                {{ t('settings.downloadHint') }}
               </span>
             </label>
           </div>
@@ -168,74 +177,75 @@ async function chooseDownloadDirectory() {
         <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
           <h3 class="flex items-center gap-[8px] text-h2 font-bold dark:text-primary-dark">
             <AppIcon name="lock" :size="15" class="text-tertiary-strong dark:text-tertiary-dark" />
-            凭证管理
+            {{ t('settings.vault') }}
           </h3>
           <div class="mt-sm flex items-center justify-between gap-sm">
             <p class="text-body-sm text-text-muted dark:text-text-muted-dark">
-              密码 / 私钥 / Token 加密存本机（keyring 主密钥），插件只引用凭证 ID。已存
-              <span class="font-mono">{{ vaultCount ?? '—' }}</span> 条。
+              {{ t('settings.vaultSummary', { count: vaultCount ?? '—' }) }}
             </p>
-            <UiButton @click="openVault">管理凭证</UiButton>
+            <UiButton @click="openVault">{{ t('settings.manageVault') }}</UiButton>
           </div>
         </section>
 
+        <UpdateSettingsCard />
+
         <!-- 工具级设置（settingsSchema 自动渲染） -->
         <section
-          v-for="t in toolsWithSettings"
-          :key="t.id"
+          v-for="tool in toolsWithSettings"
+          :key="tool.id"
           class="rounded-lg border border-border p-[16px] dark:border-border-dark"
         >
           <h3 class="flex items-center gap-[8px] text-h2 font-bold dark:text-primary-dark">
             <AppIcon
-              :name="t.icon"
+              :name="tool.icon"
               :size="15"
               class="text-tertiary-strong dark:text-tertiary-dark"
             />
-            {{ t.name }} 设置
+            {{ t('settings.toolSettings', { name: tool.name }) }}
           </h3>
           <div class="mt-sm flex flex-col gap-sm">
             <label
-              v-for="field in t.settingsSchema"
+              v-for="field in tool.settingsSchema"
               :key="field.key"
               class="field-label flex flex-col gap-[6px]"
             >
               {{ field.label }}
               <Select
                 v-if="field.type === 'select'"
-                :model-value="String(fieldValue(field, t.id))"
+                :model-value="String(fieldValue(field, tool.id))"
                 :options="field.options ?? []"
-                @update:model-value="onFieldChange(field, t.id, $event)"
+                @update:model-value="onFieldChange(field, tool.id, $event)"
               />
               <UiCheckbox
                 v-else-if="field.type === 'toggle'"
-                :model-value="Boolean(fieldValue(field, t.id))"
-                @update:model-value="onFieldChange(field, t.id, $event)"
+                :model-value="Boolean(fieldValue(field, tool.id))"
+                @update:model-value="onFieldChange(field, tool.id, $event)"
               />
               <UiInput
                 v-else-if="field.type === 'number'"
                 type="number"
-                :model-value="Number(fieldValue(field, t.id))"
-                @update:model-value="onFieldChange(field, t.id, Number($event))"
+                :model-value="Number(fieldValue(field, tool.id))"
+                @update:model-value="onFieldChange(field, tool.id, Number($event))"
               />
               <UiInput
                 v-else
-                :model-value="String(fieldValue(field, t.id))"
-                @update:model-value="onFieldChange(field, t.id, $event)"
+                :model-value="String(fieldValue(field, tool.id))"
+                @update:model-value="onFieldChange(field, tool.id, $event)"
               />
             </label>
           </div>
         </section>
 
         <p v-if="!toolsWithSettings.length" class="text-body-sm text-text-muted">
-          暂无带设置项的工具
+          {{ t('settings.noToolSettings') }}
         </p>
       </div>
 
       <!-- 凭证管理弹窗（xl；框架功能，独立于工具页签体系） -->
       <UiModal
         :open="vaultVisible"
-        title="凭证管理"
-        description="秘密加密存储在本机凭证库（keyring 主密钥），插件只引用凭证 ID，明文不出后端"
+        :title="t('settings.vault')"
+        :description="t('settings.vaultDescription')"
         size="xl"
         @close="vaultVisible = false"
       >

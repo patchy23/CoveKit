@@ -20,6 +20,8 @@
     "dialog:default",
     "global-shortcut:default",
     "autostart:default",
-    "window-state:default"
+    "window-state:default",
+    "updater:default",
+    "process:allow-restart"
   ]
 }

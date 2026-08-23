@@ -74,7 +74,7 @@
 2. **DNS 已完成**：DNS 查询、阿里云、腾讯云 DNSPod、Cloudflare 均可用。阿里/腾讯可选择 Vault AccessKey 对，Cloudflare 可选择 Vault API Token；三者均保留原手工输入与 `dns.db` 存储。
 3. **SSH 主体已完成**：russh 会话、终端、SFTP/远程编辑、监控、进程、systemd、Docker 管理均已落地；连接可选择公共 Vault 的用户名密码/SSH 私钥，也保留插件私有 AES 手工凭据。
 4. **公共 Vault 已完成**：系统 keyring 保存主密钥，AES-256-GCM 保存凭据本体，并支持 Argon2id 加密备份；数据库、SSH、DNS 均已接入可选引用；删除前汇总 DNS/SSH 引用，失效与类型不匹配由前后端双重提示。
-5. **M4 待办**：英文语言包、自动更新、代码签名与发布候选版验证。
+5. **M4 发布基建已完成**：核心界面中英文切换、Tauri Updater、GitHub 标签发布与签名参数已接入；待完成发布候选版验证，真实签名依赖 GitHub secrets 与平台证书。
 
 ### M3 进展记录（2026-08-08 起）
 

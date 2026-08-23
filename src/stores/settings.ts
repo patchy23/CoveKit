@@ -8,6 +8,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ipc } from '@/core/ipc/ipc'
 import type { AppSettings } from '@/core/ipc/contracts'
 import { storage } from '@/core/storage'
+import { setLocale } from '@/i18n'
 
 const STORE_FILE = 'patchybox.json'
 const SETTINGS_KEY = 'settings'
@@ -51,13 +52,14 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value = { ...DEFAULTS, ...(local ?? {}) }
     }
     applyTheme()
+    setLocale(settings.value.language)
     loaded.value = true
   }
 
   async function set<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     settings.value[key] = value
     if (key === 'theme') applyTheme()
-    if (key === 'language') document.documentElement.lang = String(value)
+    if (key === 'language') setLocale(value as AppSettings['language'])
     try {
       await ipc.settingsSet(key as string, value)
     } catch {

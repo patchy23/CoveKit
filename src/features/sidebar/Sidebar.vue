@@ -4,6 +4,7 @@
  * 导航项与计数来自工具注册表聚合（tools store）；主题切换走 settings store。
  */
 import AppIcon from '@/features/ui/AppIcon.vue'
+import { useI18n } from 'vue-i18n'
 import { useSettingsStore } from '@/stores/settings'
 import { useToolsStore } from '@/stores/tools'
 import { useUiStore } from '@/stores/ui'
@@ -11,15 +12,16 @@ import { useUiStore } from '@/stores/ui'
 const ui = useUiStore()
 const tools = useToolsStore()
 const settings = useSettingsStore()
+const { t } = useI18n()
 
 const navItems = [
-  { id: 'all', label: '全部工具', icon: 'all' },
-  { id: 'dev', label: '开发工具', icon: 'dev' },
-  { id: 'text', label: '文本处理', icon: 'text' },
-  { id: 'image', label: '图片工具', icon: 'image' },
-  { id: 'net', label: '网络工具', icon: 'net' },
-  { id: 'sys', label: '系统工具', icon: 'sys' },
-  { id: 'fav', label: '我的收藏', icon: 'fav' },
+  { id: 'all', labelKey: 'nav.all', icon: 'all' },
+  { id: 'dev', labelKey: 'nav.dev', icon: 'dev' },
+  { id: 'text', labelKey: 'nav.text', icon: 'text' },
+  { id: 'image', labelKey: 'nav.image', icon: 'image' },
+  { id: 'net', labelKey: 'nav.net', icon: 'net' },
+  { id: 'sys', labelKey: 'nav.sys', icon: 'sys' },
+  { id: 'fav', labelKey: 'nav.fav', icon: 'fav' },
 ]
 
 function toggleTheme() {
@@ -59,7 +61,7 @@ function selectCategory(item: { id: string }) {
     <div
       class="mb-[6px] mt-md px-[10px] text-label-caps font-semibold tracking-[0.1em] text-text-muted dark:text-text-muted-dark"
     >
-      工具库
+      {{ t('nav.library') }}
     </div>
     <nav class="flex flex-1 flex-col gap-[2px] overflow-y-auto">
       <button
@@ -74,7 +76,7 @@ function selectCategory(item: { id: string }) {
         @click="selectCategory(item)"
       >
         <AppIcon :name="item.icon" :size="17" class="shrink-0" />
-        <span class="flex-1 text-left">{{ item.label }}</span>
+        <span class="flex-1 text-left">{{ t(item.labelKey) }}</span>
         <span
           class="rounded-full px-[7px] py-[1px] text-caption font-semibold"
           :class="
@@ -99,7 +101,7 @@ function selectCategory(item: { id: string }) {
           :size="16"
           class="shrink-0"
         />
-        {{ settings.settings.theme === 'dark' ? '浅色模式' : '深色模式' }}
+        {{ settings.settings.theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode') }}
       </button>
       <button
         class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium transition-colors duration-150 hover:bg-border hover:text-primary dark:hover:bg-border-dark dark:hover:text-primary-dark"
@@ -111,7 +113,7 @@ function selectCategory(item: { id: string }) {
         @click="ui.toggleSettings()"
       >
         <AppIcon name="sliders" :size="16" class="shrink-0" />
-        设置
+        {{ t('common.settings') }}
       </button>
     </div>
   </aside>
