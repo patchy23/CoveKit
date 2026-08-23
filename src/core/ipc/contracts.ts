@@ -104,6 +104,7 @@ export const frameworkCommands = {
   vaultList: 'vault_list',
   vaultSave: 'vault_save',
   vaultDelete: 'vault_delete',
+  vaultReferenceCount: 'vault_reference_count',
   vaultReveal: 'vault_reveal',
   vaultExport: 'vault_export',
   vaultImport: 'vault_import',
@@ -120,6 +121,7 @@ export type FrameworkPayloads = {
   vault_list: Record<string, never>
   vault_save: { payload: CredentialSavePayload }
   vault_delete: { id: string }
+  vault_reference_count: { id: string }
   vault_reveal: { id: string }
   vault_export: { path: string; password: string }
   vault_import: { path: string; password: string; overwrite: boolean }
@@ -136,6 +138,7 @@ export type FrameworkResults = {
   vault_list: CredentialSummary[]
   vault_save: CredentialSummary
   vault_delete: VaultDeleteResult
+  vault_reference_count: number
   vault_reveal: Credential
   vault_export: void
   vault_import: VaultImportResult

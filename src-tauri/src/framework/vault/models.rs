@@ -154,7 +154,7 @@ pub struct VaultDeleteResult {
     pub ok: bool,
     /// 错误信息（无则 None）
     pub error: Option<String>,
-    /// 仍引用该凭证的插件 profile 数量（引用扫描随设计 §6 迁移接入，当前恒 0）
+    /// 仍引用该凭证的后端插件配置数量（浏览器侧引用由前端登记表补充）
     pub referenced_by: usize,
 }
 

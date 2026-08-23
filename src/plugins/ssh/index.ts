@@ -2,6 +2,10 @@
  * SSH 工具 · 工具注册
  */
 import { registerTool } from '@/core/registry/toolRegistry'
+import { loadProfiles } from './useSsh'
+
+// 插件启动即同步历史 profile 引用，使凭证管理页无需先打开 SSH 工具也能给出删除警告。
+loadProfiles()
 
 registerTool({
   id: 'ssh',

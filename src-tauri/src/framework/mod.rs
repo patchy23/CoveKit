@@ -26,6 +26,7 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         vault::vault_list,
         vault::vault_save,
         vault::vault_delete,
+        vault::vault_reference_count,
         vault::vault_reveal,
         vault::vault_export,
         vault::vault_import,

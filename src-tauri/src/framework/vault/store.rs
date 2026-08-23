@@ -4,8 +4,8 @@
 //!   并告警。keyring 只存这把主密钥，凭证本体不进 keyring（Credential Manager 单条 ~2.5KB 上限）。
 //! - 凭证密文：AES-256-GCM，每次加密新 nonce，落盘 nonce(12B)‖ciphertext → app_data_dir/vault.dat；
 //!   解密先校验 ≥28B（12 nonce + 16 认证标签），损坏即报错不 panic。
-//! - 原子写 + 备份恢复：replace_file / recover_backup 原语下沉自 plugins/ssh/credential.rs
-//!   （SSH 原文件保持不动，待设计 §6 迁移时切换过来）。
+//! - 原子写 + 备份恢复：replace_file / recover_backup 原语下沉自 plugins/ssh/credential.rs；
+//!   SSH 原手工凭据文件继续保留，公共 Vault 作为可选来源。
 //! - 安全边界：防「凭证明文落盘、文件被拷走即泄密」；不防「已登录当前系统账户的恶意进程」。
 //!   stronghold（内存隔离）与主密码解锁为后续升级项，接入时只换存储/解锁层，数据模型不变。
 
@@ -202,7 +202,7 @@ pub(crate) fn encrypt_payload(key: &[u8; 32], plain: &[u8]) -> Result<Vec<u8>, S
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 原子写 + 备份恢复（原语下沉自 plugins/ssh/credential.rs，SSH 侧保持不动待 §6 切换）
+// 原子写 + 备份恢复（原语下沉自 plugins/ssh/credential.rs；SSH 手工路径继续兼容）
 // ──────────────────────────────────────────────────────────────────────────
 
 /// 先完整写入临时文件并刷盘，再替换目标（旧文件改 .bak，替换成功后删除），避免半截密文。
@@ -352,10 +352,36 @@ pub(crate) fn summary_of(credential: &Credential) -> CredentialSummary {
     }
 }
 
-/// 凭证引用计数（供删除提示）。引用扫描随设计 §6 迁移接入
-/// （SSH/DB/DNS profile 存 credentialId 后在此聚合），当前无接入方，恒 0。
-pub(crate) fn reference_count(_app: &AppHandle, _credential_id: &str) -> usize {
-    0
+/// 凭证引用计数（供删除提示）。这里只扫描后端持久化配置；
+/// SSH localStorage 引用由前端登记表补充，避免框架反向依赖插件前端实现。
+pub(crate) fn reference_count(app: &AppHandle, credential_id: &str) -> usize {
+    dns_reference_count(app, credential_id)
+}
+
+/// 统计 dns.db 中阿里云 / DNSPod / Cloudflare 配置对凭证的引用。
+fn dns_reference_count(app: &AppHandle, credential_id: &str) -> usize {
+    let Ok(path) = crate::framework::store::plugin_db_path(app, "dns") else {
+        return 0;
+    };
+    if !path.exists() {
+        return 0;
+    }
+    let Ok(conn) =
+        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    else {
+        return 0;
+    };
+    count_dns_references(&conn, credential_id)
+}
+
+/// 在已打开的 DNS 数据库连接上统计引用；独立函数便于覆盖旧表结构与多引用单测。
+fn count_dns_references(conn: &rusqlite::Connection, credential_id: &str) -> usize {
+    conn.query_row(
+        "SELECT COUNT(*) FROM dns_config WHERE credential_ref = ?1",
+        [credential_id],
+        |row| row.get::<_, usize>(0),
+    )
+    .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -364,6 +390,27 @@ mod tests {
     use std::cell::RefCell;
 
     use super::super::models::{CredentialFields, CredentialKind};
+
+    #[test]
+    fn dns_reference_count_handles_current_and_legacy_schema() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE dns_config (
+                platform TEXT PRIMARY KEY,
+                credential_ref TEXT
+            );
+            INSERT INTO dns_config VALUES ('aliyun', 'credential-1');
+            INSERT INTO dns_config VALUES ('dnspod', 'credential-1');",
+        )
+        .unwrap();
+        assert_eq!(count_dns_references(&conn, "credential-1"), 2);
+
+        let legacy = rusqlite::Connection::open_in_memory().unwrap();
+        legacy
+            .execute_batch("CREATE TABLE dns_config (platform TEXT PRIMARY KEY);")
+            .unwrap();
+        assert_eq!(count_dns_references(&legacy, "credential-1"), 0);
+    }
 
     /// 内存密钥库桩（可注入读/写失败，模拟无桌面环境）
     struct MemStore {

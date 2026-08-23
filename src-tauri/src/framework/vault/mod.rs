@@ -1,6 +1,6 @@
 //! Vault 凭证管理 · 门面（框架级能力，不是插件；落地 docs/02-architecture.md 预留的 secrets 抽象）
 //! - 设计书：docs/plugins/vault/设计.md（唯一事实源）
-//! - 职责：6 个框架命令薄层（参数校验 → store/export 服务层）+ ipc_registry 入库 + register
+//! - 职责：7 个框架命令薄层（参数校验 → store/export 服务层）+ ipc_registry 入库 + register
 //! - 引用模型：插件 profile 只存 credentialId；后端解析走 crate 内 API `resolve()`（store.rs，
 //!   不做成 Tauri 命令，明文不过 IPC）；前端仅 vault_reveal 例外路径取明文
 //! - SSH/DNS 已支持可选 Vault 引用，同时保留原手工凭据路径
@@ -144,6 +144,12 @@ pub fn vault_delete(app: AppHandle, id: String) -> Result<VaultDeleteResult, Str
     })
 }
 
+/// 删除前查询后端持久化插件中的凭证引用数；浏览器侧引用由前端登记表补充。
+#[tauri::command]
+pub fn vault_reference_count(app: AppHandle, id: String) -> usize {
+    store::reference_count(&app, &id)
+}
+
 /// 读取单条凭证明文（仅用户点「显示/复制」时调用；列表永远走脱敏数据）
 #[tauri::command]
 pub fn vault_reveal(app: AppHandle, id: String) -> Result<Credential, String> {
@@ -210,7 +216,7 @@ pub async fn vault_import(
     })
 }
 
-/// 框架装配：6 个命令全量入 IPC 注册表（命令由 framework::invoke_handler 总 handler 分派）
+/// 框架装配：7 个命令全量入 IPC 注册表（命令由 framework::invoke_handler 总 handler 分派）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     super::ipc_registry::register(&[
         (
@@ -222,6 +228,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
             "新增/更新凭证（payload 打包，id 可选 upsert）",
         ),
         ("vault_delete", "删除凭证（返回被引用计数供前端提示）"),
+        ("vault_reference_count", "删除前查询后端插件凭证引用数"),
         (
             "vault_reveal",
             "读取单条凭证明文（仅用户点显示/复制时调用）",

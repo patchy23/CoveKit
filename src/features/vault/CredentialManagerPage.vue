@@ -32,6 +32,7 @@ import {
   primarySecret,
 } from '@/core/vault/useVault'
 import CredentialForm from '@/core/vault/CredentialForm.vue'
+import { clientCredentialReferenceCount } from '@/core/vault/references'
 
 const ui = useUiStore()
 const { copyText } = useCopy()
@@ -124,10 +125,25 @@ async function copyValue(id: string) {
 // ── 删除（确认弹窗；被引用时提示引用数） ──
 const deleteTarget = ref<CredentialSummary | null>(null)
 const deleteError = ref('')
+const deleteReferenceCount = ref(0)
 
 async function startDelete(item: CredentialSummary) {
   deleteError.value = ''
+  const clientCount = clientCredentialReferenceCount(item.id)
+  let backendCount = 0
+  try {
+    backendCount = await ipc.vaultReferenceCount(item.id)
+  } catch {
+    // 浏览器预览或后端旧版本不可用时，至少保留前端 SSH 引用警告。
+  }
+  deleteReferenceCount.value = clientCount + backendCount
   deleteTarget.value = item
+}
+
+function closeDelete() {
+  deleteTarget.value = null
+  deleteError.value = ''
+  deleteReferenceCount.value = 0
 }
 
 async function confirmDelete() {
@@ -139,12 +155,12 @@ async function confirmDelete() {
       deleteError.value = result.error ?? '删除失败'
       return
     }
-    if (result.referencedBy > 0) {
-      ui.toast(`已删除，仍有 ${result.referencedBy} 处引用需手动改绑`)
+    if (deleteReferenceCount.value > 0) {
+      ui.toast(`已删除，原有 ${deleteReferenceCount.value} 处引用需手动改绑`)
     } else {
       ui.toast('凭证已删除')
     }
-    deleteTarget.value = null
+    closeDelete()
     void reload()
   } catch (e) {
     deleteError.value = e instanceof Error ? e.message : String(e)
@@ -310,10 +326,15 @@ async function confirmTransfer() {
     <ConfirmDialog
       :open="deleteTarget !== null"
       title="删除凭证"
-      :message="`确定删除「${deleteTarget?.name ?? ''}」吗？删除后引用它的工具配置将失效。`"
+      :message="
+        deleteReferenceCount > 0
+          ? `「${deleteTarget?.name ?? ''}」仍被 ${deleteReferenceCount} 处工具配置引用。确定强制删除吗？相关连接会失效，需重新选择或改用手工凭据。`
+          : `确定删除「${deleteTarget?.name ?? ''}」吗？此操作无法撤销。`
+      "
+      :error="deleteError"
       confirm-label="删除"
       danger
-      @close="deleteTarget = null"
+      @close="closeDelete"
       @confirm="confirmDelete"
     />
 
@@ -346,7 +367,6 @@ async function confirmTransfer() {
             { value: 'overwrite', label: '覆盖', description: '清空现有凭证后整体替换' },
           ]"
         />
-        <p v-if="deleteError" class="text-caption text-danger-strong">{{ deleteError }}</p>
       </div>
       <template #footer>
         <UiButton size="sm" variant="ghost" @click="transfer = null">取消</UiButton>

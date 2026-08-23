@@ -8,6 +8,7 @@ defineProps<{
   message: string
   confirmLabel?: string
   danger?: boolean
+  error?: string
 }>()
 
 const emit = defineEmits<{
@@ -23,6 +24,9 @@ const emit = defineEmits<{
     </h3>
     <p class="mb-[20px] text-body leading-relaxed text-secondary dark:text-secondary-dark">
       {{ message }}
+    </p>
+    <p v-if="error" class="mb-[12px] text-caption text-danger-strong dark:text-danger-dark">
+      {{ error }}
     </p>
     <div class="flex justify-end gap-[8px]">
       <UiButton variant="ghost" @click="emit('close')">取消</UiButton>

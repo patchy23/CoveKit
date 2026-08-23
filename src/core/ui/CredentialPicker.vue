@@ -31,6 +31,8 @@ const CREATE_VALUE = '__create__'
 
 const list = ref<CredentialSummary[]>([])
 const formOpen = ref(false)
+const loaded = ref(false)
+const loadFailed = ref(false)
 
 /** 下拉选项：凭证条目 + 末尾新建入口 */
 const options = computed(() => {
@@ -43,13 +45,26 @@ const options = computed(() => {
   return items
 })
 
+/** 已保存的引用不在列表中：通常是凭证被删除或导入覆盖。 */
+const selectionError = computed(() => {
+  if (!loaded.value || !props.modelValue) return ''
+  if (loadFailed.value) return '凭证库暂不可用；可稍后重试或清空选择并改用手工凭据。'
+  return list.value.some((c) => c.id === props.modelValue)
+    ? ''
+    : '所选凭证已删除或不可用，请重新选择。'
+})
+
 async function reload() {
+  loadFailed.value = false
   try {
     const all = await ipc.vaultList()
     list.value = props.kind ? all.filter((c) => c.kind === props.kind) : all
   } catch {
     // 凭证库不可用时降级为空列表（工具仍可手填）
     list.value = []
+    loadFailed.value = true
+  } finally {
+    loaded.value = true
   }
 }
 
@@ -87,4 +102,7 @@ function onSaved(summary: CredentialSummary) {
     @close="formOpen = false"
     @saved="onSaved"
   />
+  <p v-if="selectionError" class="text-caption text-danger-strong dark:text-danger-dark">
+    {{ selectionError }}
+  </p>
 </template>

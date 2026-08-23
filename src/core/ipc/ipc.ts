@@ -45,6 +45,7 @@ export const ipc = {
   vaultList: () => call('vault_list', {}),
   vaultSave: (payload: CredentialSavePayload) => call('vault_save', { payload }),
   vaultDelete: (id: string) => call('vault_delete', { id }),
+  vaultReferenceCount: (id: string) => call('vault_reference_count', { id }),
   vaultReveal: (id: string) => call('vault_reveal', { id }),
   vaultExport: (path: string, password: string) => call('vault_export', { path, password }),
   vaultImport: (path: string, password: string, overwrite: boolean) =>

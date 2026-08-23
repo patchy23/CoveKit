@@ -9,6 +9,7 @@ import type {
   TerminalSession,
   RemoteFile,
 } from './contracts'
+import { syncCredentialReferences } from '@/core/vault/references'
 
 /* ── 连接状态机 ── */
 
@@ -82,7 +83,11 @@ const PROFILES_KEY = 'ssh.profiles.v1'
 export function loadProfiles(): ServerProfile[] {
   try {
     const raw = localStorage.getItem(PROFILES_KEY)
-    if (raw) return JSON.parse(raw) as ServerProfile[]
+    if (raw) {
+      const profiles = JSON.parse(raw) as ServerProfile[]
+      syncSshCredentialReferences(profiles)
+      return profiles
+    }
   } catch {
     /* 数据损坏时回退空列表 */
   }
@@ -92,6 +97,15 @@ export function loadProfiles(): ServerProfile[] {
 /** 保存服务器配置（新增/更新，返回最新列表） */
 export function persistProfiles(list: ServerProfile[]): void {
   localStorage.setItem(PROFILES_KEY, JSON.stringify(list))
+  syncSshCredentialReferences(list)
+}
+
+/** 把 SSH profile 的 Vault 引用登记给框架删除提示；手工凭据不登记。 */
+export function syncSshCredentialReferences(list: ServerProfile[]): void {
+  syncCredentialReferences(
+    'ssh',
+    list.flatMap((profile) => (profile.secretRef ? [profile.secretRef] : []))
+  )
 }
 
 export const mockConnections: ServerConnection[] = [
