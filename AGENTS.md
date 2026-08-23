@@ -1,7 +1,7 @@
 # patchyBox · 项目简报（AGENTS.md）
 
 > 本文件在会话打开 `G:\workspace\patchyBox` 时自动注入，先读它再动手。
-> 设计阶段已完成（2026-08-02）；**M0–M3 已完成**，当前目标：**M4 发布准备**。
+> 设计阶段已完成（2026-08-02）；**M0–M4 代码与本地 RC 验证已完成**，下一阶段是持证书的正式发布验证。
 
 ## 项目是什么
 
@@ -74,7 +74,7 @@
 2. **DNS 已完成**：DNS 查询、阿里云、腾讯云 DNSPod、Cloudflare 均可用。阿里/腾讯可选择 Vault AccessKey 对，Cloudflare 可选择 Vault API Token；三者均保留原手工输入与 `dns.db` 存储。
 3. **SSH 主体已完成**：russh 会话、终端、SFTP/远程编辑、监控、进程、systemd、Docker 管理均已落地；连接可选择公共 Vault 的用户名密码/SSH 私钥，也保留插件私有 AES 手工凭据。
 4. **公共 Vault 已完成**：系统 keyring 保存主密钥，AES-256-GCM 保存凭据本体，并支持 Argon2id 加密备份；数据库、SSH、DNS 均已接入可选引用；删除前汇总 DNS/SSH 引用，失效与类型不匹配由前后端双重提示。
-5. **M4 发布基建已完成**：核心界面中英文切换、Tauri Updater、GitHub 标签发布与签名参数已接入；待完成发布候选版验证，真实签名依赖 GitHub secrets 与平台证书。
+5. **M4 本地验证已完成**：核心界面中英文切换、Tauri Updater、GitHub 标签发布与签名参数已接入；Windows NSIS 生产包已构建并记录哈希。真实 Windows/macOS 签名、Apple 公证和升级链路依赖 GitHub secrets、平台证书与旧版本产物。
 
 ### M3 进展记录（2026-08-08 起）
 

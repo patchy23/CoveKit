@@ -21,7 +21,7 @@ patchyBox 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，�
 
 ## 当前进度
 
-截至 2026-08-24，项目已完成 **M3**，进入 **M4 发布准备**阶段：
+截至 2026-08-24，项目已完成 **M4 代码与 Windows 本地 RC 验证**：
 
 - M0–M2 已完成，HTTP/WS、hosts、格式转换等工具可用。
 - 数据库工作台已支持 MySQL、PostgreSQL、SQLite、Redis、Oracle、PolarDB、Vastbase、Kingbase；达梦入口暂未实现后端驱动。
@@ -29,6 +29,7 @@ patchyBox 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，�
 - SSH 已支持终端、SFTP、远程编辑、资源监控、进程、systemd 服务和 Docker 管理。
 - 框架级 Vault 已采用系统 keyring + AES-256-GCM 落地；数据库、SSH、DNS 均可引用 Vault，SSH/DNS 同时保留原手工凭据方式。
 - 中英文核心界面可在运行时切换；已接入 Tauri 自动更新与 GitHub Release 工作流，实际签名发布需在 GitHub 配置私钥和平台证书。
+- Windows x64 NSIS 生产包已在本地构建通过；发布候选版验证记录见 `docs/releases/v0.1.0-rc.md`。
 
 ## 开发
 
