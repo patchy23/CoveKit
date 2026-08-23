@@ -69,7 +69,10 @@ const toneOf = (kind: string) => {
       </tbody>
     </UiTable>
 
-    <div v-else class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark">
+    <div
+      v-else
+      class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+    >
       {{ state.status === 'error' ? state.error : '加载中…' }}
     </div>
   </div>

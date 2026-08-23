@@ -18,7 +18,7 @@ export interface SshActionResult {
 /** 认证方式 */
 export type AuthMethod = 'password' | 'privateKey' | 'privateKeyWithPassphrase'
 
-/** 服务器连接配置（凭证管理用，密码/密钥不直接存储，仅存 secretRef） */
+/** 服务器连接配置（密码/密钥不直接存储，可引用公共 Vault 或插件原手工凭据） */
 export interface ServerProfile {
   /** 唯一 id（profile-<毫秒时间戳>） */
   id: string
@@ -32,7 +32,7 @@ export interface ServerProfile {
   username: string
   /** 认证方式 */
   authMethod: AuthMethod
-  /** 凭证引用（stronghold 密钥 id，密码/私钥不落盘） */
+  /** 公共 Vault 凭证 id；未设置时使用原手工输入并由 SSH 插件加密保存 */
   secretRef?: string
   /** 备注 */
   remark?: string

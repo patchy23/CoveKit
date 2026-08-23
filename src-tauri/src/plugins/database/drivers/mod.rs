@@ -487,6 +487,7 @@ async fn query_first_string_pg(pool: &deadpool_postgres::Pool, sql: &str) -> Opt
     client.query_one(sql, &[]).await.ok().map(|row| row.get(0))
 }
 
+/// 按当前会话类型构造查询取消句柄；具体取消元数据在执行开始后补齐。
 pub(crate) fn build_cancel_handle(entry: &DbSessionEntry) -> CancelHandle {
     match &entry.session {
         DbSession::Postgres(_) => CancelHandle {
@@ -529,6 +530,7 @@ pub(crate) fn build_cancel_handle(entry: &DbSessionEntry) -> CancelHandle {
     }
 }
 
+/// 通过数据库侧车执行 SQL，并把 JSON RPC 结果转换为统一查询结果。
 pub(crate) async fn execute_agent(
     client: &AgentClient,
     session_id: &str,
@@ -578,6 +580,7 @@ pub(crate) async fn execute_agent(
     })
 }
 
+/// 将侧车返回的 JSON 单元格稳定转换为表格展示字符串。
 pub(crate) fn json_cell_str(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::Null => "NULL".to_string(),

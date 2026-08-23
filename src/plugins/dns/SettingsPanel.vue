@@ -1,18 +1,18 @@
 <script setup lang="ts">
 /**
- * 密钥设置 · 阿里云 AccessKey + DNSPod Token
- * 保存到插件数据库（dns.db，明文存储；M3 stronghold 加密升级）。
+ * 密钥设置 · 阿里云 AccessKey + DNSPod CAM
+ * 每个平台可选择公共 Vault 凭证，或继续使用原有手工输入。
  */
 import { onMounted, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { ProviderConfig } from './contracts'
-import { UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
+import { CredentialPicker, UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
 
 const ui = useUiStore()
 
-const aliyun = ref<ProviderConfig>({ id: '', key: '' })
-const dnspod = ref<ProviderConfig>({ id: '', key: '' })
+const aliyun = ref<ProviderConfig>({ id: '', key: '', credentialRef: '' })
+const dnspod = ref<ProviderConfig>({ id: '', key: '', credentialRef: '' })
 const loaded = ref(false)
 const saving = ref(false)
 
@@ -20,8 +20,16 @@ const saving = ref(false)
 async function load() {
   try {
     const cfg = await ipc.dnsConfigGet()
-    aliyun.value = { id: cfg.aliyun.id, key: cfg.aliyun.key }
-    dnspod.value = { id: cfg.dnspod.id, key: cfg.dnspod.key }
+    aliyun.value = {
+      id: cfg.aliyun.id,
+      key: cfg.aliyun.key,
+      credentialRef: cfg.aliyun.credentialRef ?? '',
+    }
+    dnspod.value = {
+      id: cfg.dnspod.id,
+      key: cfg.dnspod.key,
+      credentialRef: cfg.dnspod.credentialRef ?? '',
+    }
   } catch (e) {
     ui.toast('读取配置失败：' + (e instanceof Error ? e.message : String(e)))
   } finally {
@@ -34,8 +42,16 @@ async function save() {
   saving.value = true
   try {
     await ipc.dnsConfigSet({
-      aliyun: { id: aliyun.value.id.trim(), key: aliyun.value.key.trim() },
-      dnspod: { id: dnspod.value.id.trim(), key: dnspod.value.key.trim() },
+      aliyun: {
+        id: aliyun.value.id.trim(),
+        key: aliyun.value.key.trim(),
+        credentialRef: aliyun.value.credentialRef || undefined,
+      },
+      dnspod: {
+        id: dnspod.value.id.trim(),
+        key: dnspod.value.key.trim(),
+        credentialRef: dnspod.value.credentialRef || undefined,
+      },
     })
     ui.toast('密钥配置已保存')
   } catch (e) {
@@ -68,7 +84,18 @@ onMounted(load)
           >
         </p>
         <div class="flex flex-col gap-[10px]">
-          <UiField label="AccessKey ID">
+          <UiField
+            label="凭证库（可选）"
+            description="选择后优先使用 Vault 凭证；清空选择即可回退下方手工密钥。"
+          >
+            <CredentialPicker
+              :model-value="aliyun.credentialRef ?? ''"
+              kind="access-key-pair"
+              placeholder="选择阿里云 AccessKey 凭证"
+              @update:model-value="aliyun.credentialRef = $event"
+            />
+          </UiField>
+          <UiField label="手工 AccessKey ID">
             <UiInput
               v-model="aliyun.id"
               class="font-mono"
@@ -76,7 +103,7 @@ onMounted(load)
               spellcheck="false"
             />
           </UiField>
-          <UiField label="AccessKey Secret">
+          <UiField label="手工 AccessKey Secret">
             <UiInput
               v-model="aliyun.key"
               type="password"
@@ -103,10 +130,21 @@ onMounted(load)
           >
         </p>
         <div class="flex flex-col gap-[10px]">
-          <UiField label="SecretId">
+          <UiField
+            label="凭证库（可选）"
+            description="选择后优先使用 Vault 凭证；清空选择即可回退下方手工密钥。"
+          >
+            <CredentialPicker
+              :model-value="dnspod.credentialRef ?? ''"
+              kind="access-key-pair"
+              placeholder="选择腾讯云 CAM 凭证"
+              @update:model-value="dnspod.credentialRef = $event"
+            />
+          </UiField>
+          <UiField label="手工 SecretId">
             <UiInput v-model="dnspod.id" class="font-mono" placeholder="AKID…" spellcheck="false" />
           </UiField>
-          <UiField label="SecretKey">
+          <UiField label="手工 SecretKey">
             <UiInput
               v-model="dnspod.key"
               type="password"
@@ -122,7 +160,7 @@ onMounted(load)
           {{ saving ? '保存中…' : '保存密钥' }}
         </UiButton>
         <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-          密钥仅保存在本机应用数据目录（M3 起接入强加密存储）
+          Vault 凭证加密保存；手工密钥继续沿用原 dns.db 存储。
         </span>
       </div>
     </div>

@@ -7,6 +7,7 @@ use rusqlite::Connection as SqliteConn;
 use crate::plugins::database::dialect::dialect_for;
 use crate::plugins::database::models::{ConnConfig, QueryResult};
 
+/// 打开 SQLite 文件并包装为插件会话使用的线程安全连接。
 pub(crate) fn sqlite_conn(config: &ConnConfig) -> Result<Arc<Mutex<SqliteConn>>, String> {
     let path = &config.host;
     if path.trim().is_empty() {

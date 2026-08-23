@@ -137,7 +137,7 @@ export interface Settings {
 export interface ConnectionProfile {  // DB / SSH 通用
   id: string; name: string; kind: 'mysql' | 'postgres' | 'sqlite' | 'ssh';
   host?: string; port?: number; user?: string;
-  secretRef?: string;                 // 密码/密钥引用（存 stronghold，不落明文）
+  secretRef?: string;                 // 可选公共 Vault 引用；为空时插件可保留手工凭据路径
   options?: Record<string, string>;
 }
 
@@ -257,7 +257,7 @@ App.vue
 
 **第二批关键决策（架构已预留，实现时落地）：**
 - **网络请求走 Rust 侧**（reqwest / tokio-tungstenite），前端零 CORS、无 `http` 插件 scope 管理负担；
-- **凭据加密**：云 API Token、数据库密码、SSH 私钥存 stronghold（加密落盘），`ConnectionProfile.secretRef` 只存引用；明文生命周期仅存在于 Rust 内存；
+- **凭据加密**：公共 Vault 用系统 keyring 保存主密钥、AES-256-GCM 保存凭据本体；数据库、SSH、DNS 可存凭据引用并在 Rust 内解析，SSH/DNS 同时保留原手工输入兼容路径；
 - **hosts 提权策略**：应用本体保持非提权运行；写 hosts 时检测权限，失败则通过 `std::process` 拉起 PowerShell `Start-Process -Verb RunAs` 的**最小化提权助手**（只执行 hosts 写入），UAC 按需弹出，不常驻管理员权限；
 - DB/SSH 会话默认超时与空闲回收，防连接泄漏。
 
@@ -294,13 +294,15 @@ App.vue
 
 ## 10. 里程碑路线图
 
-| 阶段 | 周期 | 交付物 | 验收标准 |
-|------|------|--------|---------|
-| **M0 脚手架** | 1–2 天 | create-tauri-app(vue-ts) + Tailwind 4 接 DESIGN.md tokens + ESLint/Prettier/rustfmt + CI | `pnpm tauri dev` 出方向二主界面（空数据版），CI 绿 |
-| **M1 框架 + 第一批** | 5–8 天 | 整体 UI（§6 全部组件）+ 后端框架（§1 框架层 + settings/clipboard/color 模块 + 托盘/快捷键/单实例）+ **8 个文本工具** | 完整闭环：浏览-搜索-收藏-换肤-设置持久化；8 工具可用；`clippy -D warnings` 绿 |
-| **M2 第二批 I** | 5–7 天 | HTTP/WS 调试、SQLite 数据库工具、hosts 修改 + 补齐轻量工具（随机密码/哈希/颜色选择器/二维码） | workspace 载体上线；三工具可用；hosts 提权流程走通 |
-| **M3 第二批 II** | 7–10 天 | MySQL/PG 数据库工具、DNS 管理（阿里/腾讯/CF）、SSH 工具 | 连接会话管理 + stronghold 凭据落地；三云厂商 adapter 可用 |
-| **M4 打磨发布** | 持续 | 图片压缩/批量重命名/磁盘分析/翻译、i18n 英文、自动更新、代码签名、插件化预留 | 发布候选版 |
+> 状态更新（2026-08-24）：M0–M2 已完成；M3 主体已落地，剩余 Cloudflare Adapter；项目已开始 M4 发布准备。凭据方案已由 Stronghold 调整为系统 keyring + AES-256-GCM，数据库、SSH、DNS 均已支持 Vault 引用。
+
+| 阶段 | 状态 | 周期 | 交付物 | 验收标准 |
+|------|------|------|--------|---------|
+| **M0 脚手架** | 已完成 | 1–2 天 | create-tauri-app(vue-ts) + Tailwind 4 接 DESIGN.md tokens + ESLint/Prettier/rustfmt + CI | `pnpm tauri dev` 出方向二主界面（空数据版），CI 绿 |
+| **M1 框架 + 第一批** | 已完成 | 5–8 天 | 整体 UI（§6 全部组件）+ 后端框架（§1 框架层 + 托盘/快捷键/单实例）+ 文本工具 | 浏览、搜索、收藏、换肤、设置持久化闭环；质量门槛全绿 |
+| **M2 第二批 I** | 已完成 | 5–7 天 | HTTP/WS 调试、SQLite 数据库工具、hosts 修改 + 轻量工具 | workspace 载体上线；三工具可用；hosts 提权流程走通 |
+| **M3 第二批 II** | 收尾中 | 7–10 天 | 多驱动数据库工作台、DNS 管理、SSH 远程管理、公共 Vault | 数据库、SSH、阿里/腾讯 DNS 与可选 Vault 引用完成；待 Cloudflare |
+| **M4 打磨发布** | 进行中 | 持续 | 扩展工具、i18n 英文、自动更新、代码签名、发布验证 | CI 已配置 Windows/macOS 产物构建；其余发布能力待完成 |
 
 **第一批工具清单（8 个，全为文本类）：** JSON 格式化、时间戳转换、Base64 编解码、URL 编解码、字符统计、文本对比、Markdown 预览、正则测试。
 
@@ -312,5 +314,5 @@ App.vue
 2. 前端框架默认 **Vue 3**（M0 前可改 React，影响面见技术选型 §2）；
 3. 关窗行为：默认最小化到托盘；
 4. 剪贴板隐私：默认仅忽略列表；
-5. 第二批凭据方案：默认 **stronghold**（备选：Windows Credential Manager via `keyring` crate）；
+5. ~~第二批凭据方案~~ → 已定：**系统 keyring 保存主密钥 + AES-256-GCM 加密凭据文件**，Stronghold 已弃用；
 6. hosts 提权：默认**按需提权助手**（UAC 弹出最小授权），不整体管理员运行。

@@ -3,12 +3,14 @@
  * 与 src-tauri/plugins/dns/models.rs 的 serde 结构同步（camelCase）。
  */
 
-/** 单平台密钥配置（阿里云 AccessKey / DNSPod Token） */
+/** 单平台密钥配置（可选公共 Vault；未选择时使用手工 AccessKey） */
 export interface ProviderConfig {
   /** 密钥 ID（AccessKeyId / Token ID） */
   id: string
   /** 密钥（AccessKeySecret / Token） */
   key: string
+  /** 公共 Vault 的 AccessKey 对凭证 id */
+  credentialRef?: string
 }
 
 /** DNS 插件全局配置（两平台密钥） */

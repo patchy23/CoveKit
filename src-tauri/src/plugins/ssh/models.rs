@@ -28,7 +28,7 @@ pub enum AuthMethod {
     PrivateKeyWithPassphrase,
 }
 
-/// 服务器连接配置（凭证管理用，密码/密钥不直接存储，仅存 secretRef）
+/// 服务器连接配置（可选公共 Vault secretRef；为空时使用 SSH 插件原手工凭据）
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerProfile {
@@ -44,7 +44,7 @@ pub struct ServerProfile {
     pub(crate) username: String,
     /// 认证方式
     pub(crate) auth_method: AuthMethod,
-    /// 凭证引用（预留字段；密码/私钥由 credential.rs 加密落盘）
+    /// 公共 Vault 凭证引用；为空时密码/私钥由 credential.rs 加密落盘
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) secret_ref: Option<String>,
     /// 备注

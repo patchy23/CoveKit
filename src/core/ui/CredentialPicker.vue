@@ -4,7 +4,7 @@
  * 按 kind 过滤列出凭证库条目（显示名称 + 掩码摘要），末尾「+ 新建凭证」内嵌
  * CredentialForm，保存成功后自动选中。空串值 = 未选择（工具可据此回退手填）。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import UiSelect from './UiSelect.vue'
 import type { CredentialKind, CredentialSummary } from '@/core/ipc/contracts'
 import { ipc } from '@/core/ipc/ipc'
@@ -54,6 +54,7 @@ async function reload() {
 }
 
 onMounted(reload)
+watch(() => props.kind, reload)
 
 function onSelect(value: string) {
   if (value === CREATE_VALUE) {

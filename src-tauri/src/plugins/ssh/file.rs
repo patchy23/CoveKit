@@ -12,10 +12,15 @@ use crate::plugins::ssh::models::{
     FileListResult, FileTransferProgress, RemoteFile, SshActionResult,
 };
 
+/// 递归上传前展开的单个本地文件或目录。
 struct LocalUploadEntry {
+    /// 本地绝对或用户选择路径。
     local_path: PathBuf,
+    /// 对应的远程目标路径。
     remote_path: String,
+    /// 是否为目录。
     is_dir: bool,
+    /// 文件字节数；目录为 0。
     size: u64,
 }
 
@@ -88,6 +93,7 @@ fn collect_upload_entries(
     Ok(entries)
 }
 
+/// 用 POSIX 分隔符把相对本地路径拼接到远程根路径。
 fn join_remote_path(root: &str, relative: &Path) -> String {
     relative
         .components()

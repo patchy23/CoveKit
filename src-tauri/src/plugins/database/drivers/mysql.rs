@@ -8,6 +8,7 @@ use mysql_async::Value as MysqlValue;
 
 use crate::plugins::database::models::{ConnConfig, QueryResult};
 
+/// 按连接配置创建并预检 MySQL / PolarDB 连接池。
 pub(crate) async fn mysql_pool(
     config: &ConnConfig,
     password: &str,

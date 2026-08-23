@@ -17,6 +17,9 @@ pub struct ProviderConfig {
     pub id: String,
     /// 密钥（AccessKeySecret / Token）
     pub key: String,
+    /// 公共 Vault 凭证 id；为空时继续使用上面的手工密钥
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_ref: Option<String>,
 }
 
 /// DNS 插件全局配置（两平台密钥）

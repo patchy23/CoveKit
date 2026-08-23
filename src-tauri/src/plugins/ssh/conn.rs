@@ -16,6 +16,7 @@ use std::{
 use russh::{client, ChannelMsg};
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use crate::framework::vault::{self, Credential, CredentialFields};
 use crate::plugins::ssh::models::{
     AuthMethod, ConnectionStatus, ServerConnection, ServerProfile, SshActionResult,
     SshConnectPayload,
@@ -248,6 +249,90 @@ pub(crate) async fn open_session(
     Ok(std::sync::Arc::new(session))
 }
 
+/// 已解析的 SSH 连接参数。Vault 路径在 Rust 内取出明文，避免秘密经 IPC 返回前端。
+struct ResolvedConnectPayload {
+    /// 解析后实际用于认证的服务器配置（Vault 用户名会覆盖展示值）。
+    profile: ServerProfile,
+    /// 密码认证秘密。
+    password: Option<String>,
+    /// OpenSSH 私钥原文。
+    private_key: Option<String>,
+    /// 加密私钥的可选口令。
+    passphrase: Option<String>,
+}
+
+/// 将 Vault 凭据映射为 SSH 认证参数；凭据中的用户名优先于 profile 展示值。
+fn apply_vault_credential(
+    mut profile: ServerProfile,
+    credential: Credential,
+) -> Result<ResolvedConnectPayload, String> {
+    match (profile.auth_method, credential.fields) {
+        (AuthMethod::Password, CredentialFields::Password { username, password }) => {
+            profile.username = username;
+            Ok(ResolvedConnectPayload {
+                profile,
+                password: Some(password),
+                private_key: None,
+                passphrase: None,
+            })
+        }
+        (
+            AuthMethod::PrivateKey | AuthMethod::PrivateKeyWithPassphrase,
+            CredentialFields::SshKey {
+                username,
+                private_key,
+                passphrase,
+            },
+        ) => {
+            if profile.auth_method == AuthMethod::PrivateKeyWithPassphrase
+                && passphrase.as_deref().unwrap_or_default().is_empty()
+            {
+                return Err("所选 SSH 私钥凭证缺少 Passphrase".into());
+            }
+            profile.username = username;
+            Ok(ResolvedConnectPayload {
+                profile,
+                password: None,
+                private_key: Some(private_key),
+                passphrase,
+            })
+        }
+        (AuthMethod::Password, _) => Err("所选 Vault 凭证不是“用户名密码”类型".into()),
+        (AuthMethod::PrivateKey | AuthMethod::PrivateKeyWithPassphrase, _) => {
+            Err("所选 Vault 凭证不是“SSH 私钥”类型".into())
+        }
+    }
+}
+
+/// 解析连接载荷：有 secretRef 时优先走公共 Vault，否则保留原手工凭据路径。
+fn resolve_connect_payload(
+    app: &AppHandle,
+    payload: SshConnectPayload,
+) -> Result<ResolvedConnectPayload, String> {
+    let SshConnectPayload {
+        profile,
+        password,
+        private_key,
+        passphrase,
+    } = payload;
+    if let Some(secret_ref) = profile
+        .secret_ref
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+    {
+        let credential =
+            vault::resolve(app, secret_ref).map_err(|e| format!("SSH Vault 凭据读取失败: {e}"))?;
+        apply_vault_credential(profile, credential)
+    } else {
+        Ok(ResolvedConnectPayload {
+            profile,
+            password,
+            private_key,
+            passphrase,
+        })
+    }
+}
+
 /// 建立连接并登记会话（ssh_connect 命令；reconnect 复用）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn ssh_connect(
@@ -255,12 +340,13 @@ pub async fn ssh_connect(
     state: State<'_, SshState>,
     payload: SshConnectPayload,
 ) -> Result<ServerConnection, String> {
-    let profile = &payload.profile;
+    let resolved = resolve_connect_payload(&app, payload)?;
+    let profile = &resolved.profile;
     let session = open_session(
         profile,
-        payload.password.as_deref(),
-        payload.private_key.as_deref(),
-        payload.passphrase.as_deref(),
+        resolved.password.as_deref(),
+        resolved.private_key.as_deref(),
+        resolved.passphrase.as_deref(),
         app.path()
             .app_data_dir()
             .map_err(|e| e.to_string())?
@@ -360,13 +446,14 @@ pub async fn ssh_reconnect(
     payload: Option<SshConnectPayload>,
 ) -> Result<ServerConnection, String> {
     let payload = payload.ok_or("重连需要服务器配置与凭证")?;
-    let profile = payload.profile;
+    let resolved = resolve_connect_payload(&app, payload)?;
+    let profile = resolved.profile;
     // 先建立并认证新连接；失败时保留仍可用的旧连接。
     let session = open_session(
         &profile,
-        payload.password.as_deref(),
-        payload.private_key.as_deref(),
-        payload.passphrase.as_deref(),
+        resolved.password.as_deref(),
+        resolved.private_key.as_deref(),
+        resolved.passphrase.as_deref(),
         app.path()
             .app_data_dir()
             .map_err(|e| e.to_string())?
@@ -436,7 +523,37 @@ pub async fn ssh_connections(state: State<'_, SshState>) -> Result<Vec<ServerCon
 mod tests {
     use std::collections::HashSet;
 
-    use super::{resource_id, shell_quote};
+    use crate::framework::vault::models::CredentialKind;
+    use crate::framework::vault::{Credential, CredentialFields};
+    use crate::plugins::ssh::models::{AuthMethod, ServerProfile};
+
+    use super::{apply_vault_credential, resource_id, shell_quote};
+
+    fn profile(auth_method: AuthMethod) -> ServerProfile {
+        ServerProfile {
+            id: "p1".into(),
+            name: "测试服务器".into(),
+            host: "127.0.0.1".into(),
+            port: 22,
+            username: "manual-user".into(),
+            auth_method,
+            secret_ref: Some("vault-1".into()),
+            remark: None,
+            last_connected_at: None,
+        }
+    }
+
+    fn credential(kind: CredentialKind, fields: CredentialFields) -> Credential {
+        Credential {
+            id: "vault-1".into(),
+            name: "测试凭据".into(),
+            kind,
+            fields,
+            note: String::new(),
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
 
     #[test]
     fn shell_quote_keeps_single_quotes() {
@@ -453,5 +570,39 @@ mod tests {
             .map(|_| resource_id("test"))
             .collect::<HashSet<_>>();
         assert_eq!(ids.len(), 1000);
+    }
+
+    #[test]
+    fn vault_password_overrides_profile_username() {
+        let resolved = apply_vault_credential(
+            profile(AuthMethod::Password),
+            credential(
+                CredentialKind::Password,
+                CredentialFields::Password {
+                    username: "vault-user".into(),
+                    password: "secret".into(),
+                },
+            ),
+        )
+        .unwrap();
+        assert_eq!(resolved.profile.username, "vault-user");
+        assert_eq!(resolved.password.as_deref(), Some("secret"));
+        assert!(resolved.private_key.is_none());
+    }
+
+    #[test]
+    fn vault_auth_type_must_match_profile() {
+        let result = apply_vault_credential(
+            profile(AuthMethod::Password),
+            credential(
+                CredentialKind::SshKey,
+                CredentialFields::SshKey {
+                    username: "root".into(),
+                    private_key: "key".into(),
+                    passphrase: None,
+                },
+            ),
+        );
+        assert!(result.is_err());
     }
 }

@@ -3,9 +3,18 @@
  * ServerForm · 添加/编辑服务器弹窗
  * 表单：名称 / host / port / 用户名 / 认证方式 / 密码/密钥 / 备注
  */
-import { reactive, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
+import type { CredentialKind } from '@/core/ipc/contracts'
 import type { ServerProfile, AuthMethod } from './contracts'
-import { UiButton, UiField, UiInput, UiModal, UiSelect as Select, UiTextarea } from '@/core/ui'
+import {
+  CredentialPicker,
+  UiButton,
+  UiField,
+  UiInput,
+  UiModal,
+  UiSelect as Select,
+  UiTextarea,
+} from '@/core/ui'
 
 const props = defineProps<{
   profile: ServerProfile | null
@@ -28,6 +37,7 @@ const form = reactive({
   port: 22,
   username: '',
   authMethod: 'password' as AuthMethod,
+  secretRef: '',
   password: '',
   privateKey: '',
   passphrase: '',
@@ -48,6 +58,7 @@ watch(
       form.port = p.port
       form.username = p.username
       form.authMethod = p.authMethod
+      form.secretRef = p.secretRef ?? ''
       form.remark = p.remark ?? ''
     } else {
       form.id = ''
@@ -56,11 +67,23 @@ watch(
       form.port = 22
       form.username = ''
       form.authMethod = 'password'
+      form.secretRef = ''
       form.remark = ''
     }
   },
   { immediate: true }
 )
+
+/** 当前认证方式允许选择的公共 Vault 凭证类型。 */
+const credentialKind = computed<CredentialKind>(() =>
+  form.authMethod === 'password' ? 'password' : 'ssh-key'
+)
+
+function changeAuthMethod(value: string) {
+  form.authMethod = value as AuthMethod
+  // 不同认证方式的 Vault 类型不兼容，切换后要求重新选择。
+  form.secretRef = ''
+}
 
 function submit() {
   // 必填校验：名称/主机/用户名任一为空则提示并中止（UI-014）
@@ -87,6 +110,7 @@ function submit() {
     port: form.port,
     username: form.username.trim(),
     authMethod: form.authMethod,
+    secretRef: form.secretRef || undefined,
     remark: form.remark.trim() || undefined,
     lastConnectedAt: props.profile?.lastConnectedAt,
   }
@@ -131,15 +155,26 @@ function submit() {
             { value: 'privateKey', label: '私钥' },
             { value: 'privateKeyWithPassphrase', label: '私钥 + Passphrase' },
           ]"
-          @update:model-value="form.authMethod = $event as AuthMethod"
+          @update:model-value="changeAuthMethod"
         />
       </UiField>
 
-      <UiField v-if="form.authMethod === 'password'" label="密码">
+      <UiField
+        label="凭证库（可选）"
+        description="选择后由后端直接读取凭证，凭证中的用户名会覆盖上方用户名；清空选择即可继续使用手工输入。"
+      >
+        <CredentialPicker
+          v-model="form.secretRef"
+          :kind="credentialKind"
+          :placeholder="credentialKind === 'password' ? '选择用户名密码凭证' : '选择 SSH 私钥凭证'"
+        />
+      </UiField>
+
+      <UiField v-if="form.authMethod === 'password'" label="手工密码（可选）">
         <UiInput v-model="form.password" type="password" />
       </UiField>
 
-      <UiField v-if="form.authMethod !== 'password'" label="私钥内容">
+      <UiField v-if="form.authMethod !== 'password'" label="手工私钥内容（可选）">
         <UiTextarea
           v-model="form.privateKey"
           class="font-mono text-body-sm"
@@ -148,7 +183,10 @@ function submit() {
         />
       </UiField>
 
-      <UiField v-if="form.authMethod === 'privateKeyWithPassphrase'" label="Passphrase">
+      <UiField
+        v-if="form.authMethod === 'privateKeyWithPassphrase'"
+        label="手工 Passphrase（可选）"
+      >
         <UiInput v-model="form.passphrase" type="password" />
       </UiField>
 

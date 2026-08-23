@@ -1,7 +1,7 @@
 # patchyBox · 项目简报（AGENTS.md）
 
 > 本文件在会话打开 `G:\workspace\patchyBox` 时自动注入，先读它再动手。
-> 设计阶段已完成（2026-08-02）；**M0/M1 已完成（2026-08-02）**，当前目标：**M2 第二批 I（HTTP/WS 调试、SQLite 数据库、hosts 修改 + 轻量工具）**。
+> 设计阶段已完成（2026-08-02）；**M0–M2 已完成，M3 主体已落地**，当前目标：**M3 收尾（Cloudflare）与 M4 发布准备**。
 
 ## 项目是什么
 
@@ -9,7 +9,7 @@
 
 ## 交付路线（两批次）
 
-- **第一批（当前目标）**：整体 UI 框架 + 后端框架 + **8 个常用文本小工具**（JSON 格式化 / 时间戳转换 / Base64 编解码 / URL 编解码 / 字符统计 / 文本对比 / Markdown 预览 / 正则测试）
+- **第一批（已完成）**：整体 UI 框架 + 后端框架 + 常用文本工具
 - **第二批**：复杂工具——HTTP/WS 调试、数据库（MySQL/PG/SQLite）、本地 hosts 修改、DNS 管理（阿里/腾讯/CF）、SSH 工具
 
 **铁律：第二批的工具形态（大工作区、长连接、凭据、提权）必须在第一批框架里预留抽象，第二批只填实现不改框架。** 第一批代码对第二批"只增不改"。
@@ -20,7 +20,7 @@
 - 前端：**Vue 3.5 + TypeScript + Vite + Tailwind CSS 4 + Pinia** + fuse.js（搜索）+ vue-i18n（zh-CN 默认）
 - 公共 UI 采用 **shadcn-vue 源码模式 + Reka UI 无样式原语**，业务仅从 `src/core/ui` 使用 `Ui*`；tokens 仍以根目录 `DESIGN.md` 为**单一事实源**，禁止引入第三方默认皮肤
 - 明确禁用 `tauri-plugin-shell`
-- 第二批技术预备（**第一批不引入依赖**，只留架构边界）：reqwest + tokio-tungstenite（HTTP/WS）、sqlx（DB 三方言）、russh 或 ssh2（SSH，M3 再定）、tauri-plugin-stronghold（凭据加密）、hosts 按需提权助手（UAC）
+- 第二批实际实现：reqwest + tokio-tungstenite（HTTP/WS）、多驱动数据库 Adapter、russh（SSH）、系统 keyring + AES-256-GCM（凭据）、hosts 按需提权助手（UAC）；Stronghold 因调试态快照性能与迁移成本已弃用
 
 ## 架构核心（详见 docs/02-architecture.md）
 
@@ -63,24 +63,26 @@
 2. 应用 identifier：默认 `com.patchy23.patchybox`（tauri.conf.json）
 3. 关窗行为：默认**最小化到托盘**
 4. 剪贴板隐私：默认仅忽略列表，不做启发式过滤
-5. 第二批凭据：默认 **stronghold**（备选 Windows Credential Manager / keyring）
+5. 第二批凭据：已定 **系统 keyring 保存主密钥 + AES-256-GCM 加密凭据文件**；Stronghold 已弃用
 6. hosts 提权：默认**按需提权助手**（UAC 最小授权），应用本体不常驻管理员
 
-## 下一步：M3 第二批 II（新会话任务）
+## 下一步：M3 收尾与 M4 发布准备
 
-**M2 已全部完成（2026-08-02，共 17 个工具，验收全绿）**：轻量工具 4 + 剪贴板历史 + 快捷键改键 + HTTP/WS 调试 + SQLite 数据库 + hosts 修改。
+截至 2026-08-23：
 
-M3 按 docs/02-architecture.md §10 推进：
+1. **数据库工作台主体已完成**：MySQL、PostgreSQL、SQLite、Redis、Oracle、PolarDB、Vastbase、Kingbase 已接入；达梦仅保留 UI 入口。
+2. **DNS 主体已完成**：DNS 查询、阿里云、腾讯云 DNSPod 可用；Cloudflare Adapter 尚未接入。阿里/腾讯均可选择公共 Vault 的 AccessKey 对，也保留原手工密钥输入与 `dns.db` 存储。
+3. **SSH 主体已完成**：russh 会话、终端、SFTP/远程编辑、监控、进程、systemd、Docker 管理均已落地；连接可选择公共 Vault 的用户名密码/SSH 私钥，也保留插件私有 AES 手工凭据。
+4. **公共 Vault 已完成**：系统 keyring 保存主密钥，AES-256-GCM 保存凭据本体，并支持 Argon2id 加密备份；数据库、SSH、DNS 均已接入可选引用。
+5. **M4 待办**：英文语言包、自动更新、代码签名与发布候选版验证。
 
-1. **数据库扩展**：MySQL/PG 连接（复用 `modules/db`，sqlx 三方言 Adapter）
-2. **DNS 管理**：✅ 已完成（2026-08-08，见下方实现记录）
-3. **SSH 工具**：russh 或 ssh2（M3 再定），`modules/ssh`
-4. **凭据加密**：tauri-plugin-stronghold（连接凭据落盘保护）——**DNS 插件密钥当前明文存 dns.db，接入 stronghold 时迁移**
-5. **i18n / 发布准备**：英文语言包、自动更新、代码签名
+### M3 进展记录（2026-08-08 起）
 
-### M3 已完成记录（2026-08-08）
+- **数据库工具**：`plugins/database` 已演进为多连接工作台，支持对象树、SQL 编辑/格式化/语句级执行、查询取消、数据与结构页签、建库建表及表维护；原生驱动与 agent 侧车统一走 Adapter 边界。
+- **SSH 工具**：`plugins/ssh` 使用 russh，覆盖连接配置、主机密钥校验、PTY 终端、SFTP、远程编辑、文件传输、资源监控、进程、systemd 服务和 Docker 管理；认证支持公共 Vault 可选引用与原手工输入双路径；真实服务器集成测试默认 `#[ignore]`，通过 `SSH_TEST_*` 环境变量手动运行。
+- **公共 Vault**：`framework/vault` 提供凭证 CRUD、脱敏摘要、导入导出和加密备份；主密钥优先存系统 keyring，不可用时回退本地密钥文件并告警。数据库旧 Stronghold/AES 存储已迁移到公共凭证命名空间。
 
-- **DNS 工具**：`plugins/dns`（Rust `src-tauri/src/plugins/dns/`：mod.rs 门面 + models.rs + query.rs + alidns.rs + dnspod.rs）。DNS 查询用 hickory-resolver 0.26（feature `tokio`+`system-config`；**API 与旧版差异大：类型是 `TokioResolver`/`Resolver<TokioRuntimeProvider>` Builder 模式、`ResolverConfig::from_parts` 3 参、`NameServerConfig::udp(ip)`、Record 的 name/ttl/data 是公开字段、`Lookup::answers()`、TXT 用 `.txt_data` 字段**）；云解析：阿里云走 aliyun-openapi-core-rust-sdk 1.1（同参考项目 DnsAnalysisTools），腾讯云 DNSPod 走 **API 3.0（dnspod.tencentcloudapi.com，CAM SecretId/SecretKey + TC3-HMAC-SHA256 自实现签名，依赖 hmac/sha2/hex/time；参考项目用的是 tencentcloud-sdk-rs 0.1，dnspod.cn 老 Token API 已弃用为备选）**；**TC3 签名单测与官方 Python SDK（sign_tc3）交叉验证**。8 命令 dns_query/dns_domains/dns_records/dns_add_record/dns_update_record/dns_delete_record/dns_config_get/dns_config_set 全量入库；add/update 用 payload 结构体打包（规避 clippy too_many_arguments）；密钥存 dns.db（PluginDb）明文。前端 plugins/dns/：三页签（DNS 查询/解析管理/密钥设置），查询面板多服务器对比 + 自定义服务器，解析管理两段式删除确认 + 行内表单 + 分页；recordTypeBadgeClass 色标在 useDns.ts。**dnsapi.cn 的 status.code 是字符串（as_i64 会解析失败误判成功为失败），腾讯云错误统一在 Response.Error**。
+- **DNS 工具**：`plugins/dns`（Rust `src-tauri/src/plugins/dns/`：mod.rs 门面 + models.rs + query.rs + alidns.rs + dnspod.rs）。DNS 查询用 hickory-resolver 0.26（feature `tokio`+`system-config`；**API 与旧版差异大：类型是 `TokioResolver`/`Resolver<TokioRuntimeProvider>` Builder 模式、`ResolverConfig::from_parts` 3 参、`NameServerConfig::udp(ip)`、Record 的 name/ttl/data 是公开字段、`Lookup::answers()`、TXT 用 `.txt_data` 字段**）；云解析：阿里云走 aliyun-openapi-core-rust-sdk 1.1（同参考项目 DnsAnalysisTools），腾讯云 DNSPod 走 **API 3.0（dnspod.tencentcloudapi.com，CAM SecretId/SecretKey + TC3-HMAC-SHA256 自实现签名，依赖 hmac/sha2/hex/time；参考项目用的是 tencentcloud-sdk-rs 0.1，dnspod.cn 老 Token API 已弃用为备选）**；**TC3 签名单测与官方 Python SDK（sign_tc3）交叉验证**。8 命令 dns_query/dns_domains/dns_records/dns_add_record/dns_update_record/dns_delete_record/dns_config_get/dns_config_set 全量入库；add/update 用 payload 结构体打包（规避 clippy too_many_arguments）；配置支持公共 Vault AccessKey 对或原手工密钥双路径，手工密钥继续存 `dns.db`。前端 plugins/dns/：三页签（DNS 查询/解析管理/密钥设置），查询面板多服务器对比 + 自定义服务器，解析管理两段式删除确认 + 行内表单 + 分页；recordTypeBadgeClass 色标在 useDns.ts。**dnsapi.cn 的 status.code 是字符串（as_i64 会解析失败误判成功为失败），腾讯云错误统一在 Response.Error**。
 
 ### M2 已完成记录（2026-08-02）
 

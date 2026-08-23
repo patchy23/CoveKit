@@ -22,7 +22,10 @@ export interface SplitPaneOptions {
  * @param vertical true=水平分隔条（上下分栏，用 clientY）；false=垂直分隔条（左右分栏，用 clientX）
  * @param getMax 可选动态上限（如容器剩余高度），mousedown 时读取
  */
-export function useSplitPane({ initial, min, max, reverse = false }: SplitPaneOptions, vertical = false) {
+export function useSplitPane(
+  { initial, min, max, reverse = false }: SplitPaneOptions,
+  vertical = false
+) {
   const size = ref(initial)
   let dragging = false
 

@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use crate::plugins::database::models::{ConnConfig, QueryResult};
 
+/// 按连接配置创建并预检 PostgreSQL 连接池，按需启用 TLS。
 pub(crate) async fn pg_pool(
     config: &ConnConfig,
     password: &str,

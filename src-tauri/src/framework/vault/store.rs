@@ -569,7 +569,7 @@ mod tests {
             created_at: now,
             updated_at: now,
         };
-        write_all_at(&dir, &store, &[credential.clone()]).unwrap();
+        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
         assert_eq!(read_all_at(&dir, &store).unwrap(), vec![credential]);
 
         // 损坏 vault.dat（内容过短）→ 报错不 panic

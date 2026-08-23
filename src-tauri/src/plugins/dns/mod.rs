@@ -1,7 +1,7 @@
 //! DNS 插件 · 门面
 //! 能力一：DNS 查询（query.rs，hickory-resolver，支持指定服务器/多服务器对比）
 //! 能力二：云解析管理（alidns.rs 阿里云 / dnspod.rs 腾讯云 DNSPod API 3.0）
-//! 配置：dns.db（PluginDb 统一骨架）存两平台密钥（M3 stronghold 加密升级，当前明文）
+//! 配置：dns.db 保存手工密钥与可选 Vault 引用；Vault 引用存在时由 Rust 后端解析并优先使用
 
 mod alidns;
 mod dnspod;
@@ -13,12 +13,13 @@ use std::sync::Mutex;
 use tauri::{AppHandle, State};
 
 use crate::framework::store::PluginDb;
+use crate::framework::vault::{self, Credential, CredentialFields};
 use models::{DnsConfig, DomainList, RecordList, ServerQueryResult};
 
 /// DNS 插件数据库（惰性打开：首次命令时 open + 迁移）
 pub struct DnsState(pub Mutex<Option<PluginDb>>);
 
-/// 数据表迁移（只追加；v1 = 云平台密钥配置表）
+/// 数据表迁移（只追加；v1 = 云平台密钥配置表，v2 = 公共 Vault 引用）
 const MIGRATIONS: &[&str] = &[
     // 云平台密钥（platform 主键，两行：aliyun / dnspod）
     "CREATE TABLE IF NOT EXISTS dns_config (
@@ -26,6 +27,7 @@ const MIGRATIONS: &[&str] = &[
         id TEXT NOT NULL DEFAULT '',
         key TEXT NOT NULL DEFAULT ''
     );",
+    "ALTER TABLE dns_config ADD COLUMN credential_ref TEXT;",
 ];
 
 /// 获取数据库连接（首次自动打开 + 迁移；锁内同步使用，不跨 await）
@@ -48,7 +50,7 @@ fn load_config(app: &AppHandle, state: &State<'_, DnsState>) -> Result<DnsConfig
         let mut cfg = DnsConfig::default();
         // 逐行读取密钥表，按 platform 归位
         let mut stmt = c
-            .prepare("SELECT platform, id, key FROM dns_config")
+            .prepare("SELECT platform, id, key, credential_ref FROM dns_config")
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |r| {
@@ -56,22 +58,81 @@ fn load_config(app: &AppHandle, state: &State<'_, DnsState>) -> Result<DnsConfig
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
                     r.get::<_, String>(2)?,
+                    r.get::<_, Option<String>>(3)?,
                 ))
             })
             .map_err(|e| e.to_string())?;
         for row in rows {
-            let (platform, id, key) = row.map_err(|e| e.to_string())?;
+            let (platform, id, key, credential_ref) = row.map_err(|e| e.to_string())?;
             match platform.as_str() {
                 models::PLATFORM_ALIYUN => {
-                    cfg.aliyun = models::ProviderConfig { id, key };
+                    cfg.aliyun = models::ProviderConfig {
+                        id,
+                        key,
+                        credential_ref,
+                    };
                 }
                 models::PLATFORM_DNSPOD => {
-                    cfg.dnspod = models::ProviderConfig { id, key };
+                    cfg.dnspod = models::ProviderConfig {
+                        id,
+                        key,
+                        credential_ref,
+                    };
                 }
                 _ => {}
             }
         }
         Ok(cfg)
+    })
+}
+
+/// 将公共 Vault 的 AccessKey 对映射为云平台配置。
+fn apply_vault_credential(
+    mut config: models::ProviderConfig,
+    credential: Credential,
+    platform_label: &str,
+) -> Result<models::ProviderConfig, String> {
+    let CredentialFields::AccessKeyPair {
+        access_key_id,
+        access_key_secret,
+    } = credential.fields
+    else {
+        return Err(format!(
+            "{platform_label} 所选 Vault 凭证不是“AccessKey 对”类型"
+        ));
+    };
+    config.id = access_key_id;
+    config.key = access_key_secret;
+    Ok(config)
+}
+
+/// 解析单个平台的有效配置：有 credentialRef 时优先使用 Vault，否则保留手工输入。
+fn resolve_provider_config(
+    app: &AppHandle,
+    config: models::ProviderConfig,
+    platform_label: &str,
+) -> Result<models::ProviderConfig, String> {
+    let Some(credential_ref) = config
+        .credential_ref
+        .as_deref()
+        .filter(|id| !id.trim().is_empty())
+    else {
+        return Ok(config);
+    };
+    let credential = vault::resolve(app, credential_ref)
+        .map_err(|e| format!("{platform_label} Vault 凭据读取失败: {e}"))?;
+    apply_vault_credential(config, credential, platform_label)
+}
+
+/// 云 API 使用的有效配置；Vault 明文只在 Rust 内存在，不经配置 IPC 返回。
+fn load_effective_config(
+    app: &AppHandle,
+    state: &State<'_, DnsState>,
+) -> Result<DnsConfig, String> {
+    let config = load_config(app, state)?;
+    Ok(DnsConfig {
+        aliyun: resolve_provider_config(app, config.aliyun, "阿里云")?,
+        dnspod: resolve_provider_config(app, config.dnspod, "腾讯云 DNSPod")?,
     })
 }
 
@@ -93,18 +154,17 @@ pub fn dns_config_set(
     let guard = db(&app, &state)?;
     let conn = guard.as_ref().unwrap();
     conn.with_conn(|c| {
-        c.execute(
-            "INSERT INTO dns_config (platform, id, key) VALUES ('aliyun', ?1, ?2)
-             ON CONFLICT(platform) DO UPDATE SET id = ?1, key = ?2",
-            rusqlite::params![config.aliyun.id, config.aliyun.key],
-        )
-        .map_err(|e| e.to_string())?;
-        c.execute(
-            "INSERT INTO dns_config (platform, id, key) VALUES ('dnspod', ?1, ?2)
-             ON CONFLICT(platform) DO UPDATE SET id = ?1, key = ?2",
-            rusqlite::params![config.dnspod.id, config.dnspod.key],
-        )
-        .map_err(|e| e.to_string())?;
+        for (platform, provider) in [
+            (models::PLATFORM_ALIYUN, config.aliyun),
+            (models::PLATFORM_DNSPOD, config.dnspod),
+        ] {
+            c.execute(
+                "INSERT INTO dns_config (platform, id, key, credential_ref) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(platform) DO UPDATE SET id = ?2, key = ?3, credential_ref = ?4",
+                rusqlite::params![platform, provider.id, provider.key, provider.credential_ref],
+            )
+            .map_err(|e| e.to_string())?;
+        }
         Ok(())
     })
 }
@@ -152,7 +212,7 @@ pub async fn dns_domains(
     state: State<'_, DnsState>,
     platform: String,
 ) -> Result<DomainList, String> {
-    let cfg = load_config(&app, &state)?;
+    let cfg = load_effective_config(&app, &state)?;
     match platform.as_str() {
         models::PLATFORM_ALIYUN => alidns::AliyunDns::new(&cfg.aliyun)?.get_domains().await,
         models::PLATFORM_DNSPOD => dnspod::TencentDns::new(&cfg.dnspod)?.get_domains().await,
@@ -171,7 +231,7 @@ pub async fn dns_records(
     size: u32,
     keyword: String,
 ) -> Result<RecordList, String> {
-    let cfg = load_config(&app, &state)?;
+    let cfg = load_effective_config(&app, &state)?;
     match platform.as_str() {
         models::PLATFORM_ALIYUN => {
             alidns::AliyunDns::new(&cfg.aliyun)?
@@ -197,7 +257,7 @@ pub async fn dns_add_record(
     if payload.rr.trim().is_empty() || payload.value.trim().is_empty() {
         return Err("主机记录与记录值不能为空".into());
     }
-    let cfg = load_config(&app, &state)?;
+    let cfg = load_effective_config(&app, &state)?;
     match payload.platform.as_str() {
         models::PLATFORM_ALIYUN => {
             alidns::AliyunDns::new(&cfg.aliyun)?
@@ -232,7 +292,7 @@ pub async fn dns_update_record(
     state: State<'_, DnsState>,
     payload: models::UpdateRecordPayload,
 ) -> Result<(), String> {
-    let cfg = load_config(&app, &state)?;
+    let cfg = load_effective_config(&app, &state)?;
     match payload.platform.as_str() {
         models::PLATFORM_ALIYUN => {
             alidns::AliyunDns::new(&cfg.aliyun)?
@@ -271,7 +331,7 @@ pub async fn dns_delete_record(
     domain: String,
     record_id: String,
 ) -> Result<(), String> {
-    let cfg = load_config(&app, &state)?;
+    let cfg = load_effective_config(&app, &state)?;
     match platform.as_str() {
         models::PLATFORM_ALIYUN => {
             alidns::AliyunDns::new(&cfg.aliyun)?
@@ -316,4 +376,61 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     ])
     .expect("IPC 命令重复注册");
     builder.manage(DnsState(Mutex::new(None)))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::framework::vault::{Credential, CredentialFields};
+
+    use super::{apply_vault_credential, models::ProviderConfig};
+
+    fn credential(fields: CredentialFields) -> Credential {
+        Credential {
+            id: "vault-dns".into(),
+            name: "云解析密钥".into(),
+            kind: fields.kind(),
+            fields,
+            note: String::new(),
+            created_at: 1,
+            updated_at: 1,
+        }
+    }
+
+    #[test]
+    fn vault_access_key_overrides_manual_values() {
+        let config = ProviderConfig {
+            id: "manual-id".into(),
+            key: "manual-key".into(),
+            credential_ref: Some("vault-dns".into()),
+        };
+        let resolved = apply_vault_credential(
+            config,
+            credential(CredentialFields::AccessKeyPair {
+                access_key_id: "vault-id".into(),
+                access_key_secret: "vault-key".into(),
+            }),
+            "阿里云",
+        )
+        .unwrap();
+        assert_eq!(resolved.id, "vault-id");
+        assert_eq!(resolved.key, "vault-key");
+        assert_eq!(resolved.credential_ref.as_deref(), Some("vault-dns"));
+    }
+
+    #[test]
+    fn vault_dns_credential_must_be_access_key_pair() {
+        let config = ProviderConfig {
+            id: String::new(),
+            key: String::new(),
+            credential_ref: Some("vault-dns".into()),
+        };
+        let result = apply_vault_credential(
+            config,
+            credential(CredentialFields::ApiToken {
+                token: "token".into(),
+            }),
+            "腾讯云 DNSPod",
+        );
+        assert!(result.is_err());
+    }
 }

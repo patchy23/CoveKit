@@ -66,12 +66,15 @@ export function useSshWorkspace() {
   ) {
     const index = profiles.value.findIndex((item) => item.id === profile.id)
     const authChanged = index < 0 || profiles.value[index].authMethod !== profile.authMethod
-    const credentialReady =
+    const switchedFromVault =
+      index >= 0 && Boolean(profiles.value[index].secretRef) && !profile.secretRef
+    const manualCredentialReady =
       profile.authMethod === 'password'
         ? Boolean(credentials.password)
         : Boolean(credentials.privateKey) &&
           (profile.authMethod !== 'privateKeyWithPassphrase' || Boolean(credentials.passphrase))
-    if (authChanged && !credentialReady) {
+    const credentialReady = Boolean(profile.secretRef) || manualCredentialReady
+    if ((authChanged || switchedFromVault) && !credentialReady) {
       ui.toast('新增服务器或切换认证方式时必须填写完整凭证')
       return
     }
@@ -139,7 +142,7 @@ export function useSshWorkspace() {
     if (!profile) return undefined
     activeProfileId.value = profileId
     try {
-      const credentials = await ipc.sshCredentialGet(profileId)
+      const credentials = profile.secretRef ? {} : await ipc.sshCredentialGet(profileId)
       const request = ipc.sshConnect({
         profile,
         password: credentials.password,
@@ -196,7 +199,7 @@ export function useSshWorkspace() {
     const disconnected = workspace.connection
     workspace.connection = { ...disconnected, status: 'reconnecting', error: undefined }
     try {
-      const credentials = await ipc.sshCredentialGet(profile.id)
+      const credentials = profile.secretRef ? {} : await ipc.sshCredentialGet(profile.id)
       const connection = await ipc.sshReconnect(disconnected.sessionId, {
         profile,
         password: credentials.password,

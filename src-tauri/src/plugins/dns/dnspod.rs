@@ -438,6 +438,7 @@ mod tests {
         let dns = TencentDns::new(&ProviderConfig {
             id: "AKIDinvalid".into(),
             key: "invalidsecret".into(),
+            credential_ref: None,
         })
         .unwrap();
         let err = dns.get_domains().await.unwrap_err();

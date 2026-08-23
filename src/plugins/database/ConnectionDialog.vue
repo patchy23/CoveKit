@@ -6,7 +6,15 @@
  */
 import { computed, reactive, ref, watch } from 'vue'
 import { UiAlert, UiButton, UiInput, UiModal, UiSpinner, UiSwitch } from '@/core/ui'
-import { DB_TYPE_META, DB_TYPE_OPTIONS, DEFAULT_PORT, defaultDatabaseFor, isFileType, isUnsupportedType, type V2DbType } from './useDatabaseMeta'
+import {
+  DB_TYPE_META,
+  DB_TYPE_OPTIONS,
+  DEFAULT_PORT,
+  defaultDatabaseFor,
+  isFileType,
+  isUnsupportedType,
+  type V2DbType,
+} from './useDatabaseMeta'
 
 const props = defineProps<{
   open: boolean
@@ -161,17 +169,26 @@ async function onSave() {
 
       <div class="grid grid-cols-2 gap-[8px]">
         <div>
-          <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">连接名称</label>
+          <label
+            class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
+            >连接名称</label
+          >
           <UiInput v-model="form.label" size="sm" placeholder="例如：开发 · PG 主库" />
         </div>
         <div>
-          <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">环境</label>
+          <label
+            class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
+            >环境</label
+          >
           <UiInput v-model="form.env" size="sm" placeholder="开发" />
         </div>
       </div>
 
       <div>
-        <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">数据库类型</label>
+        <label
+          class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
+          >数据库类型</label
+        >
         <div class="grid grid-cols-3 gap-[6px]">
           <UiButton
             v-for="item in DB_TYPE_OPTIONS"
@@ -192,21 +209,33 @@ async function onSave() {
       <template v-if="!fileType">
         <div class="grid grid-cols-[1fr_96px] gap-[8px]">
           <div>
-            <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">主机</label>
+            <label
+              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
+              >主机</label
+            >
             <UiInput v-model="form.host" size="sm" placeholder="127.0.0.1" />
           </div>
           <div>
-            <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">端口</label>
+            <label
+              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
+              >端口</label
+            >
             <UiInput v-model.number="form.port" size="sm" type="number" />
           </div>
         </div>
         <div class="grid grid-cols-2 gap-[8px]">
           <div>
-            <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">用户名</label>
+            <label
+              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
+              >用户名</label
+            >
             <UiInput v-model="form.username" size="sm" placeholder="patchy" />
           </div>
           <div>
-            <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">密码</label>
+            <label
+              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
+              >密码</label
+            >
             <UiInput
               v-model="form.password"
               size="sm"
@@ -217,16 +246,26 @@ async function onSave() {
         </div>
         <div class="grid grid-cols-2 gap-[8px]">
           <div>
-            <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">
+            <label
+              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
+            >
               {{ form.dbType === 'redis' ? '数据库索引（db0/db1…）' : '默认数据库' }}
             </label>
-            <UiInput v-model="form.database" size="sm" :placeholder="form.dbType === 'redis' ? 'db0' : 'patchybox'" />
+            <UiInput
+              v-model="form.database"
+              size="sm"
+              :placeholder="form.dbType === 'redis' ? 'db0' : 'patchybox'"
+            />
           </div>
           <div class="flex items-end gap-[16px] pb-[6px]">
-            <label class="flex items-center gap-[6px] text-caption text-text-muted dark:text-text-muted-dark">
+            <label
+              class="flex items-center gap-[6px] text-caption text-text-muted dark:text-text-muted-dark"
+            >
               <UiSwitch v-model="form.ssl" size="sm" /> SSL
             </label>
-            <label class="flex items-center gap-[6px] text-caption text-text-muted dark:text-text-muted-dark">
+            <label
+              class="flex items-center gap-[6px] text-caption text-text-muted dark:text-text-muted-dark"
+            >
               <UiSwitch v-model="form.readonly" size="sm" /> 只读
             </label>
           </div>
@@ -234,16 +273,27 @@ async function onSave() {
       </template>
 
       <div v-else>
-        <label class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark">SQLite 文件路径</label>
+        <label
+          class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
+          >SQLite 文件路径</label
+        >
         <div class="flex gap-[8px]">
-          <UiInput v-model="form.host" size="sm" placeholder="C:\data\app.db（不存在自动创建）" class="flex-1" />
+          <UiInput
+            v-model="form.host"
+            size="sm"
+            placeholder="C:\data\app.db（不存在自动创建）"
+            class="flex-1"
+          />
           <UiButton
             size="sm"
             variant="secondary"
             @click="
               (async () => {
                 const { open } = await import('@tauri-apps/plugin-dialog')
-                const picked = await open({ multiple: false, filters: [{ name: 'SQLite', extensions: ['db', 'sqlite', 'sqlite3'] }] })
+                const picked = await open({
+                  multiple: false,
+                  filters: [{ name: 'SQLite', extensions: ['db', 'sqlite', 'sqlite3'] }],
+                })
                 if (picked) form.host = picked
               })()
             "
@@ -259,7 +309,9 @@ async function onSave() {
           class="h-[8px] w-[8px] rounded-full"
           :class="testResult.ok ? 'bg-success-strong' : 'bg-danger-strong'"
         />
-        <span class="text-caption text-secondary dark:text-secondary-dark">{{ testResult.message }}</span>
+        <span class="text-caption text-secondary dark:text-secondary-dark">{{
+          testResult.message
+        }}</span>
       </div>
     </div>
 

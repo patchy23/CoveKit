@@ -3,7 +3,8 @@
 //! - 职责：6 个框架命令薄层（参数校验 → store/export 服务层）+ ipc_registry 入库 + register
 //! - 引用模型：插件 profile 只存 credentialId；后端解析走 crate 内 API `resolve()`（store.rs，
 //!   不做成 Tauri 命令，明文不过 IPC）；前端仅 vault_reveal 例外路径取明文
-//! - 不做：SSH/DNS 存量迁移（设计 §6）、主密码解锁、stronghold、审计日志
+//! - SSH/DNS 已支持可选 Vault 引用，同时保留原手工凭据路径
+//! - 不做：强制搬迁/删除旧凭据、主密码解锁、stronghold、审计日志
 
 mod export;
 pub mod models;
@@ -13,9 +14,7 @@ pub use models::{
     Credential, CredentialFields, CredentialSavePayload, CredentialSummary, VaultDeleteResult,
     VaultImportResult,
 };
-// crate 内解析 API：插件命令（ssh_connect / db_open 等）在 Rust 侧解析 credentialId 后直接建连。
-// 设计 §6 迁移（SSH/DB/DNS 接入）前暂无调用方，先保留导出形状。
-#[allow(unused_imports)]
+// crate 内解析 API：SSH/DNS 等插件在 Rust 侧解析 credentialId 后直接建连/调用云 API。
 pub use store::resolve;
 
 use tauri::AppHandle;
