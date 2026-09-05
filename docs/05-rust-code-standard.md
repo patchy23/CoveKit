@@ -119,3 +119,15 @@ python scripts/check_rust_rules.py
 - panic 风险与 clone 统计采用**棘轮基线**（`scripts/rust_rules_baseline.json`）：违规总数只许减不许增；整改后同步下调基线数字
 - 生命周期/unsafe 类（`Box::leak` / `unsafe` / `transmute` / `mem::forget`）**零容忍无基线**，出现即失败
 - §1 的合法例外（启动 fail-fast、可证不变量）登记在脚本的 `ALLOWLIST_PATTERNS`，新增例外须先过评审再加白名单
+
+## 附录 · 参考来源（2026-09-05 对照验证）
+
+本规范与以下社区公认标杆交叉验证过：
+
+| 来源 | 星数 | 与本规范的关系 |
+|------|------|---------------|
+| [rust-unofficial/patterns](https://github.com/rust-unofficial/patterns) | 8.9k★ | 官方反模式第一条「Clone to satisfy the borrow checker」= 本规范 §2 的原始出处；「`#[deny(warnings)]` 是反模式」印证我们用 CLI 的 `-D warnings` 而非代码内 deny 的做法正确 |
+| [rust-lang/api-guidelines](https://github.com/rust-lang/api-guidelines) | 1.3k★ | 官方 API 清单；本规范 §1 比官方更严（官方允许库代码 unwrap，我们因 IPC 直连用户而收紧），方向一致 |
+| [pretzelhammer/rust-blog](https://github.com/pretzelhammer/rust-blog) | 8.4k★ | 《Common Rust Lifetime Misconceptions》= §3 的理论依据 |
+| [google/comprehensive-rust](https://github.com/google/comprehensive-rust) | 33k★ | Google Android 团队课程，错误处理章节与 §5 一致 |
+| [rust-lang/rust-analyzer](https://github.com/rust-lang/rust-analyzer) | 16.8k★ | 其 dev 风格指南的锁与异步纪律 = §4 出处 |
