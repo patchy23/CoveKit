@@ -42,6 +42,7 @@
 | `docs/01-tech-stack.md`                            | 技术选型 + 第二批技术预备评估                                    |
 | `docs/02-architecture.md`                          | 两批次详细设计：架构 / 注册表 / IPC / 安全 / 路线图 M0–M4        |
 | `docs/03-plugin-development.md`                    | **插件开发规则 v1（2026-08-08）：IPC 接口入库 / 数据库管理 / 复杂工具架构 / 质量门槛 / 新增插件 Check-list** |
+| `docs/05-rust-code-standard.md`                    | **Rust 代码规范 v1（2026-09-05）：panic 控制 / clone 纪律 / 生命周期零容忍；提交前跑 `scripts/check_rust_rules.py`（棘轮基线只减不增）** |
 | `sketches/002-clean-light/`                        | 已采纳方向的**可交互原型**，开发验收视觉参照                     |
 | `sketches/001-command-dark/` `003-glass-launcher/` | 未采纳方向，留档勿删                                             |
 
