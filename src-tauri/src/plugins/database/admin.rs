@@ -214,7 +214,8 @@ pub async fn dbc_create_database(
                 label: "创建数据库".to_string(),
                 sql,
                 ok: false,
-                error: Some(e.clone()),
+                // e 之后不再使用，直接移动（规范 §2：不 clone 只用一次的值）
+                error: Some(e),
             });
             return Ok(steps);
         }

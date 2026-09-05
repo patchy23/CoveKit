@@ -476,7 +476,7 @@ pub async fn ssh_file_download(
             Ok(total)
         }
         .await;
-        let total = result.clone().unwrap_or(0);
+        let total = result.as_ref().copied().unwrap_or(0);
         let _ = app2.emit(
             "ssh://transfer-progress",
             &FileTransferProgress {

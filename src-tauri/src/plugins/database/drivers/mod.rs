@@ -116,15 +116,10 @@ impl DbSessionEntry {
             connect_timeout_ms: self.config.connect_timeout_ms,
         }
     }
-
-    /// 会话快照（agent 存活校验失败时标记离线并携带错误）
-    fn to_info_with_error(&self, error: String) -> DbConnectionInfo {
-        let mut info = self.to_info();
-        info.status = ConnStatus::Offline;
-        info.error = Some(error);
-        info
-    }
 }
+
+/// snapshot 锁内预提取的中间结构（agent 校验句柄 + 同步快照）
+type PreppedSnapshot = Vec<(Option<(Arc<AgentClient>, String)>, Option<DbConnectionInfo>)>;
 
 /// 归一化连接配置：端口缺省（0）时补默认端口（sqlite 除外），数据库为空时补默认库名
 fn normalize_config(config: &ConnConfig) -> ConnConfig {
@@ -302,28 +297,60 @@ pub async fn disconnect(
 
 /// 全量会话快照（前端连接列表刷新；agent 会话做存活校验，进程被杀时标记离线）
 pub async fn snapshot(state: &State<'_, DbState>, configs: &[ConnConfig]) -> Vec<DbConnectionInfo> {
-    let sessions = state.0.lock().map(|m| m.clone()).unwrap_or_default();
+    // 锁内做最小提取：同步算好 to_info 快照，只把 agent 校验需要的句柄拿出锁外 await
+    // （原实现整图 m.clone()：每次快照深拷贝全部会话条目，且 unwrap_or_default 静默吞锁错误）
+    let prepped: PreppedSnapshot = {
+        let map = match state.0.lock() {
+            Ok(map) => map,
+            Err(e) => {
+                eprintln!("[database] 会话注册表锁失败，快照返回空: {e}");
+                return Vec::new();
+            }
+        };
+        configs
+            .iter()
+            .map(|config| match map.get(&config.id) {
+                Some(entry) => {
+                    let agent = match &entry.session {
+                        DbSession::Agent { client, session_id } => {
+                            Some((client.clone(), session_id.clone()))
+                        }
+                        _ => None,
+                    };
+                    (agent, Some(entry.to_info()))
+                }
+                None => (None, None),
+            })
+            .collect()
+    };
     let mut out = Vec::with_capacity(configs.len());
-    for config in configs {
-        let info = match sessions.get(&config.id) {
-            Some(entry) => {
-                if let DbSession::Agent { client, session_id } = &entry.session {
+    for (config, (agent, info)) in configs.iter().zip(prepped) {
+        let info = match info {
+            Some(info) => match agent {
+                Some((client, session_id)) => {
                     let alive = tokio::time::timeout(
                         Duration::from_secs(1),
-                        client.validate_session(session_id),
+                        client.validate_session(&session_id),
                     )
                     .await;
                     match alive {
-                        Ok(Ok(())) => entry.to_info(),
-                        Ok(Err(e)) => entry.to_info_with_error(format!("agent 进程不可达：{e}")),
+                        Ok(Ok(())) => info,
+                        Ok(Err(e)) => {
+                            let mut info = info;
+                            info.status = ConnStatus::Offline;
+                            info.error = Some(format!("agent 进程不可达：{e}"));
+                            info
+                        }
                         Err(_) => {
-                            entry.to_info_with_error("agent 存活校验超时（进程可能已退出）".into())
+                            let mut info = info;
+                            info.status = ConnStatus::Offline;
+                            info.error = Some("agent 存活校验超时（进程可能已退出）".to_string());
+                            info
                         }
                     }
-                } else {
-                    entry.to_info()
                 }
-            }
+                None => info,
+            },
             None => DbConnectionInfo {
                 id: config.id.clone(),
                 label: config.label.clone(),
