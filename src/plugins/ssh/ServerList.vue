@@ -217,7 +217,7 @@ function confirmDeleteGroup() {
               :class="{ 'rotate-90': isExpanded(group.id) }"
             />
             <span
-              class="min-w-0 flex-1 truncate text-body-sm font-semibold text-primary dark:text-primary-dark"
+              class="min-w-0 flex-1 truncate text-label-caps font-semibold tracking-[0.06em] text-text-muted dark:text-text-muted-dark"
               >{{ group.name }}</span
             >
             <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
@@ -271,7 +271,7 @@ function confirmDeleteGroup() {
             :class="{ 'rotate-90': isExpanded(null) }"
           />
           <span
-            class="min-w-0 flex-1 truncate text-body-sm font-semibold text-text-muted dark:text-text-muted-dark"
+            class="min-w-0 flex-1 truncate text-label-caps font-semibold tracking-[0.06em] text-text-muted dark:text-text-muted-dark"
             >未分组</span
           >
           <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
