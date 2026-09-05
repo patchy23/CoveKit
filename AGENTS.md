@@ -24,7 +24,7 @@
 
 ## 架构核心（详见 docs/02-architecture.md）
 
-- **插件模式（2026-08-08 起，前后端同构）**：前端 `src/plugins/<id>/`（manifest 自注册 + 私有 contracts.ts/ipc.ts + 组件，插件间禁止互相 import）；公共能力走 `src/core/ui/`（组件）与 `src/core/ipc/`（框架命令 + invokeCommand 基础设施）；**Rust 侧 `src-tauri/src/plugins/<id>/` 一律目录结构**（mod.rs 门面 + models.rs + 能力子模块；命令清单由插件私有 `invoke_handler` 聚合，State 由 `register(builder)` 自注册，启动初始化走 `init(app)`）；应用级 `Builder::invoke_handler` 只能设置一次（后调用会覆盖前者），由 `plugins/mod.rs` 按前缀分派到插件 handler；lib.rs 仅保留一个总 handler 与 register/init 各一行链式装配
+- **插件模式（2026-08-08 起，前后端同构）**：前端 `src/plugins/<id>/`（manifest 自注册 + 私有 contracts.ts/ipc.ts + 组件，插件间禁止互相 import）；公共能力走 `src/core/ui/`（组件）与 `src/core/ipc/`（框架命令 + invokeCommand 基础设施）；**Rust 侧 `src-tauri/src/plugins/<id>/` 一律目录结构**（mod.rs 门面 + models.rs + 能力子模块；命令清单由插件私有 `invoke_handler` 聚合，State 由 `register(builder)` 自注册，启动初始化走 `init(app)`）；应用级 `Builder::invoke_handler` 只能设置一次（后调用会覆盖前者），由 `plugins/mod.rs` 按注册表 owner 精确路由到插件 handler（2026-09-06 起，register 带 owner 参数，validate_routing 启动 fail-fast；不再手写前缀清单）；lib.rs 仅保留一个总 handler 与 register/init 各一行链式装配
 - **框架与插件分离**：`src-tauri/src/framework/`（设置存储/全局快捷键/窗口/命令入库/数据管理）是基建不属于插件；**无实际前端引用的插件必须删除**（color/clipboard 已删，设置弹窗剪贴板区块已清）
 - **IPC 接口入库**（`framework/ipc_registry.rs`）：插件 register() 登记命令（名称+中文说明），启动校验全局唯一（重复即 panic）；框架命令 `framework_commands` 可查全量清单
 - **数据库管理规则**（`framework/store.rs`）：插件数据文件统一 `app_data_dir/<plugin>.db`（`plugin_db_path`）；表结构走 `PRAGMA user_version` 顺序迁移（`migrate`，只追加）；**本地库统一骨架 `PluginDb`**（连接生命周期 + 锁 + 迁移，插件只写业务 SQL）；连接型 sqlx（三方言 M3）不套用
@@ -66,6 +66,14 @@
 4. 剪贴板隐私：默认仅忽略列表，不做启发式过滤
 5. 第二批凭据：已定 **系统 keyring 保存主密钥 + AES-256-GCM 加密凭据文件**；Stronghold 已弃用
 6. hosts 提权：默认**按需提权助手**（UAC 最小授权），应用本体不常驻管理员
+
+## 2026-09-06 进展（本会话，其他 agent 必读）
+
+- **新公共组件**：`UiListRow`（列表行壳，侧栏行一律用它）、`UiCombobox`（可输入搜索下拉，reka Combobox 封装）、`UiTabsOverflow`+`useTabsOverflow`（页签溢出三点收纳，估算+实测反馈）；`UiIcon` 新增 plus/dots。
+- **SSH 插件**：连接分组（拖拽入组=pointer 自实现，HTML5 DnD 被 Tauri OLE 拖放吞掉，勿用）、认证方式加「凭证」档（凭证下拉在认证方式下方，选中即用凭证连接）、keepalive 30s/3 次、空闲断开默认 10 分钟（后台活动不误杀）、会话一键清理。
+- **架构变更**：插件 IPC 路由按注册表 owner 精确匹配（register 第一参数为插件 id）；`presentation` 字段与 modal 载体已删（全部工具 workspace 载体）；`formatBytes` 在 `core/format.ts`。
+- **质量门禁新增**（docs/03 §5）：check_rust_rules.py 棘轮、dev 冷启动冒烟（改 tauri.conf.json/lib.rs/Cargo.toml/权限时必跑）、CI 已含 cargo test + 棘轮。
+- **分析报告**：docs/项目分析报告.md（2026-09-06 第三方分析，整改已完成第一批）。
 
 ## 下一步：M4 发布准备
 

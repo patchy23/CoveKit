@@ -37,23 +37,18 @@
 
 ```rust
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    ipc_registry::register(&[
+    // 第一个参数是插件 id（owner）：路由按注册表精确匹配命令名，不再靠手写前缀
+    ipc_registry::register("db", &[
         ("db_open", "打开数据库（路径不存在自动创建）"),
         ("db_execute", "执行 SQL（查询/非查询自动识别）"),
     ]);
     builder.manage(...)
 }
-
-pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
-    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
-        tauri::generate_handler![db::db_open, db::db_execute];
-    handler(invoke)
-}
 ```
 
 规则：
 - **命令名全局唯一**：启动时 `ipc_registry` 检测重复，重复即 panic（开发期暴露，杜绝两个插件抢命令名）。
-- **唯一总 handler**：`lib.rs` 只调用一次 `Builder::invoke_handler`；`plugins/mod.rs` 只维护插件前缀到私有 handler 的一行路由。
+- **唯一总 handler**：`lib.rs` 只调用一次 `Builder::invoke_handler`；`plugins/mod.rs` 的 `invoke_handler` 按注册表 owner 分派（新增插件加一行 `Some("<id>") => <id>::invoke_handler(invoke)` 分支），`validate_routing()` 启动期 fail-fast 校验「登记了但没路由分支」。
 - **入库元数据**：`(名称, 中文说明)` 是入库最小单位；说明必须写清用途与关键参数。
 - **可查询**：框架命令 `framework_commands` 返回全量清单（名称 + 说明），供前端调试面板/文档生成。
 - **契约同步**：前端 `contracts.ts` 与 Rust serde 结构逐字段对应；`rename_all = "camelCase"` 是默认，禁止手写不一致。
@@ -142,13 +137,16 @@ Rust：
 
 ## 5. 质量门槛（合入红线）
 
-1. `pnpm lint --max-warnings 0` + `pnpm test` + `pnpm build` 全绿；Rust `clippy -D warnings` + `fmt --check` + `cargo test` 全绿。
+1. `pnpm lint --max-warnings 0` + `pnpm test` + `pnpm build` 全绿；Rust `clippy -D warnings`（`--no-default-features`）+ `fmt --check` + `cargo test` 全绿。
 2. 纯函数必须单测（`useXxx.test.ts`）；契约字段变更必须同步更新测试。
 3. 组件 ≤300 行；逻辑抽 `useXxx.ts`。
 4. 所有用户操作必须有可见反馈（toast/错误行），禁止静默 catch。
 5. 提交信息：conventional commits 带插件作用域（`fix(http-ws): ...`；框架用 `core`）。
 6. **代码注释（Rust 强制）**：每个 rs 文件必须有文件头注释（`//!` 说明模块职责）；文件内每个结构体/函数必须有 `///` 用途注释；**结构体每个属性必须注释其作用**（`/// 字段含义`）；函数内关键逻辑/复杂结构（锁、异步任务、迁移、提权等）必须加行注释（`// 说明`）。提交前用 `scripts/check_docs.py` 复查覆盖率。
 7. 前端通用控件必须从 `@/core/ui` 导入，禁止在插件内复制按钮、表单、页签、面板、弹窗和状态反馈样式；完整规范见 `docs/04-ui-components.md`。
+8. **Rust 代码规范**（`docs/05-rust-code-standard.md`）：提交前跑 `python scripts/check_rust_rules.py`（棘轮基线只减不增）；运行期禁 unwrap/expect、clone 需答所有权、unsafe 零容忍。
+9. **dev 冷启动冒烟（2026-09-06 新增，血泪教训：b75b531 注册 updater 插件但基座配置缺段，之后两周 dev 启动即 panic 无人发现）**：改动涉及 `tauri.conf.json` / `lib.rs` 插件注册 / `Cargo.toml` 依赖 / 能力权限时，提交前必须 `pnpm tauri dev` 冷启动一次，确认窗口正常出现、控制台无 panic。只改前端或纯逻辑可豁免。
+10. **Tauri 已知坑**：`dragDropEnabled`（默认开，OS 文件拖入依赖它）会吞掉应用内 HTML5 拖拽——内部拖拽一律用 pointer 事件自实现（参照 `src/plugins/ssh/useServerGroups.ts` 的 `useGroupDrag`）；SFC scoped 样式里 `:global()+:deep()` 混写会被编译静默丢弃，暗色覆盖写 `main.css` 全局 unlayered 区。
 
 ## 6. 新增插件 Check-list
 
