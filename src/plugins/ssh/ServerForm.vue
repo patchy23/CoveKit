@@ -11,7 +11,15 @@ import { ipc } from '@/core/ipc/ipc'
 import { KIND_LABEL } from '@/core/vault/useVault'
 import CredentialForm from '@/core/vault/CredentialForm.vue'
 import type { ServerProfile, AuthMethod } from './contracts'
-import { UiButton, UiField, UiInput, UiModal, UiSelect as Select, UiTextarea } from '@/core/ui'
+import {
+  UiButton,
+  UiCombobox,
+  UiField,
+  UiInput,
+  UiModal,
+  UiSelect as Select,
+  UiTextarea,
+} from '@/core/ui'
 import type { SelectOption } from '@/core/ui/UiSelect.vue'
 
 const props = defineProps<{
@@ -42,6 +50,9 @@ const form = reactive({
   remark: '',
 })
 
+/** 认证方式是否处于「凭证」档（UI 层状态；选了凭证后 secretRef 才有值；须在 watch 之前声明） */
+const credentialMode = ref(false)
+
 watch(
   () => props.profile,
   (p) => {
@@ -57,6 +68,7 @@ watch(
       form.username = p.username
       form.authMethod = p.authMethod
       form.secretRef = p.secretRef ?? ''
+      credentialMode.value = Boolean(p.secretRef)
       form.remark = p.remark ?? ''
     } else {
       form.id = ''
@@ -66,6 +78,7 @@ watch(
       form.username = ''
       form.authMethod = 'password'
       form.secretRef = ''
+      credentialMode.value = false
       form.remark = ''
     }
   },
@@ -96,51 +109,52 @@ async function loadCredentials() {
 }
 onMounted(loadCredentials)
 
-/** 认证方式下拉的选中值：选了凭证为 vault:<id>，否则为手工认证方式 */
-const authValue = computed(() => (form.secretRef ? `vault:${form.secretRef}` : form.authMethod))
+/** 认证方式下拉选中值：凭证档为 credential，否则为手工认证方式 */
+const authValue = computed(() => (credentialMode.value ? 'credential' : form.authMethod))
 
-/** 认证方式选项：手工三档 + 凭证库条目 + 新建入口 */
-const authOptions = computed<SelectOption[]>(() => {
-  const items: SelectOption[] = [
-    { value: 'password', label: '密码（手工输入）' },
-    { value: 'privateKey', label: '私钥（手工输入）' },
-    { value: 'privateKeyWithPassphrase', label: '私钥 + Passphrase（手工输入）' },
-  ]
-  if (credentials.value.length) {
-    items.push({ value: '__group__', label: '—— 凭证库 ——', disabled: true })
-    for (const c of credentials.value) {
-      items.push({
-        value: `vault:${c.id}`,
-        label: `${c.name}（${KIND_LABEL[c.kind]} · ${c.masked}）`,
-      })
-    }
-  }
-  items.push({ value: CREATE_VALUE, label: '+ 新建凭证' })
-  return items
-})
+const AUTH_OPTIONS: SelectOption[] = [
+  { value: 'password', label: '密码（手工输入）' },
+  { value: 'privateKey', label: '私钥（手工输入）' },
+  { value: 'privateKeyWithPassphrase', label: '私钥 + Passphrase（手工输入）' },
+  { value: 'credential', label: '凭证（凭证库选择）' },
+]
+
+/** 凭证下拉选项（可搜索：匹配名称/类型/掩码摘要），末尾新建入口 */
+const credentialOptions = computed(() => [
+  ...credentials.value.map((c) => ({
+    value: c.id,
+    label: `${c.name}（${KIND_LABEL[c.kind]} · ${c.masked}）`,
+    keywords: `${c.name} ${c.masked} ${KIND_LABEL[c.kind]}`,
+  })),
+  { value: CREATE_VALUE, label: '+ 新建凭证' },
+])
 
 /** 当前选中凭证（展示用） */
-const selectedCredential = computed(() =>
-  credentials.value.find((c) => `vault:${c.id}` === authValue.value)
-)
+const selectedCredential = computed(() => credentials.value.find((c) => c.id === form.secretRef))
 
 function onAuthChange(value: string | number) {
   const v = String(value)
-  if (v === CREATE_VALUE) {
-    credFormOpen.value = true
-    return
-  }
-  if (v.startsWith('vault:')) {
-    const id = v.slice('vault:'.length)
-    const cred = credentials.value.find((c) => c.id === id)
-    form.secretRef = id
-    // 认证方式随凭证类型推导：密码凭证→密码；SSH 私钥凭证→私钥（passphrase 随凭证内容走）
-    if (cred) form.authMethod = cred.kind === 'password' ? 'password' : 'privateKey'
+  if (v === 'credential') {
+    credentialMode.value = true
     return
   }
   // 切回手工输入：清空凭证引用
+  credentialMode.value = false
   form.secretRef = ''
   form.authMethod = v as AuthMethod
+}
+
+/** 选择凭证：记录引用并把认证方式推导为凭证类型对应的手工档（后端连接时按凭证内容认证） */
+function onCredentialSelect(value: string) {
+  if (value === CREATE_VALUE) {
+    credFormOpen.value = true
+    return
+  }
+  const cred = credentials.value.find((c) => c.id === value)
+  if (!cred) return
+  form.secretRef = cred.id
+  // 密码凭证→password；SSH 私钥凭证→privateKey（passphrase 随凭证内容走）
+  form.authMethod = cred.kind === 'password' ? 'password' : 'privateKey'
 }
 
 /** 新建凭证保存成功：刷新列表并自动选中 */
@@ -178,6 +192,10 @@ function submit() {
   }
   if (!Number.isInteger(form.port) || form.port < 1 || form.port > 65535) {
     emit('error', '端口必须是 1 到 65535 之间的整数')
+    return
+  }
+  if (credentialMode.value && !form.secretRef) {
+    emit('error', '请选择凭证（或从下拉末尾新建）')
     return
   }
   const p: ServerProfile = {
@@ -227,8 +245,20 @@ function submit() {
       <UiField label="认证方式">
         <Select
           :model-value="authValue"
-          :options="authOptions"
+          :options="AUTH_OPTIONS"
           @update:model-value="onAuthChange"
+        />
+      </UiField>
+
+      <!-- 凭证档：可输入搜索的凭证选择（下方独立下拉） -->
+      <UiField v-if="credentialMode" label="凭证">
+        <UiCombobox
+          :model-value="form.secretRef"
+          :options="credentialOptions"
+          placeholder="选择凭证"
+          search-placeholder="搜索凭证名称…"
+          empty-text="凭证库暂无可用凭证（支持用户名密码 / SSH 私钥类型）"
+          @update:model-value="onCredentialSelect"
         />
       </UiField>
 
@@ -239,17 +269,17 @@ function submit() {
         }}连接（用户名覆盖上方填写值）；类型不符时连接会明确报错。
       </p>
       <p v-if="credentialMissing" class="text-caption text-danger-strong dark:text-danger-dark">
-        引用的凭证已删除或不可用，请重新选择认证方式。
+        引用的凭证已删除或不可用，请重新选择。
       </p>
       <p v-if="credentialsFailed" class="text-caption text-danger-strong dark:text-danger-dark">
         凭证库暂不可用；可稍后重试，或改用手工输入。
       </p>
 
-      <UiField v-if="!form.secretRef && form.authMethod === 'password'" label="密码">
+      <UiField v-if="!credentialMode && form.authMethod === 'password'" label="密码">
         <UiInput v-model="form.password" type="password" />
       </UiField>
 
-      <UiField v-if="!form.secretRef && form.authMethod !== 'password'" label="私钥内容">
+      <UiField v-if="!credentialMode && form.authMethod !== 'password'" label="私钥内容">
         <UiTextarea
           v-model="form.privateKey"
           class="font-mono text-body-sm"
@@ -259,7 +289,7 @@ function submit() {
       </UiField>
 
       <UiField
-        v-if="!form.secretRef && form.authMethod === 'privateKeyWithPassphrase'"
+        v-if="!credentialMode && form.authMethod === 'privateKeyWithPassphrase'"
         label="Passphrase"
       >
         <UiInput v-model="form.passphrase" type="password" />
