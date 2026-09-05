@@ -534,6 +534,21 @@
   border-top-color: rgba(255, 255, 255, 0.22);
 }
 
+/* UiTable 暗色覆盖：必须写在 unlayered 全局区（@layer 内会输给组件内 scoped 样式）；
+   html 前缀提升优先级，压过 UiTable.vue 内 scoped 的浅色规则。
+   注意：组件内 :global()+:deep() 混写选择器会被 SFC 编译静默丢弃，勿写回组件里。 */
+html[data-theme='dark'] .ui-data-table th,
+html[data-theme='dark'] .ui-data-table-striped tbody tr:nth-child(even) {
+  background: var(--color-surface-muted-dark);
+}
+html[data-theme='dark'] .ui-data-table th {
+  color: var(--color-text-muted-dark);
+}
+html[data-theme='dark'] .ui-data-table th,
+html[data-theme='dark'] .ui-data-table td {
+  border-color: var(--color-border-dark);
+}
+
 /* CodeMirror 6 语法高亮配色（GitHub 风格，CSS 变量随应用主题切换） */
 :root {
   --cm-keyword: #cf222e;

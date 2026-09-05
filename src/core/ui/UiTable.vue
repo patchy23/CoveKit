@@ -88,12 +88,4 @@ withDefaults(
 .ui-data-table-hoverable :deep(tbody tr[data-selected='true']:hover) {
   background: var(--ui-table-row-selected);
 }
-:global([data-theme='dark']) .ui-data-table :deep(th),
-:global([data-theme='dark']) .ui-data-table-striped :deep(tbody tr:nth-child(even)) {
-  background: var(--color-surface-muted-dark);
-}
-:global([data-theme='dark']) .ui-data-table :deep(th),
-:global([data-theme='dark']) .ui-data-table :deep(td) {
-  border-color: var(--color-border-dark);
-}
 </style>
