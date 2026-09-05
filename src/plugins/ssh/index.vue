@@ -176,7 +176,6 @@ watch(
               :connect-request="1"
               :active="activeWorkspaceId === remote.id && remote.activeSection === 'terminal'"
               class="h-full"
-              @activity="workspace.touchWorkspace(remote.id)"
               @reconnect="workspace.reconnectWorkspace(remote.id)"
             />
             <FileManagerTab

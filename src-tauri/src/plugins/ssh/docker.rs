@@ -187,6 +187,7 @@ pub async fn ssh_docker_exec(
     crate::plugins::ssh::terminal::spawn_channel_task(
         app.clone(),
         terminal_id.clone(),
+        connection_id.clone(),
         channel,
         rx,
         cancel_rx,

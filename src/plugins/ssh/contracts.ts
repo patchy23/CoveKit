@@ -83,6 +83,8 @@ export interface TerminalSession {
 export interface TerminalData {
   /** 关联的终端 id */
   terminalId: string
+  /** 所属连接 id（空闲断开判定用：终端输出视为会话活跃） */
+  connectionId: string
   /** 数据内容（原始字节，含 ANSI 转义序列） */
   data: string
   /** 毫秒时间戳 */

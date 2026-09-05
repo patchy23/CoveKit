@@ -263,7 +263,13 @@ pub(crate) async fn open_session(
     passphrase: Option<&str>,
     known_hosts_path: PathBuf,
 ) -> Result<std::sync::Arc<client::Handle<SshHandler>>, String> {
-    let config = Arc::new(client::Config::default());
+    // keepalive：30s 一个心跳，连续 3 次无应答即判定断链（russh 会断开全部通道）。
+    // 无 keepalive 时空闲连接会被 NAT/sshd ClientAliveInterval 静默掐掉，UI 仍显示已连接。
+    let config = Arc::new(client::Config {
+        keepalive_interval: Some(std::time::Duration::from_secs(30)),
+        keepalive_max: 3,
+        ..Default::default()
+    });
     let addr = format!("{}:{}", profile.host, profile.port);
     let handler = SshHandler {
         host: profile.host.clone(),

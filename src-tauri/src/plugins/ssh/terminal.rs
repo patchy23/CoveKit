@@ -47,6 +47,7 @@ pub struct TerminalState(pub Mutex<HashMap<String, TerminalHandle>>);
 pub(crate) fn spawn_channel_task(
     app: AppHandle,
     terminal_id: String,
+    connection_id: String,
     mut channel: russh::Channel<client::Msg>,
     mut rx: mpsc::Receiver<TerminalCmd>,
     mut cancel_rx: watch::Receiver<bool>,
@@ -75,6 +76,7 @@ pub(crate) fn spawn_channel_task(
                         Some(ChannelMsg::Data { data }) => {
                             let payload = TerminalData {
                                 terminal_id: terminal_id.clone(),
+                                connection_id: connection_id.clone(),
                                 data: String::from_utf8_lossy(&data).to_string(),
                                 time: now_ms(),
                             };
@@ -157,7 +159,14 @@ pub async fn ssh_terminal_open(
         },
     );
 
-    spawn_channel_task(app.clone(), terminal_id.clone(), channel, rx, cancel_rx);
+    spawn_channel_task(
+        app.clone(),
+        terminal_id.clone(),
+        connection_id.clone(),
+        channel,
+        rx,
+        cancel_rx,
+    );
 
     Ok(TerminalSession {
         id: terminal_id,

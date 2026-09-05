@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
-import { ipc, onConnectionStatus } from './ipc'
+import { ipc, onConnectionStatus, onTerminalData, onTransferProgress } from './ipc'
 import { loadProfiles, persistProfiles } from './useSsh'
 import type { ServerConnection, ServerProfile } from './contracts'
 
@@ -226,8 +226,25 @@ export function useSshWorkspace() {
   }
 
   let unlistenConnection: (() => void) | null = null
+  let unlistenActivity: (() => void) | null = null
+  let unlistenTransfer: (() => void) | null = null
   let idleTimer: ReturnType<typeof setInterval> | null = null
   let disposed = false
+
+  /** 后台活动节流表（connectionId → 上次活动时间戳），5s 内不重复刷新 */
+  const ACTIVITY_TOUCH_THROTTLE = 5_000
+  const lastActivityTouch = new Map<string, number>()
+
+  /** 后台活动（终端输出含输入回显、文件传输进度）也算会话活跃——防止长任务/看日志时被空闲断开误杀 */
+  function touchByConnectionId(connectionId: string) {
+    const now = Date.now()
+    if (now - (lastActivityTouch.get(connectionId) ?? 0) < ACTIVITY_TOUCH_THROTTLE) return
+    lastActivityTouch.set(connectionId, now)
+    const workspace = connectionWorkspaces.value.find(
+      (item) => item.connection.sessionId === connectionId
+    )
+    if (workspace?.connection.status === 'connected') workspace.lastActivityAt = now
+  }
 
   onMounted(async () => {
     // v2 将历史默认值 30 分钟一次性迁移为 10 分钟；之后仍允许用户自行修改。
@@ -259,6 +276,20 @@ export function useSshWorkspace() {
     } catch {
       /* 浏览器预览没有 Tauri 事件系统。 */
     }
+    // 后台活动监听：终端有输出（含打字回显）/ 传输在进行 → 刷新对应工作区活跃时间
+    try {
+      const stopData = await onTerminalData((d) => touchByConnectionId(d.connectionId))
+      const stopTransfer = await onTransferProgress((p) => touchByConnectionId(p.connectionId))
+      if (disposed) {
+        stopData()
+        stopTransfer()
+      } else {
+        unlistenActivity = stopData
+        unlistenTransfer = stopTransfer
+      }
+    } catch {
+      /* 浏览器预览没有 Tauri 事件系统。 */
+    }
 
     idleTimer = setInterval(() => {
       const minutes = Number(settings.getToolSetting('ssh', 'idleDisconnectMinutes', '10'))
@@ -279,6 +310,8 @@ export function useSshWorkspace() {
   onUnmounted(() => {
     disposed = true
     unlistenConnection?.()
+    unlistenActivity?.()
+    unlistenTransfer?.()
     if (idleTimer) clearInterval(idleTimer)
     void cleanupAll()
   })

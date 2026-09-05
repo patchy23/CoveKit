@@ -121,6 +121,8 @@ pub struct TerminalSession {
 pub struct TerminalData {
     /// 关联的终端 id
     pub(crate) terminal_id: String,
+    /// 所属连接 id（前端据此把工作区标记为活跃，防止看日志时被空闲断开误杀）
+    pub(crate) connection_id: String,
     /// 数据内容（原始字节，含 ANSI 转义序列）
     pub(crate) data: String,
     /// 毫秒时间戳
