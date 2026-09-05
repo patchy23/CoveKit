@@ -164,13 +164,13 @@ function confirmDeleteGroup() {
         <div
           v-for="profile in profiles"
           :key="profile.id"
-          class="mb-[2px] flex cursor-default items-center rounded-md px-[8px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+          class="mb-[2px] flex cursor-default items-center rounded-md px-[8px] py-[5px] transition-colors hover:bg-border dark:hover:bg-border-dark"
           :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接）`"
           @dblclick="emit('openConnection', profile.id)"
           @contextmenu="openProfileMenu($event, profile)"
         >
           <span
-            class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
+            class="min-w-0 flex-1 truncate text-body-sm font-medium text-primary dark:text-primary-dark"
           >
             {{ profile.name }}
           </span>
@@ -211,14 +211,14 @@ function confirmDeleteGroup() {
             <div
               v-for="profile in profilesOf(group.id)"
               :key="profile.id"
-              class="mb-[2px] ml-[12px] flex cursor-grab items-center rounded-md px-[8px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+              class="mb-[2px] ml-[12px] flex cursor-grab items-center rounded-md px-[8px] py-[5px] transition-colors hover:bg-border dark:hover:bg-border-dark"
               :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接，拖拽移动分组）`"
               @dblclick="emit('openConnection', profile.id)"
               @contextmenu="openProfileMenu($event, profile)"
               @pointerdown="onRowPointerDown($event, profile)"
             >
               <span
-                class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
+                class="min-w-0 flex-1 truncate text-body-sm font-medium text-primary dark:text-primary-dark"
               >
                 {{ profile.name }}
               </span>
@@ -261,14 +261,14 @@ function confirmDeleteGroup() {
           <div
             v-for="profile in profilesOf(null)"
             :key="profile.id"
-            class="mb-[2px] ml-[12px] flex cursor-grab items-center rounded-md px-[8px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+            class="mb-[2px] ml-[12px] flex cursor-grab items-center rounded-md px-[8px] py-[5px] transition-colors hover:bg-border dark:hover:bg-border-dark"
             :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接，拖拽移动分组）`"
             @dblclick="emit('openConnection', profile.id)"
             @contextmenu="openProfileMenu($event, profile)"
             @pointerdown="onRowPointerDown($event, profile)"
           >
             <span
-              class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
+              class="min-w-0 flex-1 truncate text-body-sm font-medium text-primary dark:text-primary-dark"
             >
               {{ profile.name }}
             </span>
