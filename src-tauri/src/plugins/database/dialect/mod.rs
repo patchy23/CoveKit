@@ -153,6 +153,12 @@ pub fn dialect_for(db_type: DbType) -> Option<Box<dyn DbDialect>> {
     }
 }
 
+/// dialect_for 的 Result 版（规范 §1：运行期路径禁止 expect）。
+/// 用户配置的库类型可能超出方言覆盖范围，缺失时必须显式报错而不是 panic。
+pub fn dialect_or_err(db_type: DbType) -> Result<Box<dyn DbDialect>, String> {
+    dialect_for(db_type).ok_or_else(|| format!("库类型 {db_type:?} 暂不支持该操作（方言未实现）"))
+}
+
 /// 通用多语句拆分：按分号切分，跳过单引号/双引号/反引号字符串与行注释/块注释。
 /// 返回去掉首尾空白后的语句列表（空语句丢弃）。
 pub fn split_sql_statements(sql: &str) -> Vec<String> {

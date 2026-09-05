@@ -9,7 +9,7 @@ use std::time::Instant;
 use mysql_async::prelude::Queryable;
 use tauri::State;
 
-use crate::plugins::database::dialect::dialect_for;
+use crate::plugins::database::dialect::dialect_or_err;
 use crate::plugins::database::drivers;
 use crate::plugins::database::drivers::redis;
 use crate::plugins::database::drivers::{DbCancelState, DbSession, DbSessionEntry, DbState};
@@ -69,7 +69,7 @@ pub async fn dbc_execute(
         DbSession::Mysql(pool) => drivers::mysql::execute_mysql(pool, &sql, limit).await,
         DbSession::Postgres(pool) => drivers::postgres::execute_postgres(pool, &sql, limit).await,
         DbSession::Sqlite(conn) => drivers::sqlite::execute_sqlite(conn, &sql, limit),
-        DbSession::Redis(_) => unreachable!("redis 已在上方处理"),
+        DbSession::Redis(_) => return Err("Redis 会话不支持 SQL 执行（请用键操作）".to_string()),
         DbSession::Agent { client, session_id } => {
             drivers::execute_agent(client, session_id, &sql, limit).await
         }
@@ -146,7 +146,7 @@ pub async fn dbc_databases(
     let entry = session(&state, &conn_id)?;
     match &entry.session {
         DbSession::Mysql(pool) => {
-            let dialect = dialect_for(entry.config.db_type).expect("mysql 方言存在");
+            let dialect = dialect_or_err(entry.config.db_type)?;
             drivers::mysql::query_strings_mysql(
                 pool,
                 dialect.databases_sql().ok_or("该类型无库列表")?,
@@ -154,7 +154,7 @@ pub async fn dbc_databases(
             .await
         }
         DbSession::Postgres(pool) => {
-            let dialect = dialect_for(entry.config.db_type).expect("pg 方言存在");
+            let dialect = dialect_or_err(entry.config.db_type)?;
             drivers::postgres::query_strings_pg(
                 pool,
                 dialect.databases_sql().ok_or("该类型无库列表")?,
@@ -177,7 +177,7 @@ pub async fn dbc_schemas(
     match &entry.session {
         DbSession::Mysql(_) | DbSession::Redis(_) => Ok(Vec::new()),
         DbSession::Postgres(pool) => {
-            let dialect = dialect_for(entry.config.db_type).expect("pg 方言存在");
+            let dialect = dialect_or_err(entry.config.db_type)?;
             drivers::postgres::query_strings_pg(
                 pool,
                 dialect.schemas_sql().ok_or("该类型无 schema 列表")?,
@@ -199,7 +199,7 @@ pub async fn dbc_objects(
     let entry = session(&state, &conn_id)?;
     match &entry.session {
         DbSession::Mysql(pool) => {
-            let dialect = dialect_for(entry.config.db_type).expect("mysql 方言存在");
+            let dialect = dialect_or_err(entry.config.db_type)?;
             let database = schema.unwrap_or_else(|| entry.config.database.clone());
             let rows = pool
                 .get_conn()
@@ -217,7 +217,7 @@ pub async fn dbc_objects(
                 .collect())
         }
         DbSession::Postgres(pool) => {
-            let dialect = dialect_for(entry.config.db_type).expect("pg 方言存在");
+            let dialect = dialect_or_err(entry.config.db_type)?;
             let schema = schema.unwrap_or_else(|| "public".to_string());
             let client = pool.get().await.map_err(|e| format!("取连接失败: {e}"))?;
             let rows = client
@@ -234,12 +234,9 @@ pub async fn dbc_objects(
         }
         DbSession::Sqlite(conn) => {
             let guard = conn.lock().map_err(|e| e.to_string())?;
+            let dialect = dialect_or_err(crate::plugins::database::models::DbType::Sqlite)?;
             let mut stmt = guard
-                .prepare(
-                    dialect_for(crate::plugins::database::models::DbType::Sqlite)
-                        .expect("sqlite 方言存在")
-                        .objects_sql(),
-                )
+                .prepare(dialect.objects_sql())
                 .map_err(|e| e.to_string())?;
             let rows = stmt
                 .query_map([], |row| {
@@ -275,7 +272,7 @@ pub async fn dbc_columns(
     let entry = session(&state, &conn_id)?;
     match &entry.session {
         DbSession::Mysql(pool) => {
-            let dialect = dialect_for(entry.config.db_type).expect("mysql 方言存在");
+            let dialect = dialect_or_err(entry.config.db_type)?;
             let database = schema.unwrap_or_else(|| entry.config.database.clone());
             let rows = pool
                 .get_conn()
@@ -302,7 +299,7 @@ pub async fn dbc_columns(
                 .collect())
         }
         DbSession::Postgres(pool) => {
-            let dialect = dialect_for(entry.config.db_type).expect("pg 方言存在");
+            let dialect = dialect_or_err(entry.config.db_type)?;
             let schema = schema.unwrap_or_else(|| "public".to_string());
             let client = pool.get().await.map_err(|e| format!("取连接失败: {e}"))?;
             let rows = client
@@ -422,7 +419,7 @@ pub async fn dbc_table_data(
 
     let (columns, rows, total) = match &entry.session {
         DbSession::Mysql(pool) => {
-            let dialect = dialect_for(entry.config.db_type).expect("mysql 方言存在");
+            let dialect = dialect_or_err(entry.config.db_type)?;
             let database = schema.unwrap_or_else(|| entry.config.database.clone());
             let qualified = format!(
                 "{}.{}",
@@ -456,7 +453,7 @@ pub async fn dbc_table_data(
             (result.columns, result.rows, count_row)
         }
         DbSession::Postgres(pool) => {
-            let dialect = dialect_for(entry.config.db_type).expect("pg 方言存在");
+            let dialect = dialect_or_err(entry.config.db_type)?;
             let schema = schema.unwrap_or_else(|| "public".to_string());
             let qualified = format!(
                 "{}.{}",
@@ -479,8 +476,7 @@ pub async fn dbc_table_data(
             (result.columns, result.rows, count_row)
         }
         DbSession::Sqlite(conn) => {
-            let dialect = dialect_for(crate::plugins::database::models::DbType::Sqlite)
-                .expect("sqlite 方言存在");
+            let dialect = dialect_or_err(crate::plugins::database::models::DbType::Sqlite)?;
             let quoted = dialect.quote_ident(&table);
             let sql = dialect.paginate(
                 &format!("SELECT * FROM {quoted}"),
@@ -605,7 +601,8 @@ pub async fn dbc_redis_keys(
         return Err("当前连接不是 Redis".to_string());
     }
     let DbSession::Redis(mgr) = &entry.session else {
-        unreachable!("已校验 is_redis");
+        // 理论不变量（上方已校验 is_redis）；不 panic，类型错配时显式报错
+        return Err("连接会话与库类型不一致，请断开重连".to_string());
     };
     let mut mgr = mgr.clone();
     redis::scan_keys(&mut mgr, &pattern, cursor, 200).await
@@ -623,7 +620,8 @@ pub async fn dbc_redis_key_info(
         return Err("当前连接不是 Redis".to_string());
     }
     let DbSession::Redis(mgr) = &entry.session else {
-        unreachable!("已校验 is_redis");
+        // 理论不变量（上方已校验 is_redis）；不 panic，类型错配时显式报错
+        return Err("连接会话与库类型不一致，请断开重连".to_string());
     };
     let mut mgr = mgr.clone();
     redis::key_info(&mut mgr, &key).await

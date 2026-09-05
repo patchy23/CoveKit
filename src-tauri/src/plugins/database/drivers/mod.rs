@@ -417,11 +417,16 @@ async fn probe_version(session: &DbSession, config: &ConnConfig) -> (String, Opt
     let started = Instant::now();
     let version = match session {
         DbSession::Mysql(pool) => {
-            let dialect = dialect_for(DbType::Mysql).expect("mysql 方言存在");
+            // 常量类型必然有方言；取不到时探测降级为空版本（探测本来就是 best-effort）
+            let Some(dialect) = dialect_for(DbType::Mysql) else {
+                return (String::new(), None);
+            };
             query_first_string_mysql(pool, dialect.version_sql()).await
         }
         DbSession::Postgres(pool) => {
-            let dialect = dialect_for(DbType::Postgresql).expect("pg 方言存在");
+            let Some(dialect) = dialect_for(DbType::Postgresql) else {
+                return (String::new(), None);
+            };
             query_first_string_pg(pool, dialect.version_sql()).await
         }
         DbSession::Sqlite(conn) => conn.lock().ok().and_then(|conn| {

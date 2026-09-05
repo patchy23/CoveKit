@@ -3,7 +3,7 @@
 use mysql_async::prelude::Queryable;
 use mysql_async::{Opts, OptsBuilder};
 
-use crate::plugins::database::dialect::dialect_for;
+use crate::plugins::database::dialect::dialect_or_err;
 use mysql_async::Value as MysqlValue;
 
 use crate::plugins::database::models::{ConnConfig, QueryResult};
@@ -65,8 +65,7 @@ pub(crate) async fn execute_mysql(
     sql: &str,
     max_rows: u64,
 ) -> Result<QueryResult, String> {
-    let dialect =
-        dialect_for(crate::plugins::database::models::DbType::Mysql).expect("mysql 方言存在");
+    let dialect = dialect_or_err(crate::plugins::database::models::DbType::Mysql)?;
     let statements = dialect.split_statements(sql);
     if statements.is_empty() {
         return Ok(QueryResult {

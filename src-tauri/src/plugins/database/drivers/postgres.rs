@@ -1,6 +1,6 @@
 //! PostgreSQL 驱动：连接池构建 + 查询执行 + 单元格字符串化
 
-use crate::plugins::database::dialect::dialect_for;
+use crate::plugins::database::dialect::dialect_or_err;
 use std::time::Duration;
 
 use crate::plugins::database::models::{ConnConfig, QueryResult};
@@ -78,8 +78,7 @@ pub(crate) async fn execute_postgres(
     sql: &str,
     max_rows: u64,
 ) -> Result<QueryResult, String> {
-    let dialect =
-        dialect_for(crate::plugins::database::models::DbType::Postgresql).expect("pg 方言存在");
+    let dialect = dialect_or_err(crate::plugins::database::models::DbType::Postgresql)?;
     let statements = dialect.split_statements(sql);
     if statements.is_empty() {
         return Ok(QueryResult {

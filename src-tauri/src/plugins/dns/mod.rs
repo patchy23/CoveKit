@@ -46,7 +46,7 @@ fn db<'a>(
 /// 读取三平台密钥配置（供云解析命令使用；先取出再 await，避免持锁跨 await）
 fn load_config(app: &AppHandle, state: &State<'_, DnsState>) -> Result<DnsConfig, String> {
     let guard = db(app, state)?;
-    let conn = guard.as_ref().unwrap();
+    let conn = guard.as_ref().ok_or("本地库未初始化")?;
     conn.with_conn(|c| {
         let mut cfg = DnsConfig::default();
         // 逐行读取密钥表，按 platform 归位
@@ -189,7 +189,7 @@ pub fn dns_config_set(
     config: DnsConfig,
 ) -> Result<(), String> {
     let guard = db(&app, &state)?;
-    let conn = guard.as_ref().unwrap();
+    let conn = guard.as_ref().ok_or("本地库未初始化")?;
     conn.with_conn(|c| {
         for (platform, provider) in [
             (models::PLATFORM_ALIYUN, config.aliyun),

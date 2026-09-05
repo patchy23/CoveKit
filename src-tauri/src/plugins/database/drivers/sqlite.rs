@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection as SqliteConn;
 
-use crate::plugins::database::dialect::dialect_for;
+use crate::plugins::database::dialect::dialect_or_err;
 use crate::plugins::database::models::{ConnConfig, QueryResult};
 
 /// 打开 SQLite 文件并包装为插件会话使用的线程安全连接。
@@ -23,8 +23,7 @@ pub(crate) fn execute_sqlite(
     sql: &str,
     max_rows: u64,
 ) -> Result<QueryResult, String> {
-    let dialect =
-        dialect_for(crate::plugins::database::models::DbType::Sqlite).expect("sqlite 方言存在");
+    let dialect = dialect_or_err(crate::plugins::database::models::DbType::Sqlite)?;
     let statements = dialect.split_statements(sql);
     if statements.is_empty() {
         return Ok(QueryResult {

@@ -24,11 +24,12 @@
 
 **`unwrap_or*` 家族（v1.1 新增）**：`unwrap_or` / `unwrap_or_default` / `unwrap_or_else` 是「静默兜底」，不经 panic 但会吞掉错误。允许用于**纯展示类字段**（文件列表的 owner/group 显示空串）；**关键数据禁止静默兜底**（金额、行数、尺寸、密钥、路径——错了必须显式报错或写 `0` 并注释「为什么 0 是安全语义」）。
 
-**现状整改清单**（按优先级）：
+**存量整改已完成（2026-09-05，基线 27 → 0）**：
 
-1. `plugins/database/catalog.rs` 14 处 `expect("xx 方言存在")`——方言由用户配置的 db_type 驱动，运行期可达（2026-08 MySQL TABLE_ROWS panic 即为同类事故），全部改返回 `Err`
-2. `plugins/api/mod.rs`、`plugins/dns/mod.rs` 6 处 `guard.as_ref().unwrap()`——改 `ok_or`
-3. `plugins/database/secrets.rs`/`store.rs` `expect("已初始化")`——确认 init 顺序保证后保留 expect 并注释依据，否则改 Err
+1. ~~catalog.rs 14 处方言 expect~~ → 全部改走 `dialect_or_err()`（`dialect/mod.rs` 新增的 Result 版入口）
+2. ~~api/dns 6 处 `guard.as_ref().unwrap()`~~ → `ok_or("本地库未初始化")?`
+3. ~~secrets/store `expect("已初始化")`~~ → `ok_or_else`；catalog 3 处 `unreachable!` → 显式 Err
+4. drivers 探测函数常量方言 → let-else 降级空版本（探测本来 best-effort）
 
 ## 2. Clone 纪律
 

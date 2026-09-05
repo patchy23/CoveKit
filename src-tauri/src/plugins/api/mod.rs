@@ -59,7 +59,7 @@ pub fn api_save(
     body: String,
 ) -> Result<i64, String> {
     let guard = db(&app, &state)?;
-    let d = guard.as_ref().unwrap();
+    let d = guard.as_ref().ok_or("本地库未初始化")?;
     d.with_conn(|c| {
         let id = match id {
             // 新增：INSERT 后取自增主键
@@ -93,7 +93,7 @@ pub fn api_save(
 #[tauri::command]
 pub fn api_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<ApiRecord>, String> {
     let guard = db(&app, &state)?;
-    let d = guard.as_ref().unwrap();
+    let d = guard.as_ref().ok_or("本地库未初始化")?;
     d.with_conn(|c| {
         let mut stmt = c
             .prepare(
@@ -127,7 +127,7 @@ pub fn api_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<ApiRec
 #[tauri::command]
 pub fn api_delete(app: AppHandle, state: State<'_, ApiState>, id: i64) -> Result<(), String> {
     let guard = db(&app, &state)?;
-    let d = guard.as_ref().unwrap();
+    let d = guard.as_ref().ok_or("本地库未初始化")?;
     d.with_conn(|c| {
         c.execute("DELETE FROM api_list WHERE id=?1", rusqlite::params![id])
             .map_err(|e| e.to_string())?;
@@ -139,7 +139,7 @@ pub fn api_delete(app: AppHandle, state: State<'_, ApiState>, id: i64) -> Result
 #[tauri::command]
 pub fn api_clear(app: AppHandle, state: State<'_, ApiState>) -> Result<(), String> {
     let guard = db(&app, &state)?;
-    let d = guard.as_ref().unwrap();
+    let d = guard.as_ref().ok_or("本地库未初始化")?;
     d.execute("DELETE FROM api_list").map(|_| ())
 }
 
