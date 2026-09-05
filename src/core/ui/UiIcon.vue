@@ -27,6 +27,7 @@ import {
   Minus,
   Pencil,
   Play,
+  Plus,
   RefreshCw,
   Save,
   Search,
@@ -60,6 +61,8 @@ export const UI_ICONS = {
   download: Download,
   /** 更多/溢出（横向三点） */
   dots: Ellipsis,
+  /** 新建/添加 */
+  plus: Plus,
   /** 重命名/编辑 */
   pencil: Pencil,
   trash: Trash2,

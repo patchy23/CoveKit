@@ -9,7 +9,7 @@ import type { ServerProfile } from './contracts'
 import type { ServerGroup } from './useServerGroups'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiIcon, UiInput, UiModal, UiSearchInput } from '@/core/ui'
+import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiSearchInput } from '@/core/ui'
 
 const props = defineProps<{
   profiles: ServerProfile[]
@@ -158,14 +158,20 @@ function confirmDeleteGroup() {
 
 <template>
   <div class="flex w-[180px] shrink-0 flex-col border-r border-border dark:border-border-dark">
-    <div class="shrink-0 space-y-[8px] px-[12px] py-[10px]">
-      <UiSearchInput
-        :model-value="searchKeyword"
-        size="sm"
-        placeholder="搜索服务器..."
-        @update:model-value="emit('update:searchKeyword', $event)"
-      />
-      <UiButton variant="secondary" size="sm" block @click="emit('add')">+ 添加服务器</UiButton>
+    <div class="shrink-0 px-[12px] py-[10px]">
+      <!-- 搜索 + 添加同一行：搜索框弹性占满，右侧 + 号按钮 -->
+      <div class="flex items-center gap-[6px]">
+        <UiSearchInput
+          :model-value="searchKeyword"
+          size="sm"
+          class="min-w-0 flex-1"
+          placeholder="搜索服务器..."
+          @update:model-value="emit('update:searchKeyword', $event)"
+        />
+        <UiIconButton label="添加服务器" size="sm" title="添加服务器" @click="emit('add')">
+          <UiIcon name="plus" :size="14" />
+        </UiIconButton>
+      </div>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[8px]">
