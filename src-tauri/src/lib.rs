@@ -70,6 +70,9 @@ pub fn run() {
     let builder = plugins::ssh::register(builder);
     let builder = plugins::tts::register(builder);
 
+    // 启动校验：注册表 owner 均有路由分支（登记了命令但没加插件装配 = 启动即炸，不等运行期静默 404）
+    plugins::validate_routing();
+
     builder
         // 关窗行为：最小化到托盘（开放问题默认值）
         .on_window_event(|window, event| {

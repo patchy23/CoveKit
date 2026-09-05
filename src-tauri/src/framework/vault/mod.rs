@@ -161,7 +161,11 @@ pub fn vault_reveal(app: AppHandle, id: String) -> Result<Credential, String> {
 pub async fn vault_export(app: AppHandle, path: String, password: String) -> Result<(), String> {
     let all = store::read_all(&app)?;
     let plain = serde_json::to_vec(&all).map_err(|e| e.to_string())?;
-    let backup = export::encrypt_backup(&password, &plain)?;
+    // Argon2id 是 CPU 重负载（数百 ms），异步命令里必须挪到阻塞线程池（规范 §4）
+    let backup =
+        tauri::async_runtime::spawn_blocking(move || export::encrypt_backup(&password, &plain))
+            .await
+            .map_err(|e| format!("加密任务失败: {e}"))??;
     export::write_backup_file(std::path::Path::new(&path), &backup)
 }
 
@@ -176,7 +180,11 @@ pub async fn vault_import(
 ) -> Result<VaultImportResult, String> {
     // 1) 备份文件由用户密码解开（不依赖主密钥，密钥丢失场景也能导入）
     let backup = export::read_backup_file(std::path::Path::new(&path))?;
-    let plain = export::decrypt_backup(&password, &backup)?;
+    // Argon2id 解密同属 CPU 重负载，挪到阻塞线程池（规范 §4）
+    let plain =
+        tauri::async_runtime::spawn_blocking(move || export::decrypt_backup(&password, &backup))
+            .await
+            .map_err(|e| format!("解密任务失败: {e}"))??;
     let imported: Vec<Credential> =
         serde_json::from_slice(&plain).map_err(|e| format!("备份内容解析失败: {e}"))?;
 
@@ -218,30 +226,33 @@ pub async fn vault_import(
 
 /// 框架装配：7 个命令全量入 IPC 注册表（命令由 framework::invoke_handler 总 handler 分派）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    super::ipc_registry::register(&[
-        (
-            "vault_list",
-            "凭证列表（脱敏摘要：id/name/kind/掩码/时间，无明文）",
-        ),
-        (
-            "vault_save",
-            "新增/更新凭证（payload 打包，id 可选 upsert）",
-        ),
-        ("vault_delete", "删除凭证（返回被引用计数供前端提示）"),
-        ("vault_reference_count", "删除前查询后端插件凭证引用数"),
-        (
-            "vault_reveal",
-            "读取单条凭证明文（仅用户点显示/复制时调用）",
-        ),
-        (
-            "vault_export",
-            "密码加密导出 .pbvault 备份（Argon2id 派生密钥）",
-        ),
-        (
-            "vault_import",
-            "解密导入 .pbvault 备份（合并/覆盖由 UI 选择）",
-        ),
-    ])
+    super::ipc_registry::register(
+        "framework",
+        &[
+            (
+                "vault_list",
+                "凭证列表（脱敏摘要：id/name/kind/掩码/时间，无明文）",
+            ),
+            (
+                "vault_save",
+                "新增/更新凭证（payload 打包，id 可选 upsert）",
+            ),
+            ("vault_delete", "删除凭证（返回被引用计数供前端提示）"),
+            ("vault_reference_count", "删除前查询后端插件凭证引用数"),
+            (
+                "vault_reveal",
+                "读取单条凭证明文（仅用户点显示/复制时调用）",
+            ),
+            (
+                "vault_export",
+                "密码加密导出 .pbvault 备份（Argon2id 派生密钥）",
+            ),
+            (
+                "vault_import",
+                "解密导入 .pbvault 备份（合并/覆盖由 UI 选择）",
+            ),
+        ],
+    )
     .expect("IPC 命令重复注册");
     builder
 }

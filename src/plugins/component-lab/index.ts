@@ -8,7 +8,6 @@ registerTool({
   icon: 'grid',
   description: '临时查看与交互测试 patchyBox 公共前端组件的状态和组合效果。',
   keywords: ['ui', '组件', '设计系统', 'component', 'design system', '测试'],
-  presentation: 'workspace',
   component: () => import('./index.vue'),
   tags: ['开发'],
 })

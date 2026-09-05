@@ -52,7 +52,9 @@ fn db(app: &tauri::AppHandle, state: &StoreState) -> Result<std::sync::Arc<Plugi
             app, "database", MIGRATIONS,
         )?));
     }
-    guard.clone().ok_or_else(|| "初始化未完成（内部状态异常）".to_string())
+    guard
+        .clone()
+        .ok_or_else(|| "初始化未完成（内部状态异常）".to_string())
 }
 
 /// 连接配置 CRUD ─────────────────────────────────────────────────────────

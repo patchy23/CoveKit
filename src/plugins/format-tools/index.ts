@@ -26,7 +26,6 @@ registerTool({
   icon: 'json',
   description: 'JSON / XML 格式化校验、时间戳互转、Base64 编解码。',
   keywords: ['json', 'xml', 'base64', '时间戳', 'timestamp', '格式化', '编码', '解码'],
-  presentation: 'workspace',
   component: () => import('./FormatTools.vue'),
   settingsSchema,
   tags: ['开发', '热门'],

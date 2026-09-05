@@ -57,8 +57,15 @@ pub fn migrate(conn: &rusqlite::Connection, migrations: &[&str]) -> Result<(), S
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .map_err(|e| e.to_string())?;
     for (i, sql) in migrations.iter().enumerate().skip(cur as usize) {
-        conn.execute_batch(sql)
-            .map_err(|e| format!("迁移 v{} 失败: {e}", i + 1))?;
+        if let Err(e) = conn.execute_batch(sql) {
+            // ALTER TABLE ADD COLUMN 无 IF NOT EXISTS：进程在版本号写入前中断会导致重放报
+            // duplicate column——该错误视为幂等成功（列已存在即等价于迁移完成），其余错误照旧失败
+            if e.to_string().contains("duplicate column name") {
+                eprintln!("[store] 迁移 v{} 幂等跳过（列已存在）", i + 1);
+            } else {
+                return Err(format!("迁移 v{} 失败: {e}", i + 1));
+            }
+        }
         conn.execute_batch(&format!("PRAGMA user_version = {}", i + 1))
             .map_err(|e| format!("迁移版本号更新失败: {e}"))?;
     }

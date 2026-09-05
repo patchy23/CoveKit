@@ -24,7 +24,9 @@ fn secrets(app: &tauri::AppHandle, state: &SecretsState) -> Result<std::sync::Ar
         migrate_legacy(app)?;
         *guard = Some(std::sync::Arc::new(()));
     }
-    guard.clone().ok_or_else(|| "初始化未完成（内部状态异常）".to_string())
+    guard
+        .clone()
+        .ok_or_else(|| "初始化未完成（内部状态异常）".to_string())
 }
 
 /// 一次性迁移旧格式凭据到框架公共凭证库（新库已有数据则跳过）

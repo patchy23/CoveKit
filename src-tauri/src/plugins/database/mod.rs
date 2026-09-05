@@ -1,7 +1,7 @@
 //! 数据库工作台插件 · 门面（命令薄层 + 插件装配）
 //! 命令前缀 `dbc_`（与既有 sqlite 插件的 `db_` 前缀区分；注册表全局唯一）。
 //! 结构：models.rs（契约）/ dialect/（方言纯函数）/ drivers/（会话注册表 + 驱动执行）/
-//! catalog.rs（查询与元数据命令）/ store.rs（本地库）/ secrets.rs（stronghold 凭据）/ agent/（侧车驱动）。
+//! catalog.rs（查询与元数据命令）/ store.rs（本地库）/ secrets.rs（AES（插件私有） 凭据）/ agent/（侧车驱动）。
 
 pub(crate) mod admin;
 pub(crate) mod agent;
@@ -20,7 +20,7 @@ use crate::plugins::database::models::{ConnConfig, HistoryEntry, SavedEntry};
 use crate::plugins::database::store::StoreState;
 
 /// 连接管理命令 ───────────────────────────────────────────────────────────
-/// 保存连接配置（含密码 → stronghold；已连接则更新会话配置）
+/// 保存连接配置（含密码 → AES（插件私有）；已连接则更新会话配置）
 /// 密码留空且连接已存在时保留原密码（编辑模式不修改密码）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_connection_save(
@@ -64,7 +64,7 @@ pub async fn dbc_connections(
     Ok(drivers::snapshot(&session_state, &configs).await)
 }
 
-/// 建立连接（读取 stronghold 凭据；成功后探测版本与时延）
+/// 建立连接（读取 AES（插件私有） 凭据；成功后探测版本与时延）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_connect(
     app: tauri::AppHandle,
@@ -96,7 +96,7 @@ pub async fn dbc_disconnect(
 }
 
 /// 测试连接（不保存、不落会话；返回版本信息）
-/// 密码为空且该连接已存在时，使用 stronghold 已保存密码（编辑模式「留空=不修改」对称语义）
+/// 密码为空且该连接已存在时，使用 AES（插件私有） 已保存密码（编辑模式「留空=不修改」对称语义）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_test(
     app: tauri::AppHandle,
@@ -266,42 +266,45 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
 
 /// 插件注册：命令入库 + 全部 State 装配
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(&[
-        (
-            "dbc_connection_save",
-            "保存数据库连接配置（密码进 stronghold）",
-        ),
-        ("dbc_connection_delete", "删除数据库连接配置与凭据"),
-        ("dbc_connections", "连接列表（配置 + 会话状态）"),
-        ("dbc_connect", "建立数据库连接（探测版本与时延）"),
-        ("dbc_disconnect", "断开数据库连接"),
-        ("dbc_test", "测试数据库连接（不保存）"),
-        ("dbc_history", "查询历史列表"),
-        ("dbc_history_add", "追加查询历史"),
-        ("dbc_history_clear", "清空查询历史"),
-        ("dbc_saved", "收藏 SQL 列表"),
-        ("dbc_saved_add", "添加收藏 SQL"),
-        ("dbc_saved_update", "更新收藏 SQL（编辑器二次保存）"),
-        ("dbc_saved_delete", "删除收藏 SQL"),
-        ("dbc_driver_status", "agent 驱动就绪状态（含目录指引）"),
-        ("dbc_execute", "执行 SQL（多语句拆分，查询返回表格）"),
-        ("dbc_cancel", "取消进行中的查询"),
-        ("dbc_databases", "数据库列表"),
-        ("dbc_schemas", "schema 列表"),
-        ("dbc_objects", "对象列表（表/视图等）"),
-        ("dbc_columns", "表结构列信息"),
-        ("dbc_table_data", "表数据分页浏览"),
-        ("dbc_export_csv", "导出 CSV 文件（结果集导出）"),
-        ("dbc_redis_keys", "Redis 键列表（SCAN）"),
-        ("dbc_redis_key_info", "Redis 键信息（TYPE/TTL/预览）"),
-        ("dbc_charset_options", "字符集与排序规则选项（建库对话框）"),
-        ("dbc_users", "数据库用户清单（授权选择）"),
-        ("dbc_create_database", "新建数据库（含可选分步授权）"),
-        ("dbc_drop_database", "删除数据库（前端确认后调用）"),
-        ("dbc_table_admin", "表维护（重命名/清空/删除）"),
-        ("dbc_table_ddl", "表 DDL 查看"),
-        ("dbc_table_indexes", "表索引清单"),
-    ])
+    crate::framework::ipc_registry::register(
+        "database",
+        &[
+            (
+                "dbc_connection_save",
+                "保存数据库连接配置（密码进 AES（插件私有））",
+            ),
+            ("dbc_connection_delete", "删除数据库连接配置与凭据"),
+            ("dbc_connections", "连接列表（配置 + 会话状态）"),
+            ("dbc_connect", "建立数据库连接（探测版本与时延）"),
+            ("dbc_disconnect", "断开数据库连接"),
+            ("dbc_test", "测试数据库连接（不保存）"),
+            ("dbc_history", "查询历史列表"),
+            ("dbc_history_add", "追加查询历史"),
+            ("dbc_history_clear", "清空查询历史"),
+            ("dbc_saved", "收藏 SQL 列表"),
+            ("dbc_saved_add", "添加收藏 SQL"),
+            ("dbc_saved_update", "更新收藏 SQL（编辑器二次保存）"),
+            ("dbc_saved_delete", "删除收藏 SQL"),
+            ("dbc_driver_status", "agent 驱动就绪状态（含目录指引）"),
+            ("dbc_execute", "执行 SQL（多语句拆分，查询返回表格）"),
+            ("dbc_cancel", "取消进行中的查询"),
+            ("dbc_databases", "数据库列表"),
+            ("dbc_schemas", "schema 列表"),
+            ("dbc_objects", "对象列表（表/视图等）"),
+            ("dbc_columns", "表结构列信息"),
+            ("dbc_table_data", "表数据分页浏览"),
+            ("dbc_export_csv", "导出 CSV 文件（结果集导出）"),
+            ("dbc_redis_keys", "Redis 键列表（SCAN）"),
+            ("dbc_redis_key_info", "Redis 键信息（TYPE/TTL/预览）"),
+            ("dbc_charset_options", "字符集与排序规则选项（建库对话框）"),
+            ("dbc_users", "数据库用户清单（授权选择）"),
+            ("dbc_create_database", "新建数据库（含可选分步授权）"),
+            ("dbc_drop_database", "删除数据库（前端确认后调用）"),
+            ("dbc_table_admin", "表维护（重命名/清空/删除）"),
+            ("dbc_table_ddl", "表 DDL 查看"),
+            ("dbc_table_indexes", "表索引清单"),
+        ],
+    )
     .expect("IPC 命令重复注册");
     builder
         .manage(drivers::DbState(Mutex::new(HashMap::new())))

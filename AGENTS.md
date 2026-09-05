@@ -29,7 +29,7 @@
 - **IPC 接口入库**（`framework/ipc_registry.rs`）：插件 register() 登记命令（名称+中文说明），启动校验全局唯一（重复即 panic）；框架命令 `framework_commands` 可查全量清单
 - **数据库管理规则**（`framework/store.rs`）：插件数据文件统一 `app_data_dir/<plugin>.db`（`plugin_db_path`）；表结构走 `PRAGMA user_version` 顺序迁移（`migrate`，只追加）；**本地库统一骨架 `PluginDb`**（连接生命周期 + 锁 + 迁移，插件只写业务 SQL）；连接型 sqlx（三方言 M3）不套用
 - **工具注册表**（`src/core/registry/`）：工具目录自注册，新增工具 = 建目录 + 注册一行，框架零改动
-- **presentation 双载体**：`workspace`（**多页签工作区，2026-08-02 用户决策：第一批起全部工具以子页面打开**，实现见 `src/features/workspace/ToolWorkspace.vue`）/ `modal`（轻量弹窗，备用载体）
+- **载体**：全部工具以多页签工作区子页面打开（2026-08-02 用户决策，实现见 `src/features/workspace/ToolWorkspace.vue`）；原 modal 备用载体零使用已删（2026-09-06），未来需要弹窗式工具时重建
 - **Rust 插件化**：`src-tauri/src/plugins/`（与前端 plugins 同名同边界；settings/clipboard/color 基础，http_ws/api/db/hosts 业务；后续 dns/ssh/secrets 同目录），Adapter 模式（Provider trait）是第二批骨架
 - **IPC 契约插件化**：框架契约 `src/core/ipc/contracts.ts`（窗口/设置/剪贴板/取色）；插件契约在各自 `src/plugins/<id>/contracts.ts`（与 Rust serde 同步，互不影响）
 - **工具级设置**：manifest 声明 `settingsSchema`，框架自动渲染设置表单并存 `settings.tools[id]`
@@ -78,6 +78,8 @@
 5. **M4 本地验证已完成**：核心界面中英文切换、Tauri Updater、GitHub 标签发布与签名参数已接入；Windows NSIS 生产包已构建并记录哈希。真实 Windows/macOS 签名、Apple 公证和升级链路依赖 GitHub secrets、平台证书与旧版本产物。
 
 ### M3 进展记录（2026-08-08 起）
+
+- **文字转语音（TTS）**：`plugins/tts`，系统 TTS 引擎封装（Windows SAPI / macOS say），轻量工具。
 
 - **数据库工具**：`plugins/database` 已演进为多连接工作台，支持对象树、SQL 编辑/格式化/语句级执行、查询取消、数据与结构页签、建库建表及表维护；原生驱动与 agent 侧车统一走 Adapter 边界。
 - **SSH 工具**：`plugins/ssh` 使用 russh，覆盖连接配置、主机密钥校验、PTY 终端、SFTP、远程编辑、文件传输、资源监控、进程、systemd 服务和 Docker 管理；认证支持公共 Vault 可选引用与原手工输入双路径；真实服务器集成测试默认 `#[ignore]`，通过 `SSH_TEST_*` 环境变量手动运行。

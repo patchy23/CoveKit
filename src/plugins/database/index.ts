@@ -23,7 +23,6 @@ registerTool({
     '数据库',
     '查询',
   ],
-  presentation: 'workspace',
   component: () => import('./DatabaseWorkbench.vue'),
   tags: ['第二批'],
 })

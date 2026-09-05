@@ -449,16 +449,19 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
 
 /// 插件注册：命令入库 + State
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(&[
-        ("dns_query", "DNS 查询（指定服务器/多服务器对比）"),
-        ("dns_domains", "云解析域名列表（aliyun/dnspod/cloudflare）"),
-        ("dns_records", "云解析记录列表（分页）"),
-        ("dns_add_record", "云解析添加记录"),
-        ("dns_update_record", "云解析更新记录"),
-        ("dns_delete_record", "云解析删除记录"),
-        ("dns_config_get", "读取云平台密钥配置"),
-        ("dns_config_set", "保存云平台密钥配置"),
-    ])
+    crate::framework::ipc_registry::register(
+        "dns",
+        &[
+            ("dns_query", "DNS 查询（指定服务器/多服务器对比）"),
+            ("dns_domains", "云解析域名列表（aliyun/dnspod/cloudflare）"),
+            ("dns_records", "云解析记录列表（分页）"),
+            ("dns_add_record", "云解析添加记录"),
+            ("dns_update_record", "云解析更新记录"),
+            ("dns_delete_record", "云解析删除记录"),
+            ("dns_config_get", "读取云平台密钥配置"),
+            ("dns_config_set", "保存云平台密钥配置"),
+        ],
+    )
     .expect("IPC 命令重复注册");
     builder.manage(DnsState(Mutex::new(None)))
 }

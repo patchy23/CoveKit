@@ -152,12 +152,15 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
 
 /// 插件注册：命令 + 库 State（惰性初始化）+ IPC 命令入库
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(&[
-        ("api_save", "保存/更新接口（id=0 新增）"),
-        ("api_list", "接口列表"),
-        ("api_delete", "删除接口"),
-        ("api_clear", "清空全部接口"),
-    ])
+    crate::framework::ipc_registry::register(
+        "api",
+        &[
+            ("api_save", "保存/更新接口（id=0 新增）"),
+            ("api_list", "接口列表"),
+            ("api_delete", "删除接口"),
+            ("api_clear", "清空全部接口"),
+        ],
+    )
     .expect("IPC 命令重复注册");
     builder.manage(ApiState(std::sync::Mutex::new(None)))
 }

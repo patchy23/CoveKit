@@ -10,6 +10,5 @@ registerTool({
   icon: 'tts',
   description: '输入文字生成中文语音（晓晓/云希等 11 种音色），支持语速与音调调节。',
   keywords: ['tts', '语音', '朗读', '合成', '配音', 'text-to-speech', 'audio'],
-  presentation: 'workspace',
   component: () => import('./index.vue'),
 })

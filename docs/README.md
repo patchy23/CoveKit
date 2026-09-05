@@ -1,4 +1,4 @@
-# ToolKit 文档索引
+# patchyBox 文档索引
 
 桌面工具箱项目 · 设计方向：**② 明净浅色 · 内容优先**
 
@@ -7,6 +7,9 @@
 | [`DESIGN.md`](../DESIGN.md) | 设计 tokens 规范（颜色/字体/圆角/组件，单一事实源） |
 | [`01-tech-stack.md`](01-tech-stack.md) | 技术选型分析（Tauri 2.11 + Vue 3 + TS + Tailwind 4） |
 | [`02-architecture.md`](02-architecture.md) | 详细设计（架构、注册表、IPC 契约、数据模型、路线图） |
+| [`03-plugin-development.md`](03-plugin-development.md) | 插件开发规则（IPC 入库 / 数据库管理 / 质量门槛） |
+| [`05-rust-code-standard.md`](05-rust-code-standard.md) | Rust 代码规范（panic/clone/生命周期/异步） |
+| [`06-release.md`](06-release.md) | 发布、自动更新与代码签名配置 |
 
 ## 原型（已验收）
 

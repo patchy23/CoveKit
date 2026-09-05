@@ -4,7 +4,7 @@
  * 页签条 + 内容区：首页（工具库）/ 各工具页签（v-show 保持组件状态，切换不销毁）。
  * 页签过多时：新页签在首页后第一位，超出显示宽度的页签收纳进「···」下拉。
  */
-import { computed, defineAsyncComponent, ref, type Component } from 'vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, type Component } from 'vue'
 import { getTool } from '@/core/registry/toolRegistry'
 import { UiTabsOverflow } from '@/core/ui'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
@@ -42,6 +42,31 @@ function tabIcon(id: string) {
 function openHiddenTool(id: string) {
   ui.openTool(id)
 }
+
+/* ── 页签键盘快捷键：Ctrl+W 关闭当前页签，Ctrl(+Shift)+Tab 左右循环切换 ── */
+function onTabKeydown(event: KeyboardEvent) {
+  if (!event.ctrlKey) return
+  if (event.key === 'w' || event.key === 'W') {
+    // 首页不可关；无工具页签时不拦截（避免与系统/其他快捷键语义冲突）
+    if (!ui.activeTab) return
+    event.preventDefault()
+    ui.closeTab(ui.activeTab)
+    return
+  }
+  if (event.key === 'Tab' && ui.openTabs.length > 1) {
+    event.preventDefault()
+    // 候选序列 = 首页('') + 打开的工具页签
+    const seq: string[] = ['', ...ui.openTabs]
+    const cur = seq.indexOf(ui.activeTab ?? '')
+    const next = event.shiftKey ? (cur - 1 + seq.length) % seq.length : (cur + 1) % seq.length
+    const target = seq[next]
+    if (target) ui.openTool(target)
+    else ui.goHome()
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onTabKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onTabKeydown))
 
 /* ── 页签溢出收纳：按页签条可用宽度逐页签估算，放得下几个显示几个，其余进「···」下拉 ── */
 // extra=60：图标15 + 间距12 + 关闭18 + padding 15；maxLabel=120 与页签 max-w-[120px] 对齐。

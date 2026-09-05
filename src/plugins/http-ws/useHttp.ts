@@ -28,11 +28,7 @@ export function formatHeaders(headers: [string, string][]): string {
 }
 
 /** 字节数人类可读 */
-export function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / 1024 / 1024).toFixed(2)} MB`
-}
+export { formatBytes } from '@/core/format'
 
 /** 响应体是否为 JSON（启发式） */
 export function looksLikeJson(s: string): boolean {

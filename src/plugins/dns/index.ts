@@ -26,7 +26,6 @@ registerTool({
     'cloudflare',
     '云解析',
   ],
-  presentation: 'workspace',
   component: () => import('./index.vue'),
   tags: ['网络'],
 })

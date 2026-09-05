@@ -10,30 +10,43 @@ pub mod http_ws;
 pub mod ssh;
 pub mod tts;
 
-/// 判断命令是否属于业务插件，供唯一的应用级 invoke_handler 路由。
+use crate::framework::ipc_registry;
+
+/// 判断命令是否属于业务插件（注册表精确匹配；未入库或归属 framework 均为否）。
 pub(crate) fn is_command(command: &str) -> bool {
-    command.starts_with("http_")
-        || command.starts_with("ws_")
-        || command.starts_with("api_")
-        || command.starts_with("dbc_")
-        || command.starts_with("hosts_")
-        || command.starts_with("dns_")
-        || command.starts_with("ssh_")
-        || command.starts_with("tts_")
+    matches!(ipc_registry::owner_of(command), Some(owner) if owner != "framework")
 }
 
-/// 按插件命令前缀分派到插件私有 handler，避免 Builder::invoke_handler 互相覆盖。
+/// 按注册表归属者分派到插件私有 handler，避免 Builder::invoke_handler 互相覆盖。
+/// 路由依据 register() 时的 owner 登记——新增插件只需照常登记命令，无需再维护前缀清单。
 pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
-    match invoke.message.command() {
-        command if command.starts_with("http_") || command.starts_with("ws_") => {
-            http_ws::invoke_handler(invoke)
-        }
-        command if command.starts_with("api_") => api::invoke_handler(invoke),
-        command if command.starts_with("dbc_") => database::invoke_handler(invoke),
-        command if command.starts_with("hosts_") => hosts::invoke_handler(invoke),
-        command if command.starts_with("dns_") => dns::invoke_handler(invoke),
-        command if command.starts_with("ssh_") => ssh::invoke_handler(invoke),
-        command if command.starts_with("tts_") => tts::invoke_handler(invoke),
+    match ipc_registry::owner_of(invoke.message.command()) {
+        Some("http_ws") => http_ws::invoke_handler(invoke),
+        Some("api") => api::invoke_handler(invoke),
+        Some("database") => database::invoke_handler(invoke),
+        Some("hosts") => hosts::invoke_handler(invoke),
+        Some("dns") => dns::invoke_handler(invoke),
+        Some("ssh") => ssh::invoke_handler(invoke),
+        Some("tts") => tts::invoke_handler(invoke),
         _ => false,
+    }
+}
+
+/// 启动校验：注册表中每个插件 owner 在 invoke_handler 都有分派分支。
+/// 在全部插件 register 之后调用；发现死命令（登记了但没有路由分支）立即 panic（fail-fast）。
+pub(crate) fn validate_routing() {
+    for entry in ipc_registry::snapshot() {
+        if entry.owner == "framework" {
+            continue;
+        }
+        let routable = matches!(
+            entry.owner,
+            "http_ws" | "api" | "database" | "hosts" | "dns" | "ssh" | "tts"
+        );
+        assert!(
+            routable,
+            "IPC 命令 {} 的归属者 {} 没有路由分支（plugins/mod.rs invoke_handler 缺分支）",
+            entry.name, entry.owner
+        );
     }
 }

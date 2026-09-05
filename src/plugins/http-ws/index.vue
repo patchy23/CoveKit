@@ -11,6 +11,7 @@ import ApiSidebar from './ApiSidebar.vue'
 import type { ApiDraft } from './useHttp'
 import { useUiStore } from '@/stores/ui'
 import { UiButton, UiInput, UiModal } from '@/core/ui'
+import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
 const ui = useUiStore()
 
@@ -31,13 +32,24 @@ async function loadApis() {
   }
 }
 
-async function deleteApi(id: number) {
+/** 待删除的接口（两段式确认，与全站删除交互一致） */
+const deleteTarget = ref<ApiRecord | null>(null)
+
+function requestDeleteApi(id: number) {
+  deleteTarget.value = apis.value.find((a) => a.id === id) ?? null
+}
+
+async function confirmDeleteApi() {
+  const target = deleteTarget.value
+  deleteTarget.value = null
+  if (!target) return
   try {
-    await ipc.apiDelete(id)
-    if (activeApiId.value === id) activeApiId.value = null
+    await ipc.apiDelete(target.id)
+    if (activeApiId.value === target.id) activeApiId.value = null
     await loadApis()
-  } catch {
-    /* 忽略 */
+    ui.toast(`已删除接口「${target.name || target.url}」`)
+  } catch (error) {
+    ui.toast(`删除接口失败：${error}`)
   }
 }
 
@@ -153,7 +165,7 @@ onMounted(loadApis)
         :active-id="activeApiId"
         @select="applyApi"
         @rename="renameApi"
-        @delete="deleteApi"
+        @delete="requestDeleteApi"
         @new="newApi"
       />
 
@@ -186,5 +198,16 @@ onMounted(loadApis)
         <UiButton variant="primary" @click="saveApi">保存</UiButton>
       </template>
     </UiModal>
+
+    <!-- 删除接口确认（两段式，与全站删除交互一致） -->
+    <ConfirmDialog
+      :open="deleteTarget !== null"
+      title="删除接口"
+      :message="`确定删除接口「${deleteTarget?.name || deleteTarget?.url}」？该操作不可恢复。`"
+      confirm-label="删除"
+      danger
+      @confirm="confirmDeleteApi"
+      @close="deleteTarget = null"
+    />
   </div>
 </template>

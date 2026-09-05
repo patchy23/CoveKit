@@ -7,11 +7,11 @@
 ### 新增
 
 - 完整的桌面工具箱框架：工具注册表、多页签工作区、搜索、收藏、设置、托盘和全局快捷键。
-- HTTP/WebSocket 调试、hosts 编辑、格式转换、文本处理、二维码、密码与哈希等常用工具。
+- HTTP/WebSocket 调试、hosts 编辑、格式转换（JSON/XML/时间戳/Base64）、文字转语音等常用工具。
 - MySQL、PostgreSQL、SQLite、Redis、Oracle 及多种兼容数据库的多连接工作台。
 - DNS 查询和阿里云、腾讯云 DNSPod、Cloudflare 解析管理。
 - SSH 终端、SFTP、远程编辑、资源监控、进程、systemd 和 Docker 管理。
-- 系统 keyring 主密钥与 AES-256-GCM 加密的公共 Vault，支持凭证引用、删除保护和加密备份。
+- 系统 keyring 主密钥与 AES-256-GCM 加密的公共 Vault；SSH/DNS 可引用 Vault 凭证并保留手工输入，支持删除保护和加密备份。
 - 核心界面中英文运行时切换。
 - Tauri 自动更新、GitHub 标签发布和更新产物签名流程。
 
