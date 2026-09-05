@@ -129,6 +129,8 @@ function openContextMenu(event: MouseEvent) {
 
 function selectAll() {
   term?.selectAll()
+  // 菜单点击带走焦点，操作后归还终端
+  term?.focus()
 }
 
 async function copySelection() {
@@ -138,6 +140,8 @@ async function copySelection() {
     await writeText(selection)
   } catch (error) {
     ui.toast(`复制失败：${error}`)
+  } finally {
+    term?.focus()
   }
 }
 
@@ -147,6 +151,9 @@ async function pasteClipboard() {
     if (text) term?.paste(text)
   } catch (error) {
     ui.toast(`粘贴失败：${error}`)
+  } finally {
+    // 右键菜单点击会把焦点带离 xterm 的隐藏输入框，粘贴后必须归还焦点（否则光标消失、键盘输入无响应）
+    term?.focus()
   }
 }
 
