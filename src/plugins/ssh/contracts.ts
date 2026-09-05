@@ -34,6 +34,8 @@ export interface ServerProfile {
   authMethod: AuthMethod
   /** 公共 Vault 凭证 id；未设置时使用原手工输入并由 SSH 插件加密保存 */
   secretRef?: string
+  /** 所属分组 id（未设置 = 未分组，固定沉底的虚拟组） */
+  groupId?: string
   /** 备注 */
   remark?: string
   /** 最后连接时间（毫秒时间戳） */

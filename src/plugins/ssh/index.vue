@@ -14,12 +14,14 @@ import {
   type SshConnectionWorkspace,
   type SshWorkspaceSection,
 } from './useSshWorkspace'
-import { UiTabs, type UiTabItem } from '@/core/ui'
+import { UiIcon, UiIconButton, UiTabs, type UiTabItem } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
 const workspace = useSshWorkspace()
 const {
   profiles,
+  groups,
+  expandedIds,
   connectionWorkspaces,
   activeProfileId,
   searchKeyword,
@@ -41,6 +43,15 @@ const sectionTabs: UiTabItem[] = [
 const activeWorkspaceId = ref<string | null>(null)
 const closingWorkspaceId = ref<string | null>(null)
 const openingProfileId = ref<string | null>(null)
+/** 「关闭全部会话」确认弹窗开关 */
+const cleanupAllOpen = ref(false)
+
+/** 确认清理：断开并关闭全部连接工作区 */
+async function confirmCleanupAll() {
+  cleanupAllOpen.value = false
+  activeWorkspaceId.value = null
+  await workspace.closeAllWorkspaces()
+}
 const activeWorkspace = computed(() =>
   connectionWorkspaces.value.find((item) => item.id === activeWorkspaceId.value)
 )
@@ -116,25 +127,44 @@ watch(
   <div class="flex h-full min-h-0 w-full">
     <ServerList
       :profiles="filteredProfiles"
+      :groups="groups"
+      :expanded-ids="expandedIds"
       :search-keyword="searchKeyword"
       @update:search-keyword="searchKeyword = $event"
       @open-connection="createConnection"
       @add="workspace.openAddForm"
       @edit="workspace.openEditForm"
       @delete-request="workspace.requestDelete"
+      @move-to-group="workspace.moveToGroup"
+      @toggle-group="workspace.toggleGroup"
+      @create-group="workspace.createGroup"
+      @rename-group="workspace.renameGroup"
+      @delete-group="workspace.deleteGroup"
     />
 
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <!-- 第一层：完整 SSH 连接页签。关闭它才释放连接及其全部任务。 -->
-      <UiTabs
-        v-if="connectionTabItems.length"
-        :model-value="activeWorkspaceId ?? ''"
-        :items="connectionTabItems"
-        variant="line"
-        size="sm"
-        @update:model-value="activeWorkspaceId = $event"
-        @close="requestCloseWorkspace"
-      />
+      <div v-if="connectionTabItems.length" class="flex shrink-0 items-center">
+        <UiTabs
+          :model-value="activeWorkspaceId ?? ''"
+          :items="connectionTabItems"
+          variant="line"
+          size="sm"
+          class="min-w-0 flex-1"
+          @update:model-value="activeWorkspaceId = $event"
+          @close="requestCloseWorkspace"
+        />
+        <!-- 一键清理：断开并关闭全部会话 -->
+        <UiIconButton
+          label="关闭全部会话"
+          size="xs"
+          class="mx-[6px] shrink-0"
+          title="关闭全部会话"
+          @click="cleanupAllOpen = true"
+        >
+          <UiIcon name="trash" :size="13" />
+        </UiIconButton>
+      </div>
 
       <div
         v-if="!activeWorkspace"
@@ -243,6 +273,15 @@ watch(
       danger
       @close="deleteTarget = null"
       @confirm="workspace.confirmDelete"
+    />
+    <ConfirmDialog
+      :open="cleanupAllOpen"
+      title="关闭全部会话"
+      :message="`将断开并关闭全部 ${connectionWorkspaces.length} 个会话，未保存的终端内容将丢失。`"
+      confirm-label="全部关闭"
+      danger
+      @close="cleanupAllOpen = false"
+      @confirm="confirmCleanupAll"
     />
   </div>
 </template>

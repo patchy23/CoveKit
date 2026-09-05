@@ -1,9 +1,10 @@
-/** SSH 工作区状态：服务器配置、多连接工作区、凭证与工具生命周期清理。 */
+/** SSH 工作区状态：服务器配置、分组、多连接工作区、凭证与工具生命周期清理。 */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { ipc, onConnectionStatus, onTerminalData, onTransferProgress } from './ipc'
 import { loadProfiles, persistProfiles } from './useSsh'
+import { useServerGroups } from './useServerGroups'
 import type { ServerConnection, ServerProfile } from './contracts'
 
 export type SshWorkspaceSection =
@@ -34,6 +35,44 @@ export function useSshWorkspace() {
   const editingProfile = ref<ServerProfile | null>(null)
   const deleteTarget = ref<ServerProfile | null>(null)
   const pendingConnections = new Set<Promise<ServerConnection>>()
+
+  /* ── 分组（localStorage 持久化；折叠状态不持久化，重开工具默认全折叠） ── */
+  const groupsApi = useServerGroups()
+  const { groups, expandedIds, toggleGroup } = groupsApi
+
+  /** 新建分组（去重空名由弹窗保证） */
+  function createGroup(name: string) {
+    const group = groupsApi.createGroup(name)
+    ui.toast(`已创建分组「${group.name}」`)
+  }
+
+  /** 重命名分组 */
+  function renameGroup(groupId: string, name: string) {
+    groupsApi.renameGroup(groupId, name)
+    ui.toast('已重命名分组')
+  }
+
+  /** 删除分组：组内连接移回未分组（连接配置本身不删） */
+  function deleteGroup(groupId: string) {
+    const group = groups.value.find((g) => g.id === groupId)
+    for (const p of profiles.value) {
+      if (p.groupId === groupId) delete p.groupId
+    }
+    persistProfiles(profiles.value)
+    groupsApi.deleteGroup(groupId)
+    ui.toast(`已删除分组「${group?.name ?? ''}」，组内连接移回未分组`)
+  }
+
+  /** 拖拽入组：null = 未分组 */
+  function moveToGroup(profileId: string, groupId: string | null) {
+    const profile = profiles.value.find((p) => p.id === profileId)
+    if (!profile) return
+    const targetName = groupId ? (groups.value.find((g) => g.id === groupId)?.name ?? '') : '未分组'
+    if ((profile.groupId ?? null) === groupId) return
+    profile.groupId = groupId ?? undefined
+    persistProfiles(profiles.value)
+    ui.toast(`已将「${profile.name}」移动到「${targetName}」`)
+  }
 
   const filteredProfiles = computed(() => {
     const keyword = searchKeyword.value.trim().toLowerCase()
@@ -106,6 +145,16 @@ export function useSshWorkspace() {
     if (!workspace) return
     connectionWorkspaces.value = connectionWorkspaces.value.filter((item) => item.id !== id)
     await disconnectConnection(workspace.connection)
+  }
+
+  /** 一键清理：断开并关闭全部连接工作区（右侧页签条「关闭全部会话」） */
+  async function closeAllWorkspaces() {
+    const count = connectionWorkspaces.value.length
+    for (const workspace of [...connectionWorkspaces.value]) {
+      await disconnectConnection(workspace.connection)
+    }
+    connectionWorkspaces.value = []
+    ui.toast(`已关闭全部 ${count} 个会话`)
   }
 
   async function deleteProfile(id: string) {
@@ -318,6 +367,8 @@ export function useSshWorkspace() {
 
   return {
     profiles,
+    groups,
+    expandedIds,
     connectionWorkspaces,
     activeProfileId,
     searchKeyword,
@@ -333,7 +384,13 @@ export function useSshWorkspace() {
     confirmDelete,
     openConnection,
     closeConnectionWorkspace,
+    closeAllWorkspaces,
     reconnectWorkspace,
     touchWorkspace,
+    createGroup,
+    renameGroup,
+    deleteGroup,
+    moveToGroup,
+    toggleGroup,
   }
 }
