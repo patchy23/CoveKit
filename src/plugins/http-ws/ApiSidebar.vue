@@ -4,7 +4,7 @@
  */
 import type { ApiRecord } from './contracts'
 import { formatRelativeTime, methodBadgeClass } from './useHttp'
-import { UiBadge, UiButton, UiIcon, UiIconButton } from '@/core/ui'
+import { UiBadge, UiButton, UiIcon, UiIconButton, UiListRow } from '@/core/ui'
 
 defineProps<{
   apis: ApiRecord[]
@@ -38,56 +38,55 @@ const emit = defineEmits<{
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[8px]">
-      <div
+      <UiListRow
         v-for="a in apis"
         :key="a.id"
-        class="group mb-[2px] flex cursor-pointer flex-col gap-[3px] rounded-md px-[8px] py-[7px] transition-colors"
-        :class="
-          a.id === activeId
-            ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
-            : 'hover:bg-border dark:hover:bg-border-dark'
-        "
+        class="group"
+        cursor="pointer"
+        :active="a.id === activeId"
         :title="`${a.method} ${a.url}\n${a.updatedAt}`"
         @click="emit('select', a)"
       >
-        <div class="flex items-center gap-[8px]">
-          <UiBadge
-            size="xs"
-            class="w-[46px] shrink-0 rounded-[4px] px-[4px] py-[1px] text-center font-mono text-caption font-medium"
-            :class="methodBadgeClass(a.method, a.type)"
-            >{{ a.type === 'ws' ? 'WS' : a.method }}</UiBadge
-          >
-          <span
-            class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
-          >
-            {{ a.name || '(未命名)' }}
-          </span>
-          <UiIconButton
-            label="重命名接口"
-            size="xs"
-            class="hidden shrink-0 text-text-muted hover:text-info-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-info-dark"
-            @click.stop="emit('rename', a)"
-          >
-            <UiIcon name="pencil" :size="12" />
-          </UiIconButton>
-          <UiIconButton
-            label="删除接口"
-            size="xs"
-            class="hidden shrink-0 text-text-muted hover:text-tertiary-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-tertiary-dark"
-            @click.stop="emit('delete', a.id)"
-          >
-            <UiIcon name="trash" :size="12" />
-          </UiIconButton>
+        <div class="flex min-w-0 flex-1 flex-col gap-[3px]">
+          <div class="flex items-center gap-[8px]">
+            <UiBadge
+              size="xs"
+              class="w-[46px] shrink-0 rounded-[4px] px-[4px] py-[1px] text-center font-mono text-caption font-medium"
+              :class="methodBadgeClass(a.method, a.type)"
+              >{{ a.type === 'ws' ? 'WS' : a.method }}</UiBadge
+            >
+            <span
+              class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
+            >
+              {{ a.name || '(未命名)' }}
+            </span>
+            <UiIconButton
+              label="重命名接口"
+              size="xs"
+              class="hidden shrink-0 text-text-muted hover:text-info-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-info-dark"
+              @click.stop="emit('rename', a)"
+            >
+              <UiIcon name="pencil" :size="12" />
+            </UiIconButton>
+            <UiIconButton
+              label="删除接口"
+              size="xs"
+              class="hidden shrink-0 text-text-muted hover:text-tertiary-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-tertiary-dark"
+              @click.stop="emit('delete', a.id)"
+            >
+              <UiIcon name="trash" :size="12" />
+            </UiIconButton>
+          </div>
+          <div class="flex items-center gap-[6px]">
+            <span class="truncate font-mono text-body-sm text-secondary dark:text-secondary-dark">
+              {{ a.url }}
+            </span>
+            <span class="ml-auto shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
+              {{ formatRelativeTime(a.updatedAt) }}
+            </span>
+          </div>
         </div>
-        <div class="flex items-center gap-[6px]">
-          <span class="truncate font-mono text-body-sm text-secondary dark:text-secondary-dark">
-            {{ a.url }}
-          </span>
-          <span class="ml-auto shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
-            {{ formatRelativeTime(a.updatedAt) }}
-          </span>
-        </div>
-      </div>
+      </UiListRow>
 
       <p
         v-if="!apis.length"

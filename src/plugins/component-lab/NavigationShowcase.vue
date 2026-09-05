@@ -1,6 +1,15 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
-import { UiButton, UiField, UiInput, UiModal, UiPagination, UiPanel, UiTabs } from '@/core/ui'
+import {
+  UiButton,
+  UiField,
+  UiInput,
+  UiListRow,
+  UiModal,
+  UiPagination,
+  UiPanel,
+  UiTabs,
+} from '@/core/ui'
 import type { UiSize } from '@/core/ui'
 
 const sizes: UiSize[] = ['xs', 'sm', 'md', 'lg']
@@ -16,6 +25,7 @@ const activeTabs = reactive<Record<UiSize, string>>({
   lg: 'settings',
 })
 const page = ref(4)
+const listRowActive = ref('row-1')
 const modalOpen = ref(false)
 const modalSize = ref<'sm' | 'md' | 'lg' | 'xl'>('md')
 
@@ -53,6 +63,31 @@ function openModal(size: 'sm' | 'md' | 'lg' | 'xl') {
       <p class="mt-md text-body-sm text-text-muted dark:text-text-muted-dark">
         当前第 {{ page }} 页
       </p>
+    </UiPanel>
+
+    <UiPanel
+      title="列表行"
+      description="UiListRow：行壳统一尺寸/hover/选中/缩进，内容走插槽；事件直接挂在组件上。"
+    >
+      <div class="overflow-hidden rounded-lg border border-border dark:border-border-dark">
+        <UiListRow
+          v-for="row in ['row-1', 'row-2', 'row-3']"
+          :key="row"
+          size="sm"
+          cursor="pointer"
+          :active="listRowActive === row"
+          @click="listRowActive = row"
+        >
+          <span class="min-w-0 flex-1 truncate font-medium text-primary dark:text-primary-dark">
+            {{
+              row === 'row-1' ? '生产环境-web-01' : row === 'row-2' ? '测试环境-db' : '本地开发机'
+            }}
+          </span>
+          <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
+            root@10.0.0.1
+          </span>
+        </UiListRow>
+      </div>
     </UiPanel>
 
     <UiPanel title="弹窗尺寸" description="弹窗按内容复杂度提供 sm / md / lg / xl。">

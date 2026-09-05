@@ -9,7 +9,15 @@ import type { ServerProfile } from './contracts'
 import { UNGROUPED_DROP_KEY, useGroupDrag, type ServerGroup } from './useServerGroups'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiSearchInput } from '@/core/ui'
+import {
+  UiButton,
+  UiIcon,
+  UiIconButton,
+  UiInput,
+  UiListRow,
+  UiModal,
+  UiSearchInput,
+} from '@/core/ui'
 
 const props = defineProps<{
   profiles: ServerProfile[]
@@ -161,20 +169,18 @@ function confirmDeleteGroup() {
     <div class="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[8px]">
       <!-- 搜索态：平铺列表 -->
       <template v-if="searching">
-        <div
+        <UiListRow
           v-for="profile in profiles"
           :key="profile.id"
-          class="mb-[2px] flex cursor-default items-center rounded-md px-[8px] py-[5px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+          size="sm"
           :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接）`"
           @dblclick="emit('openConnection', profile.id)"
           @contextmenu="openProfileMenu($event, profile)"
         >
-          <span
-            class="min-w-0 flex-1 truncate text-body-sm font-medium text-primary dark:text-primary-dark"
-          >
+          <span class="min-w-0 flex-1 truncate font-medium text-primary dark:text-primary-dark">
             {{ profile.name }}
           </span>
-        </div>
+        </UiListRow>
       </template>
 
       <!-- 分组态 -->
@@ -208,21 +214,21 @@ function confirmDeleteGroup() {
           </div>
           <!-- 组内连接 -->
           <template v-if="isExpanded(group.id)">
-            <div
+            <UiListRow
               v-for="profile in profilesOf(group.id)"
               :key="profile.id"
-              class="mb-[2px] ml-[12px] flex cursor-grab items-center rounded-md px-[8px] py-[5px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+              size="sm"
+              :indent="12"
+              cursor="grab"
               :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接，拖拽移动分组）`"
               @dblclick="emit('openConnection', profile.id)"
               @contextmenu="openProfileMenu($event, profile)"
               @pointerdown="onRowPointerDown($event, profile)"
             >
-              <span
-                class="min-w-0 flex-1 truncate text-body-sm font-medium text-primary dark:text-primary-dark"
-              >
+              <span class="min-w-0 flex-1 truncate font-medium text-primary dark:text-primary-dark">
                 {{ profile.name }}
               </span>
-            </div>
+            </UiListRow>
             <p
               v-if="!profilesOf(group.id).length"
               class="ml-[12px] px-[8px] py-[4px] text-caption text-text-muted dark:text-text-muted-dark"
@@ -258,21 +264,21 @@ function confirmDeleteGroup() {
           >
         </div>
         <template v-if="isExpanded(null)">
-          <div
+          <UiListRow
             v-for="profile in profilesOf(null)"
             :key="profile.id"
-            class="mb-[2px] ml-[12px] flex cursor-grab items-center rounded-md px-[8px] py-[5px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+            size="sm"
+            :indent="12"
+            cursor="grab"
             :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接，拖拽移动分组）`"
             @dblclick="emit('openConnection', profile.id)"
             @contextmenu="openProfileMenu($event, profile)"
             @pointerdown="onRowPointerDown($event, profile)"
           >
-            <span
-              class="min-w-0 flex-1 truncate text-body-sm font-medium text-primary dark:text-primary-dark"
-            >
+            <span class="min-w-0 flex-1 truncate font-medium text-primary dark:text-primary-dark">
               {{ profile.name }}
             </span>
-          </div>
+          </UiListRow>
         </template>
       </template>
 
