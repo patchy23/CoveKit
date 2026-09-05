@@ -23,6 +23,7 @@ registerTool({
       label: '空闲自动断开',
       default: '10',
       options: [
+        { value: '1', label: '1 分钟（调试用）' },
         { value: '10', label: '10 分钟' },
         { value: '30', label: '30 分钟' },
         { value: '60', label: '1 小时' },
