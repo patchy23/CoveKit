@@ -3,6 +3,7 @@
  * 分组只有一层；「未分组」是固定沉底的虚拟组（无实体记录）。
  */
 import { ref, watch } from 'vue'
+import type { ServerProfile } from './contracts'
 
 export interface ServerGroup {
   /** 唯一 id（group-<时间戳>） */
@@ -64,4 +65,93 @@ export function useServerGroups() {
   }
 
   return { groups, expandedIds, createGroup, renameGroup, deleteGroup, toggleGroup }
+}
+
+/* ── 拖拽入组（pointer 事件自实现；HTML5 DnD 与 Tauri dragDropEnabled 的 OLE 拖放冲突，实测不可用） ── */
+
+/** 拖动超过该位移才算拖拽（避免吞掉单击/双击） */
+const DRAG_THRESHOLD = 6
+
+/** 未分组投放目标的命中值（data-group-drop=""） */
+export const UNGROUPED_DROP_KEY = '__ungrouped__'
+
+export interface GroupDragState {
+  profileId: string
+  name: string
+  startX: number
+  startY: number
+  x: number
+  y: number
+  /** 是否已越过阈值进入拖拽态 */
+  active: boolean
+}
+
+/**
+ * 连接行拖拽入组：行上挂 @pointerdown="onRowPointerDown($event, profile)"，
+ * 分组行挂 data-group-drop（未分组为空串）；投放命中经回调上抛（groupId null = 未分组）。
+ */
+export function useGroupDrag(onMove: (profileId: string, groupId: string | null) => void) {
+  const drag = ref<GroupDragState | null>(null)
+  /** 当前命中的投放目标（高亮反馈） */
+  const dragOverId = ref<string | null>(null)
+
+  function onRowPointerDown(event: PointerEvent, profile: ServerProfile) {
+    if (event.button !== 0) return
+    drag.value = {
+      profileId: profile.id,
+      name: profile.name,
+      startX: event.clientX,
+      startY: event.clientY,
+      x: event.clientX,
+      y: event.clientY,
+      active: false,
+    }
+    window.addEventListener('pointermove', onDragMove)
+    window.addEventListener('pointerup', onDragEnd, { once: true })
+    window.addEventListener('keydown', onDragKeydown)
+  }
+
+  /** 命中测试：指针下的分组行（data-group-drop 属性，空串 = 未分组） */
+  function hitTest(x: number, y: number): string | null {
+    const el = document.elementFromPoint(x, y)
+    const target = el?.closest('[data-group-drop]') as HTMLElement | null
+    if (!target) return null
+    const raw = target.dataset.groupDrop
+    return raw === '' ? UNGROUPED_DROP_KEY : (raw ?? null)
+  }
+
+  function onDragMove(event: PointerEvent) {
+    const d = drag.value
+    if (!d) return
+    if (!d.active) {
+      if (Math.hypot(event.clientX - d.startX, event.clientY - d.startY) < DRAG_THRESHOLD) return
+      d.active = true
+    }
+    d.x = event.clientX
+    d.y = event.clientY
+    dragOverId.value = hitTest(event.clientX, event.clientY)
+  }
+
+  function cleanup() {
+    drag.value = null
+    dragOverId.value = null
+    window.removeEventListener('pointermove', onDragMove)
+    window.removeEventListener('keydown', onDragKeydown)
+  }
+
+  function onDragEnd(event: PointerEvent) {
+    const d = drag.value
+    cleanup()
+    if (!d?.active) return
+    const hit = hitTest(event.clientX, event.clientY)
+    if (hit === null) return
+    onMove(d.profileId, hit === UNGROUPED_DROP_KEY ? null : hit)
+  }
+
+  /** Esc 取消拖拽 */
+  function onDragKeydown(event: KeyboardEvent) {
+    if (event.key === 'Escape') cleanup()
+  }
+
+  return { drag, dragOverId, onRowPointerDown }
 }

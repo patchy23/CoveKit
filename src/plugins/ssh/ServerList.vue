@@ -6,7 +6,7 @@
  */
 import { computed, ref } from 'vue'
 import type { ServerProfile } from './contracts'
-import type { ServerGroup } from './useServerGroups'
+import { UNGROUPED_DROP_KEY, useGroupDrag, type ServerGroup } from './useServerGroups'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiSearchInput } from '@/core/ui'
@@ -33,7 +33,12 @@ const emit = defineEmits<{
 }>()
 
 /** 未分组虚拟组的展开键（固定沉底，可折叠/接收拖出） */
-const UNGROUPED_KEY = '__ungrouped__'
+const UNGROUPED_KEY = UNGROUPED_DROP_KEY
+
+/** 拖拽入组（逻辑在 useGroupDrag；命中上抛为 moveToGroup 事件） */
+const { drag, dragOverId, onRowPointerDown } = useGroupDrag((profileId, groupId) =>
+  emit('moveToGroup', profileId, groupId)
+)
 
 const searching = computed(() => props.searchKeyword.trim().length > 0)
 
@@ -46,30 +51,6 @@ function profilesOf(groupId: string | null): ServerProfile[] {
 
 function isExpanded(groupId: string | null): boolean {
   return props.expandedIds.has(groupId ?? UNGROUPED_KEY)
-}
-
-/* ── 拖拽入组（HTML5 原生 DnD，dataTransfer 带 profile id） ── */
-const DND_TYPE = 'application/x-ssh-profile'
-/** 当前悬停的投放目标（高亮反馈） */
-const dragOverId = ref<string | null>(null)
-
-function onDragStart(event: DragEvent, profile: ServerProfile) {
-  event.dataTransfer?.setData(DND_TYPE, profile.id)
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
-}
-
-function onDragOver(event: DragEvent, groupId: string | null) {
-  if (!event.dataTransfer?.types.includes(DND_TYPE)) return
-  event.preventDefault()
-  event.dataTransfer.dropEffect = 'move'
-  dragOverId.value = groupId ?? '__ungrouped__'
-}
-
-function onDrop(event: DragEvent, groupId: string | null) {
-  event.preventDefault()
-  dragOverId.value = null
-  const profileId = event.dataTransfer?.getData(DND_TYPE)
-  if (profileId) emit('moveToGroup', profileId, groupId)
 }
 
 /* ── 右键菜单 ── */
@@ -157,7 +138,10 @@ function confirmDeleteGroup() {
 </script>
 
 <template>
-  <div class="flex w-[180px] shrink-0 flex-col border-r border-border dark:border-border-dark">
+  <div
+    class="flex w-[180px] shrink-0 flex-col border-r border-border dark:border-border-dark"
+    :class="{ 'select-none': drag?.active }"
+  >
     <div class="shrink-0 px-[12px] py-[10px]">
       <!-- 搜索 + 添加同一行：搜索框弹性占满，右侧 + 号按钮 -->
       <div class="flex items-center gap-[6px]">
@@ -204,11 +188,9 @@ function confirmDeleteGroup() {
                 dragOverId === group.id,
             }"
             :title="`${group.name}（单击${isExpanded(group.id) ? '折叠' : '展开'}，拖拽连接到此入组）`"
+            :data-group-drop="group.id"
             @click="emit('toggleGroup', group.id)"
             @contextmenu="openGroupMenu($event, group)"
-            @dragover="onDragOver($event, group.id)"
-            @dragleave="dragOverId = null"
-            @drop="onDrop($event, group.id)"
           >
             <UiIcon
               name="chevron-right"
@@ -217,7 +199,7 @@ function confirmDeleteGroup() {
               :class="{ 'rotate-90': isExpanded(group.id) }"
             />
             <span
-              class="min-w-0 flex-1 truncate text-label-caps font-semibold tracking-[0.06em] text-text-muted dark:text-text-muted-dark"
+              class="min-w-0 flex-1 truncate text-body-sm font-semibold text-secondary dark:text-secondary-dark"
               >{{ group.name }}</span
             >
             <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
@@ -229,12 +211,11 @@ function confirmDeleteGroup() {
             <div
               v-for="profile in profilesOf(group.id)"
               :key="profile.id"
-              draggable="true"
-              class="mb-[2px] ml-[12px] flex cursor-default items-center rounded-md px-[8px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+              class="mb-[2px] ml-[12px] flex cursor-grab items-center rounded-md px-[8px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
               :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接，拖拽移动分组）`"
               @dblclick="emit('openConnection', profile.id)"
               @contextmenu="openProfileMenu($event, profile)"
-              @dragstart="onDragStart($event, profile)"
+              @pointerdown="onRowPointerDown($event, profile)"
             >
               <span
                 class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
@@ -259,10 +240,8 @@ function confirmDeleteGroup() {
               dragOverId === UNGROUPED_KEY,
           }"
           title="未分组（拖拽到此处移出分组）"
+          data-group-drop=""
           @click="emit('toggleGroup', UNGROUPED_KEY)"
-          @dragover="onDragOver($event, null)"
-          @dragleave="dragOverId = null"
-          @drop="onDrop($event, null)"
         >
           <UiIcon
             name="chevron-right"
@@ -271,7 +250,7 @@ function confirmDeleteGroup() {
             :class="{ 'rotate-90': isExpanded(null) }"
           />
           <span
-            class="min-w-0 flex-1 truncate text-label-caps font-semibold tracking-[0.06em] text-text-muted dark:text-text-muted-dark"
+            class="min-w-0 flex-1 truncate text-body-sm font-semibold text-secondary dark:text-secondary-dark"
             >未分组</span
           >
           <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
@@ -282,12 +261,11 @@ function confirmDeleteGroup() {
           <div
             v-for="profile in profilesOf(null)"
             :key="profile.id"
-            draggable="true"
-            class="mb-[2px] ml-[12px] flex cursor-default items-center rounded-md px-[8px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
+            class="mb-[2px] ml-[12px] flex cursor-grab items-center rounded-md px-[8px] py-[8px] transition-colors hover:bg-border dark:hover:bg-border-dark"
             :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接，拖拽移动分组）`"
             @dblclick="emit('openConnection', profile.id)"
             @contextmenu="openProfileMenu($event, profile)"
-            @dragstart="onDragStart($event, profile)"
+            @pointerdown="onRowPointerDown($event, profile)"
           >
             <span
               class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
@@ -343,5 +321,14 @@ function confirmDeleteGroup() {
       @confirm="confirmDeleteGroup"
       @close="deleteGroupTarget = null"
     />
+
+    <!-- 拖拽中的浮动指示（跟随指针的迷你标签） -->
+    <div
+      v-if="drag?.active"
+      class="pointer-events-none fixed z-[300] rounded-md border border-tertiary bg-surface px-[8px] py-[4px] text-body-sm font-medium text-tertiary-strong shadow-md dark:bg-surface-dark dark:text-tertiary-dark"
+      :style="{ left: `${drag.x + 12}px`, top: `${drag.y + 12}px` }"
+    >
+      {{ drag.name }}
+    </div>
   </div>
 </template>
