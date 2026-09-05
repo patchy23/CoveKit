@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from 'xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
 import type { ServerConnection, ServerProfile } from './contracts'
 import { UiButton } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
-import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import ContextMenu from '@/core/ui/ContextMenu.vue'
+import { useTerminalContextMenu } from './useTerminalContextMenu'
 import { ipc, onTerminalData } from './ipc'
 import { createTerminalResizeController } from './useTerminalResize'
 
@@ -24,7 +24,6 @@ const ui = useUiStore()
 const termHost = ref<HTMLDivElement | null>(null)
 const statusLine = ref('终端未连接')
 const terminalActive = ref(false)
-const menu = ref<{ x: number; y: number; hasSelection: boolean } | null>(null)
 
 let term: Terminal | null = null
 let fitAddon: FitAddon | null = null
@@ -115,57 +114,8 @@ async function reconnect() {
   await openTerminal()
 }
 
-/** 在终端区域打开项目统一右键菜单。 */
-function openContextMenu(event: MouseEvent) {
-  event.preventDefault()
-  const width = 150
-  const height = 112
-  menu.value = {
-    x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
-    y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)),
-    hasSelection: Boolean(term?.hasSelection()),
-  }
-}
-
-function selectAll() {
-  term?.selectAll()
-  // 菜单点击带走焦点，操作后归还终端
-  term?.focus()
-}
-
-async function copySelection() {
-  const selection = term?.getSelection() ?? ''
-  if (!selection) return
-  try {
-    await writeText(selection)
-  } catch (error) {
-    ui.toast(`复制失败：${error}`)
-  } finally {
-    term?.focus()
-  }
-}
-
-async function pasteClipboard() {
-  try {
-    const text = await readText()
-    if (text) term?.paste(text)
-  } catch (error) {
-    ui.toast(`粘贴失败：${error}`)
-  } finally {
-    // 右键菜单点击会把焦点带离 xterm 的隐藏输入框，粘贴后必须归还焦点（否则光标消失、键盘输入无响应）
-    term?.focus()
-  }
-}
-
-const menuItems = computed<ContextMenuItem[]>(() => [
-  { label: '全选', onClick: selectAll },
-  {
-    label: '复制',
-    disabled: !menu.value?.hasSelection,
-    onClick: () => void copySelection(),
-  },
-  { label: '粘贴', onClick: () => void pasteClipboard() },
-])
+// 右键菜单逻辑在 useTerminalContextMenu（焦点归还规则见该文件头注释）
+const { menu, menuItems, openContextMenu } = useTerminalContextMenu(() => term)
 
 onMounted(async () => {
   if (!termHost.value) return

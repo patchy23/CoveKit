@@ -5,12 +5,10 @@
  * 认证方式 = 手工三档 + 凭证库条目（vault:<id>）；选中凭证即用它连接（用户名由凭证覆盖），
  * 凭证类型与 SSH 认证不符时由后端在连接时给出明确报错。
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue'
-import type { CredentialSummary } from '@/core/ipc/contracts'
-import { ipc } from '@/core/ipc/ipc'
-import { KIND_LABEL } from '@/core/vault/useVault'
+import { computed, reactive, ref, watch } from 'vue'
 import CredentialForm from '@/core/vault/CredentialForm.vue'
 import type { ServerProfile, AuthMethod } from './contracts'
+import { useServerCredentialChoice } from './useServerCredentialChoice'
 import {
   UiButton,
   UiCombobox,
@@ -85,31 +83,7 @@ watch(
   { immediate: true }
 )
 
-/** 新建凭证的哨兵值（选中它 = 打开新建表单） */
-const CREATE_VALUE = '__create__'
-
-/** 凭证库条目（只列 SSH 可用的两类：用户名密码 / SSH 私钥） */
-const credentials = ref<CredentialSummary[]>([])
-const credentialsLoaded = ref(false)
-const credentialsFailed = ref(false)
-const credFormOpen = ref(false)
-
-async function loadCredentials() {
-  credentialsFailed.value = false
-  try {
-    const all = await ipc.vaultList()
-    credentials.value = all.filter((c) => c.kind === 'password' || c.kind === 'ssh-key')
-  } catch (e) {
-    credentials.value = []
-    credentialsFailed.value = true
-    console.warn('[ssh] 凭证库加载失败', e)
-  } finally {
-    credentialsLoaded.value = true
-  }
-}
-onMounted(loadCredentials)
-
-/** 认证方式下拉选中值：凭证档为 credential，否则为手工认证方式 */
+/* ── 认证方式选择（手工三档 + 凭证档） ── */
 const authValue = computed(() => (credentialMode.value ? 'credential' : form.authMethod))
 
 const AUTH_OPTIONS: SelectOption[] = [
@@ -118,19 +92,6 @@ const AUTH_OPTIONS: SelectOption[] = [
   { value: 'privateKeyWithPassphrase', label: '私钥 + Passphrase（手工输入）' },
   { value: 'credential', label: '凭证（凭证库选择）' },
 ]
-
-/** 凭证下拉选项（可搜索：匹配名称/类型/掩码摘要），末尾新建入口 */
-const credentialOptions = computed(() => [
-  ...credentials.value.map((c) => ({
-    value: c.id,
-    label: `${c.name}（${KIND_LABEL[c.kind]} · ${c.masked}）`,
-    keywords: `${c.name} ${c.masked} ${KIND_LABEL[c.kind]}`,
-  })),
-  { value: CREATE_VALUE, label: '+ 新建凭证' },
-])
-
-/** 当前选中凭证（展示用） */
-const selectedCredential = computed(() => credentials.value.find((c) => c.id === form.secretRef))
 
 function onAuthChange(value: string | number) {
   const v = String(value)
@@ -144,37 +105,16 @@ function onAuthChange(value: string | number) {
   form.authMethod = v as AuthMethod
 }
 
-/** 选择凭证：记录引用并把认证方式推导为凭证类型对应的手工档（后端连接时按凭证内容认证） */
-function onCredentialSelect(value: string) {
-  if (value === CREATE_VALUE) {
-    credFormOpen.value = true
-    return
-  }
-  const cred = credentials.value.find((c) => c.id === value)
-  if (!cred) return
-  form.secretRef = cred.id
-  // 密码凭证→password；SSH 私钥凭证→privateKey（passphrase 随凭证内容走）
-  form.authMethod = cred.kind === 'password' ? 'password' : 'privateKey'
-}
-
-/** 新建凭证保存成功：刷新列表并自动选中 */
-function onCredentialSaved(summary: CredentialSummary) {
-  void loadCredentials().then(() => {
-    if (summary.kind === 'password' || summary.kind === 'ssh-key') {
-      form.secretRef = summary.id
-      form.authMethod = summary.kind === 'password' ? 'password' : 'privateKey'
-    }
-  })
-}
-
-/** 编辑场景：引用的凭证已被删除时提示（选择时即拦截，不必等到连接） */
-const credentialMissing = computed(
-  () =>
-    credentialsLoaded.value &&
-    form.secretRef !== '' &&
-    !credentialsFailed.value &&
-    !selectedCredential.value
-)
+/* ── 凭证档逻辑（加载/选项/失效检测在 useServerCredentialChoice） ── */
+const {
+  credentialsFailed,
+  credFormOpen,
+  credentialOptions,
+  selectedCredential,
+  credentialMissing,
+  onCredentialSelect,
+  onCredentialSaved,
+} = useServerCredentialChoice(form, (m) => (form.authMethod = m))
 
 function submit() {
   // 必填校验：名称/主机/用户名任一为空则提示并中止（UI-014）

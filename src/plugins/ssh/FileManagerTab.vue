@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, RemoteFile } from './contracts'
-import { canEditRemoteFile } from './useSsh'
+import { useRemoteFileOps } from './useRemoteFileOps'
 import { useUiStore } from '@/stores/ui'
 import ContextMenu from '@/core/ui/ContextMenu.vue'
 import FileBrowser from './FileBrowser.vue'
@@ -42,10 +42,24 @@ function cacheDirectory(key: string, list: RemoteFile[]) {
 }
 const selectedFile = ref<RemoteFile | null>(null)
 
-const editing = ref<{ connectionId: string; path: string; content: string } | null>(null)
-const savingEdit = ref(false)
-const renameTarget = ref<RemoteFile | null>(null)
-const deleteTarget = ref<RemoteFile | null>(null)
+/* 编辑/删除/重命名操作在 useRemoteFileOps（toast/确认目标/编辑态统一管理） */
+const {
+  editing,
+  savingEdit,
+  deleteTarget,
+  renameTarget,
+  openFile,
+  openFileGuarded,
+  onSave,
+  requestDelete,
+  confirmDelete,
+  requestRename,
+  confirmRename,
+} = useRemoteFileOps({
+  sessionId: () => props.connection?.sessionId,
+  selectedFile,
+  refresh: () => refreshCurrent(),
+})
 
 const { dragActive, transferStatus, upload, download } = useSftpTransfers({
   connectionId: () => props.connection?.sessionId,
@@ -142,101 +156,7 @@ async function onDoubleClick(file: RemoteFile) {
     navigate(file.path)
     return
   }
-  if (!canEditRemoteFile(file)) {
-    ui.toast('该文件类型或大小不支持在线编辑')
-    return
-  }
-  await openFile(file)
-}
-
-async function openFile(file: RemoteFile) {
-  const connectionId = props.connection?.sessionId
-  if (!connectionId) return
-  try {
-    const r = await ipc.sshEditOpen(connectionId, file.path)
-    if (props.connection?.sessionId !== connectionId) return
-    if (r.ok) {
-      editing.value = { connectionId, path: r.path, content: r.content }
-    } else {
-      ui.toast(`打开文件失败：${r.error ?? '未知错误'}`)
-    }
-  } catch (e) {
-    ui.toast(`打开文件失败：${e}`)
-  }
-}
-
-/** 保存：回写服务器（ssh_edit_save） */
-async function onSave(content: string) {
-  const target = editing.value
-  if (!target || savingEdit.value) return
-  savingEdit.value = true
-  try {
-    const r = await ipc.sshEditSave(target.connectionId, target.path, content)
-    if (r.ok) {
-      ui.toast(`已保存 ${target.path}（${content.length} 字符）`)
-      editing.value = null
-    } else {
-      ui.toast(`保存失败：${r.error ?? '未知错误'}`)
-    }
-  } catch (e) {
-    ui.toast(`保存失败：${e}`)
-  } finally {
-    savingEdit.value = false
-  }
-}
-
-function requestDelete(file: RemoteFile | null = selectedFile.value) {
-  if (!file) {
-    ui.toast('请先选择文件')
-    return
-  }
-  deleteTarget.value = file
-}
-
-async function confirmDelete() {
-  const file = deleteTarget.value
-  deleteTarget.value = null
-  if (!file || !props.connection?.sessionId) return
-  try {
-    const r = await ipc.sshFileDelete(props.connection.sessionId, file.path, file.isDir)
-    if (r.ok) {
-      ui.toast(`已删除 ${file.name}`)
-      selectedFile.value = null
-      refreshCurrent()
-    } else {
-      ui.toast(`删除失败：${r.error ?? '未知错误'}`)
-    }
-  } catch (e) {
-    ui.toast(`删除失败：${e}`)
-  }
-}
-
-function requestRename(file: RemoteFile | null = selectedFile.value) {
-  if (!file) {
-    ui.toast('请先选择文件')
-    return
-  }
-  renameTarget.value = file
-}
-
-async function confirmRename(name: string) {
-  const file = renameTarget.value
-  renameTarget.value = null
-  if (!file || !props.connection?.sessionId || name === file.name) return
-  const dir = file.path.slice(0, file.path.lastIndexOf('/') + 1)
-  const newPath = `${dir}${name}`
-  try {
-    const r = await ipc.sshFileRename(props.connection.sessionId, file.path, newPath)
-    if (r.ok) {
-      ui.toast(`已重命名为 ${name}`)
-      selectedFile.value = null
-      refreshCurrent()
-    } else {
-      ui.toast(`重命名失败：${r.error ?? '未知错误'}`)
-    }
-  } catch (e) {
-    ui.toast(`重命名失败：${e}`)
-  }
+  await openFileGuarded(file)
 }
 
 const { menu, menuItems, openMenu } = useFileContextMenu({
