@@ -26,6 +26,20 @@ const files = ref<RemoteFile[]>([])
 const sortKey = ref<'name' | 'modifiedAt'>('name')
 const sortDirection = ref<'asc' | 'desc'>('asc')
 const directoryCache = new Map<string, RemoteFile[]>()
+/** 目录缓存上限：超出时淘汰最旧条目（Map 保持插入序），防长期浏览无限增长 */
+const DIRECTORY_CACHE_LIMIT = 100
+/** 目录请求序号：快速连续切换时只认最后一次请求的目录（竞态守卫） */
+let navigateSeq = 0
+
+/** 写入目录缓存（带淘汰：同 key 刷新位置，超限删最旧） */
+function cacheDirectory(key: string, list: RemoteFile[]) {
+  if (directoryCache.has(key)) directoryCache.delete(key)
+  directoryCache.set(key, list)
+  if (directoryCache.size > DIRECTORY_CACHE_LIMIT) {
+    const oldest = directoryCache.keys().next().value
+    if (oldest !== undefined) directoryCache.delete(oldest)
+  }
+}
 const selectedFile = ref<RemoteFile | null>(null)
 
 const editing = ref<{ connectionId: string; path: string; content: string } | null>(null)
@@ -67,6 +81,8 @@ function cacheKey(connectionId: string, path: string) {
 async function navigate(path: string, force = false, recordHistory = true) {
   const connectionId = props.connection?.sessionId
   if (!connectionId) return
+  // 竞态守卫：序号单调递增，慢返回的旧目录请求直接丢弃（不再回写 files/缓存）
+  const seq = ++navigateSeq
   const previousPath = currentPath.value
   if (recordHistory && path !== previousPath) {
     directoryHistory.value = [...directoryHistory.value, previousPath].slice(
@@ -83,14 +99,16 @@ async function navigate(path: string, force = false, recordHistory = true) {
   }
   try {
     const r = await ipc.sshFileList(connectionId, path)
+    if (seq !== navigateSeq) return // 已有更新的目录请求，丢弃本次结果
     if (props.connection?.sessionId !== connectionId) return
     if (r.ok) {
       files.value = r.files
-      directoryCache.set(key, r.files)
+      cacheDirectory(key, r.files)
     } else {
       ui.toast(`读取目录失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
+    if (seq !== navigateSeq) return
     ui.toast(`读取目录失败：${e}`)
   }
 }

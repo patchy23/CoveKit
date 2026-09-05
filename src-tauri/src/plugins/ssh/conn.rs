@@ -85,6 +85,11 @@ pub(crate) struct SshSessionHandle {
     pub(crate) connected_at: u64,
     /// russh 会话句柄（终端/文件通道从此开启）
     pub(crate) session: std::sync::Arc<client::Handle<SshHandler>>,
+    /// SFTP 长驻会话（惰性创建 + 全连接期复用，句柄销毁时随之回收）。
+    /// 每次新建需 channel open + 子系统握手（约 2~3 次 RTT）——
+    /// 逐操作新建是文件页签切目录卡顿与内存飙升的根因；
+    /// SftpSession 设计为长生命周期且支持并发请求，标准做法即每连接复用一个。
+    pub(crate) sftp: Mutex<Option<Arc<russh_sftp::client::SftpSession>>>,
 }
 
 /// SSH 会话注册表（State 注入，惰性初始化）
@@ -126,6 +131,62 @@ pub(crate) fn get_session(
         .get(connection_id)
         .map(|h| h.session.clone())
         .ok_or_else(|| "连接不存在或已断开".to_string())
+}
+
+/// 取该连接的 SFTP 长驻会话（惰性创建，之后复用；并发首访时后者覆盖前者，
+/// 被覆盖的会话随 Arc 释放自动关通道，无害）。文件浏览/编辑等高频操作走此入口；
+/// 大文件传输仍用独立通道（不占用交互会话的请求窗口）。
+pub(crate) async fn get_sftp_session(
+    state: &tauri::State<'_, SshState>,
+    connection_id: &str,
+) -> Result<Arc<russh_sftp::client::SftpSession>, String> {
+    // 先查缓存（两把锁都只在小作用域内持有，不跨 await）
+    let cached = {
+        let map = state.0.lock().map_err(|e| e.to_string())?;
+        let handle = map.get(connection_id).ok_or("连接不存在或已断开")?;
+        // 先落局部变量再作为块尾值：避免 MutexGuard 临时量的析构顺序借用问题
+        let cached_slot = handle.sftp.lock().map_err(|e| e.to_string())?.clone();
+        cached_slot
+    };
+    if let Some(sftp) = cached {
+        return Ok(sftp);
+    }
+    // 缓存未命中：新建 channel + SFTP 子系统握手
+    let session = get_session(state, connection_id)?;
+    let channel = session
+        .channel_open_session()
+        .await
+        .map_err(|e| format!("打开通道失败: {e}"))?;
+    channel
+        .request_subsystem(false, "sftp")
+        .await
+        .map_err(|e| format!("SFTP 子系统请求失败: {e}"))?;
+    let stream = channel.into_stream();
+    let sftp = Arc::new(
+        russh_sftp::client::SftpSession::new(stream)
+            .await
+            .map_err(|e| format!("SFTP 初始化失败: {e}"))?,
+    );
+    // 回存（连接可能已断开，存不进去就直接返回新建的这个）
+    if let Ok(map) = state.0.lock() {
+        if let Some(handle) = map.get(connection_id) {
+            if let Ok(mut slot) = handle.sftp.lock() {
+                *slot = Some(sftp.clone());
+            }
+        }
+    }
+    Ok(sftp)
+}
+
+/// 使缓存的 SFTP 会话失效（操作报通道/协议错误时调用，下次操作自动重建）
+pub(crate) fn invalidate_sftp_session(state: &tauri::State<'_, SshState>, connection_id: &str) {
+    if let Ok(map) = state.0.lock() {
+        if let Some(handle) = map.get(connection_id) {
+            if let Ok(mut slot) = handle.sftp.lock() {
+                *slot = None;
+            }
+        }
+    }
 }
 
 /// 执行远程命令并收集全部输出（监控/服务/进程/Docker 共用）
@@ -362,6 +423,7 @@ pub async fn ssh_connect(
         open: true,
         connected_at,
         session,
+        sftp: Mutex::new(None),
     };
     state
         .0
@@ -474,6 +536,7 @@ pub async fn ssh_reconnect(
                 open: true,
                 connected_at,
                 session,
+                sftp: Mutex::new(None),
             },
         );
         old

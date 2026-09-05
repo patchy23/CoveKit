@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::plugins::ssh::conn::{get_session, resource_id, SshState};
+use crate::plugins::ssh::conn::{
+    get_session, get_sftp_session, invalidate_sftp_session, resource_id, SshState,
+};
 use crate::plugins::ssh::models::{
     FileListResult, FileTransferProgress, RemoteFile, SshActionResult,
 };
@@ -104,26 +106,6 @@ fn join_remote_path(root: &str, relative: &Path) -> String {
         })
 }
 
-/// 从连接会话建立 SFTP 会话（临时通道，用完即弃）
-async fn sftp_session(
-    ssh_state: &State<'_, SshState>,
-    connection_id: &str,
-) -> Result<russh_sftp::client::SftpSession, String> {
-    let session = get_session(ssh_state, connection_id)?;
-    let channel = session
-        .channel_open_session()
-        .await
-        .map_err(|e| format!("打开通道失败: {e}"))?;
-    channel
-        .request_subsystem(false, "sftp")
-        .await
-        .map_err(|e| format!("SFTP 子系统请求失败: {e}"))?;
-    let stream = channel.into_stream();
-    russh_sftp::client::SftpSession::new(stream)
-        .await
-        .map_err(|e| format!("SFTP 初始化失败: {e}"))
-}
-
 /// 将已完整写入的临时文件安全替换为目标文件；失败时尽量恢复旧文件。
 pub(crate) async fn replace_remote_file(
     fs: &russh_sftp::client::SftpSession,
@@ -216,11 +198,15 @@ pub async fn ssh_file_list(
     connection_id: String,
     path: String,
 ) -> Result<FileListResult, String> {
-    let sftp = sftp_session(&ssh_state, &connection_id).await?;
-    let entries = sftp
-        .read_dir(&path)
-        .await
-        .map_err(|e| format!("读取目录失败: {e}"))?;
+    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+    let entries = match sftp.read_dir(&path).await {
+        Ok(entries) => entries,
+        Err(e) => {
+            // 长驻会话可能已失效（服务器重启/通道被回收）：清缓存，下次操作自动重建
+            invalidate_sftp_session(&ssh_state, &connection_id);
+            return Err(format!("读取目录失败: {e}"));
+        }
+    };
     let mut files = Vec::new();
     for entry in entries {
         let meta = entry.metadata();
@@ -526,7 +512,7 @@ pub async fn ssh_file_delete(
     remote_path: String,
     recursive: Option<bool>,
 ) -> Result<SshActionResult, String> {
-    let sftp = sftp_session(&ssh_state, &connection_id).await?;
+    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
     let meta = sftp
         .metadata(&remote_path)
         .await
@@ -588,7 +574,7 @@ pub async fn ssh_file_rename(
     old_path: String,
     new_path: String,
 ) -> Result<SshActionResult, String> {
-    let sftp = sftp_session(&ssh_state, &connection_id).await?;
+    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
     match sftp.rename(&old_path, &new_path).await {
         Ok(_) => Ok(SshActionResult {
             ok: true,

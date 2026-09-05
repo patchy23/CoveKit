@@ -5,32 +5,12 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use tauri::State;
 
-use crate::plugins::ssh::conn::{get_session, resource_id, SshState};
+use crate::plugins::ssh::conn::{get_sftp_session, resource_id, SshState};
 use crate::plugins::ssh::file::replace_remote_file;
 use crate::plugins::ssh::models::{RemoteFileContent, SshActionResult};
 
 /// 远程编辑器最大文件大小，避免一次性读取超大文件耗尽内存。
 const MAX_EDIT_BYTES: u64 = 10 * 1024 * 1024;
-
-/// 临时 SFTP 会话（与 file.rs 同构，避免跨文件依赖）
-async fn sftp_session(
-    ssh_state: &State<'_, SshState>,
-    connection_id: &str,
-) -> Result<russh_sftp::client::SftpSession, String> {
-    let session = get_session(ssh_state, connection_id)?;
-    let channel = session
-        .channel_open_session()
-        .await
-        .map_err(|e| format!("打开通道失败: {e}"))?;
-    channel
-        .request_subsystem(false, "sftp")
-        .await
-        .map_err(|e| format!("SFTP 子系统请求失败: {e}"))?;
-    let stream = channel.into_stream();
-    russh_sftp::client::SftpSession::new(stream)
-        .await
-        .map_err(|e| format!("SFTP 初始化失败: {e}"))
-}
 
 /// 打开远程文件（下载完整内容）
 #[tauri::command(rename_all = "camelCase")]
@@ -39,7 +19,7 @@ pub async fn ssh_edit_open(
     connection_id: String,
     remote_path: String,
 ) -> Result<RemoteFileContent, String> {
-    let sftp = sftp_session(&ssh_state, &connection_id).await?;
+    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
     let meta = sftp
         .metadata(&remote_path)
         .await
@@ -81,7 +61,7 @@ pub async fn ssh_edit_save(
     remote_path: String,
     content: String,
 ) -> Result<SshActionResult, String> {
-    let sftp = sftp_session(&ssh_state, &connection_id).await?;
+    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
     let target_path = sftp
         .canonicalize(&remote_path)
         .await
