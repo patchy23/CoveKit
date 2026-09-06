@@ -5,6 +5,7 @@
 
 pub(crate) mod browse;
 pub(crate) mod transfer;
+pub(crate) mod util;
 
 pub(crate) use transfer::replace_remote_file;
 pub use transfer::TransferState;
