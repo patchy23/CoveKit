@@ -8,6 +8,7 @@
 import { safeWindow } from '@/core/ui/windowCtl'
 import { useUiStore } from '@/stores/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
+import hekaraIcon from '@/assets/hekara-icon-color.png'
 
 const ui = useUiStore()
 
@@ -23,14 +24,8 @@ function onDblClick() {
     @dblclick="onDblClick"
   >
     <div class="flex items-center gap-[8px] px-[14px]" data-tauri-drag-region>
-      <div
-        class="grid h-[20px] w-[20px] place-items-center rounded-[6px] bg-gradient-to-br from-tertiary to-tertiary-strong text-[10px] font-extrabold text-on-tertiary"
-      >
-        P
-      </div>
-      <span class="text-body-sm font-medium text-secondary dark:text-secondary-dark">
-        patchyBox
-      </span>
+      <img :src="hekaraIcon" alt="" class="h-[20px] w-[20px] rounded-[6px] object-cover" />
+      <span class="text-body-sm font-medium text-secondary dark:text-secondary-dark"> Hekara </span>
     </div>
     <div class="flex-1" data-tauri-drag-region />
     <div class="flex h-full items-center">
