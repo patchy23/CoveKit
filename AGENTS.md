@@ -54,7 +54,7 @@
 
 ## 工程约束（第一批验收红线）
 
-**可读性**：组件 < 300 行；逻辑抽纯函数（`tools/<id>/useXxx.ts`）；IPC 出入参只在 contracts.ts 出现一次；ESLint 9 + Prettier + rustfmt + `clippy -D warnings` 全绿才合入。
+**可读性**：组件 < 300 行；逻辑抽纯函数（`tools/<id>/useXxx.ts`）；**Rust 单文件 >400 行或插件能力文件 >8 个必须按能力域下沉子目录**（规则见 docs/03 §1）；IPC 出入参只在 contracts.ts 出现一次；ESLint 9 + Prettier + rustfmt + `clippy -D warnings` 全绿才合入。
 **字体规范**：字号一律用语义 token（`text-h1/text-brand/text-card-title/text-h2/text-body/text-body-sm/text-caption/text-label-caps/text-display`，定义在 `src/assets/styles/main.css` @theme），禁止 arbitrary `text-[*px]`；字体族用 `--font-sans`（Inter Variable 本地打包）/ `--font-mono`（等宽）。
 **可扩展性**：新增工具 = `src/plugins/<id>/` 目录（manifest + 私有契约/封装）+ `plugins/index.ts` 一行；新增 Rust 插件 = `src-tauri/src/plugins/<id>.rs` + `mod.rs`/lib.rs 各一行；新增厂商/数据库 = adapter；升级第二批时第一批代码只增不改。
 
@@ -119,5 +119,6 @@
 
 - 文档与注释中文；代码标识符英文；提交信息用 conventional commits 带模块作用域（如 `fix(http-ws): 保存对话框`；跨模块逗号分隔；框架/基建用 `core`）
 - 提交要求（所有项目通用）：Conventional Commits `类型(scope): 中文描述`；标题一行总概括，body 按代码增删改分条、内容具体（禁"xx产品化"式模糊概括），不写文件级细节/架构性质；类型按实质（搬移 refactor/隐患 fix/新机制 feat/测试 test）、scope 按真实改动模块；禁破折号与评审编号。署名：每会话首次提交前与用户明确（用户名+邮箱），无本地 git 配置则添加 local，会话内统一。提交时机：默认自动提交（除非明确说不提交）；复杂模块开发前先提交基线；任务尽量一次提交、大任务按阶段；只 commit 不 push
+- **并行多会话纪律**：可能有多个 agent 会话同时在本仓库工作；**只 `git add` 本会话改过的文件，禁止 `git add -A`/`git add .`**；动手前先 `git status` 看工作区有无他人进行中的改动（有则绕开，不同步不覆盖）；需要改他人未提交的文件时先与用户确认归属
 - 所有命令在 git-bash 执行；Windows 环境
 - 改 DESIGN.md 后跑 `npx -y -p @google/design.md designmd lint DESIGN.md` 校验

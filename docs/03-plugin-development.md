@@ -27,8 +27,9 @@
 - `id`：小写连字符（`http-ws`、`random-password`）；Rust 模块名 snake_case（`http_ws`）。
 - 命令名：snake_case（`db_open`）；前端封装名 camelCase（`dbOpen`）。
 - 字段：serde 统一 `camelCase`；错误结构统一 `{ ok: false, error: Option<String> }`（不抛错给前端展示）。
-- 每个插件在 `mod.rs` 提供自己的 `invoke_handler(invoke)`，内部 `generate_handler!` 使用完整路径；应用级 Builder 只安装一次总 handler，由 `plugins/mod.rs` 按命令前缀分派。
+- 每个插件在 `mod.rs` 提供自己的 `invoke_handler(invoke)`，内部 `generate_handler!` 使用完整路径；应用级 Builder 只安装一次总 handler，由 `plugins/mod.rs` 按注册表 owner 精确路由（2026-09-06 起；旧的前缀手写清单已废弃）。
 - **禁止在多个 `register()` 中调用 `Builder::invoke_handler`**：该方法是 setter，后调用会覆盖前一批命令，并非追加。
+- **Rust 文件规模红线（2026-09-06 新增，教训：ssh 插件平铺 14 个 rs / conn.rs 1222 行）**：单个 rs 文件 >400 行、或插件目录下能力文件 >8 个时，必须按能力域下沉子目录（如 `ssh/conn/`、`ssh/sftp/`、`ssh/ops/`），子目录 `mod.rs` 用 `pub use` 重导出保持 `crate::plugins::<id>::<域>::xxx` 引用路径稳定，调用方零改动；门面 `mod.rs` 保持薄（命令薄层 + register/init + 模块声明）。
 - 框架级能力（设置/快捷键/窗口/命令入库/数据管理）在 `src-tauri/src/framework/`，**不属于插件**。
 
 ## 2. IPC 接口入库规则（tauri 接口入库）
@@ -137,7 +138,7 @@ Rust：
 
 ## 5. 质量门槛（合入红线）
 
-1. `pnpm lint --max-warnings 0` + `pnpm test` + `pnpm build` 全绿；Rust `clippy -D warnings`（`--no-default-features`）+ `fmt --check` + `cargo test` 全绿。
+1. `pnpm lint --max-warnings 0` + `pnpm format`（CI 有 format:check，提交前必须本地跑过）+ `pnpm test` + `pnpm build` 全绿；Rust `clippy -D warnings`（`--no-default-features`）+ `fmt --check` + `cargo test` 全绿。
 2. 纯函数必须单测（`useXxx.test.ts`）；契约字段变更必须同步更新测试。
 3. 组件 ≤300 行；逻辑抽 `useXxx.ts`。
 4. 所有用户操作必须有可见反馈（toast/错误行），禁止静默 catch。
