@@ -4,6 +4,9 @@ import { computed, ref, watch } from 'vue'
 import ServerList from './ServerList.vue'
 import ServerForm from './ServerForm.vue'
 import TerminalTab from './TerminalTab.vue'
+import TunnelTab from './TunnelTab.vue'
+import HostKeyDialog from './HostKeyDialog.vue'
+import KnownHostsDialog from './KnownHostsDialog.vue'
 import FileManagerTab from './FileManagerTab.vue'
 import MonitorTab from './MonitorTab.vue'
 import ServiceTab from './ServiceTab.vue'
@@ -29,11 +32,13 @@ const {
   formOpen,
   editingProfile,
   deleteTarget,
+  hostKeyRequest,
 } = workspace
 
 const sectionTabs: UiTabItem[] = [
   { value: 'terminal', label: '终端' },
   { value: 'files', label: '文件' },
+  { value: 'tunnels', label: '隧道' },
   { value: 'monitor', label: '监控' },
   { value: 'services', label: '服务' },
   { value: 'processes', label: '进程' },
@@ -45,6 +50,8 @@ const closingWorkspaceId = ref<string | null>(null)
 const openingProfileId = ref<string | null>(null)
 /** 「关闭全部会话」确认弹窗开关 */
 const cleanupAllOpen = ref(false)
+/** 已知主机管理弹窗开关 */
+const knownHostsOpen = ref(false)
 
 /** 确认清理：断开并关闭全部连接工作区 */
 async function confirmCleanupAll() {
@@ -133,6 +140,7 @@ watch(
       @update:search-keyword="searchKeyword = $event"
       @open-connection="createConnection"
       @add="workspace.openAddForm"
+      @known-hosts="knownHostsOpen = true"
       @edit="workspace.openEditForm"
       @delete-request="workspace.requestDelete"
       @move-to-group="workspace.moveToGroup"
@@ -203,10 +211,13 @@ watch(
               v-show="remote.activeSection === 'terminal'"
               :connection="remote.connection"
               :profile="profiles.find((profile) => profile.id === remote.profileId)"
-              :connect-request="1"
+              :connect-request="remote.connectRequest"
+              :reconnect-tick="remote.reconnectTick"
+              :stage-text="remote.stageText"
               :active="activeWorkspaceId === remote.id && remote.activeSection === 'terminal'"
               class="h-full"
               @reconnect="workspace.reconnectWorkspace(remote.id)"
+              @link-dead="workspace.handleLinkDead(remote.id)"
             />
             <FileManagerTab
               v-if="
@@ -216,6 +227,13 @@ watch(
               :connection="remote.connection"
               :profile="profiles.find((profile) => profile.id === remote.profileId)"
               :active="activeWorkspaceId === remote.id && remote.activeSection === 'files'"
+              class="h-full"
+            />
+            <TunnelTab
+              v-if="remote.connection.status === 'connected' && remote.visitedSections.includes('tunnels')"
+              v-show="remote.activeSection === 'tunnels'"
+              :connection="remote.connection"
+              :profile="profiles.find((profile) => profile.id === remote.profileId)"
               class="h-full"
             />
             <MonitorTab
@@ -252,7 +270,7 @@ watch(
     <ServerForm
       v-if="formOpen"
       :profile="editingProfile"
-      @save="workspace.saveProfile"
+      @save="(p, creds, saveCredential) => workspace.saveProfile(p, creds, saveCredential)"
       @error="workspace.showError"
       @cancel="formOpen = false"
     />
@@ -274,6 +292,9 @@ watch(
       @close="deleteTarget = null"
       @confirm="workspace.confirmDelete"
     />
+    <HostKeyDialog :request="hostKeyRequest" @respond="workspace.respondHostKey" />
+    <KnownHostsDialog :open="knownHostsOpen" @close="knownHostsOpen = false" />
+
     <ConfirmDialog
       :open="cleanupAllOpen"
       title="关闭全部会话"

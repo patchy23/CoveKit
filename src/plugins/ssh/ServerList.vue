@@ -32,6 +32,7 @@ const emit = defineEmits<{
   (event: 'update:searchKeyword', value: string): void
   (event: 'openConnection', profileId: string): void
   (event: 'add'): void
+  (event: 'knownHosts'): void
   (event: 'edit', profile: ServerProfile): void
   (event: 'deleteRequest', profile: ServerProfile): void
   (event: 'moveToGroup', profileId: string, groupId: string | null): void
@@ -154,8 +155,11 @@ function confirmDeleteGroup() {
           placeholder="搜索服务器..."
           @update:model-value="emit('update:searchKeyword', $event)"
         />
-        <UiIconButton label="添加服务器" size="sm" title="添加服务器" @click="emit('add')">
-          <UiIcon name="plus" :size="14" />
+        <UiIconButton label="添加服务器" size="sm" title="添加服务器" @click="emit('add')">
+          <UiIcon name="plus" :size="14" />
+        </UiIconButton>
+        <UiIconButton label="已知主机" size="sm" title="已知主机（指纹管理）" @click="emit('knownHosts')">
+          <UiIcon name="eye" :size="14" />
         </UiIconButton>
       </div>
     </div>

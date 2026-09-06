@@ -96,6 +96,7 @@ pub(crate) fn spawn_channel_task(
             "ssh://terminal-closed",
             &TerminalClosed {
                 terminal_id: terminal_id.clone(),
+                connection_id: connection_id.clone(),
             },
         );
     });

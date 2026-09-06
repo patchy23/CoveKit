@@ -19,7 +19,10 @@ export function useSftpTransfers(options: {
   const settings = useSettingsStore()
   const dragActive = ref(false)
   let stopDragDrop: (() => void) | null = null
-  const transferStatus = useFileTransfer(options.connectionId, options.refresh)
+  const { transferStatus, transfers, cancelTransfer } = useFileTransfer(
+    options.connectionId,
+    options.refresh
+  )
 
   async function uploadLocalPaths(
     localPaths: string[],
@@ -105,5 +108,5 @@ export function useSftpTransfers(options: {
   })
   onUnmounted(() => stopDragDrop?.())
 
-  return { dragActive, transferStatus, upload, download }
+  return { dragActive, transferStatus, transfers, cancelTransfer, uploadLocalPaths, upload, download }
 }

@@ -18,7 +18,7 @@ export interface SshActionResult {
 /** 认证方式 */
 export type AuthMethod = 'password' | 'privateKey' | 'privateKeyWithPassphrase'
 
-/** 服务器连接配置（密码/密钥不直接存储，可引用公共 Vault 或插件原手工凭据） */
+/** 服务器连接配置（凭证只存公共 Vault 的 credentialRef 引用，秘密永不入库/不落 profile） */
 export interface ServerProfile {
   /** 唯一 id（profile-<毫秒时间戳>） */
   id: string
@@ -32,14 +32,24 @@ export interface ServerProfile {
   username: string
   /** 认证方式 */
   authMethod: AuthMethod
-  /** 公共 Vault 凭证 id；未设置时使用原手工输入并由 SSH 插件加密保存 */
-  secretRef?: string
+  /** 公共 Vault 凭证 id；未设置表示尚未保存凭证（连接时需一次性凭证） */
+  credentialRef?: string
   /** 所属分组 id（未设置 = 未分组，固定沉底的虚拟组） */
   groupId?: string
   /** 备注 */
   remark?: string
   /** 最后连接时间（毫秒时间戳） */
   lastConnectedAt?: number
+}
+
+/** 服务器分组 */
+export interface SshGroup {
+  /** 唯一 id（group-<毫秒时间戳>） */
+  id: string
+  /** 分组名称 */
+  name: string
+  /** 排序权重（创建顺序自增） */
+  sortOrder: number
 }
 
 /** 服务器连接状态 */
@@ -96,6 +106,8 @@ export interface TerminalData {
 /** 后端 PTY 通道已经关闭。 */
 export interface TerminalClosed {
   terminalId: string
+  /** 所属连接会话 id（前端据此触发断线自动重连） */
+  connectionId: string
 }
 
 /* ── 文件管理 ── */
@@ -152,14 +164,6 @@ export interface FileTransferProgress {
   error?: string
 }
 
-/** 解密后的 SSH 凭证（仅 IPC 临时返回，不持久化到前端） */
-export interface SshCredential {
-  authMethod?: AuthMethod
-  password?: string
-  privateKey?: string
-  passphrase?: string
-}
-
 /* ── 远程编辑 ── */
 
 /** 远程文件内容 */
@@ -173,7 +177,18 @@ export interface RemoteFileContent {
   size: number
   /** 编码（如 UTF-8 / GBK） */
   encoding: string
+  /** 修改时间（毫秒；编辑器乐观锁基线） */
+  modifiedAt?: number
   error?: string
+}
+
+/** 远程编辑保存结果（conflict=true 表示远端已被修改，未写入） */
+export interface EditSaveResult {
+  ok: boolean
+  error?: string
+  conflict?: boolean
+  /** 冲突时远端当前 mtime（毫秒） */
+  currentMtime?: number
 }
 
 /* ── 资源监控 ── */
@@ -270,15 +285,150 @@ export interface DockerLog {
   time: number
 }
 
+/* ── 主机密钥校验与连接结果 ── */
+
+/** 已知主机条目（patchyBox 私有 known_hosts） */
+export interface KnownHostEntry {
+  /** 主机地址 */
+  host: string
+  /** 端口 */
+  port: number
+  /** 公钥算法名（如 ssh-ed25519） */
+  algorithm: string
+  /** SHA256 指纹（SHA256:base64） */
+  fingerprint: string
+}
+
+/** 主机密钥人工确认请求（后端在握手回调中推送，等待 ssh_host_key_respond） */
+export interface HostKeyVerifyRequest {
+  /** 本次连接尝试的唯一请求 id */
+  requestId: string
+  /** unknown = 首次连接；mismatch = 与已保存指纹不一致 */
+  kind: 'unknown' | 'mismatch'
+  host: string
+  port: number
+  algorithm: string
+  fingerprint: string
+  /** kind=mismatch 时已保存的指纹列表 */
+  savedFingerprints: string[]
+}
+
+/** 连接阶段事件 */
+export interface ConnectStage {
+  /** 本次连接尝试的请求 id（对应连接结果中的 requestId） */
+  requestId: string
+
+  /** 所属服务器配置 id（前端据此把进度关联到工作区） */
+  profileId: string  /** resolve / tcp / handshake / verify / auth / session */
+  stage: string
+  /** start / ok / fail */
+  status: string
+  message?: string
+}
+
+/** 稳定错误码 + 中文文案（detail 可复制，已脱敏） */
+export interface SshConnectError {
+  code: string
+  message: string
+  detail?: string
+}
+
+/** ssh_connect / ssh_reconnect 的结构化返回（业务失败不抛 IPC 异常） */
+export interface SshConnectOutcome {
+  ok: boolean
+  connection?: ServerConnection
+  requestId: string
+  error?: SshConnectError
+}
+
+/** 一次性导入结果摘要 */
+export interface SshImportResult {
+  importedProfiles: number
+  importedGroups: number
+  migratedCredentials: number
+}
+
+/* ── 隧道 ── */
+
+/** 隧道类型 */
+export type TunnelType = 'local' | 'remote' | 'dynamic'
+
+/** 隧道配置（随 profile 持久化在后端插件库） */
+export interface TunnelConfig {
+  /** 唯一 id（tun-<毫秒时间戳>） */
+  id: string
+  /** 所属服务器配置 id */
+  profileId: string
+  /** 显示名称 */
+  name: string
+  /** 隧道类型 */
+  tunnelType: TunnelType
+  /** 监听地址（local/dynamic 为本机侧；remote 为服务端侧） */
+  listenHost: string
+  /** 监听端口 */
+  listenPort: number
+  /** 目标主机（dynamic 为空） */
+  targetHost?: string
+  /** 目标端口（dynamic 为空） */
+  targetPort?: number
+  /** 连接建立后自动启动 */
+  autoStart: boolean
+}
+
+/** 隧道运行状态 */
+export type TunnelStatus = 'stopped' | 'starting' | 'running' | 'error'
+
+/** 隧道运行时快照 */
+export interface TunnelRuntime {
+  /** 隧道配置（平铺） */
+  id: string
+  profileId: string
+  name: string
+  tunnelType: TunnelType
+  listenHost: string
+  listenPort: number
+  targetHost?: string
+  targetPort?: number
+  autoStart: boolean
+  /** 当前状态 */
+  status: TunnelStatus
+  /** 活动连接数 */
+  connections: number
+  /** 异常信息（status=error 时） */
+  error?: string
+}
+
 /* ── 命令清单 ── */
 
 /** 命令清单（本插件命令的唯一出处） */
 export const commands = {
-  /* 第 1 批：连接 + 终端 + 文件管理 */
+  /* 连接 */
   sshConnect: 'ssh_connect',
   sshDisconnect: 'ssh_disconnect',
   sshReconnect: 'ssh_reconnect',
   sshConnections: 'ssh_connections',
+  sshHostKeyRespond: 'ssh_host_key_respond',
+  sshKnownHostList: 'ssh_known_host_list',
+  sshKnownHostDelete: 'ssh_known_host_delete',
+
+  /* 服务器配置 + 分组 */
+  sshProfileList: 'ssh_profile_list',
+  sshProfileSave: 'ssh_profile_save',
+  sshProfileDelete: 'ssh_profile_delete',
+  sshProfileImport: 'ssh_profile_import',
+  sshGroupList: 'ssh_group_list',
+  sshGroupSave: 'ssh_group_save',
+  sshGroupDelete: 'ssh_group_delete',
+
+  /* 隧道 */
+  sshTunnelList: 'ssh_tunnel_list',
+  sshTunnelSave: 'ssh_tunnel_save',
+  sshTunnelStart: 'ssh_tunnel_start',
+  sshTunnelStop: 'ssh_tunnel_stop',
+  sshTunnels: 'ssh_tunnels',
+  sshTunnelDelete: 'ssh_tunnel_delete',
+
+  /* 终端 */
   sshTerminalOpen: 'ssh_terminal_open',
   sshTerminalWrite: 'ssh_terminal_write',
   sshTerminalResize: 'ssh_terminal_resize',
@@ -289,15 +439,16 @@ export const commands = {
   sshFileDownload: 'ssh_file_download',
   sshFileDelete: 'ssh_file_delete',
   sshFileRename: 'ssh_file_rename',
+  sshFileMkdir: 'ssh_file_mkdir',
+  sshLocalList: 'ssh_local_list',
+  sshFileDownloadRecursive: 'ssh_file_download_recursive',
+  sshTransferCancel: 'ssh_transfer_cancel',
 
-  /* 第 2 批：凭证 + 远程编辑 */
-  sshCredentialSave: 'ssh_credential_save',
-  sshCredentialGet: 'ssh_credential_get',
-  sshCredentialDelete: 'ssh_credential_delete',
+  /* 远程编辑 */
   sshEditOpen: 'ssh_edit_open',
   sshEditSave: 'ssh_edit_save',
 
-  /* 第 3 批：监控 + 服务 + 进程 + docker */
+  /* 监控 + 服务 + 进程 + docker */
   sshMonitorGet: 'ssh_monitor_get',
   sshServiceList: 'ssh_service_list',
   sshServiceAction: 'ssh_service_action',
@@ -312,23 +463,48 @@ export const commands = {
 
 /* ── 命令入参 ── */
 
+/** 一次性凭证覆盖（仅本次连接在内存中使用，不落任何存储） */
+export interface CredentialOverride {
+  password?: string
+  privateKey?: string
+  passphrase?: string
+}
+
 export type Payloads = {
   /* 连接 */
-  ssh_connect: {
-    profile: ServerProfile
-    password?: string
-    privateKey?: string
-    passphrase?: string
-  }
+  ssh_connect: { profileId: string; overrides?: CredentialOverride }
   ssh_disconnect: { sessionId: string }
-  ssh_reconnect: {
-    sessionId: string
+  ssh_reconnect: { sessionId: string; overrides?: CredentialOverride }
+  ssh_connections: Record<string, never>
+  ssh_host_key_respond: {
+    requestId: string
+    decision: 'trustOnce' | 'trustSave' | 'cancel' | 'replace'
+  }
+  ssh_known_host_list: Record<string, never>
+  ssh_known_host_delete: { host: string; port: number; fingerprint?: string }
+
+  /* 服务器配置 + 分组 */
+  ssh_profile_list: Record<string, never>
+  ssh_profile_save: {
     profile: ServerProfile
     password?: string
     privateKey?: string
     passphrase?: string
+    saveCredential: boolean
   }
-  ssh_connections: Record<string, never>
+  ssh_profile_delete: { profileId: string }
+  ssh_profile_import: { profiles: ServerProfile[]; groups: SshGroup[] }
+  ssh_group_list: Record<string, never>
+  ssh_group_save: { group: SshGroup }
+  ssh_group_delete: { groupId: string }
+
+  /* 隧道 */
+  ssh_tunnel_list: { profileId: string }
+  ssh_tunnel_save: { config: TunnelConfig }
+  ssh_tunnel_start: { connectionId: string; tunnelId: string }
+  ssh_tunnel_stop: { tunnelId: string }
+  ssh_tunnels: { connectionId: string }
+  ssh_tunnel_delete: { tunnelId: string }
 
   /* 终端 */
   ssh_terminal_open: { connectionId: string; cols: number; rows: number }
@@ -343,20 +519,24 @@ export type Payloads = {
   ssh_file_download: { connectionId: string; remotePath: string; localPath: string }
   ssh_file_delete: { connectionId: string; remotePath: string; recursive?: boolean }
   ssh_file_rename: { connectionId: string; oldPath: string; newPath: string }
-
-  /* 凭证 */
-  ssh_credential_save: {
-    profile: ServerProfile
-    password?: string
-    privateKey?: string
-    passphrase?: string
+  ssh_file_mkdir: { connectionId: string; path: string }
+  ssh_local_list: { path: string }
+  ssh_file_download_recursive: {
+    connectionId: string
+    remotePath: string
+    localPath: string
+    overwrite?: boolean
   }
-  ssh_credential_get: { profileId: string }
-  ssh_credential_delete: { profileId: string }
+  ssh_transfer_cancel: { transferId: string }
 
   /* 远程编辑 */
   ssh_edit_open: { connectionId: string; remotePath: string }
-  ssh_edit_save: { connectionId: string; remotePath: string; content: string }
+  ssh_edit_save: {
+    connectionId: string
+    remotePath: string
+    content: string
+    expectedMtime?: number
+  }
 
   /* 监控 */
   ssh_monitor_get: { connectionId: string }
@@ -394,14 +574,16 @@ export type Payloads = {
 /** 前端 invoke 的真实顶层参数；Rust payload 结构体命令在此统一声明包裹层。 */
 export type InvokePayloads = Omit<
   Payloads,
-  'ssh_connect' | 'ssh_reconnect' | 'ssh_credential_save' | 'ssh_docker_exec'
+  | 'ssh_connect'
+  | 'ssh_reconnect'
+  | 'ssh_profile_save'
+  | 'ssh_profile_import'
+  | 'ssh_docker_exec'
 > & {
   ssh_connect: { payload: Payloads['ssh_connect'] }
-  ssh_reconnect: {
-    sessionId: string
-    payload: Omit<Payloads['ssh_reconnect'], 'sessionId'>
-  }
-  ssh_credential_save: { payload: Payloads['ssh_credential_save'] }
+  ssh_reconnect: { sessionId: string; payload: Omit<Payloads['ssh_reconnect'], 'sessionId'> }
+  ssh_profile_save: { payload: Payloads['ssh_profile_save'] }
+  ssh_profile_import: { payload: Payloads['ssh_profile_import'] }
   ssh_docker_exec: { payload: Payloads['ssh_docker_exec'] }
 }
 
@@ -409,10 +591,30 @@ export type InvokePayloads = Omit<
 
 export type Results = {
   /* 连接 */
-  ssh_connect: ServerConnection
+  ssh_connect: SshConnectOutcome
   ssh_disconnect: SshActionResult
-  ssh_reconnect: ServerConnection
+  ssh_reconnect: SshConnectOutcome
   ssh_connections: ServerConnection[]
+  ssh_host_key_respond: SshActionResult
+  ssh_known_host_list: KnownHostEntry[]
+  ssh_known_host_delete: SshActionResult
+
+  /* 服务器配置 + 分组 */
+  ssh_profile_list: ServerProfile[]
+  ssh_profile_save: ServerProfile
+  ssh_profile_delete: void
+  ssh_profile_import: SshImportResult
+  ssh_group_list: SshGroup[]
+  ssh_group_save: void
+  ssh_group_delete: void
+
+  /* 隧道 */
+  ssh_tunnel_list: TunnelConfig[]
+  ssh_tunnel_save: TunnelConfig
+  ssh_tunnel_start: TunnelRuntime
+  ssh_tunnel_stop: TunnelRuntime
+  ssh_tunnels: TunnelRuntime[]
+  ssh_tunnel_delete: void
 
   /* 终端 */
   ssh_terminal_open: TerminalSession
@@ -427,15 +629,14 @@ export type Results = {
   ssh_file_download: FileTransferProgress
   ssh_file_delete: SshActionResult
   ssh_file_rename: SshActionResult
-
-  /* 凭证 */
-  ssh_credential_save: SshActionResult
-  ssh_credential_get: SshCredential
-  ssh_credential_delete: SshActionResult
+  ssh_file_mkdir: SshActionResult
+  ssh_local_list: FileListResult
+  ssh_file_download_recursive: FileTransferProgress
+  ssh_transfer_cancel: SshActionResult
 
   /* 远程编辑 */
   ssh_edit_open: RemoteFileContent
-  ssh_edit_save: SshActionResult
+  ssh_edit_save: EditSaveResult
 
   /* 监控 */
   ssh_monitor_get: MonitorData
@@ -470,6 +671,12 @@ export const sshEvents = {
   transferProgress: 'ssh://transfer-progress',
   /** 连接/断开/重连状态变化推送 */
   connectionStatus: 'ssh://connection-status',
+  /** 主机密钥人工确认请求（首连/指纹变更），等待 ssh_host_key_respond 应答 */
+  hostKeyVerify: 'ssh://host-key-verify',
+  /** 分阶段连接进度（resolve/tcp/handshake/verify/auth/session） */
+  connectStage: 'ssh://connect-stage',
+  /** 隧道状态变化（启停/错误/连接数） */
+  tunnelStatus: 'ssh://tunnel-status',
 } as const
 
 /** 事件负载类型（与命令出参类型同源） */
@@ -478,4 +685,7 @@ export type SshEventPayloads = {
   'ssh://terminal-closed': TerminalClosed
   'ssh://transfer-progress': FileTransferProgress
   'ssh://connection-status': ServerConnection
+  'ssh://host-key-verify': HostKeyVerifyRequest
+  'ssh://connect-stage': ConnectStage
+  'ssh://tunnel-status': TunnelRuntime
 }

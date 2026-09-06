@@ -1,14 +1,22 @@
-/** SSH 工作区状态：服务器配置、分组、多连接工作区、凭证与工具生命周期清理。 */
+/** SSH 工作区状态：服务器配置（后端插件库）、分组、多连接工作区、主机密钥确认、分阶段连接与自动重连。 */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
-import { ipc, onConnectionStatus, onTerminalData, onTransferProgress } from './ipc'
-import { loadProfiles, persistProfiles } from './useSsh'
+import {
+  ipc,
+  onConnectionStatus,
+  onConnectStage,
+  onHostKeyVerify,
+  onTerminalClosed,
+  onTerminalData,
+  onTransferProgress,
+} from './ipc'
+import { clearLegacySnapshot, readLegacySnapshot } from './useSsh'
 import { useServerGroups } from './useServerGroups'
-import type { ServerConnection, ServerProfile } from './contracts'
+import type { HostKeyVerifyRequest, ServerConnection, ServerProfile } from './contracts'
 
 export type SshWorkspaceSection =
-  'terminal' | 'files' | 'monitor' | 'services' | 'processes' | 'docker'
+  'terminal' | 'files' | 'tunnels' | 'monitor' | 'services' | 'processes' | 'docker'
 
 /** 一个连接页签代表一条独立 SSH 连接，并拥有完整的右侧功能区。 */
 export interface SshConnectionWorkspace {
@@ -16,6 +24,14 @@ export interface SshConnectionWorkspace {
   profileId: string
   title: string
   connection: ServerConnection
+  /** 连接进度文案（connecting/reconnecting 期间由 connect-stage 事件驱动） */
+  stageText: string
+  /** 显式连接请求计数（驱动 TerminalTab 开启终端通道） */
+  connectRequest: number
+  /** 断线自动重连已尝试次数（0 = 未在自动重连） */
+  reconnectAttempt: number
+  /** 重连成功计数（驱动 TerminalTab 保留缓冲并插入分隔线） */
+  reconnectTick: number
   activeSection: SshWorkspaceSection
   visitedSections: SshWorkspaceSection[]
   lastActivityAt: number
@@ -23,55 +39,120 @@ export interface SshConnectionWorkspace {
 
 let nextWorkspaceId = 1
 
+/** 断线自动重连退避间隔（1/2/5/10/30 秒，最多 5 次） */
+const RECONNECT_DELAYS_MS = [1_000, 2_000, 5_000, 10_000, 30_000]
+
+/** 连接阶段 → 进度文案 */
+function stageTextFor(stage: string, status: string): string {
+  if (status === 'fail') return '连接失败'
+  switch (stage) {
+    case 'resolve':
+      return '解析主机…'
+    case 'tcp':
+      return '建立连接…'
+    case 'handshake':
+      return 'SSH 握手…'
+    case 'verify':
+      return '校验主机指纹…'
+    case 'auth':
+      return '认证中…'
+    case 'session':
+      return '建立会话…'
+    default:
+      return '连接中…'
+  }
+}
+
 /** 创建 SSH 主工作区的状态与操作。每个连接页签独占一条 SSH 连接。 */
 export function useSshWorkspace() {
   const ui = useUiStore()
   const settings = useSettingsStore()
-  const profiles = ref<ServerProfile[]>(loadProfiles())
+  const profiles = ref<ServerProfile[]>([])
   const connectionWorkspaces = ref<SshConnectionWorkspace[]>([])
   const activeProfileId = ref<string | null>(null)
   const searchKeyword = ref('')
   const formOpen = ref(false)
   const editingProfile = ref<ServerProfile | null>(null)
   const deleteTarget = ref<ServerProfile | null>(null)
-  const pendingConnections = new Set<Promise<ServerConnection>>()
+  /** 待确认的主机密钥请求（非空时弹出指纹确认框；同一时刻最多一个连接在等待确认） */
+  const hostKeyRequest = ref<HostKeyVerifyRequest | null>(null)
 
-  /* ── 分组（localStorage 持久化；折叠状态不持久化，重开工具默认全折叠） ── */
+  const pendingConnections = new Set<Promise<unknown>>()
+
+  /* ── 分组（后端 ssh.db 持久化；折叠状态不持久化，重开工具默认全折叠） ── */
   const groupsApi = useServerGroups()
   const { groups, expandedIds, toggleGroup } = groupsApi
 
-  /** 新建分组（去重空名由弹窗保证） */
-  function createGroup(name: string) {
-    const group = groupsApi.createGroup(name)
+  async function loadProfiles() {
+    try {
+      profiles.value = await ipc.sshProfileList()
+    } catch {
+      /* 浏览器预览没有 IPC */
+    }
+  }
+
+  /** localStorage 存量一次性迁入后端插件库（旧手工凭证由后端迁移进 Vault 并归档） */
+  async function importLegacyOnce() {
+    try {
+      const existing = await ipc.sshProfileList()
+      if (existing.length > 0) {
+        // 已迁移过（或用户手动重建过配置）：清掉 localStorage 快照，静默返回
+        clearLegacySnapshot()
+        return
+      }
+      const legacy = readLegacySnapshot()
+      if (legacy.profiles.length === 0 && legacy.groups.length === 0) return
+      const result = await ipc.sshProfileImport(legacy)
+      await loadProfiles()
+      clearLegacySnapshot()
+      ui.toast(
+        `已迁移 ${result.importedProfiles} 台服务器` +
+          (result.migratedCredentials > 0
+            ? `，${result.migratedCredentials} 个凭证已入凭证库`
+            : '')
+      )
+    } catch (error) {
+      // 迁移失败保留 localStorage 快照，下次打开工具重试；错误必须可见（曾静默导致"数据消失"假象）
+      console.error('[ssh] 存量迁移失败:', error)
+      ui.toast(`存量配置迁移失败：${error}`)
+    }
+  }
+
+  /** 新建分组 */
+  async function createGroup(name: string) {
+    const group = await groupsApi.createGroup(name)
     ui.toast(`已创建分组「${group.name}」`)
   }
 
   /** 重命名分组 */
-  function renameGroup(groupId: string, name: string) {
-    groupsApi.renameGroup(groupId, name)
+  async function renameGroup(groupId: string, name: string) {
+    await groupsApi.renameGroup(groupId, name)
     ui.toast('已重命名分组')
   }
 
   /** 删除分组：组内连接移回未分组（连接配置本身不删） */
-  function deleteGroup(groupId: string) {
+  async function deleteGroup(groupId: string) {
     const group = groups.value.find((g) => g.id === groupId)
+    await groupsApi.deleteGroup(groupId)
     for (const p of profiles.value) {
-      if (p.groupId === groupId) delete p.groupId
+      if (p.groupId === groupId) p.groupId = undefined
     }
-    persistProfiles(profiles.value)
-    groupsApi.deleteGroup(groupId)
     ui.toast(`已删除分组「${group?.name ?? ''}」，组内连接移回未分组`)
   }
 
-  /** 拖拽入组：null = 未分组 */
-  function moveToGroup(profileId: string, groupId: string | null) {
+  /** 拖拽入组：null = 未分组（组变更走 ssh_profile_save 持久化） */
+  async function moveToGroup(profileId: string, groupId: string | null) {
     const profile = profiles.value.find((p) => p.id === profileId)
     if (!profile) return
     const targetName = groupId ? (groups.value.find((g) => g.id === groupId)?.name ?? '') : '未分组'
     if ((profile.groupId ?? null) === groupId) return
     profile.groupId = groupId ?? undefined
-    persistProfiles(profiles.value)
-    ui.toast(`已将「${profile.name}」移动到「${targetName}」`)
+    try {
+      await ipc.sshProfileSave({ profile, saveCredential: false })
+      ui.toast(`已将「${profile.name}」移动到「${targetName}」`)
+    } catch (error) {
+      ui.toast(`移动分组失败：${error}`)
+    }
   }
 
   const filteredProfiles = computed(() => {
@@ -99,44 +180,50 @@ export function useSshWorkspace() {
     ui.toast(message)
   }
 
+  /**
+   * 保存服务器：配置写插件库；勾选保存凭证时后端把手工凭证写入 Vault 并回填 credentialRef
+   * （同 profile upsert 同一条 Vault 条目，不产生重复）。
+   */
   async function saveProfile(
     profile: ServerProfile,
-    credentials: { password?: string; privateKey?: string; passphrase?: string }
+    credentials: { password?: string; privateKey?: string; passphrase?: string },
+    saveCredential: boolean
   ) {
     const index = profiles.value.findIndex((item) => item.id === profile.id)
     const authChanged = index < 0 || profiles.value[index].authMethod !== profile.authMethod
     const switchedFromVault =
-      index >= 0 && Boolean(profiles.value[index].secretRef) && !profile.secretRef
+      index >= 0 && Boolean(profiles.value[index].credentialRef) && !profile.credentialRef
     const manualCredentialReady =
       profile.authMethod === 'password'
         ? Boolean(credentials.password)
         : Boolean(credentials.privateKey) &&
           (profile.authMethod !== 'privateKeyWithPassphrase' || Boolean(credentials.passphrase))
-    const credentialReady = Boolean(profile.secretRef) || manualCredentialReady
-    if ((authChanged || switchedFromVault) && !credentialReady) {
+    const credentialReady = Boolean(profile.credentialRef) || manualCredentialReady
+    if ((index < 0 || authChanged || switchedFromVault) && !credentialReady) {
       ui.toast('新增服务器或切换认证方式时必须填写完整凭证')
       return
     }
     try {
-      if (credentials.password || credentials.privateKey || credentials.passphrase) {
-        await ipc.sshCredentialSave({ profile, ...credentials })
-      }
+      const saved = await ipc.sshProfileSave({
+        profile,
+        ...credentials,
+        saveCredential: saveCredential && manualCredentialReady,
+      })
+      const existing = profiles.value.findIndex((item) => item.id === saved.id)
+      if (existing >= 0) profiles.value[existing] = saved
+      else profiles.value.push(saved)
+      ui.toast(
+        `${existing >= 0 ? '已更新' : '已添加'}服务器「${saved.name}」` +
+          (saveCredential && manualCredentialReady ? '（凭证已入凭证库）' : '')
+      )
+      formOpen.value = false
     } catch (error) {
-      ui.toast(`凭证保存失败：${error}`)
-      return
+      ui.toast(`保存失败：${error}`)
     }
-    if (index >= 0) {
-      profiles.value[index] = profile
-      ui.toast(`已更新服务器「${profile.name}」`)
-    } else {
-      profiles.value.push(profile)
-      ui.toast(`已添加服务器「${profile.name}」`)
-    }
-    persistProfiles(profiles.value)
-    formOpen.value = false
   }
 
   async function disconnectConnection(connection: ServerConnection) {
+    if (!connection.sessionId) return
     await ipc.sshDisconnect(connection.sessionId).catch(() => undefined)
   }
 
@@ -164,15 +251,14 @@ export function useSshWorkspace() {
     connectionWorkspaces.value = connectionWorkspaces.value.filter((item) => item.profileId !== id)
     try {
       await Promise.all(related.map((workspace) => disconnectConnection(workspace.connection)))
-      await ipc.sshCredentialDelete(id)
+      await ipc.sshProfileDelete(id)
     } catch (error) {
       ui.toast(`删除服务器失败：${error}`)
       return
     }
     profiles.value = profiles.value.filter((item) => item.id !== id)
     if (activeProfileId.value === id) activeProfileId.value = null
-    persistProfiles(profiles.value)
-    ui.toast(`已删除服务器「${profile.name}」`)
+    ui.toast(`已删除服务器「${profile.name}」（凭证保留在凭证库）`)
   }
 
   function requestDelete(profile: ServerProfile) {
@@ -185,53 +271,73 @@ export function useSshWorkspace() {
     deleteTarget.value = null
   }
 
-  /** 双击服务器始终建立一条新连接，并返回一个完整连接工作区。 */
+  /** 连接成功后为工作区生成不重复标题（「名称」「名称 2」…） */
+  function dedupeTitle(profileName: string, profileId: string): string {
+    const usedTitles = new Set(
+      connectionWorkspaces.value
+        .filter((workspace) => workspace.profileId === profileId)
+        .map((workspace) => workspace.title)
+    )
+    let title = profileName
+    let number = 1
+    while (usedTitles.has(title)) {
+      number += 1
+      title = `${profileName} ${number}`
+    }
+    return title
+  }
+
+  /** 双击服务器建立一条新连接：先建占位工作区承接分阶段进度，连接成功后填入会话。 */
   async function openConnection(profileId: string): Promise<SshConnectionWorkspace | undefined> {
     const profile = profiles.value.find((item) => item.id === profileId)
     if (!profile) return undefined
     activeProfileId.value = profileId
+    const workspace: SshConnectionWorkspace = {
+      id: `ssh-workspace-${Date.now()}-${nextWorkspaceId++}`,
+      profileId,
+      title: dedupeTitle(profile.name, profileId),
+      connection: { profileId, sessionId: '', status: 'connecting' },
+      stageText: '准备连接…',
+      connectRequest: 0,
+      reconnectAttempt: 0,
+      reconnectTick: 0,
+      activeSection: 'terminal',
+      visitedSections: ['terminal'],
+      lastActivityAt: Date.now(),
+    }
+    connectionWorkspaces.value.push(workspace)
+    const request = ipc
+      .sshConnect({ profileId })
+      .finally(() => pendingConnections.delete(request))
+    pendingConnections.add(request)
     try {
-      const credentials = profile.secretRef ? {} : await ipc.sshCredentialGet(profileId)
-      const request = ipc.sshConnect({
-        profile,
-        password: credentials.password,
-        privateKey: credentials.privateKey,
-        passphrase: credentials.passphrase,
-      })
-      pendingConnections.add(request)
-      const connection = await request.finally(() => pendingConnections.delete(request))
+      const outcome = await request
       if (disposed) {
-        await disconnectConnection(connection)
+        if (outcome.ok && outcome.connection) await disconnectConnection(outcome.connection)
+        removeWorkspace(workspace.id)
         return undefined
       }
-      const usedTitles = new Set(
-        connectionWorkspaces.value
-          .filter((workspace) => workspace.profileId === profileId)
-          .map((workspace) => workspace.title)
-      )
-      let workspaceNumber = 1
-      let title = profile.name
-      while (usedTitles.has(title)) {
-        workspaceNumber += 1
-        title = `${profile.name} ${workspaceNumber}`
+      if (!outcome.ok || !outcome.connection) {
+        removeWorkspace(workspace.id)
+        const error = outcome.error
+        ui.toast(error ? `${error.message}（${error.code}）` : '连接失败')
+        return undefined
       }
-      const workspace: SshConnectionWorkspace = {
-        id: `ssh-workspace-${Date.now()}-${nextWorkspaceId++}`,
-        profileId,
-        title,
-        connection,
-        activeSection: 'terminal',
-        visitedSections: ['terminal'],
-        lastActivityAt: Date.now(),
-      }
-      connectionWorkspaces.value.push(workspace)
+      workspace.connection = outcome.connection
+      workspace.connectRequest += 1
+      workspace.stageText = ''
+      workspace.lastActivityAt = Date.now()
       profile.lastConnectedAt = Date.now()
-      persistProfiles(profiles.value)
       return workspace
     } catch (error) {
+      removeWorkspace(workspace.id)
       if (!disposed) ui.toast(`连接失败：${error}`)
       return undefined
     }
+  }
+
+  function removeWorkspace(id: string) {
+    connectionWorkspaces.value = connectionWorkspaces.value.filter((item) => item.id !== id)
   }
 
   function touchWorkspace(id: string) {
@@ -239,33 +345,132 @@ export function useSshWorkspace() {
     if (workspace?.connection.status === 'connected') workspace.lastActivityAt = Date.now()
   }
 
-  /** 使用已保存的配置与凭证恢复断开的工作区，工作区 id 与页签保持不变。 */
+  /**
+   * 意外断线（终端通道异常关闭）后的自动重连：指数退避 1/2/5/10/30 秒，最多 5 次。
+   * 用户手动断开或关闭页签会移出 reconnecting 状态，从而中止后续尝试。
+   */
+  function handleLinkDead(workspaceId: string) {
+    const workspace = connectionWorkspaces.value.find((item) => item.id === workspaceId)
+    if (!workspace || workspace.connection.status !== 'connected') return
+    if (!settings.getToolSetting<boolean>('ssh', 'autoReconnect', true)) {
+      workspace.connection = {
+        ...workspace.connection,
+        status: 'disconnected',
+        error: '连接已断开',
+      }
+      ui.toast(`连接「${workspace.title}」已断开`)
+      return
+    }
+    scheduleAutoReconnect(workspace)
+  }
+
+  function scheduleAutoReconnect(workspace: SshConnectionWorkspace) {
+    if (workspace.reconnectAttempt >= RECONNECT_DELAYS_MS.length) {
+      workspace.connection = {
+        ...workspace.connection,
+        status: 'disconnected',
+        error: '自动重连失败次数过多',
+      }
+      workspace.reconnectAttempt = 0
+      ui.toast(`「${workspace.title}」自动重连失败次数过多，已停止（可手动重连）`)
+      return
+    }
+    const delay = RECONNECT_DELAYS_MS[workspace.reconnectAttempt]
+    workspace.reconnectAttempt += 1
+    workspace.connection = { ...workspace.connection, status: 'reconnecting' }
+    workspace.stageText = `${delay / 1000} 秒后自动重连（第 ${workspace.reconnectAttempt} 次）…`
+    window.setTimeout(() => {
+      if (
+        !connectionWorkspaces.value.includes(workspace) ||
+        workspace.connection.status !== 'reconnecting'
+      ) {
+        return // 用户已手动断开或关闭页签
+      }
+      void attemptReconnect(workspace)
+    }, delay)
+  }
+
+  /** 执行一次重连：成功则刷新会话并让终端保留缓冲打分隔线；失败继续退避重试 */
+  async function attemptReconnect(workspace: SshConnectionWorkspace) {
+    try {
+      const outcome = await ipc.sshReconnect(workspace.connection.sessionId)
+      if (!connectionWorkspaces.value.includes(workspace)) {
+        if (outcome.ok && outcome.connection) await disconnectConnection(outcome.connection)
+        return
+      }
+      if (outcome.ok && outcome.connection) {
+        workspace.connection = outcome.connection
+        workspace.reconnectTick += 1
+        workspace.reconnectAttempt = 0
+        workspace.stageText = ''
+        workspace.lastActivityAt = Date.now()
+        ui.toast(`连接「${workspace.title}」已恢复`)
+        return
+      }
+      const message = outcome.error?.message ?? '重连失败'
+      if (outcome.error?.code === 'PROFILE_NOT_FOUND') {
+        workspace.connection = {
+          ...workspace.connection,
+          status: 'disconnected',
+          error: message,
+        }
+        ui.toast(message)
+        return
+      }
+      scheduleAutoReconnect(workspace)
+    } catch (error) {
+      ui.toast(`重新连接失败：${error}`)
+      workspace.connection = {
+        ...workspace.connection,
+        status: 'disconnected',
+        error: String(error),
+      }
+    }
+  }
+
+  /** 手动重连（终端「重连」按钮 / 页签操作）：保留工作区与终端缓冲 */
   async function reconnectWorkspace(id: string) {
     const workspace = connectionWorkspaces.value.find((item) => item.id === id)
     if (!workspace || ['connected', 'reconnecting'].includes(workspace.connection.status)) return
-    const profile = profiles.value.find((item) => item.id === workspace.profileId)
-    if (!profile) return
     const disconnected = workspace.connection
-    workspace.connection = { ...disconnected, status: 'reconnecting', error: undefined }
+    workspace.connection = { ...disconnected, status: 'reconnecting' }
+    workspace.stageText = '重新连接…'
+    workspace.reconnectAttempt = 0
     try {
-      const credentials = profile.secretRef ? {} : await ipc.sshCredentialGet(profile.id)
-      const connection = await ipc.sshReconnect(disconnected.sessionId, {
-        profile,
-        password: credentials.password,
-        privateKey: credentials.privateKey,
-        passphrase: credentials.passphrase,
-      })
+      const outcome = await ipc.sshReconnect(disconnected.sessionId)
       if (disposed || !connectionWorkspaces.value.includes(workspace)) {
-        await disconnectConnection(connection)
+        if (outcome.ok && outcome.connection) await disconnectConnection(outcome.connection)
         return
       }
-      workspace.connection = connection
-      workspace.lastActivityAt = Date.now()
-      ui.toast(`连接「${workspace.title}」已恢复`)
+      if (outcome.ok && outcome.connection) {
+        workspace.connection = outcome.connection
+        workspace.reconnectTick += 1
+        workspace.stageText = ''
+        workspace.lastActivityAt = Date.now()
+        ui.toast(`连接「${workspace.title}」已恢复`)
+        return
+      }
+      const error = outcome.error
+      workspace.connection = {
+        ...disconnected,
+        status: 'disconnected',
+        error: error?.message ?? '重连失败',
+      }
+      ui.toast(error ? `${error.message}（${error.code}）` : '重新连接失败')
     } catch (error) {
       workspace.connection = { ...disconnected, status: 'disconnected', error: String(error) }
       ui.toast(`重新连接失败：${error}`)
     }
+  }
+
+  /* ── 主机密钥人工确认 ── */
+
+  /** 应答当前确认请求；取消时后端连接失败，占位工作区由 openConnection 清理 */
+  async function respondHostKey(decision: 'trustOnce' | 'trustSave' | 'cancel' | 'replace') {
+    const request = hostKeyRequest.value
+    hostKeyRequest.value = null
+    if (!request) return
+    await ipc.sshHostKeyRespond({ requestId: request.requestId, decision }).catch(() => undefined)
   }
 
   async function cleanupAll() {
@@ -277,6 +482,9 @@ export function useSshWorkspace() {
   let unlistenConnection: (() => void) | null = null
   let unlistenActivity: (() => void) | null = null
   let unlistenTransfer: (() => void) | null = null
+  let unlistenClosed: (() => void) | null = null
+  let unlistenStage: (() => void) | null = null
+  let unlistenHostKey: (() => void) | null = null
   let idleTimer: ReturnType<typeof setInterval> | null = null
   let disposed = false
 
@@ -305,6 +513,10 @@ export function useSshWorkspace() {
         /* 设置持久化失败不应阻断 SSH 会话初始化，本次仍使用 10 分钟回退值。 */
       }
     }
+    // localStorage 存量配置/分组一次性迁入后端插件库（旧手工凭证由后端迁入 Vault）
+    await importLegacyOnce()
+    await Promise.all([loadProfiles(), groupsApi.load()])
+
     // 不恢复上一次工具实例遗留的后端会话；重新打开 SSH 工具永远从空状态开始。
     try {
       const stale = await ipc.sshConnections()
@@ -318,6 +530,13 @@ export function useSshWorkspace() {
           (item) => item.connection.sessionId === connection.sessionId
         )
         if (!workspace) return
+        // 自动重连等待期忽略旧会话的 Disconnected 推送，避免覆盖 reconnecting 状态
+        if (
+          connection.status === 'disconnected' &&
+          workspace.connection.status === 'reconnecting'
+        ) {
+          return
+        }
         workspace.connection = connection
       })
       if (disposed) stop()
@@ -329,12 +548,45 @@ export function useSshWorkspace() {
     try {
       const stopData = await onTerminalData((d) => touchByConnectionId(d.connectionId))
       const stopTransfer = await onTransferProgress((p) => touchByConnectionId(p.connectionId))
+      // 意外断线检测：主终端通道异常关闭（本地主动关闭不经过此路径）→ 触发自动重连
+      const stopClosed = await onTerminalClosed((d) => {
+        const workspace = connectionWorkspaces.value.find(
+          (item) =>
+            item.connection.sessionId === d.connectionId &&
+            item.connection.status === 'connected'
+        )
+        if (workspace) handleLinkDead(workspace.id)
+      })
       if (disposed) {
         stopData()
         stopTransfer()
+        stopClosed()
       } else {
         unlistenActivity = stopData
         unlistenTransfer = stopTransfer
+        unlistenClosed = stopClosed
+      }
+    } catch {
+      /* 浏览器预览没有 Tauri 事件系统。 */
+    }
+    try {
+      const stopStage = await onConnectStage((s) => {
+        const workspace = connectionWorkspaces.value.find(
+          (item) =>
+            item.profileId === s.profileId &&
+            ['connecting', 'reconnecting'].includes(item.connection.status)
+        )
+        if (workspace) workspace.stageText = stageTextFor(s.stage, s.status)
+      })
+      const stopHostKey = await onHostKeyVerify((request) => {
+        hostKeyRequest.value = request
+      })
+      if (disposed) {
+        stopStage()
+        stopHostKey()
+      } else {
+        unlistenStage = stopStage
+        unlistenHostKey = stopHostKey
       }
     } catch {
       /* 浏览器预览没有 Tauri 事件系统。 */
@@ -361,6 +613,9 @@ export function useSshWorkspace() {
     unlistenConnection?.()
     unlistenActivity?.()
     unlistenTransfer?.()
+    unlistenClosed?.()
+    unlistenStage?.()
+    unlistenHostKey?.()
     if (idleTimer) clearInterval(idleTimer)
     void cleanupAll()
   })
@@ -376,6 +631,8 @@ export function useSshWorkspace() {
     formOpen,
     editingProfile,
     deleteTarget,
+    hostKeyRequest,
+    respondHostKey,
     openAddForm,
     openEditForm,
     showError,
@@ -386,6 +643,7 @@ export function useSshWorkspace() {
     closeConnectionWorkspace,
     closeAllWorkspaces,
     reconnectWorkspace,
+    handleLinkDead,
     touchWorkspace,
     createGroup,
     renameGroup,

@@ -3,12 +3,15 @@ import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, RemoteFile } from './contracts'
 import { useRemoteFileOps } from './useRemoteFileOps'
 import { useUiStore } from '@/stores/ui'
+import { UiButton, UiIconButton } from '@/core/ui'
 import ContextMenu from '@/core/ui/ContextMenu.vue'
+import InputDialog from '@/core/ui/InputDialog.vue'
 import FileBrowser from './FileBrowser.vue'
 import FileManagerDialogs from './FileManagerDialogs.vue'
 import { ipc } from './ipc'
 import { useFileContextMenu } from './useFileContextMenu'
 import { useSftpTransfers } from './useSftpTransfers'
+import LocalBrowser from './LocalBrowser.vue'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -61,7 +64,8 @@ const {
   refresh: () => refreshCurrent(),
 })
 
-const { dragActive, transferStatus, upload, download } = useSftpTransfers({
+const { dragActive, transferStatus, transfers, cancelTransfer, uploadLocalPaths, upload, download } =
+  useSftpTransfers({
   connectionId: () => props.connection?.sessionId,
   active: () => props.active,
   currentPath,
@@ -69,6 +73,52 @@ const { dragActive, transferStatus, upload, download } = useSftpTransfers({
   page: filePage,
   refresh: () => void refreshCurrent(),
 })
+
+/* ── 本地侧（双栏右栏）：目录浏览 + 选中上传 ── */
+import { useSettingsStore } from '@/stores/settings'
+const settings = useSettingsStore()
+const localBrowser = ref<InstanceType<typeof LocalBrowser> | null>(null)
+const localSelected = ref<RemoteFile | null>(null)
+
+/** 上传本地选中项到远端当前目录 */
+async function uploadLocalSelection() {
+  const file = localSelected.value
+  if (!file) {
+    ui.toast('请先在本地列表中选择文件')
+    return
+  }
+  if (file.isDir) {
+    // 目录走既有上传入口（对话框选择语义不同，这里直接传目录路径）
+    await uploadLocalPaths([file.path], currentPath.value)
+    return
+  }
+  await uploadLocalPaths([file.path], currentPath.value)
+}
+
+/** 新建远程目录（右键空白处菜单） */
+const mkdirTarget = ref<string | null>(null)
+async function confirmMkdir(name: string) {
+  const dir = mkdirTarget.value
+  mkdirTarget.value = null
+  const connectionId = props.connection?.sessionId
+  if (!dir || !connectionId || !name.trim()) return
+  const path = dir.endsWith('/') ? `${dir}${name.trim()}` : `${dir}/${name.trim()}`
+  try {
+    const r = await ipc.sshFileMkdir(connectionId, path)
+    if (r.ok) {
+      ui.toast(`已创建目录 ${name.trim()}`)
+      void refreshCurrent()
+    } else {
+      ui.toast(`创建目录失败：${r.error ?? '未知错误'}`)
+    }
+  } catch (e) {
+    ui.toast(`创建目录失败：${e}`)
+  }
+}
+
+const activeTransfers = computed(() =>
+  [...transfers.value.values()].filter((t) => !t.done || t.error)
+)
 
 const parentPath = computed(() => {
   const p = currentPath.value
@@ -160,6 +210,7 @@ async function onDoubleClick(file: RemoteFile) {
 }
 
 const { menu, menuItems, openMenu } = useFileContextMenu({
+  mkdir: (dir: string) => (mkdirTarget.value = dir === '/' ? currentPath.value : dir),
   refresh: () => void refreshCurrent(),
   upload: (target) => void upload(target?.isDir ? target.path : currentPath.value),
   uploadDirectory: (target) => void upload(target?.isDir ? target.path : currentPath.value, true),
@@ -196,31 +247,90 @@ watch(
     >
       释放文件，上传到 {{ currentPath }}
     </div>
-    <FileBrowser
-      :current-path="currentPath"
-      :files="sortedFiles"
-      :active="active"
-      :can-go-back="directoryHistory.length > 0"
-      :sort-key="sortKey"
-      :sort-direction="sortDirection"
-      :selected-path="selectedFile?.path"
-      :selected-name="selectedFile?.name"
-      :transfer-status="transferStatus"
-      @navigate="navigate"
-      @back="navigateBack"
-      @up="navigateUp"
-      @upload="upload"
-      @upload-directory="upload(currentPath, true)"
-      @download="download()"
-      @rename="requestRename()"
-      @delete="requestDelete()"
-      @select="selectedFile = $event"
-      @open="onDoubleClick"
-      @context="openMenu"
-      @sort="changeSort"
-    />
+    <div class="flex min-h-0 flex-1">
+      <FileBrowser
+        class="min-w-0 flex-1"
+        :current-path="currentPath"
+        :files="sortedFiles"
+        :active="active"
+        :can-go-back="directoryHistory.length > 0"
+        :sort-key="sortKey"
+        :sort-direction="sortDirection"
+        :selected-path="selectedFile?.path"
+        :selected-name="selectedFile?.name"
+        :transfer-status="transferStatus"
+        @navigate="navigate"
+        @back="navigateBack"
+        @up="navigateUp"
+        @upload="upload"
+        @upload-directory="upload(currentPath, true)"
+        @download="download()"
+        @rename="requestRename()"
+        @delete="requestDelete()"
+        @select="selectedFile = $event"
+        @open="onDoubleClick"
+        @context="openMenu"
+        @sort="changeSort"
+      />
+
+      <!-- 中列传输按钮 -->
+      <div class="flex w-[42px] shrink-0 flex-col items-center justify-center gap-[8px] border-l border-border dark:border-border-dark">
+        <UiIconButton
+          label="上传到远端"
+          title="把左侧选中的本地文件/目录上传到远端当前目录"
+          @click="uploadLocalSelection"
+        >
+          →
+        </UiIconButton>
+      </div>
+
+      <!-- 右栏：本地目录 -->
+      <LocalBrowser
+        ref="localBrowser"
+        class="w-[280px] shrink-0"
+        :initial-path="settings.settings.defaultDownloadDirectory || 'C:/'
+        "
+        @select="localSelected = $event"
+        @error="(m: string) => ui.toast(m)"
+      />
+    </div>
+
+    <!-- 传输队列 -->
+    <div
+      v-if="activeTransfers.length"
+      class="flex max-h-[110px] shrink-0 flex-col gap-[4px] overflow-y-auto border-t border-border px-[12px] py-[6px] dark:border-border-dark"
+    >
+      <div v-for="item in activeTransfers" :key="item.id" class="flex items-center gap-[8px] text-caption">
+        <span class="shrink-0 rounded-full bg-neutral px-[7px] py-[1px] font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark">
+          {{ item.kind === 'upload' ? '上传' : '下载' }}
+        </span>
+        <span class="min-w-0 flex-1 truncate text-secondary dark:text-secondary-dark">{{ item.label }}</span>
+        <span v-if="item.total > 0" class="shrink-0 font-mono text-text-muted">
+          {{ Math.min(100, Math.round((item.transferred / item.total) * 100)) }}%
+        </span>
+        <span v-if="item.error" class="shrink-0 text-danger-strong dark:text-danger-dark">{{ item.error }}</span>
+        <UiButton
+          v-if="!item.done"
+          variant="ghost"
+          size="xs"
+          class="!h-auto !px-[6px] !py-[1px] text-caption text-danger-strong dark:text-danger-dark"
+          title="取消传输"
+          @click="cancelTransfer(item.id)"
+        >
+          取消
+        </UiButton>
+      </div>
+    </div>
 
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
+    <InputDialog
+      :open="mkdirTarget !== null"
+      title="新建目录"
+      label="目录名"
+      confirm-label="创建"
+      @close="mkdirTarget = null"
+      @confirm="confirmMkdir"
+    />
     <FileManagerDialogs
       :editing="editing"
       :saving="savingEdit"
@@ -229,7 +339,7 @@ watch(
       @cancel-edit="editing = null"
       @cancel-rename="renameTarget = null"
       @cancel-delete="deleteTarget = null"
-      @save="onSave"
+      @save="(content: string, force?: boolean) => onSave(content, force)"
       @rename="confirmRename"
       @delete="confirmDelete"
     />

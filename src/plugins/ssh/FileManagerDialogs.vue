@@ -5,7 +5,13 @@ import EditorDialog from './EditorDialog.vue'
 import type { RemoteFile } from './contracts'
 
 defineProps<{
-  editing: { connectionId: string; path: string; content: string } | null
+  editing: {
+    connectionId: string
+    path: string
+    content: string
+    modifiedAt?: number
+    conflict?: boolean
+  } | null
   saving: boolean
   renameTarget: RemoteFile | null
   deleteTarget: RemoteFile | null
@@ -14,7 +20,7 @@ const emit = defineEmits<{
   cancelEdit: []
   cancelRename: []
   cancelDelete: []
-  save: [content: string]
+  save: [content: string, force?: boolean]
   rename: [name: string]
   delete: []
 }>()
@@ -26,7 +32,8 @@ const emit = defineEmits<{
     :path="editing.path"
     :content="editing.content"
     :saving="saving"
-    @save="emit('save', $event)"
+    :conflict="editing.conflict"
+    @save="(content, force) => emit('save', content, force)"
     @cancel="emit('cancelEdit')"
   />
   <InputDialog

@@ -3,7 +3,9 @@
 //! 上传/下载为后台任务分块传输，进度经事件 ssh://transfer-progress 推送。
 
 use russh_sftp::protocol::FileAttributes;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
@@ -247,11 +249,14 @@ pub async fn ssh_file_list(
 pub async fn ssh_file_upload(
     app: AppHandle,
     ssh_state: State<'_, SshState>,
+    transfer_state: State<'_, TransferState>,
     connection_id: String,
     local_path: String,
     remote_path: String,
 ) -> Result<FileTransferProgress, String> {
     let transfer_id = resource_id("up");
+    let cancel = register_cancel(&transfer_state, &transfer_id);
+    let cancel_registry = transfer_state.0.clone();
     let event_connection_id = connection_id.clone();
     let entries = collect_upload_entries(&local_path, &remote_path)?;
     let total = entries.iter().map(|entry| entry.size).sum();
@@ -277,6 +282,9 @@ pub async fn ssh_file_upload(
                 .map_err(|e| e.to_string())?;
             let mut transferred: u64 = 0;
             for entry in entries {
+                if cancel.is_cancelled() {
+                    return Err("已取消".into());
+                }
                 let target_exists = sftp
                     .try_exists(&entry.remote_path)
                     .await
@@ -323,6 +331,10 @@ pub async fn ssh_file_upload(
                     .map_err(|e| e.to_string())?;
                 let mut buf = vec![0u8; 64 * 1024];
                 loop {
+                    if cancel.is_cancelled() {
+                        let _ = sftp.remove_file(&temp_path).await;
+                        return Err("已取消".into());
+                    }
                     let n = local.read(&mut buf).await.map_err(|e| e.to_string())?;
                     if n == 0 {
                         break;
@@ -383,6 +395,7 @@ pub async fn ssh_file_upload(
                 error: result.err(),
             },
         );
+        unregister_cancel(cancel_registry.clone(), &tid);
     });
 
     Ok(FileTransferProgress {
@@ -402,11 +415,14 @@ pub async fn ssh_file_upload(
 pub async fn ssh_file_download(
     app: AppHandle,
     ssh_state: State<'_, SshState>,
+    transfer_state: State<'_, TransferState>,
     connection_id: String,
     remote_path: String,
     local_path: String,
 ) -> Result<FileTransferProgress, String> {
     let transfer_id = resource_id("down");
+    let cancel = register_cancel(&transfer_state, &transfer_id);
+    let cancel_registry = transfer_state.0.clone();
     let event_connection_id = connection_id.clone();
     let session = get_session(&ssh_state, &connection_id)?;
 
@@ -441,6 +457,11 @@ pub async fn ssh_file_download(
             let mut buf = vec![0u8; 64 * 1024];
             let mut transferred: u64 = 0;
             loop {
+                if cancel.is_cancelled() {
+                    drop(local);
+                    let _ = std::fs::remove_file(&temp_path);
+                    return Err("已取消".into());
+                }
                 let n = remote.read(&mut buf).await.map_err(|e| e.to_string())?;
                 if n == 0 {
                     break;
@@ -490,6 +511,7 @@ pub async fn ssh_file_download(
                 error: result.err(),
             },
         );
+        unregister_cancel(cancel_registry.clone(), &tid);
     });
 
     Ok(FileTransferProgress {
@@ -585,4 +607,325 @@ pub async fn ssh_file_rename(
             error: Some(format!("重命名失败: {e}")),
         }),
     }
+}
+
+/* ── 传输取消注册表 ── */
+
+/// 传输任务取消标志：transferId → 取消位（协作式；循环内检查并清理临时文件）
+pub struct TransferState(
+    pub Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
+);
+
+/// 传输任务的取消位句柄：任务持有共享位，取消命令置 true
+pub(crate) struct CancelFlag(Arc<std::sync::atomic::AtomicBool>);
+
+impl CancelFlag {
+    /// 是否已被请求取消
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+/// 注册取消位并返回句柄
+fn register_cancel(state: &TransferState, transfer_id: &str) -> CancelFlag {
+    let flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    if let Ok(mut map) = state.0.lock() {
+        map.insert(transfer_id.to_string(), flag.clone());
+    }
+    CancelFlag(flag)
+}
+
+/// 移除取消位（任务结束时调用；接收可克隆的注册表句柄）
+fn unregister_cancel(
+    registry: Arc<std::sync::Mutex<HashMap<String, Arc<std::sync::atomic::AtomicBool>>>>,
+    transfer_id: &str,
+) {
+    if let Ok(mut map) = registry.lock() {
+        map.remove(transfer_id);
+    }
+}
+
+/// 取消传输任务（命令）：置位即可；传输循环负责清理临时文件并结束
+#[tauri::command(rename_all = "camelCase")]
+pub fn ssh_transfer_cancel(
+    state: State<'_, TransferState>,
+    transfer_id: String,
+) -> Result<SshActionResult, String> {
+    let found = {
+        let map = state.0.lock().map_err(|e| e.to_string())?;
+        map.get(&transfer_id).map(|f| {
+            f.store(true, std::sync::atomic::Ordering::Relaxed);
+        })
+    };
+    Ok(SshActionResult {
+        ok: found.is_some(),
+        error: found
+            .is_none()
+            .then(|| "传输任务不存在或已结束".to_string()),
+    })
+}
+
+/* ── 本地目录列表（双栏文件管理的本地侧） ── */
+
+/// 本地目录列表（复用 FileListResult 结构；权限/所有者列不适用，填充占位值）
+#[tauri::command(rename_all = "camelCase")]
+pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
+    let entries = std::fs::read_dir(&path).map_err(|e| format!("读取目录失败: {e}"))?;
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("读取目录项失败: {e}"))?;
+        let meta = match entry.metadata() {
+            Ok(meta) => meta,
+            Err(_) => continue, // 系统文件可能拒绝访问，跳过不阻断
+        };
+        let full = entry.path().to_string_lossy().to_string();
+        let name = entry.file_name().to_string_lossy().to_string();
+        files.push(RemoteFile {
+            name,
+            path: full,
+            is_dir: meta.is_dir(),
+            size: meta.len(),
+            modified_at: meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+            permissions: "-".into(),
+            owner: "-".into(),
+            group: "-".into(),
+        });
+    }
+    files.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+    let parent_path = Path::new(&path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .filter(|p| !p.is_empty());
+    Ok(FileListResult {
+        ok: true,
+        path,
+        parent_path,
+        files,
+        error: None,
+    })
+}
+
+/* ── 远程新建目录 ── */
+
+/// 新建远程目录（仅单级；多级由前端逐级调用或先建父目录）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn ssh_file_mkdir(
+    ssh_state: State<'_, SshState>,
+    connection_id: String,
+    path: String,
+) -> Result<SshActionResult, String> {
+    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+    match sftp.create_dir(&path).await {
+        Ok(_) => Ok(SshActionResult {
+            ok: true,
+            error: None,
+        }),
+        Err(e) => Ok(SshActionResult {
+            ok: false,
+            error: Some(format!("创建目录失败: {e}")),
+        }),
+    }
+}
+
+/* ── 递归下载 ── */
+
+/// 递归展开远程目录（父目录优先，返回扁平清单）
+async fn collect_remote_entries(
+    sftp: &russh_sftp::client::SftpSession,
+    remote_path: &str,
+    local_path: &Path,
+) -> Result<Vec<LocalUploadEntry>, String> {
+    let meta = sftp
+        .metadata(remote_path)
+        .await
+        .map_err(|e| format!("读取远程元数据失败: {e}"))?;
+    if !meta.permissions.map(is_dir_mode).unwrap_or(false) {
+        return Ok(vec![LocalUploadEntry {
+            local_path: local_path.to_path_buf(),
+            remote_path: remote_path.to_string(),
+            is_dir: false,
+            size: meta.size.unwrap_or(0),
+        }]);
+    }
+    let mut entries = vec![LocalUploadEntry {
+        local_path: local_path.to_path_buf(),
+        remote_path: remote_path.to_string(),
+        is_dir: true,
+        size: 0,
+    }];
+    let mut pending = vec![remote_path.to_string()];
+    while let Some(directory) = pending.pop() {
+        let remote_entries = sftp.read_dir(&directory).await.map_err(|e| e.to_string())?;
+        for entry in remote_entries {
+            let name = entry.file_name();
+            let child_remote = if directory.ends_with('/') {
+                format!("{directory}{name}")
+            } else {
+                format!("{directory}/{name}")
+            };
+            let relative = Path::new(&child_remote)
+                .strip_prefix(remote_path)
+                .map_err(|e| format!("计算相对路径失败: {e}"))?;
+            let child_local = local_path.join(relative);
+            let meta = entry.metadata();
+            if meta.permissions.map(is_dir_mode).unwrap_or(false) {
+                entries.push(LocalUploadEntry {
+                    local_path: child_local.clone(),
+                    remote_path: child_remote.clone(),
+                    is_dir: true,
+                    size: 0,
+                });
+                pending.push(child_remote);
+            } else {
+                entries.push(LocalUploadEntry {
+                    local_path: child_local,
+                    remote_path: child_remote,
+                    is_dir: false,
+                    size: meta.size.unwrap_or(0),
+                });
+            }
+        }
+    }
+    Ok(entries)
+}
+
+/// 递归下载（远程目录 → 本地目录；进度经事件推送；支持取消；本地侧原子替换）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn ssh_file_download_recursive(
+    app: AppHandle,
+    ssh_state: State<'_, SshState>,
+    transfer_state: State<'_, TransferState>,
+    connection_id: String,
+    remote_path: String,
+    local_path: String,
+    overwrite: Option<bool>,
+) -> Result<FileTransferProgress, String> {
+    let transfer_id = resource_id("downr");
+    let cancel = register_cancel(&transfer_state, &transfer_id);
+    let cancel_registry = transfer_state.0.clone();
+    let session = get_session(&ssh_state, &connection_id)?;
+    let overwrite = overwrite.unwrap_or(false);
+    let event_connection_id = connection_id.clone();
+
+    let app2 = app.clone();
+    let tid = transfer_id.clone();
+    let rpath = remote_path.clone();
+    let lpath = local_path.clone();
+    tauri::async_runtime::spawn(async move {
+        let result: Result<(), String> = async {
+            let channel = session
+                .channel_open_session()
+                .await
+                .map_err(|e| e.to_string())?;
+            channel
+                .request_subsystem(false, "sftp")
+                .await
+                .map_err(|e| format!("SFTP 子系统请求失败: {e}"))?;
+            let stream = channel.into_stream();
+            let sftp = russh_sftp::client::SftpSession::new(stream)
+                .await
+                .map_err(|e| e.to_string())?;
+            let entries = collect_remote_entries(&sftp, &rpath, Path::new(&lpath)).await?;
+            let total: u64 = entries.iter().map(|e| e.size).sum();
+            let mut transferred: u64 = 0;
+            for entry in entries {
+                if cancel.is_cancelled() {
+                    return Err("已取消".into());
+                }
+                if entry.is_dir {
+                    std::fs::create_dir_all(&entry.local_path)
+                        .map_err(|e| format!("创建本地目录失败: {e}"))?;
+                    continue;
+                }
+                if !overwrite && Path::new(&entry.local_path).exists() {
+                    return Err(format!("本地文件已存在：{}", entry.local_path.display()));
+                }
+                if let Some(parent) = Path::new(&entry.local_path).parent() {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|e| format!("创建本地目录失败: {e}"))?;
+                }
+                let mut remote = sftp
+                    .open(&entry.remote_path)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let temp_path = format!(
+                    "{}.patchybox-download-{}",
+                    entry.local_path.display(),
+                    resource_id("file")
+                );
+                let mut local = tokio::fs::File::create(&temp_path)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let mut buf = vec![0u8; 64 * 1024];
+                loop {
+                    if cancel.is_cancelled() {
+                        drop(local);
+                        let _ = std::fs::remove_file(&temp_path);
+                        return Err("已取消".into());
+                    }
+                    let n = remote.read(&mut buf).await.map_err(|e| e.to_string())?;
+                    if n == 0 {
+                        break;
+                    }
+                    local
+                        .write_all(&buf[..n])
+                        .await
+                        .map_err(|e| format!("写入本地文件失败: {e}"))?;
+                    transferred += n as u64;
+                    let _ = app2.emit(
+                        "ssh://transfer-progress",
+                        &FileTransferProgress {
+                            transfer_id: tid.clone(),
+                            connection_id: event_connection_id.clone(),
+                            local_path: entry.local_path.display().to_string(),
+                            remote_path: entry.remote_path.clone(),
+                            transferred,
+                            total,
+                            done: false,
+                            error: None,
+                        },
+                    );
+                }
+                local.flush().await.map_err(|e| e.to_string())?;
+                local.shutdown().await.map_err(|e| e.to_string())?;
+                replace_local_file(&temp_path, entry.local_path.to_string_lossy().as_ref())?;
+            }
+            Ok(())
+        }
+        .await;
+        let _ = app2.emit(
+            "ssh://transfer-progress",
+            &FileTransferProgress {
+                transfer_id: tid.clone(),
+                connection_id: event_connection_id.clone(),
+                local_path: lpath.clone(),
+                remote_path: rpath.clone(),
+                transferred: 0,
+                total: 0,
+                done: true,
+                error: result.err(),
+            },
+        );
+        unregister_cancel(cancel_registry.clone(), &tid);
+    });
+
+    Ok(FileTransferProgress {
+        transfer_id,
+        connection_id,
+        local_path,
+        remote_path,
+        transferred: 0,
+        total: 0,
+        done: false,
+        error: None,
+    })
 }

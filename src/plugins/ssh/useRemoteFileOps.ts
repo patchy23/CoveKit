@@ -13,6 +13,10 @@ export interface RemoteEditing {
   connectionId: string
   path: string
   content: string
+  /** 打开时的远端 mtime（毫秒）；保存时做乐观锁比对 */
+  modifiedAt?: number
+  /** 保存冲突后置位：提示远端已变化，用户可选择强制覆盖 */
+  conflict?: boolean
 }
 
 export function useRemoteFileOps(deps: {
@@ -37,7 +41,12 @@ export function useRemoteFileOps(deps: {
       const r = await ipc.sshEditOpen(connectionId, file.path)
       if (deps.sessionId() !== connectionId) return
       if (r.ok) {
-        editing.value = { connectionId, path: r.path, content: r.content }
+        editing.value = {
+          connectionId,
+          path: r.path,
+          content: r.content,
+          modifiedAt: r.modifiedAt,
+        }
       } else {
         ui.toast(`打开文件失败：${r.error ?? '未知错误'}`)
       }
@@ -57,16 +66,24 @@ export function useRemoteFileOps(deps: {
     return 'opened'
   }
 
-  /** 保存：回写服务器（ssh_edit_save） */
-  async function onSave(content: string) {
+  /**
+   * 保存：回写服务器（ssh_edit_save）。
+   * force=false 时携带打开时的 mtime 做乐观锁；远端已变化则标记 conflict 并保留编辑器
+   * 由用户决定「强制覆盖」或「放弃」；force=true 跳过校验直接写入。
+   */
+  async function onSave(content: string, force = false) {
     const target = editing.value
     if (!target || savingEdit.value) return
     savingEdit.value = true
     try {
-      const r = await ipc.sshEditSave(target.connectionId, target.path, content)
+      const expectedMtime = force ? undefined : target.modifiedAt
+      const r = await ipc.sshEditSave(target.connectionId, target.path, content, expectedMtime)
       if (r.ok) {
         ui.toast(`已保存 ${target.path}（${content.length} 字符）`)
         editing.value = null
+      } else if (r.conflict) {
+        editing.value = { ...target, content, conflict: true }
+        ui.toast('远端文件已被修改，保存被阻止')
       } else {
         ui.toast(`保存失败：${r.error ?? '未知错误'}`)
       }

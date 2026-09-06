@@ -28,7 +28,8 @@ const emit = defineEmits<{
   (
     e: 'save',
     p: ServerProfile,
-    creds: { password?: string; privateKey?: string; passphrase?: string }
+    creds: { password?: string; privateKey?: string; passphrase?: string },
+    saveCredential: boolean
   ): void
   (e: 'cancel'): void
   (e: 'error', msg: string): void
@@ -41,14 +42,16 @@ const form = reactive({
   port: 22,
   username: '',
   authMethod: 'password' as AuthMethod,
-  secretRef: '',
+  credentialRef: '',
   password: '',
   privateKey: '',
   passphrase: '',
   remark: '',
 })
 
-/** 认证方式是否处于「凭证」档（UI 层状态；选了凭证后 secretRef 才有值；须在 watch 之前声明） */
+/** 认证方式是否处于「凭证」档（UI 层状态；选了凭证后 credentialRef 才有值；须在 watch 之前声明） */
+/** 手工凭证是否保存到凭证库（默认保存；取消勾选则凭证仅本次连接使用，不落任何存储） */
+const saveCredential = ref(true)
 const credentialMode = ref(false)
 
 watch(
@@ -65,8 +68,8 @@ watch(
       form.port = p.port
       form.username = p.username
       form.authMethod = p.authMethod
-      form.secretRef = p.secretRef ?? ''
-      credentialMode.value = Boolean(p.secretRef)
+      form.credentialRef = p.credentialRef ?? ''
+      credentialMode.value = Boolean(p.credentialRef)
       form.remark = p.remark ?? ''
     } else {
       form.id = ''
@@ -75,7 +78,7 @@ watch(
       form.port = 22
       form.username = ''
       form.authMethod = 'password'
-      form.secretRef = ''
+      form.credentialRef = ''
       credentialMode.value = false
       form.remark = ''
     }
@@ -101,7 +104,7 @@ function onAuthChange(value: string | number) {
   }
   // 切回手工输入：清空凭证引用
   credentialMode.value = false
-  form.secretRef = ''
+  form.credentialRef = ''
   form.authMethod = v as AuthMethod
 }
 
@@ -134,7 +137,7 @@ function submit() {
     emit('error', '端口必须是 1 到 65535 之间的整数')
     return
   }
-  if (credentialMode.value && !form.secretRef) {
+  if (credentialMode.value && !form.credentialRef) {
     emit('error', '请选择凭证（或从下拉末尾新建）')
     return
   }
@@ -145,7 +148,7 @@ function submit() {
     port: form.port,
     username: form.username.trim(),
     authMethod: form.authMethod,
-    secretRef: form.secretRef || undefined,
+    credentialRef: form.credentialRef || undefined,
     remark: form.remark.trim() || undefined,
     lastConnectedAt: props.profile?.lastConnectedAt,
   }
@@ -153,7 +156,7 @@ function submit() {
     password: form.password.trim() || undefined,
     privateKey: form.privateKey.trim() || undefined,
     passphrase: form.passphrase.trim() || undefined,
-  })
+    }, saveCredential.value)
 }
 </script>
 
@@ -193,7 +196,7 @@ function submit() {
       <!-- 凭证档：可输入搜索的凭证选择（下方独立下拉） -->
       <UiField v-if="credentialMode" label="凭证">
         <UiCombobox
-          :model-value="form.secretRef"
+          :model-value="form.credentialRef"
           :options="credentialOptions"
           placeholder="选择凭证"
           search-placeholder="搜索凭证名称…"
@@ -218,6 +221,12 @@ function submit() {
       <UiField v-if="!credentialMode && form.authMethod === 'password'" label="密码">
         <UiInput v-model="form.password" type="password" />
       </UiField>
+      <!-- 手工凭证默认入凭证库；取消勾选则仅本次连接使用（不落任何存储） -->
+      <UiCheckbox
+        v-if="!credentialMode && (form.password || form.privateKey)"
+        v-model="saveCredential"
+        label="保存凭证到凭证库（取消勾选则仅本次连接使用）"
+      />
 
       <UiField v-if="!credentialMode && form.authMethod !== 'password'" label="私钥内容">
         <UiTextarea

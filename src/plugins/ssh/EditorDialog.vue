@@ -21,10 +21,12 @@ const props = defineProps<{
   content: string
   /** 正在保存，禁用重复提交和关闭 */
   saving?: boolean
+  /** 远端文件已被修改（乐观锁冲突）：显示警告并提供强制覆盖 */
+  conflict?: boolean
 }>()
 
 const emit = defineEmits<{
-  (e: 'save', content: string): void
+  (e: 'save', content: string, force?: boolean): void
   (e: 'cancel'): void
 }>()
 
@@ -88,9 +90,9 @@ function createEditor() {
   })
 }
 
-function save() {
+function save(force = false) {
   if (props.saving) return
-  emit('save', view?.state.doc.toString() ?? props.content)
+  emit('save', view?.state.doc.toString() ?? props.content, force)
 }
 
 function cancel() {
@@ -130,10 +132,26 @@ onUnmounted(() => view?.destroy())
           >
             已修改
           </span>
+          <span
+            v-if="conflict"
+            class="rounded-[4px] bg-danger-soft px-[6px] py-[1px] text-caption font-medium text-danger-strong dark:bg-danger-soft-dark dark:text-danger-dark"
+          >
+            远端已变化
+          </span>
           <div class="ml-auto flex items-center gap-[8px]">
             <UiButton variant="ghost" size="sm" :disabled="saving" @click="cancel"> 取消 </UiButton>
-            <UiButton variant="primary" size="sm" :loading="saving" @click="save">
-              {{ saving ? '保存中…' : '保存' }}
+            <UiButton
+              v-if="conflict"
+              variant="danger"
+              size="sm"
+              :loading="saving"
+              title="忽略远端修改，以当前编辑内容覆盖"
+              @click="save(true)"
+            >
+              强制覆盖
+            </UiButton>
+            <UiButton variant="primary" size="sm" :loading="saving" @click="save(false)">
+              {{ conflict ? '重新检查并保存' : saving ? '保存中…' : '保存' }}
             </UiButton>
           </div>
         </div>

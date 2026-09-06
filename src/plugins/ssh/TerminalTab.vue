@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+/**
+ * TerminalTab · xterm 终端（PTY 通道 + 事件推送）
+ * - 主终端由 connectRequest 显式驱动开启；容器终端由 Docker 页「终端」按钮打开。
+ * - 意外断线：后端 terminal-closed 事件（非本地关闭）→ 上报 linkDead，由工作区决定自动重连。
+ * - 自动/手动重连成功（reconnectTick 递增）：保留 xterm 缓冲，仅换 PTY 通道并插入重连分隔线。
+ */
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from 'xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import 'xterm/css/xterm.css'
@@ -8,7 +14,7 @@ import { UiButton } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 import ContextMenu from '@/core/ui/ContextMenu.vue'
 import { useTerminalContextMenu } from './useTerminalContextMenu'
-import { ipc, onTerminalData } from './ipc'
+import { ipc, onTerminalClosed, onTerminalData } from './ipc'
 import { createTerminalResizeController } from './useTerminalResize'
 
 const props = defineProps<{
@@ -16,7 +22,17 @@ const props = defineProps<{
   profile?: ServerProfile
   dockerContainerId?: string
   connectRequest?: number
+  /** 重连成功计数：递增 = 在保留缓冲的前提下换新 PTY 通道并插入分隔线 */
+  reconnectTick?: number
+  /** 连接进度文案（connecting/reconnecting 期间非空，覆盖状态栏） */
+  stageText?: string
   active?: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'reconnect'): void
+  /** 终端通道异常关闭（连接可能已死），由工作区触发自动重连 */
+  (e: 'linkDead'): void
 }>()
 
 const ui = useUiStore()
@@ -24,6 +40,8 @@ const ui = useUiStore()
 const termHost = ref<HTMLDivElement | null>(null)
 const statusLine = ref('终端未连接')
 const terminalActive = ref(false)
+/** 状态栏展示：连接进度优先（连接中/重连中），否则显示终端状态 */
+const displayLine = computed(() => props.stageText || statusLine.value)
 
 let term: Terminal | null = null
 let fitAddon: FitAddon | null = null
@@ -31,9 +49,11 @@ let terminalId: string | null = null
 let openingConnectionId: string | null = null
 let openingGeneration = 0
 let unlistenData: (() => void) | null = null
+let unlistenClosed: (() => void) | null = null
 let resizeObserver: ResizeObserver | null = null
 let terminalGeneration = 0
 let handledConnectRequest = 0
+let handledReconnectTick = 0
 let disposed = false
 
 const terminalResize = createTerminalResizeController({
@@ -47,8 +67,14 @@ const terminalResize = createTerminalResizeController({
   },
 })
 
-/** 打开终端通道（连接建立/重连时调用） */
-async function openTerminal() {
+/** 重连分隔线（灰色，与旧输出在视觉上区分） */
+function writeReconnectSeparator() {
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  term?.write(`\r\n\x1b[90m── 已于 ${time} 重新连接 ──\x1b[0m\r\n`)
+}
+
+/** 打开终端通道（连接建立/重连时调用）；preserve=true 时保留缓冲（重连场景） */
+async function openTerminal(preserve = false) {
   const connectionId = props.connection?.sessionId
   if (!connectionId || !term) return
   if (terminalId || openingConnectionId === connectionId) return
@@ -78,9 +104,10 @@ async function openTerminal() {
     terminalId = t.id
     terminalActive.value = true
     statusLine.value = `已连接 ${props.connection.host ?? ''} · ${t.cols}×${t.rows}`
+    if (preserve) writeReconnectSeparator()
     // 连接可能在隐藏页签或窗口初始布局尚未稳定时建立；此处必须再按当前可见尺寸同步一次。
     terminalResize.scheduleFitAndSync()
-    ui.toast('终端已打开')
+    if (!preserve) ui.toast('终端已打开')
   } catch (e) {
     if (generation === terminalGeneration) {
       statusLine.value = `终端打开失败：${e}`
@@ -91,7 +118,7 @@ async function openTerminal() {
   }
 }
 
-/** 关闭终端通道（断开/组件卸载时调用） */
+/** 关闭终端通道（断开/组件卸载时调用）；先清 terminalId，terminal-closed 事件即不会误报断线 */
 async function closeTerminal() {
   terminalGeneration += 1
   openingConnectionId = null
@@ -111,7 +138,7 @@ async function closeTerminal() {
 async function reconnect() {
   await closeTerminal()
   term?.reset()
-  await openTerminal()
+  emit('reconnect')
 }
 
 // 右键菜单逻辑在 useTerminalContextMenu（焦点归还规则见该文件头注释）
@@ -157,6 +184,23 @@ onMounted(async () => {
     /* 浏览器预览没有 Tauri 事件系统。 */
   }
 
+  // PTY 通道异常关闭（服务端/网络原因；本地主动关闭前已清 terminalId，不会走到这里）。
+  // 仅主终端上报 linkDead：容器终端 exit 退出属正常流程，不应触发整条连接自动重连。
+  try {
+    const stop = await onTerminalClosed((d) => {
+      if (terminalId && d.terminalId === terminalId) {
+        terminalId = null
+        terminalActive.value = false
+        statusLine.value = '连接已断开'
+        if (!props.dockerContainerId) emit('linkDead')
+      }
+    })
+    if (disposed) stop()
+    else unlistenClosed = stop
+  } catch {
+    /* 浏览器预览没有 Tauri 事件系统。 */
+  }
+
   // 窗口尺寸同步（xterm → SSH PTY）
   resizeObserver = new ResizeObserver(() => terminalResize.scheduleFitAndSync())
   resizeObserver.observe(termHost.value)
@@ -177,6 +221,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', terminalResize.scheduleFitAndSync)
   terminalResize.cancelScheduledFit()
   unlistenData?.()
+  unlistenClosed?.()
   closeTerminal()
   term?.dispose()
   term = null
@@ -202,6 +247,17 @@ watch(
   }
 )
 
+// 重连成功：保留缓冲换新通道（不 reset），分隔线标记断点
+watch(
+  () => props.reconnectTick ?? 0,
+  async (tick) => {
+    if (tick > handledReconnectTick) {
+      handledReconnectTick = tick
+      await openTerminal(true)
+    }
+  }
+)
+
 watch(
   () => props.active,
   (active) => {
@@ -220,7 +276,7 @@ watch(
         {{ dockerContainerId ? '容器终端' : '终端' }}
       </span>
       <span class="font-mono text-caption text-text-muted dark:text-text-muted-dark">
-        {{ statusLine }}
+        {{ displayLine }}
       </span>
       <div class="ml-auto flex gap-[6px]">
         <UiButton
@@ -237,7 +293,7 @@ watch(
           size="xs"
           class="!h-auto !px-[8px] !py-[3px] text-caption"
           :title="terminalActive ? '重连终端' : '连接终端'"
-          @click="terminalActive ? reconnect() : openTerminal()"
+          @click="terminalActive ? reconnect() : emit('reconnect')"
         >
           {{ terminalActive ? '重连' : '连接' }}
         </UiButton>

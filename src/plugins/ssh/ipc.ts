@@ -5,10 +5,14 @@
 import { invokeCommand } from '@/core/ipc/ipc'
 import { listen } from '@tauri-apps/api/event'
 import type {
+  ConnectStage,
   FileTransferProgress,
+  HostKeyVerifyRequest,
   ServerConnection,
   TerminalClosed,
   TerminalData,
+  TunnelConfig,
+  TunnelRuntime,
 } from './contracts'
 import { commands, sshEvents } from './contracts'
 import type { InvokePayloads, Payloads, Results } from './contracts'
@@ -25,9 +29,33 @@ export const ipc = {
   /* 连接（Rust 侧命令以 payload 对象为入参） */
   sshConnect: (p: Payloads['ssh_connect']) => cmd(commands.sshConnect, { payload: p }),
   sshDisconnect: (sessionId: string) => cmd(commands.sshDisconnect, { sessionId }),
-  sshReconnect: (sessionId: string, creds: Omit<Payloads['ssh_reconnect'], 'sessionId'>) =>
-    cmd(commands.sshReconnect, { sessionId, payload: creds }),
+  sshReconnect: (sessionId: string, overrides?: Payloads['ssh_reconnect']['overrides']) =>
+    cmd(commands.sshReconnect, { sessionId, payload: { overrides } }),
   sshConnections: () => cmd(commands.sshConnections, {}),
+
+  /* 主机密钥（首连确认 / 指纹变更阻断） */
+  sshHostKeyRespond: (p: Payloads['ssh_host_key_respond']) => cmd(commands.sshHostKeyRespond, p),
+  sshKnownHostList: () => cmd(commands.sshKnownHostList, {}),
+  sshKnownHostDelete: (p: Payloads['ssh_known_host_delete']) => cmd(commands.sshKnownHostDelete, p),
+
+  /* 服务器配置 + 分组（配置与凭证引用持久化在后端插件库） */
+  sshProfileList: () => cmd(commands.sshProfileList, {}),
+  sshProfileSave: (p: Payloads['ssh_profile_save']) => cmd(commands.sshProfileSave, { payload: p }),
+  sshProfileDelete: (profileId: string) => cmd(commands.sshProfileDelete, { profileId }),
+  sshProfileImport: (p: Payloads['ssh_profile_import']) =>
+    cmd(commands.sshProfileImport, { payload: p }),
+  sshGroupList: () => cmd(commands.sshGroupList, {}),
+  sshGroupSave: (group: Payloads['ssh_group_save']['group']) => cmd(commands.sshGroupSave, { group }),
+  sshGroupDelete: (groupId: string) => cmd(commands.sshGroupDelete, { groupId }),
+
+  /* 隧道 */
+  sshTunnelList: (profileId: string) => cmd(commands.sshTunnelList, { profileId }),
+  sshTunnelSave: (config: TunnelConfig) => cmd(commands.sshTunnelSave, { config }),
+  sshTunnelStart: (connectionId: string, tunnelId: string) =>
+    cmd(commands.sshTunnelStart, { connectionId, tunnelId }),
+  sshTunnelStop: (tunnelId: string) => cmd(commands.sshTunnelStop, { tunnelId }),
+  sshTunnels: (connectionId: string) => cmd(commands.sshTunnels, { connectionId }),
+  sshTunnelDelete: (tunnelId: string) => cmd(commands.sshTunnelDelete, { tunnelId }),
 
   /* 终端 */
   sshTerminalOpen: (p: Payloads['ssh_terminal_open']) => cmd(commands.sshTerminalOpen, p),
@@ -47,18 +75,18 @@ export const ipc = {
     cmd(commands.sshFileDelete, { connectionId, remotePath, recursive }),
   sshFileRename: (connectionId: string, oldPath: string, newPath: string) =>
     cmd(commands.sshFileRename, { connectionId, oldPath, newPath }),
-
-  /* 凭证 */
-  sshCredentialSave: (p: Payloads['ssh_credential_save']) =>
-    cmd(commands.sshCredentialSave, { payload: p }),
-  sshCredentialGet: (profileId: string) => cmd(commands.sshCredentialGet, { profileId }),
-  sshCredentialDelete: (profileId: string) => cmd(commands.sshCredentialDelete, { profileId }),
+  sshFileMkdir: (connectionId: string, path: string) =>
+    cmd(commands.sshFileMkdir, { connectionId, path }),
+  sshLocalList: (path: string) => cmd(commands.sshLocalList, { path }),
+  sshFileDownloadRecursive: (p: Payloads['ssh_file_download_recursive']) =>
+    cmd(commands.sshFileDownloadRecursive, p),
+  sshTransferCancel: (transferId: string) => cmd(commands.sshTransferCancel, { transferId }),
 
   /* 远程编辑 */
   sshEditOpen: (connectionId: string, remotePath: string) =>
     cmd(commands.sshEditOpen, { connectionId, remotePath }),
-  sshEditSave: (connectionId: string, remotePath: string, content: string) =>
-    cmd(commands.sshEditSave, { connectionId, remotePath, content }),
+  sshEditSave: (connectionId: string, remotePath: string, content: string, expectedMtime?: number) =>
+    cmd(commands.sshEditSave, { connectionId, remotePath, content, expectedMtime }),
 
   /* 监控 */
   sshMonitorGet: (connectionId: string) => cmd(commands.sshMonitorGet, { connectionId }),
@@ -98,4 +126,19 @@ export function onTransferProgress(fn: (d: FileTransferProgress) => void): Promi
 /** 订阅连接状态（返回取消订阅函数） */
 export function onConnectionStatus(fn: (d: ServerConnection) => void): Promise<() => void> {
   return listen<ServerConnection>(sshEvents.connectionStatus, (e) => fn(e.payload))
+}
+
+/** 订阅主机密钥确认请求（首连/指纹变更） */
+export function onHostKeyVerify(fn: (d: HostKeyVerifyRequest) => void): Promise<() => void> {
+  return listen<HostKeyVerifyRequest>(sshEvents.hostKeyVerify, (e) => fn(e.payload))
+}
+
+/** 订阅分阶段连接进度 */
+export function onConnectStage(fn: (d: ConnectStage) => void): Promise<() => void> {
+  return listen<ConnectStage>(sshEvents.connectStage, (e) => fn(e.payload))
+}
+
+/** 订阅隧道状态变化 */
+export function onTunnelStatus(fn: (d: TunnelRuntime) => void): Promise<() => void> {
+  return listen<TunnelRuntime>(sshEvents.tunnelStatus, (e) => fn(e.payload))
 }

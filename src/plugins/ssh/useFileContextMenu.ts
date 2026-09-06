@@ -5,6 +5,7 @@ import type { RemoteFile } from './contracts'
 import { canEditRemoteFile } from './useSsh'
 
 interface FileMenuActions {
+  mkdir: (dir: string) => void
   refresh: () => void
   upload: (target: RemoteFile | null) => void
   uploadDirectory: (target: RemoteFile | null) => void
@@ -35,6 +36,7 @@ export function useFileContextMenu(actions: FileMenuActions) {
     if (!target) {
       return [
         { label: '刷新', onClick: actions.refresh },
+        { label: '新建目录', onClick: () => actions.mkdir('/') },
         { label: '上传文件', onClick: () => actions.upload(null) },
         { label: '上传目录', onClick: () => actions.uploadDirectory(null) },
       ]
@@ -42,6 +44,7 @@ export function useFileContextMenu(actions: FileMenuActions) {
     if (target.isDir) {
       return [
         { label: '刷新', onClick: actions.refresh },
+        { label: '新建目录', onClick: () => actions.mkdir(target.path) },
         { label: '上传文件到此目录', onClick: () => actions.upload(target) },
         { label: '上传目录到此目录', onClick: () => actions.uploadDirectory(target) },
         { label: '重命名', onClick: () => actions.rename(target) },

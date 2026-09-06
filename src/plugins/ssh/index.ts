@@ -2,10 +2,6 @@
  * SSH 工具 · 工具注册
  */
 import { registerTool } from '@/core/registry/toolRegistry'
-import { loadProfiles } from './useSsh'
-
-// 插件启动即同步历史 profile 引用，使凭证管理页无需先打开 SSH 工具也能给出删除警告。
-loadProfiles()
 
 registerTool({
   id: 'ssh',
@@ -29,6 +25,12 @@ registerTool({
         { value: '120', label: '2 小时' },
         { value: '0', label: '永不自动断开' },
       ],
+    },
+    {
+      key: 'autoReconnect',
+      type: 'toggle',
+      label: '意外断线自动重连（指数退避，最多 5 次）',
+      default: true,
     },
   ],
   tags: ['网络', '热门'],

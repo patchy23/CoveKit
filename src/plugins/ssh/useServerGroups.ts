@@ -1,56 +1,51 @@
 /**
- * SSH 服务器分组（纯逻辑 + localStorage 持久化；折叠状态不持久化，每次打开工具默认全部折叠）
+ * SSH 服务器分组（后端 ssh.db 持久化；折叠状态不持久化，每次打开工具默认全部折叠）
  * 分组只有一层；「未分组」是固定沉底的虚拟组（无实体记录）。
  */
-import { ref, watch } from 'vue'
-import type { ServerProfile } from './contracts'
+import { ref } from 'vue'
+import type { ServerProfile, SshGroup } from './contracts'
+import { ipc } from './ipc'
 
-export interface ServerGroup {
-  /** 唯一 id（group-<时间戳>） */
-  id: string
-  /** 分组名称 */
-  name: string
-  /** 排序权重（创建时自增，v1 按创建顺序排列） */
-  order: number
-}
-
-const GROUPS_KEY = 'ssh.groups.v1'
-
-/** 读取分组列表（数据损坏回退空列表） */
-function loadGroups(): ServerGroup[] {
-  try {
-    const raw = localStorage.getItem(GROUPS_KEY)
-    if (raw) return (JSON.parse(raw) as ServerGroup[]).sort((a, b) => a.order - b.order)
-  } catch {
-    /* 数据损坏时回退空列表 */
-  }
-  return []
-}
+/** 兼容别名：分组模型已迁移到 contracts.SshGroup */
+export type ServerGroup = SshGroup
 
 export function useServerGroups() {
-  const groups = ref<ServerGroup[]>(loadGroups())
+  const groups = ref<SshGroup[]>([])
   /** 展开的分组 id 集合（默认空 = 全部折叠；不持久化，重开工具回到全折叠） */
   const expandedIds = ref<Set<string>>(new Set())
 
-  watch(groups, (list) => localStorage.setItem(GROUPS_KEY, JSON.stringify(list)), { deep: true })
+  /** 从后端加载分组（失败回退空列表，不阻断 SSH 工具打开） */
+  async function load(): Promise<void> {
+    try {
+      groups.value = await ipc.sshGroupList()
+    } catch {
+      groups.value = []
+    }
+  }
 
   /** 新建分组（返回新分组；调用方 toast） */
-  function createGroup(name: string): ServerGroup {
-    const group: ServerGroup = {
+  async function createGroup(name: string): Promise<SshGroup> {
+    const group: SshGroup = {
       id: `group-${Date.now()}`,
       name: name.trim(),
-      order: Math.max(0, ...groups.value.map((g) => g.order)) + 1,
+      sortOrder: Math.max(0, ...groups.value.map((g) => g.sortOrder)) + 1,
     }
+    await ipc.sshGroupSave(group)
     groups.value = [...groups.value, group]
     return group
   }
 
-  function renameGroup(id: string, name: string) {
-    groups.value = groups.value.map((g) => (g.id === id ? { ...g, name: name.trim() } : g))
+  async function renameGroup(id: string, name: string) {
+    const group = groups.value.find((g) => g.id === id)
+    if (!group) return
+    const renamed = { ...group, name: name.trim() }
+    await ipc.sshGroupSave(renamed)
+    groups.value = groups.value.map((g) => (g.id === id ? renamed : g))
   }
 
-  /** 删除分组（调用方负责把组内 profile 的 groupId 清掉） */
-  function deleteGroup(id: string) {
+  /** 删除分组（后端负责把组内 profile 的 groupId 清掉） */
+  async function deleteGroup(id: string) {
+    await ipc.sshGroupDelete(id)
     groups.value = groups.value.filter((g) => g.id !== id)
     const next = new Set(expandedIds.value)
     next.delete(id)
@@ -64,7 +59,7 @@ export function useServerGroups() {
     expandedIds.value = next
   }
 
-  return { groups, expandedIds, createGroup, renameGroup, deleteGroup, toggleGroup }
+  return { groups, expandedIds, load, createGroup, renameGroup, deleteGroup, toggleGroup }
 }
 
 /* ── 拖拽入组（pointer 事件自实现；HTML5 DnD 与 Tauri dragDropEnabled 的 OLE 拖放冲突，实测不可用） ── */

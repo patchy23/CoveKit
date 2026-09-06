@@ -6,10 +6,10 @@ import type {
   ServerProfile,
   ServerConnection,
   ConnectionStatus,
+  SshGroup,
   TerminalSession,
   RemoteFile,
 } from './contracts'
-import { syncCredentialReferences } from '@/core/vault/references'
 
 /* ── 连接状态机 ── */
 
@@ -75,37 +75,51 @@ export const mockProfiles: ServerProfile[] = [
   },
 ]
 
-/* ── 服务器配置持久化（localStorage；凭证本体走后端 AES-GCM，不入库）── */
+/* ── localStorage 存量快照（一次性迁移到后端插件库；迁移成功后由调用方清理） ── */
 
 const PROFILES_KEY = 'ssh.profiles.v1'
+const GROUPS_KEY = 'ssh.groups.v1'
 
-/** 读取服务器配置（首次运行返回空列表，不注入不可连接的示例服务器） */
-export function loadProfiles(): ServerProfile[] {
+export interface LegacySnapshot {
+  profiles: ServerProfile[]
+  groups: SshGroup[]
+}
+
+/** 读取 localStorage 存量快照（secretRef → credentialRef 字段映射；无存量返回空） */
+export function readLegacySnapshot(): LegacySnapshot {
+  let profiles: ServerProfile[] = []
+  let groups: SshGroup[] = []
   try {
-    const raw = localStorage.getItem(PROFILES_KEY)
-    if (raw) {
-      const profiles = JSON.parse(raw) as ServerProfile[]
-      syncSshCredentialReferences(profiles)
-      return profiles
+    const rawProfiles = localStorage.getItem(PROFILES_KEY)
+    if (rawProfiles) {
+      profiles = (JSON.parse(rawProfiles) as (ServerProfile & { secretRef?: string })[]).map(
+        ({ secretRef, ...rest }) => ({
+          ...rest,
+          credentialRef: secretRef,
+        })
+      )
     }
   } catch {
-    /* 数据损坏时回退空列表 */
+    /* 数据损坏时按空处理 */
   }
-  return []
+  try {
+    const rawGroups = localStorage.getItem(GROUPS_KEY)
+    if (rawGroups) {
+      // 旧分组字段 order → sortOrder
+      groups = (
+        JSON.parse(rawGroups) as (SshGroup & { order?: number })[]
+      ).map(({ order, ...rest }) => ({ ...rest, sortOrder: order ?? 0 }))
+    }
+  } catch {
+    /* 数据损坏时按空处理 */
+  }
+  return { profiles, groups }
 }
 
-/** 保存服务器配置（新增/更新，返回最新列表） */
-export function persistProfiles(list: ServerProfile[]): void {
-  localStorage.setItem(PROFILES_KEY, JSON.stringify(list))
-  syncSshCredentialReferences(list)
-}
-
-/** 把 SSH profile 的 Vault 引用登记给框架删除提示；手工凭据不登记。 */
-export function syncSshCredentialReferences(list: ServerProfile[]): void {
-  syncCredentialReferences(
-    'ssh',
-    list.flatMap((profile) => (profile.secretRef ? [profile.secretRef] : []))
-  )
+/** 清理 localStorage 存量快照（迁移成功后调用） */
+export function clearLegacySnapshot(): void {
+  localStorage.removeItem(PROFILES_KEY)
+  localStorage.removeItem(GROUPS_KEY)
 }
 
 export const mockConnections: ServerConnection[] = [

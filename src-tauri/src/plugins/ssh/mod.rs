@@ -1,23 +1,31 @@
 //! SSH 远程管理插件 · 门面
 //! 命令函数（薄层）与插件装配在此；实现按能力拆分：
 //! - models.rs：serde 数据结构（与前端 plugins/ssh/contracts.ts 同步）
-//! - conn.rs：连接会话注册表（russh 客户端 + 状态事件）
+//! - conn.rs：连接会话注册表（russh 客户端 + 分阶段事件 + 主机密钥人工确认）
+//! - host_keys.rs：已知主机解析/删除/替换（私有 known_hosts 文件）
+//! - store.rs：服务器配置与分组持久化（ssh.db，PluginDb 骨架）
+//! - credential.rs：旧版手工凭证读取与归档（已迁移 Vault，仅存档兼容）
 //! - terminal.rs：PTY 终端通道（事件推送）
-//! - file.rs / credential.rs / edit.rs / monitor.rs / service.rs / process.rs / docker.rs：其余能力
+//! - file.rs / edit.rs / monitor.rs / service.rs / process.rs / docker.rs：其余能力
 
 pub(crate) mod conn;
 pub(crate) mod credential;
 pub(crate) mod docker;
 pub(crate) mod edit;
 pub(crate) mod file;
+pub(crate) mod host_keys;
 mod models;
 pub(crate) mod monitor;
 pub(crate) mod process;
 pub(crate) mod service;
+pub(crate) mod store;
 pub(crate) mod terminal;
+pub(crate) mod tunnel;
 
-use crate::plugins::ssh::conn::SshState;
+use crate::plugins::ssh::conn::{HostKeyState, SshState};
+use crate::plugins::ssh::store::ProfileState;
 use crate::plugins::ssh::terminal::TerminalState;
+use crate::plugins::ssh::tunnel::TunnelState;
 
 /// 分派 SSH 插件全部命令；应用级 Builder 仅安装一个总 handler。
 pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
@@ -26,6 +34,22 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         conn::ssh_disconnect,
         conn::ssh_reconnect,
         conn::ssh_connections,
+        conn::ssh_host_key_respond,
+        conn::ssh_known_host_list,
+        conn::ssh_known_host_delete,
+        store::ssh_profile_list,
+        store::ssh_profile_save,
+        store::ssh_profile_delete,
+        store::ssh_profile_import,
+        store::ssh_group_list,
+        store::ssh_group_save,
+        store::ssh_group_delete,
+        store::ssh_tunnel_list,
+        store::ssh_tunnel_save,
+        tunnel::ssh_tunnel_start,
+        tunnel::ssh_tunnel_stop,
+        tunnel::ssh_tunnels,
+        tunnel::ssh_tunnel_delete,
         terminal::ssh_terminal_open,
         terminal::ssh_terminal_write,
         terminal::ssh_terminal_resize,
@@ -36,9 +60,10 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         file::ssh_file_download,
         file::ssh_file_delete,
         file::ssh_file_rename,
-        credential::ssh_credential_save,
-        credential::ssh_credential_get,
-        credential::ssh_credential_delete,
+        file::ssh_file_mkdir,
+        file::ssh_local_list,
+        file::ssh_file_download_recursive,
+        file::ssh_transfer_cancel,
         edit::ssh_edit_open,
         edit::ssh_edit_save,
         monitor::ssh_monitor_get,
@@ -55,15 +80,37 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
     handler(invoke)
 }
 
-/// 插件注册：命令 + 会话/终端 State + IPC 命令入库
+/// 插件注册：命令 + 会话/终端/主机密钥/配置库 State + IPC 命令入库
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     crate::framework::ipc_registry::register(
         "ssh",
         &[
-            ("ssh_connect", "建立 SSH 连接（密码/私钥认证）"),
+            (
+                "ssh_connect",
+                "建立 SSH 连接（按 profileId 解析配置与凭证）",
+            ),
             ("ssh_disconnect", "断开连接并清理会话"),
             ("ssh_reconnect", "重新连接（新会话替换旧会话）"),
             ("ssh_connections", "全部会话快照（侧栏轮询）"),
+            ("ssh_host_key_respond", "应答主机密钥确认（首连/指纹变更）"),
+            ("ssh_known_host_list", "已知主机列表（含 SHA256 指纹）"),
+            ("ssh_known_host_delete", "删除已知主机条目"),
+            ("ssh_profile_list", "服务器配置列表"),
+            ("ssh_profile_save", "新增/更新服务器配置（凭证入 Vault）"),
+            ("ssh_profile_delete", "删除服务器配置"),
+            (
+                "ssh_profile_import",
+                "localStorage 存量配置与凭证一次性导入",
+            ),
+            ("ssh_group_list", "服务器分组列表"),
+            ("ssh_group_save", "新增/更新分组"),
+            ("ssh_group_delete", "删除分组（组内配置移回未分组）"),
+            ("ssh_tunnel_list", "某服务器的隧道配置列表"),
+            ("ssh_tunnel_save", "新增/更新隧道配置"),
+            ("ssh_tunnel_start", "启动隧道（绑定到指定连接）"),
+            ("ssh_tunnel_stop", "停止隧道"),
+            ("ssh_tunnels", "某连接下的隧道运行时快照"),
+            ("ssh_tunnel_delete", "删除隧道配置"),
             ("ssh_terminal_open", "打开 PTY 终端通道（xterm）"),
             ("ssh_terminal_write", "写入终端数据（键盘输入）"),
             ("ssh_terminal_resize", "调整终端窗口大小"),
@@ -74,9 +121,10 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
             ("ssh_file_download", "下载文件（进度事件推送）"),
             ("ssh_file_delete", "删除远程文件/目录"),
             ("ssh_file_rename", "重命名远程文件/目录"),
-            ("ssh_credential_save", "保存凭证（AES-GCM 加密）"),
-            ("ssh_credential_get", "读取凭证（解密返回）"),
-            ("ssh_credential_delete", "删除凭证"),
+            ("ssh_file_mkdir", "新建远程目录"),
+            ("ssh_local_list", "本地目录列表（双栏文件管理）"),
+            ("ssh_file_download_recursive", "递归下载远程目录"),
+            ("ssh_transfer_cancel", "取消传输任务"),
             ("ssh_edit_open", "打开远程文件（下载内容）"),
             ("ssh_edit_save", "保存远程文件（上传回写）"),
             ("ssh_monitor_get", "资源监控数据（CPU/内存/磁盘/网络）"),
@@ -99,6 +147,16 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         .manage(TerminalState(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
+        .manage(HostKeyState(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )))
+        .manage(TunnelState(std::sync::Mutex::new(
+            std::collections::HashMap::new(),
+        )))
+        .manage(file::TransferState(std::sync::Arc::new(
+            std::sync::Mutex::new(std::collections::HashMap::new()),
+        )))
+        .manage(ProfileState(std::sync::Mutex::new(None)))
         .manage(monitor::MonitorState(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))

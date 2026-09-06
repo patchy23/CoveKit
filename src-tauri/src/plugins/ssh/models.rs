@@ -17,7 +17,7 @@ pub struct SshActionResult {
 }
 
 /// 认证方式（密码 / 私钥 / 私钥+passphrase）
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]
 pub enum AuthMethod {
     /// 用户名+密码
@@ -28,7 +28,7 @@ pub enum AuthMethod {
     PrivateKeyWithPassphrase,
 }
 
-/// 服务器连接配置（可选公共 Vault secretRef；为空时使用 SSH 插件原手工凭据）
+/// 服务器连接配置（凭证只存公共 Vault 的 credentialRef 引用，秘密永不入库/不落 profile）
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerProfile {
@@ -44,15 +44,30 @@ pub struct ServerProfile {
     pub(crate) username: String,
     /// 认证方式
     pub(crate) auth_method: AuthMethod,
-    /// 公共 Vault 凭证引用；为空时密码/私钥由 credential.rs 加密落盘
+    /// 公共 Vault 凭证引用；为空表示尚未保存凭证（连接时需要一次性凭证）
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) secret_ref: Option<String>,
+    pub(crate) credential_ref: Option<String>,
+    /// 所属分组 id（为空 = 未分组；分组实体在 ssh_groups 表）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) group_id: Option<String>,
     /// 备注
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) remark: Option<String>,
     /// 最后连接时间（毫秒时间戳）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) last_connected_at: Option<u64>,
+}
+
+/// 服务器分组
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SshGroup {
+    /// 唯一 id（group-<毫秒时间戳>）
+    pub(crate) id: String,
+    /// 分组名称
+    pub(crate) name: String,
+    /// 排序权重（创建顺序自增）
+    pub(crate) sort_order: i64,
 }
 
 /// 服务器连接状态
@@ -135,6 +150,8 @@ pub struct TerminalData {
 pub struct TerminalClosed {
     /// 已关闭的终端 id。
     pub(crate) terminal_id: String,
+    /// 所属连接会话 id（前端据此触发断线自动重连）
+    pub(crate) connection_id: String,
 }
 
 /* ── 文件管理 ── */
@@ -218,9 +235,29 @@ pub struct RemoteFileContent {
     pub(crate) size: u64,
     /// 编码（如 UTF-8 / GBK）
     pub(crate) encoding: String,
+    /// 修改时间（毫秒；编辑器乐观锁基线）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) modified_at: Option<u64>,
     /// 失败原因（成功时省略）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
+}
+
+/// 远程编辑保存结果（冲突时带当前 mtime 供前端决策）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditSaveResult {
+    /// 保存是否成功
+    pub(crate) ok: bool,
+    /// 失败原因（成功时省略）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) error: Option<String>,
+    /// 远端文件已被他人修改（乐观锁冲突），未写入
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) conflict: Option<bool>,
+    /// 冲突时远端当前 mtime（毫秒）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) current_mtime: Option<u64>,
 }
 
 /* ── 资源监控 ── */
@@ -330,30 +367,11 @@ pub struct DockerLog {
 
 /* ── 连接请求载荷（前端 ssh_connect 入参） ── */
 
-/// SSH 连接请求载荷
-#[derive(Deserialize)]
+/// 一次性凭证覆盖（仅本次连接在内存中使用，不落任何存储）
+#[derive(Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct SshConnectPayload {
-    /// 服务器配置
-    pub(crate) profile: ServerProfile,
-    /// 密码（auth_method=Password 时必填）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) password: Option<String>,
-    /// 私钥内容（auth_method=PrivateKey/PrivateKeyWithPassphrase 时必填）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) private_key: Option<String>,
-    /// 私钥 passphrase（auth_method=PrivateKeyWithPassphrase 时必填）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) passphrase: Option<String>,
-}
-
-/// SSH 凭证保存载荷（与契约 Payloads.ssh_credential_save 对应）
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SshCredentialSavePayload {
-    /// 服务器配置（id 作为凭证 key）
-    pub(crate) profile: ServerProfile,
-    /// 密码
+pub struct CredentialOverride {
+    /// 密码（auth_method=Password 时使用）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) password: Option<String>,
     /// 私钥内容
@@ -362,6 +380,158 @@ pub struct SshCredentialSavePayload {
     /// 私钥 passphrase
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) passphrase: Option<String>,
+}
+
+/// SSH 连接请求载荷：只传 profile id（后端自行读取配置并解析 Vault 凭证）
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConnectPayload {
+    /// 服务器配置 id
+    pub(crate) profile_id: String,
+    /// 一次性凭证覆盖（优先于已保存凭证；仅在内存中使用）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) overrides: Option<CredentialOverride>,
+}
+
+/// 服务器保存载荷：配置 + 可选手工凭证（勾选保存时写入 Vault，返回带 credentialRef 的记录）
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshProfileSavePayload {
+    /// 服务器配置
+    pub(crate) profile: ServerProfile,
+    /// 保存到 Vault 的密码（手工密码认证时）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) password: Option<String>,
+    /// 保存到 Vault 的私钥内容
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) private_key: Option<String>,
+    /// 私钥 passphrase
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) passphrase: Option<String>,
+    /// 是否把本次输入的凭证保存到 Vault（false = 仅更新配置，凭证保持原引用）
+    #[serde(default)]
+    pub(crate) save_credential: bool,
+}
+
+/// localStorage → 插件库一次性导入载荷（含旧手工凭证的明文迁移原始输入）
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshProfileImportPayload {
+    /// 服务器配置列表（localStorage 中的存量数据）
+    pub(crate) profiles: Vec<ServerProfile>,
+    /// 分组列表
+    pub(crate) groups: Vec<SshGroup>,
+}
+
+/// 导入结果摘要（不含任何秘密）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshImportResult {
+    /// 导入的服务器配置数
+    pub(crate) imported_profiles: usize,
+    /// 导入的分组数
+    pub(crate) imported_groups: usize,
+    /// 迁移进 Vault 的凭证数
+    pub(crate) migrated_credentials: usize,
+}
+
+/* ── 主机密钥校验（首连确认 / 变更阻断） ── */
+
+/// 已知主机条目（来自 patchyBox 私有 known_hosts 文件）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownHostEntry {
+    /// 主机地址
+    pub(crate) host: String,
+    /// 端口
+    pub(crate) port: u16,
+    /// 公钥算法名（如 ssh-ed25519）
+    pub(crate) algorithm: String,
+    /// SHA256 指纹（SHA256:base64）
+    pub(crate) fingerprint: String,
+}
+
+/// 主机密钥人工确认请求（后端在握手回调中推送，等待前端 ssh_host_key_respond）
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct HostKeyVerifyRequest {
+    /// 本次连接尝试的唯一请求 id
+    pub(crate) request_id: String,
+    /// 类型：unknown = 首次连接；mismatch = 与已保存指纹不一致
+    pub(crate) kind: String,
+    /// 主机地址
+    pub(crate) host: String,
+    /// 端口
+    pub(crate) port: u16,
+    /// 公钥算法名
+    pub(crate) algorithm: String,
+    /// 服务器公钥 SHA256 指纹
+    pub(crate) fingerprint: String,
+    /// kind=mismatch 时已保存的指纹列表
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) saved_fingerprints: Vec<String>,
+}
+
+/// 用户对主机密钥的决定（respond 命令入参）
+#[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum HostKeyDecision {
+    /// 仅本次信任（不写入 known_hosts）
+    TrustOnce,
+    /// 保存并连接（写入 known_hosts）
+    TrustSave,
+    /// 取消连接
+    Cancel,
+    /// 仅 kind=mismatch：确认替换已保存指纹（前端已二次确认）
+    Replace,
+}
+
+/* ── 连接阶段事件与结构化结果 ── */
+
+/// 连接阶段（按 SSH 建链顺序）
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectStage {
+    /// 本次连接尝试的唯一请求 id（对应 ssh_connect 返回值中的 requestId）
+    pub(crate) request_id: String,
+    /// 所属服务器配置 id（前端据此把进度关联到工作区）
+    pub(crate) profile_id: String,
+    /// 阶段：resolve / tcp / handshake / verify / auth / session
+    pub(crate) stage: String,
+    /// 阶段状态：start / ok / fail
+    pub(crate) status: String,
+    /// 附加信息（失败原因等）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) message: Option<String>,
+}
+
+/// 稳定错误码（前端据此分支展示，message 为中文用户文案）
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConnectError {
+    /// 错误码（如 AUTH_FAILED / TCP_TIMEOUT / HOST_KEY_MISMATCH）
+    pub(crate) code: String,
+    /// 中文用户文案
+    pub(crate) message: String,
+    /// 可复制的技術详情（已脱敏）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) detail: Option<String>,
+}
+
+/// ssh_connect / ssh_reconnect 的结构化返回：业务失败不抛 IPC 异常
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshConnectOutcome {
+    /// 连接是否成功
+    pub(crate) ok: bool,
+    /// 成功时的连接快照
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) connection: Option<ServerConnection>,
+    /// 本次连接尝试的请求 id（关联 connect-stage 事件；成功时也有）
+    pub(crate) request_id: String,
+    /// 失败时的结构化错误
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) error: Option<SshConnectError>,
 }
 
 /// Docker 交互终端命令入参；打包为 payload 以保持 IPC 契约稳定并规避参数过多。
@@ -378,4 +548,94 @@ pub(crate) struct SshDockerExecPayload {
     pub(crate) cols: u32,
     /// PTY 行数
     pub(crate) rows: u32,
+}
+
+/* ── SSH 隧道 ── */
+
+/// 隧道类型
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum TunnelType {
+    /// 本地转发（-L）：本地监听 → 经 SSH → 目标主机
+    Local,
+    /// 远程转发（-R）：服务端监听 → 经 SSH → 本机侧目标
+    Remote,
+    /// 动态 SOCKS5（-D）：本地 SOCKS5 代理，目标由客户端请求指定
+    Dynamic,
+}
+
+impl TunnelType {
+    /// 存储字符串
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TunnelType::Local => "local",
+            TunnelType::Remote => "remote",
+            TunnelType::Dynamic => "dynamic",
+        }
+    }
+
+    /// 存储字符串 → 类型（未知值兜底为本地转发）
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "remote" => TunnelType::Remote,
+            "dynamic" => TunnelType::Dynamic,
+            _ => TunnelType::Local,
+        }
+    }
+}
+
+/// 隧道配置（随 profile 存插件库）
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelConfig {
+    /// 唯一 id（tun-<毫秒时间戳>）
+    pub(crate) id: String,
+    /// 所属服务器配置 id
+    pub(crate) profile_id: String,
+    /// 显示名称
+    pub(crate) name: String,
+    /// 隧道类型
+    pub(crate) tunnel_type: TunnelType,
+    /// 监听地址（local/dynamic 为本机侧；remote 为服务端侧；默认 127.0.0.1）
+    pub(crate) listen_host: String,
+    /// 监听端口
+    pub(crate) listen_port: u16,
+    /// 目标主机（dynamic 类型为空）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_host: Option<String>,
+    /// 目标端口（dynamic 类型为空）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) target_port: Option<u16>,
+    /// 连接建立后自动启动
+    pub(crate) auto_start: bool,
+}
+
+/// 隧道运行状态
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TunnelStatus {
+    /// 已停止
+    Stopped,
+    /// 启动中（监听/转发请求进行中）
+    Starting,
+    /// 运行中
+    Running,
+    /// 异常（监听失败/转发断开等）
+    Error,
+}
+
+/// 隧道运行时快照（前端展示）
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TunnelRuntime {
+    /// 隧道配置
+    #[serde(flatten)]
+    pub(crate) config: TunnelConfig,
+    /// 当前状态
+    pub(crate) status: TunnelStatus,
+    /// 活动连接数
+    pub(crate) connections: u64,
+    /// 异常信息（status=error 时）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) error: Option<String>,
 }

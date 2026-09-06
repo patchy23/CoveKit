@@ -12,7 +12,7 @@ const CREATE_VALUE = '__create__'
 
 interface FormLike {
   authMethod: string
-  secretRef: string
+  credentialRef: string
 }
 
 export function useServerCredentialChoice(
@@ -51,13 +51,13 @@ export function useServerCredentialChoice(
   ])
 
   const selectedCredential: ComputedRef<CredentialSummary | undefined> = computed(() =>
-    credentials.value.find((c) => c.id === form.secretRef)
+    credentials.value.find((c) => c.id === form.credentialRef)
   )
 
   /** 编辑场景：引用的凭证已被删除/不可用 */
   const credentialMissing = computed(
     () =>
-      Boolean(form.secretRef) &&
+      Boolean(form.credentialRef) &&
       credentialsLoaded.value &&
       !credentialsFailed.value &&
       !selectedCredential.value
@@ -69,7 +69,7 @@ export function useServerCredentialChoice(
       credFormOpen.value = true
       return
     }
-    form.secretRef = value
+    form.credentialRef = value
     const cred = credentials.value.find((c) => c.id === value)
     if (cred) setAuthMethod(cred.kind === 'password' ? 'password' : 'privateKey')
   }

@@ -1,13 +1,15 @@
-//! SSH 插件 · 凭证管理（AES-256-GCM 本地加密）
-//! v1 实现：主密钥（随机 32B）存 app_data_dir/ssh-master.key，凭证 JSON 加密存 ssh-credentials.json；
-//! 每次读写全量解密→增删改→加密写回。stronghold 引擎仍是后续安全升级项
-//! （iota_stronghold 2.x 为 procedures 架构，Rust 侧胶水成本高；插件仅暴露前端命令层）。
+//! SSH 插件 · 旧版手工凭证存储（AES-256-GCM 本地加密）
+//! 历史背景：v1 手工凭证以 profileId 为键加密存 ssh-credentials.json（主密钥 ssh-master.key）。
+//! 现凭证统一走公共 Vault（profile 只存 credentialRef），本模块仅保留：
+//! 1) 读取旧文件用于一次性迁移进 Vault（store::ssh_profile_import）；
+//! 2) 迁移成功后归档旧文件（改名保留，不删除）。
+//!
+//! 若旧文件不存在，全部函数为无害空操作。
 
 use std::{
     collections::HashMap,
     io::Write,
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
 };
 
 use aes_gcm::{
@@ -16,14 +18,6 @@ use aes_gcm::{
 };
 use rand::RngCore;
 use tauri::{AppHandle, Manager};
-
-use crate::plugins::ssh::models::SshActionResult;
-
-/// 凭证文件进程内互斥锁，避免并发保存/删除发生丢更新。
-fn credential_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
 
 /// 主密钥文件（不存在则生成 32 随机字节）
 fn master_key(app: &AppHandle) -> Result<[u8; 32], String> {
@@ -61,20 +55,6 @@ fn decrypt_payload(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, String> {
     cipher
         .decrypt(Nonce::from_slice(nonce), ct)
         .map_err(|_| "凭证解密失败（主密钥不匹配或数据损坏）".into())
-}
-
-/// 使用主密钥加密明文，返回 nonce(12B)||ciphertext。
-fn encrypt_payload(key: &[u8; 32], plain: &[u8]) -> Result<Vec<u8>, String> {
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
-    let mut nonce = [0u8; 12];
-    rand::rngs::OsRng.fill_bytes(&mut nonce);
-    let ct = cipher
-        .encrypt(Nonce::from_slice(&nonce), plain)
-        .map_err(|_| "凭证加密失败")?;
-    let mut out = Vec::with_capacity(12 + ct.len());
-    out.extend_from_slice(&nonce);
-    out.extend_from_slice(&ct);
-    Ok(out)
 }
 
 /// 先完整写入临时文件并刷盘，再替换目标，避免进程中断留下半截密文。
@@ -130,8 +110,8 @@ fn creds_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("ssh-credentials.json"))
 }
 
-/// 读取全部凭证（解密；无文件时返回空表）
-fn read_all(app: &AppHandle) -> Result<HashMap<String, serde_json::Value>, String> {
+/// 读取全部旧凭证（解密；无文件时返回空表；供一次性迁移使用，明文不离开本模块的调用方）
+pub(crate) fn read_all(app: &AppHandle) -> Result<HashMap<String, serde_json::Value>, String> {
     let path = creds_path(app)?;
     recover_backup(&path)?;
     let data = match std::fs::read(&path) {
@@ -144,89 +124,19 @@ fn read_all(app: &AppHandle) -> Result<HashMap<String, serde_json::Value>, Strin
     serde_json::from_slice(&plain).map_err(|e| format!("凭证数据解析失败: {e}"))
 }
 
-/// 写回全部凭证（加密落盘）
-fn write_all(app: &AppHandle, map: &HashMap<String, serde_json::Value>) -> Result<(), String> {
-    let key = master_key(app)?;
-    let plain = serde_json::to_vec(map).map_err(|e| e.to_string())?;
-    let out = encrypt_payload(&key, &plain)?;
-    replace_file(&creds_path(app)?, &out)
-}
-
-/// 保存凭证（profile 级；字段与契约 Payloads.ssh_credential_save 对应）
-#[tauri::command(rename_all = "camelCase")]
-pub async fn ssh_credential_save(
-    app: AppHandle,
-    payload: crate::plugins::ssh::models::SshCredentialSavePayload,
-) -> Result<SshActionResult, String> {
-    let _guard = credential_lock().lock().map_err(|e| e.to_string())?;
-    let mut map = read_all(&app)?;
-    map.insert(
-        payload.profile.id,
-        serde_json::json!({
-            "authMethod": payload.profile.auth_method,
-            "password": payload.password,
-            "privateKey": payload.private_key,
-            "passphrase": payload.passphrase,
-        }),
-    );
-    write_all(&app, &map)?;
-    Ok(SshActionResult {
-        ok: true,
-        error: None,
-    })
-}
-
-/// 读取凭证（解密返回；无记录返回空对象）
-#[tauri::command(rename_all = "camelCase")]
-pub async fn ssh_credential_get(
-    app: AppHandle,
-    profile_id: String,
-) -> Result<serde_json::Value, String> {
-    let _guard = credential_lock().lock().map_err(|e| e.to_string())?;
-    let map = read_all(&app)?;
-    Ok(map
-        .get(&profile_id)
-        .cloned()
-        .unwrap_or_else(|| serde_json::json!({})))
-}
-
-/// 删除凭证
-#[tauri::command(rename_all = "camelCase")]
-pub async fn ssh_credential_delete(
-    app: AppHandle,
-    profile_id: String,
-) -> Result<SshActionResult, String> {
-    let _guard = credential_lock().lock().map_err(|e| e.to_string())?;
-    let mut map = read_all(&app)?;
-    map.remove(&profile_id);
-    write_all(&app, &map)?;
-    Ok(SshActionResult {
-        ok: true,
-        error: None,
-    })
+/// 归档旧凭证文件（改名 .migrated.bak 保留）；文件不存在时为无害空操作。
+pub(crate) fn archive_legacy_file(app: &AppHandle) -> Result<(), String> {
+    let path = creds_path(app)?;
+    if !path.exists() {
+        return Ok(());
+    }
+    let backup = path.with_extension("migrated.bak");
+    std::fs::rename(&path, backup).map_err(|e| format!("旧凭证文件归档失败: {e}"))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn encrypt_decrypt_roundtrip() {
-        let key = [7u8; 32];
-        let plain = b"{\"password\":\"s3cret\"}";
-        let ct = encrypt_payload(&key, plain).unwrap();
-        let back = decrypt_payload(&key, &ct).unwrap();
-        assert_eq!(back, plain);
-    }
-
-    #[test]
-    fn wrong_key_fails_decrypt() {
-        let key = [7u8; 32];
-        let plain = b"hello";
-        let ct = encrypt_payload(&key, plain).unwrap();
-        let wrong = [8u8; 32];
-        assert!(decrypt_payload(&wrong, &ct).is_err());
-    }
 
     #[test]
     fn corrupted_ciphertext_returns_error() {

@@ -7,7 +7,7 @@ use tauri::State;
 
 use crate::plugins::ssh::conn::{get_sftp_session, resource_id, SshState};
 use crate::plugins::ssh::file::replace_remote_file;
-use crate::plugins::ssh::models::{RemoteFileContent, SshActionResult};
+use crate::plugins::ssh::models::{EditSaveResult, RemoteFileContent};
 
 /// 远程编辑器最大文件大小，避免一次性读取超大文件耗尽内存。
 const MAX_EDIT_BYTES: u64 = 10 * 1024 * 1024;
@@ -49,18 +49,20 @@ pub async fn ssh_edit_open(
         content,
         size,
         encoding: "UTF-8".into(),
+        modified_at: Some(meta.mtime.unwrap_or(0) as u64 * 1000),
         error: None,
     })
 }
 
-/// 保存远程文件（内容上传回写）
+/// 保存远程文件（内容上传回写；expected_mtime 提供时做乐观锁校验，冲突不写入）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn ssh_edit_save(
     ssh_state: State<'_, SshState>,
     connection_id: String,
     remote_path: String,
     content: String,
-) -> Result<SshActionResult, String> {
+    expected_mtime: Option<u64>,
+) -> Result<EditSaveResult, String> {
     let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
     let target_path = sftp
         .canonicalize(&remote_path)
@@ -70,6 +72,18 @@ pub async fn ssh_edit_save(
         .metadata(&target_path)
         .await
         .map_err(|e| format!("读取远程文件属性失败: {e}"))?;
+    // 乐观锁：打开时的 mtime 与当前不一致 → 远端已变化，拒绝覆盖（error 带 CONFLICT 前缀）
+    if let Some(expected) = expected_mtime {
+        let current = metadata.mtime.unwrap_or(0) as u64 * 1000;
+        if current != expected {
+            return Ok(EditSaveResult {
+                ok: false,
+                error: Some("CONFLICT".into()),
+                conflict: Some(true),
+                current_mtime: Some(current),
+            });
+        }
+    }
     let temp_path = format!("{target_path}.patchybox-edit-{}", resource_id("file"));
     let mut file = sftp
         .create(&temp_path)
@@ -94,8 +108,10 @@ pub async fn ssh_edit_save(
     .await
     .map_err(|e| format!("恢复远程文件属性失败: {e}"))?;
     replace_remote_file(&sftp, &temp_path, &target_path).await?;
-    Ok(SshActionResult {
+    Ok(EditSaveResult {
         ok: true,
         error: None,
+        conflict: None,
+        current_mtime: None,
     })
 }
