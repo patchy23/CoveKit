@@ -107,6 +107,10 @@ export function useFileTransfer(
       transfers.value = next
       ui.toast(`文件传输失败：${progress.error}`)
     } else {
+      const next = new Map(transfers.value)
+      const item = next.get(progress.transferId)
+      if (item) next.set(progress.transferId, { ...item, done: true })
+      transfers.value = next
       ui.toast(`${upload ? '上传' : '下载'}完成：${name}`)
       if (upload) onUploadDone()
     }

@@ -30,7 +30,7 @@ export const ipc = {
   sshConnect: (p: Payloads['ssh_connect']) => cmd(commands.sshConnect, { payload: p }),
   sshDisconnect: (sessionId: string) => cmd(commands.sshDisconnect, { sessionId }),
   sshReconnect: (sessionId: string, overrides?: Payloads['ssh_reconnect']['overrides']) =>
-    cmd(commands.sshReconnect, { sessionId, payload: { overrides } }),
+    cmd(commands.sshReconnect, { sessionId, overrides }),
   sshConnections: () => cmd(commands.sshConnections, {}),
 
   /* 主机密钥（首连确认 / 指纹变更阻断） */

@@ -2,6 +2,7 @@
 //! profile 只存 credentialRef 引用；秘密本体在公共 Vault，永不落本库。
 //! SQL 与行映射写在 &Connection 层（便于内存库单测），PluginDb 仅承担打开/迁移/锁。
 
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection;
@@ -257,6 +258,20 @@ pub fn ssh_profile_save(
 ) -> Result<ServerProfile, String> {
     let mut profile = payload.profile;
     if payload.save_credential {
+        // 共享保护：该 credentialRef 还被其他服务器引用时，强制新建而非改名/覆盖原凭证
+        let shared = profile
+            .credential_ref
+            .as_deref()
+            .map(|rid| {
+                with_db(&app, &state, |conn| {
+                    credential_shared_by_others(conn, &profile.id, rid)
+                })
+            })
+            .unwrap_or(Ok(false))
+            .unwrap_or(false);
+        if shared {
+            profile.credential_ref = None;
+        }
         let has_password = !payload.password.as_deref().unwrap_or_default().is_empty();
         let has_key = !payload
             .private_key
@@ -281,17 +296,30 @@ pub fn ssh_profile_save(
                     passphrase: payload.passphrase.clone(),
                 }
             };
-            let summary = crate::framework::vault::vault_save(
-                app.clone(),
-                CredentialSavePayload {
-                    // 已有引用时 upsert 同一条目，避免反复保存产生重复凭证
-                    id: profile.credential_ref.clone(),
-                    name: format!("{}（SSH）", profile.name),
-                    kind: fields.kind(),
-                    fields,
-                    note: String::new(),
-                },
-            )?;
+            // 已有引用时 upsert 同一条目（避免重复凭证）；引用失效（凭证已删）回退新建
+            let build_payload = |id: Option<String>| CredentialSavePayload {
+                id,
+                name: format!("{}（SSH）", profile.name),
+                kind: fields.kind(),
+                fields: fields.clone(),
+                note: String::new(),
+            };
+            let summary = match profile.credential_ref.clone() {
+                Some(id) => {
+                    // 已有引用时 upsert 同一条目（避免重复凭证）；失效（已删）回退新建
+                    match crate::framework::vault::vault_save(app.clone(), build_payload(Some(id)))
+                    {
+                        Ok(summary) => summary,
+                        Err(e) => {
+                            if !e.contains("不存在") {
+                                return Err(e);
+                            }
+                            crate::framework::vault::vault_save(app.clone(), build_payload(None))?
+                        }
+                    }
+                }
+                None => crate::framework::vault::vault_save(app.clone(), build_payload(None))?,
+            };
             profile.credential_ref = Some(summary.id);
         }
     }
@@ -350,7 +378,16 @@ pub fn ssh_profile_import(
     payload: SshProfileImportPayload,
 ) -> Result<SshImportResult, String> {
     // 旧 AES 凭证文件（profileId → {authMethod, password, privateKey, passphrase}）
-    let legacy = crate::plugins::ssh::credential::read_all(&app)?;
+    // 解密失败（主密钥丢失等）只跳过凭证迁移，配置照常导入——否则用户视角=服务器列表消失
+    let mut legacy_credentials_failed = false;
+    let legacy = match crate::plugins::ssh::credential::read_all(&app) {
+        Ok(map) => map,
+        Err(e) => {
+            eprintln!("[ssh] 旧凭证读取失败，跳过凭证迁移: {e}");
+            legacy_credentials_failed = true;
+            HashMap::new()
+        }
+    };
     let now = crate::plugins::ssh::conn::now_ms() as i64;
     let mut migrated_credentials = 0usize;
 
@@ -432,6 +469,7 @@ pub fn ssh_profile_import(
         imported_profiles: profiles.len(),
         imported_groups: groups.len(),
         migrated_credentials,
+        legacy_credentials_failed,
     })
 }
 
@@ -522,6 +560,22 @@ fn row_to_tunnel(
         target_port: row.get::<_, Option<i64>>("target_port")?.map(|v| v as u16),
         auto_start: row.get::<_, i64>("auto_start")? != 0,
     })
+}
+
+/// 检查某 credentialRef 是否还被其他 profile 引用（共享保护用）
+pub(crate) fn credential_shared_by_others(
+    conn: &Connection,
+    profile_id: &str,
+    credential_ref: &str,
+) -> Result<bool, String> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM ssh_profiles WHERE credential_ref = ?1 AND id != ?2",
+            rusqlite::params![credential_ref, profile_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(count > 0)
 }
 
 /// 某服务器的全部隧道配置（按创建顺序）

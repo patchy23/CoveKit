@@ -794,7 +794,7 @@ fn register_session(
     profile: &ServerProfile,
     session: std::sync::Arc<client::Handle<SshHandler>>,
     forward_targets: ForwardTargets,
-) -> String {
+) -> Result<String, SshConnectError> {
     let session_id = resource_id("conn");
     let handle = SshSessionHandle {
         profile_id: profile.id.clone(),
@@ -805,10 +805,18 @@ fn register_session(
         sftp: Mutex::new(None),
         forward_targets,
     };
-    if let Ok(mut map) = state.0.lock() {
-        map.insert(session_id.clone(), handle);
+    // 注册表锁中毒不吞：断开刚建立的会话并报错（宁可连接失败也不留无人持有的会话）
+    match state.0.lock() {
+        Ok(mut map) => {
+            map.insert(session_id.clone(), handle);
+            Ok(session_id)
+        }
+        Err(e) => Err(connect_error(
+            "INTERNAL",
+            "会话注册失败（注册表异常）".into(),
+            Some(e.to_string()),
+        )),
     }
-    session_id
 }
 
 /// 建立连接（ssh_connect 命令）：按 profileId 从插件库取配置，凭证在 Rust 侧解析
@@ -866,7 +874,17 @@ pub async fn ssh_connect(
         }
     };
 
-    let session_id = register_session(&state, &profile, session, forward_targets);
+    let session_id = match register_session(&state, &profile, session, forward_targets) {
+        Ok(id) => id,
+        Err(e) => {
+            return Ok(SshConnectOutcome {
+                ok: false,
+                connection: None,
+                request_id,
+                error: Some(e),
+            })
+        }
+    };
     let _ = store::with_db(&app, &profile_state, |c| {
         store::touch_last_connected(c, &profile.id, now_ms() as i64)
     });
@@ -955,6 +973,10 @@ pub async fn ssh_reconnect(
     session_id: String,
     overrides: Option<CredentialOverride>,
 ) -> Result<SshConnectOutcome, String> {
+    // 终端/监控/隧道的 State 走 app.state 内部获取（命令参数过多触发 clippy 8/7）
+    let terminal_state = app.state::<TerminalState>();
+    let monitor_state = app.state::<MonitorState>();
+    let tunnel_state = app.state::<crate::plugins::ssh::tunnel::TunnelState>();
     let request_id = resource_id("sshc");
     // 先取旧句柄的 profileId（句柄保留在表中，失败时不影响旧连接）
     let profile_id = {
@@ -962,7 +984,17 @@ pub async fn ssh_reconnect(
         map.get(&session_id).map(|h| h.profile_id.clone())
     };
     let Some(profile_id) = profile_id else {
-        return Err("连接不存在或已断开，无法重连".into());
+        // 结构化返回（与其他失败路径一致），前端据此停止重连而非反复报 IPC 错
+        return Ok(SshConnectOutcome {
+            ok: false,
+            connection: None,
+            request_id,
+            error: Some(connect_error(
+                "SESSION_NOT_FOUND",
+                "连接不存在或已断开，无法重连".into(),
+                None,
+            )),
+        });
     };
     let profile = {
         let pid = profile_id.clone();
@@ -1028,6 +1060,23 @@ pub async fn ssh_reconnect(
         old
     };
     if let Some(h) = old {
+        // 旧会话资源随重连一并清理：终端任务取消、监控采样移除、旧隧道停置（desired 保留供恢复）
+        if let Ok(mut terminals) = terminal_state.0.lock() {
+            terminals.retain(|_, terminal| {
+                if terminal.connection_id == session_id {
+                    let _ = terminal.cancel.send(true);
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        monitor_state
+            .0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(&session_id);
+        crate::plugins::ssh::tunnel::stop_session_tunnels(&tunnel_state, &session_id);
         let _ = h
             .session
             .disconnect(russh::Disconnect::ByApplication, "重连", "")

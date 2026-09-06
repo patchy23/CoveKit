@@ -82,7 +82,8 @@ export function useRemoteFileOps(deps: {
         ui.toast(`已保存 ${target.path}（${content.length} 字符）`)
         editing.value = null
       } else if (r.conflict) {
-        editing.value = { ...target, content, conflict: true }
+        // 回填远端当前 mtime 为新基线：再次保存走正常乐观锁（而非永远冲突）
+        editing.value = { ...target, content, conflict: true, modifiedAt: r.currentMtime ?? target.modifiedAt }
         ui.toast('远端文件已被修改，保存被阻止')
       } else {
         ui.toast(`保存失败：${r.error ?? '未知错误'}`)

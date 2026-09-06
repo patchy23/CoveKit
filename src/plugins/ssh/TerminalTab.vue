@@ -142,6 +142,12 @@ async function closeTerminal() {
 }
 
 async function reconnect() {
+  // 已连接：只重建 PTY 通道（保留缓冲），不惊动工作区——其重连守卫对 connected 直接返回
+  if (props.connection?.status === 'connected') {
+    await closeTerminal()
+    await openTerminal(true)
+    return
+  }
   await closeTerminal()
   term?.reset()
   emit('reconnect')
@@ -239,7 +245,10 @@ onBeforeUnmount(() => {
 watch(
   [() => props.connection?.sessionId, () => props.connectRequest ?? 0],
   async ([newId, request], [oldId]) => {
-    if (newId && newId !== oldId) {
+    // 重连换会话（reconnectTick 有未处理递增）不清缓冲：reconnectTick watcher 负责
+    // openTerminal(true) 换通道并打分隔线；只有真正的「换连接」才 reset
+    const reconnectSwap = (props.reconnectTick ?? 0) > handledReconnectTick
+    if (newId && newId !== oldId && !reconnectSwap) {
       await closeTerminal()
       term?.reset()
       statusLine.value = '终端未连接'

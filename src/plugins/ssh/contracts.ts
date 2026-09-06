@@ -346,6 +346,8 @@ export interface SshImportResult {
   importedProfiles: number
   importedGroups: number
   migratedCredentials: number
+  /** 旧凭证文件存在但解密失败（配置已迁入，凭证需重新保存） */
+  legacyCredentialsFailed: boolean
 }
 
 /* ── 隧道 ── */
@@ -574,14 +576,9 @@ export type Payloads = {
 /** 前端 invoke 的真实顶层参数；Rust payload 结构体命令在此统一声明包裹层。 */
 export type InvokePayloads = Omit<
   Payloads,
-  | 'ssh_connect'
-  | 'ssh_reconnect'
-  | 'ssh_profile_save'
-  | 'ssh_profile_import'
-  | 'ssh_docker_exec'
+  'ssh_connect' | 'ssh_profile_save' | 'ssh_profile_import' | 'ssh_docker_exec'
 > & {
   ssh_connect: { payload: Payloads['ssh_connect'] }
-  ssh_reconnect: { sessionId: string; payload: Omit<Payloads['ssh_reconnect'], 'sessionId'> }
   ssh_profile_save: { payload: Payloads['ssh_profile_save'] }
   ssh_profile_import: { payload: Payloads['ssh_profile_import'] }
   ssh_docker_exec: { payload: Payloads['ssh_docker_exec'] }

@@ -11,6 +11,7 @@ import type { ServerProfile, AuthMethod } from './contracts'
 import { useServerCredentialChoice } from './useServerCredentialChoice'
 import {
   UiButton,
+  UiCheckbox,
   UiCombobox,
   UiField,
   UiInput,
@@ -61,6 +62,7 @@ watch(
     form.password = ''
     form.privateKey = ''
     form.passphrase = ''
+    saveCredential.value = true
     if (p) {
       form.id = p.id
       form.name = p.name

@@ -231,6 +231,7 @@ watch(
     renameTarget.value = null
     deleteTarget.value = null
     menu.value = null
+    mkdirTarget.value = null
     directoryHistory.value = []
     currentPath.value = '/'
     if (sessionId) void navigate('/')

@@ -433,6 +433,8 @@ pub struct SshImportResult {
     pub(crate) imported_groups: usize,
     /// 迁移进 Vault 的凭证数
     pub(crate) migrated_credentials: usize,
+    /// 旧凭证文件存在但解密失败（配置已迁入，凭证需用户重新保存）
+    pub(crate) legacy_credentials_failed: bool,
 }
 
 /* ── 主机密钥校验（首连确认 / 变更阻断） ── */

@@ -24,6 +24,8 @@ export interface SshConnectionWorkspace {
   profileId: string
   title: string
   connection: ServerConnection
+  /** 本次连接尝试的后端请求 id（首个 connect-stage 事件完成绑定，之后精确匹配进度） */
+  connectRequestId?: string
   /** 连接进度文案（connecting/reconnecting 期间由 connect-stage 事件驱动） */
   stageText: string
   /** 显式连接请求计数（驱动 TerminalTab 开启终端通道） */
@@ -74,8 +76,12 @@ export function useSshWorkspace() {
   const formOpen = ref(false)
   const editingProfile = ref<ServerProfile | null>(null)
   const deleteTarget = ref<ServerProfile | null>(null)
-  /** 待确认的主机密钥请求（非空时弹出指纹确认框；同一时刻最多一个连接在等待确认） */
-  const hostKeyRequest = ref<HostKeyVerifyRequest | null>(null)
+  /**
+   * 主机密钥确认请求队列：并发首连多台主机时排队逐个确认（单值会覆盖导致先到的永远挂起）。
+   * hostKeyRequest 暴露队首给 UI；卸载时对积压请求统一 cancel。
+   */
+  const hostKeyQueue = ref<HostKeyVerifyRequest[]>([])
+  const hostKeyRequest = computed(() => hostKeyQueue.value[0] ?? null)
 
   const pendingConnections = new Set<Promise<unknown>>()
 
@@ -105,12 +111,18 @@ export function useSshWorkspace() {
       const result = await ipc.sshProfileImport(legacy)
       await loadProfiles()
       clearLegacySnapshot()
-      ui.toast(
-        `已迁移 ${result.importedProfiles} 台服务器` +
-          (result.migratedCredentials > 0
-            ? `，${result.migratedCredentials} 个凭证已入凭证库`
-            : '')
-      )
+      if (result.legacyCredentialsFailed) {
+        ui.toast(
+          `已迁移 ${result.importedProfiles} 台服务器；旧凭证未能自动迁移，请编辑服务器重新保存凭证`
+        )
+      } else {
+        ui.toast(
+          `已迁移 ${result.importedProfiles} 台服务器` +
+            (result.migratedCredentials > 0
+              ? `，${result.migratedCredentials} 个凭证已入凭证库`
+              : '')
+        )
+      }
     } catch (error) {
       // 迁移失败保留 localStorage 快照，下次打开工具重试；错误必须可见（曾静默导致"数据消失"假象）
       console.error('[ssh] 存量迁移失败:', error)
@@ -146,11 +158,13 @@ export function useSshWorkspace() {
     if (!profile) return
     const targetName = groupId ? (groups.value.find((g) => g.id === groupId)?.name ?? '') : '未分组'
     if ((profile.groupId ?? null) === groupId) return
+    const previous = profile.groupId
     profile.groupId = groupId ?? undefined
     try {
       await ipc.sshProfileSave({ profile, saveCredential: false })
       ui.toast(`已将「${profile.name}」移动到「${targetName}」`)
     } catch (error) {
+      profile.groupId = previous
       ui.toast(`移动分组失败：${error}`)
     }
   }
@@ -314,7 +328,8 @@ export function useSshWorkspace() {
     pendingConnections.add(request)
     try {
       const outcome = await request
-      if (disposed) {
+      if (disposed || !connectionWorkspaces.value.includes(workspace)) {
+        // 组件卸载，或占位页签在连接期间被用户关闭：会话无人持有，立即断开防泄漏
         if (outcome.ok && outcome.connection) await disconnectConnection(outcome.connection)
         removeWorkspace(workspace.id)
         return undefined
@@ -326,6 +341,7 @@ export function useSshWorkspace() {
         return undefined
       }
       workspace.connection = outcome.connection
+      workspace.connectRequestId = outcome.requestId
       workspace.connectRequest += 1
       workspace.stageText = ''
       workspace.lastActivityAt = Date.now()
@@ -420,13 +436,9 @@ export function useSshWorkspace() {
         return
       }
       scheduleAutoReconnect(workspace)
-    } catch (error) {
-      ui.toast(`重新连接失败：${error}`)
-      workspace.connection = {
-        ...workspace.connection,
-        status: 'disconnected',
-        error: String(error),
-      }
+    } catch {
+      // IPC 抛错（多为网络断）与业务失败一致走退避；上限由 scheduleAutoReconnect 自终止
+      scheduleAutoReconnect(workspace)
     }
   }
 
@@ -467,10 +479,9 @@ export function useSshWorkspace() {
 
   /* ── 主机密钥人工确认 ── */
 
-  /** 应答当前确认请求；取消时后端连接失败，占位工作区由 openConnection 清理 */
+  /** 应答队首确认请求；取消时后端连接失败，占位工作区由 openConnection 清理 */
   async function respondHostKey(decision: 'trustOnce' | 'trustSave' | 'cancel' | 'replace') {
-    const request = hostKeyRequest.value
-    hostKeyRequest.value = null
+    const request = hostKeyQueue.value.shift()
     if (!request) return
     await ipc.sshHostKeyRespond({ requestId: request.requestId, decision }).catch(() => undefined)
   }
@@ -573,15 +584,24 @@ export function useSshWorkspace() {
     }
     try {
       const stopStage = await onConnectStage((s) => {
-        const workspace = connectionWorkspaces.value.find(
-          (item) =>
-            item.profileId === s.profileId &&
-            ['connecting', 'reconnecting'].includes(item.connection.status)
+        // 先按已绑定的 requestId 精确匹配；未绑定的占位工作区用「同 profile + 进行中」
+        // 完成首绑（并发同 profile 双连时各自绑定，之后不再串台）
+        let workspace = connectionWorkspaces.value.find(
+          (item) => item.connectRequestId === s.requestId
         )
+        if (!workspace) {
+          workspace = connectionWorkspaces.value.find(
+            (item) =>
+              item.profileId === s.profileId &&
+              !item.connectRequestId &&
+              ['connecting', 'reconnecting'].includes(item.connection.status)
+          )
+          if (workspace) workspace.connectRequestId = s.requestId
+        }
         if (workspace) workspace.stageText = stageTextFor(s.stage, s.status)
       })
       const stopHostKey = await onHostKeyVerify((request) => {
-        hostKeyRequest.value = request
+        hostKeyQueue.value.push(request)
       })
       if (disposed) {
         stopStage()
@@ -594,6 +614,7 @@ export function useSshWorkspace() {
       /* 浏览器预览没有 Tauri 事件系统。 */
     }
 
+    if (disposed) return
     idleTimer = setInterval(() => {
       const minutes = Number(settings.getToolSetting('ssh', 'idleDisconnectMinutes', '10'))
       if (!Number.isFinite(minutes) || minutes <= 0) return
@@ -612,6 +633,13 @@ export function useSshWorkspace() {
 
   onUnmounted(() => {
     disposed = true
+    // 积压的主机密钥确认统一取消，避免后端握手回调挂到超时
+    for (const pending of hostKeyQueue.value) {
+      void ipc.sshHostKeyRespond({ requestId: pending.requestId, decision: 'cancel' }).catch(
+        () => undefined
+      )
+    }
+    hostKeyQueue.value = []
     unlistenConnection?.()
     unlistenActivity?.()
     unlistenTransfer?.()
