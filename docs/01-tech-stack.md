@@ -127,11 +127,11 @@
 | 屏幕取色（系统级） | 自研 Rust 命令 | Windows: `GetDC`/`GetPixel` 或全屏截图 |
 | 磁盘扫描 | 自研 Rust 命令 | `walkdir` crate，异步 + 进度事件 |
 | HTTP/WS 调试（第二批） | `reqwest` + `tokio-tungstenite` | **Rust 侧发请求**，无 CORS，无 http 插件 scope 负担 |
-| 数据库工具（第二批） | `sqlx` | 统一 MySQL/Postgres/SQLite 三方言，连接池存 AppState |
+| 数据库工具（第二批） | `mysql_async` + `tokio-postgres` + `redis` + `rusqlite` | 按驱动选型（统一 TLS 走 rustls/ring）；sqlx 曾预留，实际未使用已于 2026-09-06 移除 |
 | hosts 修改（第二批） | std fs + 提权助手 | 读系统 hosts，写前检测权限，UAC 按需提权 |
 | DNS 管理（第二批） | `reqwest` + 签名实现 | 阿里 HMAC-SHA1 / 腾讯 TC3-HMAC-SHA256 / CF Bearer |
 | SSH 工具（第二批） | `russh` | 纯 Rust async；密钥走 secrets |
-| 凭据加密（第二批） | `tauri-plugin-stronghold` | Token/密码/私钥加密落盘，明文仅存 Rust 内存 |
+| 凭据加密（第二批） | 系统 keyring + AES-256-GCM（`framework/vault`） | Stronghold 因调试态性能与迁移成本弃用（2026-08-24 决策） |
 
 **明确不引入：** `tauri-plugin-shell`（默认安全策略下权限繁琐且风险高，需要执行外部命令的场景用 `opener` 或自研白名单命令替代；hosts 提权用 std::process 拉起 PowerShell `-Verb RunAs`，不经 shell 插件）。
 

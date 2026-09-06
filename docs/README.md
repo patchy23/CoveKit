@@ -8,8 +8,10 @@
 | [`01-tech-stack.md`](01-tech-stack.md) | 技术选型分析（Tauri 2.11 + Vue 3 + TS + Tailwind 4） |
 | [`02-architecture.md`](02-architecture.md) | 详细设计（架构、注册表、IPC 契约、数据模型、路线图） |
 | [`03-plugin-development.md`](03-plugin-development.md) | 插件开发规则（IPC 入库 / 数据库管理 / 质量门槛） |
+| [`04-ui-components.md`](04-ui-components.md) | 公共 UI 组件规范 |
 | [`05-rust-code-standard.md`](05-rust-code-standard.md) | Rust 代码规范（panic/clone/生命周期/异步） |
 | [`06-release.md`](06-release.md) | 发布、自动更新与代码签名配置 |
+| [`07-product-requirements.md`](07-product-requirements.md) | 产品需求文档 |
 
 ## 原型（已验收）
 

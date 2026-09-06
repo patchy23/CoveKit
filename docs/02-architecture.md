@@ -1,5 +1,9 @@
 # 详细设计 · patchyBox 桌面工具箱
 
+> ⚠️ 本文是设计期文档（2026-08）：其中 `modules/` 目录、sqlx、Stronghold、modal 载体、前缀路由等描述已被实现演进取代。
+> **现行规则以 `docs/03-plugin-development.md`（插件结构/IPC/数据库）与 `docs/05-rust-code-standard.md`（Rust 规范）为准；当前架构实况见 AGENTS.md。**
+
+
 > 视觉方向：**明净浅色 · 内容优先**（已采纳，原型 `sketches/002-clean-light/`）；设计规范：`DESIGN.md`（已过 lint，0 错误）。
 > 技术栈：Tauri 2.11 + Vue 3.5 + TS + Tailwind 4 + Pinia（详见 `01-tech-stack.md`）。
 

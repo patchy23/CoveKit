@@ -1,6 +1,6 @@
 /**
  * 工具注册表 · 数据模型
- * 与 docs/02-architecture.md §3 同步；第二批预留类型（ConnectionProfile）一并定义。
+ * 与 docs/02-architecture.md §3 同步。
  */
 import type { Component } from 'vue'
 
@@ -44,17 +44,4 @@ export interface AppSettings {
   defaultDownloadDirectory: string
   recentTools: string[]
   tools: Record<string, Record<string, unknown>>
-}
-
-/** 第二批预留：连接型工具（DB/SSH）的统一连接配置 */
-export interface ConnectionProfile {
-  id: string
-  name: string
-  kind: 'mysql' | 'postgres' | 'sqlite' | 'ssh'
-  host?: string
-  port?: number
-  user?: string
-  /** 密码/密钥引用（存 stronghold，不落明文） */
-  secretRef?: string
-  options?: Record<string, string>
 }
