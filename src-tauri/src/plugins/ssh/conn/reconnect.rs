@@ -20,8 +20,9 @@ use crate::plugins::ssh::store::{self, ProfileState};
 use crate::plugins::ssh::terminal::TerminalState;
 use crate::plugins::ssh::tunnel::{resume_for_profile, stop_session_tunnels};
 
-use super::connect::{open_session, resolve_credentials};
+use super::connect::resolve_credentials;
 use super::connect_error;
+use super::session::open_session;
 
 /// 断开连接并清理会话
 #[tauri::command]

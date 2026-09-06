@@ -12,6 +12,7 @@
 pub(crate) mod connect;
 pub(crate) mod handler;
 pub(crate) mod reconnect;
+pub(crate) mod session;
 
 pub(crate) use handler::SshHandler;
 
