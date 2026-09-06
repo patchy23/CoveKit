@@ -30,6 +30,7 @@
 - 每个插件在 `mod.rs` 提供自己的 `invoke_handler(invoke)`，内部 `generate_handler!` 使用完整路径；应用级 Builder 只安装一次总 handler，由 `plugins/mod.rs` 按注册表 owner 精确路由（2026-09-06 起；旧的前缀手写清单已废弃）。
 - **禁止在多个 `register()` 中调用 `Builder::invoke_handler`**：该方法是 setter，后调用会覆盖前一批命令，并非追加。
 - **Rust 文件规模红线（2026-09-06 新增，教训：ssh 插件平铺 14 个 rs / conn.rs 1222 行）**：单个 rs 文件 >400 行、或插件目录下能力文件 >8 个时，必须按能力域下沉子目录（如 `ssh/conn/`、`ssh/sftp/`、`ssh/ops/`），子目录 `mod.rs` 用 `pub use` 重导出保持 `crate::plugins::<id>::<域>::xxx` 引用路径稳定，调用方零改动；门面 `mod.rs` 保持薄（命令薄层 + register/init + 模块声明）。
+- **前端目录规模红线（2026-09-06 新增，与 Rust 侧对称）**：插件目录下文件 >15 个（不含测试）时，必须按特性域分目录（如 `ssh/connection/`、`ssh/terminal/`、`ssh/files/`），门面层（index.ts/index.vue/contracts.ts/ipc.ts）留在插件根；子目录内组件用相对路径引用，跨域共享逻辑放 `shared/`；移动文件用 `git mv` 保历史。
 - 框架级能力（设置/快捷键/窗口/命令入库/数据管理）在 `src-tauri/src/framework/`，**不属于插件**。
 
 ## 2. IPC 接口入库规则（tauri 接口入库）
