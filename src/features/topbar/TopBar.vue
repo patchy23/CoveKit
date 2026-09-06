@@ -1,12 +1,11 @@
 <script setup lang="ts">
 /**
  * TopBar · 顶栏
- * 首页：分类标题 + 计数副标题 + 搜索框 + 视图切换 + 添加按钮；
- * 工具页签激活：显示工具名 + 描述（搜索框聚焦时自动回到工具库）。
+ * 首页：分类标题 + 计数副标题；工具页签激活：显示工具名 + 描述。
+ * 搜索框迁至侧栏顶部、视图切换迁至「工具列表」行（2026-09-06）。
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppIcon from '@/features/ui/AppIcon.vue'
 import { getTool } from '@/core/registry/toolRegistry'
 import { useToolsStore } from '@/stores/tools'
 import { useUiStore } from '@/stores/ui'
@@ -32,50 +31,20 @@ const subtitle = computed(() =>
     ? activeTool.value.description
     : t('topbar.summary', { count: tools.filtered.length })
 )
-
-/** 聚焦搜索时若在工具页签，切回工具库首页 */
-function onSearchFocus() {
-  if (ui.activeTab) ui.goHome()
-}
 </script>
 
 <template>
   <header
-    class="flex h-[66px] shrink-0 items-center gap-md border-b border-border bg-surface px-xl dark:border-border-dark dark:bg-surface-dark"
+    class="flex h-[48px] shrink-0 items-center gap-md border-b border-border bg-surface px-xl dark:border-border-dark dark:bg-surface-dark"
   >
-    <div class="min-w-0">
-      <h1 class="truncate text-h1 font-bold tracking-[-0.02em] dark:text-primary-dark">
+    <div class="flex min-w-0 items-baseline gap-[10px]">
+      <h1 class="shrink-0 truncate text-h1 font-bold tracking-[-0.02em] dark:text-primary-dark">
         {{ title }}
       </h1>
-      <p class="mt-[1px] truncate text-body-sm text-text-muted dark:text-text-muted-dark">
+      <p class="min-w-0 truncate text-body-sm text-text-muted dark:text-text-muted-dark">
         {{ subtitle }}
       </p>
     </div>
     <div class="flex-1" />
-    <div
-      class="flex h-[38px] w-[280px] items-center gap-sm rounded-md border border-border bg-neutral px-[12px] transition-all duration-200 focus-within:w-[320px] focus-within:border-tertiary focus-within:shadow-[0_0_0_3px_var(--color-tertiary-soft)] dark:border-border-dark dark:bg-neutral-dark"
-    >
-      <AppIcon
-        name="search"
-        :size="15"
-        class="shrink-0 text-text-muted dark:text-text-muted-dark"
-      />
-      <input
-        v-model="ui.searchQuery"
-        class="flex-1 bg-transparent text-body text-primary outline-none placeholder:text-text-muted dark:text-primary-dark dark:placeholder:text-text-muted-dark"
-        type="text"
-        :placeholder="t('topbar.search')"
-        spellcheck="false"
-        @focus="onSearchFocus"
-      />
-    </div>
-    <button
-      v-if="!activeTool"
-      class="grid h-[38px] w-[38px] shrink-0 place-items-center rounded-md border border-border bg-surface text-secondary transition-colors duration-150 hover:border-border-strong hover:bg-surface-muted hover:text-primary dark:border-border-dark dark:bg-surface-dark dark:text-secondary-dark dark:hover:border-border-strong-dark dark:hover:bg-surface-muted-dark dark:hover:text-primary-dark"
-      :title="t('topbar.switchView')"
-      @click="ui.listView = !ui.listView"
-    >
-      <AppIcon :name="ui.listView ? 'list' : 'grid'" :size="17" />
-    </button>
   </header>
 </template>

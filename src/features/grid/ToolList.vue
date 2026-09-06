@@ -29,7 +29,7 @@ async function toggleFav(t: ToolManifest) {
 </script>
 
 <template>
-  <div class="overflow-hidden rounded-lg border border-border dark:border-border-dark">
+  <div class="overflow-y-auto rounded-lg border border-border dark:border-border-dark">
     <div
       v-for="t in tools.filtered"
       :key="t.id"

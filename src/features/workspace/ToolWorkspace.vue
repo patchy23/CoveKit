@@ -155,17 +155,50 @@ const hiddenTabItems = computed(() => hiddenItems.value)
 
     <!-- 内容区 -->
     <div class="min-h-0 flex-1 overflow-y-auto px-md py-md">
-      <!-- 首页：工具库 -->
-      <div v-show="ui.activeTab === null">
+      <!-- 首页：工具库（列表模式下限高自滚，滚动条收在列表边框内；卡片模式仍随内容区滚动） -->
+      <div
+        v-show="ui.activeTab === null"
+        :class="ui.listView ? 'flex h-full min-h-0 flex-col' : ''"
+      >
         <RecentStrip />
         <div class="mb-[12px] flex items-center gap-sm">
           <h2 class="text-h2 font-bold tracking-[-0.01em] dark:text-primary-dark">工具列表</h2>
           <span class="text-body-sm text-text-muted dark:text-text-muted-dark"
             >{{ tools.filtered.length }} 个</span
           >
+          <div class="flex-1" />
+          <!-- 视图切换（卡片/列表，默认卡片；自顶栏迁入） -->
+          <div
+            class="flex items-center gap-[2px] rounded-md border border-border bg-neutral p-[2px] dark:border-border-dark dark:bg-neutral-dark"
+          >
+            <button
+              class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
+              :class="
+                !ui.listView
+                  ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
+                  : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
+              "
+              title="卡片模式"
+              @click="ui.listView = false"
+            >
+              <AppIcon name="grid" :size="14" />
+            </button>
+            <button
+              class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
+              :class="
+                ui.listView
+                  ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
+                  : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
+              "
+              title="列表模式"
+              @click="ui.listView = true"
+            >
+              <AppIcon name="list" :size="14" />
+            </button>
+          </div>
         </div>
         <ToolGrid v-if="tools.filtered.length && !ui.listView" />
-        <ToolList v-else-if="tools.filtered.length && ui.listView" />
+        <ToolList v-else-if="tools.filtered.length && ui.listView" class="min-h-0 flex-1" />
         <div v-else class="flex flex-col items-center justify-center py-[96px] text-center">
           <div
             class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
