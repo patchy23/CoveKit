@@ -75,8 +75,8 @@ const connectionTabItems = computed<UiTabItem[]>(() =>
     status:
       item.connection.status === 'connected'
         ? ('success' as const)
-        : item.connection.status === 'reconnecting'
-          ? ('neutral' as const)
+        : item.connection.status === 'connecting' || item.connection.status === 'reconnecting'
+          ? ('progress' as const)
           : ('danger' as const),
   }))
 )

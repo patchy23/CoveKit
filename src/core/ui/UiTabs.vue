@@ -8,7 +8,7 @@ export interface UiTabItem {
   disabled?: boolean
   badge?: string | number
   closable?: boolean
-  status?: 'success' | 'danger' | 'neutral'
+  status?: 'success' | 'danger' | 'neutral' | 'progress'
   /** 状态点 tooltip（默认按连接语义：已连接/已断开/连接中） */
   statusTitle?: string
 }
@@ -53,6 +53,7 @@ const emit = defineEmits<{
             'bg-success-strong dark:bg-success-dark': item.status === 'success',
             'bg-danger-strong dark:bg-danger-dark': item.status === 'danger',
             'bg-text-muted dark:bg-text-muted-dark': item.status === 'neutral',
+            'bg-tertiary animate-pulse dark:bg-tertiary-dark': item.status === 'progress',
           }"
           :title="
             item.statusTitle ??
