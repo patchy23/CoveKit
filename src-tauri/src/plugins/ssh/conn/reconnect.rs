@@ -224,7 +224,8 @@ mod tests {
     use crate::framework::vault::{Credential, CredentialFields};
     use crate::plugins::ssh::models::{AuthMethod, ServerProfile};
 
-    use super::{apply_vault_credential, resource_id, shell_quote};
+    use crate::plugins::ssh::conn::connect::apply_vault_credential;
+    use crate::plugins::ssh::conn::{resource_id, shell_quote};
 
     fn profile(auth_method: AuthMethod) -> ServerProfile {
         ServerProfile {

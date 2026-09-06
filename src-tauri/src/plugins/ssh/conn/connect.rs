@@ -241,17 +241,17 @@ pub(crate) struct ResolvedConnectPayload {
     /// 解析后实际用于认证的服务器配置（Vault 用户名覆盖表单展示值）。
     pub(crate) profile: ServerProfile,
     /// 密码认证秘密。
-    password: Option<String>,
+    pub(crate) password: Option<String>,
     /// OpenSSH 私钥原文。
-    private_key: Option<String>,
+    pub(crate) private_key: Option<String>,
     /// 加密私钥的可选口令。
-    passphrase: Option<String>,
+    pub(crate) passphrase: Option<String>,
     /// 主机密钥交互槽（连接流程与握手回调共享）。
     verify: Arc<HostKeyVerifySlot>,
 }
 
 /// 将 Vault 凭据映射为 SSH 认证参数；凭据中的用户名优先于 profile 展示值。
-fn apply_vault_credential(
+pub(crate) fn apply_vault_credential(
     mut profile: ServerProfile,
     credential: Credential,
 ) -> Result<ResolvedConnectPayload, String> {

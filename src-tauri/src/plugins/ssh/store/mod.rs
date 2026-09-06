@@ -1,0 +1,157 @@
+//! SSH 插件 · 服务器配置与分组持久化（插件私有 ssh.db，PluginDb 骨架）
+//! profile 只存 credentialRef 引用；秘密本体在公共 Vault，永不落本库。
+//! SQL 与行映射写在 &Connection 层（便于内存库单测），PluginDb 仅承担打开/迁移/锁。
+
+use std::sync::{Arc, Mutex};
+
+use rusqlite::Connection;
+use tauri::{AppHandle, State};
+
+use crate::framework::store::PluginDb;
+
+/// 顺序迁移（只追加）：v1 建分组与服务器配置表
+pub(crate) const MIGRATIONS: &[&str] = &[
+    "CREATE TABLE IF NOT EXISTS ssh_groups (
+       id TEXT PRIMARY KEY,
+       name TEXT NOT NULL,
+       sort_order INTEGER NOT NULL DEFAULT 0
+     );
+     CREATE TABLE IF NOT EXISTS ssh_profiles (
+       id TEXT PRIMARY KEY,
+       name TEXT NOT NULL,
+       host TEXT NOT NULL,
+       port INTEGER NOT NULL,
+       username TEXT NOT NULL,
+       auth_method TEXT NOT NULL,
+       credential_ref TEXT,
+       group_id TEXT,
+       remark TEXT,
+       last_connected_at INTEGER,
+       created_at INTEGER NOT NULL,
+       updated_at INTEGER NOT NULL
+     );",
+    // v2：隧道配置表
+    "CREATE TABLE IF NOT EXISTS ssh_tunnels (
+       id TEXT PRIMARY KEY,
+       profile_id TEXT NOT NULL,
+       name TEXT NOT NULL,
+       tunnel_type TEXT NOT NULL,
+       listen_host TEXT NOT NULL,
+       listen_port INTEGER NOT NULL,
+       target_host TEXT,
+       target_port INTEGER,
+       auto_start INTEGER NOT NULL DEFAULT 0,
+       created_at INTEGER NOT NULL
+     );",
+];
+
+/// profile/分组库的惰性句柄（首次访问时打开并迁移）
+pub(crate) struct ProfileState(pub Mutex<Option<Arc<PluginDb>>>);
+
+/// 惰性打开插件库（ssh.db；首次调用时执行迁移；打开失败不污染槽位，下次调用重试）
+pub(crate) fn with_db<T>(
+    app: &AppHandle,
+    state: &State<'_, ProfileState>,
+    f: impl FnOnce(&Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let arc = {
+        let mut slot = state.0.lock().map_err(|e| e.to_string())?;
+        if let Some(db) = slot.as_ref() {
+            db.clone()
+        } else {
+            let db = Arc::new(PluginDb::open(app, "ssh", MIGRATIONS)?);
+            *slot = Some(db.clone());
+            db
+        }
+    };
+    arc.with_conn(f)
+}
+
+/// 打开内存库并跑同一份迁移（单测用）
+#[cfg(test)]
+pub(crate) fn open_memory() -> Connection {
+    let conn = Connection::open_in_memory().expect("内存库打开失败");
+    crate::framework::store::migrate(&conn, MIGRATIONS).expect("内存库迁移失败");
+    conn
+}
+
+/* ── 分组 ── */
+
+pub(crate) mod profiles;
+pub(crate) mod tunnels;
+
+pub(crate) use profiles::{get_profile, touch_last_connected};
+pub(crate) use tunnels::{delete_tunnel, get_tunnel, list_tunnels};
+
+#[cfg(test)]
+mod tests {
+    use super::open_memory;
+    use super::profiles::*;
+    use super::tunnels::*;
+    use crate::plugins::ssh::models::{AuthMethod, ServerProfile, SshGroup};
+
+    fn profile(id: &str, group_id: Option<&str>) -> ServerProfile {
+        ServerProfile {
+            id: id.into(),
+            name: format!("服务器 {id}"),
+            host: "10.0.0.5".into(),
+            port: 22,
+            username: "root".into(),
+            auth_method: AuthMethod::Password,
+            credential_ref: Some("cred-1".into()),
+            group_id: group_id.map(Into::into),
+            remark: None,
+            last_connected_at: None,
+        }
+    }
+
+    #[test]
+    fn profile_upsert_get_roundtrip() {
+        let conn = open_memory();
+        upsert_profile(&conn, &profile("p1", None), 100).unwrap();
+        let loaded = get_profile(&conn, "p1").unwrap();
+        assert_eq!(loaded.name, "服务器 p1");
+        assert_eq!(loaded.credential_ref.as_deref(), Some("cred-1"));
+        // 更新：同 id 覆盖 credentialRef 与字段
+        let mut updated = profile("p1", None);
+        updated.credential_ref = Some("cred-2".into());
+        updated.port = 2222;
+        upsert_profile(&conn, &updated, 200).unwrap();
+        let reloaded = list_profiles(&conn).unwrap();
+        assert_eq!(reloaded.len(), 1);
+        assert_eq!(reloaded[0].port, 2222);
+        assert_eq!(reloaded[0].credential_ref.as_deref(), Some("cred-2"));
+    }
+
+    #[test]
+    fn group_delete_moves_profiles_to_ungrouped() {
+        let conn = open_memory();
+        upsert_group(
+            &conn,
+            &SshGroup {
+                id: "g1".into(),
+                name: "生产".into(),
+                sort_order: 1,
+            },
+        )
+        .unwrap();
+        upsert_profile(&conn, &profile("p1", Some("g1")), 100).unwrap();
+        delete_group(&conn, "g1").unwrap();
+        assert!(list_groups(&conn).unwrap().is_empty());
+        assert_eq!(get_profile(&conn, "p1").unwrap().group_id, None);
+    }
+
+    #[test]
+    fn auth_method_survives_roundtrip() {
+        let conn = open_memory();
+        let mut p = profile("p2", None);
+        p.auth_method = AuthMethod::PrivateKeyWithPassphrase;
+        upsert_profile(&conn, &p, 1).unwrap();
+        assert_eq!(
+            get_profile(&conn, "p2").unwrap().auth_method,
+            AuthMethod::PrivateKeyWithPassphrase
+        );
+    }
+}
+
+/* ── 隧道配置 ── */
