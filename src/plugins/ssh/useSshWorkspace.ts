@@ -1,5 +1,5 @@
 /** SSH 工作区状态：服务器配置（后端插件库）、分组、多连接工作区、主机密钥确认、分阶段连接与自动重连。 */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import {
@@ -292,7 +292,9 @@ export function useSshWorkspace() {
     const profile = profiles.value.find((item) => item.id === profileId)
     if (!profile) return undefined
     activeProfileId.value = profileId
-    const workspace: SshConnectionWorkspace = {
+    // reactive 包裹：闭包后续对 workspace 的赋值（connected/connectRequest 等）必须触发响应式更新，
+    // 否则页签状态点与终端 props 要等下一次任意重渲染才刷新（曾致"开第二个连接第一个才变绿"）
+    const workspace = reactive<SshConnectionWorkspace>({
       id: `ssh-workspace-${Date.now()}-${nextWorkspaceId++}`,
       profileId,
       title: dedupeTitle(profile.name, profileId),
@@ -304,7 +306,7 @@ export function useSshWorkspace() {
       activeSection: 'terminal',
       visitedSections: ['terminal'],
       lastActivityAt: Date.now(),
-    }
+    })
     connectionWorkspaces.value.push(workspace)
     const request = ipc
       .sshConnect({ profileId })
