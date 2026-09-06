@@ -5,29 +5,25 @@
 
 use russh_sftp::protocol::FileAttributes;
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use crate::plugins::ssh::conn::{get_session, get_sftp_session, resource_id, SshState};
-use crate::plugins::ssh::models::{FileTransferProgress, RemoteFile, SshActionResult};
+use crate::plugins::ssh::conn::resource_id;
+use crate::plugins::ssh::models::RemoteFile;
 
 /// 递归上传前展开的单个本地文件或目录。
-struct LocalUploadEntry {
+pub(crate) struct LocalUploadEntry {
     /// 本地绝对或用户选择路径。
-    local_path: PathBuf,
+    pub(crate) local_path: PathBuf,
     /// 对应的远程目标路径。
-    remote_path: String,
+    pub(crate) remote_path: String,
     /// 是否为目录。
-    is_dir: bool,
+    pub(crate) is_dir: bool,
     /// 文件字节数；目录为 0。
-    size: u64,
+    pub(crate) size: u64,
 }
 
 /// 展开本地上传目标；目录按父目录优先排列，符号链接不跟随，避免越出用户选择范围。
-fn collect_upload_entries(
+pub(crate) fn collect_upload_entries(
     local_path: &str,
     remote_path: &str,
 ) -> Result<Vec<LocalUploadEntry>, String> {
@@ -144,7 +140,7 @@ pub(crate) async fn replace_remote_file(
 }
 
 /// 将已完整写入的本地临时文件替换为下载目标；失败时恢复旧文件。
-fn replace_local_file(temp_path: &str, target_path: &str) -> Result<(), String> {
+pub(crate) fn replace_local_file(temp_path: &str, target_path: &str) -> Result<(), String> {
     if !std::path::Path::new(target_path).exists() {
         return std::fs::rename(temp_path, target_path)
             .map_err(|e| format!("提交下载文件失败: {e}"));

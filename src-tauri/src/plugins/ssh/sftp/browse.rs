@@ -8,7 +8,7 @@ use tauri::State;
 use crate::plugins::ssh::conn::{get_sftp_session, invalidate_sftp_session, SshState};
 use crate::plugins::ssh::models::{FileListResult, RemoteFile};
 
-use super::transfer::to_remote_file;
+use super::util::to_remote_file;
 
 /// 目录列表
 #[tauri::command(rename_all = "camelCase")]

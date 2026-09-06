@@ -4,8 +4,8 @@
 //! 模块划分：browse = 目录浏览；transfer = 传输与文件操作 + 共享工具。
 
 pub(crate) mod browse;
+pub(crate) mod ops;
 pub(crate) mod transfer;
 pub(crate) mod util;
 
-pub(crate) use transfer::replace_remote_file;
-pub use transfer::TransferState;
+pub use ops::TransferState;
