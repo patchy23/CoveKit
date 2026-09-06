@@ -16,6 +16,7 @@ use crate::plugins::ssh::store::{self, ProfileState};
 use crate::plugins::ssh::tunnel::resume_for_profile;
 
 use super::session::open_session;
+/// 已解析的 SSH 连接参数（凭证在 Rust 内解密，秘密不回传前端）
 pub(crate) struct ResolvedConnectPayload {
     /// 解析后实际用于认证的服务器配置（Vault 用户名覆盖表单展示值）。
     pub(crate) profile: ServerProfile,
