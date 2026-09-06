@@ -6,8 +6,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tauri::State;
 
 use crate::plugins::ssh::conn::{get_sftp_session, resource_id, SshState};
-use crate::plugins::ssh::file::replace_remote_file;
 use crate::plugins::ssh::models::{EditSaveResult, RemoteFileContent};
+use crate::plugins::ssh::sftp::replace_remote_file;
 
 /// 远程编辑器最大文件大小，避免一次性读取超大文件耗尽内存。
 const MAX_EDIT_BYTES: u64 = 10 * 1024 * 1024;

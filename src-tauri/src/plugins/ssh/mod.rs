@@ -8,16 +8,16 @@
 //! - terminal.rs：PTY 终端通道（事件推送）
 //! - file.rs / edit.rs / monitor.rs / service.rs / process.rs / docker.rs：其余能力
 
-pub(crate) mod conn;
+pub(crate) mod conn; // conn/ 目录：会话注册表 + 连接/重连（能力域下沉，引用路径经 mod.rs pub use 保持不变）
 pub(crate) mod credential;
 pub(crate) mod docker;
 pub(crate) mod edit;
-pub(crate) mod file;
 pub(crate) mod host_keys;
-mod models;
+mod models; // models/ 目录：serde 数据结构按域拆分
 pub(crate) mod monitor;
 pub(crate) mod process;
 pub(crate) mod service;
+pub(crate) mod sftp; // sftp/ 目录：文件浏览/传输/递归下载
 pub(crate) mod store;
 pub(crate) mod terminal;
 pub(crate) mod tunnel;
@@ -30,9 +30,9 @@ use crate::plugins::ssh::tunnel::TunnelState;
 /// 分派 SSH 插件全部命令；应用级 Builder 仅安装一个总 handler。
 pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
     let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
-        conn::ssh_connect,
-        conn::ssh_disconnect,
-        conn::ssh_reconnect,
+        conn::connect::ssh_connect,
+        conn::reconnect::ssh_disconnect,
+        conn::reconnect::ssh_reconnect,
         conn::ssh_connections,
         conn::ssh_host_key_respond,
         conn::ssh_known_host_list,
@@ -55,15 +55,15 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         terminal::ssh_terminal_resize,
         terminal::ssh_terminal_close,
         terminal::ssh_terminal_list,
-        file::ssh_file_list,
-        file::ssh_file_upload,
-        file::ssh_file_download,
-        file::ssh_file_delete,
-        file::ssh_file_rename,
-        file::ssh_file_mkdir,
-        file::ssh_local_list,
-        file::ssh_file_download_recursive,
-        file::ssh_transfer_cancel,
+        sftp::ssh_file_list,
+        sftp::ssh_file_upload,
+        sftp::ssh_file_download,
+        sftp::ssh_file_delete,
+        sftp::ssh_file_rename,
+        sftp::ssh_file_mkdir,
+        sftp::ssh_local_list,
+        sftp::ssh_file_download_recursive,
+        sftp::ssh_transfer_cancel,
         edit::ssh_edit_open,
         edit::ssh_edit_save,
         monitor::ssh_monitor_get,
@@ -153,7 +153,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         .manage(TunnelState(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
-        .manage(file::TransferState(std::sync::Arc::new(
+        .manage(sftp::TransferState(std::sync::Arc::new(
             std::sync::Mutex::new(std::collections::HashMap::new()),
         )))
         .manage(ProfileState(std::sync::Mutex::new(None)))
