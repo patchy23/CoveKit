@@ -4,6 +4,7 @@
  * - 主终端由 connectRequest 显式驱动开启；容器终端由 Docker 页「终端」按钮打开。
  * - 意外断线：后端 terminal-closed 事件（非本地关闭）→ 上报 linkDead，由工作区决定自动重连。
  * - 自动/手动重连成功（reconnectTick 递增）：保留 xterm 缓冲，仅换 PTY 通道并插入重连分隔线。
+ * - 断开时往缓冲写横幅提示；断开态按 Enter 重新连接（缓冲保留）。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from 'xterm'
@@ -71,6 +72,11 @@ const terminalResize = createTerminalResizeController({
 function writeReconnectSeparator() {
   const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
   term?.write(`\r\n\x1b[90m── 已于 ${time} 重新连接 ──\x1b[0m\r\n`)
+}
+
+/** 断开横幅（黄色，提示按 Enter 重连；缓冲保留） */
+function writeDisconnectBanner() {
+  term?.write('\r\n\x1b[33m── 连接已断开 · 按 Enter 重新连接（当前内容保留）──\x1b[0m\r\n')
 }
 
 /** 打开终端通道（连接建立/重连时调用）；preserve=true 时保留缓冲（重连场景） */
@@ -162,12 +168,14 @@ onMounted(async () => {
   term.open(termHost.value)
   terminalResize.scheduleFitAndSync()
 
-  // 用户输入 → 后端
+  // 用户输入 → 后端；无通道时按 Enter = 重新连接（断开提示引导，缓冲保留）
   term.onData((data) => {
     if (terminalId) {
       ipc.sshTerminalWrite(terminalId, data).catch((e) => {
         statusLine.value = `终端写入失败：${e}`
       })
+    } else if (!props.dockerContainerId && (data === '\r' || data === '\n')) {
+      emit('reconnect')
     }
   })
 
@@ -243,6 +251,18 @@ watch(
     if (newId && request > handledConnectRequest) {
       handledConnectRequest = request
       await openTerminal()
+    }
+  }
+)
+
+// 连接断开（connected → 断开态）：往终端缓冲写横幅提示，引导按 Enter 重连。
+// 容器终端不提示（exit 退出属正常流程）；连接从未成功过的页签不经历此路径。
+watch(
+  () => props.connection?.status,
+  (status, prev) => {
+    if (props.dockerContainerId) return
+    if (prev === 'connected' && (status === 'disconnected' || status === 'error')) {
+      writeDisconnectBanner()
     }
   }
 )

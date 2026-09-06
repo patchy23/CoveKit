@@ -93,7 +93,14 @@ async function createConnection(profileId: string) {
 }
 
 function requestCloseWorkspace(id: string) {
-  if (connectionWorkspaces.value.some((item) => item.id === id)) closingWorkspaceId.value = id
+  const workspace = connectionWorkspaces.value.find((item) => item.id === id)
+  if (!workspace) return
+  // 已断开（或连接失败）的页签直接关闭，无需确认；活连接才提醒会话将结束
+  if (workspace.connection.status === 'disconnected' || workspace.connection.status === 'error') {
+    void confirmCloseWorkspace(id)
+    return
+  }
+  closingWorkspaceId.value = id
 }
 
 function selectSection(remote: SshConnectionWorkspace, section: string) {
@@ -103,8 +110,8 @@ function selectSection(remote: SshConnectionWorkspace, section: string) {
   workspace.touchWorkspace(remote.id)
 }
 
-async function confirmCloseWorkspace() {
-  const id = closingWorkspaceId.value
+async function confirmCloseWorkspace(passedId?: string) {
+  const id = passedId ?? closingWorkspaceId.value
   closingWorkspaceId.value = null
   if (!id) return
   const index = connectionWorkspaces.value.findIndex((item) => item.id === id)
