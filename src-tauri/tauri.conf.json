@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "patchyBox",
+  "productName": "Hekara",
   "version": "0.1.0",
   "identifier": "com.patchy23.patchybox",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "patchyBox",
+        "title": "Hekara",
         "width": 1200,
         "height": 780,
         "minWidth": 900,

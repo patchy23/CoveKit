@@ -15,7 +15,7 @@ import type { TtsVoice } from './contracts'
 const ui = useUiStore()
 
 /** 输入文本 */
-const text = ref('你好，欢迎使用 patchyBox 文字转语音工具。这是一段中文语音测试。')
+const text = ref('你好，欢迎使用 Hekara 文字转语音工具。这是一段中文语音测试。')
 /** 语音列表与选中项 */
 const voices = ref<TtsVoice[]>([])
 const voiceName = ref('zh-CN-XiaoxiaoNeural')
