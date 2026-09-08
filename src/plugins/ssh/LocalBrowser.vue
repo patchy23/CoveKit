@@ -119,10 +119,10 @@ defineExpose({
       </UiIconButton>
     </div>
 
-    <!-- 列表（与远程侧同款 UiTable 布局：名称/大小/修改时间） -->
-    <div class="min-h-0 flex-1 overflow-y-auto" aria-label="本地文件列表">
+    <!-- 列表（与远程侧同款 UiTable 布局：名称/大小/修改时间；内容超宽时横向滚动） -->
+    <div class="min-h-0 flex-1 overflow-auto" aria-label="本地文件列表">
       <div v-if="loading" class="py-[16px] text-center text-caption text-text-muted">读取中…</div>
-      <UiTable v-else :framed="false" :styled="false" table-class="text-body-sm">
+      <UiTable v-else :framed="false" :styled="false" table-class="w-max min-w-full text-body-sm">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -145,8 +145,8 @@ defineExpose({
             @click="select(file)"
             @dblclick="open(file)"
           >
-            <UiTableCell content="technical" class="max-w-0 px-[12px] py-[7px]">
-              <span class="block truncate" :title="file.path">
+            <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">
+              <span :title="file.path">
                 <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
                 <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
               </span>
