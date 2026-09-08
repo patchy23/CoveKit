@@ -190,6 +190,9 @@ watch(
       <span v-if="selectedCount" class="text-tertiary-strong dark:text-tertiary-dark">
         已选 {{ selectedCount }} 项
       </span>
+      <!-- 书签/传输双按钮（由上层经 slot 注入） -->
+      <span class="flex-1"></span>
+      <slot name="status-actions" />
     </div>
   </div>
 </template>

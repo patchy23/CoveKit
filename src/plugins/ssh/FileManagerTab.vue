@@ -9,7 +9,6 @@ import { useUiStore } from '@/stores/ui'
 import { useSettingsStore } from '@/stores/settings'
 import FileManagerPanes from './FileManagerPanes.vue'
 import FileManagerOverlays from './FileManagerOverlays.vue'
-import FileTransferStrip from './FileTransferStrip.vue'
 import { useFileManagerMenus } from './useFileManagerMenus'
 import { useFileSelection } from './useFileSelection'
 import { useFileBatchOps } from './useFileBatchOps'
@@ -21,9 +20,6 @@ const props = defineProps<{
   profile?: ServerProfile
   active?: boolean
 }>()
-
-/** 请求添加书签（P4） */
-const emit = defineEmits<{ (e: 'bookmark', dir: RemoteFile): void }>()
 
 const ui = useUiStore()
 const settings = useSettingsStore()
@@ -157,10 +153,6 @@ const { newFileTarget, mkdirTarget, confirmNewFile, confirmMkdir, requestNewFile
     refresh: () => void refreshCurrent(),
   })
 
-const activeTransfers = computed(() =>
-  [...transfers.value.values()].filter((t) => !t.done || t.error)
-)
-
 /** 双击：目录进入，符合文本规则的文件打开统一编辑弹窗。 */
 async function onDoubleClick(file: RemoteFile) {
   if (file.isDir) {
@@ -189,7 +181,7 @@ const { menu, menuItems, openMenu, localMenu, localMenuItems, openLocalMenu } = 
     requestDelete,
     requestBatchDeleteRemote,
     onChmod: requestChmod,
-    onBookmark: (dir) => emit('bookmark', dir),
+    onBookmark: (dir) => panes.value?.statusActions?.addBookmark(dir),
     uploadLocalPaths,
     requestBatchUpload,
     requestLocalNewFile: () => (localCreateKind.value = 'file'),
@@ -199,6 +191,11 @@ const { menu, menuItems, openMenu, localMenu, localMenuItems, openLocalMenu } = 
     requestBatchDeleteLocal,
   }
 )
+
+/** 全部取消（ConfirmDialog 后逐个 cancel） */
+function cancelAllTransfers() {
+  for (const item of transfers.value.values()) if (!item.done) void cancelTransfer(item.id)
+}
 
 watch(
   () => props.connection?.sessionId,
@@ -235,6 +232,8 @@ watch(
       :transfer-status="transferStatus"
       :local-initial-path="settings.settings.defaultDownloadDirectory || 'C:/'"
       :local-selected-paths="localSel.selectedPaths.value"
+      :profile-id="profile?.id"
+      :transfers="[...transfers.values()]"
       @navigate="navigate"
       @back="navigateBack"
       @up="navigateUp"
@@ -252,9 +251,9 @@ watch(
       @local-row-context="openLocalMenu"
       @local-blank-context="(e: MouseEvent) => openLocalMenu(e, null)"
       @local-error="(m: string) => ui.toast(m)"
+      @cancel-transfer="cancelTransfer"
+      @cancel-all-transfers="cancelAllTransfers"
     />
-
-    <FileTransferStrip :items="activeTransfers" @cancel="cancelTransfer" />
 
     <FileManagerOverlays
       :menu="menu"

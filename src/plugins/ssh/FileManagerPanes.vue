@@ -6,7 +6,9 @@
 import { ref } from 'vue'
 import type { RemoteFile } from './contracts'
 import { UiIconButton } from '@/core/ui'
+import type { TransferItem } from './useFileTransfer'
 import FileBrowser from './FileBrowser.vue'
+import FileStatusActions from './FileStatusActions.vue'
 import LocalBrowser from './LocalBrowser.vue'
 
 defineProps<{
@@ -22,6 +24,10 @@ defineProps<{
   transferStatus?: string
   localInitialPath: string
   localSelectedPaths: Set<string>
+  /** 书签按服务器隔离 */
+  profileId?: string
+  /** 全部传输项（状态栏传输按钮/面板） */
+  transfers: TransferItem[]
 }>()
 
 const emit = defineEmits<{
@@ -42,11 +48,15 @@ const emit = defineEmits<{
   (e: 'localRowContext', mouse: MouseEvent, file: RemoteFile): void
   (e: 'localBlankContext', mouse: MouseEvent): void
   (e: 'localError', message: string): void
+  (e: 'cancelTransfer', id: string): void
+  (e: 'cancelAllTransfers'): void
 }>()
 
 /** 本地浏览器实例（父级读取 files/currentPath/refresh 用，defineExpose 转发） */
 const localBrowser = ref<InstanceType<typeof LocalBrowser> | null>(null)
-defineExpose({ localBrowser })
+/** 状态栏动作实例（父级「添加书签」菜单经此调用） */
+const statusActions = ref<InstanceType<typeof FileStatusActions> | null>(null)
+defineExpose({ localBrowser, statusActions })
 </script>
 
 <template>
@@ -80,7 +90,18 @@ defineExpose({ localBrowser })
       @open="(f: RemoteFile) => emit('open', f)"
       @context="(e: MouseEvent, f: RemoteFile | null) => emit('remoteContext', e, f)"
       @sort="(k: 'name' | 'modifiedAt') => emit('sort', k)"
-    />
+    >
+      <template #status-actions>
+        <FileStatusActions
+          ref="statusActions"
+          :profile-id="profileId"
+          :transfers="transfers"
+          @navigate="(p: string) => emit('navigate', p)"
+          @cancel="(id: string) => emit('cancelTransfer', id)"
+          @cancel-all="emit('cancelAllTransfers')"
+        />
+      </template>
+    </FileBrowser>
 
     <!-- 中列传输按钮 -->
     <div

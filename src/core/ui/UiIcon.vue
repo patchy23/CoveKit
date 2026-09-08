@@ -35,6 +35,7 @@ import {
   Save,
   Search,
   SkipForward,
+  Star,
   Trash2,
   Upload,
   X,
@@ -67,6 +68,8 @@ export const UI_ICONS = {
   dots: Ellipsis,
   /** 新建/添加 */
   plus: Plus,
+  /** 书签/收藏 */
+  star: Star,
   /** 后退（返回上一次位置） */
   'arrow-left': ArrowLeft,
   /** 上级目录 */
