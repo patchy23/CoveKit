@@ -62,9 +62,24 @@ pub async fn ssh_file_list(
 }
 
 /// 本地目录列表（复用 FileListResult 结构；权限/所有者列不适用，填充占位值）
+/// path 为空 / "/" / "\\" 时返回驱动器列表——「此电脑」是 Shell 命名空间式的虚拟层，
+/// 由文件系统抽象自身处理（WinSCP/FileZilla 本地侧同款），前端不做字符串手术。
 #[tauri::command(rename_all = "camelCase")]
 pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
-    let entries = std::fs::read_dir(&path).map_err(|e| format!("读取目录失败: {e}"))?;
+    // 规范化：分隔符统一；盘符 'C:' 补尾斜杠（裸盘符是「该盘当前目录」而非根）
+    let mut normalized = path.replace('/', "\\");
+    if normalized == "\\" {
+        normalized.clear();
+    }
+    let bytes = normalized.as_bytes();
+    if bytes.len() == 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        normalized.push('\\');
+    }
+    // 虚拟根：返回驱动器列表
+    if normalized.is_empty() {
+        return Ok(local_drives_result());
+    }
+    let entries = std::fs::read_dir(&normalized).map_err(|e| format!("读取目录失败: {e}"))?;
     let mut files = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| format!("读取目录项失败: {e}"))?;
@@ -95,13 +110,18 @@ pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
             .cmp(&a.is_dir)
             .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
-    let parent_path = Path::new(&path)
-        .parent()
-        .map(|p| p.to_string_lossy().to_string())
-        .filter(|p| !p.is_empty());
+    // 盘符根的上级 = 驱动器层（空串哨兵）；其余走 Path::parent
+    let parent_path = if is_drive_root(&normalized) {
+        Some(String::new())
+    } else {
+        Path::new(&normalized)
+            .parent()
+            .map(|p| p.to_string_lossy().to_string())
+            .filter(|p| !p.is_empty())
+    };
     Ok(FileListResult {
         ok: true,
-        path,
+        path: normalized,
         parent_path,
         files,
         error: None,
@@ -110,34 +130,33 @@ pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
 
 /* ── 远程新建目录 ── */
 
-/// 本地驱动器列表（「此电脑」层：双栏文件管理的本地侧选盘入口）
-/// Windows 枚举 A-Z 存在的盘符；macOS/Linux 无盘符概念，返回根目录。
-#[tauri::command(rename_all = "camelCase")]
-pub fn ssh_local_drives() -> Vec<RemoteFile> {
+/// 是否盘符根（'C:\\'）
+fn is_drive_root(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() == 3 && bytes[1] == b':' && bytes[2] == b'\\' && bytes[0].is_ascii_alphabetic()
+}
+
+/// 驱动器列表的 FileListResult（「此电脑」虚拟层；Windows 枚举存在的盘符，其余平台给根目录）
+fn local_drives_result() -> FileListResult {
+    let mut drives = Vec::new();
     #[cfg(windows)]
-    let drives = {
-        let mut list = Vec::new();
-        // 逐个字母探测（比 WinAPI 少一层依赖，U 盘拔插实时反映）
-        for letter in b'A'..=b'Z' {
-            let root = format!("{}:\\\\", letter as char);
-            if std::path::Path::new(&root).exists() {
-                list.push(RemoteFile {
-                    name: format!("{}:", letter as char),
-                    path: root,
-                    is_dir: true,
-                    size: 0,
-                    modified_at: 0,
-                    permissions: "-".into(),
-                    owner: "-".into(),
-                    group: "-".into(),
-                });
-            }
+    for letter in b'A'..=b'Z' {
+        let root = format!("{}:\\", letter as char);
+        if std::path::Path::new(&root).exists() {
+            drives.push(RemoteFile {
+                name: format!("{}:", letter as char),
+                path: root,
+                is_dir: true,
+                size: 0,
+                modified_at: 0,
+                permissions: "-".into(),
+                owner: "-".into(),
+                group: "-".into(),
+            });
         }
-        list
-    };
-    // macOS/Linux 无盘符概念，返回根目录
+    }
     #[cfg(not(windows))]
-    let drives = vec![RemoteFile {
+    drives.push(RemoteFile {
         name: "/".into(),
         path: "/".into(),
         is_dir: true,
@@ -146,6 +165,12 @@ pub fn ssh_local_drives() -> Vec<RemoteFile> {
         permissions: "-".into(),
         owner: "-".into(),
         group: "-".into(),
-    }];
-    drives
+    });
+    FileListResult {
+        ok: true,
+        path: String::new(),
+        parent_path: None,
+        files: drives,
+        error: None,
+    }
 }

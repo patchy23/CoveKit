@@ -44,21 +44,13 @@ const parentPath = computed(() => {
 async function navigate(path: string) {
   loading.value = true
   try {
-    if (path === '') {
-      // 驱动器视图（此电脑）
-      const list = await ipc.sshLocalDrives()
-      currentPath.value = ''
-      files.value = list
-      selected.value = null
-      emit('select', null)
-      return
-    }
+    // 规范化（分隔符/盘符尾斜杠/虚拟根）全在后端：''、'/'、'\' 都会得到驱动器列表
     const result = await ipc.sshLocalList(path)
     if (!result.ok) {
       emit('error', result.error ?? '读取目录失败')
       return
     }
-    currentPath.value = path
+    currentPath.value = result.path
     files.value = result.files
     selected.value = null
     emit('select', null)

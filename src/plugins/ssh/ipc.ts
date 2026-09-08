@@ -79,7 +79,6 @@ export const ipc = {
   sshFileMkdir: (connectionId: string, path: string) =>
     cmd(commands.sshFileMkdir, { connectionId, path }),
   sshLocalList: (path: string) => cmd(commands.sshLocalList, { path }),
-  sshLocalDrives: () => cmd(commands.sshLocalDrives, {}),
   sshFileDownloadRecursive: (p: Payloads['ssh_file_download_recursive']) =>
     cmd(commands.sshFileDownloadRecursive, p),
   sshTransferCancel: (transferId: string) => cmd(commands.sshTransferCancel, { transferId }),

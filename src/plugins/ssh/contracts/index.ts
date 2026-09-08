@@ -20,7 +20,6 @@ import type {
   KnownHostEntry,
   MonitorData,
   ProcessInfo,
-  RemoteFile,
   RemoteFileContent,
   SshActionResult,
   SshConnectOutcome,
@@ -83,7 +82,6 @@ export const commands = {
   sshFileRename: 'ssh_file_rename',
   sshFileMkdir: 'ssh_file_mkdir',
   sshLocalList: 'ssh_local_list',
-  sshLocalDrives: 'ssh_local_drives',
   sshFileDownloadRecursive: 'ssh_file_download_recursive',
   sshTransferCancel: 'ssh_transfer_cancel',
 
@@ -164,8 +162,6 @@ export type Payloads = {
   ssh_file_rename: { connectionId: string; oldPath: string; newPath: string }
   ssh_file_mkdir: { connectionId: string; path: string }
   ssh_local_list: { path: string }
-  /** 本地驱动器列表（无入参） */
-  ssh_local_drives: Record<string, never>
   ssh_file_download_recursive: {
     connectionId: string
     remotePath: string
@@ -271,7 +267,6 @@ export type Results = {
   ssh_file_rename: SshActionResult
   ssh_file_mkdir: SshActionResult
   ssh_local_list: FileListResult
-  ssh_local_drives: RemoteFile[]
   ssh_file_download_recursive: FileTransferProgress
   ssh_transfer_cancel: SshActionResult
 
