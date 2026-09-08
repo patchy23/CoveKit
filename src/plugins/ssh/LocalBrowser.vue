@@ -106,7 +106,7 @@ defineExpose({
         v-if="!atDrives"
         class="min-w-0 flex-1"
         :path="currentPath"
-        separator="\\"
+        :separator="'\\'"
         @navigate="navigate"
       />
       <span
