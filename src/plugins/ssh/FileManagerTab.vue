@@ -258,7 +258,7 @@ watch(
     </div>
     <div class="flex min-h-0 flex-1">
       <FileBrowser
-        class="min-w-0 flex-1"
+        class="min-w-[420px] flex-[3]"
         :current-path="currentPath"
         :files="sortedFiles"
         :active="active"
@@ -298,7 +298,7 @@ watch(
       <!-- 右栏：本地目录 -->
       <LocalBrowser
         ref="localBrowser"
-        class="w-[240px] shrink-0"
+        class="min-w-[240px] flex-[2]"
         :initial-path="settings.settings.defaultDownloadDirectory || 'C:/'"
         @select="localSelected = $event"
         @error="(m: string) => ui.toast(m)"
