@@ -110,7 +110,7 @@ watch(
 
     <div
       ref="listViewport"
-      class="min-h-0 flex-1 overflow-y-auto outline-none"
+      class="min-h-0 flex-1 overflow-auto outline-none"
       tabindex="0"
       aria-label="远程文件列表，输入首字母可循环定位"
       @keydown="jumpByInitial"
