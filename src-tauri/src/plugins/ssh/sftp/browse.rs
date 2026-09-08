@@ -109,3 +109,43 @@ pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
 }
 
 /* ── 远程新建目录 ── */
+
+/// 本地驱动器列表（「此电脑」层：双栏文件管理的本地侧选盘入口）
+/// Windows 枚举 A-Z 存在的盘符；macOS/Linux 无盘符概念，返回根目录。
+#[tauri::command(rename_all = "camelCase")]
+pub fn ssh_local_drives() -> Vec<RemoteFile> {
+    #[cfg(windows)]
+    let drives = {
+        let mut list = Vec::new();
+        // 逐个字母探测（比 WinAPI 少一层依赖，U 盘拔插实时反映）
+        for letter in b'A'..=b'Z' {
+            let root = format!("{}:\\\\", letter as char);
+            if std::path::Path::new(&root).exists() {
+                list.push(RemoteFile {
+                    name: format!("{}:", letter as char),
+                    path: root,
+                    is_dir: true,
+                    size: 0,
+                    modified_at: 0,
+                    permissions: "-".into(),
+                    owner: "-".into(),
+                    group: "-".into(),
+                });
+            }
+        }
+        list
+    };
+    // macOS/Linux 无盘符概念，返回根目录
+    #[cfg(not(windows))]
+    let drives = vec![RemoteFile {
+        name: "/".into(),
+        path: "/".into(),
+        is_dir: true,
+        size: 0,
+        modified_at: 0,
+        permissions: "-".into(),
+        owner: "-".into(),
+        group: "-".into(),
+    }];
+    drives
+}

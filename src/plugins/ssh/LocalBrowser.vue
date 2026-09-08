@@ -28,8 +28,14 @@ const files = ref<RemoteFile[]>([])
 const selected = ref<RemoteFile | null>(null)
 const loading = ref(false)
 
+/** 驱动器视图（currentPath 为 '' = 「此电脑」） */
+const atDrives = computed(() => currentPath.value === '')
+
 const parentPath = computed(() => {
+  if (atDrives.value) return null
   const normalized = currentPath.value.replace(/[\\/]+$/, '')
+  // 盘符根（C:）再上级 = 驱动器视图
+  if (/^[A-Za-z]:$/.test(normalized)) return ''
   const index = Math.max(normalized.lastIndexOf('\\'), normalized.lastIndexOf('/'))
   if (index <= 0) return null
   return normalized.slice(0, index)
@@ -38,6 +44,15 @@ const parentPath = computed(() => {
 async function navigate(path: string) {
   loading.value = true
   try {
+    if (path === '') {
+      // 驱动器视图（此电脑）
+      const list = await ipc.sshLocalDrives()
+      currentPath.value = ''
+      files.value = list
+      selected.value = null
+      emit('select', null)
+      return
+    }
     const result = await ipc.sshLocalList(path)
     if (!result.ok) {
       emit('error', result.error ?? '读取目录失败')
@@ -88,11 +103,17 @@ defineExpose({
         <UiIcon name="arrow-up" :size="14" />
       </UiIconButton>
       <PathBreadcrumbs
+        v-if="!atDrives"
         class="min-w-0 flex-1"
         :path="currentPath"
         separator="\\"
         @navigate="navigate"
       />
+      <span
+        v-else
+        class="min-w-0 flex-1 px-[8px] text-body-sm text-secondary dark:text-secondary-dark"
+        >此电脑</span
+      >
       <UiIconButton label="刷新" size="sm" title="刷新" @click="navigate(currentPath)">
         <UiIcon name="refresh" :size="14" />
       </UiIconButton>
@@ -127,7 +148,7 @@ defineExpose({
     <div
       class="flex shrink-0 items-center gap-[8px] border-t border-border px-[10px] py-[4px] text-caption text-text-muted dark:border-border-dark"
     >
-      <span class="min-w-0 flex-1 truncate font-mono">{{ currentPath }}</span>
+      <span class="min-w-0 flex-1 truncate font-mono">{{ atDrives ? '此电脑' : currentPath }}</span>
       <span>{{ files.length }} 项</span>
     </div>
   </div>

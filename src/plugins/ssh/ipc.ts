@@ -45,7 +45,8 @@ export const ipc = {
   sshProfileImport: (p: Payloads['ssh_profile_import']) =>
     cmd(commands.sshProfileImport, { payload: p }),
   sshGroupList: () => cmd(commands.sshGroupList, {}),
-  sshGroupSave: (group: Payloads['ssh_group_save']['group']) => cmd(commands.sshGroupSave, { group }),
+  sshGroupSave: (group: Payloads['ssh_group_save']['group']) =>
+    cmd(commands.sshGroupSave, { group }),
   sshGroupDelete: (groupId: string) => cmd(commands.sshGroupDelete, { groupId }),
 
   /* 隧道 */
@@ -78,6 +79,7 @@ export const ipc = {
   sshFileMkdir: (connectionId: string, path: string) =>
     cmd(commands.sshFileMkdir, { connectionId, path }),
   sshLocalList: (path: string) => cmd(commands.sshLocalList, { path }),
+  sshLocalDrives: () => cmd(commands.sshLocalDrives, {}),
   sshFileDownloadRecursive: (p: Payloads['ssh_file_download_recursive']) =>
     cmd(commands.sshFileDownloadRecursive, p),
   sshTransferCancel: (transferId: string) => cmd(commands.sshTransferCancel, { transferId }),
@@ -85,8 +87,12 @@ export const ipc = {
   /* 远程编辑 */
   sshEditOpen: (connectionId: string, remotePath: string) =>
     cmd(commands.sshEditOpen, { connectionId, remotePath }),
-  sshEditSave: (connectionId: string, remotePath: string, content: string, expectedMtime?: number) =>
-    cmd(commands.sshEditSave, { connectionId, remotePath, content, expectedMtime }),
+  sshEditSave: (
+    connectionId: string,
+    remotePath: string,
+    content: string,
+    expectedMtime?: number
+  ) => cmd(commands.sshEditSave, { connectionId, remotePath, content, expectedMtime }),
 
   /* 监控 */
   sshMonitorGet: (connectionId: string) => cmd(commands.sshMonitorGet, { connectionId }),
