@@ -70,7 +70,8 @@ async function navigate(path: string) {
 }
 
 function goUp() {
-  if (parentPath.value) void navigate(parentPath.value)
+  // '' 是合法的「上级」（驱动器视图），只能用 null 判断
+  if (parentPath.value !== null) void navigate(parentPath.value)
 }
 
 function open(file: RemoteFile) {
@@ -99,7 +100,14 @@ defineExpose({
     <div
       class="flex shrink-0 items-center gap-[4px] border-b border-border px-[8px] py-[6px] dark:border-border-dark"
     >
-      <UiIconButton label="上级" size="sm" title="上级目录" :disabled="!parentPath" @click="goUp">
+      <!-- 盘符根的上级是 ''（驱动器视图），禁用判定必须用 null 比较（'' 是假值会误禁用） -->
+      <UiIconButton
+        label="上级"
+        size="sm"
+        title="上级目录"
+        :disabled="parentPath === null"
+        @click="goUp"
+      >
         <UiIcon name="arrow-up" :size="14" />
       </UiIconButton>
       <PathBreadcrumbs
