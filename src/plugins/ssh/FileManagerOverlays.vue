@@ -11,6 +11,7 @@ import ContextMenu from '@/core/ui/ContextMenu.vue'
 import InputDialog from '@/core/ui/InputDialog.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import FileManagerDialogs from './FileManagerDialogs.vue'
+import ChmodDialog from './ChmodDialog.vue'
 
 interface MenuState {
   x: number
@@ -35,6 +36,8 @@ defineProps<{
   /* 本地重命名/删除 */
   localRenameTarget: RemoteFile | null
   localDeleteTarget: RemoteFile | null
+  /* chmod */
+  chmodTarget: RemoteFile | null
   /* 远程编辑/重命名/删除 */
   editing: RemoteEditing | null
   savingEdit: boolean
@@ -61,6 +64,8 @@ const emit = defineEmits<{
   (e: 'cancelRename'): void
   (e: 'cancelDelete'): void
   (e: 'save', content: string, force?: boolean): void
+  (e: 'closeChmod'): void
+  (e: 'chmod', mode: number, recursive: boolean, acknowledgeRisk: boolean): void
   (e: 'rename', name: string): void
   (e: 'delete'): void
 }>()
@@ -126,6 +131,12 @@ const emit = defineEmits<{
     danger
     @close="emit('closeLocalDelete')"
     @confirm="emit('localDelete')"
+  />
+  <ChmodDialog
+    :open="chmodTarget !== null"
+    :file="chmodTarget"
+    @close="emit('closeChmod')"
+    @confirm="(m: number, r: boolean, a: boolean) => emit('chmod', m, r, a)"
   />
   <FileManagerDialogs
     :editing="editing"

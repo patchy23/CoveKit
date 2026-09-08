@@ -31,6 +31,34 @@ export function useRemoteFileOps(deps: {
 
   /* ── 远程编辑 ── */
   const editing = ref<RemoteEditing | null>(null)
+
+  /** chmod 目标（单选；弹窗在 ChmodDialog） */
+  const chmodTarget = ref<RemoteFile | null>(null)
+
+  /* ── chmod：弹窗确认后调后端（安全策略后端强制） ── */
+  function requestChmod(file: RemoteFile) {
+    chmodTarget.value = file
+  }
+
+  async function confirmChmod(mode: number, recursive: boolean, acknowledgeRisk: boolean) {
+    const target = chmodTarget.value
+    chmodTarget.value = null
+    const connectionId = deps.sessionId()
+    if (!target || !connectionId) return
+    const r = await ipc.sshFileChmod({
+      connectionId,
+      remotePath: target.path,
+      mode,
+      recursive,
+      acknowledgeRisk,
+    })
+    if (r.ok) {
+      ui.toast(`已修改权限 ${target.name}`)
+      deps.refresh()
+    } else {
+      ui.toast(`修改权限失败：${r.error ?? '未知错误'}`)
+    }
+  }
   const savingEdit = ref(false)
 
   /** 打开文件进编辑器（类型/大小不支持时 toast 拦截） */
@@ -163,6 +191,9 @@ export function useRemoteFileOps(deps: {
   }
 
   return {
+    chmodTarget,
+    requestChmod,
+    confirmChmod,
     editing,
     savingEdit,
     openFile,

@@ -22,12 +22,8 @@ const props = defineProps<{
   active?: boolean
 }>()
 
-const emit = defineEmits<{
-  /** 请求打开 chmod 弹窗（P3） */
-  (e: 'chmod', file: RemoteFile): void
-  /** 请求添加书签（P4） */
-  (e: 'bookmark', dir: RemoteFile): void
-}>()
+/** 请求添加书签（P4） */
+const emit = defineEmits<{ (e: 'bookmark', dir: RemoteFile): void }>()
 
 const ui = useUiStore()
 const settings = useSettingsStore()
@@ -78,6 +74,9 @@ const selectedFile = computed<RemoteFile | null>({
 
 /* 编辑/删除/重命名操作在 useRemoteFileOps（toast/确认目标/编辑态统一管理） */
 const {
+  chmodTarget,
+  requestChmod,
+  confirmChmod,
   editing,
   savingEdit,
   deleteTarget,
@@ -189,7 +188,7 @@ const { menu, menuItems, openMenu, localMenu, localMenuItems, openLocalMenu } = 
     requestRename,
     requestDelete,
     requestBatchDeleteRemote,
-    onChmod: (file) => emit('chmod', file),
+    onChmod: requestChmod,
     onBookmark: (dir) => emit('bookmark', dir),
     uploadLocalPaths,
     requestBatchUpload,
@@ -269,6 +268,7 @@ watch(
       :batch-running="batchRunning"
       :local-rename-target="localRenameTarget"
       :local-delete-target="localDeleteTarget"
+      :chmod-target="chmodTarget"
       :editing="editing"
       :saving-edit="savingEdit"
       :rename-target="renameTarget"
@@ -290,6 +290,8 @@ watch(
       @cancel-edit="editing = null"
       @cancel-rename="renameTarget = null"
       @cancel-delete="deleteTarget = null"
+      @close-chmod="chmodTarget = null"
+      @chmod="confirmChmod"
       @save="(c: string, f?: boolean) => onSave(c, f)"
       @rename="confirmRename"
       @delete="confirmDelete"
