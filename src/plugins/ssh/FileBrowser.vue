@@ -121,7 +121,7 @@ watch(
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
           >
-            <UiTableCell as="th" class="px-[12px] py-[8px]">
+            <UiTableCell as="th" class="min-w-[160px] px-[12px] py-[8px]">
               <UiButton variant="ghost" size="xs" @click="emit('sort', 'name')">
                 名称 {{ sortKey === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : '' }}
               </UiButton>
