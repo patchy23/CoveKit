@@ -79,6 +79,17 @@ export const ipc = {
   sshFileMkdir: (connectionId: string, path: string) =>
     cmd(commands.sshFileMkdir, { connectionId, path }),
   sshLocalList: (path: string) => cmd(commands.sshLocalList, { path }),
+  sshLocalCreate: (path: string, isDir: boolean) => cmd(commands.sshLocalCreate, { path, isDir }),
+  sshLocalDelete: (path: string, isDir: boolean) => cmd(commands.sshLocalDelete, { path, isDir }),
+  sshLocalRename: (oldPath: string, newPath: string) =>
+    cmd(commands.sshLocalRename, { oldPath, newPath }),
+  sshFileCreate: (connectionId: string, remotePath: string) =>
+    cmd(commands.sshFileCreate, { connectionId, remotePath }),
+  sshFileChmod: (p: Payloads['ssh_file_chmod']) => cmd(commands.sshFileChmod, p),
+  sshBookmarkList: (profileId: string) => cmd(commands.sshBookmarkList, { profileId }),
+  sshBookmarkAdd: (profileId: string, name: string, path: string) =>
+    cmd(commands.sshBookmarkAdd, { profileId, name, path }),
+  sshBookmarkDelete: (id: string) => cmd(commands.sshBookmarkDelete, { id }),
   sshFileDownloadRecursive: (p: Payloads['ssh_file_download_recursive']) =>
     cmd(commands.sshFileDownloadRecursive, p),
   sshTransferCancel: (transferId: string) => cmd(commands.sshTransferCancel, { transferId }),

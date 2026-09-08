@@ -22,6 +22,7 @@ import type {
   ProcessInfo,
   RemoteFileContent,
   SshActionResult,
+  SshBookmark,
   SshConnectOutcome,
   SshGroup,
   ServerConnection,
@@ -82,6 +83,14 @@ export const commands = {
   sshFileRename: 'ssh_file_rename',
   sshFileMkdir: 'ssh_file_mkdir',
   sshLocalList: 'ssh_local_list',
+  sshLocalCreate: 'ssh_local_create',
+  sshLocalDelete: 'ssh_local_delete',
+  sshLocalRename: 'ssh_local_rename',
+  sshFileCreate: 'ssh_file_create',
+  sshFileChmod: 'ssh_file_chmod',
+  sshBookmarkList: 'ssh_bookmark_list',
+  sshBookmarkAdd: 'ssh_bookmark_add',
+  sshBookmarkDelete: 'ssh_bookmark_delete',
   sshFileDownloadRecursive: 'ssh_file_download_recursive',
   sshTransferCancel: 'ssh_transfer_cancel',
 
@@ -162,6 +171,26 @@ export type Payloads = {
   ssh_file_rename: { connectionId: string; oldPath: string; newPath: string }
   ssh_file_mkdir: { connectionId: string; path: string }
   ssh_local_list: { path: string }
+  /** 本地新建文件/目录 */
+  ssh_local_create: { path: string; isDir: boolean }
+  /** 本地删除文件/目录（目录递归） */
+  ssh_local_delete: { path: string; isDir: boolean }
+  /** 本地重命名/移动 */
+  ssh_local_rename: { oldPath: string; newPath: string }
+  /** 远程新建空文件 */
+  ssh_file_create: { connectionId: string; remotePath: string }
+  /** 远程权限修改（acknowledgeRisk=系统目录内递归的风险确认） */
+  ssh_file_chmod: {
+    connectionId: string
+    remotePath: string
+    mode: number
+    recursive?: boolean
+    acknowledgeRisk?: boolean
+  }
+  /** 书签列表/新增/删除 */
+  ssh_bookmark_list: { profileId: string }
+  ssh_bookmark_add: { profileId: string; name: string; path: string }
+  ssh_bookmark_delete: { id: string }
   ssh_file_download_recursive: {
     connectionId: string
     remotePath: string
@@ -267,6 +296,14 @@ export type Results = {
   ssh_file_rename: SshActionResult
   ssh_file_mkdir: SshActionResult
   ssh_local_list: FileListResult
+  ssh_local_create: SshActionResult
+  ssh_local_delete: SshActionResult
+  ssh_local_rename: SshActionResult
+  ssh_file_create: SshActionResult
+  ssh_file_chmod: SshActionResult
+  ssh_bookmark_list: SshBookmark[]
+  ssh_bookmark_add: SshBookmark
+  ssh_bookmark_delete: void
   ssh_file_download_recursive: FileTransferProgress
   ssh_transfer_cancel: SshActionResult
 

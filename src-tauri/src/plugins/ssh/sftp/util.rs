@@ -235,3 +235,105 @@ mod tests {
         assert_eq!(format_permissions(0o120777), "lrwxrwxrwx");
     }
 }
+
+/* ── 危险路径安全策略（删除/chmod 共用；后端是最后防线，前端只藏菜单项） ── */
+
+/// 系统目录清单（本体及子树受保护）
+const SYSTEM_DIRS: [&str; 13] = [
+    "/", "/bin", "/boot", "/dev", "/etc", "/lib", "/lib64", "/proc", "/run", "/sbin", "/sys",
+    "/usr", "/var",
+];
+
+/// 虚拟文件系统（chmod 无意义且可能报错，整树禁止）
+const VIRTUAL_DIRS: [&str; 3] = ["/proc", "/sys", "/dev"];
+
+/// 规范化远程路径：去尾部斜杠（根 "/" 除外）
+fn normalize_remote_path(path: &str) -> &str {
+    if path.len() > 1 {
+        path.trim_end_matches('/')
+    } else {
+        path
+    }
+}
+
+/// path 是否为系统目录本体（恰好等于清单项）
+fn is_system_dir_itself(path: &str) -> bool {
+    SYSTEM_DIRS.contains(&path)
+}
+
+/// path 是否位于系统目录子树内
+fn under_system_dir(path: &str) -> bool {
+    SYSTEM_DIRS
+        .iter()
+        .filter(|d| **d != "/")
+        .any(|d| path.starts_with(&format!("{d}/")))
+}
+
+/// 删除安全校验：系统目录本体及子树一律禁止；根下自定义目录（/mydata 等）允许。
+/// 根目录 "/" 本身禁止（normalize 后 "/" 在 SYSTEM_DIRS 中直接命中）。
+pub(crate) fn check_delete_allowed(path: &str) -> Result<(), String> {
+    let p = normalize_remote_path(path);
+    if is_system_dir_itself(p) || under_system_dir(p) {
+        return Err(format!("系统路径 {p} 禁止删除（防止误删系统文件）"));
+    }
+    Ok(())
+}
+
+/// chmod 安全校验：
+/// - 系统目录本体禁止（不能 chmod /etc 本身）
+/// - /proc /sys /dev 虚拟文件系统整树禁止
+/// - 系统目录内递归修改需 acknowledge_risk（前端弹窗红字勾选「我知道风险」）
+/// - 系统目录内部文件的非递归修改允许（/sbin/sshd 加执行权限是正常运维）
+pub(crate) fn check_chmod_allowed(
+    path: &str,
+    recursive: bool,
+    acknowledge_risk: bool,
+) -> Result<(), String> {
+    let p = normalize_remote_path(path);
+    if is_system_dir_itself(p) {
+        return Err(format!("系统目录 {p} 本体禁止修改权限"));
+    }
+    if VIRTUAL_DIRS.iter().any(|d| p.starts_with(&format!("{d}/"))) {
+        return Err(format!("虚拟文件系统 {p} 不支持修改权限"));
+    }
+    if recursive && under_system_dir(p) && !acknowledge_risk {
+        return Err(format!("{p} 位于系统目录内，递归修改权限需确认风险"));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use super::*;
+
+    #[test]
+    fn 删除拦截系统路径() {
+        assert!(check_delete_allowed("/").is_err());
+        assert!(check_delete_allowed("/etc").is_err());
+        assert!(check_delete_allowed("/etc/nginx/nginx.conf").is_err());
+        assert!(check_delete_allowed("/sbin/sshd").is_err());
+    }
+
+    #[test]
+    fn 删除放行自定义路径() {
+        assert!(check_delete_allowed("/mydata").is_ok());
+        assert!(check_delete_allowed("/data/logs/app.log").is_ok());
+        assert!(check_delete_allowed("/home/user/tmp").is_ok());
+    }
+
+    #[test]
+    fn chmod拦截目录本体与虚拟文件系统() {
+        assert!(check_chmod_allowed("/etc", false, false).is_err());
+        assert!(check_chmod_allowed("/", false, false).is_err());
+        assert!(check_chmod_allowed("/proc/1/status", false, false).is_err());
+    }
+
+    #[test]
+    fn chmod放行系统目录内文件与递归风险确认() {
+        assert!(check_chmod_allowed("/sbin/sshd", false, false).is_ok());
+        assert!(check_chmod_allowed("/etc/nginx/nginx.conf", false, false).is_ok());
+        // 递归在系统目录内需确认风险
+        assert!(check_chmod_allowed("/var/www", true, false).is_err());
+        assert!(check_chmod_allowed("/var/www", true, true).is_ok());
+    }
+}

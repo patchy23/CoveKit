@@ -41,9 +41,12 @@ function respond(decision: 'trustOnce' | 'trustSave' | 'cancel' | 'replace') {
   >
     <div class="space-y-[10px]">
       <p class="text-body-sm text-secondary dark:text-secondary-dark">
-        服务器 <span class="font-mono">{{ request?.host }}</span> :{{ request?.port }}
-        的{{ isMismatch ? '主机密钥与已保存指纹不一致' : '主机密钥首次出现' }}。
-        {{ isMismatch ? '这可能意味着服务器重装，也可能存在中间人攻击风险。' : '请核对指纹后再信任。' }}
+        服务器 <span class="font-mono">{{ request?.host }}</span> :{{ request?.port }} 的{{
+          isMismatch ? '主机密钥与已保存指纹不一致' : '主机密钥首次出现'
+        }}。
+        {{
+          isMismatch ? '这可能意味着服务器重装，也可能存在中间人攻击风险。' : '请核对指纹后再信任。'
+        }}
       </p>
 
       <div class="space-y-[4px] rounded-md bg-surface-muted p-[10px] dark:bg-surface-muted-dark">
@@ -64,7 +67,9 @@ function respond(decision: 'trustOnce' | 'trustSave' | 'cancel' | 'replace') {
             <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
               已保存指纹
             </span>
-            <span class="min-w-0 break-all text-right font-mono text-caption text-danger-strong dark:text-danger-dark">
+            <span
+              class="min-w-0 break-all text-right font-mono text-caption text-danger-strong dark:text-danger-dark"
+            >
               {{ request?.savedFingerprints[0] }}
             </span>
           </div>
@@ -72,7 +77,9 @@ function respond(decision: 'trustOnce' | 'trustSave' | 'cancel' | 'replace') {
       </div>
 
       <p v-if="isMismatch" class="text-caption text-danger-strong dark:text-danger-dark">
-        默认取消连接。如确认是服务器合法变更（如重装系统），可输入主机名「{{ request?.host }}」解锁替换。
+        默认取消连接。如确认是服务器合法变更（如重装系统），可输入主机名「{{
+          request?.host
+        }}」解锁替换。
       </p>
       <UiInput
         v-if="isMismatch"

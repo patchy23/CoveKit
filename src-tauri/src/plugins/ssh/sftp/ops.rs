@@ -10,7 +10,9 @@ use tauri::State;
 
 use crate::plugins::ssh::conn::{get_sftp_session, SshState};
 use crate::plugins::ssh::models::SshActionResult;
-use crate::plugins::ssh::sftp::util::{is_dir_mode, LocalUploadEntry};
+use crate::plugins::ssh::sftp::util::{
+    check_chmod_allowed, check_delete_allowed, is_dir_mode, LocalUploadEntry,
+};
 
 /// 删除远程文件/目录（目录需 recursive 或仅空目录）
 #[tauri::command(rename_all = "camelCase")]
@@ -20,6 +22,13 @@ pub async fn ssh_file_delete(
     remote_path: String,
     recursive: Option<bool>,
 ) -> Result<SshActionResult, String> {
+    // 系统路径删除拦截（后端最后防线；本体及子树一律禁止，根下自定义目录放行）
+    if let Err(msg) = check_delete_allowed(&remote_path) {
+        return Ok(SshActionResult {
+            ok: false,
+            error: Some(msg),
+        });
+    }
     let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
     let meta = sftp
         .metadata(&remote_path)
@@ -233,4 +242,108 @@ pub(crate) async fn collect_remote_entries(
         }
     }
     Ok(entries)
+}
+
+/// 新建远程空文件（已存在则报错，防覆盖）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn ssh_file_create(
+    ssh_state: State<'_, SshState>,
+    connection_id: String,
+    remote_path: String,
+) -> Result<SshActionResult, String> {
+    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+    // 先 stat 探测存在性（存在即拒绝，不用 truncate 语义防覆盖）
+    if sftp.metadata(&remote_path).await.is_ok() {
+        return Ok(SshActionResult {
+            ok: false,
+            error: Some("目标已存在".into()),
+        });
+    }
+    let result = match sftp.create(&remote_path).await {
+        Ok(file) => file.close().await.map_err(|e| e.to_string()),
+        Err(e) => Err(e.to_string()),
+    };
+    match result {
+        Ok(_) => Ok(SshActionResult {
+            ok: true,
+            error: None,
+        }),
+        Err(e) => Ok(SshActionResult {
+            ok: false,
+            error: Some(format!("新建文件失败: {e}")),
+        }),
+    }
+}
+
+/// 修改远程文件/目录权限（安全策略见 util::check_chmod_allowed；目录可递归）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn ssh_file_chmod(
+    ssh_state: State<'_, SshState>,
+    connection_id: String,
+    remote_path: String,
+    mode: u32,
+    recursive: Option<bool>,
+    acknowledge_risk: Option<bool>,
+) -> Result<SshActionResult, String> {
+    let recursive = recursive.unwrap_or(false);
+    if let Err(msg) =
+        check_chmod_allowed(&remote_path, recursive, acknowledge_risk.unwrap_or(false))
+    {
+        return Ok(SshActionResult {
+            ok: false,
+            error: Some(msg),
+        });
+    }
+    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+    let result = if recursive {
+        chmod_recursive(&sftp, &remote_path, mode).await
+    } else {
+        set_mode(&sftp, &remote_path, mode).await
+    };
+    match result {
+        Ok(_) => Ok(SshActionResult {
+            ok: true,
+            error: None,
+        }),
+        Err(e) => Ok(SshActionResult {
+            ok: false,
+            error: Some(format!("修改权限失败: {e}")),
+        }),
+    }
+}
+
+/// setstat 单目标权限
+async fn set_mode(
+    sftp: &russh_sftp::client::SftpSession,
+    path: &str,
+    mode: u32,
+) -> Result<(), String> {
+    let attrs = russh_sftp::protocol::FileAttributes {
+        permissions: Some(mode),
+        ..Default::default()
+    };
+    sftp.set_metadata(path, attrs)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 递归 chmod：先子后己，逐目标 setstat
+async fn chmod_recursive(
+    sftp: &russh_sftp::client::SftpSession,
+    path: &str,
+    mode: u32,
+) -> Result<(), String> {
+    let meta = sftp.metadata(path).await.map_err(|e| e.to_string())?;
+    if meta.permissions.map(is_dir_mode).unwrap_or(false) {
+        let entries = sftp.read_dir(path).await.map_err(|e| e.to_string())?;
+        for entry in entries {
+            let child = if path.ends_with('/') {
+                format!("{path}{}", entry.file_name())
+            } else {
+                format!("{path}/{}", entry.file_name())
+            };
+            Box::pin(chmod_recursive(sftp, &child, mode)).await?;
+        }
+    }
+    set_mode(sftp, path, mode).await
 }

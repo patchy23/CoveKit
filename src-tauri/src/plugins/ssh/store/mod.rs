@@ -43,6 +43,14 @@ pub(crate) const MIGRATIONS: &[&str] = &[
        auto_start INTEGER NOT NULL DEFAULT 0,
        created_at INTEGER NOT NULL
      );",
+    // v3：目录书签表（按服务器隔离）
+    "CREATE TABLE IF NOT EXISTS profile_bookmarks (
+       id TEXT PRIMARY KEY,
+       profile_id TEXT NOT NULL,
+       name TEXT NOT NULL,
+       path TEXT NOT NULL,
+       sort INTEGER NOT NULL DEFAULT 0
+     );",
 ];
 
 /// profile/分组库的惰性句柄（首次访问时打开并迁移）
@@ -77,6 +85,7 @@ pub(crate) fn open_memory() -> Connection {
 
 /* ── 分组 ── */
 
+pub(crate) mod bookmarks;
 pub(crate) mod profiles;
 pub(crate) mod tunnels;
 

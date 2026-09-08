@@ -60,7 +60,10 @@ defineExpose({ load })
       首次连接时保存的主机指纹。连接时若服务器指纹与此处不一致会被阻断；服务器重装后可删除对应条目再重连。
     </p>
 
-    <div v-if="loadFailed" class="py-[16px] text-center text-body-sm text-danger-strong dark:text-danger-dark">
+    <div
+      v-if="loadFailed"
+      class="py-[16px] text-center text-body-sm text-danger-strong dark:text-danger-dark"
+    >
       已知主机列表加载失败，请重试。
     </div>
     <div
@@ -70,7 +73,10 @@ defineExpose({ load })
       暂无已知主机（首次连接服务器并选择「保存并连接」后出现在这里）。
     </div>
 
-    <div v-else class="max-h-[380px] overflow-y-auto rounded-md border border-border dark:border-border-dark">
+    <div
+      v-else
+      class="max-h-[380px] overflow-y-auto rounded-md border border-border dark:border-border-dark"
+    >
       <UiListRow
         v-for="entry in entries"
         :key="`${entry.host}:${entry.port}:${entry.fingerprint}`"
@@ -84,7 +90,9 @@ defineExpose({ load })
           <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
             {{ entry.algorithm }}
           </span>
-          <span class="min-w-0 flex-1 truncate font-mono text-caption text-text-muted dark:text-text-muted-dark">
+          <span
+            class="min-w-0 flex-1 truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+          >
             {{ entry.fingerprint }}
           </span>
         </div>

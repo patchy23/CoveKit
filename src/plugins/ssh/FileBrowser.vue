@@ -11,8 +11,10 @@ const props = defineProps<{
   files: RemoteFile[]
   active?: boolean
   canGoBack?: boolean
-  selectedPath?: string
-  selectedName?: string
+  /** 多选集合（path 集合；空集 = 未选） */
+  selectedPaths?: Set<string>
+  /** 已选数量（状态栏展示） */
+  selectedCount?: number
   transferStatus?: string
   sortKey: 'name' | 'modifiedAt'
   sortDirection: 'asc' | 'desc'
@@ -27,7 +29,7 @@ const emit = defineEmits<{
   (event: 'download'): void
   (event: 'rename'): void
   (event: 'delete'): void
-  (event: 'select', file: RemoteFile): void
+  (event: 'rowClick', mouse: MouseEvent, file: RemoteFile): void
   (event: 'open', file: RemoteFile): void
   (event: 'context', mouse: MouseEvent, file: RemoteFile | null): void
   (event: 'sort', key: 'name' | 'modifiedAt'): void
@@ -63,9 +65,10 @@ async function jumpByInitial(event: KeyboardEvent) {
   )
   if (!matches.length) return
   event.preventDefault()
-  const currentIndex = matches.findIndex((file) => file.path === props.selectedPath)
+  // 循环定位：从「当前已选项中最后一个匹配」的下一个开始
+  const currentIndex = matches.findIndex((file) => props.selectedPaths?.has(file.path))
   const target = matches[currentIndex >= 0 ? (currentIndex + 1) % matches.length : 0]
-  emit('select', target)
+  emit('rowClick', new MouseEvent('click'), target)
   await nextTick()
   const row = rowElements.get(target.path)
   const viewport = listViewport.value
@@ -75,8 +78,8 @@ async function jumpByInitial(event: KeyboardEvent) {
   }
 }
 
-function selectFile(file: RemoteFile) {
-  emit('select', file)
+function selectFile(event: MouseEvent, file: RemoteFile) {
+  emit('rowClick', event, file)
   nextTick(focusList)
 }
 
@@ -144,11 +147,11 @@ watch(
             :ref="(element) => setRowElement(file.path, element)"
             class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
             :class="
-              selectedPath === file.path
-                ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
+              selectedPaths?.has(file.path)
+                ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
                 : 'hover:bg-border dark:hover:bg-border-dark'
             "
-            @click="selectFile(file)"
+            @click="selectFile($event, file)"
             @dblclick="emit('open', file)"
             @contextmenu.stop="emit('context', $event, file)"
           >
@@ -184,8 +187,8 @@ watch(
       <span v-if="transferStatus" class="text-tertiary-strong dark:text-tertiary-dark">
         {{ transferStatus }}
       </span>
-      <span v-if="selectedName" class="text-tertiary-strong dark:text-tertiary-dark">
-        已选：{{ selectedName }}
+      <span v-if="selectedCount" class="text-tertiary-strong dark:text-tertiary-dark">
+        已选 {{ selectedCount }} 项
       </span>
     </div>
   </div>

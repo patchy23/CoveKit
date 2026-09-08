@@ -17,7 +17,12 @@ import type { HostKeyVerifyRequest, ServerConnection } from './contracts'
 
 export interface SshWatchCallbacks {
   /** 当前全部连接工作区（浅拷贝读取） */
-  workspaces: () => Array<{ id: string; profileId: string; connection: ServerConnection; lastActivityAt: number }>
+  workspaces: () => Array<{
+    id: string
+    profileId: string
+    connection: ServerConnection
+    lastActivityAt: number
+  }>
   /** 按 sessionId 找工作区 id */
   findIdBySession: (sessionId: string) => string | null
   /** 连接状态事件 */

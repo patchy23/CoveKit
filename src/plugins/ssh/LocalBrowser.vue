@@ -13,11 +13,16 @@ import { UiIcon, UiIconButton, UiTable, UiTableCell } from '@/core/ui'
 const props = defineProps<{
   /** 初始目录（默认取设置里的默认下载目录） */
   initialPath: string
+  /** 多选集合（path 集合） */
+  selectedPaths?: Set<string>
 }>()
 
 const emit = defineEmits<{
-  /** 双击文件 / 选中变化（供外部读取选中项） */
-  (e: 'select', file: RemoteFile | null): void
+  /** 行点击（携带鼠标事件，多选语义在父级 useFileSelection） */
+  (e: 'rowClick', mouse: MouseEvent, file: RemoteFile): void
+  /** 空白处右键（新建/刷新菜单） */
+  (e: 'blankContext', mouse: MouseEvent): void
+  (e: 'rowContext', mouse: MouseEvent, file: RemoteFile): void
   (e: 'error', message: string): void
 }>()
 
@@ -25,7 +30,6 @@ const emit = defineEmits<{
 const initialDir = props.initialPath.replace(/\//g, '\\')
 const currentPath = ref(initialDir)
 const files = ref<RemoteFile[]>([])
-const selected = ref<RemoteFile | null>(null)
 const loading = ref(false)
 
 /** 驱动器视图（currentPath 为 '' = 「此电脑」） */
@@ -52,8 +56,6 @@ async function navigate(path: string) {
     }
     currentPath.value = result.path
     files.value = result.files
-    selected.value = null
-    emit('select', null)
   } catch (error) {
     emit('error', String(error))
   } finally {
@@ -71,16 +73,17 @@ function open(file: RemoteFile) {
   return
 }
 
-function select(file: RemoteFile) {
-  selected.value = file
-  emit('select', file)
+function onRowClick(event: MouseEvent, file: RemoteFile) {
+  emit('rowClick', event, file)
 }
 
 onMounted(() => void navigate(currentPath.value))
 
 defineExpose({
-  /** 当前目录（上传时用不到——上传用选中文件完整路径；保留给"上传到此目录"扩展） */
+  /** 当前目录 */
   currentPath,
+  /** 当前目录文件列表（父级多选模型用） */
+  files,
   /** 重新加载当前目录 */
   refresh: () => navigate(currentPath.value),
 })
@@ -120,7 +123,11 @@ defineExpose({
     </div>
 
     <!-- 列表（与远程侧同款 UiTable 布局：名称/大小/修改时间；内容超宽时横向滚动） -->
-    <div class="min-h-0 flex-1 overflow-auto" aria-label="本地文件列表">
+    <div
+      class="min-h-0 flex-1 overflow-auto"
+      aria-label="本地文件列表"
+      @contextmenu="emit('blankContext', $event)"
+    >
       <div v-if="loading" class="py-[16px] text-center text-caption text-text-muted">读取中…</div>
       <UiTable v-else :framed="false" :styled="false" table-class="w-max min-w-full text-body-sm">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
@@ -138,12 +145,13 @@ defineExpose({
             :key="file.path"
             class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
             :class="
-              selected?.path === file.path
-                ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
+              selectedPaths?.has(file.path)
+                ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
                 : 'hover:bg-border dark:hover:bg-border-dark'
             "
-            @click="select(file)"
+            @click="onRowClick($event, file)"
             @dblclick="open(file)"
+            @contextmenu.stop="emit('rowContext', $event, file)"
           >
             <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">
               <span :title="file.path">

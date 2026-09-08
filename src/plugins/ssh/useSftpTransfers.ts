@@ -108,5 +108,13 @@ export function useSftpTransfers(options: {
   })
   onUnmounted(() => stopDragDrop?.())
 
-  return { dragActive, transferStatus, transfers, cancelTransfer, uploadLocalPaths, upload, download }
+  return {
+    dragActive,
+    transferStatus,
+    transfers,
+    cancelTransfer,
+    uploadLocalPaths,
+    upload,
+    download,
+  }
 }

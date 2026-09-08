@@ -322,9 +322,7 @@ export function useSshWorkspace() {
       lastActivityAt: Date.now(),
     })
     connectionWorkspaces.value.push(workspace)
-    const request = ipc
-      .sshConnect({ profileId })
-      .finally(() => pendingConnections.delete(request))
+    const request = ipc.sshConnect({ profileId }).finally(() => pendingConnections.delete(request))
     pendingConnections.add(request)
     try {
       const outcome = await request
@@ -565,8 +563,7 @@ export function useSshWorkspace() {
       const stopClosed = await onTerminalClosed((d) => {
         const workspace = connectionWorkspaces.value.find(
           (item) =>
-            item.connection.sessionId === d.connectionId &&
-            item.connection.status === 'connected'
+            item.connection.sessionId === d.connectionId && item.connection.status === 'connected'
         )
         if (workspace) handleLinkDead(workspace.id)
       })
@@ -635,9 +632,9 @@ export function useSshWorkspace() {
     disposed = true
     // 积压的主机密钥确认统一取消，避免后端握手回调挂到超时
     for (const pending of hostKeyQueue.value) {
-      void ipc.sshHostKeyRespond({ requestId: pending.requestId, decision: 'cancel' }).catch(
-        () => undefined
-      )
+      void ipc
+        .sshHostKeyRespond({ requestId: pending.requestId, decision: 'cancel' })
+        .catch(() => undefined)
     }
     hostKeyQueue.value = []
     unlistenConnection?.()

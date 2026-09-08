@@ -106,9 +106,9 @@ export function readLegacySnapshot(): LegacySnapshot {
     const rawGroups = localStorage.getItem(GROUPS_KEY)
     if (rawGroups) {
       // 旧分组字段 order → sortOrder
-      groups = (
-        JSON.parse(rawGroups) as (SshGroup & { order?: number })[]
-      ).map(({ order, ...rest }) => ({ ...rest, sortOrder: order ?? 0 }))
+      groups = (JSON.parse(rawGroups) as (SshGroup & { order?: number })[]).map(
+        ({ order, ...rest }) => ({ ...rest, sortOrder: order ?? 0 })
+      )
     }
   } catch {
     /* 数据损坏时按空处理 */

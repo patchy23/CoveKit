@@ -69,6 +69,22 @@ pub struct SshGroup {
     pub(crate) sort_order: i64,
 }
 
+/// 目录书签（文件页签底栏；按服务器 profile 隔离）
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SshBookmark {
+    /// 唯一 id（bm-<毫秒时间戳>）
+    pub(crate) id: String,
+    /// 所属服务器配置 id
+    pub(crate) profile_id: String,
+    /// 显示名（默认目录名）
+    pub(crate) name: String,
+    /// 远程目录绝对路径
+    pub(crate) path: String,
+    /// 排序权重（追加自增）
+    pub(crate) sort: i64,
+}
+
 /// 服务器连接状态
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]

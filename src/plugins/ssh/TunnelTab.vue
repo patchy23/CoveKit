@@ -6,9 +6,24 @@
  * 安全约束：监听 0.0.0.0/:: 时橙色警告 + 需输入主机名解锁保存。
  */
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import type { ServerConnection, ServerProfile, TunnelConfig, TunnelRuntime, TunnelType } from './contracts'
+import type {
+  ServerConnection,
+  ServerProfile,
+  TunnelConfig,
+  TunnelRuntime,
+  TunnelType,
+} from './contracts'
 import { ipc, onTunnelStatus } from './ipc'
-import { UiButton, UiCheckbox, UiField, UiIcon, UiIconButton, UiInput, UiModal, UiSelect as Select } from '@/core/ui'
+import {
+  UiButton,
+  UiCheckbox,
+  UiField,
+  UiIcon,
+  UiIconButton,
+  UiInput,
+  UiModal,
+  UiSelect as Select,
+} from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
@@ -48,9 +63,7 @@ const TYPE_OPTIONS = [
   { value: 'dynamic', label: '动态 SOCKS5 -D（本地代理）' },
 ]
 
-const isDangerListen = computed(() =>
-  ['0.0.0.0', '::'].includes(form.listenHost.trim())
-)
+const isDangerListen = computed(() => ['0.0.0.0', '::'].includes(form.listenHost.trim()))
 const canSave = computed(
   () => !isDangerListen.value || dangerConfirmText.value.trim() === (props.profile?.host ?? '___')
 )
@@ -78,7 +91,8 @@ const STATUS_LABEL: Record<string, string> = {
 }
 const STATUS_CLASS: Record<string, string> = {
   stopped: 'bg-neutral text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark',
-  starting: 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark',
+  starting:
+    'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark',
   running: 'bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark',
   error: 'bg-danger-soft text-danger-strong dark:bg-danger-soft-dark dark:text-danger-dark',
 }
@@ -248,13 +262,20 @@ onUnmounted(() => {
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- 工具栏 -->
-    <div class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark">
+    <div
+      class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
+    >
       <span class="text-body-sm text-secondary dark:text-secondary-dark">隧道</span>
       <span class="font-mono text-caption text-text-muted dark:text-text-muted-dark">
         {{ connection.host ?? '' }}
       </span>
       <div class="ml-auto">
-        <UiButton variant="ghost" size="xs" class="!h-auto !px-[8px] !py-[3px] text-caption" @click="openCreate">
+        <UiButton
+          variant="ghost"
+          size="xs"
+          class="!h-auto !px-[8px] !py-[3px] text-caption"
+          @click="openCreate"
+        >
           <UiIcon name="plus" :size="12" class="mr-[3px]" />新建隧道
         </UiButton>
       </div>
@@ -262,21 +283,29 @@ onUnmounted(() => {
 
     <!-- 列表 -->
     <div class="min-h-0 flex-1 overflow-y-auto p-[12px]">
-      <div v-if="loadFailed" class="py-[24px] text-center text-body-sm text-danger-strong dark:text-danger-dark">
+      <div
+        v-if="loadFailed"
+        class="py-[24px] text-center text-body-sm text-danger-strong dark:text-danger-dark"
+      >
         隧道配置加载失败，请重试。
       </div>
       <div
         v-else-if="loaded && rows.length === 0"
         class="flex flex-col items-center justify-center py-[64px] text-center"
       >
-        <div class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark">
+        <div
+          class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
+        >
           <UiIcon name="play-all" :size="20" class="text-tertiary-strong dark:text-tertiary-dark" />
         </div>
         <p class="mt-md text-body font-medium dark:text-primary-dark">还没有隧道</p>
         <p class="mt-[4px] max-w-[360px] text-body-sm text-text-muted dark:text-text-muted-dark">
-          端口转发可以把远程服务映射到本机（-L）、把本机服务暴露给服务器（-R），或建立 SOCKS5 代理（-D）。
+          端口转发可以把远程服务映射到本机（-L）、把本机服务暴露给服务器（-R），或建立 SOCKS5
+          代理（-D）。
         </p>
-        <UiButton variant="ghost" size="sm" class="mt-[12px]" @click="openCreate">新建第一条隧道</UiButton>
+        <UiButton variant="ghost" size="sm" class="mt-[12px]" @click="openCreate"
+          >新建第一条隧道</UiButton
+        >
       </div>
 
       <div v-else class="overflow-hidden rounded-lg border border-border dark:border-border-dark">
@@ -306,7 +335,9 @@ onUnmounted(() => {
                 自动
               </span>
             </div>
-            <div class="mt-[2px] truncate font-mono text-caption text-text-muted dark:text-text-muted-dark">
+            <div
+              class="mt-[2px] truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+            >
               {{ listenText(config) }}
               <span class="mx-[4px]">→</span>
               {{ targetText(config) }}
@@ -342,7 +373,11 @@ onUnmounted(() => {
               :disabled="busyIds.has(config.id)"
               @click="toggleStart(config)"
             >
-              {{ runtimeOf(config)?.status === 'running' || runtimeOf(config)?.status === 'starting' ? '停止' : '启动' }}
+              {{
+                runtimeOf(config)?.status === 'running' || runtimeOf(config)?.status === 'starting'
+                  ? '停止'
+                  : '启动'
+              }}
             </UiButton>
             <UiIconButton label="编辑" size="xs" title="编辑" @click="openEdit(config)">
               <UiIcon name="pencil" :size="13" />
@@ -356,7 +391,12 @@ onUnmounted(() => {
     </div>
 
     <!-- 新建/编辑弹窗 -->
-    <UiModal :open="formOpen" :title="editingId ? '编辑隧道' : '新建隧道'" width="min(460px, 92vw)" @close="formOpen = false">
+    <UiModal
+      :open="formOpen"
+      :title="editingId ? '编辑隧道' : '新建隧道'"
+      width="min(460px, 92vw)"
+      @close="formOpen = false"
+    >
       <div class="space-y-[10px]">
         <UiField label="名称" required>
           <UiInput v-model="form.name" placeholder="如：生产数据库转发" />
@@ -365,7 +405,10 @@ onUnmounted(() => {
           <Select v-model="form.tunnelType" :options="TYPE_OPTIONS" />
         </UiField>
         <div class="grid grid-cols-2 gap-[10px]">
-          <UiField label="监听地址" :hint="form.tunnelType === 'remote' ? '在服务端监听' : '在本机监听'">
+          <UiField
+            label="监听地址"
+            :hint="form.tunnelType === 'remote' ? '在服务端监听' : '在本机监听'"
+          >
             <UiInput v-model="form.listenHost" class="font-mono" placeholder="127.0.0.1" />
           </UiField>
           <UiField label="监听端口" required>
@@ -373,32 +416,45 @@ onUnmounted(() => {
           </UiField>
         </div>
         <template v-if="form.tunnelType !== 'dynamic'">
-          <UiField :label="form.tunnelType === 'remote' ? '本机侧目标地址' : '目标地址（经服务器访问）'" required>
+          <UiField
+            :label="form.tunnelType === 'remote' ? '本机侧目标地址' : '目标地址（经服务器访问）'"
+            required
+          >
             <UiInput v-model="form.targetHost" class="font-mono" placeholder="127.0.0.1" />
           </UiField>
           <UiField :label="form.tunnelType === 'remote' ? '本机侧目标端口' : '目标端口'" required>
             <UiInput v-model.number="form.targetPort" type="number" />
           </UiField>
         </template>
-        <p v-if="form.tunnelType === 'dynamic'" class="text-caption text-text-muted dark:text-text-muted-dark">
-          本机 {{ listenText({ ...form, id: '', profileId: '' } as TunnelConfig) }} 将作为 SOCKS5 代理，目标由访问方决定。
+        <p
+          v-if="form.tunnelType === 'dynamic'"
+          class="text-caption text-text-muted dark:text-text-muted-dark"
+        >
+          本机 {{ listenText({ ...form, id: '', profileId: '' } as TunnelConfig) }} 将作为 SOCKS5
+          代理，目标由访问方决定。
         </p>
 
-        <label class="flex cursor-pointer items-center gap-[8px] text-body-sm text-secondary dark:text-secondary-dark">
+        <label
+          class="flex cursor-pointer items-center gap-[8px] text-body-sm text-secondary dark:text-secondary-dark"
+        >
           <UiCheckbox v-model="form.autoStart" />
           连接建立后自动启动此隧道
         </label>
 
         <template v-if="isDangerListen">
           <p class="text-caption text-danger-strong dark:text-danger-dark">
-            监听 0.0.0.0/:: 会把端口暴露给整个网络，存在被第三方访问的风险。输入主机名「{{ profile?.host }}」确认。
+            监听 0.0.0.0/:: 会把端口暴露给整个网络，存在被第三方访问的风险。输入主机名「{{
+              profile?.host
+            }}」确认。
           </p>
           <UiInput v-model="dangerConfirmText" class="font-mono" :placeholder="profile?.host" />
         </template>
       </div>
       <template #footer>
         <UiButton variant="ghost" @click="formOpen = false">取消</UiButton>
-        <UiButton variant="primary" :disabled="isDangerListen && !canSave" @click="save">保存</UiButton>
+        <UiButton variant="primary" :disabled="isDangerListen && !canSave" @click="save"
+          >保存</UiButton
+        >
       </template>
     </UiModal>
 

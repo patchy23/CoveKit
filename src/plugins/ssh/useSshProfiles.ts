@@ -39,9 +39,7 @@ export function useSshProfiles() {
       clearLegacySnapshot()
       ui.toast(
         `已迁移 ${result.importedProfiles} 台服务器` +
-          (result.migratedCredentials > 0
-            ? `，${result.migratedCredentials} 个凭证已入凭证库`
-            : '')
+          (result.migratedCredentials > 0 ? `，${result.migratedCredentials} 个凭证已入凭证库` : '')
       )
     } catch {
       /* 迁移失败保留 localStorage 快照，下次打开工具重试 */

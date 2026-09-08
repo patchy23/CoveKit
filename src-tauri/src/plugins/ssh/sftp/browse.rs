@@ -6,7 +6,7 @@ use std::path::Path;
 use tauri::State;
 
 use crate::plugins::ssh::conn::{get_sftp_session, invalidate_sftp_session, SshState};
-use crate::plugins::ssh::models::{FileListResult, RemoteFile};
+use crate::plugins::ssh::models::{FileListResult, RemoteFile, SshActionResult};
 
 use super::util::to_remote_file;
 use crate::plugins::ssh::conn::resolve_id_names;
@@ -227,5 +227,70 @@ mod tests {
     fn 普通路径分隔符统一() {
         assert_eq!(normalize_local_path("D:/Tools/xx"), r"D:\Tools\xx");
         assert_eq!(normalize_local_path(r"C:\Windows"), r"C:\Windows");
+    }
+}
+
+/// 本地新建文件/目录（双栏本地侧；已存在即拒绝防覆盖）
+#[tauri::command(rename_all = "camelCase")]
+pub fn ssh_local_create(path: String, is_dir: bool) -> SshActionResult {
+    let p = std::path::Path::new(&path);
+    if p.exists() {
+        return SshActionResult {
+            ok: false,
+            error: Some("目标已存在".into()),
+        };
+    }
+    let result = if is_dir {
+        std::fs::create_dir(p).map_err(|e| e.to_string())
+    } else {
+        std::fs::File::create(p)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    };
+    match result {
+        Ok(_) => SshActionResult {
+            ok: true,
+            error: None,
+        },
+        Err(e) => SshActionResult {
+            ok: false,
+            error: Some(format!("新建失败 [{path}]: {e}")),
+        },
+    }
+}
+
+/// 本地删除文件/目录（双栏本地侧；目录递归删除，前端确认弹窗已写明不可恢复）
+#[tauri::command(rename_all = "camelCase")]
+pub fn ssh_local_delete(path: String, is_dir: bool) -> SshActionResult {
+    let p = std::path::Path::new(&path);
+    let result = if is_dir {
+        std::fs::remove_dir_all(p).map_err(|e| e.to_string())
+    } else {
+        std::fs::remove_file(p).map_err(|e| e.to_string())
+    };
+    match result {
+        Ok(_) => SshActionResult {
+            ok: true,
+            error: None,
+        },
+        Err(e) => SshActionResult {
+            ok: false,
+            error: Some(format!("删除失败 [{path}]: {e}")),
+        },
+    }
+}
+
+/// 本地重命名/移动（双栏本地侧）
+#[tauri::command(rename_all = "camelCase")]
+pub fn ssh_local_rename(old_path: String, new_path: String) -> SshActionResult {
+    match std::fs::rename(&old_path, &new_path) {
+        Ok(_) => SshActionResult {
+            ok: true,
+            error: None,
+        },
+        Err(e) => SshActionResult {
+            ok: false,
+            error: Some(format!("重命名失败 [{old_path}]: {e}")),
+        },
     }
 }

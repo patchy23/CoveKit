@@ -237,7 +237,10 @@ watch(
               class="h-full"
             />
             <TunnelTab
-              v-if="remote.connection.status === 'connected' && remote.visitedSections.includes('tunnels')"
+              v-if="
+                remote.connection.status === 'connected' &&
+                remote.visitedSections.includes('tunnels')
+              "
               v-show="remote.activeSection === 'tunnels'"
               :connection="remote.connection"
               :profile="profiles.find((profile) => profile.id === remote.profileId)"

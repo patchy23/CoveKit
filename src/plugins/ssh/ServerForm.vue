@@ -50,7 +50,8 @@ const form = reactive({
   remark: '',
 })
 
-/** 认证方式是否处于「凭证」档（UI 层状态；选了凭证后 credentialRef 才有值；须在 watch 之前声明） */
+/** 认证方式是否处于「凭证」档（UI 层状态；选了凭证后 credentialRef 才有值；须在 watch 之前声明） */
+
 /** 手工凭证是否保存到凭证库（默认保存；取消勾选则凭证仅本次连接使用，不落任何存储） */
 const saveCredential = ref(true)
 const credentialMode = ref(false)
@@ -154,11 +155,16 @@ function submit() {
     remark: form.remark.trim() || undefined,
     lastConnectedAt: props.profile?.lastConnectedAt,
   }
-  emit('save', p, {
-    password: form.password.trim() || undefined,
-    privateKey: form.privateKey.trim() || undefined,
-    passphrase: form.passphrase.trim() || undefined,
-    }, saveCredential.value)
+  emit(
+    'save',
+    p,
+    {
+      password: form.password.trim() || undefined,
+      privateKey: form.privateKey.trim() || undefined,
+      passphrase: form.passphrase.trim() || undefined,
+    },
+    saveCredential.value
+  )
 }
 </script>
 
