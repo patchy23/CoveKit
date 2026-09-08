@@ -11,7 +11,7 @@ import FileManagerDialogs from './FileManagerDialogs.vue'
 import { ipc } from './ipc'
 import { useFileContextMenu } from './useFileContextMenu'
 import { useSftpTransfers } from './useSftpTransfers'
-import LocalBrowser from './LocalBrowser.vue'
+import LocalBrowser from './LocalBrowser.vue'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -64,8 +64,15 @@ const {
   refresh: () => refreshCurrent(),
 })
 
-const { dragActive, transferStatus, transfers, cancelTransfer, uploadLocalPaths, upload, download } =
-  useSftpTransfers({
+const {
+  dragActive,
+  transferStatus,
+  transfers,
+  cancelTransfer,
+  uploadLocalPaths,
+  upload,
+  download,
+} = useSftpTransfers({
   connectionId: () => props.connection?.sessionId,
   active: () => props.active,
   currentPath,
@@ -75,7 +82,8 @@ const { dragActive, transferStatus, transfers, cancelTransfer, uploadLocalPaths,
 })
 
 /* ── 本地侧（双栏右栏）：目录浏览 + 选中上传 ── */
-import { useSettingsStore } from '@/stores/settings'
+import { useSettingsStore } from '@/stores/settings'
+
 const settings = useSettingsStore()
 const localBrowser = ref<InstanceType<typeof LocalBrowser> | null>(null)
 const localSelected = ref<RemoteFile | null>(null)
@@ -275,7 +283,9 @@ watch(
       />
 
       <!-- 中列传输按钮 -->
-      <div class="flex w-[42px] shrink-0 flex-col items-center justify-center gap-[8px] border-l border-border dark:border-border-dark">
+      <div
+        class="flex w-[42px] shrink-0 flex-col items-center justify-center gap-[8px] border-l border-border dark:border-border-dark"
+      >
         <UiIconButton
           label="上传到远端"
           title="把左侧选中的本地文件/目录上传到远端当前目录"
@@ -289,8 +299,7 @@ watch(
       <LocalBrowser
         ref="localBrowser"
         class="w-[280px] shrink-0"
-        :initial-path="settings.settings.defaultDownloadDirectory || 'C:/'
-        "
+        :initial-path="settings.settings.defaultDownloadDirectory || 'C:/'"
         @select="localSelected = $event"
         @error="(m: string) => ui.toast(m)"
       />
@@ -301,15 +310,25 @@ watch(
       v-if="activeTransfers.length"
       class="flex max-h-[110px] shrink-0 flex-col gap-[4px] overflow-y-auto border-t border-border px-[12px] py-[6px] dark:border-border-dark"
     >
-      <div v-for="item in activeTransfers" :key="item.id" class="flex items-center gap-[8px] text-caption">
-        <span class="shrink-0 rounded-full bg-neutral px-[7px] py-[1px] font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark">
+      <div
+        v-for="item in activeTransfers"
+        :key="item.id"
+        class="flex items-center gap-[8px] text-caption"
+      >
+        <span
+          class="shrink-0 rounded-full bg-neutral px-[7px] py-[1px] font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
+        >
           {{ item.kind === 'upload' ? '上传' : '下载' }}
         </span>
-        <span class="min-w-0 flex-1 truncate text-secondary dark:text-secondary-dark">{{ item.label }}</span>
+        <span class="min-w-0 flex-1 truncate text-secondary dark:text-secondary-dark">{{
+          item.label
+        }}</span>
         <span v-if="item.total > 0" class="shrink-0 font-mono text-text-muted">
           {{ Math.min(100, Math.round((item.transferred / item.total) * 100)) }}%
         </span>
-        <span v-if="item.error" class="shrink-0 text-danger-strong dark:text-danger-dark">{{ item.error }}</span>
+        <span v-if="item.error" class="shrink-0 text-danger-strong dark:text-danger-dark">{{
+          item.error
+        }}</span>
         <UiButton
           v-if="!item.done"
           variant="ghost"

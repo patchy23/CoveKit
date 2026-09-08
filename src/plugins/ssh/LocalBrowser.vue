@@ -86,8 +86,17 @@ defineExpose({
 <template>
   <div class="flex min-h-0 flex-col border-l border-border dark:border-border-dark">
     <!-- 工具栏：路径 + 上级 + 刷新 -->
-    <div class="flex shrink-0 items-center gap-[6px] border-b border-border px-[10px] py-[8px] dark:border-border-dark">
-      <UiButton variant="ghost" size="xs" class="!h-auto !px-[6px] !py-[2px] text-caption" :disabled="!parentPath" title="上级目录" @click="goUp">
+    <div
+      class="flex shrink-0 items-center gap-[6px] border-b border-border px-[10px] py-[8px] dark:border-border-dark"
+    >
+      <UiButton
+        variant="ghost"
+        size="xs"
+        class="!h-auto !px-[6px] !py-[2px] text-caption"
+        :disabled="!parentPath"
+        title="上级目录"
+        @click="goUp"
+      >
         ↑
       </UiButton>
       <UiInput
@@ -97,7 +106,13 @@ defineExpose({
         placeholder="本地目录路径"
         @keydown.enter="commitPath"
       />
-      <UiButton variant="ghost" size="xs" class="!h-auto !px-[6px] !py-[2px] text-caption" title="刷新" @click="navigate(currentPath)">
+      <UiButton
+        variant="ghost"
+        size="xs"
+        class="!h-auto !px-[6px] !py-[2px] text-caption"
+        title="刷新"
+        @click="navigate(currentPath)"
+      >
         ⟳
       </UiButton>
     </div>
@@ -109,7 +124,7 @@ defineExpose({
         v-for="file in files"
         :key="file.path"
         size="sm"
-        :data-selected="selected?.path === file.path"
+        :active="selected?.path === file.path"
         :title="file.path"
         @click="select(file)"
         @dblclick="open(file)"
@@ -128,7 +143,9 @@ defineExpose({
     </div>
 
     <!-- 状态栏 -->
-    <div class="flex shrink-0 items-center gap-[8px] border-t border-border px-[10px] py-[4px] text-caption text-text-muted dark:border-border-dark">
+    <div
+      class="flex shrink-0 items-center gap-[8px] border-t border-border px-[10px] py-[4px] text-caption text-text-muted dark:border-border-dark"
+    >
       <span class="min-w-0 flex-1 truncate font-mono">{{ currentPath }}</span>
       <span>{{ files.length }} 项</span>
     </div>
