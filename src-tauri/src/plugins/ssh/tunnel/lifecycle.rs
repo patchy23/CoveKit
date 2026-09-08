@@ -265,6 +265,7 @@ fn conn_handle(state: &SshState, connection_id: &str) -> Result<Arc<SshSessionHa
         session,
         sftp: Mutex::new(None),
         forward_targets,
+        id_names: Mutex::new(None),
     }))
 }
 

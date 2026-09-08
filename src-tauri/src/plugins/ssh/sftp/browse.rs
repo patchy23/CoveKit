@@ -9,6 +9,7 @@ use crate::plugins::ssh::conn::{get_sftp_session, invalidate_sftp_session, SshSt
 use crate::plugins::ssh::models::{FileListResult, RemoteFile};
 
 use super::util::to_remote_file;
+use crate::plugins::ssh::conn::resolve_id_names;
 
 /// 目录列表
 #[tauri::command(rename_all = "camelCase")]
@@ -35,6 +36,28 @@ pub async fn ssh_file_list(
             format!("{path}/{}", entry.file_name())
         };
         files.push(to_remote_file(entry.file_name(), full, meta));
+    }
+    // uid/gid → 名称回填（线协议只带数字；解析结果每连接缓存，失败回退数字展示）
+    let names = resolve_id_names(&ssh_state, &connection_id).await;
+    if !names.users.is_empty() || !names.groups.is_empty() {
+        for f in &mut files {
+            if let Some(name) = f
+                .owner
+                .parse::<u32>()
+                .ok()
+                .and_then(|id| names.users.get(&id))
+            {
+                f.owner = name.clone();
+            }
+            if let Some(name) = f
+                .group
+                .parse::<u32>()
+                .ok()
+                .and_then(|id| names.groups.get(&id))
+            {
+                f.group = name.clone();
+            }
+        }
     }
     files.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then(a.name.cmp(&b.name)));
     let parent_path = if path == "/" {

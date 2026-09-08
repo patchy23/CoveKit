@@ -8,7 +8,7 @@ import type { RemoteFile } from './contracts'
 import { ipc } from './ipc'
 import { formatBytes, formatTime } from './useSsh'
 import PathBreadcrumbs from './PathBreadcrumbs.vue'
-import { UiIcon, UiIconButton, UiListRow } from '@/core/ui'
+import { UiIcon, UiIconButton, UiTable, UiTableCell } from '@/core/ui'
 
 const props = defineProps<{
   /** 初始目录（默认取设置里的默认下载目录） */
@@ -119,29 +119,47 @@ defineExpose({
       </UiIconButton>
     </div>
 
-    <!-- 列表 -->
+    <!-- 列表（与远程侧同款 UiTable 布局：名称/大小/修改时间） -->
     <div class="min-h-0 flex-1 overflow-y-auto" aria-label="本地文件列表">
       <div v-if="loading" class="py-[16px] text-center text-caption text-text-muted">读取中…</div>
-      <UiListRow
-        v-for="file in files"
-        :key="file.path"
-        size="sm"
-        :active="selected?.path === file.path"
-        :title="file.path"
-        @click="select(file)"
-        @dblclick="open(file)"
-      >
-        <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
-        <span class="min-w-0 flex-1 truncate text-body-sm" :class="file.isDir ? 'font-medium' : ''">
-          {{ file.name }}
-        </span>
-        <span class="shrink-0 text-caption text-text-muted">
-          {{ file.isDir ? '-' : formatBytes(file.size) }}
-        </span>
-        <span class="hidden shrink-0 text-caption text-text-muted xl:inline">
-          {{ formatTime(file.modifiedAt) }}
-        </span>
-      </UiListRow>
+      <UiTable v-else :framed="false" :styled="false" table-class="text-body-sm">
+        <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
+          <tr
+            class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
+          >
+            <UiTableCell as="th" class="px-[12px] py-[8px]">名称</UiTableCell>
+            <UiTableCell as="th" class="w-[90px] px-[12px] py-[8px]">大小</UiTableCell>
+            <UiTableCell as="th" class="w-[132px] px-[12px] py-[8px]">修改时间</UiTableCell>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="file in files"
+            :key="file.path"
+            class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
+            :class="
+              selected?.path === file.path
+                ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
+                : 'hover:bg-border dark:hover:bg-border-dark'
+            "
+            @click="select(file)"
+            @dblclick="open(file)"
+          >
+            <UiTableCell content="technical" class="max-w-0 px-[12px] py-[7px]">
+              <span class="block truncate" :title="file.path">
+                <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
+                <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
+              </span>
+            </UiTableCell>
+            <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
+              file.isDir ? '-' : formatBytes(file.size)
+            }}</UiTableCell>
+            <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
+              formatTime(file.modifiedAt)
+            }}</UiTableCell>
+          </tr>
+        </tbody>
+      </UiTable>
     </div>
 
     <!-- 状态栏 -->

@@ -298,7 +298,7 @@ watch(
       <!-- 右栏：本地目录 -->
       <LocalBrowser
         ref="localBrowser"
-        class="w-[280px] shrink-0"
+        class="w-[240px] shrink-0"
         :initial-path="settings.settings.defaultDownloadDirectory || 'C:/'"
         @select="localSelected = $event"
         @error="(m: string) => ui.toast(m)"

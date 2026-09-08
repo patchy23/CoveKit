@@ -116,7 +116,7 @@ watch(
       @keydown="jumpByInitial"
       @contextmenu="emit('context', $event, null)"
     >
-      <UiTable :framed="false" :styled="false" table-class="table-fixed text-body-sm">
+      <UiTable :framed="false" :styled="false" table-class="text-body-sm">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -126,15 +126,15 @@ watch(
                 名称 {{ sortKey === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : '' }}
               </UiButton>
             </UiTableCell>
-            <UiTableCell as="th" class="w-[100px] px-[12px] py-[8px]">大小</UiTableCell>
-            <UiTableCell as="th" class="w-[132px] px-[12px] py-[8px]">
+            <UiTableCell as="th" class="w-[76px] px-[12px] py-[8px]">大小</UiTableCell>
+            <UiTableCell as="th" class="w-[118px] px-[12px] py-[8px]">
               <UiButton variant="ghost" size="xs" @click="emit('sort', 'modifiedAt')">
                 修改时间
                 {{ sortKey === 'modifiedAt' ? (sortDirection === 'asc' ? '↑' : '↓') : '' }}
               </UiButton>
             </UiTableCell>
-            <UiTableCell as="th" class="w-[110px] px-[12px] py-[8px]">权限</UiTableCell>
-            <UiTableCell as="th" class="w-[80px] px-[12px] py-[8px]">所有者</UiTableCell>
+            <UiTableCell as="th" class="w-[92px] px-[12px] py-[8px]">权限</UiTableCell>
+            <UiTableCell as="th" class="w-[88px] px-[12px] py-[8px]">所有者</UiTableCell>
           </tr>
         </thead>
         <tbody>
@@ -152,23 +152,23 @@ watch(
             @dblclick="emit('open', file)"
             @contextmenu.stop="emit('context', $event, file)"
           >
-            <UiTableCell content="technical" class="px-[12px] py-[7px]">
-              <!-- 长文件名截断不换行（table-fixed 下 truncate 生效），完整名走 title -->
+            <UiTableCell content="technical" class="max-w-0 px-[12px] py-[7px]">
+              <!-- 长文件名截断不换行：auto 布局下 max-w-0 单元格 + 内层 truncate（不挤掉其他列），完整名走 title -->
               <span class="block truncate" :title="file.name">
                 <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
                 <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
               </span>
             </UiTableCell>
-            <UiTableCell content="numeric" class="px-[12px] py-[7px]">
+            <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">
               {{ file.isDir ? '-' : formatBytes(file.size) }}
             </UiTableCell>
-            <UiTableCell content="numeric" class="px-[12px] py-[7px]">{{
+            <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
               formatTime(file.modifiedAt)
             }}</UiTableCell>
-            <UiTableCell content="technical" class="px-[12px] py-[7px]">{{
+            <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
               file.permissions
             }}</UiTableCell>
-            <UiTableCell content="technical" class="px-[12px] py-[7px]">{{
+            <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
               file.owner
             }}</UiTableCell>
           </tr>

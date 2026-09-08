@@ -170,6 +170,7 @@ pub async fn ssh_reconnect(
                 session,
                 sftp: Mutex::new(None),
                 forward_targets,
+                id_names: Mutex::new(None),
             },
         );
         old

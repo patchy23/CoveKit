@@ -63,10 +63,81 @@ pub(crate) struct SshSessionHandle {
     pub(crate) sftp: Mutex<Option<Arc<russh_sftp::client::SftpSession>>>,
     /// -R 远程转发目标表（与 handler 共享；tunnel 模块注册/注销）
     pub(crate) forward_targets: ForwardTargets,
+    /// uid/gid → 用户名/组名缓存（None = 尚未解析；文件列表展示用，解析失败回退数字）
+    pub(crate) id_names: Mutex<Option<Arc<IdNameMap>>>,
+}
+
+/// uid/gid → 名称映射（文件列表 owner/group 列展示；SFTP 线协议只带数字，名字靠 getent 解析）
+#[derive(Default)]
+pub(crate) struct IdNameMap {
+    /// uid → 用户名
+    pub(crate) users: HashMap<u32, String>,
+    /// gid → 组名
+    pub(crate) groups: HashMap<u32, String>,
 }
 
 /// SSH 会话注册表（State 注入，惰性初始化）
 pub struct SshState(pub Mutex<HashMap<String, SshSessionHandle>>);
+
+/// 解析连接的 uid/gid → 用户名/组名（每连接只执行一次，失败缓存空表避免反复 exec）。
+/// OpenSSH 的 SFTP attrs 只带 uid/gid 数字；所有者名称从 `getent passwd/group`（退化 /etc/passwd）解析。
+pub(crate) async fn resolve_id_names(ssh_state: &SshState, connection_id: &str) -> Arc<IdNameMap> {
+    // 先查缓存（锁不跨 await：取出 Arc 即放锁）
+    let cached: Option<Arc<IdNameMap>> = ssh_state.0.lock().ok().and_then(|map| {
+        map.get(connection_id)
+            .and_then(|h| h.id_names.lock().ok()?.clone())
+    });
+    if let Some(map) = cached {
+        return map;
+    }
+    let session = {
+        ssh_state
+            .0
+            .lock()
+            .ok()
+            .and_then(|map| map.get(connection_id).map(|h| Arc::clone(&h.session)))
+    };
+    let mut parsed = IdNameMap::default();
+    if let Some(session) = session {
+        // getent 覆盖 NSS（含 LDAP），失败退 /etc/passwd + /etc/group
+        if let Ok(out) = exec_collect(
+            &session,
+            "getent passwd 2>/dev/null || cat /etc/passwd; echo; echo ---groups---; getent group 2>/dev/null || cat /etc/group",
+        )
+        .await
+        {
+            let mut in_groups = false;
+            for line in out.lines() {
+                let line = line.trim();
+                if line == "---groups---" {
+                    in_groups = true;
+                    continue;
+                }
+                let parts: Vec<&str> = line.split(':').collect();
+                // passwd: name:x:uid:gid:...；group: name:x:gid:...
+                if parts.len() >= 3 {
+                    if let Ok(id) = parts[2].parse::<u32>() {
+                        if in_groups {
+                            parsed.groups.insert(id, parts[0].to_string());
+                        } else {
+                            parsed.users.insert(id, parts[0].to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let map = Arc::new(parsed);
+    // 写回缓存（含解析失败——失败也缓存，避免每次列目录都 exec）
+    if let Ok(guard) = ssh_state.0.lock() {
+        if let Some(h) = guard.get(connection_id) {
+            if let Ok(mut slot) = h.id_names.lock() {
+                *slot = Some(Arc::clone(&map));
+            }
+        }
+    }
+    map
+}
 
 /// 当前毫秒时间戳
 pub(crate) fn now_ms() -> u64 {
@@ -280,6 +351,7 @@ fn register_session(
         session,
         sftp: Mutex::new(None),
         forward_targets,
+        id_names: Mutex::new(None),
     };
     // 注册表锁中毒不吞：断开刚建立的会话并报错（宁可连接失败也不留无人持有的会话）
     match state.0.lock() {
