@@ -7,7 +7,8 @@ import { computed, onMounted, ref } from 'vue'
 import type { RemoteFile } from './contracts'
 import { ipc } from './ipc'
 import { formatBytes, formatTime } from './useSsh'
-import { UiButton, UiInput, UiListRow } from '@/core/ui'
+import PathBreadcrumbs from './PathBreadcrumbs.vue'
+import { UiIcon, UiIconButton, UiListRow } from '@/core/ui'
 
 const props = defineProps<{
   /** 初始目录（默认取设置里的默认下载目录） */
@@ -20,8 +21,9 @@ const emit = defineEmits<{
   (e: 'error', message: string): void
 }>()
 
-const currentPath = ref(props.initialPath)
-const pathDraft = ref(props.initialPath)
+/** 初始路径统一为反斜杠（设置里可能是 C:/ 正斜杠写法） */
+const initialDir = props.initialPath.replace(/\//g, '\\')
+const currentPath = ref(initialDir)
 const files = ref<RemoteFile[]>([])
 const selected = ref<RemoteFile | null>(null)
 const loading = ref(false)
@@ -42,7 +44,6 @@ async function navigate(path: string) {
       return
     }
     currentPath.value = path
-    pathDraft.value = path
     files.value = result.files
     selected.value = null
     emit('select', null)
@@ -67,12 +68,6 @@ function select(file: RemoteFile) {
   emit('select', file)
 }
 
-function commitPath() {
-  const target = pathDraft.value.trim()
-  if (target && target !== currentPath.value) void navigate(target)
-  else pathDraft.value = currentPath.value
-}
-
 onMounted(() => void navigate(currentPath.value))
 
 defineExpose({
@@ -85,36 +80,22 @@ defineExpose({
 
 <template>
   <div class="flex min-h-0 flex-col border-l border-border dark:border-border-dark">
-    <!-- 工具栏：路径 + 上级 + 刷新 -->
+    <!-- 工具栏：上级 + 面包屑路径（与远程侧同款）+ 刷新 -->
     <div
-      class="flex shrink-0 items-center gap-[6px] border-b border-border px-[10px] py-[8px] dark:border-border-dark"
+      class="flex shrink-0 items-center gap-[4px] border-b border-border px-[8px] py-[6px] dark:border-border-dark"
     >
-      <UiButton
-        variant="ghost"
-        size="xs"
-        class="!h-auto !px-[6px] !py-[2px] text-caption"
-        :disabled="!parentPath"
-        title="上级目录"
-        @click="goUp"
-      >
-        ↑
-      </UiButton>
-      <UiInput
-        v-model="pathDraft"
-        size="sm"
-        class="min-w-0 flex-1 font-mono text-caption"
-        placeholder="本地目录路径"
-        @keydown.enter="commitPath"
+      <UiIconButton label="上级" size="sm" title="上级目录" :disabled="!parentPath" @click="goUp">
+        <UiIcon name="arrow-up" :size="14" />
+      </UiIconButton>
+      <PathBreadcrumbs
+        class="min-w-0 flex-1"
+        :path="currentPath"
+        separator="\\"
+        @navigate="navigate"
       />
-      <UiButton
-        variant="ghost"
-        size="xs"
-        class="!h-auto !px-[6px] !py-[2px] text-caption"
-        title="刷新"
-        @click="navigate(currentPath)"
-      >
-        ⟳
-      </UiButton>
+      <UiIconButton label="刷新" size="sm" title="刷新" @click="navigate(currentPath)">
+        <UiIcon name="refresh" :size="14" />
+      </UiIconButton>
     </div>
 
     <!-- 列表 -->

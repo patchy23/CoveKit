@@ -12,6 +12,8 @@
  */
 import {
   AlignLeft,
+  ArrowLeft,
+  ArrowUp,
   Check,
   ChevronDown,
   ChevronRight,
@@ -22,6 +24,7 @@ import {
   Ellipsis,
   Eye,
   EyeOff,
+  FolderUp,
   LayoutGrid,
   LoaderCircle,
   Minus,
@@ -33,6 +36,7 @@ import {
   Search,
   SkipForward,
   Trash2,
+  Upload,
   X,
 } from '@lucide/vue'
 
@@ -63,6 +67,14 @@ export const UI_ICONS = {
   dots: Ellipsis,
   /** 新建/添加 */
   plus: Plus,
+  /** 后退（返回上一次位置） */
+  'arrow-left': ArrowLeft,
+  /** 上级目录 */
+  'arrow-up': ArrowUp,
+  /** 上传 */
+  upload: Upload,
+  /** 上传目录 */
+  'folder-up': FolderUp,
   /** 重命名/编辑 */
   pencil: Pencil,
   trash: Trash2,
