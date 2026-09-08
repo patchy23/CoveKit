@@ -67,19 +67,13 @@ pub async fn ssh_file_list(
 #[tauri::command(rename_all = "camelCase")]
 pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
     // 规范化：分隔符统一；盘符 'C:' 补尾斜杠（裸盘符是「该盘当前目录」而非根）
-    let mut normalized = path.replace('/', "\\");
-    if normalized == "\\" {
-        normalized.clear();
-    }
-    let bytes = normalized.as_bytes();
-    if bytes.len() == 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
-        normalized.push('\\');
-    }
+    let normalized = normalize_local_path(&path);
     // 虚拟根：返回驱动器列表
     if normalized.is_empty() {
         return Ok(local_drives_result());
     }
-    let entries = std::fs::read_dir(&normalized).map_err(|e| format!("读取目录失败: {e}"))?;
+    let entries =
+        std::fs::read_dir(&normalized).map_err(|e| format!("读取目录失败 [{normalized}]: {e}"))?;
     let mut files = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| format!("读取目录项失败: {e}"))?;
@@ -172,5 +166,43 @@ fn local_drives_result() -> FileListResult {
         parent_path: None,
         files: drives,
         error: None,
+    }
+}
+
+/// 本地路径规范化（纯函数，可单测）：分隔符统一反斜杠；裸分隔符/空串 → 空（驱动器层）；盘符补尾斜杠
+fn normalize_local_path(path: &str) -> String {
+    let mut normalized = path.replace('/', "\\");
+    if normalized == "\\" {
+        normalized.clear();
+    }
+    let bytes = normalized.as_bytes();
+    if bytes.len() == 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        normalized.push('\\');
+    }
+    normalized
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn 裸分隔符与空串归一到驱动器层() {
+        assert_eq!(normalize_local_path(""), "");
+        assert_eq!(normalize_local_path("/"), "");
+        assert_eq!(normalize_local_path("\\"), "");
+    }
+
+    #[test]
+    fn 盘符补尾斜杠() {
+        assert_eq!(normalize_local_path("C:"), "C:\\");
+        assert_eq!(normalize_local_path("d:"), "d:\\");
+        assert_eq!(normalize_local_path("D:/"), "D:\\");
+    }
+
+    #[test]
+    fn 普通路径分隔符统一() {
+        assert_eq!(normalize_local_path("D:/Tools/xx"), r"D:\Tools\xx");
+        assert_eq!(normalize_local_path(r"C:\Windows"), r"C:\Windows");
     }
 }

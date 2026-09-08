@@ -168,10 +168,46 @@ pub(crate) fn is_dir_mode(mode: u32) -> bool {
     (mode & 0o170000) == 0o040000
 }
 
+/// 权限位转 rwx 字符串（如 drwxr-xr-x；mode 高 4 位是文件类型）
+/// 参考 ls -l 输出格式，比八进制可读（用户反馈 40755 看不懂）
+pub(crate) fn format_permissions(mode: u32) -> String {
+    // 文件类型位（S_IFMT）
+    let kind = match mode & 0o170000 {
+        0o040000 => 'd', // 目录
+        0o120000 => 'l', // 符号链接
+        0o010000 => 'p', // 管道
+        0o060000 => 'b', // 块设备
+        0o020000 => 'c', // 字符设备
+        0o140000 => 's', // socket
+        _ => '-',        // 普通文件
+    };
+    // 9 个权限位：rwxrwxrwx
+    let mut out = String::with_capacity(10);
+    out.push(kind);
+    for shift in [6, 3, 0] {
+        let bits = (mode >> shift) & 0o7;
+        out.push(if bits & 0o4 != 0 { 'r' } else { '-' });
+        out.push(if bits & 0o2 != 0 { 'w' } else { '-' });
+        out.push(if bits & 0o1 != 0 { 'x' } else { '-' });
+    }
+    out
+}
+
 /// 文件属性 → 对外 RemoteFile（纯函数，可单测）
 pub(crate) fn to_remote_file(name: String, path: String, meta: FileAttributes) -> RemoteFile {
     let size = meta.size.unwrap_or(0);
     let is_dir = meta.permissions.map(is_dir_mode).unwrap_or(false);
+    // owner/group：SFTP 线协议通常只给 uid/gid 数字，longname 解析才有名字——两级回退
+    let owner = meta
+        .user
+        .clone()
+        .or_else(|| meta.uid.map(|u| u.to_string()))
+        .unwrap_or_else(|| "-".into());
+    let group = meta
+        .group
+        .clone()
+        .or_else(|| meta.gid.map(|g| g.to_string()))
+        .unwrap_or_else(|| "-".into());
     RemoteFile {
         name,
         path,
@@ -180,9 +216,22 @@ pub(crate) fn to_remote_file(name: String, path: String, meta: FileAttributes) -
         modified_at: meta.mtime.unwrap_or(0) as u64 * 1000,
         permissions: meta
             .permissions
-            .map(|p| format!("{p:o}"))
-            .unwrap_or_default(),
-        owner: meta.user.map(|u| u.to_string()).unwrap_or_default(),
-        group: meta.group.map(|g| g.to_string()).unwrap_or_default(),
+            .map(format_permissions)
+            .unwrap_or_else(|| "-".into()),
+        owner,
+        group,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_permissions;
+
+    #[test]
+    fn 权限位转rwx字符串() {
+        assert_eq!(format_permissions(0o040755), "drwxr-xr-x");
+        assert_eq!(format_permissions(0o100644), "-rw-r--r--");
+        assert_eq!(format_permissions(0o100600), "-rw-------");
+        assert_eq!(format_permissions(0o120777), "lrwxrwxrwx");
     }
 }

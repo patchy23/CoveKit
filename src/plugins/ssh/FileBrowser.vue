@@ -116,7 +116,7 @@ watch(
       @keydown="jumpByInitial"
       @contextmenu="emit('context', $event, null)"
     >
-      <UiTable :framed="false" :styled="false" table-class="text-body-sm">
+      <UiTable :framed="false" :styled="false" table-class="table-fixed text-body-sm">
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -153,8 +153,11 @@ watch(
             @contextmenu.stop="emit('context', $event, file)"
           >
             <UiTableCell content="technical" class="px-[12px] py-[7px]">
-              <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
-              <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
+              <!-- 长文件名截断不换行（table-fixed 下 truncate 生效），完整名走 title -->
+              <span class="block truncate" :title="file.name">
+                <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
+                <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
+              </span>
             </UiTableCell>
             <UiTableCell content="numeric" class="px-[12px] py-[7px]">
               {{ file.isDir ? '-' : formatBytes(file.size) }}
