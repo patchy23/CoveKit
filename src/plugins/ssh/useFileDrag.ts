@@ -112,7 +112,14 @@ export function useFileDrag(deps: {
   function onPointerUp(event: PointerEvent) {
     const d = drag.value
     cleanup()
-    if (!d?.active) return
+    if (!d) return
+    // 兜底：合成/极快拖拽可能没有中间 pointermove——up 相对起点位移过阈值即按拖拽处理
+    if (!d.active) {
+      if (Math.hypot(event.clientX - d.startX, event.clientY - d.startY) < DRAG_THRESHOLD) return
+      d.active = true
+    }
+    d.x = event.clientX
+    d.y = event.clientY
     const remote = paneRect('remote')
     const local = paneRect('local')
     if (!remote || !local) return
