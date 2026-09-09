@@ -175,7 +175,7 @@ defineExpose({
 
     <!-- 状态栏 -->
     <div
-      class="flex shrink-0 items-center gap-[8px] border-t border-border px-[10px] py-[4px] text-caption text-text-muted dark:border-border-dark"
+      class="flex h-[36px] shrink-0 items-center gap-[8px] border-t border-border px-[10px] text-caption text-text-muted dark:border-border-dark"
     >
       <span class="min-w-0 flex-1 truncate font-mono">{{ atDrives ? '此电脑' : currentPath }}</span>
       <span>{{ files.length }} 项</span>

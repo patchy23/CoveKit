@@ -183,7 +183,7 @@ watch(
     </div>
 
     <div
-      class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
+      class="flex h-[36px] shrink-0 items-center gap-[12px] border-t border-border px-[12px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
     >
       <span>{{ currentPath }}</span>
       <span>{{ files.length }} 个项目</span>

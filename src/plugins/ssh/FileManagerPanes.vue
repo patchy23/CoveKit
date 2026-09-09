@@ -5,7 +5,7 @@
  */
 import { ref } from 'vue'
 import type { RemoteFile } from './contracts'
-import { UiIconButton } from '@/core/ui'
+import { UiIcon, UiIconButton } from '@/core/ui'
 import type { TransferItem } from './useFileTransfer'
 import { computed } from 'vue'
 import { useFileDrag, type DragSide } from './useFileDrag'
@@ -164,7 +164,7 @@ const dragLabel = computed(() => {
         title="把左侧选中的本地文件/目录上传到远端当前目录"
         @click="emit('uploadLocal')"
       >
-        →
+        <UiIcon name="upload" :size="14" />
       </UiIconButton>
     </div>
 
