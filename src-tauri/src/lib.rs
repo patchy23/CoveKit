@@ -87,6 +87,9 @@ pub fn run() {
             // ── 框架启动初始化 ──
             framework::settings::init(app)?;
 
+            // 屏蔽 WebView2 原生右键菜单（不再干扰程序内自绘右键菜单；仅 Windows 生效）
+            disable_native_context_menu(app);
+
             // 托盘：左键显示主窗；菜单含 显示/退出
             let show_item = MenuItem::with_id(app, "show", "显示 Hekara", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
@@ -124,4 +127,23 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// 屏蔽 WebView2 原生右键菜单（复制/粘贴/检查元素等），避免与程序内自绘右键菜单叠加干扰。
+/// 原理：Tauri 2.11 的 PlatformWebview 直接暴露 ICoreWebView2Controller（Windows 专属 API），
+/// 走 COM 设置 AreDefaultContextMenusEnabled=false；纯前端 preventDefault 并不能抑制该原生菜单。
+#[cfg(windows)]
+fn disable_native_context_menu(app: &tauri::App) {
+    for (_, window) in app.webview_windows() {
+        let _ = window.with_webview(|webview| {
+            let controller = webview.controller();
+            unsafe {
+                if let Ok(core) = controller.CoreWebView2() {
+                    if let Ok(settings) = core.Settings() {
+                        let _ = settings.SetAreDefaultContextMenusEnabled(false);
+                    }
+                }
+            }
+        });
+    }
 }
