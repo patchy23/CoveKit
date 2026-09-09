@@ -82,12 +82,26 @@ export function useFileDrag(deps: {
     window.addEventListener('keydown', onKeydown)
   }
 
+  /** 拖拽激活后禁止浏览器文本选择（pointer 拖拽会顺带选中拖动区域文字） */
+  let prevUserSelect = ''
+  function lockTextSelection() {
+    const body = document.body
+    prevUserSelect = body.style.userSelect
+    body.style.userSelect = 'none'
+    const sel = window.getSelection()
+    if (sel && !sel.isCollapsed) sel.removeAllRanges()
+  }
+  function restoreTextSelection() {
+    document.body.style.userSelect = prevUserSelect
+  }
+
   function onPointerMove(event: PointerEvent) {
     const d = drag.value
     if (!d) return
     if (!d.active) {
       if (Math.hypot(event.clientX - d.startX, event.clientY - d.startY) < DRAG_THRESHOLD) return
       d.active = true
+      lockTextSelection()
     }
     d.x = event.clientX
     d.y = event.clientY
@@ -105,6 +119,7 @@ export function useFileDrag(deps: {
   function cleanup() {
     drag.value = null
     dragTarget.value = null
+    restoreTextSelection()
     window.removeEventListener('pointermove', onPointerMove)
     window.removeEventListener('keydown', onKeydown)
   }
