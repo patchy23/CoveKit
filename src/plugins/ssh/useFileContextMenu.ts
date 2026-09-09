@@ -45,7 +45,7 @@ export function useFileContextMenu(actions: RemoteMenuActions) {
     menu.value = { target, multi, x: event.clientX, y: event.clientY }
     // 坐标夹取在打开后按实际项数二次校正（项数依赖 computed，故直接估算上限）
     menu.value.x = Math.max(8, Math.min(menu.value.x, window.innerWidth - 170 - 8))
-    menu.value.y = Math.max(8, Math.min(menu.value.y, window.innerHeight - 8 * 36 - 16))
+    menu.value.y = Math.max(8, Math.min(menu.value.y, window.innerHeight - 10 * 36 - 16))
   }
 
   const menuItems = computed<ContextMenuItem[]>(() => {
@@ -82,7 +82,7 @@ export function useFileContextMenu(actions: RemoteMenuActions) {
       return items
     }
 
-    // 单选
+    // 单选：行操作 + 同目录新建（列表占满无空白处时仍可新建）
     const items: ContextMenuItem[] = [{ label: '下载', onClick: () => actions.download(target) }]
     if (!target.isDir && canEditRemoteFile(target)) {
       items.push({ label: '编辑', onClick: () => actions.edit(target) })
@@ -97,7 +97,12 @@ export function useFileContextMenu(actions: RemoteMenuActions) {
     if (deleteMenuVisible(target.path)) {
       items.push({ label: '删除', onClick: () => actions.deleteFile(target) })
     }
-    items.push(refreshItem)
+    items.push(
+      { label: '', separator: true },
+      { label: '新建文件', onClick: () => actions.newFile('/') },
+      { label: '新建目录', onClick: () => actions.mkdir('/') },
+      refreshItem
+    )
     return items
   })
 

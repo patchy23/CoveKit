@@ -33,7 +33,7 @@ export function useLocalContextMenu(actions: LocalMenuActions) {
       target,
       multi,
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - 170 - 8)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 6 * 36 - 16)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 10 * 36 - 16)),
     }
   }
 
@@ -64,6 +64,9 @@ export function useLocalContextMenu(actions: LocalMenuActions) {
       { label: '上传', onClick: () => actions.upload([target]) },
       { label: '重命名', onClick: () => actions.rename(target) },
       { label: '删除', onClick: () => actions.deleteFile(target) },
+      { label: '', separator: true },
+      { label: '新建文件', onClick: actions.newFile },
+      { label: '新建目录', onClick: actions.mkdir },
       refreshItem,
     ]
   })
