@@ -261,6 +261,10 @@
   ::-webkit-scrollbar-track {
     background: transparent;
   }
+  /* 横向+纵向滚动条交汇的角落：去掉浏览器默认白方块，露出面板底色 */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════
