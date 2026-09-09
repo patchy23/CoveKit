@@ -14,7 +14,6 @@ import { useFileSelection } from './useFileSelection'
 import { useFileBatchOps } from './useFileBatchOps'
 import { useLocalFileOps } from './useLocalFileOps'
 import { useSftpTransfers } from './useSftpTransfers'
-
 const props = defineProps<{
   connection?: ServerConnection
   profile?: ServerProfile
@@ -46,20 +45,17 @@ const {
   onNavigate: () => remoteSel.clear(),
 })
 
-/* ── 多选模型（本地侧；远程在上面导航前已建） ── */
 const localSel = useFileSelection(() => localBrowser.value?.files.map((f) => f.path) ?? [])
 
-/** 远程选中文件列表（按列表顺序） */
+/** 选中项列表（按列表顺序，远程/本地各一） */
 const selectedRemoteFiles = computed(() =>
   sortedFiles.value.filter((f) => remoteSel.selectedPaths.value.has(f.path))
 )
-/** 本地选中文件列表 */
 const selectedLocalFiles = computed(() =>
   (localBrowser.value?.files ?? []).filter((f: RemoteFile) =>
     localSel.selectedPaths.value.has(f.path)
   )
 )
-
 /** 单选 shim：恰好选中 1 项时返回该项；置 null = 清空选择（兼容 useRemoteFileOps 的 Ref 契约） */
 const selectedFile = computed<RemoteFile | null>({
   get: () => (selectedRemoteFiles.value.length === 1 ? selectedRemoteFiles.value[0] : null),
@@ -68,7 +64,6 @@ const selectedFile = computed<RemoteFile | null>({
   },
 })
 
-/* 编辑/删除/重命名操作在 useRemoteFileOps（toast/确认目标/编辑态统一管理） */
 const {
   chmodTarget,
   requestChmod,
@@ -103,11 +98,12 @@ const {
   active: () => props.active,
   currentPath,
   selectedFile,
+  localDir: () => localBrowser.value?.currentPath ?? '',
   page: filePage,
   refresh: () => void refreshCurrent(),
 })
 
-/* ── 批量操作（确认弹窗 + 执行在 useFileBatchOps） ── */
+/* 批量操作（确认弹窗 + 执行在 useFileBatchOps） */
 const {
   batchConfirm,
   batchRunning,
@@ -126,8 +122,6 @@ const {
   localDir: () => localBrowser.value?.currentPath ?? '',
   localFiles: () => localBrowser.value?.files ?? [],
 })
-
-/* ── 本地文件操作（新建/重命名/删除在 useLocalFileOps） ── */
 const {
   deleteTarget: localDeleteTarget,
   renameTarget: localRenameTarget,
@@ -153,7 +147,7 @@ const { newFileTarget, mkdirTarget, confirmNewFile, confirmMkdir, requestNewFile
     refresh: () => void refreshCurrent(),
   })
 
-/** 双击：目录进入，符合文本规则的文件打开统一编辑弹窗。 */
+/** 双击：目录进入，文本文件打开编辑弹窗 */
 async function onDoubleClick(file: RemoteFile) {
   if (file.isDir) {
     navigate(file.path)
@@ -192,14 +186,13 @@ const { menu, menuItems, openMenu, localMenu, localMenuItems, openLocalMenu } = 
   }
 )
 
-/** 全部取消（ConfirmDialog 后逐个 cancel） */
 function cancelAllTransfers() {
   for (const item of transfers.value.values()) if (!item.done) void cancelTransfer(item.id)
 }
-
 watch(
   () => props.connection?.sessionId,
   (sessionId) => {
+    // 换连接/断开：清空全部交互态（菜单/弹窗/选择），目录回到根
     remoteSel.clear()
     localSel.clear()
     editing.value = null
@@ -253,8 +246,15 @@ watch(
       @local-error="(m: string) => ui.toast(m)"
       @cancel-transfer="cancelTransfer"
       @cancel-all-transfers="cancelAllTransfers"
+      @drop-remote-to-local="(items: RemoteFile[]) => items.forEach((f) => void download(f))"
+      @drop-local-to-remote="
+        (items: RemoteFile[]) =>
+          void uploadLocalPaths(
+            items.map((f) => f.path),
+            currentPath
+          )
+      "
     />
-
     <FileManagerOverlays
       :menu="menu"
       :menu-items="menuItems"

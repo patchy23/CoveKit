@@ -32,6 +32,8 @@ const emit = defineEmits<{
   (event: 'rowClick', mouse: MouseEvent, file: RemoteFile): void
   (event: 'open', file: RemoteFile): void
   (event: 'context', mouse: MouseEvent, file: RemoteFile | null): void
+  /** 行指针按下（双栏拖拽起点） */
+  (event: 'rowPointerDown', mouse: PointerEvent, file: RemoteFile): void
   (event: 'sort', key: 'name' | 'modifiedAt'): void
 }>()
 
@@ -154,6 +156,7 @@ watch(
             @click="selectFile($event, file)"
             @dblclick="emit('open', file)"
             @contextmenu.stop="emit('context', $event, file)"
+            @pointerdown="emit('rowPointerDown', $event, file)"
           >
             <UiTableCell content="technical" class="max-w-0 px-[12px] py-[7px]">
               <!-- 长文件名截断不换行：auto 布局下 max-w-0 单元格 + 内层 truncate（不挤掉其他列），完整名走 title -->

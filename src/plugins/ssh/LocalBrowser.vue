@@ -23,6 +23,8 @@ const emit = defineEmits<{
   /** 空白处右键（新建/刷新菜单） */
   (e: 'blankContext', mouse: MouseEvent): void
   (e: 'rowContext', mouse: MouseEvent, file: RemoteFile): void
+  /** 行指针按下（双栏拖拽起点） */
+  (e: 'rowPointerDown', mouse: PointerEvent, file: RemoteFile): void
   (e: 'error', message: string): void
 }>()
 
@@ -152,6 +154,7 @@ defineExpose({
             @click="onRowClick($event, file)"
             @dblclick="open(file)"
             @contextmenu.stop="emit('rowContext', $event, file)"
+            @pointerdown="emit('rowPointerDown', $event, file)"
           >
             <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">
               <span :title="file.path">

@@ -1,8 +1,7 @@
 import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
-import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog'
+import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { useUiStore } from '@/stores/ui'
-import { useSettingsStore } from '@/stores/settings'
 import type { RemoteFile } from './contracts'
 import { ipc } from './ipc'
 import { useFileTransfer } from './useFileTransfer'
@@ -12,11 +11,12 @@ export function useSftpTransfers(options: {
   active: () => boolean | undefined
   currentPath: Ref<string>
   selectedFile: Ref<RemoteFile | null>
+  /** 下载落盘目录（本地栏当前目录） */
+  localDir: () => string
   page: Ref<HTMLElement | null>
   refresh: () => void
 }) {
   const ui = useUiStore()
-  const settings = useSettingsStore()
   const dragActive = ref(false)
   let stopDragDrop: (() => void) | null = null
   const { transferStatus, transfers, cancelTransfer } = useFileTransfer(
@@ -56,23 +56,32 @@ export function useSftpTransfers(options: {
     }
   }
 
+  /**
+   * 下载到本地栏当前目录（不弹保存框；目录由调用方注入）。
+   * 同名文件直接覆盖——传输面板有进度与取消，行为与 WinSCP 落盘一致。
+   */
   async function download(file: RemoteFile | null = options.selectedFile.value) {
     const connectionId = options.connectionId()
     if (!file || !connectionId) {
       if (!file) ui.toast('请先选择文件')
       return
     }
+    const dir = options.localDir()
+    if (!dir) {
+      ui.toast('本地目录尚未就绪，无法下载')
+      return
+    }
     try {
-      const directory = settings.settings.defaultDownloadDirectory.trim()
-      const separator = directory.includes('\\') ? '\\' : '/'
-      const defaultPath = directory
-        ? `${directory.replace(/[\\/]$/, '')}${separator}${file.name}`
-        : file.name
-      const localPath = await dialogSave({ defaultPath })
-      if (!localPath) return
-      await ipc.sshFileDownload({ connectionId, remotePath: file.path, localPath })
+      const separator = dir.includes('\\') ? '\\' : '/'
+      const localPath = `${dir.replace(/[\\/]$/, '')}${separator}${file.name}`
+      if (file.isDir) {
+        // 目录走递归下载（与批量下载一致），任务进传输面板
+        await ipc.sshFileDownloadRecursive({ connectionId, remotePath: file.path, localPath })
+      } else {
+        await ipc.sshFileDownload({ connectionId, remotePath: file.path, localPath })
+      }
       transferStatus.value = `正在下载 ${file.name}`
-      ui.toast(`已开始下载：${file.name}`)
+      ui.toast(`已开始下载：${file.name} → ${dir}`)
     } catch (error) {
       ui.toast(`下载失败：${error}`)
     }

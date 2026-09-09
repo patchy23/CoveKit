@@ -3,8 +3,6 @@
  * 两段式：request* 打开确认弹窗 → confirm* 执行；单项失败不中断其余（结束后汇总 toast）。
  */
 import { ref } from 'vue'
-import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
-import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from './ipc'
 import type { RemoteFile } from './contracts'
@@ -37,7 +35,6 @@ export function useFileBatchOps(deps: {
   localFiles: () => RemoteFile[]
 }) {
   const ui = useUiStore()
-  const settings = useSettingsStore()
 
   /** 待确认弹窗（非空即显示） */
   const batchConfirm = ref<BatchConfirm | null>(null)
@@ -50,14 +47,14 @@ export function useFileBatchOps(deps: {
     return names.join('、') + (items.length > 5 ? ` 等 ${items.length} 项` : '')
   }
 
-  /* ── 远程批量下载：先确认，再选目标目录一次 ── */
+  /* ── 远程批量下载：确认后直接落本地栏当前目录（不弹目录选择器） ── */
   function requestBatchDownload(items: RemoteFile[]) {
     if (!items.length) return
     batchConfirm.value = {
       kind: 'download',
       items,
       title: `批量下载 ${items.length} 项`,
-      message: `将把 ${previewNames(items)} 下载到本地目录（下一步选择目标目录）。`,
+      message: `将把 ${previewNames(items)} 下载到本地目录 ${deps.localDir()}。`,
       danger: false,
     }
   }
@@ -129,12 +126,12 @@ export function useFileBatchOps(deps: {
   async function execDownload(items: RemoteFile[]) {
     const connectionId = deps.sessionId()
     if (!connectionId) return
-    // 目标目录：优先默认下载目录，弹一次目录选择器
-    const targetDir = await dialogOpen({
-      directory: true,
-      defaultPath: settings.settings.defaultDownloadDirectory || undefined,
-    })
-    if (typeof targetDir !== 'string') return
+    // 落盘目录：本地栏当前目录（与单选下载一致，不弹选择器）
+    const targetDir = deps.localDir()
+    if (!targetDir) {
+      ui.toast('本地目录尚未就绪，无法下载')
+      return
+    }
     const sep = targetDir.includes('\\') ? '\\' : '/'
     let failed = 0
     for (const item of items) {
@@ -150,7 +147,11 @@ export function useFileBatchOps(deps: {
         failed++
       }
     }
-    ui.toast(failed ? `批量下载已提交，${failed} 项失败` : `已开始批量下载 ${items.length} 项`)
+    ui.toast(
+      failed
+        ? `批量下载已提交到 ${targetDir}，${failed} 项失败`
+        : `已开始批量下载 ${items.length} 项 → ${targetDir}`
+    )
     deps.refreshLocal()
   }
 
