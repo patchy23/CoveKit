@@ -55,6 +55,12 @@ const cancelAllConfirm = ref(false)
 const activeTransfers = computed(() => props.transfers.filter((t) => !t.done || t.error))
 const runningTransfers = computed(() => props.transfers.filter((t) => !t.done))
 
+/** 全部取消确认通过（多语句内联处理器会被 vite 拒绝，必须抽函数） */
+function onCancelAllConfirmed() {
+  emit('cancelAll')
+  cancelAllConfirm.value = false
+}
+
 /** 总进度 = 已传总和 / 总量总和（无总量信息时按完成项比例） */
 const totalProgress = computed(() => {
   const list = activeTransfers.value
@@ -246,10 +252,7 @@ const currentTaskLabel = computed(() => {
       confirm-label="全部取消"
       danger
       @close="cancelAllConfirm = false"
-      @confirm="
-        emit('cancelAll')
-        cancelAllConfirm = false
-      "
+      @confirm="onCancelAllConfirmed"
     />
   </div>
 </template>

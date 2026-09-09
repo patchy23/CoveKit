@@ -82,6 +82,13 @@ const canSubmit = computed(
   () => !octalError.value && octal.value.trim() !== '' && (!needRiskAck.value || riskAck.value)
 )
 
+/** 二次确认通过：上抛参数并关闭（多语句内联处理器会被 vite 拒绝，必须抽函数） */
+function onConfirmed() {
+  emit('confirm', currentMode.value, recursive.value, riskAck.value)
+  confirming.value = false
+  emit('close')
+}
+
 const GROUPS = ['所有者', '所属组', '其他'] as const
 const PERMS = ['读', '写', '执行'] as const
 </script>
@@ -166,11 +173,7 @@ const PERMS = ['读', '写', '执行'] as const
       :message="`将把 ${file?.path} 的权限从 ${file?.permissions} 修改为 ${formatModeRwx(currentMode)}（${currentMode.toString(8)}）${file?.isDir && recursive ? '，并递归应用到子项' : ''}。`"
       confirm-label="确认修改"
       @close="confirming = false"
-      @confirm="
-        emit('confirm', currentMode, recursive, riskAck)
-        confirming = false
-        emit('close')
-      "
+      @confirm="onConfirmed"
     />
   </UiModal>
 </template>
