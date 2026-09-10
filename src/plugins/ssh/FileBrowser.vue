@@ -24,11 +24,6 @@ const emit = defineEmits<{
   (event: 'navigate', path: string): void
   (event: 'back'): void
   (event: 'up'): void
-  (event: 'upload'): void
-  (event: 'uploadDirectory'): void
-  (event: 'download'): void
-  (event: 'rename'): void
-  (event: 'delete'): void
   (event: 'rowClick', mouse: MouseEvent, file: RemoteFile): void
   (event: 'open', file: RemoteFile): void
   (event: 'context', mouse: MouseEvent, file: RemoteFile | null): void
@@ -106,11 +101,6 @@ watch(
       @navigate="emit('navigate', $event)"
       @back="emit('back')"
       @up="emit('up')"
-      @upload="emit('upload')"
-      @upload-directory="emit('uploadDirectory')"
-      @download="emit('download')"
-      @rename="emit('rename')"
-      @delete="emit('delete')"
     />
 
     <div

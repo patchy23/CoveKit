@@ -36,11 +36,7 @@ const emit = defineEmits<{
   (e: 'navigate', path: string): void
   (e: 'back'): void
   (e: 'up'): void
-  (e: 'upload'): void
-  (e: 'uploadDirectory'): void
   (e: 'download'): void
-  (e: 'rename'): void
-  (e: 'delete'): void
   (e: 'remoteRowClick', mouse: MouseEvent, file: RemoteFile): void
   (e: 'open', file: RemoteFile): void
   (e: 'remoteContext', mouse: MouseEvent, file: RemoteFile | null): void
@@ -140,11 +136,6 @@ const dragLabel = computed(() => {
         @navigate="(p: string) => emit('navigate', p)"
         @back="emit('back')"
         @up="emit('up')"
-        @upload="emit('upload')"
-        @upload-directory="emit('uploadDirectory')"
-        @download="emit('download')"
-        @rename="emit('rename')"
-        @delete="emit('delete')"
         @row-click="(e: MouseEvent, f: RemoteFile) => emit('remoteRowClick', e, f)"
         @open="(f: RemoteFile) => emit('open', f)"
         @context="(e: MouseEvent, f: RemoteFile | null) => emit('remoteContext', e, f)"
