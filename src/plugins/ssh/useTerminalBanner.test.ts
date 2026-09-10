@@ -8,11 +8,13 @@ describe('disconnectBanner', () => {
     expect(text).toContain('Press Enter to reconnect.')
   })
 
-  it('不带中文文案，且提示行用暗灰而非黄色告警色', () => {
+  it('用品牌橙与中灰：不带中文、不用黄色告警色、不用过暗的 90', () => {
     const text = disconnectBanner('10.0.0.1')
     expect(text).not.toMatch(/[\u4e00-\u9fa5]/)
     expect(text).not.toContain('\x1b[33m')
-    expect(text).toContain('\x1b[90m')
+    expect(text).not.toContain('\x1b[90m')
+    expect(text).toContain('\x1b[38;2;240;86;44m')
+    expect(text).toContain('\x1b[38;2;139;148;158m')
   })
 
   it('主机名缺失时退化为 remote host（断开事件会清空 host）', () => {
@@ -31,6 +33,7 @@ describe('reconnectSeparator', () => {
   it('标出重连目标与时间', () => {
     const text = reconnectSeparator('82.157.102.178', '23:05:01')
     expect(text).toContain('--- reconnected to 82.157.102.178 at 23:05:01 ---')
+    expect(text).toContain('\x1b[38;2;139;148;158m')
     expect(text).not.toMatch(/[\u4e00-\u9fa5]/)
   })
 
