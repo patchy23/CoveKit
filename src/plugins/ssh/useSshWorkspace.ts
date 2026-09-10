@@ -424,6 +424,11 @@ export function useSshWorkspace() {
         return
       }
       const message = outcome.error?.message ?? '重连失败'
+      if (outcome.error?.code === 'SESSION_NOT_FOUND') {
+        // 句柄已被后端回收（多为空闲自动断开）：ssh_reconnect 无从下手，按配置整条重建
+        if (await reconnectByProfile(workspace)) scheduleAutoReconnect(workspace)
+        return
+      }
       if (outcome.error?.code === 'PROFILE_NOT_FOUND') {
         workspace.connection = {
           ...workspace.connection,
@@ -437,6 +442,35 @@ export function useSshWorkspace() {
     } catch {
       // IPC 抛错（多为网络断）与业务失败一致走退避；上限由 scheduleAutoReconnect 自终止
       scheduleAutoReconnect(workspace)
+    }
+  }
+
+  /**
+   * 旧会话句柄已被后端回收时的整条重连（空闲自动断开、后端重启、其它入口断开）。
+   * ssh_reconnect 需要一个仍在会话表里的旧句柄，句柄没了只能按 profileId 重新 ssh_connect，
+   * 再把新会话挂回原工作区：终端保留缓冲，reconnectTick 递增走「换通道 + 分隔线」分支。
+   * 返回 null 表示成功，否则为失败说明（调用方决定是报错还是继续退避）。
+   */
+  async function reconnectByProfile(workspace: SshConnectionWorkspace): Promise<string | null> {
+    try {
+      const outcome = await ipc.sshConnect({ profileId: workspace.profileId })
+      if (disposed || !connectionWorkspaces.value.includes(workspace)) {
+        if (outcome.ok && outcome.connection) await disconnectConnection(outcome.connection)
+        return null
+      }
+      if (outcome.ok && outcome.connection) {
+        workspace.connection = outcome.connection
+        workspace.connectRequestId = outcome.requestId
+        workspace.reconnectTick += 1
+        workspace.reconnectAttempt = 0
+        workspace.stageText = ''
+        workspace.lastActivityAt = Date.now()
+        ui.toast(`连接「${workspace.title}」已恢复`)
+        return null
+      }
+      return outcome.error?.message ?? '重新连接失败'
+    } catch (error) {
+      return String(error)
     }
   }
 
@@ -463,6 +497,14 @@ export function useSshWorkspace() {
         return
       }
       const error = outcome.error
+      if (error?.code === 'SESSION_NOT_FOUND') {
+        // 句柄已被后端回收（空闲自动断开等）：改按 profileId 整条重建，成功后保留终端缓冲
+        const failure = await reconnectByProfile(workspace)
+        if (!failure) return
+        workspace.connection = { ...disconnected, status: 'disconnected', error: failure }
+        ui.toast(`重新连接失败：${failure}`)
+        return
+      }
       workspace.connection = {
         ...disconnected,
         status: 'disconnected',

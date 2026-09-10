@@ -4,7 +4,7 @@
  * - 主终端由 connectRequest 显式驱动开启；容器终端由 Docker 页「终端」按钮打开。
  * - 意外断线：后端 terminal-closed 事件（非本地关闭）→ 上报 linkDead，由工作区决定自动重连。
  * - 自动/手动重连成功（reconnectTick 递增）：保留 xterm 缓冲，仅换 PTY 通道并插入重连分隔线。
- * - 断开时往缓冲写横幅提示；断开态按 Enter 重新连接（缓冲保留）。
+ * - 断开提示沿用 OpenSSH 客户端措辞（英文、无装饰）；断开态按 Enter 重新连接（缓冲保留）。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Terminal } from 'xterm'
@@ -17,6 +17,7 @@ import ContextMenu from '@/core/ui/ContextMenu.vue'
 import { useTerminalContextMenu } from './useTerminalContextMenu'
 import { ipc, onTerminalClosed, onTerminalData } from './ipc'
 import { createTerminalResizeController } from './useTerminalResize'
+import { bannerTime, disconnectBanner, reconnectSeparator } from './useTerminalBanner'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -68,15 +69,23 @@ const terminalResize = createTerminalResizeController({
   },
 })
 
+/** 最近一次已知对端地址：断开事件会把 host 清空，终端提示仍需写出连的是哪台机器 */
+let knownHost = ''
+watch(
+  () => props.connection?.host,
+  (host) => {
+    if (host) knownHost = host
+  }
+)
+
 /** 重连分隔线（灰色，与旧输出在视觉上区分） */
 function writeReconnectSeparator() {
-  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
-  term?.write(`\r\n\x1b[90m── 已于 ${time} 重新连接 ──\x1b[0m\r\n`)
+  term?.write(reconnectSeparator(knownHost, bannerTime()))
 }
 
-/** 断开横幅（黄色，提示按 Enter 重连；缓冲保留） */
+/** 断开提示（OpenSSH 客户端同款措辞，英文无装饰；缓冲保留） */
 function writeDisconnectBanner() {
-  term?.write('\r\n\x1b[33m── 连接已断开 · 按 Enter 重新连接（当前内容保留）──\x1b[0m\r\n')
+  term?.write(disconnectBanner(knownHost))
 }
 
 /** 打开终端通道（连接建立/重连时调用）；preserve=true 时保留缓冲（重连场景） */
