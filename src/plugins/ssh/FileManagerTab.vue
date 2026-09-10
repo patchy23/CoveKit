@@ -139,7 +139,6 @@ const {
   },
 })
 
-/* ── 远程新建文件/目录（useRemoteCreateOps） ── */
 const { newFileTarget, mkdirTarget, confirmNewFile, confirmMkdir, requestNewFile, requestMkdir } =
   useRemoteCreateOps({
     sessionId: () => props.connection?.sessionId,
@@ -233,6 +232,7 @@ watch(
       @upload="upload"
       @upload-directory="upload(currentPath, true)"
       @download="download()"
+      @batch-download-selected="requestBatchDownload"
       @rename="requestRename()"
       @delete="requestDelete()"
       @remote-row-click="(e: MouseEvent, f: RemoteFile) => remoteSel.onRowClick(e, f.path)"

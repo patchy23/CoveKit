@@ -13,6 +13,7 @@
 import {
   AlignLeft,
   ArrowLeft,
+  ArrowRight,
   ArrowUp,
   Check,
   ChevronDown,
@@ -72,6 +73,8 @@ export const UI_ICONS = {
   star: Star,
   /** 后退（返回上一次位置） */
   'arrow-left': ArrowLeft,
+  /** 前进/指向右侧（双栏传输方向等） */
+  'arrow-right': ArrowRight,
   /** 上级目录 */
   'arrow-up': ArrowUp,
   /** 上传 */

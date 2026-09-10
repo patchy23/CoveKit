@@ -56,6 +56,8 @@ const emit = defineEmits<{
   (e: 'dropRemoteToLocal', items: RemoteFile[]): void
   /** 本地栏拖到远程栏（上传） */
   (e: 'dropLocalToRemote', items: RemoteFile[]): void
+  /** 中列下载按钮：多选走批量下载 */
+  (e: 'batchDownloadSelected', items: RemoteFile[]): void
 }>()
 
 /** 两栏容器（拖拽目标判定用） */
@@ -92,6 +94,13 @@ const { drag, dragTarget, onRowPointerDown } = useFileDrag({
 /** 行指针按下：转发到拖拽机（source 按栏定） */
 function onRowPointerDownSide(event: PointerEvent, side: DragSide, file: RemoteFile) {
   onRowPointerDown(event, side, file)
+}
+
+/** 中列下载按钮：单项直下（父级走单选链路），多选取选中集走批量下载 */
+function onMiddleDownload() {
+  const picked = props.files.filter((f) => props.remoteSelectedPaths.has(f.path))
+  if (picked.length > 1) emit('batchDownloadSelected', picked)
+  else emit('download')
 }
 
 /** 拖拽 ghost 文案（来源栏 + 数量） */
@@ -155,16 +164,23 @@ const dragLabel = computed(() => {
       </FileBrowser>
     </div>
 
-    <!-- 中列传输按钮 -->
+    <!-- 中列传输按钮：箭头方向与栏位几何一致（服务器在左、本地在右） -->
     <div
       class="flex w-[42px] shrink-0 flex-col items-center justify-center gap-[8px] border-l border-border dark:border-border-dark"
     >
       <UiIconButton
         label="上传到远端"
-        title="把左侧选中的本地文件/目录上传到远端当前目录"
+        title="上传到远端：把本地选中的文件/目录传到左侧远端当前目录"
         @click="emit('uploadLocal')"
       >
-        <UiIcon name="upload" :size="14" />
+        <UiIcon name="arrow-left" :size="16" />
+      </UiIconButton>
+      <UiIconButton
+        label="下载到本地"
+        title="下载到本地：把远端选中的文件/目录传到右侧本地当前目录"
+        @click="onMiddleDownload"
+      >
+        <UiIcon name="arrow-right" :size="16" />
       </UiIconButton>
     </div>
 
