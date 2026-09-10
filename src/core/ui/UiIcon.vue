@@ -13,7 +13,9 @@
 import {
   AlignLeft,
   ArrowLeft,
+  ArrowLeftToLine,
   ArrowRight,
+  ArrowRightToLine,
   ArrowUp,
   Check,
   ChevronDown,
@@ -75,6 +77,10 @@ export const UI_ICONS = {
   'arrow-left': ArrowLeft,
   /** 前进/指向右侧（双栏传输方向等） */
   'arrow-right': ArrowRight,
+  /** 推送到左侧栏（双栏上传方向：箭头抵住边界线） */
+  'arrow-left-to-line': ArrowLeftToLine,
+  /** 推送到右侧栏（双栏下载方向：箭头抵住边界线） */
+  'arrow-right-to-line': ArrowRightToLine,
   /** 上级目录 */
   'arrow-up': ArrowUp,
   /** 上传 */

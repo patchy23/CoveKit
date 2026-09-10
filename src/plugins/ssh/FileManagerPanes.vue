@@ -164,24 +164,34 @@ const dragLabel = computed(() => {
       </FileBrowser>
     </div>
 
-    <!-- 中列传输按钮：箭头方向与栏位几何一致（服务器在左、本地在右） -->
+    <!-- 中列传输按钮：箭头指向目标栏（服务器在左、本地在右）+ 文字标签 + 上传侧主色 -->
     <div
-      class="flex w-[42px] shrink-0 flex-col items-center justify-center gap-[8px] border-l border-border dark:border-border-dark"
+      class="flex w-[58px] shrink-0 flex-col items-center justify-center gap-[12px] border-l border-border dark:border-border-dark"
     >
-      <UiIconButton
-        label="上传到远端"
-        title="上传到远端：把本地选中的文件/目录传到左侧远端当前目录"
-        @click="emit('uploadLocal')"
-      >
-        <UiIcon name="arrow-left" :size="16" />
-      </UiIconButton>
-      <UiIconButton
-        label="下载到本地"
-        title="下载到本地：把远端选中的文件/目录传到右侧本地当前目录"
-        @click="onMiddleDownload"
-      >
-        <UiIcon name="arrow-right" :size="16" />
-      </UiIconButton>
+      <div class="flex flex-col items-center gap-[2px]">
+        <UiIconButton
+          label="上传到远端"
+          title="上传到远端：把本地选中的文件/目录传到左侧远端当前目录"
+          @click="emit('uploadLocal')"
+        >
+          <UiIcon
+            name="arrow-left-to-line"
+            :size="16"
+            class="text-tertiary-strong dark:text-tertiary-dark"
+          />
+        </UiIconButton>
+        <span class="select-none text-caption text-text-muted dark:text-text-muted-dark">上传</span>
+      </div>
+      <div class="flex flex-col items-center gap-[2px]">
+        <UiIconButton
+          label="下载到本地"
+          title="下载到本地：把远端选中的文件/目录传到右侧本地当前目录"
+          @click="onMiddleDownload"
+        >
+          <UiIcon name="arrow-right-to-line" :size="16" />
+        </UiIconButton>
+        <span class="select-none text-caption text-text-muted dark:text-text-muted-dark">下载</span>
+      </div>
     </div>
 
     <!-- 右栏：本地目录 -->
