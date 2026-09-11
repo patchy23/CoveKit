@@ -136,6 +136,10 @@ export interface EditSaveResult {
   /** 冲突时远端当前 mtime（毫秒） */
 
   currentMtime?: number
+
+  /** 冲突时远端当前内容（供差异对比；后端读取失败或超限时省略） */
+
+  remoteContent?: string
 }
 
 /* ── 资源监控 ── */

@@ -15,8 +15,10 @@ export interface RemoteEditing {
   content: string
   /** 打开时的远端 mtime（毫秒）；保存时做乐观锁比对 */
   modifiedAt?: number
-  /** 保存冲突后置位：提示远端已变化，用户可选择强制覆盖 */
+  /** 保存冲突后置位：提示远端已变化，用户可选择强制覆盖或放弃 */
   conflict?: boolean
+  /** 冲突时远端当前内容（供差异对比；后端读取失败时不提供） */
+  remoteContent?: string
 }
 
 export function useRemoteFileOps(deps: {
@@ -116,6 +118,7 @@ export function useRemoteFileOps(deps: {
           content,
           conflict: true,
           modifiedAt: r.currentMtime ?? target.modifiedAt,
+          remoteContent: r.remoteContent,
         }
         ui.toast('远端文件已被修改，保存被阻止')
       } else {

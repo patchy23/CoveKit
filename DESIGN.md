@@ -191,6 +191,7 @@ ToolKit 是一个面向大众用户的桌面工具箱：明净、亲和、低学
 - `chip` 用于最近使用与筛选标签，选中态同 nav-item-active 逻辑。
 - `tag` 用于 HOT/完成标签：success-soft 底 + success-strong 字（10.5px 小字需 ≥4.5:1，纯 success 绿仅 2.4:1）。
 - `toast` 固定深色，全主题通用，出现在视口底部居中。
+- `code-editor` 的语法高亮色是 `--cm-*`（`--cm-keyword` / `-property` / `-string` / `-number` / `-tag` / `-punct` / `-comment`），**不进本文件色板**：它们标识代码内容的语义（近 GitHub 配色），由 `src/assets/styles/main.css` 的浅色/深色同名区块维护；编辑器外观（边框、背景、gutter、字号）仍走上方语义 token。
 - 深色模式组件使用 `-dark` 后缀变体（`card-dark`、`nav-item-active-dark`、`chip-active-dark`…），深色底上的橙色文字对比度 ~5.8:1，无需加深。
 
 ## Do's and Don'ts

@@ -10,6 +10,7 @@ import { ref } from 'vue'
 import {
   UiBadge,
   UiButton,
+  UiCodeDiff,
   UiCodeEditor,
   UiPanel,
   UiSelect,
@@ -65,6 +66,22 @@ const brokenJson = ref(`{
 
 /** 大文件降级演示：约 560KB（超过 512KB 阈值 → 关闭高亮 / 折叠 / 补全） */
 const largeSample = ref(buildLargeSample())
+
+/** 差异对比样例：远端当前内容 vs 本地编辑内容 */
+const diffOriginal = `{
+  "tool": "patchyBox",
+  "version": "1.0.0",
+  "editor": "legacy-textarea",
+  "limits": { "maxFileSize": 1048576 }
+}`
+
+const diffModified = `{
+  "tool": "patchyBox",
+  "version": "1.0.0",
+  "editor": "codemirror-6",
+  "limits": { "maxFileSize": 5242880 },
+  "features": ["search", "format", "lint"]
+}`
 
 /** 右键菜单演示：记录最后一次触发的行号与行文本 */
 const lastMenu = ref<EditorContextMenuPayload | null>(null)
@@ -259,5 +276,17 @@ function onFormat(): void {
         </div>
       </div>
     </UiPanel>
+    <UiPanel
+      title="代码差异（L3）"
+      description="基于 @codemirror/merge：左右对照与内联两种形态，顶部给出新增/删除行数。SSH 远程文件保存冲突时用同一组件对比「远端当前」与「本地编辑」。"
+    >
+      <UiCodeDiff
+        :original="diffOriginal"
+        :modified="diffModified"
+        filename="config.json"
+        height="200px"
+      />
+    </UiPanel>
+
   </div>
 </template>

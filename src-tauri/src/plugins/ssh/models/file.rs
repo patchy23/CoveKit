@@ -106,6 +106,9 @@ pub struct EditSaveResult {
     /// 冲突时远端当前 mtime（毫秒）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) current_mtime: Option<u64>,
+    /// 冲突时远端当前内容（供前端展示差异对比；读取失败或超限时省略）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) remote_content: Option<String>,
 }
 
 /* ── 资源监控 ── */

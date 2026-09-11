@@ -9,6 +9,7 @@
 2. **只增不改**：已发布插件对框架与其它插件零依赖变更；框架升级不允许破坏既有插件。
 3. **公共能力下沉框架**：组件走 `src/core/ui/`，IPC 基础设施走 `src/core/ipc/`，数据层走 `src-tauri/src/framework/`；插件不得重复造轮子（如各自实现 toast、各自建数据库）。
 4. **接口入库**：所有 Tauri 命令必须在启动时登记到 IPC 注册表（见 §2），重复注册直接报错。
+5. **编辑器统一**：多行代码 / 配置编辑一律用 `@/core/ui` 的 `UiCodeEditor`，差异对比用 `UiCodeDiff`；**禁止自研编辑器、禁止复制 CodeMirror 主题**（详见 §7）。
 
 ## 1. 目录与命名规范
 
@@ -158,4 +159,29 @@ Rust：
 - [ ] 数据文件走 `framework::store`；表结构走迁移数组
 - [ ] 命令在 `ipc_registry` 登记；契约 camelCase 同步
 - [ ] 页面通用控件使用 `@/core/ui`，并在“组件实验室”核对亮色/深色和交互状态
+- [ ] 文本编辑区域使用 `UiCodeEditor`（只读用 `readonly`，差异用 `UiCodeDiff`），未自研编辑器 / 未复制 CodeMirror 主题（§7）
 - [ ] 全量验证（§5）通过后提交（conventional commits + 插件作用域）
+
+## 7. 编辑器与文本输入规范（2026-09-11 起）
+
+背景：编辑器功能曾散落成 3 处自研 CodeMirror 包装（`CodeViewer`、`SqlEditor`、`EditorDialog`）
+与 7 处自研「行号 + 文本域」（`LineNumberTextarea`），导致每个工具的高亮配色、快捷键、
+降级策略各不相同。现统一为 `core/ui` 的编辑器组件，**新增代码不得再出现第二套实现**。
+
+| 场景 | 用法 |
+| --- | --- |
+| 单行输入 | `UiInput` |
+| 多行纯文本（无需行号/高亮/查找） | `UiTextarea` |
+| 多行代码、配置、日志（行号 + 高亮 + 缩进） | `UiCodeEditor mode="minimal"` |
+| 完整编辑（查找替换 / 格式化 / 校验 / 补全 / 状态栏） | `UiCodeEditor`（默认 `full` 档） |
+| 只读查看 | `UiCodeEditor readonly`（原 `CodeViewer` 已删除） |
+| 差异对比 | `UiCodeDiff`（`split` 左右对照 / `unified` 内联并可接受或拒绝） |
+
+硬约束：
+
+1. **主题唯一源**：`core/ui/editor/theme.ts` + `main.css` 的 `--cm-*` 变量；暗色覆盖写 `main.css` 全局 unlayered 区，不得在插件里重新定义高亮样式。
+2. **领域能力靠注入**：插件专有扩展（例如数据库的「执行当前语句」gutter、Ctrl+点击表名跳转、SQL 方言）
+   通过 `languageExtension` / `extraExtensions` / `completionSources` 传给编辑器，
+   **不得在插件内自建 `EditorView` 或自己挂主题**（`src/plugins/database/SqlEditor.vue` 是范例：137 行薄封装）。
+3. **大文件与降级交给组件**：>512KB 自动关闭高亮、折叠与补全，>5MB 强制只读并提示；插件不要自行判断与降级。
+4. **封装组件仍受 300 行红线**：插件侧编辑器封装只做领域适配（props 映射、命令式 API 转发），通用能力一律回上游 `core`。

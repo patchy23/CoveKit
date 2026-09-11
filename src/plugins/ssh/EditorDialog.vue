@@ -1,18 +1,15 @@
 <script setup lang="ts">
 /**
  * EditorDialog · 远程文件编辑弹窗
- * 文件管理页签双击文件打开；CodeMirror 6 可编辑模式（语法高亮/行号/缩进线，
- * 与 CodeViewer 同款配色）；保存后由父组件回写服务器（后端 IPC 接入前为 mock）。
+ *
+ * 文件管理页签双击文件打开；编辑底座为 core 的 `UiCodeEditor`（按文件名识别语法、行号、
+ * 状态栏、查找替换、Ctrl+S 保存、大文件自动降级），本组件只保留弹窗壳与保存/放弃交互：
+ * 有未保存修改时关闭前二次确认，远端冲突时提供强制覆盖。
  */
-import { onMounted, onUnmounted, ref } from 'vue'
-import { EditorView, lineNumbers } from '@codemirror/view'
-import { EditorState } from '@codemirror/state'
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { tags as t } from '@lezer/highlight'
-import { json } from '@codemirror/lang-json'
-import { xml } from '@codemirror/lang-xml'
+import { computed, ref, watch } from 'vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton } from '@/core/ui'
+import { UiButton, UiCodeDiff, UiCodeEditor } from '@/core/ui'
+import { useUiStore } from '@/stores/ui'
 
 const props = defineProps<{
   /** 远程文件完整路径 */
@@ -23,6 +20,8 @@ const props = defineProps<{
   saving?: boolean
   /** 远端文件已被修改（乐观锁冲突）：显示警告并提供强制覆盖 */
   conflict?: boolean
+  /** 冲突时远端当前内容（提供时出现「查看差异」入口） */
+  remoteContent?: string
 }>()
 
 const emit = defineEmits<{
@@ -30,72 +29,35 @@ const emit = defineEmits<{
   (e: 'cancel'): void
 }>()
 
-const host = ref<HTMLElement | null>(null)
+const ui = useUiStore()
+
+/** 编辑器实例（读取当前内容） */
+const editor = ref<InstanceType<typeof UiCodeEditor> | null>(null)
+/** 是否有未保存修改 */
 const dirty = ref(false)
+/** 放弃修改确认弹窗 */
 const discardOpen = ref(false)
-let view: EditorView | null = null
+/** 差异对比浮层开关 */
+const diffOpen = ref(false)
+/** 差异对比的本地内容快照（打开时冻结，避免编辑中浮层内容跳动） */
+const diffSnapshot = ref('')
 
-/* ── 语法高亮（与 CodeViewer 同款 GitHub 配色，CSS 变量随主题） ── */
-const highlight = HighlightStyle.define([
-  { tag: t.keyword, color: 'var(--cm-keyword)' },
-  { tag: [t.propertyName, t.attributeName], color: 'var(--cm-property)' },
-  { tag: [t.string, t.special(t.string)], color: 'var(--cm-string)' },
-  { tag: [t.number, t.bool, t.null], color: 'var(--cm-number)' },
-  { tag: [t.tagName, t.typeName], color: 'var(--cm-tag)' },
-  { tag: [t.angleBracket, t.paren, t.brace, t.bracket, t.separator], color: 'var(--cm-punct)' },
-  { tag: t.comment, color: 'var(--cm-comment)', fontStyle: 'italic' },
-  { tag: t.operator, color: 'var(--cm-punct)' },
-])
+/** 文件名（语言自动识别用） */
+const filename = computed(() => props.path.split('/').pop() ?? props.path)
 
-/** 按扩展名选择语法（未匹配返回空扩展 = 纯文本） */
-function langFor(path: string) {
-  const ext = path.split('.').pop()?.toLowerCase()
-  if (ext === 'json') return json()
-  if (ext === 'xml' || ext === 'html' || ext === 'htm' || ext === 'svg') return xml()
-  return []
+/** 当前编辑内容（未挂载时回落到 props 值） */
+function currentContent(): string {
+  return editor.value?.getValue() ?? props.content
 }
 
-function createEditor() {
-  view = new EditorView({
-    parent: host.value!,
-    state: EditorState.create({
-      doc: props.content,
-      extensions: [
-        lineNumbers(),
-        syntaxHighlighting(highlight),
-        langFor(props.path),
-        // 编辑监听：内容变化标记 dirty
-        EditorView.updateListener.of((u) => {
-          if (u.docChanged) dirty.value = true
-        }),
-        EditorView.theme({
-          '&': { height: '100%', fontSize: '13px' },
-          '.cm-scroller': {
-            fontFamily: 'var(--font-mono)',
-            lineHeight: '1.5',
-            overflow: 'auto',
-          },
-          '.cm-content': { padding: '10px 0' },
-          '.cm-line': { padding: '0 12px' },
-          '.cm-cursor': { borderLeftColor: 'var(--color-tertiary)' },
-          '.cm-gutters': {
-            background: 'transparent',
-            borderRight: '1px solid var(--color-border)',
-            color: 'var(--color-text-muted)',
-            fontSize: '12px',
-          },
-        }),
-      ],
-    }),
-  })
-}
-
-function save(force = false) {
+/** 保存（force 表示忽略远端修改强制覆盖） */
+function save(force = false): void {
   if (props.saving) return
-  emit('save', view?.state.doc.toString() ?? props.content, force)
+  emit('save', currentContent(), force)
 }
 
-function cancel() {
+/** 取消：有未保存修改时先二次确认 */
+function cancel(): void {
   if (props.saving) return
   if (dirty.value) {
     discardOpen.value = true
@@ -104,13 +66,26 @@ function cancel() {
   emit('cancel')
 }
 
-function confirmDiscard() {
+/** 确认放弃修改 */
+function confirmDiscard(): void {
   discardOpen.value = false
   emit('cancel')
 }
 
-onMounted(createEditor)
-onUnmounted(() => view?.destroy())
+/** 打开差异对比：冻结当前编辑内容作为对比右侧 */
+function openDiff(): void {
+  diffSnapshot.value = currentContent()
+  diffOpen.value = true
+}
+
+// 父组件回写内容（保存成功后）→ 重置未保存标记
+watch(
+  () => props.content,
+  () => {
+    dirty.value = false
+    editor.value?.markSaved()
+  }
+)
 </script>
 
 <template>
@@ -119,7 +94,7 @@ onUnmounted(() => view?.destroy())
       <div
         class="flex h-full w-full max-w-[820px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
       >
-        <!-- 标题栏：路径 + dirty 标记 -->
+        <!-- 标题栏：路径 + dirty / 冲突标记 + 操作 -->
         <div
           class="flex shrink-0 items-center gap-[10px] border-b border-border px-[16px] py-[10px] dark:border-border-dark"
         >
@@ -142,6 +117,15 @@ onUnmounted(() => view?.destroy())
             <UiButton variant="ghost" size="sm" :disabled="saving" @click="cancel"> 取消 </UiButton>
             <UiButton
               v-if="conflict"
+              variant="ghost"
+              size="sm"
+              title="对比远端当前内容与当前编辑内容"
+              @click="openDiff"
+            >
+              查看差异
+            </UiButton>
+            <UiButton
+              v-if="conflict"
               variant="danger"
               size="sm"
               :loading="saving"
@@ -156,13 +140,49 @@ onUnmounted(() => view?.destroy())
           </div>
         </div>
 
-        <!-- CodeMirror 编辑区 -->
-        <div
-          ref="host"
-          class="min-h-0 flex-1 overflow-hidden bg-surface-muted dark:bg-surface-muted-dark"
-        />
+        <!-- 编辑区：core 编辑器（语法高亮 / 行号 / 状态栏 / 查找替换 / Ctrl+S） -->
+        <div class="min-h-0 flex-1 overflow-hidden">
+          <UiCodeEditor
+            ref="editor"
+            :model-value="content"
+            :filename="filename"
+            status-bar
+            class="!rounded-none !border-0"
+            @change="dirty = true"
+            @save="save(false)"
+            @error="ui.toast($event)"
+          />
+        </div>
       </div>
     </div>
+    <!-- 冲突差异对比：左＝远端当前内容，右＝当前编辑内容 -->
+    <div v-if="diffOpen" class="fixed inset-0 z-[160] grid place-items-center bg-black/30 p-[40px]">
+      <div
+        class="flex h-full w-full max-w-[1100px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
+      >
+        <div
+          class="flex shrink-0 items-center gap-[10px] border-b border-border px-[16px] py-[10px] dark:border-border-dark"
+        >
+          <span class="text-body font-medium text-primary dark:text-primary-dark">冲突差异</span>
+          <span class="text-caption text-text-muted dark:text-text-muted-dark">
+            左：远端当前内容 · 右：当前编辑内容
+          </span>
+          <div class="ml-auto">
+            <UiButton variant="ghost" size="sm" @click="diffOpen = false">关闭</UiButton>
+          </div>
+        </div>
+        <div class="min-h-0 flex-1 p-[12px]">
+          <UiCodeDiff
+            :original="remoteContent ?? ''"
+            :modified="diffSnapshot"
+            :filename="filename"
+            mode="split"
+            height="100%"
+          />
+        </div>
+      </div>
+    </div>
+
     <ConfirmDialog
       :open="discardOpen"
       title="放弃未保存的修改"

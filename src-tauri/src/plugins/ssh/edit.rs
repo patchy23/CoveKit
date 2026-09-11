@@ -76,11 +76,15 @@ pub async fn ssh_edit_save(
     if let Some(expected) = expected_mtime {
         let current = metadata.mtime.unwrap_or(0) as u64 * 1000;
         if current != expected {
+            // 附带远端当前内容：前端据此展示差异，让用户在「看清楚改了什么」之后再决定
+            // 强制覆盖或放弃。读取失败（权限/非 UTF-8/超限）时省略该字段，不阻断冲突上报。
+            let remote_content = read_remote_text(&sftp, &target_path).await.ok();
             return Ok(EditSaveResult {
                 ok: false,
                 error: Some("CONFLICT".into()),
                 conflict: Some(true),
                 current_mtime: Some(current),
+                remote_content,
             });
         }
     }
@@ -113,5 +117,36 @@ pub async fn ssh_edit_save(
         error: None,
         conflict: None,
         current_mtime: None,
+        remote_content: None,
     })
+}
+
+/// 读取远端文本文件（供冲突对比展示）
+///
+/// 与 `ssh_edit_open` 同样的两道闸：超过 `MAX_EDIT_BYTES` 直接放弃，非 UTF-8 返回错误
+/// （调用方以 `.ok()` 降级为「无远端内容」，不影响冲突提示本身）。
+async fn read_remote_text(
+    sftp: &russh_sftp::client::SftpSession,
+    path: &str,
+) -> Result<String, String> {
+    let meta = sftp
+        .metadata(path)
+        .await
+        .map_err(|e| format!("读取元数据失败: {e}"))?;
+    if meta.size.unwrap_or(0) > MAX_EDIT_BYTES {
+        return Err("文件超过对比上限".into());
+    }
+    let file = sftp
+        .open(path)
+        .await
+        .map_err(|e| format!("打开文件失败: {e}"))?;
+    let mut buf = Vec::new();
+    file.take(MAX_EDIT_BYTES + 1)
+        .read_to_end(&mut buf)
+        .await
+        .map_err(|e| format!("读取内容失败: {e}"))?;
+    if buf.len() as u64 > MAX_EDIT_BYTES {
+        return Err("文件超过对比上限".into());
+    }
+    String::from_utf8(buf).map_err(|_| "远端内容不是有效 UTF-8 文本".to_string())
 }

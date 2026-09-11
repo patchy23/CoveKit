@@ -11,6 +11,8 @@ defineProps<{
     content: string
     modifiedAt?: number
     conflict?: boolean
+    /** 冲突时远端当前内容（供差异对比） */
+    remoteContent?: string
   } | null
   saving: boolean
   renameTarget: RemoteFile | null
@@ -33,6 +35,7 @@ const emit = defineEmits<{
     :content="editing.content"
     :saving="saving"
     :conflict="editing.conflict"
+    :remote-content="editing.remoteContent"
     @save="(content, force) => emit('save', content, force)"
     @cancel="emit('cancelEdit')"
   />
