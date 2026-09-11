@@ -4,6 +4,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, MonitorData } from './contracts'
 import { formatBytes } from './useSsh'
 import { ipc } from './ipc'
+import MonitorSystemPanel from './MonitorSystemPanel.vue'
 import { UiButton, UiEmptyState, UiPanel, UiProgress } from '@/core/ui'
 
 const props = defineProps<{ connection?: ServerConnection; profile?: ServerProfile }>()
@@ -204,6 +205,9 @@ watch(
           <UiProgress :value="data.diskPercent" tone="warning" show-value />
         </UiPanel>
       </div>
+
+      <!-- 系统信息与磁盘明细：采样间隔 30 秒（变化慢，避免与 3 秒指标叠加压力） -->
+      <MonitorSystemPanel :connection="connection" />
     </div>
 
     <div

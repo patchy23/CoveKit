@@ -15,6 +15,8 @@ import { UiButton } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 import ContextMenu from '@/core/ui/ContextMenu.vue'
 import { useTerminalContextMenu } from './useTerminalContextMenu'
+import TerminalSearchBar from './TerminalSearchBar.vue'
+import { createTerminalSearch, isSearchShortcut } from './useTerminalSearch'
 import { ipc, onTerminalClosed, onTerminalData } from './ipc'
 import { createTerminalResizeController } from './useTerminalResize'
 import { bannerTime, disconnectBanner, reconnectSeparator } from './useTerminalBanner'
@@ -171,6 +173,26 @@ async function reconnect() {
 // 右键菜单逻辑在 useTerminalContextMenu（焦点归还规则见该文件头注释）
 const { menu, menuItems, openContextMenu } = useTerminalContextMenu(() => term)
 
+/** 终端内搜索（Ctrl+F 唤起；高亮与计数由 SearchAddon 维护） */
+const terminalSearch = createTerminalSearch(() => term)
+const {
+  visible: searchVisible,
+  query: searchQuery,
+  caseSensitive: searchCaseSensitive,
+  regex: searchRegex,
+  resultIndex: searchIndex,
+  resultCount: searchTotal,
+  regexError: searchError,
+} = terminalSearch
+
+/** 搜索面板回传：写入查询并立即定位到下一个匹配（面板内已做防抖） */
+function onSearchQuery(value: string) {
+  searchQuery.value = value
+  terminalSearch.findNext()
+}
+
+onBeforeUnmount(() => terminalSearch.dispose())
+
 onMounted(async () => {
   if (!termHost.value) return
   term = new Terminal({
@@ -186,6 +208,14 @@ onMounted(async () => {
   })
   fitAddon = new FitAddon()
   term.loadAddon(fitAddon)
+  // Ctrl+F 打开终端内搜索并阻止 xterm 消费该组合键（否则会当成输入送到远端）
+  term.attachCustomKeyEventHandler((event) => {
+    if (event.type === 'keydown' && isSearchShortcut(event)) {
+      terminalSearch.open()
+      return false
+    }
+    return true
+  })
   term.open(termHost.value)
   terminalResize.scheduleFitAndSync()
 
@@ -356,6 +386,23 @@ watch(
         </UiButton>
       </div>
     </div>
+
+    <!-- 终端内搜索（Ctrl+F；仅在打开时占位，不挤压终端高度） -->
+    <TerminalSearchBar
+      v-if="searchVisible"
+      :query="searchQuery"
+      :index="searchIndex"
+      :total="searchTotal"
+      :case-sensitive="searchCaseSensitive"
+      :regex="searchRegex"
+      :error="searchError"
+      @update:query="onSearchQuery"
+      @update:case-sensitive="(value) => (searchCaseSensitive = value)"
+      @update:regex="(value) => (searchRegex = value)"
+      @next="terminalSearch.findNext()"
+      @previous="terminalSearch.findPrevious()"
+      @close="terminalSearch.close()"
+    />
 
     <!-- xterm 挂载区 -->
     <div
