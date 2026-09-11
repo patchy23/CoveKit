@@ -185,3 +185,13 @@ Rust：
    **不得在插件内自建 `EditorView` 或自己挂主题**（`src/plugins/database/SqlEditor.vue` 是范例：137 行薄封装）。
 3. **大文件与降级交给组件**：>512KB 自动关闭高亮、折叠与补全，>5MB 强制只读并提示；插件不要自行判断与降级。
 4. **封装组件仍受 300 行红线**：插件侧编辑器封装只做领域适配（props 映射、命令式 API 转发），通用能力一律回上游 `core`。
+
+**契约守卫（防回归）**：`src/core/ui/editor/editorUnification.test.ts` 扫描全仓库源码并断言以下四条，`pnpm test` 变红即说明有工具绕过了公共组件：
+
+1. 除 `UiCodeEditor.vue` / `UiCodeDiff.vue` / `editor/` 之外，任何文件不得实例化编辑器（`new EditorView` / `EditorState.create` / `new EditorState` / `monaco.editor.create` / `ace.edit`）；
+2. 不得引入其它编辑器基座（`monaco-editor` / `ace-builds` / `quill` / `@tiptap/*` / `prosemirror-*` / `@milkdown/*` / `vditor` / `codemirror` v5）；
+3. 工具层（`plugins/` `features/`）不得直接 `import` 编辑器内部实现（`@/core/ui/editor/*`），只能用 `@/core/ui` 的公共组件；
+4. 不得残留已删除的自研编辑器（`LineNumberTextarea` / `CodeViewer`）。
+
+**允许的例外**：插件向**共享编辑器注入扩展**不受限制（如数据库插件注入 SQL 补全、语句运行 gutter 与表名跳转，见 `plugins/database/sqlEditorExtensions.ts`）——契约禁的是「自己造一个编辑器」，不是「给统一编辑器加领域能力」。
+
