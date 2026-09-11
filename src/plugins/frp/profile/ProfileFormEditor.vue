@@ -63,9 +63,7 @@ const protocolOptions = computed(() =>
 const authOptions = computed(() =>
   AUTH_METHOD_OPTIONS.map((value) => ({ value, label: value.toUpperCase() }))
 )
-const logLevelOptions = computed(() =>
-  LOG_LEVEL_OPTIONS.map((value) => ({ value, label: value }))
-)
+const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value, label: value })))
 </script>
 
 <template>
@@ -166,7 +164,10 @@ const logLevelOptions = computed(() =>
       </h4>
       <UiButton size="xs" @click="addProxy">{{ t('frp.formProxyAdd') }}</UiButton>
     </div>
-    <div v-if="props.modelValue.proxies.length === 0" class="py-[8px] text-body-sm text-text-muted dark:text-text-muted-dark">
+    <div
+      v-if="props.modelValue.proxies.length === 0"
+      class="py-[8px] text-body-sm text-text-muted dark:text-text-muted-dark"
+    >
       {{ t('frp.formProxyEmpty') }}
     </div>
     <div class="flex flex-col gap-[8px]">

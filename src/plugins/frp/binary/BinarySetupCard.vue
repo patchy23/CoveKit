@@ -106,7 +106,9 @@ onMounted(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col items-center justify-center gap-[14px] px-[24px]">
-    <div class="w-full max-w-[520px] rounded-lg border border-border p-[18px] dark:border-border-dark">
+    <div
+      class="w-full max-w-[520px] rounded-lg border border-border p-[18px] dark:border-border-dark"
+    >
       <h3 class="text-card-title font-bold dark:text-primary-dark">
         {{ t('frp.binaryTitle') }}
       </h3>
@@ -124,7 +126,11 @@ onMounted(() => {
             v-model="selectedVersion"
             class="min-w-0 flex-1"
             :options="versionOptions"
-            :placeholder="binary.loadingVersions.value ? t('frp.binaryLoadingVersions') : t('frp.binaryNoVersion')"
+            :placeholder="
+              binary.loadingVersions.value
+                ? t('frp.binaryLoadingVersions')
+                : t('frp.binaryNoVersion')
+            "
             :disabled="binary.downloading.value || versionOptions.length === 0"
           />
           <UiButton

@@ -68,7 +68,8 @@ export default {
     dialogRenameTitle: 'Rename profile',
     dialogDuplicateTitle: 'Duplicate profile',
     dialogNamePlaceholder: 'File name, e.g. office.toml',
-    dialogNameHint: 'Letters, digits, underscore, hyphen and dot only; .toml is appended automatically',
+    dialogNameHint:
+      'Letters, digits, underscore, hyphen and dot only; .toml is appended automatically',
     dialogNameRequired: 'Please enter a file name',
     dialogNameInvalid: 'Invalid file name: letters, digits, underscore, hyphen and dot only',
     dialogCreateConfirm: 'Create',
@@ -148,7 +149,8 @@ export default {
     logLineCount: '{count} lines',
     // frpc binary setup
     binaryTitle: 'Set up frpc first',
-    binaryHint: 'This tool calls the frpc executable to validate and run configs, so it must be available first.',
+    binaryHint:
+      'This tool calls the frpc executable to validate and run configs, so it must be available first.',
     binaryPickLabel: 'Use an existing frpc',
     binaryPickButton: 'Choose file',
     binaryPickTitle: 'Choose the frpc executable',
@@ -164,7 +166,8 @@ export default {
     binaryVersionsFailed: 'Failed to load releases: {message}',
     binaryLoadingVersions: 'Loading releases…',
     binaryNoVersion: 'No release available',
-    binaryFooterHint: 'You can also point to a path manually; if auto-extract fails, unpack it yourself and pick frpc.',
+    binaryFooterHint:
+      'You can also point to a path manually; if auto-extract fails, unpack it yourself and pick frpc.',
   },
   sshLog: {
     buttonStart: 'Record log',

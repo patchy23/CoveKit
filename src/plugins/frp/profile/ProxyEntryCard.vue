@@ -53,7 +53,9 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
 </script>
 
 <template>
-  <div class="flex flex-col gap-[8px] rounded-sm border border-border p-[10px] dark:border-border-dark">
+  <div
+    class="flex flex-col gap-[8px] rounded-sm border border-border p-[10px] dark:border-border-dark"
+  >
     <!-- 头部：类型 + 名称 + 启用开关 + 删除 -->
     <div class="flex items-center gap-[8px]">
       <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">

@@ -93,5 +93,17 @@ export function useFrpProfiles() {
     )
   }
 
-  return { items, dir, loading, error, refresh, create, duplicate, rename, remove, setRemark, filter }
+  return {
+    items,
+    dir,
+    loading,
+    error,
+    refresh,
+    create,
+    duplicate,
+    rename,
+    remove,
+    setRemark,
+    filter,
+  }
 }

@@ -197,10 +197,7 @@ function assignNested(
 }
 
 /** 表单代理 → 写回对象（以原始条目为基底，保留 healthCheck 等未知字段） */
-function mergeProxy(
-  base: Record<string, unknown>,
-  proxy: FrpFormProxy
-): Record<string, unknown> {
+function mergeProxy(base: Record<string, unknown>, proxy: FrpFormProxy): Record<string, unknown> {
   const next: Record<string, unknown> = { ...base }
   assign(next, 'name', proxy.name)
   assign(next, 'type', proxy.type)

@@ -128,10 +128,17 @@ async function onBinaryChanged() {
 
     <!-- 右：引导卡 / 详情 -->
     <div class="flex min-w-0 flex-1 flex-col border-l border-border dark:border-border-dark">
-      <div v-if="profiles.loading.value && profiles.items.value.length === 0" class="flex flex-1 items-center justify-center">
+      <div
+        v-if="profiles.loading.value && profiles.items.value.length === 0"
+        class="flex flex-1 items-center justify-center"
+      >
         <UiSpinner />
       </div>
-      <BinarySetupCard v-else-if="needSetup" :detected="binary.info.value" @changed="onBinaryChanged" />
+      <BinarySetupCard
+        v-else-if="needSetup"
+        :detected="binary.info.value"
+        @changed="onBinaryChanged"
+      />
       <ProfileDetail
         v-else-if="activeFile !== ''"
         :file-name="activeFile"

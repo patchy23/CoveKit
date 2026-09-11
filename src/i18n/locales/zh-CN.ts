@@ -215,7 +215,8 @@ export default {
     storageOpen: '打开目录',
     storageSameDir: '目标目录与当前一致',
     storageMigrateTitle: '迁移存储目录',
-    storageMigrateBody: '将把 data / vault / logs / cache 四个分区复制到新目录，当前数据约 {size}。',
+    storageMigrateBody:
+      '将把 data / vault / logs / cache 四个分区复制到新目录，当前数据约 {size}。',
     storageMigrateTarget: '目标目录',
     storageMigrateNote:
       '源目录不会被删除，确认新目录数据无误后请自行清理；迁移完成后需要重启应用生效。',

@@ -67,7 +67,9 @@ const fields = computed<{ label: string; value: string }[]>(() => [
 const statusText = computed(() => {
   if (loading.value) return '采集中…'
   if (paused.value) return '已暂停自动刷新'
-  return updatedAt.value ? `最后更新：${new Date(updatedAt.value).toLocaleTimeString()}` : '等待采集'
+  return updatedAt.value
+    ? `最后更新：${new Date(updatedAt.value).toLocaleTimeString()}`
+    : '等待采集'
 })
 
 /** 供容器「立即刷新」复用（指标与系统信息同一次刷新） */
@@ -129,7 +131,9 @@ watch(
 
     <div class="mt-[10px] flex items-center text-caption text-text-muted dark:text-text-muted-dark">
       <span>{{ statusText }}</span>
-      <span class="ml-auto">数据来源：hostname / os-release / uname / uptime / nproc / df -hlPT</span>
+      <span class="ml-auto"
+        >数据来源：hostname / os-release / uname / uptime / nproc / df -hlPT</span
+      >
     </div>
 
     <MonitorDiskTable class="mt-[12px]" :disks="data?.disks ?? []" :loading="loading" />

@@ -46,7 +46,9 @@ const mode = ref<'form' | 'source'>('form')
 /** 状态展示视图（未运行过按 stopped 展示） */
 const view = computed(() => statusView(props.state?.state ?? 'stopped'))
 /** 是否运行中（日志页签与停止按钮用） */
-const running = computed(() => props.state?.state === 'running' || props.state?.state === 'starting')
+const running = computed(
+  () => props.state?.state === 'running' || props.state?.state === 'starting'
+)
 
 /** 切换档案：重新加载内容（脏标记由 editor.load 内部重置） */
 watch(
@@ -81,12 +83,20 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- 工具栏 -->
-    <div class="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-border px-[10px] dark:border-border-dark">
-      <span class="min-w-0 max-w-[240px] truncate text-body font-medium dark:text-primary-dark" :title="props.fileName">
+    <div
+      class="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-border px-[10px] dark:border-border-dark"
+    >
+      <span
+        class="min-w-0 max-w-[240px] truncate text-body font-medium dark:text-primary-dark"
+        :title="props.fileName"
+      >
         {{ props.fileName }}
       </span>
       <UiBadge :tone="view.tone">{{ t(view.labelKey) }}</UiBadge>
-      <span v-if="editor.dirty.value" class="shrink-0 text-caption text-tertiary-strong dark:text-tertiary-dark">
+      <span
+        v-if="editor.dirty.value"
+        class="shrink-0 text-caption text-tertiary-strong dark:text-tertiary-dark"
+      >
         {{ t('frp.unsaved') }}
       </span>
 
@@ -148,7 +158,9 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
 
     <!-- 配置页签 -->
     <div v-if="tab === 'config'" class="flex min-h-0 flex-1 flex-col">
-      <div class="flex shrink-0 items-center gap-[6px] border-b border-border px-[10px] py-[6px] dark:border-border-dark">
+      <div
+        class="flex shrink-0 items-center gap-[6px] border-b border-border px-[10px] py-[6px] dark:border-border-dark"
+      >
         <UiButton
           size="xs"
           :variant="mode === 'form' ? 'primary' : 'secondary'"
@@ -163,7 +175,10 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         >
           {{ t('frp.modeSource') }}
         </UiButton>
-        <span v-if="commentWarning" class="min-w-0 flex-1 truncate text-caption text-warning-strong dark:text-warning-dark">
+        <span
+          v-if="commentWarning"
+          class="min-w-0 flex-1 truncate text-caption text-warning-strong dark:text-warning-dark"
+        >
           {{ t('frp.formCommentWarning') }}
         </span>
       </div>
@@ -198,10 +213,6 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
     />
 
     <!-- 无档案时的占位（工作台在无选中时也会渲染本组件，这里兜底） -->
-    <UiEmptyState
-      v-if="props.fileName === ''"
-      class="flex-1"
-      :title="t('frp.noProfileSelected')"
-    />
+    <UiEmptyState v-if="props.fileName === ''" class="flex-1" :title="t('frp.noProfileSelected')" />
   </div>
 </template>

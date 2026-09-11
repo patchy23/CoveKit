@@ -25,10 +25,8 @@ export const ipc = {
   profileSaveText: (fileName: string, content: string): Promise<FrpOpResult> =>
     invokeCommand(commands.profileSaveText, { fileName, content }),
   /** 表单模式保存（由 Rust 用 parsed 重建 TOML，保留未知字段） */
-  profileSaveForm: (
-    fileName: string,
-    parsed: Record<string, unknown>
-  ): Promise<FrpOpResult> => invokeCommand(commands.profileSaveForm, { fileName, parsed }),
+  profileSaveForm: (fileName: string, parsed: Record<string, unknown>): Promise<FrpOpResult> =>
+    invokeCommand(commands.profileSaveForm, { fileName, parsed }),
   /** 新建档案（内置模板） */
   profileCreate: (fileName: string, template: FrpTemplateId): Promise<FrpOpResult> =>
     invokeCommand(commands.profileCreate, { fileName, template }),
@@ -51,8 +49,7 @@ export const ipc = {
   start: (fileName: string): Promise<FrpRuntimeState> =>
     invokeCommand(commands.start, { fileName }),
   /** 停止档案 */
-  stop: (fileName: string): Promise<FrpRuntimeState> =>
-    invokeCommand(commands.stop, { fileName }),
+  stop: (fileName: string): Promise<FrpRuntimeState> => invokeCommand(commands.stop, { fileName }),
   /** 重启档案 */
   restart: (fileName: string): Promise<FrpRuntimeState> =>
     invokeCommand(commands.restart, { fileName }),

@@ -24,7 +24,9 @@ describe('frpForm · 读取', () => {
       auth: { method: 'token', token: 'secret' },
       transport: { protocol: 'kcp', poolCount: 4, tls: { enable: true, serverName: 'x' } },
       log: { level: 'debug' },
-      proxies: [{ name: 'ssh', type: 'tcp', localIP: '127.0.0.1', localPort: 22, remotePort: 6000 }],
+      proxies: [
+        { name: 'ssh', type: 'tcp', localIP: '127.0.0.1', localPort: 22, remotePort: 6000 },
+      ],
     })
     expect(model.serverAddr).toBe('frps.example.com')
     expect(model.serverPort).toBe(7001)
@@ -73,7 +75,13 @@ describe('frpForm · 写回', () => {
       customX: { keep: 'me' },
       includes: ['./confd'],
       proxies: [
-        { name: 'p1', type: 'tcp', localPort: 8080, remotePort: 6080, healthCheck: { type: 'tcp' } },
+        {
+          name: 'p1',
+          type: 'tcp',
+          localPort: 8080,
+          remotePort: 6080,
+          healthCheck: { type: 'tcp' },
+        },
       ],
     }
     const model = toFormModel(parsed)

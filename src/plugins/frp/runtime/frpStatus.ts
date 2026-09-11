@@ -98,11 +98,7 @@ export function logLevelClass(level: FrpLogLevel): string {
  * 追加日志行并裁剪到上限（返回新数组，纯函数）。
  * `max <= 0` 视为不限制；超出时保留最新 `max` 行（环形缓冲语义）。
  */
-export function appendLogLine(
-  buffer: FrpLogLine[],
-  line: FrpLogLine,
-  max: number
-): FrpLogLine[] {
+export function appendLogLine(buffer: FrpLogLine[], line: FrpLogLine, max: number): FrpLogLine[] {
   const limit = max > 0 ? max : Number.MAX_SAFE_INTEGER
   if (buffer.length < limit) {
     return [...buffer, line]

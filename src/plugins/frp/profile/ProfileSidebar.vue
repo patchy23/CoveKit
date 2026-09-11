@@ -8,14 +8,7 @@ import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import {
-  UiButton,
-  UiIcon,
-  UiIconButton,
-  UiListRow,
-  UiSearchInput,
-  UiSpinner,
-} from '@/core/ui'
+import { UiButton, UiIcon, UiIconButton, UiListRow, UiSearchInput, UiSpinner } from '@/core/ui'
 import type { FrpProfileSummary } from '../contracts'
 import { statusView } from '../runtime/frpStatus'
 import ProfileNameDialog from './ProfileNameDialog.vue'
@@ -126,7 +119,9 @@ function onRemarkSubmit(remark: string) {
 </script>
 
 <template>
-  <aside class="flex h-full min-h-0 w-[260px] shrink-0 flex-col border-r border-border dark:border-border-dark">
+  <aside
+    class="flex h-full min-h-0 w-[260px] shrink-0 flex-col border-r border-border dark:border-border-dark"
+  >
     <!-- 栏头：标题 + 新建 -->
     <div class="flex h-[40px] shrink-0 items-center gap-[8px] px-[10px]">
       <span class="min-w-0 flex-1 truncate text-body-sm font-semibold dark:text-primary-dark">
@@ -138,11 +133,7 @@ function onRemarkSubmit(remark: string) {
       >
         {{ t('frp.profilesRunning', { count: runningCount }) }}
       </span>
-      <UiIconButton
-        :label="t('frp.newProfile')"
-        size="sm"
-        @click="openNameDialog('create')"
-      >
+      <UiIconButton :label="t('frp.newProfile')" size="sm" @click="openNameDialog('create')">
         <UiIcon name="plus" :size="15" />
       </UiIconButton>
     </div>
@@ -157,7 +148,10 @@ function onRemarkSubmit(remark: string) {
       <div v-if="loading && items.length === 0" class="flex justify-center py-[16px]">
         <UiSpinner size="sm" />
       </div>
-      <p v-else-if="error !== ''" class="px-[6px] py-[8px] text-body-sm text-danger-strong dark:text-danger-dark">
+      <p
+        v-else-if="error !== ''"
+        class="px-[6px] py-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
+      >
         {{ error }}
       </p>
       <p
@@ -184,8 +178,14 @@ function onRemarkSubmit(remark: string) {
           <span class="block truncate text-body-sm dark:text-primary-dark" :title="item.fileName">
             {{ item.displayName || item.fileName }}
           </span>
-          <span class="mt-[1px] block truncate text-caption text-text-muted dark:text-text-muted-dark">
-            {{ item.serverAddr === '' ? t('frp.profileNoServer') : `${item.serverAddr}:${item.serverPort}` }}
+          <span
+            class="mt-[1px] block truncate text-caption text-text-muted dark:text-text-muted-dark"
+          >
+            {{
+              item.serverAddr === ''
+                ? t('frp.profileNoServer')
+                : `${item.serverAddr}:${item.serverPort}`
+            }}
             · {{ t('frp.proxyCount', { count: item.proxyCount }) }}
           </span>
           <span
@@ -207,9 +207,14 @@ function onRemarkSubmit(remark: string) {
     </div>
 
     <!-- 栏脚：配置目录 -->
-    <div class="flex h-[32px] shrink-0 items-center gap-[6px] border-t border-border px-[10px] dark:border-border-dark">
+    <div
+      class="flex h-[32px] shrink-0 items-center gap-[6px] border-t border-border px-[10px] dark:border-border-dark"
+    >
       <UiIcon name="folder" :size="13" class="shrink-0 text-text-muted dark:text-text-muted-dark" />
-      <span class="min-w-0 flex-1 truncate text-caption text-text-muted dark:text-text-muted-dark" :title="dir">
+      <span
+        class="min-w-0 flex-1 truncate text-caption text-text-muted dark:text-text-muted-dark"
+        :title="dir"
+      >
         {{ dir === '' ? t('frp.dirUnknown') : dir }}
       </span>
       <UiButton size="xs" variant="ghost" :disabled="dir === ''" @click="emit('openDir')">

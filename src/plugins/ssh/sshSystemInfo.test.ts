@@ -58,22 +58,27 @@ describe('sshSystemInfo 磁盘排序与行映射', () => {
       disk({ mountPoint: '/data', usePercent: 97 }),
       disk({ mountPoint: '/var', usePercent: 13 }),
     ]
-    expect(sortDisksByUsage(disks).map((item) => item.mountPoint)).toEqual([
-      '/data',
-      '/',
-      '/var',
-    ])
+    expect(sortDisksByUsage(disks).map((item) => item.mountPoint)).toEqual(['/data', '/', '/var'])
   })
 
   it('sortDisksByUsage 不修改入参', () => {
-    const disks = [disk({ mountPoint: '/a', usePercent: 1 }), disk({ mountPoint: '/b', usePercent: 2 })]
+    const disks = [
+      disk({ mountPoint: '/a', usePercent: 1 }),
+      disk({ mountPoint: '/b', usePercent: 2 }),
+    ]
     sortDisksByUsage(disks)
     expect(disks.map((item) => item.mountPoint)).toEqual(['/a', '/b'])
   })
 
   it('toDiskRows 合并「已用 / 总量」并生成稳定行标识', () => {
     const rows = toDiskRows([
-      disk({ mountPoint: '/data', filesystem: '/dev/vdb1', usedText: '460G', sizeText: '500G', usePercent: 97 }),
+      disk({
+        mountPoint: '/data',
+        filesystem: '/dev/vdb1',
+        usedText: '460G',
+        sizeText: '500G',
+        usePercent: 97,
+      }),
       disk({ mountPoint: '/', usePercent: 13 }),
     ])
     expect(rows.map((row) => row.mountPoint)).toEqual(['/data', '/'])

@@ -39,7 +39,10 @@ function onSubmit() {
 <template>
   <UiModal :open="props.open" :title="t('frp.remarkTitle')" size="sm" @close="emit('close')">
     <div class="flex flex-col gap-[8px]">
-      <p class="truncate font-mono text-caption text-text-muted dark:text-text-muted-dark" :title="props.fileName">
+      <p
+        class="truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+        :title="props.fileName"
+      >
         {{ props.fileName }}
       </p>
       <UiInput
