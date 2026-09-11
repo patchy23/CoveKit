@@ -5,6 +5,7 @@
 pub mod api;
 pub mod database;
 pub mod dns;
+pub mod frp;
 pub mod hosts;
 pub mod http_ws;
 pub mod ssh;
@@ -26,6 +27,7 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         Some("database") => database::invoke_handler(invoke),
         Some("hosts") => hosts::invoke_handler(invoke),
         Some("dns") => dns::invoke_handler(invoke),
+        Some("frp") => frp::invoke_handler(invoke),
         Some("ssh") => ssh::invoke_handler(invoke),
         Some("tts") => tts::invoke_handler(invoke),
         _ => false,
@@ -41,7 +43,7 @@ pub(crate) fn validate_routing() {
         }
         let routable = matches!(
             entry.owner,
-            "http_ws" | "api" | "database" | "hosts" | "dns" | "ssh" | "tts"
+            "http_ws" | "api" | "database" | "hosts" | "dns" | "frp" | "ssh" | "tts"
         );
         assert!(
             routable,

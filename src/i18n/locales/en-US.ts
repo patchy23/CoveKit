@@ -166,6 +166,17 @@ export default {
     binaryNoVersion: 'No release available',
     binaryFooterHint: 'You can also point to a path manually; if auto-extract fails, unpack it yourself and pick frpc.',
   },
+  sshLog: {
+    buttonStart: 'Record log',
+    buttonStartTitle: 'Record terminal output to a log file (ANSI escapes stripped)',
+    buttonStop: 'Stop recording',
+    buttonStopTitle: 'Stop recording and close the log file',
+    started: 'Recording to {name}',
+    startFailed: 'Failed to start recording: {message}',
+    saved: 'Log saved: {path}',
+    stopFailed: 'Failed to stop recording: {message}',
+    writeFailed: 'Log write failed, recording stopped: {message}',
+  },
   settings: {
     subtitle: 'Appearance, shortcuts, credentials, and tool preferences',
     appearance: 'Appearance',

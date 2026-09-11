@@ -166,6 +166,17 @@ export default {
     binaryNoVersion: '没有可下载的版本',
     binaryFooterHint: '也可以手动指定路径；若自动解压失败，请手动解压后选择 frpc。',
   },
+  sshLog: {
+    buttonStart: '记录日志',
+    buttonStartTitle: '把终端输出记录到日志文件（自动剥离 ANSI 转义）',
+    buttonStop: '停止记录',
+    buttonStopTitle: '停止记录并关闭日志文件',
+    started: '已开始记录到 {name}',
+    startFailed: '开始记录失败：{message}',
+    saved: '日志已保存：{path}',
+    stopFailed: '停止记录失败：{message}',
+    writeFailed: '日志写入失败，已停止记录：{message}',
+  },
   settings: {
     subtitle: '外观、快捷键、凭证与工具级配置',
     appearance: '外观',

@@ -69,6 +69,7 @@ pub fn run() {
     let builder = plugins::database::register(builder);
     let builder = plugins::hosts::register(builder);
     let builder = plugins::dns::register(builder);
+    let builder = plugins::frp::register(builder);
     let builder = plugins::ssh::register(builder);
     let builder = plugins::tts::register(builder);
 
@@ -130,8 +131,14 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            // 退出前收尾：结束全部由本应用拉起的 frpc 进程，避免关掉界面后残留后台进程
+            if let tauri::RunEvent::Exit = event {
+                tauri::async_runtime::block_on(plugins::frp::runtime::shutdown_all(app_handle));
+            }
+        });
 }
 
 /// 屏蔽 WebView2 原生右键菜单（复制/粘贴/返回/刷新/检查元素等），避免与程序内自绘右键菜单叠加干扰。

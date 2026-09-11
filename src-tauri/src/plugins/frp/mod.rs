@@ -1,0 +1,456 @@
+//! frp 插件 · 门面（命令薄层 + 装配）
+//!
+//! 能力分域：`models.rs`（数据结构）/ `binary.rs`（frpc 定位与下载）/
+//! `profile.rs`（档案文件读写与创建模板）/ `verify.rs`（`frpc verify` 调用与解析）/
+//! `runtime.rs`（进程启停与状态机）。本文件只做参数适配、设置读取与元数据落库。
+//!
+//! 元数据约定：工具侧备注存 `<存储根>/data/frp.db`（`profile_meta` 表），
+//! **绝不写进用户的 frpc.toml**，保证与手写配置双向互通。
+
+pub(crate) mod binary;
+mod models;
+pub(crate) mod profile;
+pub(crate) mod runtime;
+pub(crate) mod verify;
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use tauri::{AppHandle, State};
+use tauri_plugin_store::StoreExt;
+
+use crate::framework::store::PluginDb;
+use crate::plugins::frp::models::{
+    FrpBinaryInfo, FrpOpResult, FrpProfileContent, FrpProfileList, FrpProfileSummary,
+    FrpReleaseInfo, FrpRuntimeState, FrpVerifyResult,
+};
+use crate::plugins::frp::runtime::FrpState;
+use crate::plugins::ipc_registry;
+
+/// 插件 id（设置键、数据文件名统一用它）
+const TOOL_ID: &str = "frp";
+
+/// 元数据库迁移（只追加；v1 = 建备注表）
+const MIGRATIONS: &[&str] = &["CREATE TABLE IF NOT EXISTS profile_meta (
+        file_name TEXT PRIMARY KEY,
+        remark TEXT NOT NULL DEFAULT '',
+        last_used_at INTEGER NOT NULL DEFAULT 0
+     );"];
+
+/// 当前毫秒时间戳（失败回 0：只影响排序，不影响功能）
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| i64::try_from(d.as_millis()).unwrap_or(0))
+        .unwrap_or(0)
+}
+
+/// 工具设置读取（settings.json 的 `app.tools.frp.<key>`）
+fn tool_setting(app: &AppHandle, key: &str) -> Option<String> {
+    let store = app.store("settings.json").ok()?;
+    let app_config = store.get("app")?;
+    let value = app_config.get("tools")?.get(TOOL_ID)?.get(key)?;
+    value.as_str().map(String::from)
+}
+
+/// 配置目录：工具设置 `profileDir` 优先，否则 `<存储根>/data/frp/profiles`
+pub(crate) fn profile_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let configured = tool_setting(app, "profileDir").unwrap_or_default();
+    if !configured.trim().is_empty() {
+        return Ok(PathBuf::from(configured.trim()));
+    }
+    let dir = crate::framework::paths::data_dir(app)?
+        .join(TOOL_ID)
+        .join("profiles");
+    std::fs::create_dir_all(&dir)
+        .map_err(|e| format!("创建配置目录失败（{}）：{e}", dir.display()))?;
+    Ok(dir)
+}
+
+/// 读取全部备注（无库或无记录时返回空表，不影响列表展示）
+fn read_remarks(app: &AppHandle) -> HashMap<String, String> {
+    let Ok(db) = PluginDb::open(app, TOOL_ID, MIGRATIONS) else {
+        return HashMap::new();
+    };
+    db.with_conn(|conn| {
+        let mut stmt = conn
+            .prepare("SELECT file_name, remark FROM profile_meta")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut map = HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        Ok(map)
+    })
+    .unwrap_or_default()
+}
+
+/// 写入备注（upsert；空串即清除备注内容）
+fn write_remark(app: &AppHandle, file_name: &str, remark: &str) -> Result<(), String> {
+    let db = PluginDb::open(app, TOOL_ID, MIGRATIONS)?;
+    db.with_conn(|conn| {
+        conn.execute(
+            "INSERT INTO profile_meta (file_name, remark, last_used_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(file_name) DO UPDATE SET remark = excluded.remark, last_used_at = excluded.last_used_at",
+            rusqlite::params![file_name, remark, now_ms()],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+/// 由落盘路径组装操作结果（各写操作共用）
+fn op_result(path: &std::path::Path) -> FrpOpResult {
+    FrpOpResult {
+        ok: true,
+        file_name: path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(String::from),
+        error: None,
+    }
+}
+
+/// 记录「最近使用」时间（启动时调用；失败只记日志，不打断启动流程）
+fn touch_used(app: &AppHandle, file_name: &str) {
+    if let Ok(db) = PluginDb::open(app, TOOL_ID, MIGRATIONS) {
+        let _ = db.with_conn(|conn| {
+            conn.execute(
+                "INSERT INTO profile_meta (file_name, remark, last_used_at) VALUES (?1, '', ?2)
+                 ON CONFLICT(file_name) DO UPDATE SET last_used_at = excluded.last_used_at",
+                rusqlite::params![file_name, now_ms()],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        });
+    }
+}
+
+// ────────────────────────────── 档案命令 ──────────────────────────────
+
+/// 列出配置目录下的全部档案（含运行状态、备注与基础元信息）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_profiles_list(
+    app: AppHandle,
+    state: State<'_, FrpState>,
+) -> Result<FrpProfileList, String> {
+    let dir = profile_dir(&app)?;
+    let files = match profile::list_profile_files(&dir).await {
+        Ok(files) => files,
+        Err(message) => {
+            return Ok(FrpProfileList {
+                ok: false,
+                dir: dir.display().to_string(),
+                profiles: Vec::new(),
+                error: Some(message),
+            });
+        }
+    };
+    let remarks = read_remarks(&app);
+    let mut profiles = Vec::with_capacity(files.len());
+    for path in files {
+        let Some(file_name) = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(String::from)
+        else {
+            continue;
+        };
+        // 读文件失败（权限/编码）不阻断列表：按空内容展示，用户仍能看到这一条
+        let text = tokio::fs::read_to_string(&path).await.unwrap_or_default();
+        let meta = models::parse_meta(&text);
+        let live = runtime::state_of(&state, &file_name).await;
+        let mtime = tokio::fs::metadata(&path)
+            .await
+            .ok()
+            .and_then(|info| info.modified().ok())
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| u64::try_from(d.as_millis()).unwrap_or(0))
+            .unwrap_or(0);
+        let remark = remarks.get(&file_name).cloned().unwrap_or_default();
+        profiles.push(FrpProfileSummary {
+            file_name: file_name.clone(),
+            display_name: file_name.trim_end_matches(".toml").to_string(),
+            remark,
+            server_addr: meta.server_addr,
+            server_port: meta.server_port,
+            proxy_count: meta.proxy_count,
+            enabled_proxy_count: meta.enabled_proxy_count,
+            mtime: i64::try_from(mtime).unwrap_or(i64::MAX),
+            state: live.state,
+            pid: live.pid,
+            last_error: live.last_error,
+        });
+    }
+    Ok(FrpProfileList {
+        ok: true,
+        dir: dir.display().to_string(),
+        profiles,
+        error: None,
+    })
+}
+
+/// 读取单个档案（原文 + 解析结果 + 是否含注释）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_profile_read(
+    app: AppHandle,
+    file_name: String,
+) -> Result<FrpProfileContent, String> {
+    let dir = profile_dir(&app)?;
+    let content = profile::read_profile_text(&dir, &file_name).await?;
+    let parsed = models::toml_text_to_value(&content)?;
+    Ok(FrpProfileContent {
+        ok: true,
+        file_name,
+        has_comments: models::contains_comments(&content),
+        content,
+        parsed,
+        error: None,
+    })
+}
+
+/// 源码模式保存（写原文，改前自动备份）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_profile_save_text(
+    app: AppHandle,
+    file_name: String,
+    content: String,
+) -> Result<FrpOpResult, String> {
+    let dir = profile_dir(&app)?;
+    let path = profile::write_profile_text(&dir, &file_name, &content).await?;
+    Ok(op_result(&path))
+}
+
+/// 表单模式保存（传入解析后的 JSON，由 profile.rs 重建 TOML 并保留未知字段）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_profile_save_form(
+    app: AppHandle,
+    file_name: String,
+    parsed: serde_json::Value,
+) -> Result<FrpOpResult, String> {
+    let dir = profile_dir(&app)?;
+    let text = models::parsed_to_toml_text(&parsed)?;
+    let path = profile::write_profile_text(&dir, &file_name, &text).await?;
+    Ok(op_result(&path))
+}
+
+/// 新建档案（内置模板）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_profile_create(
+    app: AppHandle,
+    file_name: String,
+    template: String,
+) -> Result<FrpOpResult, String> {
+    let dir = profile_dir(&app)?;
+    let path = profile::create_profile(&dir, &file_name, &template).await?;
+    Ok(op_result(&path))
+}
+
+/// 复制档案
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_profile_duplicate(
+    app: AppHandle,
+    file_name: String,
+    new_name: String,
+) -> Result<FrpOpResult, String> {
+    let dir = profile_dir(&app)?;
+    let path = profile::duplicate_profile(&dir, &file_name, &new_name).await?;
+    Ok(op_result(&path))
+}
+
+/// 重命名档案（同步迁移备注）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_profile_rename(
+    app: AppHandle,
+    file_name: String,
+    new_name: String,
+) -> Result<FrpOpResult, String> {
+    let dir = profile_dir(&app)?;
+    let path = profile::rename_profile(&dir, &file_name, &new_name).await?;
+    let result = op_result(&path);
+    // 备注跟着档案名迁移，避免重命名后备注「丢失」
+    if let Some(target) = result.file_name.clone() {
+        if let Some(remark) = read_remarks(&app).get(&file_name).cloned() {
+            let _ = write_remark(&app, &target, &remark);
+        }
+    }
+    Ok(result)
+}
+
+/// 删除档案（移入同目录 `.trash/`，不物理抹除）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_profile_delete(app: AppHandle, file_name: String) -> Result<FrpOpResult, String> {
+    let dir = profile_dir(&app)?;
+    let path = profile::delete_profile(&dir, &file_name).await?;
+    Ok(op_result(&path))
+}
+
+/// 写入档案备注（只落 frp.db，不动用户 TOML）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_profile_remark(
+    app: AppHandle,
+    file_name: String,
+    remark: String,
+) -> Result<FrpOpResult, String> {
+    let dir = profile_dir(&app)?;
+    // 先确认档案存在，避免给不存在的文件留下孤儿备注
+    profile::resolve_profile_path(&dir, &file_name).await?;
+    write_remark(&app, &file_name, &remark)?;
+    Ok(FrpOpResult {
+        ok: true,
+        file_name: Some(file_name),
+        error: None,
+    })
+}
+
+/// 校验档案（`frpc verify -c <path>`，错误行与列按解析结果返回）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_verify(app: AppHandle, file_name: String) -> Result<FrpVerifyResult, String> {
+    let dir = profile_dir(&app)?;
+    let path = profile::resolve_profile_path(&dir, &file_name).await?;
+    let info = binary::detect(&app).await;
+    let Some(exe) = info.path else {
+        return Err(info
+            .error
+            .unwrap_or_else(|| "未找到 frpc，无法校验配置".to_string()));
+    };
+    let (raw, exit_ok) = verify::run_verify(std::path::Path::new(&exe), &path).await?;
+    Ok(verify::build_verify_result(&file_name, &raw, exit_ok))
+}
+
+// ────────────────────────────── 运行命令 ──────────────────────────────
+
+/// 启动档案
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_start(
+    app: AppHandle,
+    state: State<'_, FrpState>,
+    file_name: String,
+) -> Result<FrpRuntimeState, String> {
+    touch_used(&app, &file_name);
+    runtime::start(&app, &state, &file_name).await
+}
+
+/// 停止档案
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_stop(
+    app: AppHandle,
+    state: State<'_, FrpState>,
+    file_name: String,
+) -> Result<FrpRuntimeState, String> {
+    runtime::stop(&app, &state, &file_name).await
+}
+
+/// 重启档案
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_restart(
+    app: AppHandle,
+    state: State<'_, FrpState>,
+    file_name: String,
+) -> Result<FrpRuntimeState, String> {
+    runtime::restart(&app, &state, &file_name).await
+}
+
+/// 全部档案的当前状态（事件为主，前端 5 秒轮询兜底）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_status(
+    app: AppHandle,
+    state: State<'_, FrpState>,
+) -> Result<Vec<FrpRuntimeState>, String> {
+    Ok(runtime::status_all(&app, &state).await)
+}
+
+// ────────────────────────────── frpc 命令 ──────────────────────────────
+
+/// 探测 frpc（可传入候选路径；未传则走设置项与自动查找）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_binary_detect(
+    app: AppHandle,
+    path: Option<String>,
+) -> Result<FrpBinaryInfo, String> {
+    Ok(binary::detect_with(&app, path.as_deref()).await)
+}
+
+/// 上游可用版本列表
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_binary_versions(
+    app: AppHandle,
+    limit: Option<u32>,
+) -> Result<Vec<FrpReleaseInfo>, String> {
+    binary::versions(&app, limit.unwrap_or(10)).await
+}
+
+/// 下载并安装 frpc（进度走 `frp://download` 事件；失败不改动已配置路径）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_binary_download(app: AppHandle, version: String) -> Result<FrpBinaryInfo, String> {
+    binary::download(&app, &version).await
+}
+
+/// 注册插件命令与状态（入 ipc_registry；命令体挂全局 handler）
+pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    ipc_registry::register(
+        "frp",
+        &[
+            (
+                "frp_profiles_list",
+                "列出配置目录下的全部档案（含运行状态与备注）",
+            ),
+            ("frp_profile_read", "读取档案原文与 TOML 解析结果"),
+            ("frp_profile_save_text", "按原文保存档案（保存前自动备份）"),
+            (
+                "frp_profile_save_form",
+                "按表单结果保存档案（保留未知字段）",
+            ),
+            (
+                "frp_profile_create",
+                "新建档案（内置 tcp/http/stcp/empty 模板）",
+            ),
+            ("frp_profile_duplicate", "复制档案"),
+            ("frp_profile_rename", "重命名档案（同步迁移备注）"),
+            ("frp_profile_delete", "删除档案（移入 .trash/ 软删）"),
+            ("frp_profile_remark", "写入档案备注（只落 frp.db）"),
+            ("frp_verify", "用 frpc verify 校验档案并解析错误行列"),
+            ("frp_start", "启动档案对应的 frpc 进程"),
+            ("frp_stop", "停止档案对应的 frpc 进程"),
+            ("frp_restart", "重启档案对应的 frpc 进程"),
+            ("frp_status", "查询全部档案的当前运行状态"),
+            (
+                "frp_binary_detect",
+                "探测 frpc 可执行文件（设置项 / PATH / 常见位置）",
+            ),
+            ("frp_binary_versions", "查询上游 frp 可用版本列表"),
+            ("frp_binary_download", "下载并安装 frpc（含 SHA256 校验）"),
+        ],
+    )
+    .expect("IPC 命令重复注册");
+    builder.manage(FrpState::default())
+}
+
+/// 分派 frp 插件命令（应用级总 handler 按前缀路由到本函数）。
+pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
+    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
+        frp_profiles_list,
+        frp_profile_read,
+        frp_profile_save_text,
+        frp_profile_save_form,
+        frp_profile_create,
+        frp_profile_duplicate,
+        frp_profile_rename,
+        frp_profile_delete,
+        frp_profile_remark,
+        frp_verify,
+        frp_start,
+        frp_stop,
+        frp_restart,
+        frp_status,
+        frp_binary_detect,
+        frp_binary_versions,
+        frp_binary_download
+    ];
+    handler(invoke)
+}
