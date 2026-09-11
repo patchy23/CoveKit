@@ -129,12 +129,16 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// 屏蔽 WebView2 原生右键菜单（复制/粘贴/检查元素等），避免与程序内自绘右键菜单叠加干扰。
-/// 原理：Tauri 2.11 的 PlatformWebview 直接暴露 ICoreWebView2Controller（Windows 专属 API），
-/// 走 COM 设置 AreDefaultContextMenusEnabled=false；纯前端 preventDefault 并不能抑制该原生菜单。
-/// 现状：该开关本是 wry 的能力（`WebViewBuilderExtWindows::with_default_context_menus`，
+/// 屏蔽 WebView2 原生右键菜单（复制/粘贴/返回/刷新/检查元素等），避免与程序内自绘右键菜单叠加干扰。
+///
+/// 为什么用 COM 而不是前端 `contextmenu` + `preventDefault`：前端方案只在主文档生效，
+/// iframe 等子文档里的右键事件冒泡不到父文档，菜单照样弹出；而 `AreDefaultContextMenusEnabled=false`
+/// 是 host 级总开关（微软文档写明此时连 ContextMenuRequested 事件都不再触发），
+/// 主文档、子文档与内建菜单项一次性封禁，故宁可为此付出一次 unsafe（安全性论证见下方 SAFETY 注释）。
+///
+/// 能力归属：该开关本是 wry 的能力（`WebViewBuilderExtWindows::with_default_context_menus`，
 /// 需 WebView2 Runtime ≥ 92.0.902.0），但 Tauri 2.11.5 未透出到 builder 与 tauri.conf.json，
-/// 只能经 with_webview 走 COM；待 Tauri 透出后，本段（连同其 SAFETY 注释）可整体替换。
+/// 只能经 with_webview 拿到 ICoreWebView2Controller 走 COM；待 Tauri 透出后，本段（连同其 SAFETY 注释）可整体替换。
 #[cfg(windows)]
 fn disable_native_context_menu(app: &tauri::App) {
     for (_, window) in app.webview_windows() {
