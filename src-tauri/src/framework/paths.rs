@@ -20,8 +20,8 @@ use tauri_plugin_store::StoreExt;
 pub const KEY_STORAGE_ROOT: &str = "storageRoot";
 /// 布局版本键（记录四分区布局迁移是否已完成）
 pub const KEY_LAYOUT_VERSION: &str = "layoutVersion";
-/// 当前布局版本（1 = 四分区布局）
-pub const LAYOUT_VERSION: i64 = 1;
+/// 当前布局版本（1 = 四分区布局；2 = 补迁 SSH / 数据库插件的凭证文件）
+pub const LAYOUT_VERSION: i64 = 2;
 
 /// 读取设置项（settings.json → app.<key>；不存在返回 None）
 fn read_setting(app: &AppHandle, key: &str) -> Option<serde_json::Value> {
@@ -185,10 +185,13 @@ pub fn data_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
 // ──────────────────────────────────────────────────────────────────────────
 
 /// 迁移计划的固定项：`(根下旧名, 目标分区)`；`*.db` 由扫描补充
-const FIXED_MOVES: [(&str, &str); 7] = [
+const FIXED_MOVES: [(&str, &str); 10] = [
     ("ssh-known-hosts", "data"),
     ("credentials", "data"),
     ("credentials-master.key", "data"),
+    ("ssh-credentials.json", "data"),
+    ("ssh-master.key", "data"),
+    ("db-master.key", "data"),
     ("vault.dat", "vault"),
     ("vault-master.key", "vault"),
     ("tts", "cache"),
