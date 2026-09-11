@@ -8,7 +8,7 @@
 import { safeWindow } from '@/core/ui/windowCtl'
 import { useUiStore } from '@/stores/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
-import hekaraIcon from '@/assets/hekara-icon-color.png'
+import covekitIcon from '@/assets/covekit-icon-color.png'
 
 const ui = useUiStore()
 
@@ -24,8 +24,10 @@ function onDblClick() {
     @dblclick="onDblClick"
   >
     <div class="flex items-center gap-[8px] px-[14px]" data-tauri-drag-region>
-      <img :src="hekaraIcon" alt="" class="h-[20px] w-[20px] rounded-[6px] object-cover" />
-      <span class="text-body-sm font-medium text-secondary dark:text-secondary-dark"> Hekara </span>
+      <img :src="covekitIcon" alt="" class="h-[20px] w-[20px] rounded-[6px] object-cover" />
+      <span class="text-body-sm font-medium text-secondary dark:text-secondary-dark">
+        CoveKit
+      </span>
     </div>
     <div class="flex-1" data-tauri-drag-region />
     <div class="flex h-full items-center">

@@ -1,6 +1,6 @@
-# Hekara
+# CoveKit
 
-Hekara 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，集成常用的开发、调试与效率工具。工程名保持为 `patchyBox`。
+CoveKit 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，集成常用的开发、调试与效率工具。工程名保持为 `patchyBox`。
 
 ## 项目规划
 

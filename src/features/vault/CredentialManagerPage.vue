@@ -167,7 +167,7 @@ async function startExport() {
   const path = await dialogSave({
     title: '导出凭证备份',
     defaultPath: 'patchybox-vault.pbvault',
-    filters: [{ name: 'Hekara 凭证备份', extensions: ['pbvault'] }],
+    filters: [{ name: 'CoveKit 凭证备份', extensions: ['pbvault'] }],
   })
   if (!path) return
   transferPassword.value = ''
@@ -178,7 +178,7 @@ async function startImport() {
   const path = await dialogOpen({
     title: '导入凭证备份',
     multiple: false,
-    filters: [{ name: 'Hekara 凭证备份', extensions: ['pbvault'] }],
+    filters: [{ name: 'CoveKit 凭证备份', extensions: ['pbvault'] }],
   })
   if (!path || typeof path !== 'string') return
   transferPassword.value = ''

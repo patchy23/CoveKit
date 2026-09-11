@@ -1,7 +1,7 @@
 [package]
 name = "patchybox"
 version = "0.1.0"
-description = "Hekara 桌面工具箱"
+description = "CoveKit 桌面工具箱"
 authors = ["patchy23"]
 edition = "2021"
 

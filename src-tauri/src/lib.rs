@@ -91,7 +91,7 @@ pub fn run() {
             disable_native_context_menu(app);
 
             // 托盘：左键显示主窗；菜单含 显示/退出
-            let show_item = MenuItem::with_id(app, "show", "显示 Hekara", true, None::<&str>)?;
+            let show_item = MenuItem::with_id(app, "show", "显示 CoveKit", true, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_item, &quit_item])?;
             let icon = app

@@ -330,7 +330,7 @@ mod tests {
     async fn live_synth_chinese() {
         // 真实合成：中文文本 + 晓晓语音 → mp3 字节（验证协议与鉴权）
         let audio = synth_bytes(
-            "你好，这是 Hekara 的文字转语音测试。",
+            "你好，这是 CoveKit 的文字转语音测试。",
             "zh-CN-XiaoxiaoNeural",
             None,
             None,
