@@ -125,7 +125,9 @@ export const codeEditorTheme = EditorView.theme({
     backgroundColor: 'var(--cm-selection)',
   },
   '&.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--cm-selection)' },
-  // 未走 drawSelection 的原生选区（打印、部分嵌入场景）保持同一底色
+  // 原生 ::selection 只作为 drawSelection 不可用时的兜底；编辑器内 CM 会用
+  // hideNativeSelection（Prec.highest + !important）把它强制设为透明，不要在此叠加颜色，
+  // 否则聚焦框选会变成两层叠色、选中态比失焦更深。
   '.cm-content ::selection': { backgroundColor: 'var(--cm-selection)' },
   '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': {
     backgroundColor: 'var(--cm-match-bg)',
