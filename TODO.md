@@ -33,7 +33,7 @@
 - [ ] 是否接受「重启生效」而非热切换
 - [ ] 迁移后旧目录：保留待用户确认（推荐）还是自动清理
 
-实现前第一件事（自举前提，未验证）：确认 `settings.json` 落点不在 `app_data_dir` 下。
+自举前提**已实测（2026-09-11）**：`settings.json` / `patchybox.json` 就在 `app_data_dir` 内（Windows 上 `app_config_dir` 与 `app_data_dir` 同路径），原设想不成立 → 改为「迁移范围只含 `data/ logs/ cache/ vault/` 四分区，根下配置类文件永不搬移」，详见任务书 §3.1。
 
 ---
 
