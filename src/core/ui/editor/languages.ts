@@ -112,7 +112,13 @@ function baseName(input: string): string {
  * 由文件名（或扩展名）识别语言。
  * 纯函数，可在单测中直接断言；不依赖 DOM 与 CodeMirror 运行时。
  */
-export function detectLanguage(filenameOrExt?: string): LanguageInfo {
+export function detectLanguage(filenameOrExt?: string, languageOverride?: string): LanguageInfo {
+  // 显式指定优先（'auto' 或空串表示按文件名识别）
+  const explicit = (languageOverride ?? '').trim()
+  if (explicit && explicit !== 'auto') {
+    return { id: explicit, label: LANGUAGE_LABELS[explicit] ?? explicit }
+  }
+
   const raw = (filenameOrExt ?? '').trim().toLowerCase()
   if (!raw) return PLAIN_TEXT
 

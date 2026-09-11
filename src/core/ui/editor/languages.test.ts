@@ -51,4 +51,14 @@ describe('detectLanguage', () => {
     expect(detectLanguage('a.json').label).toBe('JSON')
     expect(detectLanguage('a.unknown').label).toBe('纯文本')
   })
+
+  it('显式语言优先于文件名识别', () => {
+    expect(detectLanguage('a.txt', 'json')).toEqual({ id: 'json', label: 'JSON' })
+    expect(detectLanguage('', 'sql')).toEqual({ id: 'sql', label: 'SQL' })
+  })
+
+  it("language 为 'auto' 或空串时按文件名识别", () => {
+    expect(detectLanguage('a.json', 'auto').id).toBe('json')
+    expect(detectLanguage('a.json', '').id).toBe('json')
+  })
 })

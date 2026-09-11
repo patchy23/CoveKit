@@ -6,10 +6,8 @@
 import { ref } from 'vue'
 import { formatJson, minifyJson } from './useFormat'
 import { useCopy } from '@/core/ui/useClipboard'
-import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
-import CodeViewer from '@/core/ui/CodeViewer.vue'
 import { useSettingsStore } from '@/stores/settings'
-import { UiAlert, UiButton, UiToolbar } from '@/core/ui'
+import { UiAlert, UiButton, UiCodeEditor, UiToolbar } from '@/core/ui'
 
 const settings = useSettingsStore()
 const { copyText } = useCopy()
@@ -57,15 +55,14 @@ function clearAll() {
     <div class="grid min-h-0 flex-1 grid-cols-2 gap-[12px]">
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输入 JSON</label>
-        <LineNumberTextarea
+        <UiCodeEditor
           v-model="input"
           class="min-h-0 flex-1"
-          placeholder='输入 JSON，如 {"a": 1}'
-        />
+          placeholder='输入 JSON，如 {"a": 1}' mode="minimal" />
       </div>
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输出</label>
-        <CodeViewer :doc="output" lang="json" />
+        <UiCodeEditor :model-value="output" readonly language="json" />
       </div>
     </div>
   </div>

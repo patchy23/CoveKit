@@ -5,10 +5,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
-import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
 import HostsList from './HostsList.vue'
 import { countErrors, countMappings, parseHostsLines } from './useHosts'
-import { UiButton, UiTabs } from '@/core/ui'
+import { UiButton, UiCodeEditor, UiTabs } from '@/core/ui'
 
 const ui = useUiStore()
 
@@ -135,7 +134,7 @@ onMounted(load)
           第 {{ i + 1 }} 行：{{ l.error }} — {{ l.raw.trim().slice(0, 60) }}
         </p>
       </div>
-      <LineNumberTextarea v-model="content" min-height="200px" class="min-h-0 flex-1 !font-mono" />
+      <UiCodeEditor v-model="content" height="200px" class="min-h-0 flex-1 !font-mono" mode="minimal" />
     </div>
     <div v-else-if="loaded && mode === 'list'" class="min-h-0 flex-1">
       <HostsList :content="content" @change="content = $event" />

@@ -111,5 +111,10 @@ export const codeEditorTheme = EditorView.theme({
     backgroundColor: 'var(--color-surface)',
     color: 'var(--color-primary)',
   },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': { fontFamily: 'var(--font-mono)' },
+  '.cm-tooltip-autocomplete > ul > li[aria-selected]': {
+    backgroundColor: 'var(--color-tertiary-soft)',
+    color: 'var(--color-tertiary-strong)',
+  },
   '.cm-placeholder': { color: 'var(--color-text-muted)' },
 })

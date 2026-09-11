@@ -11,6 +11,7 @@
  */
 import { computed, nextTick, onMounted, ref } from 'vue'
 import type { CompletionSource } from '@codemirror/autocomplete'
+import type { Extension } from '@codemirror/state'
 import { useCodeEditor } from './editor/useCodeEditor'
 import EditorGoToLineBar from './editor/EditorGoToLineBar.vue'
 import EditorSearchBar from './editor/EditorSearchBar.vue'
@@ -26,6 +27,8 @@ const props = withDefaults(
     modelValue?: string
     /** 语言 id；默认 'auto' 表示按 filename 识别 */
     language?: string
+    /** 直接注入语言扩展（优先于识别；用于 SQL 方言这类参数化语言） */
+    languageExtension?: Extension | Extension[]
     /** 文件名或路径：language='auto' 时用于识别，亦用于状态栏展示 */
     filename?: string
     /** 只读（查看器形态，快捷键与折叠仍可用） */
@@ -54,10 +57,13 @@ const props = withDefaults(
     completion?: boolean
     /** 注入的补全源（数据库表名 / 列名等） */
     completionSources?: CompletionSource[]
+    /** 插件专用扩展（领域能力：语句运行 gutter、Ctrl+点击表名跳转等） */
+    extraExtensions?: Extension[]
   }>(),
   {
     modelValue: '',
     language: 'auto',
+    languageExtension: undefined,
     filename: undefined,
     readonly: false,
     mode: 'full',
@@ -72,6 +78,7 @@ const props = withDefaults(
     lint: true,
     completion: true,
     completionSources: undefined,
+    extraExtensions: undefined,
   }
 )
 
@@ -101,6 +108,7 @@ const editor = useCodeEditor({
   modelValue: () => props.modelValue ?? '',
   filename: () => props.filename,
   language: () => props.language,
+  languageExtension: () => props.languageExtension ?? [],
   readonly: () => props.readonly,
   mode: () => props.mode,
   lineNumbers: () => props.lineNumbers,
@@ -110,6 +118,7 @@ const editor = useCodeEditor({
   placeholder: () => props.placeholder,
   completion: () => props.completion,
   completionSources: () => props.completionSources ?? [],
+  extraExtensions: () => props.extraExtensions ?? [],
   linter: () => props.lint,
   onChange: (value) => {
     emit('update:modelValue', value)
@@ -209,6 +218,8 @@ defineExpose({
   goToLine: (line: number) => editor.goToLine(line),
   /** 读取选中文本 */
   getSelection: () => editor.getSelection(),
+  /** 读取选区与光标偏移（文档偏移） */
+  getCursor: () => editor.getCursor(),
   /** 在光标处插入文本 */
   insert: (text: string) => editor.insert(text),
   /** 撤销 */

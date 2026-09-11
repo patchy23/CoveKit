@@ -4,10 +4,8 @@
  */
 import { ref } from 'vue'
 import { formatXml, minifyXml } from './useXml'
-import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
-import CodeViewer from '@/core/ui/CodeViewer.vue'
 import { useCopy } from '@/core/ui/useClipboard'
-import { UiAlert, UiButton, UiToolbar } from '@/core/ui'
+import { UiAlert, UiButton, UiCodeEditor, UiToolbar } from '@/core/ui'
 
 const { copyText } = useCopy()
 
@@ -62,11 +60,11 @@ function minify() {
     <div class="grid min-h-0 flex-1 grid-cols-2 gap-[12px]">
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输入 XML</label>
-        <LineNumberTextarea v-model="input" class="min-h-0 flex-1" />
+        <UiCodeEditor v-model="input" class="min-h-0 flex-1" mode="minimal" />
       </div>
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输出</label>
-        <CodeViewer :doc="output" lang="xml" />
+        <UiCodeEditor :model-value="output" readonly language="xml" />
       </div>
     </div>
   </div>

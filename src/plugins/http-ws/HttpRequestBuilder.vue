@@ -5,8 +5,7 @@
 import { ref } from 'vue'
 import type { KvRow } from './useHttp'
 import { newKvId } from './useHttp'
-import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
-import { UiButton, UiIcon, UiIconButton, UiInput, UiSelect as Select, UiTabs } from '@/core/ui'
+import { UiButton, UiCodeEditor, UiIcon, UiIconButton, UiInput, UiSelect as Select, UiTabs } from '@/core/ui'
 
 const props = defineProps<{
   params: KvRow[]
@@ -163,13 +162,12 @@ function setRow(
         ]"
         @update:model-value="emit('update:bodyMode', $event as 'none' | 'json' | 'text')"
       />
-      <LineNumberTextarea
+      <UiCodeEditor
         v-if="props.bodyMode !== 'none'"
         :model-value="props.body"
-        min-height="180px"
+        height="180px"
         :placeholder="props.bodyMode === 'json' ? JSON_PLACEHOLDER : '请求体内容'"
-        @update:model-value="emit('update:body', $event)"
-      />
+        mode="minimal" @update:model-value="emit('update:body', $event)" />
       <p v-else class="text-body-sm text-text-muted dark:text-text-muted-dark">
         GET 等无请求体方法默认 none，切换方法后自动隐藏
       </p>

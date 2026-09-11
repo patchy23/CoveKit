@@ -1,35 +1,20 @@
 /**
- * SqlEditor 扩展组装（CodeMirror 6）
- * 参考 dbx：基础编辑能力（行号/撤销/折叠/括号匹配/查找/注释切换）、
- * 当前语句框选（光标所在完整语句高亮）、snippet 补全、表名点列名异步补全。
+ * SQL 编辑器扩展：补全源与语句运行按钮（数据库插件的领域能力）
+ *
+ * 说明：基础编辑能力（行号 / 历史 / 括号匹配 / 折叠 / 查找 / 缩进 / 注释切换）与语法高亮
+ * 已由 core 的 `UiCodeEditor` 内置（统一主题走 `--cm-*` 变量），本文件只保留 SQL 专有部分：
+ * - `sqlCompletionSources`：snippet 模板、表名点列名的异步补全、关键字、schema 补全；
+ * - `statementRunGutterExtension`：每条语句起始行的 ▶ 执行按钮。
+ * 两者分别通过 UiCodeEditor 的 `completionSources` 与 `extraExtensions` 装载。
  */
 import type { Extension } from '@codemirror/state'
 import { Range, RangeSet } from '@codemirror/state'
-import { GutterMarker, gutter, keymap } from '@codemirror/view'
+import { EditorView, GutterMarker, gutter } from '@codemirror/view'
 import {
-  defaultKeymap,
-  history,
-  historyKeymap,
-  indentWithTab,
-  toggleComment,
-} from '@codemirror/commands'
-import {
-  HighlightStyle,
-  bracketMatching,
-  foldGutter,
-  foldKeymap,
-  syntaxHighlighting,
-} from '@codemirror/language'
-import { lineNumbers } from '@codemirror/view'
-import { tags } from '@lezer/highlight'
-import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
-import {
-  autocompletion,
-  closeBrackets,
-  closeBracketsKeymap,
   snippetCompletion,
   type CompletionContext,
   type CompletionResult,
+  type CompletionSource,
 } from '@codemirror/autocomplete'
 import {
   StandardSQL,
@@ -43,6 +28,7 @@ import {
   statementExecutableSql,
   statementStartOffset,
 } from './sqlStatementRanges'
+
 /** 常用 SQL 模板（snippet 占位符 Tab 跳转） */
 const SQL_SNIPPETS = [
   snippetCompletion('SELECT * FROM ${table}', {
@@ -80,89 +66,19 @@ const SQL_SNIPPETS = [
   ),
 ]
 
-/** SQL 语法高亮（CSS 变量 → 深浅色自动跟随；对齐 dbx 配色语义） */
-const sqlHighlightStyle = HighlightStyle.define([
-  {
-    tag: [
-      tags.keyword,
-      tags.controlKeyword,
-      tags.definitionKeyword,
-      tags.operatorKeyword,
-      tags.modifier,
-      tags.bool,
-      tags.null,
-    ],
-    color: 'var(--color-tertiary-strong)',
-  },
-  { tag: [tags.string, tags.special(tags.string)], color: 'var(--color-success-strong)' },
-  { tag: [tags.number, tags.integer, tags.float], color: 'var(--color-info-strong)' },
-  {
-    tag: [tags.comment, tags.lineComment, tags.blockComment],
-    color: 'var(--color-text-muted)',
-    fontStyle: 'italic',
-  },
-  { tag: tags.typeName, color: 'var(--color-tertiary-strong)' },
-  { tag: tags.variableName, color: 'var(--color-primary)' },
-  { tag: tags.function(tags.variableName), color: 'var(--color-info-strong)' },
-  {
-    tag: [tags.operator, tags.compareOperator, tags.logicOperator, tags.arithmeticOperator],
-    color: 'var(--color-secondary)',
-  },
-  {
-    tag: [tags.punctuation, tags.paren, tags.brace, tags.bracket],
-    color: 'var(--color-secondary)',
-  },
-  { tag: tags.invalid, color: 'var(--color-danger-strong)', textDecoration: 'underline' },
-])
-
-/** 折叠 gutter 标记：chevron 图标（展开=向下，收起=向右），替代默认文本符号 */
-function foldMarkerDom(open: boolean): HTMLElement {
-  const el = document.createElement('span')
-  el.className = `cm-fold-marker${open ? ' cm-fold-open' : ''}`
-  el.title = open ? '折叠' : '展开'
-  el.innerHTML = open
-    ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>'
-    : '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>'
-  return el
-}
-
-/** 基础编辑扩展（对齐 dbx 编辑器基础能力） */
-export function sqlEditorBasics(): Extension[] {
-  return [
-    // SQL 语法高亮（深浅色随主题）
-    syntaxHighlighting(sqlHighlightStyle),
-    // 行号
-    lineNumbers(),
-    // 撤销/重做历史
-    history(),
-    // 括号匹配 + 折叠（chevron 标记，样式走主题）
-    bracketMatching(),
-    foldGutter({ markerDOM: foldMarkerDom }),
-    // 查找替换（Mod-f）+ 选中词高亮
-    search({ top: true }),
-    highlightSelectionMatches(),
-    // 自动闭合括号/引号
-    closeBrackets(),
-    // 按键绑定：默认 + 历史 + 折叠 + 查找 + 括号 + Tab 缩进 + 行注释（Mod-/）
-    keymap.of([
-      ...closeBracketsKeymap,
-      ...defaultKeymap,
-      ...historyKeymap,
-      ...foldKeymap,
-      ...searchKeymap,
-      indentWithTab,
-      { key: 'Mod-/', run: toggleComment },
-    ]),
-  ]
-}
-
-/** 补全扩展：关键字 + schema（表/列）+ snippet 模板 + 表.列异步补全 */
-export function sqlCompletionExtension(
+/**
+ * SQL 补全源（按优先级：snippet 模板 → 表.列异步 → 关键字 → schema 表列）
+ *
+ * @param dialect 方言（MySQL / PostgreSQL / SQLite），未指定回退标准 SQL
+ * @param schema 表名 → 列名映射（由当前连接的库结构生成）
+ * @param resolveColumns 未缓存表的列名异步获取（表名. 之后触发）
+ */
+export function sqlCompletionSources(
   dialect: SQLDialect | undefined,
   schema: SQLNamespace | undefined,
   resolveColumns?: (table: string) => Promise<string[]>
-): Extension {
-  // snippet 模板（输入关键字前缀时列出）
+): CompletionSource[] {
+  /** snippet 模板：输入关键字前缀时列出 */
   const snippetSource = (ctx: CompletionContext): CompletionResult | null => {
     const before = ctx.matchBefore(/^\w*$/)
     if (!before) return null
@@ -170,7 +86,8 @@ export function sqlCompletionExtension(
     const options = SQL_SNIPPETS.filter((s) => s.label.toLowerCase().startsWith(word))
     return options.length ? { from: before.from, options, validFor: /^\w*$/ } : null
   }
-  // 表名. 后异步补列名（未缓存时向后端要）
+
+  /** 表名. 后异步补列名（未缓存时向后端要） */
   const columnSource = async (ctx: CompletionContext): Promise<CompletionResult | null> => {
     if (!resolveColumns) return null
     const match = ctx.matchBefore(/([A-Za-z_][\w$]*)\s*\.\s*$/)
@@ -185,16 +102,16 @@ export function sqlCompletionExtension(
       validFor: /^\w*$/,
     }
   }
-  return autocompletion({
-    override: [
-      snippetSource,
-      columnSource,
-      keywordCompletionSource(dialect ?? StandardSQL),
-      schemaCompletionSource({ dialect, schema }),
-    ],
-  })
+
+  return [
+    snippetSource,
+    columnSource,
+    keywordCompletionSource(dialect ?? StandardSQL),
+    schemaCompletionSource({ dialect, schema }),
+  ]
 }
-/** 语句执行按钮：每条语句起始行前显示 ▶（对齐 dbx runStatementGutter） */
+
+/** 语句执行按钮的 gutter 标记（▶ 图标） */
 class RunStatementMarker extends GutterMarker {
   eq(other: GutterMarker): boolean {
     return other instanceof RunStatementMarker
@@ -211,9 +128,9 @@ class RunStatementMarker extends GutterMarker {
   }
 }
 
-/** 每条语句的执行按钮 gutter；点击执行该条语句（onRun 回调由上层接） */
+/** 每条语句起始行显示 ▶（样式随扩展自带）；点击执行该条语句（onRun 由上层接入） */
 export function statementRunGutterExtension(onRun?: (sql: string) => void): Extension {
-  return gutter({
+  const gutterAndStyle = gutter({
     class: 'cm-run-statement-gutter',
     markers: (view) => {
       const doc = view.state.doc.toString()
@@ -241,6 +158,86 @@ export function statementRunGutterExtension(onRun?: (sql: string) => void): Exte
         view.focus()
         return true
       },
+    },
+  })
+
+  // 按钮外观随扩展自带：配色走 token，深浅主题自动跟随（不需暗色单独覆盖）
+  const style = EditorView.theme({
+    '.cm-run-statement-gutter': { minWidth: '24px' },
+    '.cm-run-statement-gutter .cm-gutterElement': {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: '24px',
+      padding: '0 2px',
+    },
+    '.cm-run-statement-btn': {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '20px',
+      height: '20px',
+      margin: '0',
+      padding: '0',
+      border: 'none',
+      borderRadius: '4px',
+      background: 'transparent',
+      cursor: 'pointer',
+      opacity: '0',
+      color: 'var(--color-success-strong)',
+      transition: 'opacity 0.12s, background-color 0.12s',
+    },
+    '&.cm-editor:hover .cm-run-statement-btn': { opacity: '0.55' },
+    '&.cm-editor:hover .cm-run-statement-btn:hover': {
+      opacity: '1',
+      background: 'var(--color-success-soft)',
+    },
+  })
+
+  return [gutterAndStyle, style]
+}
+
+/**
+ * Ctrl(⌘)+点击表名跳转：命中当前连接已知的表名时回调上层打开表结构
+ *
+ * 悬停时光标变手型提示可点击；命中判定同时兼容 `表名`、`"表名"` 这类引号包裹写法。
+ */
+export function tableNavigationExtension(
+  tables: () => { name: string }[],
+  onTableClick: (table: string) => void
+): Extension {
+  /** 点击位置命中的已知表名（未命中返回空串） */
+  function knownTableAt(view: EditorView, event: MouseEvent): string {
+    const position = view.posAtCoords({ x: event.clientX, y: event.clientY })
+    if (position == null) return ''
+    const word = view.state.wordAt(position)
+    if (!word) return ''
+    let { from, to } = word
+    const doc = view.state.doc
+    const before = from > 0 ? doc.sliceString(from - 1, from) : ''
+    const after = to < doc.length ? doc.sliceString(to, to + 1) : ''
+    // 表名被引号包裹时把引号一起纳入，避免 A` 之类的边界截断
+    if ((before === '`' || before === '"') && after === before) {
+      from -= 1
+      to += 1
+    }
+    const raw = doc.sliceString(from, to).replace(/^["'`]|["'`]$/g, '')
+    return tables().find((table) => table.name.toLowerCase() === raw.toLowerCase())?.name ?? ''
+  }
+
+  return EditorView.domEventHandlers({
+    mousedown: (event, view) => {
+      if (!(event.ctrlKey || event.metaKey) || event.button !== 0) return false
+      const table = knownTableAt(view, event)
+      if (!table) return false
+      event.preventDefault()
+      onTableClick(table)
+      return true
+    },
+    mousemove: (event, view) => {
+      const pointer =
+        (event.ctrlKey || event.metaKey) && knownTableAt(view, event) ? 'pointer' : ''
+      if (view.dom.style.cursor !== pointer) view.dom.style.cursor = pointer
     },
   })
 }

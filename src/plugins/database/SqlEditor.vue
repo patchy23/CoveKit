@@ -1,19 +1,33 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Compartment, EditorState } from '@codemirror/state'
-import { EditorView, placeholder as cmPlaceholder } from '@codemirror/view'
-import { MySQL, PostgreSQL, SQLite, sql } from '@codemirror/lang-sql'
+/**
+ * SQL 编辑器（数据库插件薄封装）
+ *
+ * 底座为 core 的 `UiCodeEditor`：方言语法高亮、SQL 补全（snippet 模板 / 表列异步 / 关键字 / schema）、
+ * 每条语句起始行的 ▶ 执行按钮、Ctrl(⌘)+点击表名跳结构。本组件只做两件事：
+ * 把插件领域能力接进编辑器，以及按「有选中执行选中段、否则执行光标所在语句」给出可执行 SQL。
+ */
+import { computed, ref } from 'vue'
 import {
-  sqlCompletionExtension,
-  sqlEditorBasics,
+  MySQL,
+  PostgreSQL,
+  SQLite,
+  sql,
+  type SQLDialect,
+  type SQLNamespace,
+} from '@codemirror/lang-sql'
+import type { CompletionSource } from '@codemirror/autocomplete'
+import type { Extension } from '@codemirror/state'
+import { UiCodeEditor } from '@/core/ui'
+import {
+  sqlCompletionSources,
   statementRunGutterExtension,
+  tableNavigationExtension,
 } from './sqlEditorExtensions'
 import {
-  statementRangeAtCursor,
   statementExecutableSql,
+  statementRangeAtCursor,
   type SqlTextRange,
 } from './sqlStatementRanges'
-import { darkTheme, lightTheme } from './sqlEditorThemes'
 
 export interface SqlEditorTable {
   name: string
@@ -29,146 +43,94 @@ const props = defineProps<{
   onRunStatement?: (sql: string) => void
   onTableClick?: (table: string) => void
 }>()
+
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
-const host = ref<HTMLElement | null>(null)
-let view: EditorView | null = null
-let observer: MutationObserver | null = null
-const themeCompartment = new Compartment()
-const langCompartment = new Compartment()
+/** UiCodeEditor 实例引用 */
+const editor = ref<InstanceType<typeof UiCodeEditor> | null>(null)
 
-const isDark = () => document.documentElement.dataset.theme === 'dark'
-
-function pickDialect(): typeof MySQL | typeof PostgreSQL | typeof SQLite | undefined {
-  const dialect = props.dialect
-  if (dialect === 'mysql' || dialect === 'polardb') return MySQL
-  if (dialect === 'postgresql' || dialect === 'kingbase' || dialect === 'vastbase')
-    return PostgreSQL
-  if (dialect === 'sqlite') return SQLite
+/** 方言对象：MySQL 系（mysql / polardb）、PostgreSQL 系（postgresql / kingbase / vastbase）、SQLite */
+const dialect = computed<SQLDialect | undefined>(() => {
+  const name = props.dialect
+  if (name === 'mysql' || name === 'polardb') return MySQL
+  if (name === 'postgresql' || name === 'kingbase' || name === 'vastbase') return PostgreSQL
+  if (name === 'sqlite') return SQLite
   return undefined
-}
+})
 
-function completionSchema() {
+/** schema 命名空间：表名 → 列名（由当前连接的库结构生成） */
+const schema = computed<SQLNamespace | undefined>(() => {
   const namespace: Record<string, string[]> = {}
   for (const table of props.tables ?? []) {
     namespace[table.name] = table.columns.map((column) => column.name)
   }
   return Object.keys(namespace).length ? namespace : undefined
-}
-
-function langExtension() {
-  const dialect = pickDialect()
-  return [
-    dialect ? sql({ dialect }) : sql(),
-    sqlCompletionExtension(dialect, completionSchema(), props.resolveColumns),
-    statementRunGutterExtension(props.onRunStatement),
-  ]
-}
-
-function knownTableAt(editor: EditorView, event: MouseEvent): string {
-  const position = editor.posAtCoords({ x: event.clientX, y: event.clientY })
-  if (position == null) return ''
-  const word = editor.state.wordAt(position)
-  if (!word) return ''
-  let { from, to } = word
-  const doc = editor.state.doc
-  const before = from > 0 ? doc.sliceString(from - 1, from) : ''
-  const after = to < doc.length ? doc.sliceString(to, to + 1) : ''
-  if ((before === '`' || before === '"') && after === before) {
-    from -= 1
-    to += 1
-  }
-  const raw = doc.sliceString(from, to).replace(/^["'`]|["'`]$/g, '')
-  return (
-    (props.tables ?? []).find((table) => table.name.toLowerCase() === raw.toLowerCase())?.name ?? ''
-  )
-}
-
-function createState(): EditorState {
-  return EditorState.create({
-    doc: props.modelValue,
-    extensions: [
-      langCompartment.of(langExtension()),
-      ...sqlEditorBasics(),
-      themeCompartment.of(isDark() ? darkTheme : lightTheme),
-      EditorView.lineWrapping,
-      cmPlaceholder(props.placeholder ?? ''),
-      EditorView.domEventHandlers({
-        mousedown: (event, editor) => {
-          if (!props.onTableClick || !(event.ctrlKey || event.metaKey) || event.button !== 0)
-            return false
-          const table = knownTableAt(editor, event)
-          if (!table) return false
-          event.preventDefault()
-          props.onTableClick(table)
-          return true
-        },
-        mousemove: (event, editor) => {
-          if (!props.onTableClick) return
-          const pointer =
-            (event.ctrlKey || event.metaKey) && knownTableAt(editor, event) ? 'pointer' : ''
-          if (editor.dom.style.cursor !== pointer) editor.dom.style.cursor = pointer
-        },
-      }),
-      EditorView.updateListener.of((update) => {
-        if (update.docChanged) emit('update:modelValue', update.state.doc.toString())
-      }),
-    ],
-  })
-}
-
-onMounted(() => {
-  if (!host.value) return
-  view = new EditorView({ state: createState(), parent: host.value })
-  observer = new MutationObserver(() => {
-    view?.dispatch({ effects: themeCompartment.reconfigure(isDark() ? darkTheme : lightTheme) })
-  })
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
 })
 
-onBeforeUnmount(() => {
-  observer?.disconnect()
-  view?.destroy()
-  view = null
-})
+/**
+ * 语言扩展：方言高亮
+ *
+ * UiCodeEditor 的 `language="sql"` 只能给出标准 SQL，方言需由插件自行构造后注入。
+ */
+const languageExtension = computed<Extension>(() => sql({ dialect: dialect.value }))
 
-watch(
-  () => props.modelValue,
-  (value) => {
-    if (!view) return
-    const doc = view.state.doc.toString()
-    if (value !== doc) view.dispatch({ changes: { from: 0, to: doc.length, insert: value } })
-  }
-)
-watch(
-  [() => props.dialect, () => props.tables, () => props.resolveColumns],
-  () => view?.dispatch({ effects: langCompartment.reconfigure(langExtension()) }),
-  { deep: true }
+/** SQL 补全源（snippet / 表列异步 / 关键字 / schema） */
+const completionSources = computed<CompletionSource[]>(() =>
+  sqlCompletionSources(dialect.value, schema.value, props.resolveColumns)
 )
 
-function getSelection(): { from: number; to: number } {
-  const selection = view?.state.selection.main
-  return { from: selection?.from ?? 0, to: selection?.to ?? 0 }
-}
+/** 插件专用扩展：语句运行按钮 + Ctrl(⌘)+点击表名 */
+const extraExtensions = computed<Extension[]>(() => [
+  ...(props.onRunStatement ? [statementRunGutterExtension(props.onRunStatement)] : []),
+  ...(props.onTableClick
+    ? [tableNavigationExtension(() => props.tables ?? [], props.onTableClick)]
+    : []),
+])
+
+/** 当前文档内容 */
 function getDoc(): string {
-  return view?.state.doc.toString() ?? props.modelValue
+  return editor.value?.getValue() ?? props.modelValue
 }
+
+/** 当前选区偏移 */
+function getSelection(): { from: number; to: number } {
+  const cursor = editor.value?.getCursor() ?? { from: 0, to: 0, head: 0 }
+  return { from: cursor.from, to: cursor.to }
+}
+
+/** 光标所在语句范围 */
 function getCursorStatement(): SqlTextRange | null {
-  return statementRangeAtCursor(getDoc(), view?.state.selection.main.head ?? 0)
+  const cursor = editor.value?.getCursor()
+  return statementRangeAtCursor(getDoc(), cursor?.head ?? 0)
 }
+
+/** 可执行 SQL：有选中执行选中段，否则执行光标所在语句 */
 function getExecutableSql(): string {
   const { from, to } = getSelection()
   if (from !== to) return getDoc().slice(from, to)
   const statement = getCursorStatement()
   return statement ? statementExecutableSql(statement) : ''
 }
-function focusEditor() {
-  view?.focus()
+
+/** 聚焦编辑器 */
+function focusEditor(): void {
+  editor.value?.focus()
 }
 
 defineExpose({ getSelection, getCursorStatement, getExecutableSql, getDoc, focusEditor })
 </script>
 
 <template>
-  <div ref="host" class="min-h-0 w-full overflow-hidden" />
+  <UiCodeEditor
+    ref="editor"
+    :model-value="modelValue"
+    language="sql"
+    :language-extension="languageExtension"
+    :completion-sources="completionSources"
+    :extra-extensions="extraExtensions"
+    :placeholder="placeholder"
+    line-wrapping
+    class="min-h-0 flex-1 !rounded-none !border-0"
+    @update:model-value="emit('update:modelValue', $event)"
+  />
 </template>

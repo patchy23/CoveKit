@@ -30,7 +30,7 @@ import { createDocStatsTracker } from './docStats'
 import { createSearchController } from './searchController'
 import { detectLanguage, loadLanguage, PLAIN_TEXT, type LanguageInfo } from './languages'
 import type { EditorDegradeLevel } from './status'
-import type { CodeEditorHandle, UseCodeEditorOptions } from './types'
+import type { CodeEditorHandle, EditorCursorRange, UseCodeEditorOptions } from './types'
 
 /** 创建编辑器实例管理（须在 setup 作用域内调用） */
 export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
@@ -50,6 +50,8 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   const heavyCompartment = new Compartment()
   /** 补全与校验（随语言与降级级别重配） */
   const auxCompartment = new Compartment()
+  /** 插件专用扩展（领域能力，如数据库的语句运行 gutter） */
+  const extraCompartment = new Compartment()
 
   /** 外部写入标志：为 true 时忽略 docChanged 回调 */
   let applyingExternal = false
@@ -68,15 +70,23 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
 
   /** 解析当前应使用的语言：显式 id 优先，'auto' 按文件名识别 */
   function resolveLanguage(): LanguageInfo {
-    const explicit = options.language()
-    if (explicit && explicit !== 'auto') return { id: explicit, label: explicit }
-    return detectLanguage(options.filename())
+    // 显式 language 优先，'auto' / 空串回退到文件名识别（标签统一取自 LANGUAGE_LABELS）
+    return detectLanguage(options.filename(), options.language())
   }
 
-  /** 异步加载语言扩展并热重配置（失败退化为纯文本） */
+  /** 应用语言扩展：上层注入优先（如 SQL 方言），否则按识别结果异步加载 */
   async function applyLanguage(): Promise<void> {
     const info = resolveLanguage()
     languageInfo.value = info
+    const injected = options.languageExtension?.()
+    // 空数组等价于「未注入」（调用方默认传 []），避免把空语言扩展当成有效配置
+    const hasInjected = Array.isArray(injected) ? injected.length > 0 : Boolean(injected)
+    if (hasInjected) {
+      const current = view.value
+      if (destroyed || !current) return
+      current.dispatch({ effects: languageCompartment.reconfigure(injected ?? []) })
+      return
+    }
     const request = ++languageRequest
     const extension = await loadLanguage(info, options.filename())
     const current = view.value
@@ -182,6 +192,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
         heavyCompartment.of(heavyExtensionsFor('none', options.mode(), options.foldGutter())),
         languageCompartment.of([]),
         auxCompartment.of([]),
+        extraCompartment.of(options.extraExtensions?.() ?? []),
         editableCompartment.of(editableExtension(options.readonly())),
         tabSizeCompartment.of(indentExtension(options.tabSize())),
         wrappingCompartment.of(wrappingExtension(options.lineWrapping())),
@@ -274,6 +285,14 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     return current.state.sliceDoc(range.from, range.to)
   }
 
+  /** 读取选区与光标偏移（插件封装组件按选区取文本用） */
+  function getCursor(): EditorCursorRange {
+    const current = view.value
+    if (!current) return { from: 0, to: 0, head: 0 }
+    const range = current.state.selection.main
+    return { from: range.from, to: range.to, head: range.head }
+  }
+
   /** 在光标处插入文本（用户级操作，进撤销历史） */
   function insert(text: string): void {
     const current = view.value
@@ -328,7 +347,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   watch(options.modelValue, (value) => writeValue(value, false))
 
   // 语言 / 文件名变化 → 重新识别并懒加载（校验与补全随之重配）
-  watch([options.language, options.filename], () => {
+  watch([options.language, options.filename, () => options.languageExtension?.()], () => {
     if (!view.value) return
     void applyLanguage()
     view.value.dispatch({ effects: auxCompartment.reconfigure(auxExtensions()) })
@@ -347,6 +366,14 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   watch([() => options.completion?.(), () => options.linter?.()], () => {
     view.value?.dispatch({ effects: auxCompartment.reconfigure(auxExtensions()) })
   })
+
+  // 插件专用扩展变化（上层注入的领域能力，如数据库的语句运行 gutter）
+  watch(
+    () => options.extraExtensions?.(),
+    (extensions) => {
+      view.value?.dispatch({ effects: extraCompartment.reconfigure(extensions ?? []) })
+    }
+  )
 
   // 缩进宽度切换
   watch(options.tabSize, (size) => {
@@ -375,6 +402,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     blur,
     goToLine,
     getSelection,
+    getCursor,
     insert,
     undo,
     redo,

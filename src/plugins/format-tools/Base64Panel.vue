@@ -6,9 +6,7 @@
 import { ref } from 'vue'
 import { decodeBase64, encodeBase64 } from './useBase64'
 import { useCopy } from '@/core/ui/useClipboard'
-import LineNumberTextarea from '@/core/ui/LineNumberTextarea.vue'
-import CodeViewer from '@/core/ui/CodeViewer.vue'
-import { UiAlert, UiButton, UiToolbar } from '@/core/ui'
+import { UiAlert, UiButton, UiCodeEditor, UiToolbar } from '@/core/ui'
 
 const { copyText } = useCopy()
 
@@ -52,15 +50,14 @@ function clearAll() {
     <div class="grid min-h-0 flex-1 grid-cols-2 gap-[12px]">
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输入</label>
-        <LineNumberTextarea
+        <UiCodeEditor
           v-model="input"
           class="min-h-0 flex-1"
-          placeholder="输入文本或 Base64"
-        />
+          placeholder="输入文本或 Base64" mode="minimal" />
       </div>
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输出</label>
-        <CodeViewer :doc="output" lang="text" />
+        <UiCodeEditor :model-value="output" readonly language="plaintext" />
       </div>
     </div>
   </div>

@@ -6,6 +6,7 @@
  */
 import type { Ref } from 'vue'
 import type { EditorView } from '@codemirror/view'
+import type { Extension } from '@codemirror/state'
 import type { CompletionSource } from '@codemirror/autocomplete'
 import type { LanguageInfo } from './languages'
 import type { EditorMode } from './extensions'
@@ -13,7 +14,7 @@ import type { EditorDegradeLevel } from './status'
 import type { EditorSearchState } from './searchController'
 import type { SearchOptions } from './search'
 
-/** 光标位置信息（状态栏与上层联动用） */
+/** 光标信息（状态栏与上层联动用） */
 export interface EditorCursorInfo {
   /** 行号（1 起始） */
   line: number
@@ -21,6 +22,16 @@ export interface EditorCursorInfo {
   column: number
   /** 当前选中字符数（无选中为 0） */
   selected: number
+}
+
+/** 选区偏移（供插件在自己的封装组件里按选区/光标取文本） */
+export interface EditorCursorRange {
+  /** 选区起点（文档偏移） */
+  from: number
+  /** 选区终点（文档偏移） */
+  to: number
+  /** 主光标位置（文档偏移） */
+  head: number
 }
 
 /** 文档统计（状态栏展示，随编辑实时更新） */
@@ -51,6 +62,13 @@ export interface UseCodeEditorOptions {
   filename: () => string | undefined
   /** 语言 id 或 'auto' */
   language: () => string | undefined
+  /**
+   * 直接注入语言扩展（可选，优先于自动识别）
+   *
+   * 用于需要参数化语言的场景：数据库插件的 SQL 方言（MySQL / PostgreSQL / SQLite）
+   * 无法用语言 id 表达，由上层自行构造后注入；`language` 仍用于状态栏标签。
+   */
+  languageExtension?: () => Extension | Extension[]
   /** 只读 */
   readonly: () => boolean
   /** 档位 */
@@ -71,6 +89,13 @@ export interface UseCodeEditorOptions {
   completionSources?: () => CompletionSource[]
   /** 是否启用校验（语法错误波浪线） */
   linter?: () => boolean
+  /**
+   * 插件专用扩展（可选）
+   *
+   * 供上层在自己的薄封装里注入领域能力（如数据库插件的「执行当前语句」gutter、
+   * Ctrl+点击表名跳转）。core 不解释这些扩展的内容，只负责随实例生命周期装载与释放。
+   */
+  extraExtensions?: () => Extension[]
   /** 用户编辑回调（外部写入不触发） */
   onChange: (value: string) => void
   /** 光标变化回调 */
@@ -119,6 +144,8 @@ export interface CodeEditorHandle {
   goToLine: (line: number) => void
   /** 读取选中文本 */
   getSelection: () => string
+  /** 读取选区与光标偏移（插件封装组件按选区取文本用） */
+  getCursor: () => EditorCursorRange
   /** 在光标处插入文本 */
   insert: (text: string) => void
   /** 撤销 */
@@ -143,4 +170,14 @@ export interface CodeEditorHandle {
   markSaved: () => void
   /** 相对基线是否有未保存修改 */
   isDirty: () => boolean
+}
+
+/** 差异统计（UiCodeDiff 顶部展示用） */
+export interface DiffStats {
+  /** 新增行数 */
+  added: number
+  /** 删除行数 */
+  removed: number
+  /** 是否完全相同 */
+  same: boolean
 }
