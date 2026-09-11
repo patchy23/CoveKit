@@ -137,6 +137,10 @@ fn disable_native_context_menu(app: &tauri::App) {
     for (_, window) in app.webview_windows() {
         let _ = window.with_webview(|webview| {
             let controller = webview.controller();
+            // SAFETY: controller 由 Tauri 的 with_webview 回调提供，生命周期覆盖本次闭包调用；
+            // COM 接口（CoreWebView2 / Settings）在同一闭包内即时取用，不跨线程、不跨 await，
+            // 不保存任何裸指针；两个调用均用 if let 处理失败分支，不做未经验证的解引用，
+            // 因此不存在 UB 路径。
             unsafe {
                 if let Ok(core) = controller.CoreWebView2() {
                     if let Ok(settings) = core.Settings() {

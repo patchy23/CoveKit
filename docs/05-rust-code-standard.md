@@ -2,6 +2,7 @@
 
 > 目标：消灭「图方便」的 panic、clone 与隐患写法。规则必须可检查、可执行，每条给出允许/禁止/替代写法。
 > 现状基线（2026-09-05 盘点）：非测试代码 panic 风险 27 处，clone 170 处，`unwrap_or*` 141 处，`as` 数值转换 60 处，unsafe/Box::leak 为 0。
+> 更新（2026-09-11 用户决策）：`unsafe` 不再一律禁止——**必要且安全时允许使用，但必须带紧邻的 `// SAFETY:` 论证**（见 §3、§10）；`Box::leak` / `transmute` / `mem::forget` 仍零容忍。
 
 ## 1. Panic 控制（核心规则）
 
@@ -53,14 +54,21 @@
 
 ## 3. 生命周期纪律
 
-**现状基线：全库无 `unsafe` / `Box::leak` / `transmute`，`&'static str` 均为字面量与 OnceLock 锁的正当用法——本规则以预防为主，零容忍执行。**
+**现状：`Box::leak` / `transmute` / `mem::forget` 全库为零，零容忍执行；`unsafe` 仅在「无安全替代的系统 API」场景允许（当前 1 处：Windows WebView2 COM 调用），且必须带 `// SAFETY:` 论证（2026-09-11 用户决策）。**
 
 **禁止**：
 
 - `Box::leak` / `std::mem::forget` 伪造 `'static`（spawn 要 `'static` 就用 `Arc` 共享或 owned 数据）
-- `unsafe` / `transmute`（本库目前为零，保持为零；确需引入必须在评审中单独说明理由）
+- `transmute`（类型欺骗，一律用安全转换替代）
 - 把 `MutexGuard` 内部数据的引用传出锁作用域（编译器会拦，禁止用任何手段绕过）
 - 为绕 borrow checker 给结构体乱挂生命周期参数（`struct Foo<'a> { r: &'a T }` 借用地狱）——该 owned 就 owned
+
+**`unsafe` 允许条件（四问，缺一不可，2026-09-11 用户决策）**：
+
+1. **必要性**：确无安全替代（典型：Win32 / COM 等系统 API 只提供 unsafe 入口）
+2. **安全性论证**：块上方必须有紧邻的 `// SAFETY:` 注释，写清满足的不变量（指针来源与生命周期、是否跨线程或跨 await、返回值如何处理）
+3. **最小作用域**：`unsafe` 只包住必须的那几条调用；禁止整函数包裹，禁止用它绕借用检查或省 clone
+4. **无 UB 路径**：不允许「大概率没事」的裸指针解引用；调用结果一律 `if let` / `?` 处理
 
 **允许的 `'static`**：字符串字面量类型（`&'static str` 错误信息、方言 SQL 常量表）、`OnceLock` 全局单例。
 
@@ -118,7 +126,8 @@ python scripts/check_rust_rules.py
 ```
 
 - panic 风险与 clone 统计采用**棘轮基线**（`scripts/rust_rules_baseline.json`）：违规总数只许减不许增；整改后同步下调基线数字
-- 生命周期/unsafe 类（`Box::leak` / `unsafe` / `transmute` / `mem::forget`）**零容忍无基线**，出现即失败
+- 生命周期类（`Box::leak` / `transmute` / `mem::forget`）**零容忍无基线**，出现即失败
+- `unsafe` 本身不算违规，但**每处必须带紧邻的 `// SAFETY:` 注释**（脚本逐处校验注释块，缺失即失败）；必要性与作用域由代码评审把关
 - §1 的合法例外（启动 fail-fast、可证不变量）登记在脚本的 `ALLOWLIST_PATTERNS`，新增例外须先过评审再加白名单
 
 ## 附录 · 参考来源（2026-09-05 对照验证）
