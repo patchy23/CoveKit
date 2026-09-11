@@ -89,6 +89,9 @@ importers:
       '@xterm/addon-fit':
         specifier: ^0.11.0
         version: 0.11.0
+      '@xterm/addon-search':
+        specifier: 0.15.0
+        version: 0.15.0(@xterm/xterm@5.5.0)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -1254,6 +1257,14 @@ packages:
 
   '@xterm/addon-fit@0.11.0':
     resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
+
+  '@xterm/addon-search@0.15.0':
+    resolution: {integrity: sha512-ZBZKLQ+EuKE83CqCmSSz5y1tx+aNOCUaA7dm6emgOX+8J9H1FWXZyrKfzjwzV+V14TV3xToz1goIeRhXBS5qjg==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+
+  '@xterm/xterm@5.5.0':
+    resolution: {integrity: sha512-hqJHYaQb5OptNunnyAnkHyM8aCjZ1MEIDTQu1iIbbTD/xops91NB5yq1ZK/dC2JDbVWtF23zUtl9JE2NqwT87A==}
 
   abbrev@2.0.0:
     resolution: {integrity: sha512-6/mh1E2u2YgEsCHdY0Yx5oW+61gZU+1vXaoiHHrpKeuRNNgFvS+/jrwHiQhB5apAf5oB7UB7E19ol2R2LKH8hQ==}
@@ -3539,6 +3550,12 @@ snapshots:
       vue: 3.5.40(typescript@5.6.3)
 
   '@xterm/addon-fit@0.11.0': {}
+
+  '@xterm/addon-search@0.15.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/xterm@5.5.0': {}
 
   abbrev@2.0.0: {}
 

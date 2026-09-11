@@ -45,3 +45,25 @@ pub struct TerminalClosed {
     /// 所属连接会话 id（前端据此触发断线自动重连）
     pub(crate) connection_id: String,
 }
+
+/* ── 会话日志 ── */
+
+/// 会话日志操作结果（开始 / 停止共用）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogActionResult {
+    /// 日志文件绝对路径
+    pub(crate) path: String,
+    /// 已写入字节数
+    pub(crate) bytes: u64,
+}
+
+/// 日志写盘失败通知（前端据此自动停止录制并提示，禁止静默）
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalLogError {
+    /// 对应终端 id
+    pub(crate) terminal_id: String,
+    /// 失败原因（含路径）
+    pub(crate) message: String,
+}

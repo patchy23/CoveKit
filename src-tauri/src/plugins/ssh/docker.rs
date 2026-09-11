@@ -6,6 +6,7 @@ use tauri::{AppHandle, State};
 use tokio::sync::{mpsc, watch};
 
 use crate::plugins::ssh::conn::{exec_collect, get_session, resource_id, shell_quote, SshState};
+use crate::plugins::ssh::log;
 use crate::plugins::ssh::models::{
     DockerContainer, SshActionResult, SshDockerExecPayload, TerminalSession,
 };
@@ -169,6 +170,8 @@ pub async fn ssh_docker_exec(
     let terminal_id = resource_id("docker-term");
     let (tx, rx) = mpsc::channel::<crate::plugins::ssh::terminal::TerminalCmd>(128);
     let (cancel, cancel_rx) = watch::channel(false);
+    // 会话日志共享状态（docker 终端不开录制，占位以复用通道任务签名）
+    let log = log::new_shared();
 
     state.0.lock().map_err(|e| e.to_string())?.insert(
         terminal_id.clone(),
@@ -180,6 +183,7 @@ pub async fn ssh_docker_exec(
             active: true,
             tx,
             cancel,
+            log: log.clone(),
         },
     );
 
@@ -191,6 +195,7 @@ pub async fn ssh_docker_exec(
         channel,
         rx,
         cancel_rx,
+        log,
     );
 
     Ok(TerminalSession {

@@ -96,7 +96,6 @@ pub(crate) use tunnels::{delete_tunnel, get_tunnel, list_tunnels};
 mod tests {
     use super::open_memory;
     use super::profiles::*;
-    use super::tunnels::*;
     use crate::plugins::ssh::models::{AuthMethod, ServerProfile, SshGroup};
 
     fn profile(id: &str, group_id: Option<&str>) -> ServerProfile {

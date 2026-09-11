@@ -6,19 +6,22 @@
 //! - store.rs：服务器配置与分组持久化（ssh.db，PluginDb 骨架）
 //! - credential.rs：旧版手工凭证读取与归档（已迁移 Vault，仅存档兼容）
 //! - terminal.rs：PTY 终端通道（事件推送）
-//! - file.rs / edit.rs / monitor.rs / service.rs / process.rs / docker.rs：其余能力
+//! - log.rs：终端会话日志（ANSI 剥离后旁路落盘）
+//! - file.rs / edit.rs / monitor.rs / system_info.rs / service.rs / process.rs / docker.rs：其余能力
 
 pub(crate) mod conn; // conn/ 目录：会话注册表 + 连接/重连（能力域下沉，引用路径经 mod.rs pub use 保持不变）
 pub(crate) mod credential;
 pub(crate) mod docker;
 pub(crate) mod edit;
 pub(crate) mod host_keys;
+pub(crate) mod log;
 mod models; // models/ 目录：serde 数据结构按域拆分
 pub(crate) mod monitor;
 pub(crate) mod process;
 pub(crate) mod service;
 pub(crate) mod sftp; // sftp/ 目录：文件浏览/传输/递归下载
 pub(crate) mod store;
+pub(crate) mod system_info;
 pub(crate) mod terminal;
 pub(crate) mod tunnel;
 
@@ -58,6 +61,8 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         terminal::ssh_terminal_resize,
         terminal::ssh_terminal_close,
         terminal::ssh_terminal_list,
+        log::ssh_terminal_log_start,
+        log::ssh_terminal_log_stop,
         sftp::browse::ssh_file_list,
         sftp::browse::ssh_local_create,
         sftp::browse::ssh_local_delete,
@@ -75,6 +80,7 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         edit::ssh_edit_open,
         edit::ssh_edit_save,
         monitor::ssh_monitor_get,
+        system_info::ssh_system_info_get,
         service::ssh_service_list,
         service::ssh_service_action,
         service::ssh_service_logs,
@@ -127,6 +133,11 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
             ("ssh_terminal_resize", "调整终端窗口大小"),
             ("ssh_terminal_close", "关闭终端通道"),
             ("ssh_terminal_list", "某连接下的全部终端会话"),
+            (
+                "ssh_terminal_log_start",
+                "开始录制终端会话日志（ANSI 剥离后落盘）",
+            ),
+            ("ssh_terminal_log_stop", "停止录制并返回日志路径与字节数"),
             ("ssh_file_list", "远程目录列表（SFTP）"),
             ("ssh_file_upload", "上传文件（进度事件推送）"),
             ("ssh_file_download", "下载文件（进度事件推送）"),
@@ -144,6 +155,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
             ("ssh_edit_open", "打开远程文件（下载内容）"),
             ("ssh_edit_save", "保存远程文件（上传回写）"),
             ("ssh_monitor_get", "资源监控数据（CPU/内存/磁盘/网络）"),
+            ("ssh_system_info_get", "远程系统信息与磁盘分区明细"),
             ("ssh_service_list", "systemd 服务列表"),
             ("ssh_service_action", "服务启动/停止/重启"),
             ("ssh_service_logs", "服务日志（journalctl）"),

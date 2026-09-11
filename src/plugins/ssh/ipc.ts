@@ -11,6 +11,7 @@ import type {
   ServerConnection,
   TerminalClosed,
   TerminalData,
+  TerminalLogError,
   TunnelConfig,
   TunnelRuntime,
 } from './contracts'
@@ -62,6 +63,9 @@ export const ipc = {
   sshTerminalOpen: (p: Payloads['ssh_terminal_open']) => cmd(commands.sshTerminalOpen, p),
   sshTerminalWrite: (terminalId: string, data: string) =>
     cmd(commands.sshTerminalWrite, { terminalId, data }),
+  terminalLogStart: (terminalId: string, dir: string | null) =>
+    cmd(commands.sshTerminalLogStart, { terminalId, dir }),
+  terminalLogStop: (terminalId: string) => cmd(commands.sshTerminalLogStop, { terminalId }),
   sshTerminalResize: (terminalId: string, cols: number, rows: number) =>
     cmd(commands.sshTerminalResize, { terminalId, cols, rows }),
   sshTerminalClose: (terminalId: string) => cmd(commands.sshTerminalClose, { terminalId }),
@@ -106,6 +110,7 @@ export const ipc = {
 
   /* 监控 */
   sshMonitorGet: (connectionId: string) => cmd(commands.sshMonitorGet, { connectionId }),
+  sshSystemInfoGet: (connectionId: string) => cmd(commands.sshSystemInfoGet, { connectionId }),
 
   /* 服务 */
   sshServiceList: (p: Payloads['ssh_service_list']) => cmd(commands.sshServiceList, p),
@@ -127,6 +132,11 @@ export const ipc = {
 /** 订阅终端数据（返回取消订阅函数） */
 export function onTerminalData(fn: (d: TerminalData) => void): Promise<() => void> {
   return listen<TerminalData>(sshEvents.terminalData, (e) => fn(e.payload))
+}
+
+/** 订阅终端会话日志写盘失败（返回取消订阅函数） */
+export function onTerminalLogError(fn: (d: TerminalLogError) => void): Promise<() => void> {
+  return listen<TerminalLogError>(sshEvents.terminalLogError, (e) => fn(e.payload))
 }
 
 /** 订阅终端 PTY 通道关闭。 */

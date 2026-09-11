@@ -6,6 +6,7 @@ mod connect;
 mod file;
 mod host_key;
 mod profile;
+mod system_info;
 mod terminal;
 
 pub use common::*;
@@ -13,4 +14,5 @@ pub use connect::*;
 pub use file::*;
 pub use host_key::*;
 pub use profile::*;
+pub use system_info::*;
 pub use terminal::*;

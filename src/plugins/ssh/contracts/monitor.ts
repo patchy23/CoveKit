@@ -46,6 +46,80 @@ export interface MonitorData {
   timestamp: number
 }
 
+/* ── 远程系统信息与磁盘明细 ── */
+
+/** 远程系统信息（缺失字段为空/0，界面显示 `-`） */
+
+export interface SshSystemInfo {
+  /** 主机名（hostname） */
+
+  hostname: string
+
+  /** 发行版名（/etc/os-release 的 PRETTY_NAME） */
+
+  osName: string
+
+  /** 内核信息（uname -srm） */
+
+  kernel: string
+
+  /** 运行时长文本（uptime 的 `up` 段，如 `42 days, 20:05`） */
+
+  uptimeText: string
+
+  /** 1/5/15 分钟平均负载 */
+
+  loadAvg: [number, number, number]
+
+  /** 逻辑 CPU 核数（nproc） */
+
+  cpuCores: number
+}
+
+/** 磁盘分区条目（df -hlPT 一行） */
+
+export interface SshDiskEntry {
+  /** 文件系统名（/dev/vda1、overlay、tmpfs） */
+
+  filesystem: string
+
+  /** 文件系统类型（ext4/xfs/tmpfs/overlay） */
+
+  fsType: string
+
+  /** 总量（人类可读原文，如 `99G`） */
+
+  sizeText: string
+
+  /** 已用（人类可读原文） */
+
+  usedText: string
+
+  /** 可用（人类可读原文） */
+
+  availText: string
+
+  /** 使用率 0-100（df 的 `-` 视为 0） */
+
+  usePercent: number
+
+  /** 挂载点 */
+
+  mountPoint: string
+}
+
+/** 系统信息采集结果（ssh_system_info_get 出参） */
+
+export interface SshSystemInfoResult {
+  /** 系统信息 */
+
+  info: SshSystemInfo
+
+  /** 磁盘分区明细 */
+
+  disks: SshDiskEntry[]
+}
+
 /* ── 服务管理 ── */
 
 /** systemd 服务条目 */

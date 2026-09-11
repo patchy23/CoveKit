@@ -18,6 +18,8 @@ import { useTerminalContextMenu } from './useTerminalContextMenu'
 import { ipc, onTerminalClosed, onTerminalData } from './ipc'
 import { createTerminalResizeController } from './useTerminalResize'
 import { bannerTime, disconnectBanner, reconnectSeparator } from './useTerminalBanner'
+import { useTerminalLog } from './useTerminalLog'
+import { useI18n } from 'vue-i18n'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -38,6 +40,10 @@ const emit = defineEmits<{
 }>()
 
 const ui = useUiStore()
+const { t } = useI18n()
+
+/** 会话日志录制（日志目录由 Rust 侧框架存储 logs 分区决定，前端不拼路径） */
+const terminalLog = useTerminalLog(() => terminalId ?? '')
 
 const termHost = ref<HTMLDivElement | null>(null)
 const statusLine = ref('终端未连接')
@@ -317,6 +323,19 @@ watch(
         {{ displayLine }}
       </span>
       <div class="ml-auto flex gap-[6px]">
+        <UiButton
+          variant="ghost"
+          size="xs"
+          class="!h-auto !px-[8px] !py-[3px] text-caption"
+          :class="terminalLog.isRecording() ? 'text-danger-strong dark:text-danger-dark' : ''"
+          :title="
+            terminalLog.isRecording() ? t('sshLog.buttonStopTitle') : t('sshLog.buttonStartTitle')
+          "
+          :disabled="!terminalActive"
+          @click="terminalLog.toggle()"
+        >
+          {{ terminalLog.isRecording() ? t('sshLog.buttonStop') : t('sshLog.buttonStart') }}
+        </UiButton>
         <UiButton
           variant="ghost"
           size="xs"

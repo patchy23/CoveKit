@@ -18,6 +18,7 @@ import type {
   FileTransferProgress,
   HostKeyVerifyRequest,
   KnownHostEntry,
+  LogActionResult,
   MonitorData,
   ProcessInfo,
   RemoteFileContent,
@@ -28,9 +29,11 @@ import type {
   ServerConnection,
   ServerProfile,
   SshImportResult,
+  SshSystemInfoResult,
   SystemdService,
   TerminalClosed,
   TerminalData,
+  TerminalLogError,
   TerminalSession,
   TunnelConfig,
   TunnelRuntime,
@@ -76,6 +79,8 @@ export const commands = {
   sshTerminalResize: 'ssh_terminal_resize',
   sshTerminalClose: 'ssh_terminal_close',
   sshTerminalList: 'ssh_terminal_list',
+  sshTerminalLogStart: 'ssh_terminal_log_start',
+  sshTerminalLogStop: 'ssh_terminal_log_stop',
   sshFileList: 'ssh_file_list',
   sshFileUpload: 'ssh_file_upload',
   sshFileDownload: 'ssh_file_download',
@@ -100,6 +105,7 @@ export const commands = {
 
   /* 监控 + 服务 + 进程 + docker */
   sshMonitorGet: 'ssh_monitor_get',
+  sshSystemInfoGet: 'ssh_system_info_get',
   sshServiceList: 'ssh_service_list',
   sshServiceAction: 'ssh_service_action',
   sshServiceLogs: 'ssh_service_logs',
@@ -162,6 +168,9 @@ export type Payloads = {
   ssh_terminal_resize: { terminalId: string; cols: number; rows: number }
   ssh_terminal_close: { terminalId: string }
   ssh_terminal_list: { connectionId: string }
+  /** 会话日志：dir 传 null 表示用框架存储 logs 分区（<存储根>/logs/ssh） */
+  ssh_terminal_log_start: { terminalId: string; dir: string | null }
+  ssh_terminal_log_stop: { terminalId: string }
 
   /* 文件管理 */
   ssh_file_list: { connectionId: string; path: string }
@@ -210,6 +219,7 @@ export type Payloads = {
 
   /* 监控 */
   ssh_monitor_get: { connectionId: string }
+  ssh_system_info_get: { connectionId: string }
 
   /* 服务 */
   ssh_service_list: { connectionId: string; filter?: 'all' | 'active' | 'inactive' | 'failed' }
@@ -287,6 +297,8 @@ export type Results = {
   ssh_terminal_resize: SshActionResult
   ssh_terminal_close: SshActionResult
   ssh_terminal_list: TerminalSession[]
+  ssh_terminal_log_start: LogActionResult
+  ssh_terminal_log_stop: LogActionResult
 
   /* 文件管理 */
   ssh_file_list: FileListResult
@@ -313,6 +325,7 @@ export type Results = {
 
   /* 监控 */
   ssh_monitor_get: MonitorData
+  ssh_system_info_get: SshSystemInfoResult
 
   /* 服务 */
   ssh_service_list: SystemdService[]
@@ -350,6 +363,8 @@ export const sshEvents = {
   connectStage: 'ssh://connect-stage',
   /** 隧道状态变化（启停/错误/连接数） */
   tunnelStatus: 'ssh://tunnel-status',
+  /** 会话日志写盘失败（磁盘满/权限/路径失效），前端据此停录并提示 */
+  terminalLogError: 'ssh://terminal-log-error',
 } as const
 
 /** 事件负载类型（与命令出参类型同源） */
@@ -361,4 +376,5 @@ export type SshEventPayloads = {
   'ssh://host-key-verify': HostKeyVerifyRequest
   'ssh://connect-stage': ConnectStage
   'ssh://tunnel-status': TunnelRuntime
+  'ssh://terminal-log-error': TerminalLogError
 }

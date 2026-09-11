@@ -57,3 +57,19 @@ export interface TerminalClosed {
 
   connectionId: string
 }
+
+/** 会话日志操作结果（开始 / 停止共用的返回） */
+export interface LogActionResult {
+  /** 日志文件绝对路径 */
+  path: string
+  /** 已写入字节数 */
+  bytes: number
+}
+
+/** 终端会话日志写盘失败通知（前端据此停止录制并提示） */
+export interface TerminalLogError {
+  /** 终端 id */
+  terminalId: string
+  /** 失败原因（含路径） */
+  message: string
+}

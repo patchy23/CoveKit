@@ -1,7 +1,8 @@
 //! SSH 插件 · 终端通道（PTY shell）
 //! 每个终端 = 一个 SSH 通道（连接复用，多通道并行）；
 //! 后台任务 select 双路：前端指令（write/resize/close）与通道输出（wait()），
-//! 通道输出经事件 ssh://terminal-data 推送（ANSI 原样，xterm.js 渲染）。
+//! 通道输出经事件 ssh://terminal-data 推送（ANSI 原样，xterm.js 渲染）；
+//! 开启会话日志时，同一块输出会旁路剥离 ANSI 后落盘（见 log.rs）。
 
 use std::{collections::HashMap, sync::Mutex};
 
@@ -10,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, watch};
 
 use crate::plugins::ssh::conn::{now_ms, resource_id, SshState};
+use crate::plugins::ssh::log::{self, SharedLog};
 use crate::plugins::ssh::models::{SshActionResult, TerminalClosed, TerminalData, TerminalSession};
 
 /// 终端指令（前端 → 后台任务）
@@ -36,6 +38,8 @@ pub(crate) struct TerminalHandle {
     pub(crate) tx: mpsc::Sender<TerminalCmd>,
     /// 独立取消信号，不受已满的数据队列阻塞。
     pub(crate) cancel: watch::Sender<bool>,
+    /// 会话日志写入器（未录制时为 None；后台任务与命令层共享同一份）
+    pub(crate) log: SharedLog,
 }
 
 /// 终端注册表（State 注入）
@@ -51,6 +55,7 @@ pub(crate) fn spawn_channel_task(
     mut channel: russh::Channel<client::Msg>,
     mut rx: mpsc::Receiver<TerminalCmd>,
     mut cancel_rx: watch::Receiver<bool>,
+    log: SharedLog,
 ) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -81,6 +86,14 @@ pub(crate) fn spawn_channel_task(
                                 time: now_ms(),
                             };
                             let _ = app.emit("ssh://terminal-data", &payload);
+                            // 旁路写盘；失败则停录并通知前端（不静默）
+                            if let Err(message) = log::append(&log, &data).await {
+                                log::finish(&log).await;
+                                let _ = app.emit(
+                                    "ssh://terminal-log-error",
+                                    &log::error_payload(&terminal_id, message),
+                                );
+                            }
                         }
                         Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => break,
                         _ => {}
@@ -88,7 +101,8 @@ pub(crate) fn spawn_channel_task(
                 }
             }
         }
-        // 任务退出：标记非活跃并从注册表移除
+        // 任务退出：先收尾日志（flush 落盘），再标记非活跃并从注册表移除
+        log::finish(&log).await;
         if let Ok(mut m) = app.state::<TerminalState>().0.lock() {
             m.remove(&terminal_id);
         }
@@ -145,6 +159,8 @@ pub async fn ssh_terminal_open(
     let terminal_id = resource_id("term");
     let (tx, rx) = mpsc::channel::<TerminalCmd>(128);
     let (cancel, cancel_rx) = watch::channel(false);
+    // 会话日志共享状态（默认未录制；命令层开启后由后台任务写盘）
+    let log = log::new_shared();
 
     // 登记句柄（先插入，任务退出时移除）
     state.0.lock().map_err(|e| e.to_string())?.insert(
@@ -157,6 +173,7 @@ pub async fn ssh_terminal_open(
             active: true,
             tx,
             cancel,
+            log: log.clone(),
         },
     );
 
@@ -167,6 +184,7 @@ pub async fn ssh_terminal_open(
         channel,
         rx,
         cancel_rx,
+        log,
     );
 
     Ok(TerminalSession {
