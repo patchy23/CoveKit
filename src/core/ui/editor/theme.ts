@@ -79,7 +79,20 @@ export const codeEditorTheme = EditorView.theme({
     overflow: 'auto',
   },
   '.cm-content': { padding: '10px 0' },
-  '.cm-line': { padding: '0 12px' },
+  '.cm-line': { padding: '0 12px', position: 'relative' },
+  // 缩进参考线：伪元素 + z-index:-1 绘制，线只到本行缩进深度（每行样式由 indentGuides.ts
+  // 写入 --cm-indent-bg），因此不会盖住当前行高亮与选区。
+  '.cm-indent-guides::before': {
+    content: '""',
+    position: 'absolute',
+    top: '0',
+    bottom: '0',
+    left: '12px',
+    right: '0',
+    background: 'var(--cm-indent-bg)',
+    pointerEvents: 'none',
+    zIndex: '-1',
+  },
   '.cm-gutters': {
     backgroundColor: 'var(--cm-gutter-bg)',
     borderRight: '1px solid var(--color-border)',
@@ -87,8 +100,17 @@ export const codeEditorTheme = EditorView.theme({
     fontSize: '12px',
   },
   '.cm-lineNumbers .cm-gutterElement': { padding: '0 8px 0 12px' },
-  '.cm-foldGutter .cm-gutterElement': { padding: '0 4px', cursor: 'pointer' },
-  '.cm-foldGutter .cm-gutterElement:hover': { color: 'var(--color-primary)' },
+  '.cm-foldGutter': { width: '14px' },
+  '.cm-foldGutter .cm-gutterElement': {
+    padding: '0 1px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'var(--cm-fold-marker)',
+    cursor: 'pointer',
+  },
+  '.cm-foldGutter .cm-gutterElement:hover': { color: 'var(--cm-fold-marker-hover)' },
+  '.cm-foldGutter .cm-fold-marker': { display: 'flex', alignItems: 'center' },
   '.cm-activeLineGutter': {
     backgroundColor: 'var(--cm-active-gutter-bg)',
     color: 'var(--cm-active-gutter-fg)',

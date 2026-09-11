@@ -575,6 +575,11 @@ html[data-theme='dark'] .ui-data-table td {
   --cm-active-gutter-fg: #c2410c;
   --cm-match-bg: rgba(240, 86, 44, 0.08);
   --cm-match-border: rgba(240, 86, 44, 0.4);
+  /* 缩进参考线与折叠箭头（色值取自 DESIGN.md 的 border-strong / text-muted / secondary） */
+  --cm-indent-guide: #d3d8de;
+  --cm-indent-guide-active: #98a2ad;
+  --cm-fold-marker: #5c6672;
+  --cm-fold-marker-hover: #191d23;
 }
 [data-theme='dark'] {
   --cm-keyword: #ff7b72;
@@ -593,6 +598,10 @@ html[data-theme='dark'] .ui-data-table td {
   --cm-active-gutter-fg: #ff7a4d;
   --cm-match-bg: rgba(255, 122, 77, 0.12);
   --cm-match-border: rgba(255, 122, 77, 0.45);
+  --cm-indent-guide: #303946;
+  --cm-indent-guide-active: #66727f;
+  --cm-fold-marker: #9aa7b5;
+  --cm-fold-marker-hover: #e8edf2;
 }
 
 /* UiCodeEditor 暗色覆盖：语法高亮色走 --cm-*（同名覆盖，无需重建实例），而容器 / gutter /
@@ -635,23 +644,9 @@ html[data-theme='dark'] .cm-placeholder {
   color: var(--color-text-muted-dark);
 }
 
-/* 缩进参考线（VS Code 风格细竖线）：每 2 字符一格，ch 随字体缩放 */
-.cm-indent-guides {
-  background-image: repeating-linear-gradient(
-    to right,
-    transparent 0 2ch,
-    rgba(16, 24, 40, 0.1) 2ch calc(2ch + 1px),
-    transparent calc(2ch + 1px) 4ch
-  );
-}
-[data-theme='dark'] .cm-indent-guides {
-  background-image: repeating-linear-gradient(
-    to right,
-    transparent 0 2ch,
-    rgba(255, 255, 255, 0.13) 2ch calc(2ch + 1px),
-    transparent calc(2ch + 1px) 4ch
-  );
-}
+/* 缩进参考线改为按行绘制：indentGuides.ts 把多层 1px 渐变写进 --cm-indent-bg，
+   伪元素样式在 theme.ts 定义；线只画到本行实际缩进深度，颜色走 --cm-indent-guide /
+   --cm-indent-guide-active（不再用整行宽度的 repeating-gradient 铺满）。 */
 
 /* XML/HTML 标签（hljs xml 语言 token：<tag> 尖括号 + 标签名） */
 .hljs-tag {

@@ -35,6 +35,7 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { highlightSelectionMatches } from '@codemirror/search'
 import { codeEditorTheme, codeHighlightStyle } from './theme'
 import { indentGuides } from './indentGuides'
+import { createFoldMarker } from './foldMarker'
 import type { EditorDegradeLevel } from './status'
 
 /** 编辑器档位：full 完整能力，minimal 轻量（工具输入输出区） */
@@ -73,7 +74,7 @@ export function buildHeavyExtensions(mode: EditorMode, withFoldGutter: boolean):
     rectangularSelection(),
     crosshairCursor(),
   ]
-  if (withFoldGutter) extensions.push(foldGutter())
+  if (withFoldGutter) extensions.push(foldGutter({ markerDOM: createFoldMarker }))
   return extensions
 }
 
