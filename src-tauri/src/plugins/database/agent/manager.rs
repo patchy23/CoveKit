@@ -12,7 +12,6 @@ use std::path::{Path, PathBuf};
 
 use crate::plugins::database::agent::driver_key;
 use crate::plugins::database::models::DbType;
-use tauri::Manager;
 
 /// 驱动 store 根目录下的版本清单文件名
 const VERSIONS_FILE: &str = "versions.json";
@@ -24,13 +23,9 @@ pub struct DriverStore {
 }
 
 impl DriverStore {
-    /// 从应用数据目录构造驱动 store
+    /// 从缓存分区构造驱动 store（`<root>/cache/agents/drivers`）
     pub fn new(app: &tauri::AppHandle) -> Result<Self, String> {
-        let dir = app
-            .path()
-            .app_data_dir()
-            .map_err(|e| format!("数据目录获取失败: {e}"))?;
-        let root = dir.join("agents").join("drivers");
+        let root = crate::framework::paths::cache_dir(app, "agents")?.join("drivers");
         Ok(Self { root })
     }
 

@@ -1,11 +1,13 @@
 //! 插件数据管理 · 统一规则（docs/03-plugin-development.md §3）
-//! - 数据文件约定：%APPDATA%/com.patchy23.patchybox/<plugin-id>.db（按平台 app_data_dir）
+//! - 数据文件约定：经 `framework::paths` 解析到数据分区（`<storageRoot>/data/<plugin-id>.db`），
+//!   禁止插件手拼路径；`storageRoot` 缺省为平台 app_data_dir
 //! - 迁移规则：PRAGMA user_version 版本号 + 顺序迁移数组（只追加不改写）
 //! - 本地库统一骨架 PluginDb：连接生命周期 + 锁语义 + 迁移，插件只管业务 SQL
 
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::Manager;
+
+use crate::framework::paths;
 
 /// 插件本地数据库（rusqlite 场景的统一骨架）
 /// 用途：本地键值/记录型插件（接口列表、设置等）直接使用；
@@ -42,13 +44,9 @@ impl PluginDb {
 }
 
 /// 插件数据文件路径（统一约定，禁止插件手拼路径）
+/// 经 `framework::paths` 解析到数据分区，并对老布局（根下 `<plugin>.db`）自动回落。
 pub fn plugin_db_path(app: &tauri::AppHandle, plugin: &str) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("获取数据目录失败: {e}"))?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建数据目录失败: {e}"))?;
-    Ok(dir.join(format!("{plugin}.db")))
+    paths::data_path(app, &format!("{plugin}.db"))
 }
 
 /// 顺序迁移：按 user_version 依次执行未应用的迁移（只追加，禁止修改已发布迁移）

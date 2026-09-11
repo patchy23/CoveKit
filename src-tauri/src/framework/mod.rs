@@ -1,5 +1,7 @@
 //! 框架层：窗口控制命令 + 外链打开（托盘/快捷键/前端共用）
 //! 设置存储与全局快捷键（framework/settings.rs）
+//! 统一存储路径（framework/paths.rs）：四分区布局 + 老布局迁移，禁止插件手拼路径
+//! 存储位置管理（framework/storage/）：信息查询与迁移（只复制不删源，重启生效）
 //! IPC 接口入库（ipc_registry）与插件数据管理（store）
 //! 本地凭证管理（credentials）：插件按命名空间+键存取，不关心存储实现
 //! Vault 凭证管理（vault）：统一凭证库（keyring 主密钥 + AES-256-GCM + Argon2id 备份）
@@ -7,7 +9,9 @@
 
 pub mod credentials;
 pub mod ipc_registry;
+pub mod paths;
 pub mod settings;
+pub mod storage;
 pub mod store;
 pub mod vault;
 
@@ -23,6 +27,8 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         ipc_registry::framework_commands,
         settings::settings_get,
         settings::settings_set,
+        storage::storage_info,
+        storage::storage_migrate,
         vault::vault_list,
         vault::vault_save,
         vault::vault_delete,

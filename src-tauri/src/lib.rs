@@ -60,6 +60,8 @@ pub fn run() {
 
     // ── 业务插件装配（每个插件一行，互不影响）──
     let builder = framework::settings::register(builder);
+    // 框架级存储位置管理（2 命令入 ipc_registry：信息查询 + 迁移）
+    let builder = framework::storage::register(builder);
     // 框架级 Vault 凭证库（6 命令入 ipc_registry，命令走框架总 handler）
     let builder = framework::vault::register(builder);
     let builder = plugins::http_ws::register(builder);
@@ -85,6 +87,9 @@ pub fn run() {
         })
         .setup(|app| {
             // ── 框架启动初始化 ──
+            // 存储布局迁移必须最先执行：早于任何插件打开数据库、凭证与已知主机文件
+            framework::paths::migrate_layout(app.handle())
+                .map_err(|e| format!("存储布局迁移失败: {e}"))?;
             framework::settings::init(app)?;
 
             // 屏蔽 WebView2 原生右键菜单（不再干扰程序内自绘右键菜单；仅 Windows 生效）

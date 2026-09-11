@@ -4,8 +4,6 @@
 mod models;
 mod synth;
 
-use tauri::Manager;
-
 pub(crate) use models::{TtsResult, TtsVoice};
 
 /// 语音列表
@@ -25,12 +23,8 @@ pub async fn tts_synthesize(
 ) -> Result<TtsResult, String> {
     let audio = synth::synth_bytes(&text, &voice, rate, pitch).await?;
 
-    // 落盘 app_data_dir/tts/<ts>.mp3
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("数据目录获取失败: {e}"))?
-        .join("tts");
+    // 落盘缓存分区 <root>/cache/tts/<ts>.mp3
+    let dir = crate::framework::paths::cache_dir(&app, "tts")?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建 tts 目录失败: {e}"))?;
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

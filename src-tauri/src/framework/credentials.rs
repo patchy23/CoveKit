@@ -16,7 +16,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use rand::RngCore;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// 凭证目录（app_data_dir 下）
 const CREDENTIALS_DIR: &str = "credentials";
@@ -160,11 +160,9 @@ fn write_map_at(
 // 对外 API（AppHandle 封装）
 // ──────────────────────────────────────────────────────────────────────────
 
-/// 应用数据目录
+/// 框架凭证目录（数据分区下，经 `framework::paths` 统一解析并带旧布局回落）
 fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map_err(|e| format!("数据目录获取失败: {e}"))
+    crate::framework::paths::data_dir(app)
 }
 
 /// 凭证文件路径（供前端展示/诊断）

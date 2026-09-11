@@ -10,13 +10,9 @@ use russh::keys::{HashAlg, PublicKey};
 
 use crate::plugins::ssh::models::KnownHostEntry;
 
-/// 已知主机文件路径（app_data_dir/ssh-known-hosts，与历史版本一致）
+/// 已知主机文件路径（数据分区下 ssh-known-hosts，经 `framework::paths` 解析并带旧布局回落）
 pub(crate) fn known_hosts_file(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    use tauri::Manager;
-    app.path()
-        .app_data_dir()
-        .map(|dir| dir.join("ssh-known-hosts"))
-        .map_err(|e| format!("数据目录获取失败: {e}"))
+    crate::framework::paths::data_path(app, "ssh-known-hosts")
 }
 
 /// 公钥的 SHA256 指纹（Display 形如 SHA256:base64）

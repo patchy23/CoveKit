@@ -7,7 +7,6 @@
 use std::sync::Mutex;
 
 use aes_gcm::aead::{Aead, KeyInit};
-use tauri::Manager;
 
 use crate::framework::credentials;
 
@@ -31,10 +30,7 @@ fn secrets(app: &tauri::AppHandle, state: &SecretsState) -> Result<std::sync::Ar
 
 /// 一次性迁移旧格式凭据到框架公共凭证库（新库已有数据则跳过）
 fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("数据目录获取失败: {e}"))?;
+    let dir = crate::framework::paths::data_dir(app)?;
 
     // 迁移 2：AES-GCM 阶段（db-secrets.enc + db-master.key）→ 公共库
     let legacy_file = dir.join("db-secrets.enc");

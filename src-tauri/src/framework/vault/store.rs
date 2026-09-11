@@ -18,7 +18,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use rand::RngCore;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use super::models::{Credential, CredentialSummary};
 
@@ -37,11 +37,9 @@ pub(crate) fn vault_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-/// 应用数据目录（命令层用；测试走 *_at 目录参数版本）
+/// 凭证分区目录（`<root>/vault`；命令层用，测试走 *_at 目录参数版本）
 pub(crate) fn data_dir_of(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_data_dir()
-        .map_err(|e| format!("数据目录获取失败: {e}"))
+    crate::framework::paths::vault_dir(app)
 }
 
 /// 将无法读取的 vault.dat 改名留档（密钥丢失/文件损坏时导入的前置保护，绝不静默清空）
