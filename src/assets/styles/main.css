@@ -553,24 +553,46 @@ html[data-theme='dark'] .ui-data-table td {
   border-color: var(--color-border-dark);
 }
 
-/* CodeMirror 6 语法高亮配色（GitHub 风格，CSS 变量随应用主题切换） */
+/* CodeMirror 6 配色：语法高亮 + 编辑器装饰，全部走 --cm-*，浅色/深色同名覆盖。
+   同名覆盖即完成主题切换，不需要重建编辑器实例，也不需要额外的暗色规则块。
+   装饰色是 tertiary（#f0562c）/ tertiary-dark（#ff7a4d）的极淡透明度变体，不新造色相。 */
 :root {
+  /* 语法高亮：标点用中灰让关键字/字符串/数字前进一档；变量名用蓝、运算符与函数名用紫 */
   --cm-keyword: #cf222e;
   --cm-property: #005cc5;
+  --cm-variable: #0550ae;
   --cm-string: #0a7a3f;
   --cm-number: #d73a49;
   --cm-tag: #8250df;
-  --cm-punct: #24292f;
-  --cm-comment: #6a737d;
+  --cm-function: #8250df;
+  --cm-operator: #8250df;
+  --cm-punct: #57606a;
+  --cm-comment: #6e7781;
+  /* 编辑器装饰 */
+  --cm-gutter-bg: #fafbfc;
+  --cm-active-line: rgba(240, 86, 44, 0.05);
+  --cm-active-gutter-bg: rgba(240, 86, 44, 0.08);
+  --cm-active-gutter-fg: #c2410c;
+  --cm-match-bg: rgba(240, 86, 44, 0.08);
+  --cm-match-border: rgba(240, 86, 44, 0.4);
 }
 [data-theme='dark'] {
   --cm-keyword: #ff7b72;
   --cm-property: #79c0ff;
+  --cm-variable: #79c0ff;
   --cm-string: #7ee787;
   --cm-number: #ffa657;
   --cm-tag: #d2a8ff;
-  --cm-punct: #c9d1d9;
-  --cm-comment: #8b949e;
+  --cm-function: #d2a8ff;
+  --cm-operator: #d2a8ff;
+  --cm-punct: #8b949e;
+  --cm-comment: #7d8590;
+  --cm-gutter-bg: #1b2129;
+  --cm-active-line: rgba(255, 122, 77, 0.08);
+  --cm-active-gutter-bg: rgba(255, 122, 77, 0.12);
+  --cm-active-gutter-fg: #ff7a4d;
+  --cm-match-bg: rgba(255, 122, 77, 0.12);
+  --cm-match-border: rgba(255, 122, 77, 0.45);
 }
 
 /* UiCodeEditor 暗色覆盖：语法高亮色走 --cm-*（同名覆盖，无需重建实例），而容器 / gutter /
@@ -590,19 +612,10 @@ html[data-theme='dark'] .cm-cursor,
 html[data-theme='dark'] .cm-dropCursor {
   border-left-color: var(--color-primary-dark);
 }
+/* 括号匹配与搜索匹配的底色/描边走 --cm-match-*，随变量自动切换，无需在此覆盖 */
 html[data-theme='dark'] .cm-selectionBackground,
 html[data-theme='dark'] .cm-editor.cm-focused .cm-selectionBackground,
-html[data-theme='dark'] .cm-selectionMatch,
-html[data-theme='dark'] .cm-searchMatch {
-  background-color: var(--color-tertiary-soft-dark);
-}
-html[data-theme='dark'] .cm-searchMatch,
-html[data-theme='dark'] .cm-matchingBracket,
-html[data-theme='dark'] .cm-editor.cm-focused .cm-matchingBracket {
-  outline-color: var(--color-border-strong);
-}
-html[data-theme='dark'] .cm-matchingBracket,
-html[data-theme='dark'] .cm-editor.cm-focused .cm-matchingBracket {
+html[data-theme='dark'] .cm-selectionMatch {
   background-color: var(--color-tertiary-soft-dark);
 }
 html[data-theme='dark'] .cm-searchMatch.cm-searchMatch-selected {
