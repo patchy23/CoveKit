@@ -118,6 +118,12 @@ export const codeEditorTheme = EditorView.theme({
   '.cm-activeLine': { backgroundColor: 'var(--cm-active-line)', borderRadius: '2px' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--color-primary)', borderLeftWidth: '2px' },
   '.cm-selectionBackground': { backgroundColor: 'var(--cm-selection)' },
+  // drawSelection 内置了一条更深的聚焦态规则
+  // （&light.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground，
+  //  5 个 class），不写全同一条链条就会被它压过、框选回落到内置的 #d7d4f0 淡紫。
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground': {
+    backgroundColor: 'var(--cm-selection)',
+  },
   '&.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--cm-selection)' },
   // 未走 drawSelection 的原生选区（打印、部分嵌入场景）保持同一底色
   '.cm-content ::selection': { backgroundColor: 'var(--cm-selection)' },
