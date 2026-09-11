@@ -580,6 +580,10 @@ html[data-theme='dark'] .ui-data-table td {
   --cm-indent-guide-active: #98a2ad;
   --cm-fold-marker: #5c6672;
   --cm-fold-marker-hover: #191d23;
+  /* 选区：旧值用 tertiary-soft #fdeee7，与白底对比仅 1.1:1（几乎看不见）；
+     改用 VS Code Light 的 #add6ff（约 1.4:1），与淡蓝同色系的更淡一档做选中词标记 */
+  --cm-selection: #add6ff;
+  --cm-selection-match: rgba(173, 214, 255, 0.55);
 }
 [data-theme='dark'] {
   --cm-keyword: #ff7b72;
@@ -602,6 +606,8 @@ html[data-theme='dark'] .ui-data-table td {
   --cm-indent-guide-active: #66727f;
   --cm-fold-marker: #9aa7b5;
   --cm-fold-marker-hover: #e8edf2;
+  --cm-selection: #264f78;
+  --cm-selection-match: rgba(38, 79, 120, 0.6);
 }
 
 /* UiCodeEditor 暗色覆盖：语法高亮色走 --cm-*（同名覆盖，无需重建实例），而容器 / gutter /
@@ -621,12 +627,7 @@ html[data-theme='dark'] .cm-cursor,
 html[data-theme='dark'] .cm-dropCursor {
   border-left-color: var(--color-primary-dark);
 }
-/* 括号匹配与搜索匹配的底色/描边走 --cm-match-*，随变量自动切换，无需在此覆盖 */
-html[data-theme='dark'] .cm-selectionBackground,
-html[data-theme='dark'] .cm-editor.cm-focused .cm-selectionBackground,
-html[data-theme='dark'] .cm-selectionMatch {
-  background-color: var(--color-tertiary-soft-dark);
-}
+/* 选区、括号匹配与搜索匹配的底色均走 --cm-* 变量（浅/暗同名覆盖），无需在此覆盖 */
 html[data-theme='dark'] .cm-searchMatch.cm-searchMatch-selected {
   background-color: var(--color-tertiary-dark);
   color: var(--color-surface-dark);

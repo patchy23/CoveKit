@@ -117,15 +117,17 @@ export const codeEditorTheme = EditorView.theme({
   },
   '.cm-activeLine': { backgroundColor: 'var(--cm-active-line)', borderRadius: '2px' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--color-primary)', borderLeftWidth: '2px' },
-  '.cm-selectionBackground': { backgroundColor: 'var(--color-tertiary-soft)' },
-  '&.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--color-tertiary-soft)' },
+  '.cm-selectionBackground': { backgroundColor: 'var(--cm-selection)' },
+  '&.cm-focused .cm-selectionBackground': { backgroundColor: 'var(--cm-selection)' },
+  // 未走 drawSelection 的原生选区（打印、部分嵌入场景）保持同一底色
+  '.cm-content ::selection': { backgroundColor: 'var(--cm-selection)' },
   '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': {
     backgroundColor: 'var(--cm-match-bg)',
     outline: '1px solid var(--cm-match-border)',
     borderRadius: '3px',
   },
   '.cm-nonmatchingBracket': { color: 'var(--color-danger)' },
-  '.cm-selectionMatch': { backgroundColor: 'var(--color-tertiary-soft)', borderRadius: '2px' },
+  '.cm-selectionMatch': { backgroundColor: 'var(--cm-selection-match)', borderRadius: '2px' },
   '.cm-searchMatch': {
     backgroundColor: 'var(--cm-match-bg)',
     outline: '1px solid var(--cm-match-border)',
