@@ -8,6 +8,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 import UiCodeEditor from './UiCodeEditor.vue'
+import EditorSearchBar from './editor/EditorSearchBar.vue'
 
 /** 等待编辑器挂载与异步语言加载 */
 async function settle(): Promise<void> {
@@ -141,6 +142,162 @@ describe('UiCodeEditor', () => {
     api.insert('X')
     await settle()
     expect(api.getValue()).toBe('Xreplaced')
+    wrapper.unmount()
+  })
+})
+
+/** 命令式接口（批 2 能力） */
+interface EditorApi {
+  find: (replace?: boolean) => void
+  format: () => boolean
+  getValue: () => string
+  setValue: (value: string, options?: { addToHistory?: boolean }) => void
+  markSaved: () => void
+  isDirty: () => boolean
+  getSearchState: () => { total: number; current: number; error?: string }
+}
+
+describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
+  it('查找：统计匹配总数与当前序号', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'foo\nbar\nfoo baz', filename: 'a.txt' },
+      attachTo: document.body,
+    })
+    await settle()
+
+    const api = wrapper.vm as unknown as EditorApi
+    api.find()
+    await settle()
+
+    const bar = wrapper.findComponent(EditorSearchBar)
+    expect(bar.exists()).toBe(true)
+    bar.vm.$emit('search', {
+      query: 'foo',
+      replacement: 'qux',
+      options: { caseSensitive: false, regexp: false, wholeWord: false },
+    })
+    await settle()
+
+    expect(api.getSearchState().total).toBe(2)
+    expect(api.getSearchState().current).toBe(1)
+    wrapper.unmount()
+  })
+
+  it('查找：全部替换改写文本并触发回写', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'foo\nbar\nfoo baz', filename: 'a.txt' },
+      attachTo: document.body,
+    })
+    await settle()
+
+    const api = wrapper.vm as unknown as EditorApi
+    api.find()
+    await settle()
+
+    const bar = wrapper.findComponent(EditorSearchBar)
+    bar.vm.$emit('search', {
+      query: 'foo',
+      replacement: 'qux',
+      options: { caseSensitive: false, regexp: false, wholeWord: false },
+    })
+    await settle()
+    bar.vm.$emit('replace-all')
+    await settle()
+
+    expect(api.getValue()).toBe('qux\nbar\nqux baz')
+    expect(wrapper.emitted('update:modelValue')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('查找：非法正则给出中文错误且不抛异常', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'abc', filename: 'a.txt' },
+      attachTo: document.body,
+    })
+    await settle()
+
+    const api = wrapper.vm as unknown as EditorApi
+    api.find()
+    await settle()
+
+    wrapper.findComponent(EditorSearchBar).vm.$emit('search', {
+      query: '[unclosed',
+      replacement: '',
+      options: { caseSensitive: false, regexp: true, wholeWord: false },
+    })
+    await settle()
+
+    const state = api.getSearchState()
+    expect(state.total).toBe(0)
+    expect(state.error).toContain('正则')
+    wrapper.unmount()
+  })
+
+  it('格式化：合法 JSON 重排缩进，非法内容返回失败并触发 error 事件', async () => {
+    const ok = mount(UiCodeEditor, {
+      props: { modelValue: '{"a":1,"b":[1,2]}', filename: 'a.json' },
+      attachTo: document.body,
+    })
+    await settle()
+    const okApi = ok.vm as unknown as EditorApi
+    expect(okApi.format()).toBe(true)
+    await settle()
+    expect(okApi.getValue()).toContain('\n  "a": 1')
+    ok.unmount()
+
+    const bad = mount(UiCodeEditor, {
+      props: { modelValue: '{bad}', filename: 'a.json' },
+      attachTo: document.body,
+    })
+    await settle()
+    const badApi = bad.vm as unknown as EditorApi
+    expect(badApi.format()).toBe(false)
+    expect(bad.emitted('error')?.[0]?.[0]).toContain('JSON')
+    bad.unmount()
+  })
+
+  it('未保存标记：编辑后为脏，markSaved 后回归干净', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'origin', filename: 'a.txt' },
+      attachTo: document.body,
+    })
+    await settle()
+
+    const api = wrapper.vm as unknown as EditorApi
+    expect(api.isDirty()).toBe(false)
+
+    api.setValue('changed', { addToHistory: true })
+    await settle()
+    expect(api.isDirty()).toBe(true)
+
+    api.markSaved()
+    expect(api.isDirty()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('状态栏：渲染行列、语言与编码', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: '{"a":1}', filename: 'config.json', statusBar: true },
+      attachTo: document.body,
+    })
+    await settle()
+
+    const text = wrapper.text()
+    expect(text).toContain('行 1 : 列 1')
+    expect(text).toContain('UTF-8')
+    expect(text).toContain('JSON')
+    wrapper.unmount()
+  })
+
+  it('大文件降级：超过 512KB 卸载折叠并在状态栏提示', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'x'.repeat(600000), filename: 'bulk.txt', statusBar: true },
+      attachTo: document.body,
+    })
+    await settle()
+
+    expect(wrapper.find('.cm-foldGutter').exists()).toBe(false)
+    expect(wrapper.text()).toContain('512KB')
     wrapper.unmount()
   })
 })

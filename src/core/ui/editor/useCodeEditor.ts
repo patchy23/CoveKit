@@ -2,19 +2,34 @@
  * 编辑器实例管理：EditorView 生命周期 + Compartment 热重配置 + 命令式 API
  *
  * 设计要点：
- * - 明暗、语言、只读、tabSize、换行一律走 Compartment 重配置，**绝不重建 EditorView**
- *   （重建会丢撤销历史与滚动位置）；
- * - 外部写入用 applyingExternal 标志抑制 change 回调，避免上层把程序性变更误判成用户编辑；
- *   写入前先比对文档内容，避免自我循环；
- * - 语言包异步加载完成后若组件已卸载或请求已过期，丢弃结果（languageRequest 序号）。
+ * - 明暗、语言、只读、tabSize、换行、重能力、补全/校验一律走 Compartment 重配置，
+ *   **绝不重建 EditorView**（重建会丢撤销历史与滚动位置）；
+ * - 外部写入用 applyingExternal 标志抑制 change 回调；写入前先比对文档内容，避免自我循环；
+ * - 语言包异步加载完成后若组件已卸载或请求已过期，丢弃结果（languageRequest 序号）；
+ * - 大文件降级（>512KB 关重能力与语法高亮、>5MB 强制只读）只重配 Compartment，不重建实例；
+ * - 查找条件由 `searchController` 持有时统一执行，避免「面板统计」与「实际跳转」两套逻辑。
  */
 import { onBeforeUnmount, shallowRef, watch } from 'vue'
-import { Compartment, EditorState, Transaction, type Extension } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
+import { Compartment, EditorState, Prec, Transaction, type Extension } from '@codemirror/state'
+import { EditorView, keymap } from '@codemirror/view'
 import { indentUnit } from '@codemirror/language'
 import { redo as redoCommand, undo as undoCommand } from '@codemirror/commands'
-import { buildBaseExtensions } from './extensions'
+import { search as searchExtension } from '@codemirror/search'
+import {
+  buildBaseExtensions,
+  completionEnabled,
+  heavyExtensionsFor,
+  highlightEnabled,
+  linterEnabled,
+} from './extensions'
+import { buildEditorKeymap } from './keymap'
+import { buildCompletion } from './completion'
+import { linterForLanguage } from './lint'
+import { formatDocument } from './format'
+import { createDocStatsTracker } from './docStats'
+import { createSearchController } from './searchController'
 import { detectLanguage, loadLanguage, PLAIN_TEXT, type LanguageInfo } from './languages'
+import type { EditorDegradeLevel } from './status'
 import type { CodeEditorHandle, UseCodeEditorOptions } from './types'
 
 /** 创建编辑器实例管理（须在 setup 作用域内调用） */
@@ -31,6 +46,10 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   const tabSizeCompartment = new Compartment()
   /** 长行换行 */
   const wrappingCompartment = new Compartment()
+  /** 重能力：折叠 / 括号匹配 / 选区匹配 / 当前行高亮（大文件整块卸载） */
+  const heavyCompartment = new Compartment()
+  /** 补全与校验（随语言与降级级别重配） */
+  const auxCompartment = new Compartment()
 
   /** 外部写入标志：为 true 时忽略 docChanged 回调 */
   let applyingExternal = false
@@ -38,6 +57,14 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   let destroyed = false
   /** 语言加载请求序号：只接受最后一次请求的结果 */
   let languageRequest = 0
+  /** 「已保存」基线内容（未保存标记用） */
+  let savedSnapshot = ''
+
+  const docStats = createDocStatsTracker((level) => applyDegrade(level))
+  const search = createSearchController(
+    () => view.value,
+    () => view.value?.focus()
+  )
 
   /** 解析当前应使用的语言：显式 id 优先，'auto' 按文件名识别 */
   function resolveLanguage(): LanguageInfo {
@@ -74,6 +101,58 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     return [EditorState.tabSize.of(size), indentUnit.of(' '.repeat(size))]
   }
 
+  /** 只读判定：props 只读，或文档超过 5MB 被强制只读 */
+  function readOnlyNow(): boolean {
+    return options.readonly() || docStats.level.value === 'huge'
+  }
+
+  /** 补全 + 校验扩展（随语言与降级级别变化重配） */
+  function auxExtensions(): Extension {
+    const extras: Extension[] = []
+    if ((options.completion?.() ?? false) && completionEnabled(docStats.level.value)) {
+      extras.push(buildCompletion({ sources: options.completionSources?.() ?? [] }))
+    }
+    if ((options.linter?.() ?? false) && linterEnabled(docStats.level.value)) {
+      extras.push(...linterForLanguage(languageInfo.value.id))
+    }
+    return extras
+  }
+
+  /** 应用降级级别：只重配 Compartment，不重建实例 */
+  function applyDegrade(level: EditorDegradeLevel): void {
+    const current = view.value
+    if (!current) return
+    current.dispatch({
+      effects: [
+        heavyCompartment.reconfigure(
+          heavyExtensionsFor(level, options.mode(), options.foldGutter())
+        ),
+        auxCompartment.reconfigure(auxExtensions()),
+        editableCompartment.reconfigure(editableExtension(readOnlyNow())),
+      ],
+    })
+    if (highlightEnabled(level)) void applyLanguage()
+    else current.dispatch({ effects: languageCompartment.reconfigure([]) })
+    if (level === 'huge') options.onError?.('文件超过 5MB，已强制只读')
+  }
+
+  /** 右键事件：把行号 / 行文本 / 选中文本交给宿主（不阻止默认行为，由宿主决定） */
+  function handleContextMenu(event: MouseEvent, current: EditorView): boolean {
+    if (!options.onContextMenu) return false
+    const pos =
+      current.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+      current.state.selection.main.head
+    const line = current.state.doc.lineAt(pos)
+    const range = current.state.selection.main
+    options.onContextMenu({
+      event,
+      line: line.number,
+      lineText: line.text,
+      selection: current.state.sliceDoc(range.from, range.to),
+    })
+    return false
+  }
+
   /** 创建 EditorView（仅执行一次） */
   function mount(): void {
     const parent = host.value
@@ -84,20 +163,36 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     const state = EditorState.create({
       doc: options.modelValue(),
       extensions: [
+        Prec.high(
+          keymap.of(
+            buildEditorKeymap({
+              openSearch: (replace) => options.onRequestSearch?.(replace),
+              closeSearch: () => options.onRequestClosePanel?.() ?? false,
+              save: () => options.onSave?.(),
+              openGoToLine: () => options.onRequestGoToLine?.(),
+            })
+          )
+        ),
         ...buildBaseExtensions({
           mode: options.mode(),
           lineNumbers: options.lineNumbers(),
-          foldGutter: options.foldGutter(),
           placeholder: options.placeholder(),
         }),
+        searchExtension(),
+        heavyCompartment.of(heavyExtensionsFor('none', options.mode(), options.foldGutter())),
         languageCompartment.of([]),
+        auxCompartment.of([]),
         editableCompartment.of(editableExtension(options.readonly())),
         tabSizeCompartment.of(indentExtension(options.tabSize())),
         wrappingCompartment.of(wrappingExtension(options.lineWrapping())),
+        EditorView.domEventHandlers({ contextmenu: handleContextMenu }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !applyingExternal) {
             options.onChange(update.state.doc.toString())
           }
+          if (update.docChanged) docStats.update(update.state)
+          // 文档或选区变化都会影响「当前是第几个匹配」，条件为空时 refresh 内部直接返回
+          if (update.docChanged || update.selectionSet) search.refresh()
           if (!options.onCursor || !(update.selectionSet || update.docChanged)) return
           const range = update.state.selection.main
           const line = update.state.doc.lineAt(range.head)
@@ -111,6 +206,8 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     })
 
     view.value = new EditorView({ parent, state })
+    savedSnapshot = state.doc.toString()
+    docStats.init(state)
     void applyLanguage()
   }
 
@@ -203,17 +300,52 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     redoCommand(view.value)
   }
 
+  /** 按当前语言格式化：成功后写入并进撤销历史（可一次 Ctrl+Z 撤回） */
+  function format(): { ok: boolean; error?: string } {
+    const current = view.value
+    if (!current) return { ok: false, error: '编辑器尚未就绪' }
+    const result = formatDocument(
+      current.state.doc.toString(),
+      languageInfo.value.id,
+      options.tabSize()
+    )
+    if (!result.ok) return { ok: false, error: result.error }
+    writeValue(result.output, true)
+    return { ok: true }
+  }
+
+  /** 记录「已保存」基线 */
+  function markSaved(): void {
+    savedSnapshot = view.value?.state.doc.toString() ?? options.modelValue()
+  }
+
+  /** 相对基线是否有未保存修改 */
+  function isDirty(): boolean {
+    return getValue() !== savedSnapshot
+  }
+
   // 外部值变化 → 同步进编辑器（writeValue 内部抑制 change 回调）
   watch(options.modelValue, (value) => writeValue(value, false))
 
-  // 语言 / 文件名变化 → 重新识别并懒加载
+  // 语言 / 文件名变化 → 重新识别并懒加载（校验与补全随之重配）
   watch([options.language, options.filename], () => {
-    if (view.value) void applyLanguage()
+    if (!view.value) return
+    void applyLanguage()
+    view.value.dispatch({ effects: auxCompartment.reconfigure(auxExtensions()) })
   })
 
-  // 只读切换
-  watch(options.readonly, (readonly) => {
-    view.value?.dispatch({ effects: editableCompartment.reconfigure(editableExtension(readonly)) })
+  // 只读切换（huge 级强制只读优先）
+  watch(options.readonly, () => {
+    const current = view.value
+    if (!current) return
+    current.dispatch({
+      effects: editableCompartment.reconfigure(editableExtension(readOnlyNow())),
+    })
+  })
+
+  // 补全 / 校验开关
+  watch([() => options.completion?.(), () => options.linter?.()], () => {
+    view.value?.dispatch({ effects: auxCompartment.reconfigure(auxExtensions()) })
   })
 
   // 缩进宽度切换
@@ -232,6 +364,9 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     host,
     view,
     languageInfo,
+    docStats: docStats.stats,
+    degrade: docStats.level,
+    searchState: search.state,
     mount,
     destroy,
     getValue,
@@ -243,5 +378,14 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     insert,
     undo,
     redo,
+    applySearch: search.apply,
+    findNext: search.next,
+    findPrevious: search.previous,
+    replaceCurrent: search.replaceCurrent,
+    replaceAllMatches: search.replaceAllMatches,
+    clearSearch: search.clear,
+    format,
+    markSaved,
+    isDirty,
   }
 }

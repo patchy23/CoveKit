@@ -3,13 +3,22 @@
  * 通用代码编辑器（编辑器组件的唯一对外入口）
  *
  * - `readonly` 时即查看器（取代原 CodeViewer），语义与视觉保持一致；
- * - 明暗、语言、只读、缩进、换行全部走 Compartment 热重配置，切换不重建实例（不丢撤销历史）；
- * - `mode="minimal"` 为轻量档：替代原「行号 + textarea」输入输出区（无折叠 / 括号闭合 / 列选择）。
+ * - 明暗、语言、只读、缩进、换行、重能力、补全/校验全部走 Compartment 热重配置，切换不重建实例；
+ * - `mode="minimal"` 为轻量档：替代原「行号 + textarea」输入输出区（无折叠 / 括号闭合 / 列选择）；
+ * - 查找替换（Ctrl+F / Ctrl+H）、跳转行（Ctrl+G）、保存（Ctrl+S）由编辑器内键位触发，
+ *   浮层渲染在编辑器容器内，条件与统计由 `editor/searchController` 单一来源驱动；
+ * - 大文件自动降级：>512KB 关语法高亮与折叠，>5MB 强制只读，并在状态栏与 `error` 事件中提示。
  */
-import { onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
+import type { CompletionSource } from '@codemirror/autocomplete'
 import { useCodeEditor } from './editor/useCodeEditor'
-import type { EditorCursorInfo } from './editor/types'
+import EditorGoToLineBar from './editor/EditorGoToLineBar.vue'
+import EditorSearchBar from './editor/EditorSearchBar.vue'
+import EditorStatusBar from './editor/EditorStatusBar.vue'
+import { buildStatusText } from './editor/status'
+import type { SearchOptions } from './editor/search'
 import type { EditorMode } from './editor/extensions'
+import type { EditorContextMenuPayload, EditorCursorInfo } from './editor/types'
 
 const props = withDefaults(
   defineProps<{
@@ -35,6 +44,16 @@ const props = withDefaults(
     placeholder?: string
     /** 容器高度（CSS 长度值） */
     height?: string
+    /** 是否启用查找替换（Ctrl+F / Ctrl+H 与浮层面板） */
+    searchable?: boolean
+    /** 是否显示底部状态栏（行列 / 选中 / 语言 / 缩进 / 规模 / 编码） */
+    statusBar?: boolean
+    /** 是否启用语法校验（错误波浪线 + 中文提示） */
+    lint?: boolean
+    /** 是否启用补全（注入源优先，其后是文档词法兜底） */
+    completion?: boolean
+    /** 注入的补全源（数据库表名 / 列名等） */
+    completionSources?: CompletionSource[]
   }>(),
   {
     modelValue: '',
@@ -48,6 +67,11 @@ const props = withDefaults(
     tabSize: 2,
     placeholder: undefined,
     height: '100%',
+    searchable: true,
+    statusBar: false,
+    lint: true,
+    completion: true,
+    completionSources: undefined,
   }
 )
 
@@ -55,10 +79,23 @@ const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'change', value: string): void
   (event: 'cursor', info: EditorCursorInfo): void
+  (event: 'save'): void
+  (event: 'contextmenu', payload: EditorContextMenuPayload): void
+  (event: 'error', message: string): void
 }>()
 
 /** 编辑器挂载容器 */
 const hostRef = ref<HTMLDivElement | null>(null)
+/** 光标信息（状态栏用） */
+const cursor = ref<EditorCursorInfo>({ line: 1, column: 1, selected: 0 })
+/** 查找浮层开关 */
+const searchOpen = ref(false)
+/** 打开查找时是否展开替换行 */
+const replaceMode = ref(false)
+/** 跳转行浮层开关 */
+const goToLineOpen = ref(false)
+const searchBar = ref<InstanceType<typeof EditorSearchBar> | null>(null)
+const goToLineBar = ref<InstanceType<typeof EditorGoToLineBar> | null>(null)
 
 const editor = useCodeEditor({
   modelValue: () => props.modelValue ?? '',
@@ -71,12 +108,87 @@ const editor = useCodeEditor({
   lineWrapping: () => props.lineWrapping,
   tabSize: () => props.tabSize,
   placeholder: () => props.placeholder,
+  completion: () => props.completion,
+  completionSources: () => props.completionSources ?? [],
+  linter: () => props.lint,
   onChange: (value) => {
     emit('update:modelValue', value)
     emit('change', value)
   },
-  onCursor: (info) => emit('cursor', info),
+  onCursor: (info) => {
+    cursor.value = info
+    emit('cursor', info)
+  },
+  onSave: () => emit('save'),
+  onContextMenu: (payload) => emit('contextmenu', payload),
+  onError: (message) => emit('error', message),
+  onRequestSearch: (replace) => openSearch(replace),
+  onRequestGoToLine: () => openGoToLine(),
+  onRequestClosePanel: () => closePanel(),
 })
+
+/** 状态栏文案（纯函数拼装） */
+const status = computed(() =>
+  buildStatusText({
+    cursor: cursor.value,
+    lines: editor.docStats.value.lines,
+    length: editor.docStats.value.length,
+    languageLabel: editor.languageInfo.value.label,
+    tabSize: props.tabSize,
+    readonly: props.readonly || editor.degrade.value === 'huge',
+    degrade: editor.degrade.value,
+  })
+)
+
+/** 打开查找浮层（Ctrl+F / Ctrl+H） */
+function openSearch(replace: boolean): void {
+  if (!props.searchable) return
+  replaceMode.value = replace
+  goToLineOpen.value = false
+  searchOpen.value = true
+  void nextTick(() => searchBar.value?.focus())
+}
+
+/** 打开跳转行浮层（Ctrl+G） */
+function openGoToLine(): void {
+  searchOpen.value = false
+  goToLineOpen.value = true
+  void nextTick(() => goToLineBar.value?.focus())
+}
+
+/** 关闭浮层；返回是否确实关闭了（Esc 键位消费判定） */
+function closePanel(): boolean {
+  if (goToLineOpen.value) {
+    goToLineOpen.value = false
+    editor.focus()
+    return true
+  }
+  if (searchOpen.value) {
+    searchOpen.value = false
+    editor.clearSearch()
+    editor.focus()
+    return true
+  }
+  return false
+}
+
+/** 查找条件变化 → 交给控制器执行 */
+function onSearch(payload: { query: string; replacement: string; options: SearchOptions }): void {
+  editor.applySearch(payload.query, payload.replacement, payload.options)
+}
+
+/** 跳转行确认 */
+function onGoToLine(line: number): void {
+  goToLineOpen.value = false
+  editor.goToLine(line)
+}
+
+/** 格式化：失败以 `error` 事件暴露（调用方决定 toast 文案） */
+function format(): boolean {
+  const result = editor.format()
+  if (!result.ok && result.error) emit('error', result.error)
+  return result.ok
+}
 
 onMounted(() => {
   editor.host.value = hostRef.value
@@ -103,16 +215,57 @@ defineExpose({
   undo: () => editor.undo(),
   /** 重做 */
   redo: () => editor.redo(),
+  /** 打开查找浮层（replace=true 时展开替换行） */
+  find: (replace = false) => openSearch(replace),
+  /** 按当前语言格式化；返回是否成功（失败同时触发 error 事件） */
+  format,
+  /** 记录当前内容为「已保存」基线 */
+  markSaved: () => editor.markSaved(),
+  /** 相对基线是否有未保存修改 */
+  isDirty: () => editor.isDirty(),
   /** 当前语言中文标签（自动识别或显式指定） */
   getLanguageLabel: () => editor.languageInfo.value.label,
+  /** 当前查找状态（匹配总数 / 序号 / 错误） */
+  getSearchState: () => editor.searchState.value,
 })
 </script>
 
 <template>
   <div
-    class="ui-code-editor overflow-hidden rounded-lg border border-border bg-surface dark:border-border-dark dark:bg-surface-dark"
+    class="ui-code-editor flex flex-col overflow-hidden rounded-lg border border-border bg-surface dark:border-border-dark dark:bg-surface-dark"
     :style="{ height }"
   >
-    <div ref="hostRef" class="h-full w-full" />
+    <div class="relative min-h-0 flex-1">
+      <div ref="hostRef" class="h-full w-full" />
+
+      <div v-if="searchOpen" class="absolute top-2 right-3 z-20">
+        <EditorSearchBar
+          ref="searchBar"
+          :total="editor.searchState.value.total"
+          :current="editor.searchState.value.current"
+          :error="editor.searchState.value.error"
+          :replace-mode="replaceMode"
+          :readonly="readonly"
+          @search="onSearch"
+          @next="editor.findNext()"
+          @previous="editor.findPrevious()"
+          @replace="editor.replaceCurrent()"
+          @replace-all="editor.replaceAllMatches()"
+          @close="closePanel()"
+        />
+      </div>
+
+      <div v-if="goToLineOpen" class="absolute top-2 right-3 z-20">
+        <EditorGoToLineBar
+          ref="goToLineBar"
+          :current-line="cursor.line"
+          :total-lines="editor.docStats.value.lines"
+          @confirm="onGoToLine"
+          @close="closePanel()"
+        />
+      </div>
+    </div>
+
+    <EditorStatusBar v-if="statusBar" :status="status" />
   </div>
 </template>
