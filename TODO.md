@@ -15,10 +15,12 @@
 
 | # | 批次 | 内容 | 状态 |
 | - | ---- | ---- | ---- |
-| 1 | 批 1 | 骨架：`UiCodeEditor.vue` + `editor/{useCodeEditor,extensions,languages,theme}.ts` + minimal 模式 + showcase | 未开始 |
-| 2 | 批 2 | 高级能力：中文查找替换 / 快捷键 / 状态栏 / 格式化 / 错误标记 / 补全注入 / 大文件降级 / 右键菜单 | 未开始 |
+| 1 | 批 1 | 骨架：`UiCodeEditor.vue` + `editor/{useCodeEditor,extensions,languages,theme}.ts` + minimal 模式 + showcase | **已完成** |
+| 2 | 批 2 | 高级能力：中文查找替换 / 快捷键 / 状态栏 / 格式化 / 错误标记 / 补全注入 / 大文件降级 / 右键菜单 | 下一步 |
 | 3 | 批 3 | 迁移 10 处（3 处手搓 CM6 + 7 处 LineNumberTextarea）并**删除自研组件** | 未开始 |
 | 4 | 批 4 | `UiCodeDiff`（diff）+ SSH 冲突接入 + 文档与体积/内存实测 | 未开始 |
+
+批 1 完成内容（2026-09-11）：`UiCodeEditor` 对外组件 + `editor/` 五模块（含缩进参考线 `indentGuides.ts`）+ `minimal` 档 + 组件实验室 `EditorShowcase` + 13 个单测用例。实测：1 万行首帧 **15.4ms**（热态）/ 123.2ms（dev 冷启动含模块解析），10 万行 38.1ms，两种规模均只挂 36 个 DOM 行；`vendor-editor` gzip **134.84KB**（修正 manualChunks 前为 572.36KB，语言包现按需分包）。
 
 验收三条（用户原话「高性能、低占用、该有的功能都有」）：1 万行渲染 < 100ms；打包增量 ≤ 500KB（gzip）、单实例内存 < 10MB；22 项功能全部可用。
 

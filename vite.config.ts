@@ -41,12 +41,28 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       output: {
-        /** 将稳定的大型依赖从应用入口拆开，降低主包下载与解析成本。 */
+        /**
+         * 将稳定的大型依赖从应用入口拆开，降低主包下载与解析成本。
+         *
+         * 编辑器只把运行时核心归入 vendor-editor：语言包（@codemirror/lang-*）、language-data
+         * 与各语言 @lezer 语法必须保持按需分包——它们是动态 import() 加载的，一旦强制并入
+         * vendor-editor，每次启动都会下载全部语言（实测 572KB gzip）。
+         */
         manualChunks(id) {
           if (!id.includes('node_modules')) return undefined
-          if (id.includes('@codemirror') || id.includes('@lezer') || id.includes('/codemirror/')) {
+          const editorRuntime = [
+            '@codemirror/state',
+            '@codemirror/view',
+            '@codemirror/commands',
+            '@codemirror/language',
+            '@codemirror/search',
+            '@codemirror/autocomplete',
+            '@lezer/common',
+            '@lezer/highlight',
+            '@lezer/lr',
+          ]
+          if (editorRuntime.some((pkg) => id.includes(`node_modules/${pkg}/`)))
             return 'vendor-editor'
-          }
           if (id.includes('@xterm') || id.includes('/xterm/')) return 'vendor-terminal'
           if (id.includes('highlight.js') || id.includes('/marked/')) return 'vendor-markdown'
           if (

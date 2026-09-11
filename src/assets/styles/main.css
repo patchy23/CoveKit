@@ -573,6 +573,55 @@ html[data-theme='dark'] .ui-data-table td {
   --cm-comment: #8b949e;
 }
 
+/* UiCodeEditor 暗色覆盖：语法高亮色走 --cm-*（同名覆盖，无需重建实例），而容器 / gutter /
+   选区 / 折叠占位等用 --color-* 的地方必须在此覆盖；html 前缀提升优先级，压过 CodeMirror
+   运行时注入的样式（同 UiTable 的理由）。 */
+html[data-theme='dark'] .cm-editor {
+  color: var(--color-primary-dark);
+}
+html[data-theme='dark'] .cm-gutters {
+  border-right-color: var(--color-border-dark);
+  color: var(--color-text-muted-dark);
+}
+html[data-theme='dark'] .cm-activeLineGutter {
+  color: var(--color-primary-dark);
+}
+html[data-theme='dark'] .cm-cursor,
+html[data-theme='dark'] .cm-dropCursor {
+  border-left-color: var(--color-primary-dark);
+}
+html[data-theme='dark'] .cm-selectionBackground,
+html[data-theme='dark'] .cm-editor.cm-focused .cm-selectionBackground,
+html[data-theme='dark'] .cm-selectionMatch,
+html[data-theme='dark'] .cm-searchMatch {
+  background-color: var(--color-tertiary-soft-dark);
+}
+html[data-theme='dark'] .cm-searchMatch,
+html[data-theme='dark'] .cm-matchingBracket,
+html[data-theme='dark'] .cm-editor.cm-focused .cm-matchingBracket {
+  outline-color: var(--color-border-strong);
+}
+html[data-theme='dark'] .cm-matchingBracket,
+html[data-theme='dark'] .cm-editor.cm-focused .cm-matchingBracket {
+  background-color: var(--color-tertiary-soft-dark);
+}
+html[data-theme='dark'] .cm-searchMatch.cm-searchMatch-selected {
+  background-color: var(--color-tertiary-dark);
+  color: var(--color-surface-dark);
+}
+html[data-theme='dark'] .cm-foldPlaceholder {
+  background-color: var(--color-tertiary-soft-dark);
+  color: var(--color-tertiary);
+}
+html[data-theme='dark'] .cm-tooltip {
+  border-color: var(--color-border-dark);
+  background-color: var(--color-surface-dark);
+  color: var(--color-primary-dark);
+}
+html[data-theme='dark'] .cm-placeholder {
+  color: var(--color-text-muted-dark);
+}
+
 /* 缩进参考线（VS Code 风格细竖线）：每 2 字符一格，ch 随字体缩放 */
 .cm-indent-guides {
   background-image: repeating-linear-gradient(

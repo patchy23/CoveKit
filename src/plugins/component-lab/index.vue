@@ -3,6 +3,7 @@ import FoundationShowcase from './FoundationShowcase.vue'
 import FormShowcase from './FormShowcase.vue'
 import DataShowcase from './DataShowcase.vue'
 import DatabaseWorkbenchShowcase from './DatabaseWorkbenchShowcase.vue'
+import EditorShowcase from './EditorShowcase.vue'
 import NavigationShowcase from './NavigationShowcase.vue'
 import { UiBadge } from '@/core/ui'
 </script>
@@ -23,6 +24,7 @@ import { UiBadge } from '@/core/ui'
     <FormShowcase />
     <DataShowcase />
     <DatabaseWorkbenchShowcase />
+    <EditorShowcase />
     <NavigationShowcase />
   </div>
 </template>
