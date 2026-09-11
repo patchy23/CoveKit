@@ -61,8 +61,11 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
 
 ### 3.1 文件与路径约定
 
-- 插件数据文件统一存放：`%APPDATA%/com.patchy23.patchybox/<plugin-id>.db`（macOS `~/Library/Application Support/...`）。
-- 路径获取走框架助手 `framework::store::plugin_db_path(app, "api")`，禁止插件手拼路径。
+- 插件数据文件统一存放：`<storageRoot>/data/<plugin-id>.db`（默认 `%APPDATA%/com.patchy23.patchybox`，macOS `~/Library/Application Support/...`）。
+- **路径获取一律走 `framework::paths`，禁止手拼 `app_data_dir()` 或任何绝对路径**：
+  - `data_path(app, "<name>")` 数据分区文件（插件数据库 `plugin_db_path` 即其封装，另有回落旧布局的语义）
+  - `vault_dir(app)` 凭证密文分区；`logs_dir_for(app, scope)` 日志目录；`cache_dir(app, scope)` 可重建缓存
+  - 数据根目录可由用户在设置页「存储位置」修改（四分区布局与迁移流程见 `docs/02-architecture.md` §3.1）
 - 每个插件**一个数据文件**；跨插件共享数据必须经框架（当前不允许，后续需要时新增框架 API）。
 
 ### 3.2 引擎选择

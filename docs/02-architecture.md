@@ -160,6 +160,23 @@ export interface ClipboardRecord {
 | 第二批：连接配置（host/user 等非敏感部分） | `tauri-plugin-store` | 与设置同级 |
 | 第二批：密码/云 API Token/SSH 私钥 | `tauri-plugin-stronghold` | 加密落盘，明文只存内存 |
 
+### 3.1 存储布局与位置迁移（2026-09-12 起）
+
+运行时数据统一由 `framework/paths.rs` 解析，按用途分四个分区：
+
+```
+<storageRoot>/          # 默认 %APPDATA%/com.patchy23.patchybox（app_data_dir）
+├── data/               # 插件 SQLite（<plugin>.db）、ssh-known-hosts、credentials/
+├── vault/              # vault.dat + vault-master.key（仅 keyring 不可用时的降级密钥）
+├── logs/<scope>/       # 日志（如 logs/ssh 会话日志）
+└── cache/<scope>/      # 可重建缓存（cache/agents、cache/tts）
+```
+
+- **配置位置恒定**：`storageRoot` 写在 `settings.json` 的 `app.storageRoot`（空串 = 默认目录）；`settings.json` / `patchybox.json` / `.window-state.json` 等根下配置类文件**永不搬移**，因此配置读取位置与数据放在哪个盘无关（自举安全）。
+- **统一入口**：插件一律用 `paths::data_dir` / `paths::data_path` / `paths::vault_dir` / `paths::logs_dir_for` / `paths::cache_dir`，禁止手拼 `app_data_dir()`；配置的根目录不可用（拔盘 / 只读 / 无权限）时自动降级默认目录并告警，不崩溃。
+- **老布局自动迁移**：启动时（`lib.rs` setup 中最先执行）把根下的 `*.db`、`vault.dat`、`credentials/`、`ssh-known-hosts`、`tts/`、`agents/` 搬入四分区；同卷 `rename` 优先，跨卷退化为复制 + 体积校验 + 删源，目标已存在则跳过（绝不覆盖），记 `layoutVersion` 防重放。单项失败只告警并保留原位置，`data_path` / `vault_path` 会**回落旧位置**读取，升级不丢数据。
+- **位置迁移**（设置页「存储位置」卡片）：`storage_info` 查看四分区占用，`storage_migrate` 复制到新根目录；校验逐分区文件数与字节数、每个 SQLite 库 `PRAGMA quick_check`、`vault.dat` 长度语义，**全部通过才写配置**；**只复制不删除源目录**，由用户确认后自行清理；**重启生效**（不做运行中热切换）。
+
 ---
 
 ## 4. 工具注册表与扩展性设计

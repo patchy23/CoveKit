@@ -134,16 +134,15 @@ pub fn vault_dir(app: &AppHandle) -> Result<PathBuf, String> {
     partition_dir(app, "vault")
 }
 
-/// 日志根目录 `<root>/logs`
 // 会话日志（SSH）等日志消费方接入后即被使用；在此之前仅为统一入口的完整性保留。
 #[allow(dead_code)]
+/// 日志根目录 `<root>/logs`
 pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
     partition_dir(app, "logs")
 }
 
-/// 带作用域的日志目录 `<root>/logs/<scope>`（如 ssh）
-// 供 SSH 会话日志落盘使用（见 docs/plugins/ssh/2026-09-11-扩展任务书.md 第 4 项）。
 #[allow(dead_code)]
+/// 带作用域的日志目录 `<root>/logs/<scope>`（如 ssh）
 pub fn logs_dir_for(app: &AppHandle, scope: &str) -> Result<PathBuf, String> {
     scoped_dir(app, "logs", scope)
 }
@@ -199,16 +198,25 @@ const FIXED_MOVES: [(&str, &str); 7] = [
 /// 老布局 → 四分区迁移（幂等；已完成则直接返回）。
 /// 调用时机：`lib.rs` 的 setup 中**最先**执行，早于任何插件打开数据库。
 pub fn migrate_layout(app: &AppHandle) -> Result<(), String> {
-    let done = read_setting(app, KEY_LAYOUT_VERSION)
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
+    let done = layout_version(app);
     if done >= LAYOUT_VERSION {
         return Ok(());
     }
     let root = storage_root(app)?;
+    let moved = migrate_layout_at(&root)?;
+    write_setting(app, KEY_LAYOUT_VERSION, serde_json::json!(LAYOUT_VERSION))?;
+    if moved > 0 {
+        eprintln!("[storage] 已完成布局迁移：{moved} 项移入 data/vault/cache 分区");
+    }
+    Ok(())
+}
 
+/// 老布局迁移的纯实现（不需要 AppHandle，便于用临时目录单测）：
+/// 把根下的固定项与插件数据库 `*.db` 搬入四分区，返回实际搬移项数。
+/// 单项失败只告警不中断（保留原位置，`data_path` 会回落读取），因此升级不会丢数据。
+pub fn migrate_layout_at(root: &Path) -> Result<usize, String> {
     let mut moved = 0usize;
-    // 固定项
+    // 固定项：known_hosts / 本地凭据 / Vault / 缓存
     for (name, partition) in FIXED_MOVES {
         let from = root.join(name);
         let to = root.join(partition).join(name);
@@ -218,8 +226,8 @@ pub fn migrate_layout(app: &AppHandle) -> Result<(), String> {
             Err(e) => eprintln!("[storage] 迁移 {name} 失败（保留原位置）: {e}"),
         }
     }
-    // 根下插件数据库 *.db
-    if let Ok(entries) = std::fs::read_dir(&root) {
+    // 插件数据库：根下 *.db → data/
+    if let Ok(entries) = std::fs::read_dir(root) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("db") {
@@ -236,12 +244,7 @@ pub fn migrate_layout(app: &AppHandle) -> Result<(), String> {
             }
         }
     }
-
-    write_setting(app, KEY_LAYOUT_VERSION, serde_json::json!(LAYOUT_VERSION))?;
-    if moved > 0 {
-        eprintln!("[storage] 已完成布局迁移：{moved} 项移入 data/vault/cache 分区");
-    }
-    Ok(())
+    Ok(moved)
 }
 
 /// 移动单一路径（文件或目录）。返回是否真的搬了。
@@ -399,6 +402,63 @@ mod tests {
         assert!(!src.exists());
         assert_eq!(std::fs::read(dst.join("ssh.enc")).unwrap(), b"abc");
         assert!(dst.join("nested").join("x.enc").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migrate_layout_at_moves_legacy_items_into_partitions() {
+        let dir = temp_dir("migrate");
+        // 造老布局：根下的数据库、vault 密文、凭据目录、缓存目录
+        std::fs::write(dir.join("ssh.db"), b"db").unwrap();
+        std::fs::write(dir.join("vault.dat"), vec![0u8; 32]).unwrap();
+        std::fs::write(dir.join("vault-master.key"), vec![0u8; 32]).unwrap();
+        std::fs::create_dir_all(dir.join("credentials")).unwrap();
+        std::fs::write(dir.join("credentials").join("ssh.enc"), b"enc").unwrap();
+        std::fs::create_dir_all(dir.join("tts")).unwrap();
+        std::fs::write(dir.join("tts").join("a.mp3"), b"mp3").unwrap();
+        std::fs::create_dir_all(dir.join("agents")).unwrap();
+        std::fs::write(dir.join("agents").join("d.jar"), b"jar").unwrap();
+        std::fs::write(dir.join("config.json"), b"{}").unwrap();
+
+        let moved = migrate_layout_at(&dir).unwrap();
+        assert_eq!(
+            moved, 6,
+            "应为 ssh.db + vault.dat + vault-master.key + credentials + tts + agents 共 6 项"
+        );
+        // 分区落位
+        assert!(dir.join("data").join("ssh.db").exists());
+        assert!(dir.join("vault").join("vault.dat").exists());
+        assert!(dir.join("vault").join("vault-master.key").exists());
+        assert!(dir
+            .join("data")
+            .join("credentials")
+            .join("ssh.enc")
+            .exists());
+        assert!(dir.join("cache").join("tts").join("a.mp3").exists());
+        assert!(dir.join("cache").join("agents").join("d.jar").exists());
+        // 配置类根下文件永不搬移
+        assert!(dir.join("config.json").exists());
+        // 幂等：再跑一次无事发生
+        assert_eq!(migrate_layout_at(&dir).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn migrate_layout_at_keeps_source_when_target_exists() {
+        let dir = temp_dir("migrate-conflict");
+        std::fs::create_dir_all(dir.join("data")).unwrap();
+        std::fs::write(dir.join("ssh.db"), b"legacy").unwrap();
+        std::fs::write(dir.join("data").join("ssh.db"), b"current").unwrap();
+        assert_eq!(
+            migrate_layout_at(&dir).unwrap(),
+            0,
+            "目标已存在时跳过，不覆盖"
+        );
+        assert_eq!(
+            std::fs::read(dir.join("data").join("ssh.db")).unwrap(),
+            b"current"
+        );
+        assert!(dir.join("ssh.db").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
