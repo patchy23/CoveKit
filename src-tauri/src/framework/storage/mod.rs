@@ -149,8 +149,11 @@ fn migrate_blocking(app: &AppHandle, target: &str) -> Result<StorageMigrateResul
         return Err("目标目录与当前存储目录相同".into());
     }
 
+    // 源数据总量（进度事件的分母；复制阶段才会真正写入）
+    let total_bytes = paths::dir_size(&source_root).unwrap_or(0);
+
     // ── 预检：可写性探针（不可写立即中止，不写配置）──
-    emit_progress(app, "precheck", 0, 0);
+    emit_progress(app, "precheck", 0, 0, total_bytes);
     if !paths::is_writable_dir(&target_root) {
         return Err(format!("目标目录不可写：{}", target_root.display()));
     }
@@ -163,7 +166,6 @@ fn migrate_blocking(app: &AppHandle, target: &str) -> Result<StorageMigrateResul
     }
 
     // ── 复制：逐分区保留相对路径 ──
-    let total_bytes = paths::dir_size(&source_root).unwrap_or(0);
     let mut copied_files = 0u64;
     let mut copied_bytes = 0u64;
     for name in PARTITIONS {
@@ -175,20 +177,19 @@ fn migrate_blocking(app: &AppHandle, target: &str) -> Result<StorageMigrateResul
         let (files, bytes) = transfer::copy_tree(&from, &to)?;
         copied_files += files;
         copied_bytes += bytes;
-        emit_progress(app, "copy", copied_files, copied_bytes);
+        emit_progress(app, "copy", copied_files, copied_bytes, total_bytes);
     }
     if copied_files == 0 {
         return Err("源存储目录没有可迁移的数据（四分区均为空）".into());
     }
-    let _ = total_bytes;
 
     // ── 校验：文件数与字节数一致 + 每个 SQLite 库 quick_check ──
-    emit_progress(app, "verify", copied_files, copied_bytes);
+    emit_progress(app, "verify", copied_files, copied_bytes, total_bytes);
     verify::verify_copy(&source_root, &target_root)?;
 
     // ── 写配置（校验通过才落盘；重启生效）──
     paths::set_storage_root(app, trimmed)?;
-    emit_progress(app, "done", copied_files, copied_bytes);
+    emit_progress(app, "done", copied_files, copied_bytes, total_bytes);
 
     Ok(StorageMigrateResult {
         ok: true,
@@ -200,12 +201,18 @@ fn migrate_blocking(app: &AppHandle, target: &str) -> Result<StorageMigrateResul
 }
 
 /// 推送迁移进度（前端订阅 `storage://progress`）
-fn emit_progress(app: &AppHandle, phase: &'static str, copied_files: u64, copied_bytes: u64) {
+fn emit_progress(
+    app: &AppHandle,
+    phase: &'static str,
+    copied_files: u64,
+    copied_bytes: u64,
+    total_bytes: u64,
+) {
     let payload = MigrateProgress {
         phase,
         copied_files,
         copied_bytes,
-        total_bytes: copied_bytes,
+        total_bytes,
     };
     let _ = app.emit("storage://progress", payload);
 }

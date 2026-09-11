@@ -16,6 +16,7 @@ import { useUiStore } from '@/stores/ui'
 import { ipc } from '@/core/ipc/ipc'
 import CredentialManagerPage from '@/features/vault/CredentialManagerPage.vue'
 import UpdateSettingsCard from './UpdateSettingsCard.vue'
+import StorageSettingsCard from './StorageSettingsCard.vue'
 
 const settings = useSettingsStore()
 const ui = useUiStore()
@@ -186,6 +187,8 @@ async function chooseDownloadDirectory() {
             <UiButton @click="openVault">{{ t('settings.manageVault') }}</UiButton>
           </div>
         </section>
+
+        <StorageSettingsCard />
 
         <UpdateSettingsCard />
 

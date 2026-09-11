@@ -91,6 +91,52 @@ export interface VaultImportResult {
   skipped: number
 }
 
+// ── 存储位置（src-tauri framework/storage，serde camelCase 同步）──
+
+/** 单个分区（data / vault / logs / cache）的路径与占用 */
+export interface StoragePartitionInfo {
+  name: string
+  path: string
+  bytes: number
+  fileCount: number
+}
+
+/** 存储位置信息（storage_info 返回） */
+export interface StorageInfo {
+  /** 当前生效的存储根目录 */
+  root: string
+  /** 是否使用默认根目录（app_data_dir）
+   * */
+  isDefault: boolean
+  /** 默认根目录（「恢复默认」的目标） */
+  defaultRoot: string
+  /** 四分区明细 */
+  partitions: StoragePartitionInfo[]
+  /** 四分区合计字节数 */
+  totalBytes: number
+  /** 四分区合计文件数 */
+  fileCount: number
+  /** 已完成的布局版本（等于 paths::LAYOUT_VERSION 表示已是四分区布局） */
+  layoutVersion: number
+}
+
+/** 迁移结果（storage_migrate 返回；ok=false 时未写配置，现状不变） */
+export interface StorageMigrateResult {
+  ok: boolean
+  target: string
+  copiedFiles: number
+  copiedBytes: number
+  error: string | null
+}
+
+/** 迁移进度事件负载（事件名 `storage://progress`） */
+export interface StorageMigrateProgress {
+  phase: 'precheck' | 'copy' | 'verify' | 'done'
+  copiedFiles: number
+  copiedBytes: number
+  totalBytes: number
+}
+
 // ── 框架命令清单 ──
 
 export const frameworkCommands = {
@@ -100,6 +146,9 @@ export const frameworkCommands = {
   windowHide: 'window_hide',
   openExternal: 'open_external',
   frameworkCommandsList: 'framework_commands',
+  // 存储位置（框架命令，src-tauri framework/storage）
+  storageInfo: 'storage_info',
+  storageMigrate: 'storage_migrate',
   // Vault 凭证管理（框架命令，src-tauri framework/vault）
   vaultList: 'vault_list',
   vaultSave: 'vault_save',
@@ -118,6 +167,8 @@ export type FrameworkPayloads = {
   window_hide: Record<string, never>
   open_external: { url: string }
   framework_commands: Record<string, never>
+  storage_info: Record<string, never>
+  storage_migrate: { target: string }
   vault_list: Record<string, never>
   vault_save: { payload: CredentialSavePayload }
   vault_delete: { id: string }
@@ -135,6 +186,8 @@ export type FrameworkResults = {
   window_hide: void
   open_external: void
   framework_commands: { name: string; doc: string }[]
+  storage_info: StorageInfo
+  storage_migrate: StorageMigrateResult
   vault_list: CredentialSummary[]
   vault_save: CredentialSummary
   vault_delete: VaultDeleteResult
