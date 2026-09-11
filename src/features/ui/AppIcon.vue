@@ -62,6 +62,8 @@ const inner: Record<string, string> = {
   dns: '<circle cx="12" cy="12" r="7.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="2.2"/>',
   xml: '<path d="M8 6l-4 6 4 6M16 6l4 6-4 6M13.5 4l-3 16"/>',
   tts: '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
+  // FRP 客户端：两侧端面 + 中间穿透箭头（隧道意象，原创）
+  frp: '<rect x="2.5" y="8" width="4" height="8" rx="1.2"/><rect x="17.5" y="8" width="4" height="8" rx="1.2"/><path d="M8.6 12h4.6"/><path d="m11.6 9.6 2.5 2.4-2.5 2.4"/>',
 }
 </script>
 

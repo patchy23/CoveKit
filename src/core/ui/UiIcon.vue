@@ -20,12 +20,15 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  ChevronUp,
   Copy,
   Download,
   Ellipsis,
   Eye,
   EyeOff,
+  Folder,
   FolderUp,
+  Info,
   LayoutGrid,
   LoaderCircle,
   Minus,
@@ -36,6 +39,7 @@ import {
   Save,
   Search,
   SkipForward,
+  Square,
   Star,
   Trash2,
   Upload,
@@ -47,6 +51,7 @@ export const UI_ICONS = {
   search: Search,
   'chevron-down': ChevronDown,
   'chevron-right': ChevronRight,
+  'chevron-up': ChevronUp,
   'chevrons-left': ChevronsLeft,
   'chevrons-right': ChevronsRight,
   x: X,
@@ -58,6 +63,8 @@ export const UI_ICONS = {
   /** 四宫格（查看结构） */
   grid: LayoutGrid,
   play: Play,
+  /** 停止（实心方块；启停按钮用） */
+  stop: Square,
   /** 全部执行（播放 + 竖线） */
   'play-all': SkipForward,
   /** SQL 格式化 */
@@ -84,6 +91,10 @@ export const UI_ICONS = {
   /** 重命名/编辑 */
   pencil: Pencil,
   trash: Trash2,
+  /** 目录（列表栏脚、路径展示） */
+  folder: Folder,
+  /** 信息提示（空状态与说明文案） */
+  info: Info,
   /** 秘密字段显示/隐藏（眼睛切换） */
   eye: Eye,
   'eye-off': EyeOff,
