@@ -4,7 +4,8 @@
  * 用法：父组件监听 @contextmenu.prevent 记录坐标，渲染 <ContextMenu :x :y :items @close>。
  * 点击外部 / 菜单项后自动关闭；菜单项支持分隔线与危险样式（红色）。
  * hover 高亮统一 bg-border（与 Select 下拉一致）。
- * size：md（默认，w-150/text-body，SSH 文件等场景）；sm（w-124/text-body-sm，树节点等紧凑场景）
+ * size：md（默认，text-body，SSH 文件等场景）；sm（text-body-sm，树节点等紧凑场景）。
+ * 宽度不写死：min-w 保底 + 按内容自适应（max-w 兜底），菜单项一律不换行。
  * 注意：面板必须 pointer-events-auto——reka 模态弹窗会把 body 置 pointer-events:none，
  * Teleport 到 body 的菜单若不加会整体点不动（弹窗内右键菜单失效的根因）。
  */
@@ -50,9 +51,15 @@ function handleClick(item: ContextMenuItem) {
   close()
 }
 
-/** 面板尺寸类（宽/圆角/纵向间距随档位） */
+/**
+ * 面板尺寸类（最小宽度 / 纵向间距随档位）。
+ * 宽度取「最小宽度 + 按内容自适应」而不是写死宽度：菜单项文案长短差异很大，
+ * 写死宽度会把「在资源管理器中显示」这类偏长的项挤成两行。
+ */
 const panelClass = computed(() =>
-  props.size === 'sm' ? 'w-[124px] py-[3px]' : 'w-[150px] py-[4px]'
+  props.size === 'sm'
+    ? 'min-w-[140px] w-max max-w-[320px] py-[3px]'
+    : 'min-w-[168px] w-max max-w-[340px] py-[4px]'
 )
 /** 菜单项尺寸类 */
 const itemClass = computed(() =>
@@ -81,7 +88,7 @@ onUnmounted(() => document.removeEventListener('mousedown', close))
         />
         <button
           v-else
-          class="flex w-full items-center transition-colors"
+          class="flex w-full items-center whitespace-nowrap transition-colors"
           :class="[
             itemClass,
             item.disabled
