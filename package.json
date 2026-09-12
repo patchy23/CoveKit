@@ -15,6 +15,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:deps": "node scripts/check_frontend_deps.mjs",
     "release:config": "node scripts/write-release-config.mjs"
   },
   "dependencies": {

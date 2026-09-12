@@ -1,0 +1,54 @@
+{
+  "note": "前端依赖守卫基线（scripts/check_frontend_deps.mjs 读取）。语义为棘轮：已登记条目不失败；出现未登记违规、或登记的条目已不再命中（失效例外）即失败。每条必须写明 rule/path/target 与登记原因；AR03 处理完的条目要同步删除，否则守卫会以失效例外报错。unresolved 登记的是检查器无法静态解析的路径（如非字面量动态 import）。",
+  "exceptions": [
+    {
+      "rule": "R1",
+      "path": "src/core/ui/CredentialPicker.vue",
+      "target": "@/core/vault/useVault",
+      "reason": "AR03 处理：该复合组件与 core/vault/CredentialForm.vue 迁往 core/vault/ui/ 后删除本条；core/ui 不得依赖 core/vault。"
+    },
+    {
+      "rule": "R1",
+      "path": "src/core/ui/CredentialPicker.vue",
+      "target": "@/core/vault/CredentialForm.vue",
+      "reason": "AR03 处理：凭证表单随复合组件一并迁出 core/ui，改由 core/vault 入口公开，届时删除本条。"
+    },
+    {
+      "rule": "R1",
+      "path": "src/core/ui/CredentialPicker.vue",
+      "target": "@/core/ipc/ipc",
+      "reason": "AR03 处理：core/ui 不得直接调用应用 IPC（src/core/ipc/ipc.ts）；凭证列表/保存调用随组件迁往 core/vault。"
+    },
+    {
+      "rule": "R1",
+      "path": "src/core/ui/useClipboard.ts",
+      "target": "@/stores/ui",
+      "reason": "AR03 处理：底层剪贴板操作迁 core/platform/clipboard.ts、带提示的 useCopy 迁 core/feedback/useCopy.ts 后，core/ui 不再依赖 Pinia 全局状态。"
+    },
+    {
+      "rule": "R3",
+      "path": "src/core/ui/index.ts",
+      "target": "./CredentialPicker.vue",
+      "reason": "AR03 处理：core/vault 公开凭证复合组件后，基础 Ui 入口删除该重导出（Ui 入口不得反向导出 Vault 组件）。"
+    },
+    {
+      "rule": "R4",
+      "path": "src/core/ui/CredentialPicker.vue",
+      "target": "src/core/ui/CredentialPicker.vue -> src/core/vault/CredentialForm.vue -> src/core/ui/index.ts -> src/core/ui/CredentialPicker.vue",
+      "reason": "AR03 处理：core/ui ↔ core/vault 的运行期依赖环；CredentialPicker/CredentialForm 迁出并移除入口重导出后该环消失，届时本条目成为失效例外，必须同步删除。"
+    },
+    {
+      "rule": "R4",
+      "path": "src/core/ui/UiCodeEditor.vue",
+      "target": "src/core/ui/UiCodeEditor.vue -> src/core/ui/editor/EditorGoToLineBar.vue -> src/core/ui/index.ts -> src/core/ui/UiCodeEditor.vue",
+      "reason": "既有 barrel 环（AR02 登记保真，本轮不修）：编辑器定位栏从 @/core/ui 入口取基础控件，入口又重导出 UiCodeEditor。修法是在该栏改直接路径引用或拆 barrel，不在 AR03 范围内。"
+    },
+    {
+      "rule": "R4",
+      "path": "src/core/ui/UiCodeEditor.vue",
+      "target": "src/core/ui/UiCodeEditor.vue -> src/core/ui/editor/EditorSearchBar.vue -> src/core/ui/index.ts -> src/core/ui/UiCodeEditor.vue",
+      "reason": "既有 barrel 环（AR02 登记保真，本轮不修）：同 UiCodeEditor ↔ EditorGoToLineBar 一条，搜索栏同样经 @/core/ui 入口取基础控件。"
+    }
+  ],
+  "unresolved": []
+}

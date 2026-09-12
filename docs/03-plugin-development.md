@@ -154,11 +154,12 @@ Rust：
 3. **规模与拆分**：按 §1 的评审信号与「必须重构的条件」判断，行数本身不构成自动失败。
 4. **反馈与错误**：显式操作必须可感知结果（toast / 错误行 / 状态变化 / 加载指示都算反馈），禁止静默 catch；取消与预期缺失不弹错误；IO、解析与密钥失败不得伪装成默认成功。
 5. 提交信息：conventional commits 带模块作用域（`fix(http-ws): ...`；框架用 `core`）。
-6. **代码注释（按语义强制，2026-09-12 修订）**：必须写的是——(a) 文件头模块职责；(b) `pub`/`pub(crate)` API 用途；(c) IPC 与持久化 DTO 的非显然字段（单位 / 空值语义 / 敏感性）；(d) 关键生命周期、锁与安全不变量（`unsafe` 必带紧邻 `// SAFETY:`）。私有且语义显然的函数、测试辅助不强制也不扣分；注释质量由人工审查，工具只做覆盖检查（`scripts/check_docs.py`，AR02 起并入 syn 检查器）。
+6. **代码注释（按语义强制，2026-09-12 修订）**：必须写的是——(a) 文件头模块职责（`//!`）；(b) `pub`/`pub(crate)` API 用途；(c) IPC 与持久化 DTO 的非显然字段（单位 / 空值语义 / 敏感性）；(d) 关键生命周期、锁与安全不变量（`unsafe` 必带紧邻 `// SAFETY:`）。私有且语义显然的函数、测试辅助不强制也不扣分；注释质量由人工审查，工具只做覆盖检查（`python scripts/check_docs.py`，AR02 起实现为 `src-tauri/tests/source_rules` 的 syn 扫描：文件头、pub/pub(crate)/pub(super) 项含固有 impl 方法、pub 结构体字段；枚举变体与 trait 实现关联项不强制）。
 7. 前端通用控件必须从 `@/core/ui` 导入，禁止在插件内复制按钮、表单、页签、面板、弹窗和状态反馈样式；完整规范见 `docs/04-ui-components.md`。
-8. **Rust 代码规范**（`docs/05-rust-code-standard.md`）：提交前跑 `python scripts/check_rust_rules.py`；运行期禁 unwrap/expect（例外须绑定具体位置与原因）、clone 按规模与所有权评审、`unsafe` 须必要且带紧邻 `// SAFETY:` 论证。
+8. **Rust 代码规范**（`docs/05-rust-code-standard.md`）：提交前跑 `python scripts/check_rust_rules.py` 与 `python scripts/check_docs.py`（两者是 `cargo test --test source_rules` 的薄 wrapper，CI 跑同一 target）；运行期禁 unwrap/expect（例外须按路径+符号+类别登记在基线文件里）、clone 按规模与所有权评审、`unsafe` 须必要且带紧邻 `// SAFETY:` 论证。
 9. **dev 冷启动冒烟（2026-09-06 新增，血泪教训：b75b531 注册 updater 插件但基座配置缺段，之后两周 dev 启动即 panic 无人发现）**：改动涉及 `tauri.conf.json` / `lib.rs` 插件注册 / `Cargo.toml` 依赖 / 能力权限时，提交前必须 `pnpm tauri dev` 冷启动一次，确认窗口正常出现、控制台无 panic。只改前端或纯逻辑可豁免。
 10. **Tauri 已知坑**：`dragDropEnabled`（默认开，OS 文件拖入依赖它）会吞掉应用内 HTML5 拖拽——内部拖拽一律用 pointer 事件自实现（参照 `src/plugins/ssh/useServerGroups.ts` 的 `useGroupDrag`）；SFC scoped 样式里 `:global()+:deep()` 混写会被编译静默丢弃，暗色覆盖写 `main.css` 全局 unlayered 区。
+11. **前端依赖守卫（AR02 新增）**：提交前跑 `pnpm check:deps`（`scripts/check_frontend_deps.mjs`）——`core/ui` 不得依赖 `stores`/`features`/`plugins`/`vault` 与应用 IPC；插件之间不得 import 对方内部模块（含类型导入）；`core/ui` 入口不得重导出 vault/插件模块；`src/core/**` 运行期依赖图不得有环（`import type` 不算运行期）。存量违规登记在 `scripts/frontend_deps_baseline.json`（棘轮，AR03 逐步清零）：出现未登记违规、或登记条目已不再命中（失效例外）即失败。
 
 ## 6. 新增插件 Check-list
 
