@@ -1,7 +1,7 @@
-// patchyBox 桌面工具箱 · Rust 侧框架装配入口
-// 插件模式：业务插件位于 plugins/（命令 + State 由 register 自注册，启动初始化走 init）；
-// 新增插件 = plugins/<id>.rs + 下方 register/init 各一行，框架与既有插件零改动。
-// 框架级命令（窗口/外链）留在本文件。
+//! patchyBox 桌面工具箱 · Rust 侧框架装配入口
+//! 插件模式：业务插件位于 plugins/（命令 + State 由 register 自注册，启动初始化走 init）；
+//! 新增插件 = plugins/<id>.rs + 下方 register/init 各一行，框架与既有插件零改动。
+//! 框架级命令（窗口/外链）留在本文件。
 
 mod framework;
 mod plugins;

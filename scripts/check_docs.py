@@ -1,66 +1,37 @@
 #!/usr/bin/env python3
-"""Rust 注释覆盖率检查（docs/03-plugin-development.md §5 质量门槛）
-用法: python scripts/check_docs.py [src-tauri/src 路径]
-要求:
-  1. 每个 .rs 文件有文件头注释（//!）
-  2. 每个结构体/函数有 /// 用途注释（自动跳过 #[cfg]/#[derive] 属性行）
-  3. 结构体每个属性有 /// 注释（同一结构体块内检查）
-退出码: 0 = 全过；1 = 有缺失
+"""Rust 注释覆盖率检查（薄 wrapper）。
+
+检查项（实现见 src-tauri/tests/source_rules.rs，入口 `scan_docs`）：
+1. 每个 .rs 文件有 `//!` 文件头（模块职责）；
+2. 每个 pub / pub(crate) / pub(super) 项（含 impl 内缩进的方法）有 `///` 注释；
+3. pub 结构体的字段有 `///` 注释；
+4. 枚举变体与 trait 关联项不在覆盖范围（报告会打印覆盖边界，不声称语义全覆盖）。
+
+与旧实现的区别：判定基于 AST，因此缩进的 impl 方法、跨行属性不再漏判，
+注释、字符串、属性里的同名文本也不再误判。
+
+用法：python scripts/check_docs.py [src 路径]   （默认 src-tauri/src）
+退出码：0 = 通过；1 = 检查失败 / cargo 失败；2 = 参数或目录错误
 """
-import re
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
-ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else "src-tauri/src")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-def check_file(path: Path) -> list[str]:
-    issues = []
-    text = path.read_text(encoding="utf-8")
-    lines = text.split("\n")
+import source_rules_runner as runner  # noqa: E402  （需先注入 scripts/ 到 sys.path）
 
-    # 1. 文件头注释（//! 模块注释，或首行 // 块注释）
-    head = lines[:8]
-    if not any(l.strip().startswith("//!") for l in head) and not (head and head[0].strip().startswith("//")):
-        issues.append(f"{path}: 缺少文件头注释（//!）")
-
-    for i, line in enumerate(lines):
-        m = re.match(r"^(pub(?:\(crate\))? (?:async )?fn |fn |pub struct |pub\(crate\) struct |struct )", line)
-        if not m:
-            continue
-        # 2. 函数/结构体注释
-        j = i - 1
-        while j >= 0 and lines[j].strip().startswith("#["):
-            j -= 1
-        has_doc = j >= 0 and lines[j].strip().startswith("///")
-        if not has_doc:
-            issues.append(f"{path}:L{i+1} {line.strip()[:50]} 缺注释")
-
-        # 3. 结构体属性注释（含 serde 属性行跳过的字段）
-        if "struct " in m.group(0) and ";" not in line:
-            k = i + 1
-            while k < len(lines) and "}" not in lines[k]:
-                pm = re.match(r"^\s+(pub(?:\(crate\))? )?(\w+):", lines[k])
-                if pm:
-                    prev = k - 1
-                    while prev > i and lines[prev].strip().startswith("#["):
-                        prev -= 1
-                    if not lines[prev].strip().startswith("///") and not lines[k].strip().startswith("//"):
-                        issues.append(f"{path}:L{k+1} 属性 {pm.group(2)} 缺注释")
-                k += 1
-    return issues
-
-def main() -> int:
-    all_issues = []
-    files = sorted(ROOT.rglob("*.rs"))
-    for f in files:
-        all_issues += check_file(f)
-    if all_issues:
-        print(f"✗ {len(all_issues)} 处注释缺失：")
-        for x in all_issues:
-            print(f"  {x}")
-        return 1
-    print(f"✓ 注释检查通过（{len(files)} 个 rs 文件，结构体属性全覆盖）")
-    return 0
+DEFAULT_ROOT = "src-tauri/src"
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raw = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_ROOT
+    target = Path(raw)
+    if not target.is_absolute():
+        target = runner.ROOT / target
+    target = target.resolve()
+    if not target.is_dir():
+        print(f"✗ 目录不存在：{raw}（解析为 {target}）", file=sys.stderr)
+        sys.exit(runner.EXIT_USAGE)
+    note = f"扫描目录：{target}"
+    sys.exit(runner.run_entry("scan_docs", {"PATCHYBOX_DOCS_ROOT": str(target)}, note))

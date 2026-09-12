@@ -124,14 +124,19 @@
 提交前运行：
 
 ```bash
-python scripts/check_rust_rules.py
+python scripts/check_rust_rules.py      # 代码规则（panic / 生命周期逃逸 / unsafe 论证 / 层级越界）
+python scripts/check_docs.py            # 文档覆盖（//! 文件头、pub API、DTO 字段）
+node scripts/check_frontend_deps.mjs    # 前端依赖守卫（等价 pnpm check:deps）
 ```
 
-- **panic 风险**采用棘轮基线（`scripts/rust_rules_baseline.json`）：只许减不许增，整改后同步下调基线数字
-- **clone 与文件规模只报告、不拦截**（2026-09-12 修订；基线文件实际只登记 panic，旧文档「clone 也是棘轮」与脚本实现不符）：不因数字高就批量改 `Arc` 或拆文件，改动由评审按 §2 判断
+**实现位置（AR02 起）**：两个 Python 脚本只是薄 wrapper，真正的检查在 `src-tauri/tests/source_rules/`（syn 2 AST + 夹具，约定入口 `scan_rust_rules` 与 `scan_docs`），CI 显式执行 `cargo test --test source_rules`。wrapper 用 `--exact` 精确过滤并**确认真的执行了 1 个测试**——过滤器写错导致 0 个测试不得算通过。
+
+- **panic 风险**采用分类棘轮基线（`scripts/rust_rules_baseline.json` 的 `panic_by_kind`）：`unwrap` / `expect` / `panic!` / `unreachable!` / `todo!` / `assert!` 系列分类登记，只许减不许增；新增发现必须分类整改，不允许抬高数字掩盖
+- **clone 与文件规模只报告、不拦截**（2026-09-12 修订）：不因数字高就批量改 `Arc` 或拆文件，改动由评审按 §2 判断
 - 生命周期类（`Box::leak` / `transmute` / `mem::forget`）**零容忍无基线**，出现即失败
-- `unsafe` 本身不算违规，但**每处必须带紧邻的 `// SAFETY:` 注释**（脚本逐处校验注释块，缺失即失败）；必要性与作用域由代码评审把关
-- §1 的合法例外必须绑定**文件相对路径 + 符号 + 调用类别 + 原因**，不得用同一句 `expect` 文案全局放行；符号移动时同步更新记录，失效例外应报错（当前由脚本 `ALLOWLIST_PATTERNS` 实现，AR02 起随检查器改为按位置登记）
+- `unsafe` 本身不算违规，但**每处必须带紧邻的 `// SAFETY:` 注释**（逐处校验注释块，缺失即失败；属性行可以夹在两者之间）
+- §1 的合法例外必须绑定**仓库锚定相对路径 + 归属符号 + 调用类别 + 原因**（基线文件 `exceptions` 数组，不再用同一句 `expect` 文案全局放行）；符号移动或删除即失效并报错
+- **覆盖边界（工具自己在报告里声明，不声称语义全覆盖）**：不做 cfg 真假求值（只按属性 AST 字面排除直接 `#[cfg(test)]` 子树，`cfg(all(test, …))` / `cfg(not(test))` 一律保守扫描并列入未覆盖项）、不展开宏（`macro_rules!` 体内含候选时逐个提示，第三方/派生宏只汇总数量）、层级规则只解析 `crate::plugins::<owner>` 绝对路径（`super::` 拼出的跨插件引用不在范围）；枚举变体与 trait 实现关联项不强制文档
 
 ## 附录 · 参考来源（2026-09-05 对照验证）
 

@@ -1,3 +1,102 @@
 {
-  "panic_violations": 0
+  "_comment": "AR02 规范检查器基线（棘轮）：src-tauri/tests/source_rules 读取本文件。panic_by_kind 为各细分类别的存量上限，只降不升；新增发现必须分类后整改，不允许抬高数字。exceptions 是逐条登记的合法例外（仓库锚定相对路径 + 归属符号 + 调用类别 + 原因），符号移动或删除即失效报错。lifetime_escape / unsafe_without_safety / layer_violation 为零容忍规则，不设基线。",
+  "panic_violations": 0,
+  "panic_by_kind": {
+    "unwrap": 0,
+    "expect": 0,
+    "unwrap_err": 0,
+    "unwrap_unchecked": 0,
+    "panic": 0,
+    "unreachable": 0,
+    "todo": 0,
+    "assert": 0,
+    "assert_debug": 0
+  },
+  "doc_issues": 0,
+  "exceptions": [
+    {
+      "path": "src-tauri/src/framework/settings.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/framework/storage/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/framework/vault/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/plugins/api/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/plugins/database/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/plugins/dns/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/plugins/frp/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/plugins/hosts/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/plugins/http_ws/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/plugins/ssh/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/plugins/tts/mod.rs",
+      "symbol": "register",
+      "kind": "expect",
+      "reason": "启动期 IPC 注册表的唯一性校验：同名命令被两个模块登记属编码错误，必须 fail-fast（docs/05 §1 例外）"
+    },
+    {
+      "path": "src-tauri/src/plugins/mod.rs",
+      "symbol": "validate_routing",
+      "kind": "assert",
+      "reason": "启动期路由表校验：登记了命令却没有路由分支属编码错误，冷启动即暴露（AR02 起 assert! 系列也纳入候选清单）"
+    },
+    {
+      "path": "src-tauri/src/lib.rs",
+      "symbol": "run",
+      "kind": "expect",
+      "reason": "tauri 事件循环启动失败的顶层 fail-fast：此时无上层可回报，继续运行只会得到无窗口的僵尸进程"
+    },
+    {
+      "path": "src-tauri/src/plugins/dns/dnspod.rs",
+      "symbol": "hmac_sha256",
+      "kind": "expect",
+      "reason": "Hmac::new_from_slice 对任意长度密钥恒返回 Ok（类型层面可证的不变量），此处仅取回不可失败的值"
+    }
+  ]
 }

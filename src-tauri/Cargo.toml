@@ -70,6 +70,22 @@ deadpool-postgres = { version = "0.14", features = ["rt_tokio_1"] }
 redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
 toml = "1.1.6"
 
+# 规范检查器（src-tauri/tests/source_rules，AR02）的唯一直接开发依赖。
+# 依赖评审四问：① 用途=把自己写的 Rust 源码解析成 AST，替代已被证误判的逐行正则；
+# ② 必要性=行级匹配无法区分测试模块/注释/字符串/属性，误报与漏报都已复现；
+# ③ 替代方案=编译器自身无公开 API、手写解析器不划算；④ 成本=syn/proc-macro2 本就是
+# tauri 宏展开的传递依赖（锁文件已有），这里按锁文件版本精确钉住，避免引入第二份版本；
+# dev-dependencies 不参与产物打包，只在 cargo test/check 时编译。
+[dev-dependencies]
+syn = { version = "=2.0.119", default-features = false, features = [
+  "full",
+  "parsing",
+  "printing",
+  "proc-macro",
+  "visit",
+] }
+proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
