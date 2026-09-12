@@ -11,8 +11,8 @@ import {
   onTerminalData,
   onTransferProgress,
 } from './ipc'
-import { clearLegacySnapshot, readLegacySnapshot } from './useSsh'
-import { useServerGroups } from './useServerGroups'
+import { clearLegacySnapshot, readLegacySnapshot } from './connection/useSsh'
+import { useServerGroups } from './profiles/useServerGroups'
 import type { HostKeyVerifyRequest, ServerConnection, ServerProfile } from './contracts'
 
 export type SshWorkspaceSection =

@@ -1,17 +1,17 @@
 <script setup lang="ts">
 /** SSH 工具主容器：服务器配置列表 + 多连接页签；每条连接拥有完整运维功能区。 */
 import { computed, ref, watch } from 'vue'
-import ServerList from './ServerList.vue'
-import ServerForm from './ServerForm.vue'
-import TerminalTab from './TerminalTab.vue'
-import TunnelTab from './TunnelTab.vue'
-import HostKeyDialog from './HostKeyDialog.vue'
-import KnownHostsDialog from './KnownHostsDialog.vue'
-import FileManagerTab from './FileManagerTab.vue'
-import MonitorTab from './MonitorTab.vue'
-import ServiceTab from './ServiceTab.vue'
-import ProcessTab from './ProcessTab.vue'
-import DockerTab from './DockerTab.vue'
+import ServerList from './profiles/ServerList.vue'
+import ServerForm from './profiles/ServerForm.vue'
+import TerminalTab from './terminal/TerminalTab.vue'
+import TunnelTab from './tunnels/TunnelTab.vue'
+import HostKeyDialog from './connection/HostKeyDialog.vue'
+import KnownHostsDialog from './connection/KnownHostsDialog.vue'
+import FileManagerTab from './files/FileManagerTab.vue'
+import MonitorTab from './monitor/MonitorTab.vue'
+import ServiceTab from './monitor/ServiceTab.vue'
+import ProcessTab from './monitor/ProcessTab.vue'
+import DockerTab from './docker/DockerTab.vue'
 import {
   useSshWorkspace,
   type SshConnectionWorkspace,
