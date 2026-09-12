@@ -1,12 +1,15 @@
 <script setup lang="ts">
 /**
  * ProxyEntryCard · 单个代理条目表单（`[[proxies]]`）
- * 按代理类型显隐字段（tcp/udp 要远端端口、http/https 要域名、stcp 要密钥），
+ *
+ * 每个字段都带 label（此前只有 placeholder，填完值就分不清哪个框是 localIP 还是 remotePort）；
+ * 地址 + 端口同行、端口走窄列；按代理类型显隐字段（tcp/udp 要远端端口、http/https 要域名、
+ * stcp 要密钥）。删除入口只保留标题行的图标按钮，去掉底部重复的文字按钮。
  * 未知字段由上游 merge 保留，这里只呈现表单覆盖的字段。
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { UiButton, UiIcon, UiIconButton, UiInput, UiSelect, UiSwitch } from '@/core/ui'
+import { UiField, UiIcon, UiIconButton, UiInput, UiSelect, UiSwitch } from '@/core/ui'
 import {
   NEEDS_CUSTOM_DOMAINS,
   NEEDS_REMOTE_PORT,
@@ -54,27 +57,13 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
 
 <template>
   <div
-    class="flex flex-col gap-[8px] rounded-sm border border-border p-[10px] dark:border-border-dark"
+    class="rounded-md border border-border bg-surface-muted p-[10px] dark:border-border-dark dark:bg-surface-muted-dark"
   >
-    <!-- 头部：类型 + 名称 + 启用开关 + 删除 -->
-    <div class="flex items-center gap-[8px]">
-      <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
+    <!-- 标题行：序号 + 启用开关 + 删除（删除只此一处） -->
+    <div class="mb-[10px] flex items-center gap-[8px]">
+      <span class="min-w-0 flex-1 text-caption font-medium text-secondary dark:text-secondary-dark">
         {{ t('frp.formProxyIndex', { index: props.index + 1 }) }}
       </span>
-      <UiSelect
-        :model-value="props.modelValue.type"
-        size="sm"
-        class="w-[104px] shrink-0"
-        :options="typeOptions"
-        @update:model-value="setField('type', String($event))"
-      />
-      <UiInput
-        :model-value="props.modelValue.name"
-        size="sm"
-        class="min-w-0 flex-1"
-        :placeholder="t('frp.formProxyName')"
-        @update:model-value="setField('name', String($event))"
-      />
       <UiSwitch
         :model-value="props.modelValue.enabled"
         size="sm"
@@ -86,55 +75,74 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
       </UiIconButton>
     </div>
 
-    <!-- 地址与端口 -->
-    <div class="grid grid-cols-2 gap-[8px]">
-      <UiInput
-        :model-value="props.modelValue.localIP"
-        size="sm"
-        :placeholder="t('frp.formProxyLocalIp')"
-        @update:model-value="setField('localIP', String($event))"
-      />
-      <UiInput
-        :model-value="props.modelValue.localPort ?? ''"
-        size="sm"
-        :placeholder="t('frp.formProxyLocalPort')"
-        @update:model-value="setNumber('localPort', $event)"
-      />
-      <UiInput
-        v-if="needsRemotePort"
-        :model-value="props.modelValue.remotePort ?? ''"
-        size="sm"
-        class="col-span-2"
-        :placeholder="t('frp.formProxyRemotePort')"
-        @update:model-value="setNumber('remotePort', $event)"
-      />
-      <UiInput
-        v-if="needsDomains"
-        :model-value="props.modelValue.customDomains"
-        size="sm"
-        class="col-span-2"
-        :placeholder="t('frp.formProxyDomains')"
-        @update:model-value="setField('customDomains', String($event))"
-      />
-      <UiInput
-        v-if="needsSecret"
-        :model-value="props.modelValue.secretKey"
-        type="password"
-        size="sm"
-        class="col-span-2"
-        :placeholder="t('frp.formProxySecretKey')"
-        @update:model-value="setField('secretKey', String($event))"
-      />
-    </div>
+    <div class="flex flex-col gap-[8px]">
+      <!-- 类型 + 名称 -->
+      <div class="grid grid-cols-[110px_1fr] gap-[8px]">
+        <UiField :label="t('frp.formProxyType')" size="sm">
+          <UiSelect
+            :model-value="props.modelValue.type"
+            size="sm"
+            :options="typeOptions"
+            @update:model-value="setField('type', String($event))"
+          />
+        </UiField>
+        <UiField :label="t('frp.formProxyName')" size="sm">
+          <UiInput
+            :model-value="props.modelValue.name"
+            size="sm"
+            @update:model-value="setField('name', String($event))"
+          />
+        </UiField>
+      </div>
 
-    <p class="text-caption text-text-muted dark:text-text-muted-dark">
-      {{ t('frp.formProxyAdvancedHint') }}
-    </p>
+      <!-- 本地地址 + 本地端口 -->
+      <div class="grid grid-cols-[1fr_120px] gap-[8px]">
+        <UiField :label="t('frp.formProxyLocalIp')" size="sm">
+          <UiInput
+            :model-value="props.modelValue.localIP"
+            size="sm"
+            :placeholder="t('frp.formProxyLocalIpPlaceholder')"
+            @update:model-value="setField('localIP', String($event))"
+          />
+        </UiField>
+        <UiField :label="t('frp.formProxyLocalPort')" size="sm">
+          <UiInput
+            type="number"
+            :model-value="props.modelValue.localPort ?? ''"
+            size="sm"
+            @update:model-value="setNumber('localPort', $event)"
+          />
+        </UiField>
+      </div>
 
-    <div class="flex justify-end">
-      <UiButton size="xs" variant="ghost" @click="emit('remove')">
-        {{ t('frp.formProxyRemove') }}
-      </UiButton>
+      <!-- 按类型显隐 -->
+      <div v-if="needsRemotePort" class="grid grid-cols-[120px_1fr] gap-[8px]">
+        <UiField :label="t('frp.formProxyRemotePort')" size="sm">
+          <UiInput
+            type="number"
+            :model-value="props.modelValue.remotePort ?? ''"
+            size="sm"
+            @update:model-value="setNumber('remotePort', $event)"
+          />
+        </UiField>
+      </div>
+      <UiField v-if="needsDomains" :label="t('frp.formProxyDomains')" size="sm">
+        <UiInput
+          :model-value="props.modelValue.customDomains"
+          size="sm"
+          :placeholder="t('frp.formProxyDomainsPlaceholder')"
+          @update:model-value="setField('customDomains', String($event))"
+        />
+      </UiField>
+      <UiField v-if="needsSecret" :label="t('frp.formProxySecretKey')" size="sm">
+        <UiInput
+          type="password"
+          :model-value="props.modelValue.secretKey"
+          size="sm"
+          :placeholder="t('frp.formProxySecretKeyPlaceholder')"
+          @update:model-value="setField('secretKey', String($event))"
+        />
+      </UiField>
     </div>
   </div>
 </template>
