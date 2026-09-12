@@ -6,7 +6,7 @@
  * 凭证类型与 SSH 认证不符时由后端在连接时给出明确报错。
  */
 import { computed, reactive, ref, watch } from 'vue'
-import CredentialForm from '@/core/vault/CredentialForm.vue'
+import { CredentialForm } from '@/core/vault'
 import type { ServerProfile, AuthMethod } from './contracts'
 import { useServerCredentialChoice } from './useServerCredentialChoice'
 import {

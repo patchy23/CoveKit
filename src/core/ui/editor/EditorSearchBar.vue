@@ -6,7 +6,8 @@
  * 宿主用 `search.ts` 的同一套语义执行跳转与高亮，保证面板显示与实际行为一致。
  */
 import { computed, ref, watch } from 'vue'
-import { UiButton, UiInput } from '@/core/ui'
+import UiButton from '../UiButton.vue'
+import UiInput from '../UiInput.vue'
 import type { SearchOptions } from './search'
 
 const props = withDefaults(

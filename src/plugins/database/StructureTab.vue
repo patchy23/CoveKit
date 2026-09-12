@@ -6,7 +6,7 @@
  */
 import { computed, ref } from 'vue'
 import { UiBadge, UiButton, UiIcon, UiIconButton, UiTable, UiTableCell, UiTabs } from '@/core/ui'
-import { useCopy } from '@/core/ui/useClipboard'
+import { useCopy } from '@/core/feedback/useCopy'
 import type { useDatabase } from './useDatabase'
 
 const props = defineProps<{

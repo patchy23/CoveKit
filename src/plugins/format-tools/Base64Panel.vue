@@ -5,7 +5,7 @@
  */
 import { ref } from 'vue'
 import { decodeBase64, encodeBase64 } from './useBase64'
-import { useCopy } from '@/core/ui/useClipboard'
+import { useCopy } from '@/core/feedback/useCopy'
 import { UiAlert, UiButton, UiCodeEditor, UiToolbar } from '@/core/ui'
 
 const { copyText } = useCopy()

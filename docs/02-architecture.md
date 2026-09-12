@@ -19,7 +19,7 @@
 | 共享呈现（`core/ui`） | Ui 控件、编辑器、交互原语 | Vault IPC、Pinia 全局状态、账号/存储决策 |
 | 平台适配（`core/platform`、Rust 原生依赖封装） | 剪贴板/窗口/系统 API 等平台操作与降级 | 业务冲突策略、用户流程 |
 
-**前端现行目录**：`core/{ui,vault,ipc,registry,search,format}` + `core/storage.ts`、`features/workspace`、`stores`、`plugins/<owner>`（各工具自注册；模块间禁止互相 import）。`core/platform` 与 `core/feedback` 为 2026-09-12 起的分层落点（AR03 迁移中），凭证复合组件迁往 `core/vault/ui`，经 `@/core/vault` 公开入口使用。
+**前端现行目录**：`core/{ui,vault,ipc,registry,search,format,platform,feedback}` + `core/storage.ts`、`features/workspace`、`stores`、`plugins/<owner>`（各工具自注册；模块间禁止互相 import）。`core/platform`（剪贴板/窗口等平台能力，返回结果不提示）与 `core/feedback`（通知辅助，可适配 ui store）自 2026-09-12 AR03 起为现行落点；凭证复合组件位于 `core/vault/ui`，经 `@/core/vault` 公开入口使用；`core/ui` 内部走相对具体组件路径，不经自身 barrel 回流。
 
 **Rust 现行结构**：`lib.rs`（Tauri 插件装配、Builder、启动/退出）+ `framework/`（`paths` 存储四分区、`settings`、`store`（PluginDb）、`vault`、`credentials`、`ipc_registry`、`storage` 迁移）+ `plugins/<owner>/`（`mod.rs` 门面 + `models.rs` + 能力文件/子目录）；`plugins/database/` 额外分 `drivers/`（传输）、`dialect/`（SQL 语义）、`agent/`（外部代理）。
 

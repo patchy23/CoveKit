@@ -15,7 +15,7 @@ import {
   UiTable,
   UiTableCell,
 } from '@/core/ui'
-import { useCopy } from '@/core/ui/useClipboard'
+import { useCopy } from '@/core/feedback/useCopy'
 import { buildCreateTableSql, emptyColumn, type CreateTableColumn } from './createTableSql'
 import {
   FALLBACK_CHARSETS,

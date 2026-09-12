@@ -4,7 +4,7 @@
  */
 import { ref } from 'vue'
 import { dateToTimestamp, nowSeconds, timestampToResult } from './useConverter'
-import { useCopy } from '@/core/ui/useClipboard'
+import { useCopy } from '@/core/feedback/useCopy'
 import { UiAlert, UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
 
 const { copyText } = useCopy()

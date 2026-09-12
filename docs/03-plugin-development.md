@@ -159,7 +159,7 @@ Rust：
 8. **Rust 代码规范**（`docs/05-rust-code-standard.md`）：提交前跑 `python scripts/check_rust_rules.py` 与 `python scripts/check_docs.py`（两者是 `cargo test --test source_rules` 的薄 wrapper，CI 跑同一 target）；运行期禁 unwrap/expect（例外须按路径+符号+类别登记在基线文件里）、clone 按规模与所有权评审、`unsafe` 须必要且带紧邻 `// SAFETY:` 论证。
 9. **dev 冷启动冒烟（2026-09-06 新增，血泪教训：b75b531 注册 updater 插件但基座配置缺段，之后两周 dev 启动即 panic 无人发现）**：改动涉及 `tauri.conf.json` / `lib.rs` 插件注册 / `Cargo.toml` 依赖 / 能力权限时，提交前必须 `pnpm tauri dev` 冷启动一次，确认窗口正常出现、控制台无 panic。只改前端或纯逻辑可豁免。
 10. **Tauri 已知坑**：`dragDropEnabled`（默认开，OS 文件拖入依赖它）会吞掉应用内 HTML5 拖拽——内部拖拽一律用 pointer 事件自实现（参照 `src/plugins/ssh/useServerGroups.ts` 的 `useGroupDrag`）；SFC scoped 样式里 `:global()+:deep()` 混写会被编译静默丢弃，暗色覆盖写 `main.css` 全局 unlayered 区。
-11. **前端依赖守卫（AR02 新增）**：提交前跑 `pnpm check:deps`（`scripts/check_frontend_deps.mjs`）——`core/ui` 不得依赖 `stores`/`features`/`plugins`/`vault` 与应用 IPC；插件之间不得 import 对方内部模块（含类型导入）；`core/ui` 入口不得重导出 vault/插件模块；`src/core/**` 运行期依赖图不得有环（`import type` 不算运行期）。存量违规登记在 `scripts/frontend_deps_baseline.json`（棘轮，AR03 逐步清零）：出现未登记违规、或登记条目已不再命中（失效例外）即失败。
+11. **前端依赖守卫（AR02 新增）**：提交前跑 `pnpm check:deps`（`scripts/check_frontend_deps.mjs`）——`core/ui` 不得依赖 `stores`/`features`/`plugins`/`vault` 与应用 IPC；插件之间不得 import 对方内部模块（含类型导入）；`core/ui` 入口不得重导出 vault/插件模块；`src/core/**` 运行期依赖图不得有环（`import type` 不算运行期）。存量违规登记在 `scripts/frontend_deps_baseline.json`。**AR03（2026-09-12）后该基线为空**：凭证复合 UI 移入 `core/vault/ui`、平台与通知能力下沉 `core/platform`、`core/feedback`，8 条旧登记（4 条 `core/ui` 越界、1 条入口重导出、3 条运行期环）已随代码消除并同步删除；之后出现新违规直接修，不再往基线里加。失效例外（登记了但已不再命中）同样判失败。
 
 ## 6. 新增插件 Check-list
 

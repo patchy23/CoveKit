@@ -1,6 +1,6 @@
 # 公共前端组件库
 
-公共组件统一位于 `src/core/ui/`，业务插件只能从 `@/core/ui` 导入通用控件。组件库采用 shadcn-vue 的源码所有权与组合方式，Select、Dialog、Tabs、Checkbox、Radio、Switch 等交互由 Reka UI 原语提供；`DESIGN.md` token 仍是视觉单一事实源，不使用 shadcn-vue 默认皮肤，也不在插件中复制按钮、表单、页签、弹窗和状态色组合。
+公共组件统一位于 `src/core/ui/`，业务插件只能从 `@/core/ui` 导入通用控件（基础控件）；依赖凭证库、平台句柄或应用通知的**复合能力不进 `core/ui`**，见 §1 末尾的分层表。组件库采用 shadcn-vue 的源码所有权与组合方式，Select、Dialog、Tabs、Checkbox、Radio、Switch 等交互由 Reka UI 原语提供；`DESIGN.md` token 仍是视觉单一事实源，不使用 shadcn-vue 默认皮肤，也不在插件中复制按钮、表单、页签、弹窗和状态色组合。
 
 根目录 `components.json` 记录 shadcn-vue CLI 的目录和 Tailwind 4 配置。CLI 只用于按需取得组件源码；生成后必须转换成现有 `Ui*` API，并按组件实验室基线验收，业务插件不得直接导入 `reka-ui`。
 
@@ -26,7 +26,17 @@
 | `UiProgress / UiSkeleton / UiSpinner` | 加载反馈 | 进度、占位骨架和局部加载 |
 | `UiAvatar / UiKbd / UiDivider` | 信息元素 | 头像、快捷键与内容分隔 |
 
-`CodeViewer`、`LineNumberTextarea`、`ConfirmDialog`、`InputDialog`、`ContextMenu` 属于复合公共组件，继续保留在同一目录。
+`ConfirmDialog`、`InputDialog`、`ContextMenu` 属于复合公共组件，与基础控件同目录，按具体路径（`@/core/ui/ContextMenu.vue`）引用，不经 `@/core/ui` 入口，避免自身 barrel 回流成环。
+
+### 1.1 不在 `core/ui` 的相邻能力（2026-09-12 分层落定）
+
+| 能力 | 落点 | 使用方式 |
+| --- | --- | --- |
+| 凭证复合组件（`CredentialPicker`、`CredentialForm`） | `src/core/vault/ui/` | `import { CredentialPicker } from '@/core/vault'`；编辑表单同理经 `@/core/vault` |
+| 剪贴板 / 窗口等平台操作与环境判断 | `src/core/platform/` | `writeClipboardText()` / `runWindowAction()` 返回结果对象，不直接提示 |
+| 应用级通知辅助 | `src/core/feedback/` | `useCopy()`：组合平台调用与 toast，工具侧复制统一走这里 |
+
+边界由门禁强制：`core/ui` 不得依赖 `stores`/`vault`/`features`/`plugins` 与业务 IPC（`pnpm check:deps`，规则见 `scripts/check_frontend_deps.mjs`）；基础 Ui 组件的单测不引入 Pinia 与 Vault mock（`src/core/ui/components.test.ts`）。
 
 ## 2. 尺寸体系
 

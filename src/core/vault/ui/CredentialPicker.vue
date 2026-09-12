@@ -1,15 +1,15 @@
 <script setup lang="ts">
 /**
- * CredentialPicker · 凭证选择器（core/ui 公共组件，工具侧调用入口）
+ * CredentialPicker · 凭证选择器（core/vault 复合组件，经 @/core/vault 使用）
  * 按 kind 过滤列出凭证库条目（显示名称 + 掩码摘要），末尾「+ 新建凭证」内嵌
  * CredentialForm，保存成功后自动选中。空串值 = 未选择（工具可据此回退手填）。
  */
 import { computed, onMounted, ref, watch } from 'vue'
-import UiSelect from './UiSelect.vue'
+import { UiSelect } from '@/core/ui'
 import type { CredentialKind, CredentialSummary } from '@/core/ipc/contracts'
 import { ipc } from '@/core/ipc/ipc'
-import { KIND_LABEL } from '@/core/vault/useVault'
-import CredentialForm from '@/core/vault/CredentialForm.vue'
+import { KIND_LABEL } from '../useVault'
+import CredentialForm from './CredentialForm.vue'
 
 const props = withDefaults(
   defineProps<{

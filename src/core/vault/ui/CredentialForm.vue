@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * CredentialForm · 凭证编辑表单弹窗（框架级，core/vault）
+ * CredentialForm · 凭证编辑表单弹窗（core/vault/ui 复合组件，经 @/core/vault 使用）
  * 按 kind 动态渲染字段（formFieldsFor），秘密字段用 type=password（明文切换走输入框自带眼睛）；
  * custom 类型用键值条目编辑器。被凭证管理页与 CredentialPicker（+ 新建凭证）共用。
  */
@@ -16,7 +16,7 @@ import {
   KIND_LABEL,
   CREDENTIAL_KINDS,
   type CredentialFormState,
-} from '@/core/vault/useVault'
+} from '../useVault'
 import {
   UiAlert,
   UiButton,

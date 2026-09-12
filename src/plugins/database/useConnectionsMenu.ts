@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import type { UiTreeItem } from '@/core/ui'
 import type { ContextMenuItem } from '@/core/ui/ContextMenu.vue'
-import { useCopy } from '@/core/ui/useClipboard'
+import { useCopy } from '@/core/feedback/useCopy'
 import type { DbConnectionInfo } from './contracts'
 import type { useDatabase } from './useDatabase'
 import { supportsVisualCreateTable, type V2DbType } from './useDatabaseMeta'

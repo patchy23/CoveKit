@@ -4,7 +4,7 @@
  */
 import { ref } from 'vue'
 import { formatXml, minifyXml } from './useXml'
-import { useCopy } from '@/core/ui/useClipboard'
+import { useCopy } from '@/core/feedback/useCopy'
 import { UiAlert, UiButton, UiCodeEditor, UiToolbar } from '@/core/ui'
 
 const { copyText } = useCopy()

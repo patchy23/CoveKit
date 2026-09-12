@@ -9,7 +9,7 @@ import { computed, onMounted, ref } from 'vue'
 import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { useCopy } from '@/core/ui/useClipboard'
+import { useCopy } from '@/core/feedback/useCopy'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '@/core/ipc/ipc'
 import type { Credential, CredentialKind, CredentialSummary } from '@/core/ipc/contracts'
@@ -19,7 +19,7 @@ import {
   filterCredentials,
   primarySecret,
 } from '@/core/vault/useVault'
-import CredentialForm from '@/core/vault/CredentialForm.vue'
+import { CredentialForm } from '@/core/vault'
 import { clientCredentialReferenceCount } from '@/core/vault/references'
 import VaultTransferDialog from './VaultTransferDialog.vue'
 import VaultToolbar from './VaultToolbar.vue'

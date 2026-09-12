@@ -7,7 +7,8 @@ import { onMounted, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { CloudflareConfig, ProviderConfig } from './contracts'
-import { CredentialPicker, UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
+import { UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
+import { CredentialPicker } from '@/core/vault'
 
 const ui = useUiStore()
 

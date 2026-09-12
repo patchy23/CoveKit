@@ -5,7 +5,8 @@
  * 只收集目标行号并发出意图；越界收敛交给编辑器侧（`goToLine` 内部按总行数收敛）。
  */
 import { computed, ref } from 'vue'
-import { UiButton, UiInput } from '@/core/ui'
+import UiButton from '../UiButton.vue'
+import UiInput from '../UiInput.vue'
 
 const props = defineProps<{
   /** 当前行号（打开时预填） */

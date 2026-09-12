@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** ConfirmDialog · 基于 BaseModal 的项目统一确认弹窗。 */
-import { UiButton, UiModal } from '@/core/ui'
+import UiButton from './UiButton.vue'
+import UiModal from './UiModal.vue'
 
 defineProps<{
   open: boolean

@@ -5,15 +5,22 @@
  * 双击标题栏最大化；右侧窗口控制按钮（关闭 = 最小化到托盘，见 Rust CloseRequested 处理）。
  * 额外提供：侧栏折叠切换（panel 按钮）与沉浸模式切换（expand 按钮，隐藏标题栏+侧栏）。
  */
-import { safeWindow } from '@/core/ui/windowCtl'
+import { runWindowAction, type WindowAction } from '@/core/platform/window'
 import { useUiStore } from '@/stores/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import covekitIcon from '@/assets/covekit-icon-color.png'
 
 const ui = useUiStore()
 
+/** 窗口动作统一入口：桌面环境下失败必须可见，浏览器预览的不可用属预期缺失不打扰 */
+function onWindow(action: WindowAction) {
+  void runWindowAction(action).then((result) => {
+    if (!result.ok && result.reason === 'failed') ui.toast('窗口操作失败，请重试')
+  })
+}
+
 function onDblClick() {
-  safeWindow((w) => w.toggleMaximize())
+  onWindow('toggleMaximize')
 }
 </script>
 
@@ -57,21 +64,21 @@ function onDblClick() {
       <button
         class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
         title="最小化"
-        @click="safeWindow((w) => w.minimize())"
+        @click="onWindow('minimize')"
       >
         <AppIcon name="minus" :size="14" />
       </button>
       <button
         class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
         title="最大化"
-        @click="safeWindow((w) => w.toggleMaximize())"
+        @click="onWindow('toggleMaximize')"
       >
         <AppIcon name="maximize" :size="12" />
       </button>
       <button
         class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-red-500 hover:text-white"
         title="关闭（最小化到托盘）"
-        @click="safeWindow((w) => w.close())"
+        @click="onWindow('close')"
       >
         <AppIcon name="close" :size="13" />
       </button>

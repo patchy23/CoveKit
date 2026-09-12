@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /** InputDialog · 基于 BaseModal 的项目统一单行输入弹窗。 */
 import { nextTick, ref, watch } from 'vue'
-import { UiButton, UiInput, UiModal } from '@/core/ui'
+import UiButton from './UiButton.vue'
+import UiInput from './UiInput.vue'
+import UiModal from './UiModal.vue'
 
 const props = defineProps<{
   open: boolean
