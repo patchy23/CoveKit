@@ -125,7 +125,8 @@ P2 扩展 T14 / T16（工具意图、资源预算）仍仅为建议。后续执�
 - [x] 确定调整方案并完成独立任务书：`docs/tasks/2026-09-12-架构重构与工程规范调整任务书.md`。评审建议已收敛为 AR01–AR07，尚未修改生效规范或实施代码重构。
 - [x] AR01 规范切换（2026-09-12）：AGENTS / docs/01 / docs/02 / docs/03 / docs/05 / docs/README 与旧任务书冲突条文按任务书 §4.1–§4.2 收敛——owner 边界、规模改评审信号、composable 与注释按语义、锁与 clone 按成本、验证按风险分层；docs/02 拆分现行架构与设计期留档。
 - [x] AR01 配套的两个工程 skill 同步（2026-09-12）：`patchybox-feature-flow` v1.2.0→v1.3.0（Rust 门禁与验证改按风险分层、本地只格式化本次文件、S3 不再要求四件全绿）、`patchybox-plugin-ui-conventions` v1.0.0→v1.1.0（规模红线改评审信号、新增 `core/ui` 不得依赖 stores/vault/业务 IPC）。源在 `C:\Users\patchy\AppData\Local\hermes\skills\software-development\`，该目录不受 git 管理：回退方式 = 按新版本号还原上述条目，生效时间以本条记录为准。
-- [ ] AR02：重做规范检查器（syn AST 测试 `src-tauri/tests/source_rules.rs` + 两个 Python 薄入口 scans）与前端依赖守卫，CI 显式运行 `--test source_rules`。
+- [x] AR02 规范检查器重做（2026-09-12）：`src-tauri/tests/source_rules/`（syn 2 AST + 29 个夹具用例，入口 `scan_rust_rules` / `scan_docs`）取代逐行正则；旧实现的 2 处误报与 2 处漏检先用夹具复现旧行为、再验证新实现（测试模块之后的生产代码被整段截断、注释/字符串里的候选名误报、缩进 impl 方法漏检、`// SAFETY:` 与 `unsafe` 之间夹属性行误报）。两个 Python 入口改为薄 wrapper（`--exact` 过滤 + 必须实测运行 1 个测试才算通过）。基线改为「分类棘轮 + 14 条按路径/符号/类别/原因登记」的例外表。前端依赖守卫 `scripts/check_frontend_deps.mjs`（4 条规则 + 19 个夹具用例，8 条存量违规登记）。新增 dev 依赖 `syn =2.0.119` / `proc-macro2 =1.0.107`（对齐锁文件既有传递版本，未引入新包）。CI 显式跑 `--test source_rules` 与 `pnpm check:deps`（AR03 处理后须同步删除对应登记条目）。
+- [ ] AR02 遗留（待认领）：`core/ui` 两个既有 barrel 环（`UiCodeEditor.vue` ↔ `editor/EditorGoToLineBar.vue` / `EditorSearchBar.vue`，两者都经 `@/core/ui` 入口取基础控件）登记在 `scripts/frontend_deps_baseline.json` 里保真，修法是把这两个栏改为直接路径引用或拆 barrel；建议随编辑器相关改动顺带修，不做一次性重构。
 - [ ] AR03：凭证复合 UI 与平台/反馈能力移出基础 UI，删除旧入口依赖环。
 - [ ] AR04 / AR05：SSH 和 Database 按状态所有权拆分，实际接入新模块并删除重复旧实现。
 - [ ] AR06：与可靠性 T01–T11、导入导出 L0/L1 共用数据上下文与生命周期实现及验收。

@@ -24,6 +24,7 @@ jobs:
       - run: pnpm lint
       - run: pnpm format:check
       - run: pnpm test
+      - run: pnpm check:deps
       - run: pnpm build
 
   rust-checks:
@@ -46,11 +47,9 @@ jobs:
       - name: clippy 检查
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - name: Rust 单元测试
-        run: cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib
-      - name: Rust 代码规范棘轮检查
-        run: PYTHONIOENCODING=utf-8 python scripts/check_rust_rules.py
-      - name: Rust 文档覆盖检查
-        run: PYTHONIOENCODING=utf-8 python scripts/check_docs.py src-tauri/src
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --no-default-features --lib
+      - name: Rust 规范与注释检查（source_rules target：规则扫描 + 自证夹具）
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --no-default-features --test source_rules -- --nocapture
 
   build:
     name: Tauri Build（Windows 安装包）
