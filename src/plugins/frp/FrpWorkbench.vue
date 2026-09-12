@@ -4,8 +4,10 @@
  * 组合三块状态：档案列表（useFrpProfiles）、运行状态与日志（useFrpRuntime）、frpc 二进制（useFrpBinary）。
  * 无可用 frpc 时右侧显示引导卡；切换档案前若有未保存改动会拦截确认。
  */
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useUiStore } from '@/stores/ui'
 import { UiEmptyState, UiSpinner } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import BinarySetupCard from './binary/BinarySetupCard.vue'
@@ -17,6 +19,7 @@ import { useFrpProfiles } from './profile/useFrpProfiles'
 import { useFrpRuntime } from './runtime/useFrpRuntime'
 
 const { t } = useI18n()
+const ui = useUiStore()
 const binary = useFrpBinary()
 const profiles = useFrpProfiles()
 const runtime = useFrpRuntime()
@@ -102,6 +105,24 @@ async function onRemark(fileName: string, remark: string) {
   await profiles.setRemark(fileName, remark)
 }
 
+/**
+ * 在系统文件管理器中打开配置文件目录。
+ * 失败必须给可见反馈（此前的实现漏了事件监听，点了毫无反应）。
+ */
+async function openDir() {
+  const target = profiles.dir.value
+  if (target === '') {
+    ui.toast(t('frp.openDirUnavailable'))
+    return
+  }
+  try {
+    await revealItemInDir(target)
+  } catch (reason) {
+    const message = reason instanceof Error ? reason.message : String(reason)
+    ui.toast(t('frp.openDirFailed', { message }))
+  }
+}
+
 /** frpc 引导完成后重新探测 */
 async function onBinaryChanged() {
   await binary.detect()
@@ -124,6 +145,7 @@ async function onBinaryChanged() {
       @duplicate="onDuplicate"
       @remark="onRemark"
       @remove="onRemove"
+      @open-dir="openDir"
     />
 
     <!-- 右：引导卡 / 详情 -->

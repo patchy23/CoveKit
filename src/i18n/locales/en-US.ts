@@ -28,6 +28,8 @@ export default {
     unsavedDiscard: 'Discard and switch',
     dirUnknown: 'Config directory unknown',
     openDir: 'Open folder',
+    openDirFailed: 'Failed to open folder: {message}',
+    openDirUnavailable: 'Config directory is not resolved yet',
     // States
     stateStopped: 'Stopped',
     stateStarting: 'Connecting',

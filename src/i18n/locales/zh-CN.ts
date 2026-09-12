@@ -28,6 +28,8 @@ export default {
     unsavedDiscard: '丢弃并切换',
     dirUnknown: '配置目录未确定',
     openDir: '打开目录',
+    openDirFailed: '打开目录失败：{message}',
+    openDirUnavailable: '配置目录尚未确定，无法打开',
     // 状态
     stateStopped: '已停止',
     stateStarting: '连接中',
