@@ -123,8 +123,8 @@ P2 扩展 T14 / T16（工具意图、资源预算）仍仅为建议。后续执�
 
 - [x] 完成 `docs/tasks/2026-09-12-架构与工程规范独立评审.md`：评审架构与 AGENTS 规则本身，包含8项架构判断、规范逐项修订建议、检查器探针和替换条文草案。
 - [x] 确定调整方案并完成独立任务书：`docs/tasks/2026-09-12-架构重构与工程规范调整任务书.md`。评审建议已收敛为 AR01–AR07，尚未修改生效规范或实施代码重构。
-- [x] AR01 仓库侧规范切换（2026-09-12）：AGENTS / docs/01 / docs/02 / docs/03 / docs/05 / docs/README 与旧任务书冲突条文按任务书 §4.1–§4.2 收敛——owner 边界、规模改评审信号、composable 与注释按语义、锁与 clone 按成本、验证按风险分层；docs/02 拆分现行架构与设计期留档。
-- [ ] AR01 剩余：同步两个工程 skill（`patchybox-feature-flow`、`patchybox-plugin-ui-conventions`，源在 `C:\Users\patchy\AppData\Local\hermes\skills\software-development\`，该目录不受 git 管理，按任务书 §4.3 记录版本与时间）。AR01 在仓库与 skill 两端都更新后才算完成。
+- [x] AR01 规范切换（2026-09-12）：AGENTS / docs/01 / docs/02 / docs/03 / docs/05 / docs/README 与旧任务书冲突条文按任务书 §4.1–§4.2 收敛——owner 边界、规模改评审信号、composable 与注释按语义、锁与 clone 按成本、验证按风险分层；docs/02 拆分现行架构与设计期留档。
+- [x] AR01 配套的两个工程 skill 同步（2026-09-12）：`patchybox-feature-flow` v1.2.0→v1.3.0（Rust 门禁与验证改按风险分层、本地只格式化本次文件、S3 不再要求四件全绿）、`patchybox-plugin-ui-conventions` v1.0.0→v1.1.0（规模红线改评审信号、新增 `core/ui` 不得依赖 stores/vault/业务 IPC）。源在 `C:\Users\patchy\AppData\Local\hermes\skills\software-development\`，该目录不受 git 管理：回退方式 = 按新版本号还原上述条目，生效时间以本条记录为准。
 - [ ] AR02：重做规范检查器（syn AST 测试 `src-tauri/tests/source_rules.rs` + 两个 Python 薄入口 scans）与前端依赖守卫，CI 显式运行 `--test source_rules`。
 - [ ] AR03：凭证复合 UI 与平台/反馈能力移出基础 UI，删除旧入口依赖环。
 - [ ] AR04 / AR05：SSH 和 Database 按状态所有权拆分，实际接入新模块并删除重复旧实现。

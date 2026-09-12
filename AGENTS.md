@@ -5,23 +5,24 @@
 
 ## 项目是什么
 
-基于 **Tauri 2** 的桌面工具箱 **patchyBox**（Windows+macOS）。UI：**明净浅色 · 内容优先**（macOS 式侧栏 + 大卡片网格），原型见 `sketches/002-clean-light/`。现有工具：格式转换、接口调试、数据库、Hosts 编辑、DNS 解析、SSH 远程管理、文字转语音、组件实验室（公共组件视觉验收页）。
+基于 **Tauri 2** 的桌面工具箱 **patchyBox**（Windows+macOS）。UI：**明净浅色 · 内容优先**（macOS 式侧栏 + 大卡片网格），原型见 `sketches/002-clean-light/`。现有工具：格式转换、接口调试、数据库、Hosts 编辑、DNS 解析、SSH 远程管理、文字转语音、FRP 配置管理、组件实验室（公共组件视觉验收页）。
 
 ## 已定技术决策（详见 docs/01-tech-stack.md）
 
 - 容器：Tauri 2.11（Rust）+ 官方插件（clipboard-manager / global-shortcut / store / single-instance / autostart / notification / window-state / updater / dialog / fs / opener）
 - 前端：**Vue 3.5 + TypeScript + Vite + Tailwind CSS 4 + Pinia** + fuse.js + vue-i18n（zh-CN 默认）
-- 公共 UI：**shadcn-vue 源码模式 + Reka UI 无样式原语**，业务仅从 `@/core/ui` 使用 `Ui*`；tokens 以根目录 `DESIGN.md` 为单一事实源
-- 明确禁用 `tauri-plugin-shell`；**禁单平台绑定的技术选型**
+- 公共 UI：**shadcn-vue 源码模式 + Reka UI 无样式原语**，基础控件从 `@/core/ui` 使用 `Ui*`，凭证复合组件从 `@/core/vault`；tokens 以根目录 `DESIGN.md` 为单一事实源
+- 明确禁用 `tauri-plugin-shell`。**产品能力必须覆盖 Windows 与 macOS**：公共契约两端一致、unsupported 必须可见；平台适配器允许使用原生依赖与经审查的 `unsafe`，不要求每个依赖本身跨平台（新增平台专用依赖按 docs/05 §8 评审并记录 target 条件）
 - 凭据：系统 keyring 主密钥 + AES-256-GCM 凭证文件（`framework/vault`），插件可选引用 + 手工输入双路径
 
 ## 架构核心（详见 docs/02-architecture.md）
 
-- **插件模式（前后端同构）**：前端 `src/plugins/<id>/`（manifest 自注册 + contracts.ts/ipc.ts + 组件，插件间禁止互相 import）；公共能力走 `src/core/ui/` 与 `src/core/ipc/`；Rust 侧 `src-tauri/src/plugins/<id>/` 一律目录结构（mod.rs 门面 + models.rs + 能力子模块/子目录）
-- **框架与插件分离**：`src-tauri/src/framework/`（设置/快捷键/窗口/命令入库/数据管理/vault）是基建不属于插件；**无实际前端引用的插件必须删除**
-- **IPC 接口入库**（`framework/ipc_registry.rs`）：插件 register() 登记命令（owner + 名称 + 中文说明），启动校验全局唯一（重复即 panic）；路由按注册表 owner 精确匹配（`plugins/mod.rs` 一个分支/插件），`validate_routing()` 启动 fail-fast 校验死命令；**不再手写前缀清单**
-- **数据库管理规则**（`framework/store.rs`）：插件数据文件统一 `app_data_dir/<plugin>.db`；表结构走 `PRAGMA user_version` 顺序迁移（只追加；duplicate column 幂等跳过）；统一骨架 `PluginDb`（连接生命周期 + 锁 + 迁移）
-- **工具注册表**（`src/core/registry/`）：新增工具 = 建目录 + `plugins/index.ts` 一行，框架零改动
+- **内置功能模块（以业务能力 owner 为边界）**：允许纯前端工具，也允许一个能力对应多个后端实现模块，**不要求前后端目录一一对应**。前端 `src/plugins/<owner>/`（manifest 自注册 + contracts/ + ipc.ts + 组件），Rust 侧 `src-tauri/src/plugins/<owner>/` 一律目录结构（mod.rs 门面 + models.rs + 能力子模块/子目录）；模块间**禁止互相 import 与直读对方内部状态/数据表**，协作走框架公开契约
+- **框架与模块分离**：`src-tauri/src/framework/`（DataContext / paths / settings / vault 与 secure_store / PluginDb / 维护与关闭 / 命令元数据）是基建不属于任何模块；**删除死功能的依据是调用图与注册入口无消费方**（IPC 调用、动态入口、启动/恢复职责），不按“有没有前端同名目录”判断
+- **IPC 接口入库**（`framework/ipc_registry.rs`）：模块 `register()` 登记命令（owner + 名称 + 中文说明），启动校验全局唯一（重复即 fail-fast）；路由按注册表 owner 精确匹配（`plugins/mod.rs` 一个分支/模块），`validate_routing()` 启动期校验死命令；不再手写前缀清单
+- **数据库管理规则**（`framework/store.rs`）：模块数据文件统一 `<storageRoot>/data/<owner>.db`，路径一律走 `framework::paths`，禁止手拼 `app_data_dir()`（四分区布局见 `docs/02-architecture.md` §3.1）；表结构走 `PRAGMA user_version` 顺序迁移，**只追加且以事务执行**，旧半迁移按已知版本与实际 schema 修复，不得把 `duplicate column` 整段当作成功跳过；统一骨架 `PluginDb`（连接生命周期 + 锁 + 迁移）
+- **兼容边界**：向后兼容的对象是**已发布的数据格式与用户行为**，不是“所有框架源码只增不改”；内置模块之间可以协同重构（含目录、装配与状态所有权调整）
+- **工具注册表**（`src/core/registry/`）：新增工具 = 建目录 + `plugins/index.ts` 一行；新增系统能力可以修改组装根、权限与生命周期注册，不承诺框架源码零改动
 - **载体**：全部工具以多页签工作区子页面打开（`src/features/workspace/ToolWorkspace.vue`，页签支持 Ctrl+W 关闭、Ctrl(Shift)+Tab 循环、溢出三点收纳）
 - **工具级设置**：manifest 声明 `settingsSchema`，框架自动渲染设置表单并存 `settings.tools[id]`
 
@@ -31,23 +32,17 @@
 | ---- | ---- |
 | `DESIGN.md` | 设计 tokens：28 色 / 18 组件变体（改后跑 `npx -y -p @google/design.md designmd lint DESIGN.md`） |
 | `docs/01-tech-stack.md` | 技术选型 |
-| `docs/02-architecture.md` | 架构 / 注册表 / IPC / 安全 |
-| `docs/03-plugin-development.md` | **插件开发规则：目录与规模红线 / IPC 入库 / 数据库管理 / 质量门槛 / Check-list** |
-| `docs/05-rust-code-standard.md` | **Rust 代码规范 v1.1：panic/clone/生命周期/异步/脱敏/依赖评审；提交前跑 `scripts/check_rust_rules.py`（棘轮只减不增）** |
+| `docs/02-architecture.md` | 架构：现行架构与依赖方向 + 2026-08 设计期留档 |
+| `docs/03-plugin-development.md` | **模块开发规则：owner 边界 / 目录与规模评审信号 / IPC 入库 / 数据库管理 / 质量门槛 / Check-list** |
+| `docs/04-ui-components.md` | 公共 UI 组件规范 |
+| `docs/05-rust-code-standard.md` | **Rust 代码规范：panic/clone/生命周期/异步/脱敏/注释/依赖评审** |
 | `docs/06-release.md` | 发布、自动更新与代码签名 |
 | `docs/07-product-requirements.md` | 产品需求文档 |
 | `TODO.md` | **跨会话待办总表：开工前先读、完成即勾** |
 
 ## 当前待办
 
-进行中的工作见根目录 `TODO.md`。截至 2026-09-11：
-
-1. **SSH 工具扩展四项**（终端搜索 / 右键复制当前行 / 系统信息与磁盘明细 / 会话日志）→ 细则 `docs/plugins/ssh/2026-09-11-扩展任务书.md`
-2. **框架存储目录配置**（可配置数据/日志/缓存根目录 + 迁移），**待用户拍板是否本轮做**，SSH 会话日志依赖它 → 细则 `docs/tasks/2026-09-11-存储目录配置任务书.md`
-
-> 公共编辑器组件已于 2026-09-11 完成（四批全部落地、仓库内已无自研编辑器实现）：编辑器相关规则见 `docs/03-plugin-development.md` §7，完成明细与实测见 `TODO.md` 第一节。
-
-> 本节是本文件唯一允许承载「进行中状态」的位置；待办清空后删除本节（保持本文只放常青规则）。
+进行中的工作**只在 `TODO.md` 维护**：开工前先读 `TODO.md`，完成即勾。本文件不再重复状态清单，也不再保留“截至某日的进行中”小节。
 
 ## 关键设计约束（来自 DESIGN.md，务必遵守）
 
@@ -57,12 +52,16 @@
 
 ## 工程约束（合入红线）
 
-- **可读性**：组件 < 300 行；逻辑抽纯函数（`useXxx.ts` 必须带单测）；**Rust 单文件 >400 行或插件能力文件 >8 个必须下沉能力域子目录；前端插件 >15 个文件必须按特性域分目录**（细则 docs/03 §1）；IPC 出入参只在 contracts.ts 出现一次
+- **规模是评审信号，不是自动失败条件**：Vue SFC 约 300 物理行、Rust 生产实现约 400 行、插件目录 8/15 个业务文件时**触发职责审查**（模板、生产逻辑、声明、测试分别统计）；超线须在提交说明写职责与拆分依据，无需每次申请例外。**必须重构的条件与行数无关**：多个独立修改原因、重复状态或重复实现、互传大批可写状态、资源释放无唯一所有者（细则 docs/03 §1）
+- **Composable**：`useXxx` 管响应式状态与副作用，纯计算按 format/parse/reduce 等命名；非平凡规则、并发、迁移、取消与资源释放必须有测试，薄转发可由消费方测试覆盖
+- **DTO**：每个 owner 一处权威定义（允许 `contracts/` 按域分文件）；Rust 模型与 TS 传输字段同步；内部 UI/表单状态不必复用 IPC DTO
+- **锁与所有权**：同步锁不跨 `await`，确需跨 await 独占的 IO 用异步锁或「任务所有者 + 消息」；clone 按数据规模、频率与所有权评审，`Arc` 不是默认修法（细则 docs/05 §2/§4）
 - **字体规范**：字号只用语义 token（text-h1/text-brand/text-card-title/text-h2/text-body/text-body-sm/text-caption/text-label-caps/text-display），禁 arbitrary `text-[*px]`；字体族 `--font-sans`/`--font-mono`（font-mono 只用于明文数据/代码内容，密码框不加）
 - **公共组件**：避免各插件自绘 UI 差异——密码框统一 `UiInput type="password"`（自带眼睛）、下拉 `UiSelect`、可搜索下拉 `UiCombobox`、列表行 `UiListRow`、右键菜单 `ContextMenu`、删除确认 `ConfirmDialog`、页签溢出 `UiTabsOverflow`；高度基线 36px
-- **验证门禁**：`pnpm lint --max-warnings 0` + `pnpm format` + `pnpm test` + `pnpm build` + Rust `clippy -D warnings`（`--no-default-features`）+ `cargo test` + `check_docs.py` + `check_rust_rules.py` 全绿才合入
+- **反馈与错误**：显式操作必须可感知结果（toast / 错误行 / 状态变化 / 加载指示都算反馈），禁止静默 catch；取消与预期缺失不弹错误；IO、解析与密钥失败不得伪装成功
+- **注释**：强制模块职责、公共契约、IPC 字段的单位/空值/敏感性、关键生命周期与安全不变量；私有显然函数与测试不要求复述名字，注释质量由人工审查（细则 docs/05 §9）
+- **验证按风险分层**（矩阵见 `docs/tasks/2026-09-12-架构重构与工程规范调整任务书.md` §12）：纯文档查引用与格式；前端逻辑跑相关测试 + `pnpm lint` + `pnpm build`；Rust 逻辑跑相关测试 + `cargo fmt` + `clippy -- -D warnings`；持久化/凭证/上下文加旧数据夹具与故障恢复；权限/注册/Cargo 运行依赖加双平台构建与冷启动。**本地只格式化本次改动的文件，CI 用 `pnpm format:check`**；发布与跨层合入跑全量门禁
 - **dev 冷启动冒烟**：改 `tauri.conf.json`/`lib.rs` 插件注册/`Cargo.toml`/能力权限时，提交前必须 `pnpm tauri dev` 冷启动确认无 panic（教训：updater 配置缺失曾致 dev 启动崩两周无人发现）
-- **所有用户操作必须有可见反馈**（toast/错误行），禁止静默 catch
 - **Tauri 已知坑**：`dragDropEnabled`（默认开）会吞掉应用内 HTML5 拖拽——内部拖拽用 pointer 事件自实现（参照 `src/plugins/ssh/useServerGroups.ts` 的 `useGroupDrag`）
 
 ## 环境备忘（Windows）
@@ -74,7 +73,8 @@
 ## 约定
 
 - 文档与注释中文；代码标识符英文
-- **提交**：Conventional Commits `类型(scope): 中文描述`；标题一行总概括，body 按代码增删改分条、内容具体；类型按实质（搬移 refactor/隐患 fix/新机制 feat/测试 test）、scope 按真实改动模块（框架/基建用 core）；禁破折号与评审编号。署名：每会话首次提交前与用户明确（用户名+邮箱），无本地 git 配置则添加 local。默认自动提交（除非明确说不提交）；复杂模块开发前先提交基线；只 commit 不 push
+- **提交**：Conventional Commits `类型(scope): 中文描述`；标题一行总概括，body 按代码增删改分条、内容具体；类型按实质（搬移 refactor/隐患 fix/新机制 feat/测试 test）、scope 按真实改动模块（框架/基建用 core）；禁破折号与评审编号。署名：每会话首次提交前与用户明确（用户名+邮箱），无本地 git 配置则添加 local。默认自动提交（除非明确说不提交）；只 commit 不 push
 - **提交信息自包含（2026-09-06 用户重申）**：读标题就必须知道「改了什么行为 / 解决了什么问题」，禁止依赖外部上下文（任务书、issue、会话记录）才能看懂——禁止「整改任务书必修 8」「完成 XX 验证」「旗舰能力」这类元描述。反面：`fix(ssh): 整改任务书必修 8 + 中危 7 + 低危 5 全量行为修复`（等于没说）；正面：`fix(ssh): 重连成功保留终端缓冲（sessionId 变化不再触发 xterm reset）`（问题 + 机制一目了然）。一个提交修多个 bug 时，标题写最重要的那个，body 逐条列「现象 → 修法」。
+- **基线纪律**：复杂模块开发前先记录起始 HEAD，只提交自己已有完整改动；工作区干净时不造空基线提交；有他人未提交改动时不暂存其文件
 - **并行多会话纪律**：可能有多个 agent 会话同时在本仓库工作；**只 `git add` 本会话改过的文件，禁止 `git add -A`/`git add .`**；动手前先 `git status` 看工作区有无他人进行中的改动（有则绕开，不同步不覆盖）；需要改他人未提交的文件时先与用户确认归属
 - 任务书/设计文档落盘 `docs/`（插件级任务书放 `docs/plugins/<id>/`）
