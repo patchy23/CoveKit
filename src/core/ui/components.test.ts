@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import UiButton from './UiButton.vue'
 import UiInput from './UiInput.vue'
 import UiTabs from './UiTabs.vue'
@@ -9,6 +10,11 @@ import UiSelect from './UiSelect.vue'
 import UiSwitch from './UiSwitch.vue'
 import UiTableCell from './UiTableCell.vue'
 import UiSearchInput from './UiSearchInput.vue'
+import UiModal from './UiModal.vue'
+import UiCombobox from './UiCombobox.vue'
+import UiTree from './UiTree.vue'
+import UiDataGrid from './UiDataGrid.vue'
+import UiSplitPane from './UiSplitPane.vue'
 
 const pluginVueSources = import.meta.glob('../../plugins/**/*.vue', {
   eager: true,
@@ -136,5 +142,103 @@ describe('公共 UI 组件', () => {
   it('搜索输入框为图标和清空按钮保留固定空间', () => {
     const search = mount(UiSearchInput, { props: { modelValue: '' } })
     expect(search.get('input').classes()).toContain('ui-search-control')
+  })
+})
+
+/**
+ * AR03 补证据：基础 UI 必须能在没有 Pinia、没有凭证库、没有 IPC 的宿主里挂载与交互。
+ *
+ * 依赖守卫与构建只能证明 import/类型约束，不能证明真的挂得上；这里用无插件宿主真挂，
+ * 并顺带断言挂载过程没有「注入缺失」类告警（基础控件不许偷偷依赖应用服务）。
+ */
+const uiSources = import.meta.glob('./**/*.{vue,ts}', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+}) as Record<string, string>
+
+describe('AR03 补证据：基础 UI 无应用服务可独立挂载', () => {
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  it('结构复杂控件在没有 Pinia / 凭证库时挂载并响应交互', async () => {
+    const warnings: string[] = []
+    const warn = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map(String).join(' '))
+    })
+
+    // 弹窗：内容经传送门进 body，按用户可见文案与关闭出口断言
+    const modal = mount(UiModal, {
+      props: { open: false, title: '独立挂载' },
+      slots: { default: '正文', footer: '页脚' },
+      attachTo: document.body,
+    })
+    await modal.setProps({ open: true })
+    await nextTick()
+    const panel = document.body.querySelector('.ui-modal-panel')
+    expect(panel?.textContent).toContain('独立挂载')
+    expect(panel?.textContent).toContain('正文')
+    expect(panel?.textContent).toContain('页脚')
+    panel?.querySelector<HTMLButtonElement>('button[title="关闭"]')?.click()
+    await nextTick()
+    expect(modal.emitted('close')).toBeTruthy()
+    modal.unmount()
+
+    // 树：点击节点即派发选中
+    const tree = mount(UiTree, {
+      props: {
+        modelValue: '',
+        items: [{ id: 't1', label: '表 A', depth: 0, kind: 'table', expandable: true }],
+      },
+    })
+    await tree.get('[role="treeitem"]').trigger('click')
+    expect(tree.emitted('update:modelValue')?.[0]).toEqual(['t1'])
+    tree.unmount()
+
+    // 数据表：单元格按列渲染
+    const grid = mount(UiDataGrid, {
+      props: {
+        columns: [
+          { key: 'id', label: 'ID' },
+          { key: 'name', label: '名称' },
+        ],
+        rows: [{ id: '1', name: '甲' }],
+      },
+    })
+    expect(grid.text()).toContain('甲')
+    grid.unmount()
+
+    // 分栏：分隔条支持键盘调整
+    const split = mount(UiSplitPane, {
+      props: { modelValue: 240 },
+      slots: { primary: 'A', secondary: 'B' },
+    })
+    await split.get('[role="separator"]').trigger('keydown', { key: 'ArrowRight' })
+    expect(split.emitted('update:modelValue')?.[0]?.[0]).toBe(256)
+    split.unmount()
+
+    // 可搜索下拉：挂载并回显选中项
+    const combo = mount(UiCombobox, {
+      props: { modelValue: 'a', options: [{ value: 'a', label: '甲' }] },
+    })
+    expect(combo.html()).toContain('甲')
+    combo.unmount()
+
+    warn.mockRestore()
+    expect(warnings.filter((item) => /pinia|inject|provide/i.test(item))).toEqual([])
+  })
+
+  it('core/ui 不引入应用服务（stores / 凭证库 / IPC / 平台与反馈层）', () => {
+    const forbidden = [
+      /from 'pinia'/,
+      /from '@\/stores/,
+      /from '@\/core\/(?:vault|ipc|platform|feedback)/,
+    ]
+    const violations = Object.entries(uiSources)
+      .filter(([path]) => !path.includes('.test.'))
+      .filter(([, source]) => forbidden.some((pattern) => pattern.test(source)))
+      .map(([path]) => path)
+    expect(violations).toEqual([])
   })
 })
