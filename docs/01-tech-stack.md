@@ -1,7 +1,7 @@
 # 技术选型分析 · ToolKit 桌面工具箱
 
 > 结论先行：**Tauri 2.11 + Vue 3 + TypeScript + Vite + Tailwind CSS 4 + Pinia**
-> 前端框架以 Vue 3 为推荐默认；若团队更熟 React，本文档的架构设计同样适用（框架只影响 `src/features` 层的写法，`core/` 与 Rust 侧完全不变）。
+> 前端框架以 Vue 3 为推荐默认。该结论已落地为大量 Vue 组件（`core/ui`、插件界面），**换框架不再只影响某一层**：`core/ui`、`features/`、`plugins/` 的 SFC 与 Reka UI 原语都要重写，只有 IPC 契约、Rust 侧与数据格式可以保留。
 
 ---
 
@@ -51,7 +51,7 @@
 3. Pinia + `<script setup>` 组合式 API 与工具注册表这类"可插拔"架构天然契合；
 4. 本项目采用 shadcn-vue 源码模式（不依赖重型默认皮肤），Vue 的单文件组件粒度正合适。
 
-> 若团队 React 熟练度明显更高，替换成本集中在 `src/features/` 与 `src/stores/`，`core/`、`tools/` 目录结构、IPC 契约、Rust 侧零改动。
+> 若团队 React 熟练度明显更高，替换成本集中在全部 SFC 与公共控件（`core/ui`、`features/`、`plugins/` 的 `.vue` 与 Reka UI 用法），IPC 契约、Rust 侧与数据格式不变——**不再是「只改 features」的小改动**（2026-09-12 修订，旧承诺与现状不符）。
 
 ---
 
@@ -145,7 +145,7 @@
 | 包管理 | pnpm（workspace 单一包，无 monorepo 必要） |
 | 代码规范 | ESLint 9 flat config + Prettier（前端）；`rustfmt` + `clippy -D warnings`（Rust） |
 | 测试 | Vitest（前端单元）+ `cargo test`（Rust 命令单测）+ Playwright 可选（E2E） |
-| CI | GitHub Actions：lint → test → `tauri build` → 上传安装包 artifact |
+| 验证 / CI | GitHub Actions（`.github/workflows/ci.yml`）：前端 `pnpm lint` → `pnpm format:check` → `pnpm test` → `pnpm build`；Rust `cargo fmt --check` → `cargo clippy --all-targets -- -D warnings` → `cargo test --lib` → 规范与文档检查器；Windows NSIS 与 macOS dmg 双平台构建（2026-09-12 起 CI 说明以本行为准） |
 | 打包 | `tauri build`：Windows NSIS（默认）/ MSI；后期加 macOS dmg |
 | 自动更新 | Tauri updater（需自建静态资源服务器或 GitHub Releases，签名密钥 `tauri signer`） |
 | 代码签名 | Windows Authenticode（后期发布前必做，否则 SmartScreen 拦截） |
@@ -173,7 +173,7 @@
 | 第二批工具 | 技术难点 | 现实性评估 |
 |-----------|---------|-----------|
 | HTTP/WS 调试 | Rust 侧代理请求、WS 长连接、请求/响应体大文本 | 低风险：reqwest + tokio-tungstenite 成熟；难点在**前端渲染**（响应体格式化/WS 消息流），属可控工作量 |
-| 数据库工具 | 三方言统一、连接池、大结果集分页 | 中风险：sqlx 统一三方言；注意 SQLite 与 MySQL/PG 的类型差异展示；**绝不拼 SQL 到 `execute` 之外**（只读默认 + 显式确认写操作） |
+| 数据库工具 | 三方言统一、连接池、大结果集分页 | 中风险：原生驱动（`mysql_async` / `tokio-postgres` / `redis` / `rusqlite`）+ 统一 `dialect` 语义层；sqlx 已弃用（见 §5）。注意 SQLite 与 MySQL/PG 的类型差异展示；**绝不拼 SQL 到 `execute` 之外**（只读默认 + 显式确认写操作） |
 | hosts 修改 | 系统文件权限、提权、备份回滚 | 中风险：权限是唯一难点，按需提权助手方案可行；必须做**修改前备份 + 一键还原** |
 | DNS 管理 | 三家云 API 签名 | 中风险：签名算法都有公开文档，实现量不大；难点在**统一 Provider trait 抽象**与错误归一化（限流/欠费/权限错误） |
 | SSH 工具 | 密钥协商、交互式会话 | 中高风险：russh 较年轻；备选 `ssh2`（libssh2 绑定，成熟但 C 依赖）；第一批只做架构预留，M3 再定 |

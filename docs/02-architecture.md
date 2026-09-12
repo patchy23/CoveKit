@@ -1,13 +1,33 @@
 # 详细设计 · patchyBox 桌面工具箱
 
-> ⚠️ 本文是设计期文档（2026-08）：其中 `modules/` 目录、sqlx、Stronghold、modal 载体、前缀路由等描述已被实现演进取代。
-> **现行规则以 `docs/03-plugin-development.md`（插件结构/IPC/数据库）与 `docs/05-rust-code-standard.md`（Rust 规范）为准；当前架构实况见 AGENTS.md。**
+> **本文分两部分**：开头的「现行架构与依赖方向」是 2026-09-12 起的实际形态；从 §0 起的全部章节是 2026-08 的**设计期留档**（`modules/` 目录、sqlx、Stronghold、modal 载体、前缀路由等描述已被实现演进取代，保留用于追溯决策过程，不作现行规则）。
+> **现行规则以 `docs/03-plugin-development.md`（模块结构/IPC/数据库）与 `docs/05-rust-code-standard.md`（Rust 规范）为准；模块台账见 AGENTS.md，实况以代码与注册表为准。**
 
 
 > 视觉方向：**明净浅色 · 内容优先**（已采纳，原型 `sketches/002-clean-light/`）；设计规范：`DESIGN.md`（已过 lint，0 错误）。
 > 技术栈：Tauri 2.11 + Vue 3.5 + TS + Tailwind 4 + Pinia（详见 `01-tech-stack.md`）。
 
 ---
+
+## 现行架构与依赖方向（2026-09-12 起）
+
+| 层 | 负责 | 不负责 |
+| --- | --- | --- |
+| 组装根（`main.ts` / `App.vue` / `lib.rs`） | 注册服务与工具、绑定平台实现、启动/退出委托 | 业务 SQL、具体连接流程 |
+| 应用服务（`features/workspace`、`stores`、`core/vault`、Rust `framework`） | 用户操作协调、设置与存储上下文、凭证引用、页签与关闭协议 | SSH/DB 协议细节、基础 UI 样式 |
+| 工具能力域（`plugins/<owner>`） | 自己的业务状态、领域数据、传输与存储适配 | 跨模块读表、自行决定全局数据根 |
+| 共享呈现（`core/ui`） | Ui 控件、编辑器、交互原语 | Vault IPC、Pinia 全局状态、账号/存储决策 |
+| 平台适配（`core/platform`、Rust 原生依赖封装） | 剪贴板/窗口/系统 API 等平台操作与降级 | 业务冲突策略、用户流程 |
+
+**前端现行目录**：`core/{ui,vault,ipc,registry,search,format}` + `core/storage.ts`、`features/workspace`、`stores`、`plugins/<owner>`（各工具自注册；模块间禁止互相 import）。`core/platform` 与 `core/feedback` 为 2026-09-12 起的分层落点（AR03 迁移中），凭证复合组件迁往 `core/vault/ui`，经 `@/core/vault` 公开入口使用。
+
+**Rust 现行结构**：`lib.rs`（Tauri 插件装配、Builder、启动/退出）+ `framework/`（`paths` 存储四分区、`settings`、`store`（PluginDb）、`vault`、`credentials`、`ipc_registry`、`storage` 迁移）+ `plugins/<owner>/`（`mod.rs` 门面 + `models.rs` + 能力文件/子目录）；`plugins/database/` 额外分 `drivers/`（传输）、`dialect/`（SQL 语义）、`agent/`（外部代理）。
+
+**依赖方向**：组装根 → 应用服务 / 共享呈现 → 能力域 → 平台适配；**能力域之间不得互相依赖内部实现**，共享呈现不得反向依赖应用服务（现存 `core/ui` 与凭证组件的依赖环按 AR03 解除）。**持久化权威在 Rust**，前端 store 只做缓存与展示；当前设置存在前端与 Rust 两端写入的过渡状态，将在 AR06 收敛为固定 `DataContext` 与按 schema 的字段路由。
+
+---
+
+> ⬇️ 以下 §0–§11 为 **2026-08 设计期留档**，记录当时的决策与预留形态，不代表现行实现。
 
 ## 0. 交付路线（两批次）
 
@@ -299,7 +319,7 @@ App.vue
 ## 9. 工程约束：可读性与可扩展性（第一批验收红线）
 
 **可读性：**
-- 组件 < 300 行；逻辑抽纯函数（`tools/*/useXxx.ts`），UI 与逻辑分离——第一批 8 个工具全部遵循；
+- 组件规模按 docs/03 §1 的评审信号判断（约 300 物理行触发职责审查），逻辑抽到 `useXxx.ts` / 独立纯函数文件，UI 与逻辑分离；
 - 命名：文件 kebab-case、组件 PascalCase、Rust snake_case；语义化命名优先于注释；
 - 契约集中：IPC 出入参只在 `contracts.ts` 出现一次；
 - 代码评审清单：ESLint 9 + Prettier + `rustfmt` + `clippy -D warnings` 全绿才可合入。
@@ -309,7 +329,7 @@ App.vue
 - 新增 Rust 命令：`modules/` 下新模块 + 注册一行（装配处集中）；
 - 新增云厂商/数据库/SSH 实现：实现 trait 的 adapter，零框架改动；
 - 新增 presentation：`core/presentation/` 注册新载体，manifest 声明即用；
-- 升级到第二批时，第一批代码**只增不改**（新增模块/工具/命令，不重构既有路径）。
+- 兼容边界（2026-09-12 修订）：向后兼容的是**已发布的数据格式与用户行为**；内置模块可以协同重构，旧的「第一批代码只增不改」不再是生效规则；
 
 ---
 
