@@ -9,8 +9,9 @@
 1. **模块以 owner 为边界**：一个业务能力对应一个 owner（前端 `src/plugins/<owner>/` + Rust `src-tauri/src/plugins/<owner>/`）；前端与后端模块数**不要求一一对应**——纯前端工具没有 Rust 模块，一个能力也可以有多个后端实现模块。模块间**禁止互相 import、禁止直读对方内部状态与数据表**，跨能力协作走框架公开契约。
 2. **兼容边界是数据与用户行为**：向后兼容的对象是**已发布的数据格式与用户行为**；内置模块之间可以协同重构（目录、装配、状态所有权），不承诺「框架源码只增不改」「已发布插件对框架零依赖」。
 3. **公共能力按层下沉**：基础控件与编辑器走 `src/core/ui/`，凭证复合 UI 走 `src/core/vault/`，剪贴板/窗口等平台操作走 `src/core/platform/`，应用级通知走 `src/core/feedback/`，IPC 基础设施走 `src/core/ipc/`，数据与持久化基建走 `src-tauri/src/framework/`；模块不得重复造轮子（各自实现 toast、各自建数据库、各自解析存储根）。基础层不得反向依赖 `stores`、业务 IPC 或其它模块内部实现。
-4. **接口入库**：所有 Tauri 命令必须在启动时登记到 IPC 注册表（见 §2），重复注册直接报错。
-5. **编辑器统一**：多行代码 / 配置编辑一律用 `@/core/ui` 的 `UiCodeEditor`，差异对比用 `UiCodeDiff`；**禁止自研编辑器、禁止复制 CodeMirror 主题**（详见 §7）。
+4. **接口入库**：所有 Tauri 命令必须在模块清单（`patchybox_module!`）里声明并登记到 IPC 注册表（见 §2），重复注册直接报错。
+5. **路径与上下文**：分区路径一律经 `framework::paths` 取得（内部取自 `framework::context` 固定的存储位置），禁止模块自拼 `app_data_dir()`、自建空间 id 或每次调用现读 `settings.json`；应用退出清理登记到 `framework::lifecycle`，根迁移/导入提交/空间激活/更新安装共用 `context::maintenance_guard()`。
+6. **编辑器统一**：多行代码 / 配置编辑一律用 `@/core/ui` 的 `UiCodeEditor`，差异对比用 `UiCodeDiff`；**禁止自研编辑器、禁止复制 CodeMirror 主题**（详见 §7）。
 
 ## 1. 目录与命名规范
 
@@ -30,7 +31,7 @@
 - `id`：小写连字符（`http-ws`、`random-password`）；Rust 模块名 snake_case（`http_ws`）。
 - 命令名：snake_case（`db_open`）；前端封装名 camelCase（`dbOpen`）。
 - 字段：serde 统一 `camelCase`；错误结构统一 `{ ok: false, error: Option<String> }`（不抛错给前端展示）。
-- 每个插件在 `mod.rs` 提供自己的 `invoke_handler(invoke)`，内部 `generate_handler!` 使用完整路径；应用级 Builder 只安装一次总 handler，由 `plugins/mod.rs` 按注册表 owner 精确路由（2026-09-06 起；旧的前缀手写清单已废弃）。
+- 每个插件在 `mod.rs` 写一份 `patchybox_module!` 清单，宏生成该模块的 `invoke_handler(invoke)`（内部 `generate_handler!` 使用清单里的完整路径）；应用级 Builder 只安装一次总 handler，由 `plugins/mod.rs` 的 `patchybox_routes!` 生成的 `route_owner()` 按注册表 owner 精确路由（2026-09-12 AR07 起；此前的手写命令表、手写路由分支与 owner 枚举已废弃）。
 - **禁止在多个 `register()` 中调用 `Builder::invoke_handler`**：该方法是 setter，后调用会覆盖前一批命令，并非追加。
 - **规模是评审信号，不是自动失败条件（2026-09-12 修订）**：Vue 文件约 300 物理行、Rust 生产实现约 400 行、插件目录 8（Rust 能力文件）/15（前端文件）个业务文件时**触发职责审查**——模板、生产逻辑、声明表与测试分别统计。超线时在提交说明写清职责与拆分依据即可，不需要每次向用户申请例外；**行数是线索不是目标，禁止用复制实现、挪进巨型 use 文件或过度转发来满足数字**。
 - **必须重构的条件（与行数无关，命中即处理）**：同一文件存在多个独立修改原因；同一份状态或实现存在两处；模块之间互传大批可写状态；资源释放没有唯一所有者。反之，职责单一、状态所有者清晰的较长文件可以保留并说明理由。
@@ -40,23 +41,44 @@
 
 ## 2. IPC 接口入库规则（tauri 接口入库）
 
-每个插件在 `register()` 中登记命令清单：
+命令清单**只声明一处**：模块门面里的 `patchybox_module!`（框架 `framework/module_manifest.rs`），
+它同时生成 IPC 入库元数据、命令 handler 与模块描述（`ModuleSpec`）。不再手写命令名与 handler 两条清单。
 
 ```rust
+// plugins/<owner>/mod.rs
+crate::patchybox_module! {
+    owner: "database",              // 路由与登记的归属者（snake_case 模块名）
+    feature: "database",            // 前端稳定 feature id（连字符写法）
+    storage: "database",            // 可选：数据文件键 <storageRoot>/data/<key>.db（历史名不改）
+    commands: {
+        // 实现路径 => 中文说明；注册名取路径末段（与 handler 同一标识符，不会脱节）
+        dbc_catalog => "连接内的库/表清单",
+        catalog::dbc_execute => "执行 SQL（查询/非查询自动识别）",
+        // 兼容别名才允许注册名 ≠ 实现名，且必须显式写出：
+        legacy::dbc_open as "db_open" => "打开数据库（历史命令名，前端契约冻结）",
+    },
+}
+
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    // 第一个参数是插件 id（owner）：路由按注册表精确匹配命令名，不再靠手写前缀
-    ipc_registry::register("db", &[
-        ("db_open", "打开数据库（路径不存在自动创建）"),
-        ("db_execute", "执行 SQL（查询/非查询自动识别）"),
-    ]);
-    builder.manage(...)
+    register_ipc_or_fail();          // 生成的登记入口：重复注册即 fail-fast
+    // 持有会话/子进程/文件句柄的模块再登记关闭清理（唯一关闭入口，见 §7）
+    framework::lifecycle::register(ModuleLifecycle {
+        owner: IPC_OWNER,
+        prepare: None,               // 需要「未保存则拒绝退出」时才提供
+        dispose: Some(on_dispose),   // 退出时清自己的协议与子进程
+    });
+    builder.manage(...)              // 需要 State 时
 }
 ```
 
+`plugins/mod.rs` 的 `patchybox_routes! { "database" => database, ... }` 一行生成路由分支、
+装配顺序与启动校验（`validate_routing()`），新增插件只改这一行与本模块清单。
+
 规则：
 - **命令名全局唯一**：启动时 `ipc_registry` 检测重复，重复即 panic（开发期暴露，杜绝两个插件抢命令名）。
-- **唯一总 handler**：`lib.rs` 只调用一次 `Builder::invoke_handler`；`plugins/mod.rs` 的 `invoke_handler` 按注册表 owner 分派（新增插件加一行 `Some("<id>") => <id>::invoke_handler(invoke)` 分支），`validate_routing()` 启动期 fail-fast 校验「登记了但没路由分支」。
+- **唯一总 handler**：`lib.rs` 只调用一次 `Builder::invoke_handler`；业务命令由 `plugins::invoke_handler` 按注册表 owner 经 `route_owner()` 分派，已登记却没有路由分支的 owner 走 `unrouted_owner()` 明确报错（不静默当成命令不存在），`validate_routing()` 在启动期先 fail-fast。
 - **入库元数据**：`(名称, 中文说明)` 是入库最小单位；说明必须写清用途与关键参数。
+- **不许绕过清单**：任何 `#[tauri::command]` 实现都必须出现在某模块清单里，由 `framework/manifest_contract_tests.rs` 的源码扫描守卫与「已发布命令表」契约测试把关（AR07 之前有 11 条命令实现了但没入库 = 前端调用直接 command not found）。
 - **可查询**：框架命令 `framework_commands` 返回全量清单（名称 + 说明），供前端调试面板/文档生成。
 - **契约同步**：前端 `contracts.ts` 与 Rust serde 结构逐字段对应；`rename_all = "camelCase"` 是默认，禁止手写不一致。每个 owner 的传输 DTO 只有一处权威定义（契约多时按域分文件），内部 UI/表单状态不必复用 IPC DTO。
 - **owner 与 feature id 的映射显式声明**：注册 owner 用 Rust 模块名（snake_case），产品 feature id 用前端 id（如 `http-ws`）；一个 feature 调用多个 owner 的命令时，映射写在模块描述里，不靠字符串拼接或前缀猜测。
@@ -164,7 +186,7 @@ Rust：
 ## 6. 新增插件 Check-list
 
 - [ ] 前端 `src/plugins/<id>/`：manifest + contracts.ts + ipc.ts + index.vue + useXxx.ts + 测试
-- [ ] Rust `src-tauri/src/plugins/<owner>/`（**目录形式，无单文件例外**）：`mod.rs` 门面 + `models.rs` + 能力文件（或能力子目录）；命令 + register（含 ipc_registry 入库）+ 需要时 init
+- [ ] Rust `src-tauri/src/plugins/<owner>/`（**目录形式，无单文件例外**）：`mod.rs` 门面 + `models.rs` + 能力文件（或能力子目录）；`patchybox_module!` 命令清单 + register（`register_ipc_or_fail()` 入库）+ 需要时 init
 - [ ] `plugins/mod.rs` 一行 + `lib.rs` register/init 各一行 + 前端 `plugins/index.ts` 一行
 - [ ] 数据文件走 `framework::store`；表结构走迁移数组
 - [ ] 命令在 `ipc_registry` 登记；契约 camelCase 同步

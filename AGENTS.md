@@ -19,8 +19,9 @@
 
 - **内置功能模块（以业务能力 owner 为边界）**：允许纯前端工具，也允许一个能力对应多个后端实现模块，**不要求前后端目录一一对应**。前端 `src/plugins/<owner>/`（manifest 自注册 + contracts/ + ipc.ts + 组件），Rust 侧 `src-tauri/src/plugins/<owner>/` 一律目录结构（mod.rs 门面 + models.rs + 能力子模块/子目录）；模块间**禁止互相 import 与直读对方内部状态/数据表**，协作走框架公开契约
 - **框架与模块分离**：`src-tauri/src/framework/`（DataContext / paths / settings / vault 与 secure_store / PluginDb / 维护与关闭 / 命令元数据）是基建不属于任何模块；**删除死功能的依据是调用图与注册入口无消费方**（IPC 调用、动态入口、启动/恢复职责），不按“有没有前端同名目录”判断
-- **IPC 接口入库**（`framework/ipc_registry.rs`）：模块 `register()` 登记命令（owner + 名称 + 中文说明），启动校验全局唯一（重复即 fail-fast）；路由按注册表 owner 精确匹配（`plugins/mod.rs` 一个分支/模块），`validate_routing()` 启动期校验死命令；不再手写前缀清单
+- **IPC 接口入库**（`framework/module_manifest.rs` 静态清单 + `framework/ipc_registry.rs` 注册表）：每个模块在门面写一份 `patchybox_module!`（owner + featureId + `命令路径 => 中文说明`），同一标识符生成入库元数据与 handler（注册名 = 路径末段；兼容别名必须显式 `as "名"`）；`plugins/mod.rs` 的 `patchybox_routes!` 一行/模块生成路由、装配顺序与 `validate_routing()` 启动校验（重复注册、未纳路由 owner 均 fail-fast，不静默吞）。命令必须经清单入库，`framework/manifest_contract_tests.rs` 用源码扫描 + 已发布命令表契约测试拦截手写绕过
 - **数据库管理规则**（`framework/store.rs`）：模块数据文件统一 `<storageRoot>/data/<owner>.db`，路径一律走 `framework::paths`，禁止手拼 `app_data_dir()`（四分区布局见 `docs/02-architecture.md` §3.1）；表结构走 `PRAGMA user_version` 顺序迁移，**只追加且以事务执行**，旧半迁移按已知版本与实际 schema 修复，不得把 `duplicate column` 整段当作成功跳过；统一骨架 `PluginDb`（连接生命周期 + 锁 + 迁移）
+- **数据上下文与关闭**（`framework/context.rs` / `framework/lifecycle.rs`）：存储位置、空间代际与启动 epoch 只有一个来源，`paths` 与 `PluginDb` 消费同一实例，模块不得自拼物理路径或每次调用现读 `settings.json`；关闭只有 `lifecycle` 一个入口（`prepare` 可拒绝、`dispose` 有总超时），业务协议清理由各模块钩子提供，根迁移/导入提交/空间激活/更新安装共用 `context::maintenance_guard()`，前端禁用按钮不算锁
 - **兼容边界**：向后兼容的对象是**已发布的数据格式与用户行为**，不是“所有框架源码只增不改”；内置模块之间可以协同重构（含目录、装配与状态所有权调整）
 - **工具注册表**（`src/core/registry/`）：新增工具 = 建目录 + `plugins/index.ts` 一行；新增系统能力可以修改组装根、权限与生命周期注册，不承诺框架源码零改动
 - **载体**：全部工具以多页签工作区子页面打开（`src/features/workspace/ToolWorkspace.vue`，页签支持 Ctrl+W 关闭、Ctrl(Shift)+Tab 循环、溢出三点收纳）

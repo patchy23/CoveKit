@@ -180,22 +180,18 @@ fn finish_save() -> Result<HostsResult, String> {
     }
 }
 
-/// 分派 hosts 插件命令。
-pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
-    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
-        tauri::generate_handler![hosts_read, hosts_save];
-    handler(invoke)
+// 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）
+crate::patchybox_module! {
+    owner: "hosts",
+    feature: "hosts",
+    commands: {
+        hosts_read => "读取 hosts 文件",
+        hosts_save => "备份并写入 hosts（平台提权）",
+    },
 }
 
 /// 插件注册：命令
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(
-        "hosts",
-        &[
-            ("hosts_read", "读取 hosts 文件"),
-            ("hosts_save", "备份并写入 hosts（平台提权）"),
-        ],
-    )
-    .expect("IPC 命令重复注册");
+    register_ipc_or_fail();
     builder
 }

@@ -41,25 +41,18 @@ pub async fn tts_synthesize(
     })
 }
 
-/// 分派 TTS 插件命令
-pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
-    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
-        tauri::generate_handler![tts_voices, tts_synthesize];
-    handler(invoke)
+// 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）
+crate::patchybox_module! {
+    owner: "tts",
+    feature: "tts",
+    commands: {
+        tts_voices => "获取文字转语音可选语音列表",
+        tts_synthesize => "合成语音（文本 + 语音 + 语速/音调 → mp3 文件）",
+    },
 }
 
 /// 插件注册：命令入库（无 State，纯函数式）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(
-        "tts",
-        &[
-            ("tts_voices", "获取文字转语音可选语音列表"),
-            (
-                "tts_synthesize",
-                "合成语音（文本 + 语音 + 语速/音调 → mp3）",
-            ),
-        ],
-    )
-    .expect("IPC 命令重复注册");
+    register_ipc_or_fail();
     builder
 }

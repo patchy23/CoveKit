@@ -21,7 +21,7 @@
 
 **前端现行目录**：`core/{ui,vault,ipc,registry,search,format,platform,feedback}` + `core/storage.ts`、`features/workspace`、`stores`、`plugins/<owner>`（各工具自注册；模块间禁止互相 import）。`core/platform`（剪贴板/窗口等平台能力，返回结果不提示）与 `core/feedback`（通知辅助，可适配 ui store）自 2026-09-12 AR03 起为现行落点；凭证复合组件位于 `core/vault/ui`，经 `@/core/vault` 公开入口使用；`core/ui` 内部走相对具体组件路径，不经自身 barrel 回流。
 
-**Rust 现行结构**：`lib.rs`（Tauri 插件装配、Builder、启动/退出）+ `framework/`（`paths` 存储四分区、`settings`、`store`（PluginDb）、`vault`、`credentials`、`ipc_registry`、`storage` 迁移）+ `plugins/<owner>/`（`mod.rs` 门面 + `models.rs` + 能力文件/子目录）；`plugins/database/` 额外分 `drivers/`（传输）、`dialect/`（SQL 语义）、`agent/`（外部代理）。
+**Rust 现行结构**：`lib.rs`（Tauri 插件装配、Builder、启动/退出）+ `framework/`（`paths` 存储四分区、`settings`、`store`（PluginDb）、`vault`、`credentials`、`ipc_registry` 注册表、`module_manifest` 静态模块清单宏、`context` 数据上下文（存储位置/空间代际/启动 epoch 与维护互斥）、`lifecycle` 统一关闭协调（prepare/dispose + 总超时）、`storage` 迁移）+ `plugins/<owner>/`（`mod.rs` 门面 + `models.rs` + 能力文件/子目录）；`plugins/database/` 额外分 `drivers/`（传输）、`dialect/`（SQL 语义）、`agent/`（外部代理）；HTTP/WS 的接口库持久化在 `plugins/http_ws/persistence/`（原 `plugins/api` 于 2026-09-12 AR07 归入，命令名与 `data/api.db` 存储键不变）。
 
 **依赖方向**：组装根 → 应用服务 / 共享呈现 → 能力域 → 平台适配；**能力域之间不得互相依赖内部实现**，共享呈现不得反向依赖应用服务（现存 `core/ui` 与凭证组件的依赖环按 AR03 解除）。**持久化权威在 Rust**，前端 store 只做缓存与展示；当前设置存在前端与 Rust 两端写入的过渡状态，将在 AR06 收敛为固定 `DataContext` 与按 schema 的字段路由。
 

@@ -46,6 +46,14 @@ pub fn owner_of(command: &str) -> Option<&'static str> {
     })
 }
 
+/// 清空注册表（仅测试：注册表是进程级单例，契约测试需要从空表开始）
+#[cfg(test)]
+pub(crate) fn reset() {
+    if let Ok(mut guard) = REGISTRY.lock() {
+        *guard = None;
+    }
+}
+
 /// 全量命令清单（framework_commands 命令的数据源）
 pub fn snapshot() -> Vec<IpcEntry> {
     REGISTRY

@@ -72,16 +72,8 @@ pub fn settings_set(app: AppHandle, key: String, value: Value) -> Result<(), Str
     Ok(())
 }
 
-/// 插件注册：命令 + State（惰性初始化）
+/// 框架装配：只注册 State（命令入库与分派 handler 由 framework/mod.rs 的静态清单生成）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(
-        "framework",
-        &[
-            ("settings_get", "读取应用设置（可指定 key）"),
-            ("settings_set", "写入应用设置"),
-        ],
-    )
-    .expect("IPC 命令重复注册");
     builder.manage(HotkeyState(std::sync::Mutex::new(None)))
 }
 

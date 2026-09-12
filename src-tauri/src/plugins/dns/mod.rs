@@ -432,37 +432,25 @@ pub async fn dns_delete_record(
     }
 }
 
-/// 分派 DNS 插件命令。
-pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
-    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
-        dns_query,
-        dns_domains,
-        dns_records,
-        dns_add_record,
-        dns_update_record,
-        dns_delete_record,
-        dns_config_get,
-        dns_config_set,
-    ];
-    handler(invoke)
+// 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）
+crate::patchybox_module! {
+    owner: "dns",
+    feature: "dns",
+    commands: {
+        dns_query => "DNS 查询（指定服务器/多服务器对比）",
+        dns_domains => "云解析域名列表（aliyun/dnspod/cloudflare）",
+        dns_records => "云解析记录列表（分页）",
+        dns_add_record => "云解析添加记录",
+        dns_update_record => "云解析更新记录",
+        dns_delete_record => "云解析删除记录",
+        dns_config_get => "读取云平台密钥配置",
+        dns_config_set => "保存云平台密钥配置",
+    },
 }
 
 /// 插件注册：命令入库 + State
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(
-        "dns",
-        &[
-            ("dns_query", "DNS 查询（指定服务器/多服务器对比）"),
-            ("dns_domains", "云解析域名列表（aliyun/dnspod/cloudflare）"),
-            ("dns_records", "云解析记录列表（分页）"),
-            ("dns_add_record", "云解析添加记录"),
-            ("dns_update_record", "云解析更新记录"),
-            ("dns_delete_record", "云解析删除记录"),
-            ("dns_config_get", "读取云平台密钥配置"),
-            ("dns_config_set", "保存云平台密钥配置"),
-        ],
-    )
-    .expect("IPC 命令重复注册");
+    register_ipc_or_fail();
     builder.manage(DnsState(Mutex::new(None)))
 }
 

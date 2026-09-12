@@ -24,7 +24,7 @@ pub const KEY_LAYOUT_VERSION: &str = "layoutVersion";
 pub const LAYOUT_VERSION: i64 = 2;
 
 /// 读取设置项（settings.json → app.<key>；不存在返回 None）
-fn read_setting(app: &AppHandle, key: &str) -> Option<serde_json::Value> {
+pub(crate) fn read_setting(app: &AppHandle, key: &str) -> Option<serde_json::Value> {
     let store = app.store("settings.json").ok()?;
     store.get("app")?.get(key).cloned()
 }
@@ -88,8 +88,20 @@ pub fn default_root(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("数据目录获取失败: {e}"))
 }
 
-/// 当前生效的存储根目录；配置的目录不可用（拔盘/只读/无权限）时降级默认目录并告警
+/// 当前生效的存储根目录。
+///
+/// 取值优先走固定下来的数据上下文（`context::init_from_app` 在启动时解析一次：
+/// 配置优先、目录不可用则降级默认目录）：运行期改配置不再中途换根，也不会每次调用重读
+/// settings.json。上下文尚未初始化时（单元测试或框架极早期）退回一次即时解析。
 pub fn storage_root(app: &AppHandle) -> Result<PathBuf, String> {
+    if let Some(root) = crate::framework::context::root() {
+        return Ok(root.to_path_buf());
+    }
+    resolve_root_now(app)
+}
+
+/// 即时解析存储根（无上下文时的回落路径）：配置优先，不可写则降级默认目录并告警
+fn resolve_root_now(app: &AppHandle) -> Result<PathBuf, String> {
     let default = default_root(app)?;
     let configured = read_setting(app, KEY_STORAGE_ROOT)
         .and_then(|v| v.as_str().map(String::from))

@@ -16,7 +16,7 @@ mod verify;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::framework::paths;
+use crate::framework::{context, paths};
 
 /// 四分区名称（顺序即设置页展示顺序）
 const PARTITIONS: [&str; 4] = ["data", "vault", "logs", "cache"];
@@ -39,6 +39,10 @@ pub struct StorageInfo {
     file_count: u64,
     /// 已完成的布局版本（paths::LAYOUT_VERSION 表示已是四分区布局）
     layout_version: i64,
+    /// 非秘密空间标识（数据上下文；默认空间在导入导出 L0/L1 交付前恒为 default）
+    space_id: String,
+    /// 空间代际（导入激活/空间切换后递增；用于判定计划是否过期）
+    generation_id: u64,
 }
 
 /// 单个分区的路径与占用
@@ -116,6 +120,12 @@ pub fn storage_info(app: AppHandle) -> Result<StorageInfo, String> {
         total_bytes,
         file_count,
         layout_version: paths::layout_version(&app),
+        space_id: context::current()
+            .map(|ctx| ctx.space_id().to_string())
+            .unwrap_or_else(|| context::DEFAULT_SPACE_ID.to_string()),
+        generation_id: context::current()
+            .map(context::DataContext::generation_id)
+            .unwrap_or(context::DEFAULT_GENERATION_ID),
     })
 }
 
@@ -128,6 +138,8 @@ pub async fn storage_migrate(
     app: AppHandle,
     target: String,
 ) -> Result<StorageMigrateResult, String> {
+    // 维护互斥：根迁移与导入提交/空间激活/更新安装共用同一把锁（前端禁用按钮不算锁）
+    let _maintenance = context::maintenance_guard().await;
     tauri::async_runtime::spawn_blocking(move || migrate_blocking(&app, &target))
         .await
         .map_err(|e| format!("迁移任务失败: {e}"))?
@@ -215,17 +227,4 @@ fn emit_progress(
         total_bytes,
     };
     let _ = app.emit("storage://progress", payload);
-}
-
-/// 框架命令注册（命令入库 + 中文说明）
-pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(
-        "framework",
-        &[
-            ("storage_info", "读取存储位置信息（四分区路径与占用）"),
-            ("storage_migrate", "迁移存储目录到新根目录（重启生效）"),
-        ],
-    )
-    .expect("IPC 命令重复注册");
-    builder
 }

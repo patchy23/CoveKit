@@ -194,6 +194,21 @@ pub async fn ws_close(state: State<'_, WsState>, id: String) -> Result<WsActionR
     })
 }
 
+/// 关闭全部会话（应用退出清理用；幂等，返回被关闭的会话数）
+pub(crate) fn close_all_sessions(state: &WsState) -> usize {
+    let Ok(mut map) = state.0.lock() else {
+        // 锁中毒说明此前有会话线程 panic：注册表已不可信，按「全部需要重建」处理
+        return 0;
+    };
+    let closed = map.len();
+    for handle in map.values_mut() {
+        handle.open = false;
+        handle.tx = None; // drop 发送端 → 后台 select 收到 None → 断开
+    }
+    map.clear();
+    closed
+}
+
 /// 全部会话快照（含历史消息）
 #[tauri::command]
 pub async fn ws_sessions(state: State<'_, WsState>) -> Result<Vec<WsSession>, String> {

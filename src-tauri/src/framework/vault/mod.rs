@@ -224,39 +224,6 @@ pub async fn vault_import(
     })
 }
 
-/// 框架装配：7 个命令全量入 IPC 注册表（命令由 framework::invoke_handler 总 handler 分派）
-pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    super::ipc_registry::register(
-        "framework",
-        &[
-            (
-                "vault_list",
-                "凭证列表（脱敏摘要：id/name/kind/掩码/时间，无明文）",
-            ),
-            (
-                "vault_save",
-                "新增/更新凭证（payload 打包，id 可选 upsert）",
-            ),
-            ("vault_delete", "删除凭证（返回被引用计数供前端提示）"),
-            ("vault_reference_count", "删除前查询后端插件凭证引用数"),
-            (
-                "vault_reveal",
-                "读取单条凭证明文（仅用户点显示/复制时调用）",
-            ),
-            (
-                "vault_export",
-                "密码加密导出 .pbvault 备份（Argon2id 派生密钥）",
-            ),
-            (
-                "vault_import",
-                "解密导入 .pbvault 备份（合并/覆盖由 UI 选择）",
-            ),
-        ],
-    )
-    .expect("IPC 命令重复注册");
-    builder
-}
-
 #[cfg(test)]
 mod tests {
     use super::models::{CredentialKind, CustomEntry};

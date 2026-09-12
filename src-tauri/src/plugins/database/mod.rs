@@ -226,86 +226,48 @@ pub async fn dbc_driver_status(
     }))
 }
 
-/// 插件命令分派（应用级总 handler 按前缀路由到本函数）
-pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
-    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
-        dbc_connection_save,
-        dbc_connection_delete,
-        dbc_connections,
-        dbc_connect,
-        dbc_disconnect,
-        dbc_test,
-        dbc_history,
-        dbc_history_add,
-        dbc_history_clear,
-        dbc_saved,
-        dbc_saved_add,
-        dbc_saved_update,
-        dbc_saved_delete,
-        dbc_driver_status,
-        catalog::dbc_execute,
-        catalog::dbc_cancel,
-        catalog::dbc_databases,
-        catalog::dbc_schemas,
-        catalog::dbc_objects,
-        catalog::dbc_columns,
-        catalog::dbc_table_data,
-        catalog::dbc_export_csv,
-        catalog::dbc_redis_keys,
-        catalog::dbc_redis_key_info,
-        admin::dbc_charset_options,
-        admin::dbc_users,
-        admin::dbc_create_database,
-        admin::dbc_drop_database,
-        admin::dbc_table_admin,
-        admin::dbc_table_ddl,
-        admin::dbc_table_indexes,
-    ];
-    handler(invoke)
+// 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）
+crate::patchybox_module! {
+    owner: "database",
+    feature: "database",
+    commands: {
+        dbc_connection_delete => "删除数据库连接配置与凭据",
+        dbc_connections => "连接列表（配置 + 会话状态）",
+        dbc_connect => "建立数据库连接（探测版本与时延）",
+        dbc_disconnect => "断开数据库连接",
+        dbc_test => "测试数据库连接（不保存）",
+        dbc_history => "查询历史列表",
+        dbc_history_add => "追加查询历史",
+        dbc_history_clear => "清空查询历史",
+        dbc_saved => "收藏 SQL 列表",
+        dbc_saved_add => "添加收藏 SQL",
+        dbc_saved_update => "更新收藏 SQL（编辑器二次保存）",
+        dbc_saved_delete => "删除收藏 SQL",
+        dbc_driver_status => "agent 驱动就绪状态（含目录指引）",
+        catalog::dbc_execute => "执行 SQL（多语句拆分，查询返回表格）",
+        catalog::dbc_cancel => "取消进行中的查询",
+        catalog::dbc_databases => "数据库列表",
+        catalog::dbc_schemas => "schema 列表",
+        catalog::dbc_objects => "对象列表（表/视图等）",
+        catalog::dbc_columns => "表结构列信息",
+        catalog::dbc_table_data => "表数据分页浏览",
+        catalog::dbc_export_csv => "导出 CSV 文件（结果集导出）",
+        catalog::dbc_redis_keys => "Redis 键列表（SCAN）",
+        catalog::dbc_redis_key_info => "Redis 键信息（TYPE/TTL/预览）",
+        admin::dbc_charset_options => "字符集与排序规则选项（建库对话框）",
+        admin::dbc_users => "数据库用户清单（授权选择）",
+        admin::dbc_create_database => "新建数据库（含可选分步授权）",
+        admin::dbc_drop_database => "删除数据库（前端确认后调用）",
+        admin::dbc_table_admin => "表维护（重命名/清空/删除）",
+        admin::dbc_table_ddl => "表 DDL 查看",
+        admin::dbc_table_indexes => "表索引清单",
+        dbc_connection_save => "保存连接配置（密码入插件私有 AES；已连接则更新会话）",
+    },
 }
 
 /// 插件注册：命令入库 + 全部 State 装配
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    crate::framework::ipc_registry::register(
-        "database",
-        &[
-            (
-                "dbc_connection_save",
-                "保存数据库连接配置（密码进 AES（插件私有））",
-            ),
-            ("dbc_connection_delete", "删除数据库连接配置与凭据"),
-            ("dbc_connections", "连接列表（配置 + 会话状态）"),
-            ("dbc_connect", "建立数据库连接（探测版本与时延）"),
-            ("dbc_disconnect", "断开数据库连接"),
-            ("dbc_test", "测试数据库连接（不保存）"),
-            ("dbc_history", "查询历史列表"),
-            ("dbc_history_add", "追加查询历史"),
-            ("dbc_history_clear", "清空查询历史"),
-            ("dbc_saved", "收藏 SQL 列表"),
-            ("dbc_saved_add", "添加收藏 SQL"),
-            ("dbc_saved_update", "更新收藏 SQL（编辑器二次保存）"),
-            ("dbc_saved_delete", "删除收藏 SQL"),
-            ("dbc_driver_status", "agent 驱动就绪状态（含目录指引）"),
-            ("dbc_execute", "执行 SQL（多语句拆分，查询返回表格）"),
-            ("dbc_cancel", "取消进行中的查询"),
-            ("dbc_databases", "数据库列表"),
-            ("dbc_schemas", "schema 列表"),
-            ("dbc_objects", "对象列表（表/视图等）"),
-            ("dbc_columns", "表结构列信息"),
-            ("dbc_table_data", "表数据分页浏览"),
-            ("dbc_export_csv", "导出 CSV 文件（结果集导出）"),
-            ("dbc_redis_keys", "Redis 键列表（SCAN）"),
-            ("dbc_redis_key_info", "Redis 键信息（TYPE/TTL/预览）"),
-            ("dbc_charset_options", "字符集与排序规则选项（建库对话框）"),
-            ("dbc_users", "数据库用户清单（授权选择）"),
-            ("dbc_create_database", "新建数据库（含可选分步授权）"),
-            ("dbc_drop_database", "删除数据库（前端确认后调用）"),
-            ("dbc_table_admin", "表维护（重命名/清空/删除）"),
-            ("dbc_table_ddl", "表 DDL 查看"),
-            ("dbc_table_indexes", "表索引清单"),
-        ],
-    )
-    .expect("IPC 命令重复注册");
+    register_ipc_or_fail();
     builder
         .manage(drivers::DbState(Mutex::new(HashMap::new())))
         .manage(drivers::DbCancelState(Mutex::new(HashMap::new())))

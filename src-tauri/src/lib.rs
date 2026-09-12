@@ -1,7 +1,7 @@
 //! patchyBox 桌面工具箱 · Rust 侧框架装配入口
-//! 插件模式：业务插件位于 plugins/（命令 + State 由 register 自注册，启动初始化走 init）；
-//! 新增插件 = plugins/<id>.rs + 下方 register/init 各一行，框架与既有插件零改动。
-//! 框架级命令（窗口/外链）留在本文件。
+//! 插件模式：业务插件位于 plugins/（命令清单 + State 由 register 自注册，启动初始化走 init）；
+//! 新增插件 = plugins/<id>/ 目录 + plugins/mod.rs 路由清单一行，本文件无需改动。
+//! 框架级命令（窗口/外链）与本文件同目录，清单见 framework/mod.rs。
 
 mod framework;
 mod plugins;
@@ -58,22 +58,13 @@ pub fn run() {
             }
         });
 
-    // ── 业务插件装配（每个插件一行，互不影响）──
-    let builder = framework::settings::register(builder);
-    // 框架级存储位置管理（2 命令入 ipc_registry：信息查询 + 迁移）
-    let builder = framework::storage::register(builder);
-    // 框架级 Vault 凭证库（6 命令入 ipc_registry，命令走框架总 handler）
-    let builder = framework::vault::register(builder);
-    let builder = plugins::http_ws::register(builder);
-    let builder = plugins::api::register(builder);
-    let builder = plugins::database::register(builder);
-    let builder = plugins::hosts::register(builder);
-    let builder = plugins::dns::register(builder);
-    let builder = plugins::frp::register(builder);
-    let builder = plugins::ssh::register(builder);
-    let builder = plugins::tts::register(builder);
+    // ── 框架装配（命令入库与分派 handler 见 framework/mod.rs 的静态清单）──
+    let builder = framework::register(builder);
 
-    // 启动校验：注册表 owner 均有路由分支（登记了命令但没加插件装配 = 启动即炸，不等运行期静默 404）
+    // ── 业务插件装配：顺序由 plugins/mod.rs 的路由清单决定，新增插件不改动本文件 ──
+    let builder = plugins::register_all(builder);
+
+    // 启动校验：清单与登记表 owner 均有路由分支（登记了命令却没有分支 = 启动即炸，不等运行期静默 404）
     plugins::validate_routing();
 
     builder
@@ -88,6 +79,10 @@ pub fn run() {
         })
         .setup(|app| {
             // ── 框架启动初始化 ──
+            // 数据上下文最先固定：存储位置、空间代际与启动 epoch 由它唯一给出，
+            // 之后 paths / PluginDb / 插件一律取该实例，不再各自现读配置
+            framework::context::init_from_app(app.handle())
+                .map_err(|e| format!("数据上下文初始化失败: {e}"))?;
             // 存储布局迁移必须最先执行：早于任何插件打开数据库、凭证与已知主机文件
             framework::paths::migrate_layout(app.handle())
                 .map_err(|e| format!("存储布局迁移失败: {e}"))?;
@@ -133,11 +128,39 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|app_handle, event| {
-            // 退出前收尾：结束全部由本应用拉起的 frpc 进程，避免关掉界面后残留后台进程
-            if let tauri::RunEvent::Exit = event {
-                tauri::async_runtime::block_on(plugins::frp::runtime::shutdown_all(app_handle));
+        .run(|app_handle, event| match event {
+            // prepare 阶段允许业务拒绝（未保存内容、任务进行中）；清理由各模块 dispose 钩子提供
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                let outcome = framework::lifecycle::prepare_close(
+                    app_handle,
+                    framework::lifecycle::CloseReason::Exit,
+                );
+                if !outcome.proceed {
+                    for blocker in &outcome.blockers {
+                        eprintln!("[lifecycle] 退出被拒绝: {blocker}");
+                    }
+                    api.prevent_exit();
+                }
             }
+            // 真正退出：统一清理（各模块钩子 + 总超时），失败只做诊断，不再阻断退出
+            tauri::RunEvent::Exit => {
+                let reason = framework::lifecycle::CloseReason::Exit;
+                let outcome = framework::lifecycle::dispose(app_handle, reason);
+                for failure in &outcome.failures {
+                    eprintln!("[lifecycle] 退出清理失败: {failure}");
+                }
+                eprintln!(
+                    "[lifecycle] 关闭完成(原因={}, 模块={}, 超时={}, epoch={}, 丢弃晚到事件={})",
+                    reason.code(),
+                    outcome.ran,
+                    outcome.timed_out,
+                    framework::context::current()
+                        .map(|c| c.epoch())
+                        .unwrap_or(0),
+                    framework::context::stale_dropped(),
+                );
+            }
+            _ => {}
         });
 }
 

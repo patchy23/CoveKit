@@ -27,7 +27,6 @@ use crate::plugins::frp::models::{
 };
 use crate::plugins::frp::models::{FrpClient, FrpClientList};
 use crate::plugins::frp::runtime::FrpState;
-use crate::plugins::ipc_registry;
 
 /// 插件 id（设置键、数据文件名统一用它）
 pub(crate) const TOOL_ID: &str = "frp";
@@ -461,82 +460,56 @@ pub fn frp_profile_client_set(
     })
 }
 
-/// 注册插件命令与状态（入 ipc_registry；命令体挂全局 handler）
+/// 退出清理（生命周期钩子）：结束全部由本应用拉起的 frpc 进程，
+/// 避免关掉界面后残留后台进程；清理由本模块自己提供，应用只协调与超时。
+fn on_dispose(
+    app: Option<&AppHandle>,
+    _reason: crate::framework::lifecycle::CloseReason,
+) -> Vec<String> {
+    let Some(app) = app else {
+        return Vec::new();
+    };
+    tauri::async_runtime::block_on(runtime::shutdown_all(app));
+    Vec::new()
+}
+
+/// 注册插件命令与状态（入 ipc_registry；命令体挂全局 handler；退出清理登记到统一关闭入口）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    ipc_registry::register(
-        "frp",
-        &[
-            (
-                "frp_profiles_list",
-                "列出配置目录下的全部档案（含运行状态与备注）",
-            ),
-            ("frp_profile_read", "读取档案原文与 TOML 解析结果"),
-            ("frp_profile_save_text", "按原文保存档案（保存前自动备份）"),
-            (
-                "frp_profile_save_form",
-                "按表单结果保存档案（保留未知字段）",
-            ),
-            (
-                "frp_profile_create",
-                "新建档案（内置 tcp/http/stcp/empty 模板）",
-            ),
-            ("frp_profile_duplicate", "复制档案"),
-            ("frp_profile_rename", "重命名档案（同步迁移备注）"),
-            ("frp_profile_delete", "删除档案（移入 .trash/ 软删）"),
-            ("frp_profile_remark", "写入档案备注（只落 frp.db）"),
-            ("frp_verify", "用 frpc verify 校验档案并解析错误行列"),
-            ("frp_start", "启动档案对应的 frpc 进程"),
-            ("frp_stop", "停止档案对应的 frpc 进程"),
-            ("frp_restart", "重启档案对应的 frpc 进程"),
-            ("frp_status", "查询全部档案的当前运行状态"),
-            (
-                "frp_binary_detect",
-                "探测 frpc 可执行文件（设置项 / PATH / 常见位置）",
-            ),
-            ("frp_binary_versions", "查询上游 frp 可用版本列表"),
-            ("frp_binary_download", "下载并安装 frpc（含 SHA256 校验）"),
-            (
-                "frp_client_list",
-                "列出已登记的 frpc 客户端（含默认项与文件存活状态）",
-            ),
-            (
-                "frp_client_add",
-                "登记外部 frpc 可执行文件（只引用路径不复制）",
-            ),
-            ("frp_client_remove", "移除客户端登记（不删除文件）"),
-            ("frp_client_set_default", "设为默认客户端"),
-            ("frp_profile_client_set", "设置档案绑定的客户端"),
-        ],
-    )
-    .expect("IPC 命令重复注册");
+    register_ipc_or_fail();
+    crate::framework::lifecycle::register(crate::framework::lifecycle::ModuleLifecycle {
+        owner: IPC_OWNER,
+        prepare: None,
+        dispose: Some(on_dispose),
+    });
     builder.manage(FrpState::default())
 }
 
-/// 分派 frp 插件命令（应用级总 handler 按前缀路由到本函数）。
-pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
-    let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool = tauri::generate_handler![
-        frp_profiles_list,
-        frp_profile_read,
-        frp_profile_save_text,
-        frp_profile_save_form,
-        frp_profile_create,
-        frp_profile_duplicate,
-        frp_profile_rename,
-        frp_profile_delete,
-        frp_profile_remark,
-        frp_verify,
-        frp_start,
-        frp_stop,
-        frp_restart,
-        frp_status,
-        frp_binary_detect,
-        frp_binary_versions,
-        frp_binary_download,
-        frp_client_list,
-        frp_client_add,
-        frp_client_remove,
-        frp_client_set_default,
-        frp_profile_client_set
-    ];
-    handler(invoke)
+// 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）
+crate::patchybox_module! {
+    owner: "frp",
+    feature: "frp",
+    commands: {
+        frp_profile_read => "读取档案原文与 TOML 解析结果",
+        frp_profile_save_text => "按原文保存档案（保存前自动备份）",
+        frp_profile_duplicate => "复制档案",
+        frp_profile_rename => "重命名档案（同步迁移备注）",
+        frp_profile_delete => "删除档案（移入 .trash/ 软删）",
+        frp_profile_remark => "写入档案备注（只落 frp.db）",
+        frp_verify => "用 frpc verify 校验档案并解析错误行列",
+        frp_start => "启动档案对应的 frpc 进程",
+        frp_stop => "停止档案对应的 frpc 进程",
+        frp_restart => "重启档案对应的 frpc 进程",
+        frp_status => "查询全部档案的当前运行状态",
+        frp_binary_versions => "查询上游 frp 可用版本列表",
+        frp_binary_download => "下载并安装 frpc（含 SHA256 校验）",
+        frp_client_remove => "移除客户端登记（不删除文件）",
+        frp_client_set_default => "设为默认客户端",
+        frp_profile_client_set => "设置档案绑定的客户端",
+        frp_profiles_list => "档案列表（含运行状态、备注与元信息）",
+        frp_profile_save_form => "表单模式保存档案（重建 TOML 并保留未知字段）",
+        frp_profile_create => "新建档案（内置模板）",
+        frp_binary_detect => "探测 frpc（可传候选路径，否则走设置项与自动查找）",
+        frp_client_list => "已登记客户端列表（含默认项与文件是否还在）",
+        frp_client_add => "登记外部 frpc 可执行文件（只引用路径，不复制）",
+    },
 }

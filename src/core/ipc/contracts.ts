@@ -118,6 +118,10 @@ export interface StorageInfo {
   fileCount: number
   /** 已完成的布局版本（等于 paths::LAYOUT_VERSION 表示已是四分区布局） */
   layoutVersion: number
+  /** 非秘密空间标识（数据上下文；默认空间在导入导出交付前恒为 default） */
+  spaceId: string
+  /** 空间代际（导入激活/空间切换后递增） */
+  generationId: number
 }
 
 /** 迁移结果（storage_migrate 返回；ok=false 时未写配置，现状不变） */
