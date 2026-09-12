@@ -2,14 +2,16 @@
 /**
  * ProfileFormEditor · 表单模式
  *
- * 排版：每个分节是一张带边框的卡片（标题 + 左侧色条），节内字段一律 UiField 带 label、
- * 竖向 gap-[10px]；相关字段同行（地址 + 端口、协议 + 连接池），数值走窄列避免大片空白。
+ * 排版目标：**常用字段一屏配完，其余收进「更多配置」**（默认值即可用，多数时候不会改）。
+ *  - 常用：服务端地址 + 端口、认证方式 + Token、代理列表
+ *  - 更多配置（默认收起）：用户标识、传输协议、连接池大小、TLS、TLS ServerName、日志等级
+ * 容器统一用 UiPanel（分节卡片），相关字段同行、数值走窄列，避免大片空白。
  * 覆盖服务器 / 认证 / 传输与日志 + 代理列表；未覆盖字段（healthCheck、metadatas、自定义段落）
  * 由 frpForm.mergeFormModel 在上游保留，这里只提示「高级字段请用源码模式」。
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { UiButton, UiField, UiInput, UiSelect, UiSwitch } from '@/core/ui'
+import { UiButton, UiField, UiInput, UiPanel, UiSelect, UiSwitch } from '@/core/ui'
 import ProxyEntryCard from './ProxyEntryCard.vue'
 import {
   AUTH_METHOD_OPTIONS,
@@ -72,49 +74,29 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
 <template>
   <div class="h-full min-h-0 overflow-y-auto p-[12px]">
     <div class="flex flex-col gap-[12px]">
-      <!-- 服务器 -->
-      <section class="rounded-md border border-border p-[12px] dark:border-border-dark">
-        <h4
-          class="mb-[10px] flex items-center gap-[6px] text-body-sm font-semibold text-primary dark:text-primary-dark"
-        >
-          <span class="h-[12px] w-[2px] shrink-0 rounded-full bg-tertiary" />
-          {{ t('frp.formSectionServer') }}
-        </h4>
-        <div class="flex flex-col gap-[10px]">
-          <div class="grid grid-cols-[1fr_120px] gap-[10px]">
-            <UiField :label="t('frp.formServerAddr')" required>
-              <UiInput
-                :model-value="props.modelValue.serverAddr"
-                :placeholder="t('frp.formServerAddrPlaceholder')"
-                @update:model-value="setField('serverAddr', String($event))"
-              />
-            </UiField>
-            <UiField :label="t('frp.formServerPort')">
-              <UiInput
-                type="number"
-                :model-value="props.modelValue.serverPort ?? ''"
-                placeholder="7000"
-                @update:model-value="setNumber('serverPort', $event)"
-              />
-            </UiField>
-          </div>
-          <UiField :label="t('frp.formUser')">
+      <!-- 服务器（常用） -->
+      <UiPanel :title="t('frp.formSectionServer')" padding="sm">
+        <div class="grid grid-cols-[1fr_120px] gap-[10px]">
+          <UiField :label="t('frp.formServerAddr')" required>
             <UiInput
-              :model-value="props.modelValue.user"
-              @update:model-value="setField('user', String($event))"
+              :model-value="props.modelValue.serverAddr"
+              :placeholder="t('frp.formServerAddrPlaceholder')"
+              @update:model-value="setField('serverAddr', String($event))"
+            />
+          </UiField>
+          <UiField :label="t('frp.formServerPort')">
+            <UiInput
+              type="number"
+              :model-value="props.modelValue.serverPort ?? ''"
+              placeholder="7000"
+              @update:model-value="setNumber('serverPort', $event)"
             />
           </UiField>
         </div>
-      </section>
+      </UiPanel>
 
-      <!-- 认证 -->
-      <section class="rounded-md border border-border p-[12px] dark:border-border-dark">
-        <h4
-          class="mb-[10px] flex items-center gap-[6px] text-body-sm font-semibold text-primary dark:text-primary-dark"
-        >
-          <span class="h-[12px] w-[2px] shrink-0 rounded-full bg-tertiary" />
-          {{ t('frp.formSectionAuth') }}
-        </h4>
+      <!-- 认证（常用） -->
+      <UiPanel :title="t('frp.formSectionAuth')" padding="sm">
         <div class="flex flex-col gap-[10px]">
           <UiField :label="t('frp.formAuthMethod')">
             <UiSelect
@@ -131,17 +113,23 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
             />
           </UiField>
         </div>
-      </section>
+      </UiPanel>
 
-      <!-- 传输与日志 -->
-      <section class="rounded-md border border-border p-[12px] dark:border-border-dark">
-        <h4
-          class="mb-[10px] flex items-center gap-[6px] text-body-sm font-semibold text-primary dark:text-primary-dark"
-        >
-          <span class="h-[12px] w-[2px] shrink-0 rounded-full bg-tertiary" />
-          {{ t('frp.formSectionTransport') }}
-        </h4>
+      <!-- 更多配置（默认收起，保持默认值即可） -->
+      <UiPanel
+        collapsible
+        :default-open="false"
+        :title="t('frp.formSectionAdvanced')"
+        :description="t('frp.formSectionAdvancedHint')"
+        padding="sm"
+      >
         <div class="flex flex-col gap-[10px]">
+          <UiField :label="t('frp.formUser')">
+            <UiInput
+              :model-value="props.modelValue.user"
+              @update:model-value="setField('user', String($event))"
+            />
+          </UiField>
           <div class="grid grid-cols-[1fr_120px] gap-[10px]">
             <UiField :label="t('frp.formProtocol')">
               <UiSelect
@@ -180,19 +168,16 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
             />
           </UiField>
         </div>
-      </section>
+      </UiPanel>
 
-      <!-- 代理列表 -->
-      <section class="rounded-md border border-border p-[12px] dark:border-border-dark">
-        <div class="mb-[10px] flex items-center gap-[8px]">
-          <h4
-            class="flex min-w-0 flex-1 items-center gap-[6px] text-body-sm font-semibold text-primary dark:text-primary-dark"
-          >
-            <span class="h-[12px] w-[2px] shrink-0 rounded-full bg-tertiary" />
-            {{ t('frp.formSectionProxies', { count: props.modelValue.proxies.length }) }}
-          </h4>
+      <!-- 代理列表（核心，始终展开） -->
+      <UiPanel
+        :title="t('frp.formSectionProxies', { count: props.modelValue.proxies.length })"
+        padding="sm"
+      >
+        <template #actions>
           <UiButton size="xs" @click="addProxy">{{ t('frp.formProxyAdd') }}</UiButton>
-        </div>
+        </template>
         <p
           v-if="props.modelValue.proxies.length === 0"
           class="text-body-sm text-text-muted dark:text-text-muted-dark"
@@ -209,7 +194,7 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
             @remove="removeProxy(index)"
           />
         </div>
-      </section>
+      </UiPanel>
 
       <p class="text-caption text-text-muted dark:text-text-muted-dark">
         {{ t('frp.formAdvancedHint') }}
