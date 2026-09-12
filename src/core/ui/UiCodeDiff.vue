@@ -120,7 +120,14 @@ onMounted(() => void create())
 onBeforeUnmount(destroy)
 
 watch(
-  () => [props.original, props.modified, props.mode, props.filename, props.language, props.readonly],
+  () => [
+    props.original,
+    props.modified,
+    props.mode,
+    props.filename,
+    props.language,
+    props.readonly,
+  ],
   () => void create()
 )
 </script>

@@ -169,7 +169,11 @@ function toggleTree(item: UiTreeItem) {
                       </UiToolbar>
                       <UiCodeEditor
                         v-model="sql"
-                        class="min-h-0 flex-1 rounded-none border-0" mode="minimal" rounded-none border-0 />
+                        class="min-h-0 flex-1 rounded-none border-0"
+                        mode="minimal"
+                        rounded-none
+                        border-0
+                      />
                     </div>
                   </template>
                   <template #secondary>

@@ -53,7 +53,9 @@ function clearAll() {
         <UiCodeEditor
           v-model="input"
           class="min-h-0 flex-1"
-          placeholder="输入文本或 Base64" mode="minimal" />
+          placeholder="输入文本或 Base64"
+          mode="minimal"
+        />
       </div>
       <div class="flex min-h-0 flex-col">
         <label class="mb-[6px] shrink-0 field-label">输出</label>

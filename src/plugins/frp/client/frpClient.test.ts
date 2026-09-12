@@ -114,7 +114,11 @@ describe('「跟随默认」的哨兵值', () => {
   it('下拉里每一项的 value 都非空——reka 的 SelectItem 遇空串 value 会抛错，弹层随之打不开', () => {
     const options = [
       { value: FOLLOW_DEFAULT_VALUE },
-      ...clientOptions([makeClient({ id: 'client-a' }), makeClient({ id: 'client-b' })], 'client-a', t),
+      ...clientOptions(
+        [makeClient({ id: 'client-a' }), makeClient({ id: 'client-b' })],
+        'client-a',
+        t
+      ),
     ]
     expect(options.length).toBeGreaterThan(1)
     for (const option of options) expect(option.value).not.toBe('')

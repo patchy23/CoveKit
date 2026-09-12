@@ -287,6 +287,5 @@ function onFormat(): void {
         height="200px"
       />
     </UiPanel>
-
   </div>
 </template>

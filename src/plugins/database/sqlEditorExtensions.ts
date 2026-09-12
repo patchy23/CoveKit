@@ -235,8 +235,7 @@ export function tableNavigationExtension(
       return true
     },
     mousemove: (event, view) => {
-      const pointer =
-        (event.ctrlKey || event.metaKey) && knownTableAt(view, event) ? 'pointer' : ''
+      const pointer = (event.ctrlKey || event.metaKey) && knownTableAt(view, event) ? 'pointer' : ''
       if (view.dom.style.cursor !== pointer) view.dom.style.cursor = pointer
     },
   })

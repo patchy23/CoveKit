@@ -134,7 +134,12 @@ onMounted(load)
           第 {{ i + 1 }} 行：{{ l.error }} — {{ l.raw.trim().slice(0, 60) }}
         </p>
       </div>
-      <UiCodeEditor v-model="content" height="200px" class="min-h-0 flex-1 !font-mono" mode="minimal" />
+      <UiCodeEditor
+        v-model="content"
+        height="200px"
+        class="min-h-0 flex-1 !font-mono"
+        mode="minimal"
+      />
     </div>
     <div v-else-if="loaded && mode === 'list'" class="min-h-0 flex-1">
       <HostsList :content="content" @change="content = $event" />
