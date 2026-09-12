@@ -133,6 +133,8 @@ P2 扩展 T14 / T16（工具意图、资源预算）仍仅为建议。后续执�
 - [ ] AR06 数据上下文与统一生命周期（2026-09-12 **机制部分落地，按任务书 §9.3 仍未完成**）：已落地 —— `framework/context.rs`（不可变 `DataContext{spaceId, generationId, location, epoch}`：四分区位置启动时解析一次并固定，`paths`/`PluginDb` 消费同一实例，不再每次调用现读 `settings.json`；`is_current`/`stale_dropped` 承担晚到事件判定与可诊断计数；`maintenance_guard()` 是根迁移/导入提交/空间激活/更新安装的唯一互斥）与 `framework/lifecycle.rs`（唯一关闭入口：`prepare_close` 可拒绝、`dispose` 受 5s 总超时约束且兜住钩子异常；`CloseReason = tab/exit/restart/update/space-switch`；`lib.rs` 的 `RunEvent::ExitRequested/Exit` 已改走该入口，frp 进程清理与 http_ws 会话断开已登记为模块钩子）。未完成（有外部前置）—— ① 默认空间身份/索引与空间-设备字段路由依赖导入导出 L0/L1（未交付），当前 `spaceId=default`/`generationId=1` 只是承载位，设置仍是单文件；② 关闭流程的「未保存则拒绝」消费方（前端页签 + 可靠性 T10/T11）未接入；③ key 与凭证上下文（T04/T05/T09）未接入；④ 双平台冷启动与旧数据夹具验证未做。仅机制与接口落地不算完成。
 - [x] AR07 统一 HTTP owner 与静态装配（2026-09-12）：`plugins/api/{mod,models}.rs` → `plugins/http_ws/persistence/`（`api_*` 命令名、`storageKey: api` 与 `data/api.db` 均不变，模块描述里显式记录历史存储键）；新增 `framework/module_manifest.rs` 静态清单宏（`patchybox_module!` 一处声明生成 IPC 入库元数据 + handler + 模块描述，注册名取实现路径末段，兼容别名须显式 `as "名"`）与路由宏 `patchybox_routes!`（一行/模块生成路由分支、装配顺序与 `validate_routing()`），删除全部手写命令表、8 个手写 `invoke_handler` 与 owner 枚举；未纳路由的 owner 由 `unrouted_owner()` 明确报错（不再静默 false）。**顺带修复实测缺陷**：迁移中发现 11 条命令（`tts_synthesize`、`frp_profile_create`、`dbc_connection_save`、`ssh_connect`、`ssh_profile_import`、`ssh_terminal_log_start` 等）实现并进了 handler 但从未入库 → 前端调用一直 command not found，清单化后自动入库并纳入契约表（147 条已发布命令）。
 
+- [ ] 剩余项逐项计划（用户 2026-09-12 要求「一项一项做」）：`docs/tasks/2026-09-12-架构重构剩余项执行计划.md` —— P1 AR05 前端拆分、P2 文档漂移、P3 AR04 状态拆分（三小步，特征测试先行）、P4–P6 AR06 的三个外部前置、P7 AR06 收口。
+
 执行顺序与完成标准以独立调整任务书为准；不要再按评审中的候选路线分别创建实现。既有密钥/迁移风险修复可先行，不等目录整理。
 
 ---
