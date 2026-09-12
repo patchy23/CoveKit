@@ -611,4 +611,148 @@ mod tests {
         assert_eq!(crate::plugins::http_ws::MODULE.feature_id, "http-ws");
         assert_eq!(crate::plugins::http_ws::MODULE.storage_key, Some("api"));
     }
+
+    /// AR07 ②：新增模块的改动面就是两处——模块门面写一份 `patchybox_module!`，
+    /// 再在 plugins/mod.rs 的 `patchybox_routes!` 加一行。这里从源码直接锁定两份声明
+    /// 一一对应：只写了模块自己、忘加清单行的模块**不会被装配**，而运行期登记表本身
+    /// 由清单生成（模块数 == 清单长度恒真），抓不住这种漏写，只能靠源码比对。
+    #[test]
+    fn route_manifest_covers_every_declared_module() {
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut declared = Vec::new();
+        collect_module_declarations(&src.join("plugins"), &mut declared);
+        collect_module_declarations(&src.join("framework"), &mut declared);
+        declared.sort();
+        declared.dedup();
+        assert!(
+            declared.len() >= 8,
+            "源码扫描到的模块声明数异常（{}），守卫可能已失效",
+            declared.len()
+        );
+
+        // framework 不属于业务插件、不参与插件路由，其余声明必须与清单逐一对上
+        let mut expected: Vec<String> = declared
+            .iter()
+            .filter(|owner| owner.as_str() != "framework")
+            .cloned()
+            .collect();
+        expected.sort();
+        let routed = route_manifest_owners(&src.join("plugins").join("mod.rs"));
+        assert_eq!(
+            expected, routed,
+            "模块声明与路由清单不一致：漏写清单的模块不会被装配，前端调用只会得到 command not found"
+        );
+
+        // 清单行必须真的解析到 handler，不能是死行
+        for owner in &routed {
+            assert!(
+                crate::plugins::route_owner(owner).is_some(),
+                "路由清单里的 {owner} 没有对应 handler"
+            );
+        }
+    }
+
+    /// 扫描目录下所有 Rust 文件里的 `patchybox_module!` 声明，收集 owner
+    fn collect_module_declarations(dir: &Path, out: &mut Vec<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                collect_module_declarations(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let Ok(text) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                let Ok(file) = syn::parse_file(&text) else {
+                    continue;
+                };
+                collect_module_macro_owners(&file.items, out);
+            }
+        }
+    }
+
+    /// 递归（含内联模块）找 `patchybox_module!` 调用并取 owner 字面量
+    fn collect_module_macro_owners(items: &[syn::Item], out: &mut Vec<String>) {
+        for item in items {
+            match item {
+                syn::Item::Macro(m) => {
+                    if m.mac
+                        .path
+                        .segments
+                        .last()
+                        .is_some_and(|seg| seg.ident == "patchybox_module")
+                    {
+                        if let Some(owner) = owner_literal(&m.mac.tokens.to_string()) {
+                            out.push(owner);
+                        }
+                    }
+                }
+                syn::Item::Mod(m) => {
+                    if let Some((_, inner)) = &m.content {
+                        collect_module_macro_owners(inner, out);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// 从模块声明的 token 文本里取 `owner: "..."` 的值
+    fn owner_literal(tokens_text: &str) -> Option<String> {
+        let (_, after_key) = tokens_text.split_once("owner")?;
+        let (_, after_open) = after_key.split_once('"')?;
+        let (value, _) = after_open.split_once('"')?;
+        Some(value.to_string())
+    }
+
+    /// 取 `plugins/mod.rs` 里 `patchybox_routes!` 清单的全部 owner 字面量（排序后）
+    fn route_manifest_owners(path: &Path) -> Vec<String> {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return Vec::new();
+        };
+        let Ok(file) = syn::parse_file(&text) else {
+            return Vec::new();
+        };
+        let mut out = Vec::new();
+        for item in &file.items {
+            if let syn::Item::Macro(m) = item {
+                if m.mac
+                    .path
+                    .segments
+                    .last()
+                    .is_some_and(|seg| seg.ident == "patchybox_routes")
+                {
+                    let tokens = m.mac.tokens.to_string();
+                    out.extend(tokens.split('"').skip(1).step_by(2).map(str::to_string));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// AR07 ②（负例）：模块声明了自己却没进路由清单，启动校验必须炸掉，
+    /// 不能静默不装配——这是「新增模块只改两处」的漏改守卫。
+    #[test]
+    #[should_panic(expected = "没有路由分支")]
+    fn module_missing_from_route_manifest_fails_startup_validation() {
+        let _guard = lock_registry();
+        reset_all();
+        static SPEC: module_manifest::ModuleSpec = module_manifest::ModuleSpec {
+            owner: "__ghost_module__",
+            feature_id: "__ghost_module__",
+            module_path: "test::__ghost_module__",
+            storage_key: None,
+            commands: &[("__ghost_cmd__", "未进路由清单的模块命令")],
+        };
+        module_manifest::register_module(&SPEC).expect("登记幽灵模块");
+        ipc_registry::register(
+            "__ghost_module__",
+            &[("__ghost_cmd__", "未进路由清单的模块命令")],
+        )
+        .expect("登记幽灵命令");
+        crate::plugins::validate_routing();
+    }
 }
