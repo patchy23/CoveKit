@@ -11,9 +11,8 @@ import {
   onTerminalData,
   onTransferProgress,
 } from './ipc'
-import { clearLegacySnapshot, readLegacySnapshot } from './connection/useSsh'
-import { useServerGroups } from './profiles/useServerGroups'
-import type { HostKeyVerifyRequest, ServerConnection, ServerProfile } from './contracts'
+import { useSshProfiles } from './profiles/useSshProfiles'
+import type { HostKeyVerifyRequest, ServerConnection } from './contracts'
 
 export type SshWorkspaceSection =
   'terminal' | 'files' | 'tunnels' | 'monitor' | 'services' | 'processes' | 'docker'
@@ -69,13 +68,8 @@ function stageTextFor(stage: string, status: string): string {
 export function useSshWorkspace() {
   const ui = useUiStore()
   const settings = useSettingsStore()
-  const profiles = ref<ServerProfile[]>([])
   const connectionWorkspaces = ref<SshConnectionWorkspace[]>([])
   const activeProfileId = ref<string | null>(null)
-  const searchKeyword = ref('')
-  const formOpen = ref(false)
-  const editingProfile = ref<ServerProfile | null>(null)
-  const deleteTarget = ref<ServerProfile | null>(null)
   /**
    * 主机密钥确认请求队列：并发首连多台主机时排队逐个确认（单值会覆盖导致先到的永远挂起）。
    * hostKeyRequest 暴露队首给 UI；卸载时对积压请求统一 cancel。
@@ -85,156 +79,47 @@ export function useSshWorkspace() {
 
   const pendingConnections = new Set<Promise<unknown>>()
 
-  /* ── 分组（后端 ssh.db 持久化；折叠状态不持久化，重开工具默认全折叠） ── */
-  const groupsApi = useServerGroups()
-  const { groups, expandedIds, toggleGroup } = groupsApi
-
-  async function loadProfiles() {
-    try {
-      profiles.value = await ipc.sshProfileList()
-    } catch {
-      /* 浏览器预览没有 IPC */
-    }
-  }
-
-  /** localStorage 存量一次性迁入后端插件库（旧手工凭证由后端迁移进 Vault 并归档） */
-  async function importLegacyOnce() {
-    try {
-      const existing = await ipc.sshProfileList()
-      if (existing.length > 0) {
-        // 已迁移过（或用户手动重建过配置）：清掉 localStorage 快照，静默返回
-        clearLegacySnapshot()
-        return
-      }
-      const legacy = readLegacySnapshot()
-      if (legacy.profiles.length === 0 && legacy.groups.length === 0) return
-      const result = await ipc.sshProfileImport(legacy)
-      await loadProfiles()
-      clearLegacySnapshot()
-      if (result.legacyCredentialsFailed) {
-        ui.toast(
-          `已迁移 ${result.importedProfiles} 台服务器；旧凭证未能自动迁移，请编辑服务器重新保存凭证`
-        )
-      } else {
-        ui.toast(
-          `已迁移 ${result.importedProfiles} 台服务器` +
-            (result.migratedCredentials > 0
-              ? `，${result.migratedCredentials} 个凭证已入凭证库`
-              : '')
-        )
-      }
-    } catch (error) {
-      // 迁移失败保留 localStorage 快照，下次打开工具重试；错误必须可见（曾静默导致"数据消失"假象）
-      console.error('[ssh] 存量迁移失败:', error)
-      ui.toast(`存量配置迁移失败：${error}`)
-    }
-  }
-
-  /** 新建分组 */
-  async function createGroup(name: string) {
-    const group = await groupsApi.createGroup(name)
-    ui.toast(`已创建分组「${group.name}」`)
-  }
-
-  /** 重命名分组 */
-  async function renameGroup(groupId: string, name: string) {
-    await groupsApi.renameGroup(groupId, name)
-    ui.toast('已重命名分组')
-  }
-
-  /** 删除分组：组内连接移回未分组（连接配置本身不删） */
-  async function deleteGroup(groupId: string) {
-    const group = groups.value.find((g) => g.id === groupId)
-    await groupsApi.deleteGroup(groupId)
-    for (const p of profiles.value) {
-      if (p.groupId === groupId) p.groupId = undefined
-    }
-    ui.toast(`已删除分组「${group?.name ?? ''}」，组内连接移回未分组`)
-  }
-
-  /** 拖拽入组：null = 未分组（组变更走 ssh_profile_save 持久化） */
-  async function moveToGroup(profileId: string, groupId: string | null) {
-    const profile = profiles.value.find((p) => p.id === profileId)
-    if (!profile) return
-    const targetName = groupId ? (groups.value.find((g) => g.id === groupId)?.name ?? '') : '未分组'
-    if ((profile.groupId ?? null) === groupId) return
-    const previous = profile.groupId
-    profile.groupId = groupId ?? undefined
-    try {
-      await ipc.sshProfileSave({ profile, saveCredential: false })
-      ui.toast(`已将「${profile.name}」移动到「${targetName}」`)
-    } catch (error) {
-      profile.groupId = previous
-      ui.toast(`移动分组失败：${error}`)
-    }
-  }
-
-  const filteredProfiles = computed(() => {
-    const keyword = searchKeyword.value.trim().toLowerCase()
-    if (!keyword) return profiles.value
-    return profiles.value.filter(
-      (profile) =>
-        profile.name.toLowerCase().includes(keyword) ||
-        profile.host.toLowerCase().includes(keyword) ||
-        profile.username.toLowerCase().includes(keyword)
-    )
-  })
-
-  function openAddForm() {
-    editingProfile.value = null
-    formOpen.value = true
-  }
-
-  function openEditForm(profile: ServerProfile) {
-    editingProfile.value = { ...profile }
-    formOpen.value = true
-  }
-
-  function showError(message: string) {
-    ui.toast(message)
-  }
-
-  /**
-   * 保存服务器：配置写插件库；勾选保存凭证时后端把手工凭证写入 Vault 并回填 credentialRef
-   * （同 profile upsert 同一条 Vault 条目，不产生重复）。
-   */
-  async function saveProfile(
-    profile: ServerProfile,
-    credentials: { password?: string; privateKey?: string; passphrase?: string },
-    saveCredential: boolean
-  ) {
-    const index = profiles.value.findIndex((item) => item.id === profile.id)
-    const authChanged = index < 0 || profiles.value[index].authMethod !== profile.authMethod
-    const switchedFromVault =
-      index >= 0 && Boolean(profiles.value[index].credentialRef) && !profile.credentialRef
-    const manualCredentialReady =
-      profile.authMethod === 'password'
-        ? Boolean(credentials.password)
-        : Boolean(credentials.privateKey) &&
-          (profile.authMethod !== 'privateKeyWithPassphrase' || Boolean(credentials.passphrase))
-    const credentialReady = Boolean(profile.credentialRef) || manualCredentialReady
-    if ((index < 0 || authChanged || switchedFromVault) && !credentialReady) {
-      ui.toast('新增服务器或切换认证方式时必须填写完整凭证')
-      return
-    }
-    try {
-      const saved = await ipc.sshProfileSave({
-        profile,
-        ...credentials,
-        saveCredential: saveCredential && manualCredentialReady,
-      })
-      const existing = profiles.value.findIndex((item) => item.id === saved.id)
-      if (existing >= 0) profiles.value[existing] = saved
-      else profiles.value.push(saved)
-      ui.toast(
-        `${existing >= 0 ? '已更新' : '已添加'}服务器「${saved.name}」` +
-          (saveCredential && manualCredentialReady ? '（凭证已入凭证库）' : '')
+  /* ── 服务器配置与分组（owner：profiles/useSshProfiles）──
+     本域不持有配置状态，只经端口提供删除前关闭连接、清理选中态两个连接侧能力。 */
+  const profilesApi = useSshProfiles({
+    /** 删除服务器前关闭其名下工作区并断开会话 */
+    closeConnectionsOf: async (profileId) => {
+      const related = connectionWorkspaces.value.filter((item) => item.profileId === profileId)
+      connectionWorkspaces.value = connectionWorkspaces.value.filter(
+        (item) => item.profileId !== profileId
       )
-      formOpen.value = false
-    } catch (error) {
-      ui.toast(`保存失败：${error}`)
-    }
-  }
+      await Promise.all(related.map((workspace) => disconnectConnection(workspace.connection)))
+    },
+    /** 服务器被删除后清掉指向它的选中态 */
+    forgetActiveProfile: (profileId) => {
+      if (activeProfileId.value === profileId) activeProfileId.value = null
+    },
+  })
+  const {
+    profiles,
+    groups,
+    expandedIds,
+    searchKeyword,
+    filteredProfiles,
+    formOpen,
+    editingProfile,
+    deleteTarget,
+    openAddForm,
+    openEditForm,
+    toggleGroup,
+    loadProfiles,
+    loadGroups,
+    importLegacyOnce,
+    createGroup,
+    renameGroup,
+    deleteGroup,
+    moveToGroup,
+    saveProfile,
+    requestDelete,
+    confirmDelete,
+    showError,
+    touchProfileConnected,
+  } = profilesApi
 
   async function disconnectConnection(connection: ServerConnection) {
     if (!connection.sessionId) return
@@ -256,33 +141,6 @@ export function useSshWorkspace() {
     }
     connectionWorkspaces.value = []
     ui.toast(`已关闭全部 ${count} 个会话`)
-  }
-
-  async function deleteProfile(id: string) {
-    const profile = profiles.value.find((item) => item.id === id)
-    if (!profile) return
-    const related = connectionWorkspaces.value.filter((item) => item.profileId === id)
-    connectionWorkspaces.value = connectionWorkspaces.value.filter((item) => item.profileId !== id)
-    try {
-      await Promise.all(related.map((workspace) => disconnectConnection(workspace.connection)))
-      await ipc.sshProfileDelete(id)
-    } catch (error) {
-      ui.toast(`删除服务器失败：${error}`)
-      return
-    }
-    profiles.value = profiles.value.filter((item) => item.id !== id)
-    if (activeProfileId.value === id) activeProfileId.value = null
-    ui.toast(`已删除服务器「${profile.name}」（凭证保留在凭证库）`)
-  }
-
-  function requestDelete(profile: ServerProfile) {
-    deleteTarget.value = profile
-  }
-
-  async function confirmDelete() {
-    if (!deleteTarget.value) return
-    await deleteProfile(deleteTarget.value.id)
-    deleteTarget.value = null
   }
 
   /** 连接成功后为工作区生成不重复标题（「名称」「名称 2」…） */
@@ -343,7 +201,7 @@ export function useSshWorkspace() {
       workspace.connectRequest += 1
       workspace.stageText = ''
       workspace.lastActivityAt = Date.now()
-      profile.lastConnectedAt = Date.now()
+      touchProfileConnected(profileId)
       return workspace
     } catch (error) {
       removeWorkspace(workspace.id)
@@ -568,7 +426,7 @@ export function useSshWorkspace() {
     }
     // localStorage 存量配置/分组一次性迁入后端插件库（旧手工凭证由后端迁入 Vault）
     await importLegacyOnce()
-    await Promise.all([loadProfiles(), groupsApi.load()])
+    await Promise.all([loadProfiles(), loadGroups()])
 
     // 不恢复上一次工具实例遗留的后端会话；重新打开 SSH 工具永远从空状态开始。
     try {
