@@ -27,9 +27,8 @@ export default {
     unsavedSwitch: 'Switching to {name} discards the current unsaved changes. Continue?',
     unsavedDiscard: 'Discard and switch',
     dirUnknown: 'Config directory unknown',
-    openDir: 'Open folder',
-    openDirFailed: 'Failed to open folder: {message}',
-    openDirUnavailable: 'Config directory is not resolved yet',
+    menuReveal: 'Show in File Explorer',
+    revealFailed: 'Could not locate the file: {message}',
     clientManage: 'FRP clients',
     clientManagerTitle: 'FRP clients',
     clientManagerHint:

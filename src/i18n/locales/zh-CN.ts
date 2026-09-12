@@ -27,9 +27,8 @@ export default {
     unsavedSwitch: '切换到 {name} 会丢弃当前未保存的修改，确定继续？',
     unsavedDiscard: '丢弃并切换',
     dirUnknown: '配置目录未确定',
-    openDir: '打开目录',
-    openDirFailed: '打开目录失败：{message}',
-    openDirUnavailable: '配置目录尚未确定，无法打开',
+    menuReveal: '在资源管理器中显示',
+    revealFailed: '无法定位文件：{message}',
     clientManage: 'FRP 客户端管理',
     clientManagerTitle: 'FRP 客户端管理',
     clientManagerHint:

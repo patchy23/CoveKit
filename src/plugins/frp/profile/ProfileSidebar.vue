@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * ProfileSidebar · 档案列表栏
- * 搜索 + 列表（状态点 / 名称 / 服务器 / 代理数）+ 新建 + 右键菜单（重命名 / 复制 / 备注 / 删除）。
+ * 搜索 + 列表（状态点 / 名称 / 服务器 / 代理数）+ 新建 + 右键菜单（重命名 / 复制 / 备注 /
+ * 在资源管理器中显示 / 删除）+ 栏脚客户端管理入口。
  * 只负责收集用户意图并向上抛出，命令调用与状态刷新由工作台统一处理。
  */
 import { computed, ref } from 'vue'
@@ -19,8 +20,6 @@ const props = defineProps<{
   items: FrpProfileSummary[]
   /** 当前选中的档案文件名 */
   active: string
-  /** 配置目录绝对路径 */
-  dir: string
   /** 列表加载中 */
   loading: boolean
   /** 列表加载失败原因 */
@@ -35,7 +34,8 @@ const emit = defineEmits<{
   duplicate: [fileName: string, newName: string]
   remark: [fileName: string, remark: string]
   remove: [fileName: string]
-  openDir: []
+  /** 在系统文件管理器中定位某个档案文件 */
+  reveal: [fileName: string]
   /** 打开客户端管理弹窗 */
   openClients: []
 }>()
@@ -76,6 +76,9 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     { label: t('frp.menuRename'), onClick: () => openNameDialog('rename', target) },
     { label: t('frp.menuDuplicate'), onClick: () => openNameDialog('duplicate', target) },
     { label: t('frp.menuRemark'), onClick: () => (remarkTarget.value = target) },
+    { label: '', separator: true },
+    // 「在资源管理器中显示」放在档案级：配置目录是固定的，从列表定位到具体那个 .toml 才有意义
+    { label: t('frp.menuReveal'), onClick: () => emit('reveal', target.fileName) },
     { label: '', separator: true },
     { label: t('frp.menuDelete'), danger: true, onClick: () => (pendingDelete.value = target) },
   ]
@@ -224,22 +227,6 @@ function onRemarkSubmit(remark: string) {
       </span>
       <UiButton size="xs" variant="ghost" @click="emit('openClients')">
         {{ t('frp.clientManage') }}
-      </UiButton>
-    </div>
-
-    <!-- 栏脚：配置目录 -->
-    <div
-      class="flex h-[32px] shrink-0 items-center gap-[6px] border-t border-border px-[10px] dark:border-border-dark"
-    >
-      <UiIcon name="folder" :size="13" class="shrink-0 text-text-muted dark:text-text-muted-dark" />
-      <span
-        class="min-w-0 flex-1 truncate text-caption text-text-muted dark:text-text-muted-dark"
-        :title="dir"
-      >
-        {{ dir === '' ? t('frp.dirUnknown') : dir }}
-      </span>
-      <UiButton size="xs" variant="ghost" :disabled="dir === ''" @click="emit('openDir')">
-        {{ t('frp.openDir') }}
       </UiButton>
     </div>
 

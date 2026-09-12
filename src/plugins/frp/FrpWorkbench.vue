@@ -131,20 +131,22 @@ async function onRemark(fileName: string, remark: string) {
 }
 
 /**
- * 在系统文件管理器中打开配置文件目录。
- * 失败必须给可见反馈（此前的实现漏了事件监听，点了毫无反应）。
+ * 在系统文件管理器中定位某个档案文件。
+ * 定位到具体文件而非打开整个配置目录：配置目录固定不变，那一串路径没有信息量，
+ * 而「这个档案在磁盘上的哪个位置」才是从列表点进去时真正想知道的。
+ * 失败必须给可见反馈（此处曾漏了事件监听，点下去毫无反应）。
  */
-async function openDir() {
-  const target = profiles.dir.value
-  if (target === '') {
-    ui.toast(t('frp.openDirUnavailable'))
+async function onReveal(fileName: string) {
+  const dir = profiles.dir.value
+  if (dir === '') {
+    ui.toast(t('frp.revealFailed', { message: t('frp.dirUnknown') }))
     return
   }
   try {
-    await revealItemInDir(target)
+    await revealItemInDir(`${dir}/${fileName}`)
   } catch (reason) {
     const message = reason instanceof Error ? reason.message : String(reason)
-    ui.toast(t('frp.openDirFailed', { message }))
+    ui.toast(t('frp.revealFailed', { message }))
   }
 }
 
@@ -168,7 +170,6 @@ async function onClientsChanged() {
       class="w-[272px] shrink-0"
       :items="profiles.items.value"
       :active="activeFile"
-      :dir="profiles.dir.value || t('frp.dirUnknown')"
       :loading="profiles.loading.value"
       :error="profiles.error.value"
       :client-label="defaultClientLabel"
@@ -178,7 +179,7 @@ async function onClientsChanged() {
       @duplicate="onDuplicate"
       @remark="onRemark"
       @remove="onRemove"
-      @open-dir="openDir"
+      @reveal="onReveal"
       @open-clients="showClients = true"
     />
 
