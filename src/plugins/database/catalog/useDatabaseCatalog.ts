@@ -20,6 +20,7 @@ import {
 } from '../useDatabaseMeta'
 import type { DbConnectionInfo, DbGrantInput, DbObjectInfo, DbStepResult } from '../contracts'
 import { adminIpc, queryIpc } from '../ipc'
+import { nextRequestId } from '../requestId'
 import type { TabContext } from '../workspace/useQueryWorkspace'
 
 /**
@@ -602,7 +603,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   /** 执行 DDL（可视化建表等）：成功 toast + 刷新指定 scope 对象缓存 */
   async function executeDdl(connId: string, sql: string, scope?: string): Promise<boolean> {
     try {
-      const result = await queryIpc.execute(connId, sql, 1)
+      const result = await queryIpc.execute(connId, sql, 1, nextRequestId('ddl'))
       if (!result.ok) throw new Error(result.error ?? '执行失败')
       useUiStore().toast('执行成功')
       if (scope) {

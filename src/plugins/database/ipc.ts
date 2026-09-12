@@ -43,9 +43,14 @@ export const connectionIpc = {
 
 /** 查询与元数据 */
 export const queryIpc = {
-  execute: (connId: string, sql: string, maxRows?: number): Promise<QueryResult> =>
-    call('dbc_execute', { connId, sql, maxRows }),
-  cancel: (connId: string): Promise<void> => call('dbc_cancel', { connId }),
+  /** 执行 SQL；`requestId` 是本次请求身份，取消（`cancel`）按它命中，同连接多页签互不牵连 */
+  execute: (
+    connId: string,
+    sql: string,
+    maxRows: number | undefined,
+    requestId: string
+  ): Promise<QueryResult> => call('dbc_execute', { connId, sql, maxRows, requestId }),
+  cancel: (requestId: string): Promise<void> => call('dbc_cancel', { requestId }),
   databases: (connId: string): Promise<string[]> => call('dbc_databases', { connId }),
   schemas: (connId: string): Promise<string[]> => call('dbc_schemas', { connId }),
   objects: (connId: string, schema?: string): Promise<DbObjectInfo[]> =>

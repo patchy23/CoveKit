@@ -232,8 +232,8 @@ export type Payloads = {
   dbc_saved_update: { id: number; title: string; sql: string }
   dbc_saved_delete: { id: number }
   dbc_driver_status: { dbType: string }
-  dbc_execute: { connId: string; sql: string; maxRows?: number }
-  dbc_cancel: { connId: string }
+  dbc_execute: { connId: string; sql: string; maxRows?: number; requestId: string }
+  dbc_cancel: { requestId: string }
   dbc_databases: { connId: string }
   dbc_schemas: { connId: string }
   dbc_objects: { connId: string; schema?: string }

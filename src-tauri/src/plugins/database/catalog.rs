@@ -28,6 +28,9 @@ fn session(state: &State<'_, DbState>, conn_id: &str) -> Result<DbSessionEntry, 
 // ──────────────────────────────────────────────────────────────────────────
 
 /// 执行 SQL（多语句拆分逐条执行；查询语句返回最后一条结果，非查询累计影响行数）
+///
+/// `request_id` 是本次执行的请求身份（前端每次执行生成一个），取消句柄按它登记：
+/// 同一连接可以有多个在途请求（同连接多页签），取消必须命中发起的那一个，不能按连接一刀切。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_execute(
     state: State<'_, DbState>,
@@ -35,65 +38,70 @@ pub async fn dbc_execute(
     conn_id: String,
     sql: String,
     max_rows: Option<u64>,
+    request_id: String,
 ) -> Result<QueryResult, String> {
     let entry = session(&state, &conn_id)?;
+    let request_id = request_id.trim().to_string();
+    if request_id.is_empty() {
+        return Err("执行请求缺少请求标识，无法登记取消句柄".to_string());
+    }
     let started = Instant::now();
     let limit = max_rows.unwrap_or(DEFAULT_MAX_ROWS).max(1);
 
-    // Redis 会话：查询页签执行的是 Redis 命令
-    if let DbSession::Redis(mgr) = &entry.session {
-        let mut mgr = mgr.clone();
-        let value = redis::exec_command(&mut mgr, &sql).await?;
-        return Ok(QueryResult {
-            ok: true,
-            columns: vec!["result".to_string()],
-            rows: vec![vec![value]],
-            rows_affected: 0,
-            is_query: true,
-            duration_ms: started.elapsed().as_millis() as u64,
-            truncated: false,
-            error: None,
-        });
-    }
-
-    // 注册取消句柄（各驱动能力不同）
+    // 注册取消句柄（各驱动能力不同；按请求身份登记，同连接并发请求互不覆盖）
     let cancel = drivers::build_cancel_handle(&entry);
     let aborted = cancel.aborted.clone();
     let _ = cancel_state
         .0
         .lock()
         .map_err(|e| e.to_string())?
-        .insert(conn_id.clone(), cancel);
+        .insert(request_id.clone(), cancel);
 
-    let result = match &entry.session {
+    // Redis 会话：查询页签执行的是 Redis 命令（其余走 SQL 驱动）
+    let outcome = match &entry.session {
+        DbSession::Redis(mgr) => {
+            let mut mgr = mgr.clone();
+            redis::exec_command(&mut mgr, &sql)
+                .await
+                .map(|value| QueryResult {
+                    ok: true,
+                    columns: vec!["result".to_string()],
+                    rows: vec![vec![value]],
+                    rows_affected: 0,
+                    is_query: true,
+                    duration_ms: started.elapsed().as_millis() as u64,
+                    truncated: false,
+                    error: None,
+                })
+        }
         DbSession::Mysql(pool) => drivers::mysql::execute_mysql(pool, &sql, limit).await,
         DbSession::Postgres(pool) => drivers::postgres::execute_postgres(pool, &sql, limit).await,
         DbSession::Sqlite(conn) => drivers::sqlite::execute_sqlite(conn, &sql, limit),
-        DbSession::Redis(_) => return Err("Redis 会话不支持 SQL 执行（请用键操作）".to_string()),
         DbSession::Agent { client, session_id } => {
             drivers::execute_agent(client, session_id, &sql, limit).await
         }
     };
 
+    // 无论成功、失败还是被取消，都注销本次请求身份（失败也走统一清理）
     let _ = cancel_state
         .0
         .lock()
         .map_err(|e| e.to_string())?
-        .remove(&conn_id);
+        .remove(&request_id);
     let _ = aborted.load(Ordering::Relaxed);
-    let mut result = result?;
+    let mut result = outcome?;
     result.duration_ms = started.elapsed().as_millis() as u64;
     Ok(result)
 }
 
-/// 取消进行中的查询（按驱动能力：pg cancel_token / mysql KILL QUERY / agent cancel_session）
+/// 取消进行中的查询（按请求身份命中：pg cancel_token / mysql KILL QUERY / agent cancel_session）
 #[tauri::command(rename_all = "camelCase")]
-pub async fn dbc_cancel(state: State<'_, DbCancelState>, conn_id: String) -> Result<(), String> {
+pub async fn dbc_cancel(state: State<'_, DbCancelState>, request_id: String) -> Result<(), String> {
     let handle = state
         .0
         .lock()
         .map_err(|e| e.to_string())?
-        .remove(&conn_id)
+        .remove(request_id.trim())
         .ok_or("没有进行中的查询")?;
     handle.aborted.store(true, Ordering::Relaxed);
     if let Some(token) = &handle.pg_cancel {

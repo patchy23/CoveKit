@@ -21,6 +21,7 @@ import type {
 } from '../contracts'
 import { adminIpc, queryIpc } from '../ipc'
 import { formatSql } from '../sqlFormat'
+import { nextRequestId } from '../requestId'
 
 /** 查询页签状态（真实后端字段） */
 export interface QueryState {
@@ -129,6 +130,9 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   const activeTabId = ref('')
   const tabContexts = ref<Record<string, TabContext>>({})
   const queryStates = ref<Record<string, QueryState>>({})
+
+  /** 在途请求身份：页签 id → 请求 id（结果回填与取消都按它判定归属） */
+  const inFlight = new Map<string, string>()
   const structureColumns = ref<Record<string, DbColumnInfo[]>>({})
   /** 结构页签 · 索引子页签数据 */
   const structureIndexes = ref<Record<string, DbIndexInfo[]>>({})
@@ -348,6 +352,14 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   // 查询执行
   // ──────────────────────────────────────────────────────────────────────
 
+  /**
+   * 写指定页签的状态对象：用于 `await` 之后的回填。
+   * 不能用 `patchQueryState` —— 它写当前活动页签，而用户等待期间可能已切走页签。
+   */
+  function patchTabState(state: QueryState, patch: Partial<QueryState>) {
+    Object.assign(state, patch)
+  }
+
   function patchQueryState(patch: Partial<QueryState>) {
     const id = activeTabId.value
     queryStates.value[id] ??= makeQueryState()
@@ -381,12 +393,17 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       return
     }
     const startedAt = Date.now()
+    // 请求身份：后端按它登记取消句柄，本函数的回填也按它判定本次结果是否仍然有效
+    const requestId = nextRequestId(tabId)
+    inFlight.set(tabId, requestId)
     patchQueryState({ status: 'running', error: '', page: 1, columns: [], rows: [], total: 0 })
     try {
-      const result = await queryIpc.execute(conn.id, sql, 1000)
+      const result = await queryIpc.execute(conn.id, sql, 1000, requestId)
       const durationMs = Date.now() - startedAt
+      // 等待期间用户可能切走页签、取消或重新执行：只有本次请求仍是该页签在途请求时才回填
+      if (!settleRequest(tabId, requestId)) return
       if (result.ok) {
-        patchQueryState({
+        patchTabState(state, {
           status: result.isQuery && result.rows.length === 0 ? 'empty' : 'success',
           resultTab: 'data',
           durationMs,
@@ -398,7 +415,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
           filter: '',
         })
       } else {
-        patchQueryState({
+        patchTabState(state, {
           status: 'error',
           error: result.error ?? '查询失败',
           resultTab: 'message',
@@ -407,7 +424,9 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       }
       ports.recordHistory(conn.id, sql, result.ok ? 'success' : 'error', durationMs)
     } catch (err) {
-      patchQueryState({
+      // 已取消的请求其失败不再回填（状态停留在「已取消」，不改写成错误）
+      if (!settleRequest(tabId, requestId)) return
+      patchTabState(state, {
         status: 'error',
         error: String(err),
         resultTab: 'message',
@@ -417,15 +436,35 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     }
   }
 
+  /**
+   * 结束在途请求：仅当该页签的在途请求仍是本次请求时返回 true（允许回填）；
+   * 返回 false 表示已被取消或被新请求取代，本次结果作废。
+   */
+  function settleRequest(tabId: string, requestId: string): boolean {
+    if (inFlight.get(tabId) !== requestId) return false
+    inFlight.delete(tabId)
+    return true
+  }
+
   async function cancelQuery() {
+    const tabId = activeTabId.value
     const conn = activeTabConnection.value
     if (!conn) return
+    const requestId = inFlight.get(tabId)
+    // 没有在途请求就没有取消对象，不打扰后端（取消与预期缺失不报错）
+    if (!requestId) return
     try {
-      await queryIpc.cancel(conn.id)
-      patchQueryState({ status: 'cancelled', resultTab: 'message' })
+      await queryIpc.cancel(requestId)
     } catch (err) {
       ports.showError(err)
+      return
     }
+    // 该请求作废：后端迟到的结果不再回填本页签
+    inFlight.delete(tabId)
+    patchTabState(queryStates.value[tabId] ?? (queryStates.value[tabId] = makeQueryState()), {
+      status: 'cancelled',
+      resultTab: 'message',
+    })
   }
 
   function onFormatSql() {
