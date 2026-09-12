@@ -2,7 +2,8 @@
 //!
 //! 定位优先级：工具设置 `frpcPath` → 本工具下载目录 → PATH → 用户目录常见位置。
 //! 下载走 GitHub Release（可配镜像前缀），优先用 release 附带的 checksums 文件做 SHA256 校验；
-//! 解压复用系统工具（Windows `Expand-Archive`、其它平台 `tar`），不为此引入压缩库依赖。
+//! 解压复用系统工具（Windows `Expand-Archive`、其它平台 `tar`），不为此引入压缩库依赖——
+//! 代价是必须绕开系统解压工具的扩展名与退出码坑，详见 `extract` 注释。
 //! 下载中任一步失败都不改动已配置路径（调用方只在成功时记录新路径）。
 
 use std::path::{Path, PathBuf};
@@ -281,6 +282,22 @@ pub(crate) async fn versions(app: &AppHandle, limit: u32) -> Result<Vec<FrpRelea
         .collect())
 }
 
+/// 查询上游某版本的资产字节数
+///
+/// GitHub 的下载地址会 302 到 objects.githubusercontent.com，重定向后的响应是分块传输、
+/// **不带 `Content-Length`**（实测 `response.content_length()` 为 None），此时前端只能显示
+/// 「总大小未知」。release API 的 `assets[].size` 是该资产的权威大小，用它兜底。
+async fn asset_size(app: &AppHandle, version: &str) -> Option<u64> {
+    let asset = asset_name(version);
+    let releases = versions(app, 20).await.ok()?;
+    releases
+        .into_iter()
+        .find(|release| release.version == version)
+        .and_then(|release| release.assets.into_iter().find(|item| item.name == asset))
+        .map(|item| item.size)
+        .filter(|size| *size > 0)
+}
+
 /// 推送下载进度
 fn emit(
     app: &AppHandle,
@@ -300,38 +317,99 @@ fn emit(
     let _ = app.emit(EVENT_DOWNLOAD, payload);
 }
 
+/// 命令行路径参数（按原样传参，交给 OS 处理；仅非 Windows 的 tar 分支使用）
+#[cfg(not(windows))]
+fn arg_str(path: &Path) -> String {
+    path.display().to_string()
+}
+
+/// PowerShell 单引号字面量（字符串内的单引号需转义成两个，否则路径含引号时脚本被截断）
+#[cfg(windows)]
+fn ps_literal(path: &Path) -> String {
+    path.display().to_string().replace('\'', "''")
+}
+
+/// 目标目录是否已产出内容（系统解压工具退出码不可信时的兜底判据）
+async fn has_entries(dir: &Path) -> bool {
+    match tokio::fs::read_dir(dir).await {
+        Ok(mut entries) => entries.next_entry().await.ok().flatten().is_some(),
+        Err(_) => false,
+    }
+}
+
+/// 从命令输出里取一段可读原因（stderr 优先；中文系统上 PowerShell 的中文报错会因 GBK
+/// 编码显示为乱码，但其中的英文错误标识仍可辨认，比笼统的「解压失败」有用）
+fn output_tail(stderr: &[u8], stdout: &[u8]) -> String {
+    let pick = |bytes: &[u8]| {
+        String::from_utf8_lossy(bytes)
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .take(3)
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let from_stderr = pick(stderr);
+    if from_stderr.is_empty() {
+        pick(stdout)
+    } else {
+        from_stderr
+    }
+}
+
 /// 解压压缩包到目标目录（复用系统工具，避免为一次性操作引入压缩库依赖）
+///
+/// 三个坑都是实测踩到才发现的，改动本函数前先读（Windows 分支）：
+/// 1) **压缩包必须保留 `.zip` 扩展名**：PowerShell 5.1 的 `Expand-Archive` 对 `.zip.tmp`
+///    这类后缀直接报 NotSupportedArchiveFileExtension，内容都不看就拒绝；
+/// 2) **不要按名字调用 `tar` 解 zip**：PATH 上的 `tar` 可能是 MSYS / GNU tar（本机实测
+///    GNU tar 1.35），GNU tar 不支持 zip，还会把 `C:\` 当远程主机（`Cannot connect to C:`）；
+///    只有 Windows 自带的 bsdtar 支持 zip，按名字调用等于把成败押在用户机器的 PATH 顺序上；
+/// 3) `Expand-Archive` 遇到坏包时**写 stderr 但退出码仍为 0**，必须用 `try/catch + exit 1`
+///    才能拿到非零退出码，并且额外校验目录确实产出了内容，否则会把「什么都没解出来」当成功。
+#[cfg(windows)]
 async fn extract(archive: &Path, dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("创建解压目录失败：{e}"))?;
-    #[cfg(windows)]
-    let status = Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-Command",
-            &format!(
-                "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
-                archive.display(),
-                dir.display()
-            ),
-        ])
-        .status()
-        .await;
-    #[cfg(not(windows))]
-    let status = Command::new("tar")
-        .args([
-            "-xzf",
-            &archive.display().to_string(),
-            "-C",
-            &dir.display().to_string(),
-        ])
-        .status()
-        .await;
-    let status = status.map_err(|e| format!("调用系统解压工具失败：{e}"))?;
-    if !status.success() {
-        return Err("系统解压工具返回失败（压缩包可能不完整）".to_string());
+    let script = format!(
+        "try {{ Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force -ErrorAction Stop }} \
+         catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}",
+        ps_literal(archive),
+        ps_literal(dir)
+    );
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .output()
+        .await
+        .map_err(|e| format!("调用系统解压工具失败：{e}"))?;
+    if output.status.success() && has_entries(dir).await {
+        return Ok(());
     }
-    Ok(())
+    let detail = output_tail(&output.stderr, &output.stdout);
+    if detail.is_empty() {
+        Err("解压失败：系统解压工具未能解开该压缩包".to_string())
+    } else {
+        Err(format!("解压失败：{detail}"))
+    }
+}
+
+/// 解压压缩包到目标目录（其它平台：系统 tar 原生支持 tar.gz）
+#[cfg(not(windows))]
+async fn extract(archive: &Path, dir: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("创建解压目录失败：{e}"))?;
+    let output = Command::new("tar")
+        .args(["-xzf", &arg_str(archive), "-C", &arg_str(dir)])
+        .output()
+        .await
+        .map_err(|e| format!("调用系统解压工具失败：{e}"))?;
+    if output.status.success() && has_entries(dir).await {
+        return Ok(());
+    }
+    let detail = output_tail(&output.stderr, &output.stdout);
+    if detail.is_empty() {
+        Err("解压失败：系统 tar 无法解开该压缩包".to_string())
+    } else {
+        Err(format!("解压失败：{detail}"))
+    }
 }
 
 /// 计算文件 SHA256（16 进制小写）
@@ -400,17 +478,16 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         mirror(app)
     );
     let bin = bin_dir(app)?;
-    let archive = bin.join(format!("{asset}.tmp"));
+    // 下载与解压共用一个临时目录：压缩包必须保持原始文件名（含 .zip/.tar.gz 扩展名），
+    // 见 `extract` 注释——在文件名后追加 .tmp 会让两个系统解压器都拒绝处理
+    let staging = bin.join("staging");
+    let _ = tokio::fs::remove_dir_all(&staging).await;
+    std::fs::create_dir_all(&staging)
+        .map_err(|e| format!("创建下载临时目录失败（{}）：{e}", staging.display()))?;
+    let archive = staging.join(&asset);
 
     // ── 下载（流式写盘，按块推送进度）──
-    emit(
-        app,
-        version,
-        FrpDownloadPhase::Download,
-        Some(0),
-        None,
-        None,
-    );
+    // 首个进度事件要等响应头到达后再发：此时才知道总大小，否则会先闪一次「总大小未知」
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
         .build()
@@ -428,7 +505,20 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
             asset
         ));
     }
-    let total = response.content_length();
+    // 优先用响应头的 Content-Length；上游重定向后缺失时取 release 资产大小，
+    // 保证进度条与「已下载 / 总大小」始终有分母（否则只能显示总大小未知）
+    let total = match response.content_length() {
+        Some(size) if size > 0 => Some(size),
+        _ => asset_size(app, version).await,
+    };
+    emit(
+        app,
+        version,
+        FrpDownloadPhase::Download,
+        Some(0),
+        total,
+        None,
+    );
     let mut file = tokio::fs::File::create(&archive)
         .await
         .map_err(|e| format!("创建临时文件失败（{}）：{e}", archive.display()))?;
@@ -480,12 +570,17 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         total,
         None,
     );
-    let staging = bin.join("staging");
-    let _ = tokio::fs::remove_dir_all(&staging).await;
-    extract(&archive, &staging).await?;
-    let from = staging.join(package_dir_name(version)).join(exe_name());
+    // 解压目标必须是压缩包所在的子目录：若直接解到 staging，压缩包自身就会让
+    // `has_entries` 成立，退出码不可信的问题又绕回来了
+    let unpack = staging.join("unpack");
+    if let Err(error) = extract(&archive, &unpack).await {
+        // 失败即清理：整包约 14MB，留着既占空间又会让用户误以为已经装好
+        let _ = tokio::fs::remove_dir_all(&staging).await;
+        return Err(error);
+    }
+    let from = unpack.join(package_dir_name(version)).join(exe_name());
     if !from.is_file() {
-        let _ = tokio::fs::remove_file(&archive).await;
+        let _ = tokio::fs::remove_dir_all(&staging).await;
         return Err(format!(
             "解压后未找到 {}（压缩包结构可能已变，请手动解压后指定路径）",
             exe_name()
@@ -549,6 +644,63 @@ mod tests {
         let dir = package_dir_name("0.71.0");
         let asset = asset_name("0.71.0");
         assert!(asset.starts_with(&dir));
+    }
+
+    /// 解压必须能真正解开 zip
+    ///
+    /// 回归「下载完成却报解压失败」：下载文件曾命名为 `.zip.tmp`，PowerShell 的
+    /// `Expand-Archive` 只看后缀就拒绝（NotSupportedArchiveFileExtension），而下载本身
+    /// 是完整的——测试同时守住「后缀合法」与「确实解出文件」两点。
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn extract_unpacks_real_zip() {
+        let dir = std::env::temp_dir().join("patchybox-frp-extract-ok");
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+        tokio::fs::create_dir_all(&dir).await.expect("建临时目录");
+        let source = dir.join("payload");
+        tokio::fs::create_dir_all(&source).await.expect("建源目录");
+        tokio::fs::write(source.join("frpc.txt"), b"frpc")
+            .await
+            .expect("写样例文件");
+        let archive = dir.join("sample.zip");
+        let script = format!(
+            "Compress-Archive -Path '{}' -DestinationPath '{}' -Force",
+            ps_literal(&source.join("*")),
+            ps_literal(&archive)
+        );
+        let status = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .status()
+            .await
+            .expect("调用 PowerShell 造 zip");
+        assert!(status.success(), "造测试压缩包失败");
+
+        let out = dir.join("out");
+        extract(&archive, &out).await.expect("解压应成功");
+        assert!(out.join("frpc.txt").is_file(), "解压后应产出文件");
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    /// 坏包不能假成功
+    ///
+    /// 回归第二重坑：`Expand-Archive` 遇到坏包时只写 stderr、**退出码仍是 0**，
+    /// 只看 `status.success()` 会把「什么都没解出来」当成安装成功。
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn extract_rejects_broken_archive() {
+        let dir = std::env::temp_dir().join("patchybox-frp-extract-broken");
+        let _ = tokio::fs::remove_dir_all(&dir).await;
+        tokio::fs::create_dir_all(&dir).await.expect("建临时目录");
+        let archive = dir.join("broken.zip");
+        tokio::fs::write(&archive, b"this is definitely not a zip archive")
+            .await
+            .expect("写坏包");
+
+        let out = dir.join("out");
+        let result = extract(&archive, &out).await;
+        assert!(result.is_err(), "坏包必须报错，不能静默成功");
+        assert!(!has_entries(&out).await, "坏包不应产出任何文件");
+        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
     #[test]

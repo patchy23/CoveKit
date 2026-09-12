@@ -6,6 +6,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { ipc } from '../ipc'
 import type { FrpBinaryInfo, FrpDownloadPayload, FrpReleaseInfo } from '../contracts'
+import { estimateSpeed, pushSample, type SpeedSample } from './downloadSpeed'
 
 /** frpc 二进制相关状态与操作 */
 export function useFrpBinary() {
@@ -23,10 +24,14 @@ export function useFrpBinary() {
   const downloading = ref(false)
   /** 下载进度（事件驱动） */
   const progress = ref<FrpDownloadPayload | null>(null)
+  /** 下载速率（字节/秒；样本不足时为 null，表示暂无可显示值） */
+  const speed = ref<number | null>(null)
   /** 下载失败原因 */
   const downloadError = ref('')
 
   let unlisten: UnlistenFn | null = null
+  /** 速率采样窗口（每次下载重新累积） */
+  let samples: SpeedSample[] = []
 
   /** 探测 frpc（给定路径优先，其次设置项 / PATH / 常见位置） */
   async function detect(path?: string): Promise<FrpBinaryInfo | null> {
@@ -64,6 +69,8 @@ export function useFrpBinary() {
     downloading.value = true
     downloadError.value = ''
     progress.value = null
+    speed.value = null
+    samples = []
     try {
       const result = await ipc.binaryDownload(version)
       if (!result.ok) throw new Error(result.error ?? '下载失败')
@@ -79,7 +86,13 @@ export function useFrpBinary() {
 
   onMounted(async () => {
     unlisten = await listen<FrpDownloadPayload>('frp://download', (event) => {
-      progress.value = event.payload
+      const payload = event.payload
+      progress.value = payload
+      // 只在下载阶段累积采样：校验/解压阶段字节数不再增长，算了只会显示 0 B/s
+      if (payload.phase !== 'download') return
+      const now = Date.now()
+      samples = pushSample(samples, { at: now, received: payload.received ?? 0 })
+      speed.value = estimateSpeed(samples, now)
     })
   })
   onBeforeUnmount(() => {
@@ -95,6 +108,7 @@ export function useFrpBinary() {
     versionsError,
     downloading,
     progress,
+    speed,
     downloadError,
     detect,
     loadVersions,

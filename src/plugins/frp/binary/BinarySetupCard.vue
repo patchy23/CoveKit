@@ -8,6 +8,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { UiAlert, UiButton, UiProgress, UiSelect, UiSpinner } from '@/core/ui'
+import { formatBytes } from '@/core/format/bytes'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import type { FrpBinaryInfo } from '../contracts'
@@ -42,26 +43,27 @@ const versionOptions = computed(() =>
   }))
 )
 
-/** 下载进度文本（服务端未给总长度时只显示已接收量） */
+/**
+ * 进度文本：下载中为「已下载 / 总大小」，校验与解压阶段改为说明当前在做什么
+ * （这两个阶段字节数不再增长，继续显示停住的数字会让人以为卡死）。
+ */
 const progressText = computed(() => {
   const current = binary.progress.value
   if (!current) return t('frp.binaryPreparing')
-  const received = current.received ?? 0
-  if (current.total === undefined || current.total <= 0) {
-    return t('frp.binaryDownloadingUnknown', { received: formatBytes(received) })
-  }
-  return t('frp.binaryDownloading', {
-    received: formatBytes(received),
-    total: formatBytes(current.total),
-  })
+  if (current.phase === 'verify') return t('frp.binaryVerifying')
+  if (current.phase === 'extract') return t('frp.binaryExtracting')
+  const received = formatBytes(current.received ?? 0)
+  const total = current.total ?? 0
+  if (total <= 0) return t('frp.binaryDownloadingUnknown', { received })
+  return t('frp.binaryDownloading', { received, total: formatBytes(total) })
 })
 
-/** 字节数格式化（本地实现，避免为一个显示函数引入依赖） */
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
+/** 下载速率文本（样本不足时为空串，避免刚点下载就闪一个假数字） */
+const speedText = computed(() => {
+  const speed = binary.speed.value
+  if (speed === null) return ''
+  return t('frp.binarySpeed', { speed: `${formatBytes(speed)}/s` })
+})
 
 /** 选择本地已有 frpc 可执行文件并写入工具设置 */
 async function pickExisting() {
@@ -141,20 +143,22 @@ onMounted(() => {
           </UiButton>
         </div>
 
-        <!-- 下载进度（下载中才出现；总量未知时只留转圈与文本） -->
-        <div v-if="binary.downloading.value" class="flex items-center gap-[10px]">
-          <UiSpinner size="sm" />
+        <!-- 下载进度（下载中才出现）：字节进度条 + 「已下载/总大小 · 速率」，
+             总量未知时省略进度条只显示已接收量与速率 -->
+        <div v-if="binary.downloading.value" class="flex flex-col gap-[6px]">
           <UiProgress
             v-if="(binary.progress.value?.total ?? 0) > 0"
-            class="min-w-0 flex-1"
             size="sm"
             :value="binary.progress.value?.received ?? 0"
             :max="binary.progress.value?.total ?? 1"
-            show-value
           />
-          <span v-else class="text-caption text-secondary dark:text-secondary-dark">
-            {{ progressText }}
-          </span>
+          <div class="flex items-center gap-[8px] text-caption">
+            <UiSpinner size="sm" />
+            <span class="text-secondary dark:text-secondary-dark">{{ progressText }}</span>
+            <span v-if="speedText !== ''" class="text-text-muted dark:text-text-muted-dark">
+              · {{ speedText }}
+            </span>
+          </div>
         </div>
 
         <!-- 版本列表失败：给出可操作提示（手填路径与镜像前缀） -->
