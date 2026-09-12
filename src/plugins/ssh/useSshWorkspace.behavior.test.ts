@@ -2,8 +2,8 @@
  * SSH 根工作区行为网（AR04 · P3a）
  *
  * 用途：在拆分状态所有权之前，把 `useSshWorkspace`（当前活跃实现）的**用户可感知行为**固化成可跑用例；
- * P3b/P3c 每步重构都必须复用同一组断言，避免用孤儿模块（`profiles/useSshProfiles.ts`、
- * `workspace/useSshIdleWatch.ts`）的过期行为覆盖活跃实现里的较新修复（决策书 §2.2 / §3）。
+ * P3b/P3c 拆分的每一步都必须复用同一组断言，避免用过时实现（拆分前零消费方的
+ * `profiles/useSshProfiles.ts` 与 `workspace/useSshIdleWatch.ts`，已于 P3b/P3c 删除）的行为覆盖活跃实现里的较新修复。
  *
  * 覆盖（对应决策书 §2.2 必需场景）：
  * 1 → 存量迁移与提示（「已有后端配置」「迁移失败」「成功」「旧凭证解密失败」四分支）
