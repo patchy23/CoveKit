@@ -4,10 +4,12 @@
  * 配置页签内再分「表单 / 源码」两种模式；保存与校验由 useProfileEditor 统一处理。
  * 未保存改动通过 `update:dirty` 上报，由工作台在切换档案前拦截确认。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { UiBadge, UiButton, UiEmptyState, UiIcon, UiIconButton, UiSpinner, UiTabs } from '@/core/ui'
 import type { FrpRuntimeState } from '../contracts'
+import ClientPicker from '../client/ClientPicker.vue'
+import { FRP_CLIENTS_KEY } from '../client/context'
 import RuntimeLogPanel from '../runtime/RuntimeLogPanel.vue'
 import { statusView, type FrpLogLine } from '../runtime/frpStatus'
 import ProfileFormEditor from './ProfileFormEditor.vue'
@@ -23,6 +25,8 @@ const props = defineProps<{
   busy: boolean
   /** 该档案的日志行 */
   logs: FrpLogLine[]
+  /** 该档案绑定的客户端 id（未绑定时不出现 = 跟随默认） */
+  clientId?: string
 }>()
 const emit = defineEmits<{
   start: [fileName: string]
@@ -37,6 +41,8 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const editor = useProfileEditor()
+// 客户端清单由工作台注入；单独渲染本组件（无 provider）时退化为不显示选择器
+const clientsStore = inject(FRP_CLIENTS_KEY, null)
 
 /** 当前页签：配置 / 日志 */
 const tab = ref<'config' | 'log'>('config')
@@ -74,6 +80,16 @@ async function onSave() {
 /** 校验 */
 async function onVerify() {
   await editor.verify()
+}
+
+/**
+ * 切换本档案绑定的客户端。空串表示回到「跟随默认」。
+ * 写库成功后让工作台刷新档案列表，否则左栏与详情仍显示旧绑定。
+ */
+async function onClientChange(clientId: string) {
+  if (clientsStore === null) return
+  const ok = await clientsStore.bindProfile(props.fileName, clientId === '' ? undefined : clientId)
+  if (ok) emit('changed')
 }
 
 /** 表单模式保存前的注释风险提示（有注释时二次确认由工作台 toast 兜底，这里只用文案提示） */
@@ -145,6 +161,20 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
     >
       {{ editor.error.value }}
     </p>
+
+    <!-- 客户端（本档案用哪个 frpc；服务端版本限制常只针对某些档案） -->
+    <div
+      v-if="clientsStore !== null"
+      class="flex shrink-0 items-center border-b border-border px-[10px] py-[4px] dark:border-border-dark"
+    >
+      <ClientPicker
+        :clients="clientsStore.clients.value"
+        :default-id="clientsStore.defaultId.value"
+        :bound-id="props.clientId"
+        :disabled="props.busy || running"
+        @change="onClientChange"
+      />
+    </div>
 
     <!-- 页签 -->
     <UiTabs

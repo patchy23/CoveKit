@@ -32,6 +32,7 @@ import {
   LayoutGrid,
   LoaderCircle,
   Minus,
+  Package,
   Pencil,
   Play,
   Plus,
@@ -76,6 +77,8 @@ export const UI_ICONS = {
   dots: Ellipsis,
   /** 新建/添加 */
   plus: Plus,
+  /** 客户端/可执行文件（frpc 客户端管理入口） */
+  package: Package,
   /** 书签/收藏 */
   star: Star,
   /** 后退（返回上一次位置） */

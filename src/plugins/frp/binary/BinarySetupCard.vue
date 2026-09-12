@@ -7,11 +7,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
-import { UiAlert, UiButton, UiProgress, UiSelect, UiSpinner } from '@/core/ui'
-import { formatBytes } from '@/core/format/bytes'
+import { UiAlert, UiButton, UiSelect } from '@/core/ui'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import type { FrpBinaryInfo } from '../contracts'
+import DownloadProgress from './DownloadProgress.vue'
 import { useFrpBinary } from './useFrpBinary'
 
 const props = defineProps<{
@@ -42,28 +42,6 @@ const versionOptions = computed(() =>
     label: `${item.version} · ${item.publishedAt.slice(0, 10)}`,
   }))
 )
-
-/**
- * 进度文本：下载中为「已下载 / 总大小」，校验与解压阶段改为说明当前在做什么
- * （这两个阶段字节数不再增长，继续显示停住的数字会让人以为卡死）。
- */
-const progressText = computed(() => {
-  const current = binary.progress.value
-  if (!current) return t('frp.binaryPreparing')
-  if (current.phase === 'verify') return t('frp.binaryVerifying')
-  if (current.phase === 'extract') return t('frp.binaryExtracting')
-  const received = formatBytes(current.received ?? 0)
-  const total = current.total ?? 0
-  if (total <= 0) return t('frp.binaryDownloadingUnknown', { received })
-  return t('frp.binaryDownloading', { received, total: formatBytes(total) })
-})
-
-/** 下载速率文本（样本不足时为空串，避免刚点下载就闪一个假数字） */
-const speedText = computed(() => {
-  const speed = binary.speed.value
-  if (speed === null) return ''
-  return t('frp.binarySpeed', { speed: `${formatBytes(speed)}/s` })
-})
 
 /** 选择本地已有 frpc 可执行文件并写入工具设置 */
 async function pickExisting() {
@@ -143,23 +121,12 @@ onMounted(() => {
           </UiButton>
         </div>
 
-        <!-- 下载进度（下载中才出现）：字节进度条 + 「已下载/总大小 · 速率」，
-             总量未知时省略进度条只显示已接收量与速率 -->
-        <div v-if="binary.downloading.value" class="flex flex-col gap-[6px]">
-          <UiProgress
-            v-if="(binary.progress.value?.total ?? 0) > 0"
-            size="sm"
-            :value="binary.progress.value?.received ?? 0"
-            :max="binary.progress.value?.total ?? 1"
-          />
-          <div class="flex items-center gap-[8px] text-caption">
-            <UiSpinner size="sm" />
-            <span class="text-secondary dark:text-secondary-dark">{{ progressText }}</span>
-            <span v-if="speedText !== ''" class="text-text-muted dark:text-text-muted-dark">
-              · {{ speedText }}
-            </span>
-          </div>
-        </div>
+        <!-- 下载进度（下载中才出现）：与客户端管理弹窗共用 DownloadProgress -->
+        <DownloadProgress
+          v-if="binary.downloading.value"
+          :progress="binary.progress.value"
+          :speed="binary.speed.value"
+        />
 
         <!-- 版本列表失败：给出可操作提示（手填路径与镜像前缀） -->
         <UiAlert v-if="binary.versionsError.value !== ''" tone="warning">

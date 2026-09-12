@@ -25,6 +25,8 @@ const props = defineProps<{
   loading: boolean
   /** 列表加载失败原因 */
   error: string
+  /** 当前默认客户端的展示名（未设置时为空串） */
+  clientLabel: string
 }>()
 const emit = defineEmits<{
   select: [fileName: string]
@@ -34,6 +36,8 @@ const emit = defineEmits<{
   remark: [fileName: string, remark: string]
   remove: [fileName: string]
   openDir: []
+  /** 打开客户端管理弹窗 */
+  openClients: []
 }>()
 
 const { t } = useI18n()
@@ -204,6 +208,23 @@ function onRemarkSubmit(remark: string) {
           </span>
         </span>
       </UiListRow>
+    </div>
+
+    <!-- 栏脚上：客户端管理入口（默认客户端 + 管理按钮） -->
+    <div
+      class="flex h-[32px] shrink-0 items-center gap-[6px] border-t border-border px-[10px] dark:border-border-dark"
+    >
+      <UiIcon
+        name="package"
+        :size="13"
+        class="shrink-0 text-text-muted dark:text-text-muted-dark"
+      />
+      <span class="min-w-0 flex-1 truncate text-caption text-text-muted dark:text-text-muted-dark">
+        {{ props.clientLabel === '' ? t('frp.clientNoneAvailable') : props.clientLabel }}
+      </span>
+      <UiButton size="xs" variant="ghost" @click="emit('openClients')">
+        {{ t('frp.clientManage') }}
+      </UiButton>
     </div>
 
     <!-- 栏脚：配置目录 -->

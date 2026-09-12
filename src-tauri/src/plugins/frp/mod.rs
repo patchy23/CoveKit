@@ -8,6 +8,7 @@
 //! **绝不写进用户的 frpc.toml**，保证与手写配置双向互通。
 
 pub(crate) mod binary;
+mod clients;
 mod models;
 pub(crate) mod profile;
 pub(crate) mod runtime;
@@ -24,21 +25,40 @@ use crate::plugins::frp::models::{
     FrpBinaryInfo, FrpOpResult, FrpProfileContent, FrpProfileList, FrpProfileSummary,
     FrpReleaseInfo, FrpRuntimeState, FrpVerifyResult,
 };
+use crate::plugins::frp::models::{FrpClient, FrpClientList};
 use crate::plugins::frp::runtime::FrpState;
 use crate::plugins::ipc_registry;
 
 /// 插件 id（设置键、数据文件名统一用它）
-const TOOL_ID: &str = "frp";
+pub(crate) const TOOL_ID: &str = "frp";
 
-/// 元数据库迁移（只追加；v1 = 建备注表）
-const MIGRATIONS: &[&str] = &["CREATE TABLE IF NOT EXISTS profile_meta (
+/// 元数据库迁移（只追加；v1 = 备注表，v2 = 客户端清单与档案绑定）
+///
+/// v2 说明：客户端只登记路径、不复制文件，因此 `path` 可能是任意位置的绝对路径；
+/// `profile_client` 存档案与客户端的绑定，无记录即表示跟随默认客户端。
+pub(crate) const MIGRATIONS: &[&str] = &[
+    "CREATE TABLE IF NOT EXISTS profile_meta (
         file_name TEXT PRIMARY KEY,
         remark TEXT NOT NULL DEFAULT '',
         last_used_at INTEGER NOT NULL DEFAULT 0
-     );"];
+     );",
+    "CREATE TABLE IF NOT EXISTS clients (
+        id TEXT PRIMARY KEY,
+        label TEXT NOT NULL DEFAULT '',
+        path TEXT NOT NULL,
+        version TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'external',
+        is_default INTEGER NOT NULL DEFAULT 0,
+        last_seen INTEGER NOT NULL DEFAULT 0
+     );",
+    "CREATE TABLE IF NOT EXISTS profile_client (
+        file_name TEXT PRIMARY KEY,
+        client_id TEXT NOT NULL
+     );",
+];
 
 /// 当前毫秒时间戳（失败回 0：只影响排序，不影响功能）
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| i64::try_from(d.as_millis()).unwrap_or(0))
@@ -182,6 +202,7 @@ pub async fn frp_profiles_list(
             proxy_count: meta.proxy_count,
             enabled_proxy_count: meta.enabled_proxy_count,
             mtime: i64::try_from(mtime).unwrap_or(i64::MAX),
+            client_id: clients::binding(&app, &file_name),
             state: live.state,
             pid: live.pid,
             last_error: live.last_error,
@@ -313,13 +334,10 @@ pub async fn frp_profile_remark(
 pub async fn frp_verify(app: AppHandle, file_name: String) -> Result<FrpVerifyResult, String> {
     let dir = profile_dir(&app)?;
     let path = profile::resolve_profile_path(&dir, &file_name).await?;
-    let info = binary::detect(&app).await;
-    let Some(exe) = info.path else {
-        return Err(info
-            .error
-            .unwrap_or_else(|| "未找到 frpc，无法校验配置".to_string()));
-    };
-    let (raw, exit_ok) = verify::run_verify(std::path::Path::new(&exe), &path).await?;
+    // 校验必须用档案实际绑定的客户端：否则会出现「校验通过但启动失败」
+    // （不同 frpc 版本对配置字段的支持不同，服务端有版本限制时尤其明显）
+    let exe = clients::resolve(&app, &file_name).await?;
+    let (raw, exit_ok) = verify::run_verify(&exe, &path).await?;
     Ok(verify::build_verify_result(&file_name, &raw, exit_ok))
 }
 
@@ -391,6 +409,58 @@ pub async fn frp_binary_download(app: AppHandle, version: String) -> Result<FrpB
     binary::download(&app, &version).await
 }
 
+// ──────────────────────── 客户端管理命令 ────────────────────────
+
+/// 列出已登记的客户端（含默认项与「文件是否还在」）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_client_list(app: AppHandle) -> Result<FrpClientList, String> {
+    Ok(clients::list(&app).await)
+}
+
+/// 登记一个外部 frpc 可执行文件（只引用路径，不复制文件）
+#[tauri::command(rename_all = "camelCase")]
+pub async fn frp_client_add(app: AppHandle, path: String) -> Result<FrpClient, String> {
+    clients::add_external(&app, &path).await
+}
+
+/// 移除客户端登记（只删记录不删文件；同时解绑引用它的档案）
+#[tauri::command(rename_all = "camelCase")]
+pub fn frp_client_remove(app: AppHandle, id: String) -> Result<FrpOpResult, String> {
+    clients::remove(&app, &id)?;
+    Ok(FrpOpResult {
+        ok: true,
+        file_name: None,
+        error: None,
+    })
+}
+
+/// 设为默认客户端（全局唯一）
+#[tauri::command(rename_all = "camelCase")]
+pub fn frp_client_set_default(app: AppHandle, id: String) -> Result<FrpOpResult, String> {
+    clients::set_default(&app, &id)?;
+    Ok(FrpOpResult {
+        ok: true,
+        file_name: None,
+        error: None,
+    })
+}
+
+/// 设置档案绑定的客户端（clientId 为空则解除绑定、回到跟随默认）
+#[tauri::command(rename_all = "camelCase")]
+pub fn frp_profile_client_set(
+    app: AppHandle,
+    file_name: String,
+    client_id: Option<String>,
+) -> Result<FrpOpResult, String> {
+    let normalized = client_id.filter(|value| !value.trim().is_empty());
+    clients::bind(&app, &file_name, normalized.as_deref())?;
+    Ok(FrpOpResult {
+        ok: true,
+        file_name: Some(file_name),
+        error: None,
+    })
+}
+
 /// 注册插件命令与状态（入 ipc_registry；命令体挂全局 handler）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     ipc_registry::register(
@@ -425,6 +495,17 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
             ),
             ("frp_binary_versions", "查询上游 frp 可用版本列表"),
             ("frp_binary_download", "下载并安装 frpc（含 SHA256 校验）"),
+            (
+                "frp_client_list",
+                "列出已登记的 frpc 客户端（含默认项与文件存活状态）",
+            ),
+            (
+                "frp_client_add",
+                "登记外部 frpc 可执行文件（只引用路径不复制）",
+            ),
+            ("frp_client_remove", "移除客户端登记（不删除文件）"),
+            ("frp_client_set_default", "设为默认客户端"),
+            ("frp_profile_client_set", "设置档案绑定的客户端"),
         ],
     )
     .expect("IPC 命令重复注册");
@@ -450,7 +531,12 @@ pub(crate) fn invoke_handler(invoke: tauri::ipc::Invoke<tauri::Wry>) -> bool {
         frp_status,
         frp_binary_detect,
         frp_binary_versions,
-        frp_binary_download
+        frp_binary_download,
+        frp_client_list,
+        frp_client_add,
+        frp_client_remove,
+        frp_client_set_default,
+        frp_profile_client_set
     ];
     handler(invoke)
 }

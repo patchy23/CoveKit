@@ -22,6 +22,35 @@ export type FrpTemplateId = 'tcp' | 'http' | 'stcp' | 'empty'
 /** 内置模板清单（顺序即下拉顺序；模板正文由 Rust 侧 `frp_profile_create` 生成） */
 export const FRP_TEMPLATE_IDS: FrpTemplateId[] = ['tcp', 'http', 'stcp', 'empty']
 
+/** 客户端来源：工具内下载 / 引用外部已有文件（不复制） */
+export type FrpClientSource = 'download' | 'external'
+
+/** 已登记的一个 frpc 客户端 */
+export interface FrpClient {
+  /** 稳定标识（路径哈希；档案绑定与移除都用它） */
+  id: string
+  /** 展示名（取自文件名） */
+  label: string
+  /** 可执行文件绝对路径 */
+  path: string
+  /** 版本号（探测不到时不出现，仅表示文件存在） */
+  version?: string
+  source: FrpClientSource
+  /** 是否为默认客户端 */
+  isDefault: boolean
+  /** 文件当前是否仍然存在（外部引用可能被移走） */
+  exists: boolean
+}
+
+/** 客户端清单（客户端管理弹窗与档案选择器的数据源） */
+export interface FrpClientList {
+  ok: boolean
+  clients: FrpClient[]
+  /** 默认客户端 id（无默认时不出现） */
+  defaultId?: string
+  error?: string
+}
+
 /** 档案摘要（列表项；元数据来自 frp.db，统计来自 TOML 解析） */
 export interface FrpProfileSummary {
   /** 档案文件名（单段文件名，.toml 结尾） */
@@ -40,6 +69,8 @@ export interface FrpProfileSummary {
   enabledProxyCount: number
   /** 文件修改时间（Unix 毫秒） */
   mtime: number
+  /** 绑定的客户端 id（不出现 = 跟随默认客户端） */
+  clientId?: string
   /** 当前运行状态 */
   state: FrpStateName
   /** 运行中的进程 id（未运行时不出现） */
@@ -151,7 +182,7 @@ export interface FrpDownloadPayload {
   error?: string
 }
 
-/** 命令清单（16 条，全部 `frp_` 前缀） */
+/** 命令清单（21 条，全部 `frp_` 前缀） */
 export const commands = {
   profilesList: 'frp_profiles_list',
   profileRead: 'frp_profile_read',
@@ -170,6 +201,11 @@ export const commands = {
   binaryDetect: 'frp_binary_detect',
   binaryVersions: 'frp_binary_versions',
   binaryDownload: 'frp_binary_download',
+  clientList: 'frp_client_list',
+  clientAdd: 'frp_client_add',
+  clientRemove: 'frp_client_remove',
+  clientSetDefault: 'frp_client_set_default',
+  profileClientSet: 'frp_profile_client_set',
 } as const
 
 /** 命令入参 */
@@ -191,6 +227,11 @@ export type Payloads = {
   frp_binary_detect: { path?: string }
   frp_binary_versions: { limit?: number }
   frp_binary_download: { version: string }
+  frp_client_list: Record<string, never>
+  frp_client_add: { path: string }
+  frp_client_remove: { id: string }
+  frp_client_set_default: { id: string }
+  frp_profile_client_set: { fileName: string; clientId?: string }
 }
 
 /** 命令返回 */
@@ -212,4 +253,9 @@ export type Results = {
   frp_binary_detect: FrpBinaryInfo
   frp_binary_versions: FrpReleaseInfo[]
   frp_binary_download: FrpBinaryInfo
+  frp_client_list: FrpClientList
+  frp_client_add: FrpClient
+  frp_client_remove: FrpOpResult
+  frp_client_set_default: FrpOpResult
+  frp_profile_client_set: FrpOpResult
 }

@@ -78,6 +78,9 @@ pub struct FrpProfileSummary {
     pub enabled_proxy_count: u32,
     /// 文件修改时间（Unix 毫秒）
     pub mtime: i64,
+    /// 绑定的客户端 id（不出现 = 跟随默认客户端）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_id: Option<String>,
     /// 当前运行状态
     pub state: FrpStateName,
     /// 运行中的进程 id（未运行时不出现）
@@ -204,6 +207,53 @@ pub struct FrpBinaryInfo {
     /// 来源（失败时不出现）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<FrpBinarySource>,
+    /// 失败原因（ok=false 时出现）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// 客户端来源
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum FrpClientSource {
+    /// 工具内一键下载安装
+    Download,
+    /// 引用外部已有可执行文件（不复制文件，用户自编译产物可持续更新）
+    External,
+}
+
+/// 已登记的一个 frpc 客户端
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrpClient {
+    /// 稳定标识（路径哈希；档案绑定与移除都用它）
+    pub id: String,
+    /// 展示名（取自文件名）
+    pub label: String,
+    /// 可执行文件绝对路径
+    pub path: String,
+    /// 版本号（探测不到时为空，仅表示文件存在）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// 来源
+    pub source: FrpClientSource,
+    /// 是否为默认客户端
+    pub is_default: bool,
+    /// 文件当前是否仍然存在（外部引用可能被移走或改名）
+    pub exists: bool,
+}
+
+/// 客户端清单（客户端管理弹窗与档案选择器的数据源）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrpClientList {
+    /// 是否读取成功
+    pub ok: bool,
+    /// 已登记的客户端
+    pub clients: Vec<FrpClient>,
+    /// 默认客户端 id（无默认时为空）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_id: Option<String>,
     /// 失败原因（ok=false 时出现）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,

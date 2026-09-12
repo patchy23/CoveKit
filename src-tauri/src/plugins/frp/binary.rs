@@ -55,6 +55,21 @@ fn arch() -> &'static str {
     }
 }
 
+/// 工具内下载的 frpc 文件名（按版本号分文件，本地可并存多个版本以便档案各自绑定）
+fn versioned_exe_name(version: &str) -> String {
+    // 版本号来自网络响应，过滤成安全字符，避免拼出路径分隔符
+    let safe: String = version
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+        .collect();
+    let safe = if safe.is_empty() {
+        "unknown".to_string()
+    } else {
+        safe
+    };
+    format!("frpc-{safe}{}", if cfg!(windows) { ".exe" } else { "" })
+}
+
 /// 压缩包内目录名（`tar` 解压后的一级目录）
 fn package_dir_name(version: &str) -> String {
     format!("frp_{version}_{}_{}", platform(), arch())
@@ -128,6 +143,43 @@ fn common_candidates() -> Vec<PathBuf> {
     names.iter().map(|rel| home.join(rel)).collect()
 }
 
+/// 版本号 → 可比较的数值段（`0.71.0` 大于 `0.9.0`；非数字段按 0 处理）
+fn version_key(version: &str) -> Vec<u32> {
+    version
+        .split(['.', '-', '_'])
+        .map(|part| part.parse::<u32>().unwrap_or(0))
+        .collect()
+}
+
+/// 下载目录里按版本号命名的 frpc 中最新的一支（`frpc-<版本><后缀>`）
+///
+/// 用途：既有用户可能在引入「客户端清单」之前就用旧版一键下载装过 frpc，
+/// 这些文件不在 clients 表里，需要靠扫描目录补登记，否则界面会显示「没有客户端」。
+async fn latest_versioned_exe(dir: &Path) -> Option<PathBuf> {
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    let mut entries = tokio::fs::read_dir(dir).await.ok()?;
+    let mut best: Option<(Vec<u32>, PathBuf)> = None;
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.starts_with("frpc-") || !name.ends_with(suffix) {
+            continue;
+        }
+        let version = name.trim_start_matches("frpc-").trim_end_matches(suffix);
+        let key = version_key(version);
+        let better = match best.as_ref() {
+            Some((current, _)) => key > *current,
+            None => true,
+        };
+        if better {
+            best = Some((key, path));
+        }
+    }
+    best.map(|(_, path)| path)
+}
+
 /// 在 PATH 中查找可执行文件（逐目录探测，不调用外部 which）
 fn which(name: &str) -> Option<PathBuf> {
     let path = std::env::var_os("PATH")?;
@@ -137,7 +189,7 @@ fn which(name: &str) -> Option<PathBuf> {
 }
 
 /// 读取版本号：`frpc -v` 输出形如 `frpc version 0.71.0`；失败返回 None（不影响可用性判定）
-async fn probe_version(exe: &Path) -> Option<String> {
+pub(crate) async fn probe_version(exe: &Path) -> Option<String> {
     let output = Command::new(exe).arg("-v").output().await.ok()?;
     let mut text = String::from_utf8_lossy(&output.stdout).to_string();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
@@ -184,11 +236,15 @@ pub(crate) async fn detect_with(app: &AppHandle, explicit: Option<&str>) -> FrpB
         warning = Some(format!("配置的 frpc 路径不存在：{}", candidate.display()));
     }
 
-    // 2) 本工具下载目录
+    // 2) 本工具下载目录：优先无版本号的 frpc.exe（旧版遗留），
+    //    其次按版本号命名的多版本里最新的一支
     if let Ok(dir) = bin_dir(app) {
-        let candidate = dir.join(exe_name());
-        if candidate.is_file() {
-            return describe(candidate, FrpBinarySource::Downloaded, warning).await;
+        let legacy = dir.join(exe_name());
+        if legacy.is_file() {
+            return describe(legacy, FrpBinarySource::Downloaded, warning).await;
+        }
+        if let Some(versioned) = latest_versioned_exe(&dir).await {
+            return describe(versioned, FrpBinarySource::Downloaded, warning).await;
         }
     }
 
@@ -586,7 +642,7 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
             exe_name()
         ));
     }
-    let target = bin.join(exe_name());
+    let target = bin.join(versioned_exe_name(version));
     tokio::fs::rename(&from, &target)
         .await
         .or_else(|_| std::fs::copy(&from, &target).map(|_| ()))
@@ -612,13 +668,16 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         total,
         None,
     );
-    let mut info = describe(target, FrpBinarySource::Downloaded, None).await;
+    let mut info = describe(target.clone(), FrpBinarySource::Downloaded, None).await;
     if checked.is_none() {
         info.error = Some(format!(
             "上游未提供 checksums，仅校验了解压完整性；本地 SHA256：{}",
-            sha256_of(&bin.join(exe_name())).unwrap_or_else(|_| "计算失败".to_string())
+            sha256_of(&target).unwrap_or_else(|_| "计算失败".to_string())
         ));
     }
+    // 登记到客户端清单：下载完即可被档案绑定。登记失败不阻断下载结果
+    // （文件已就位，用户也可以在客户端管理里手动引用该路径）。
+    let _ = crate::plugins::frp::clients::add_downloaded(app, &target).await;
     Ok(info)
 }
 
@@ -701,6 +760,16 @@ mod tests {
         assert!(result.is_err(), "坏包必须报错，不能静默成功");
         assert!(!has_entries(&out).await, "坏包不应产出任何文件");
         let _ = tokio::fs::remove_dir_all(&dir).await;
+    }
+
+    #[test]
+    fn version_key_orders_numerically() {
+        // 字符串序会判错：`0.9.0` 按字符串大于 `0.71.0`，按数值则相反
+        assert!(version_key("0.71.0") > version_key("0.9.0"));
+        assert!(version_key("0.71.0") > version_key("0.70.9"));
+        assert_eq!(version_key("0.71.0"), vec![0, 71, 0]);
+        // 带预发布后缀时非数字段按 0 处理，不 panic（rc1 解析失败记为 0）
+        assert_eq!(version_key("0.71.0-rc1"), vec![0, 71, 0, 0]);
     }
 
     #[test]

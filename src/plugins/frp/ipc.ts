@@ -6,6 +6,8 @@ import { invokeCommand } from '@/core/ipc/ipc'
 import { commands } from './contracts'
 import type {
   FrpBinaryInfo,
+  FrpClient,
+  FrpClientList,
   FrpOpResult,
   FrpProfileContent,
   FrpProfileList,
@@ -64,4 +66,16 @@ export const ipc = {
   /** 下载并安装 frpc（进度走 frp://download 事件） */
   binaryDownload: (version: string): Promise<FrpBinaryInfo> =>
     invokeCommand(commands.binaryDownload, { version }),
+  /** 列出已登记的客户端（含默认项与文件存活状态） */
+  clientList: (): Promise<FrpClientList> => invokeCommand(commands.clientList, {}),
+  /** 登记外部 frpc 可执行文件（只引用路径，不复制文件） */
+  clientAdd: (path: string): Promise<FrpClient> => invokeCommand(commands.clientAdd, { path }),
+  /** 移除客户端登记（只删记录不删文件） */
+  clientRemove: (id: string): Promise<FrpOpResult> => invokeCommand(commands.clientRemove, { id }),
+  /** 设为默认客户端 */
+  clientSetDefault: (id: string): Promise<FrpOpResult> =>
+    invokeCommand(commands.clientSetDefault, { id }),
+  /** 设置档案绑定的客户端（clientId 传空则解除绑定、回到跟随默认） */
+  profileClientSet: (fileName: string, clientId?: string): Promise<FrpOpResult> =>
+    invokeCommand(commands.profileClientSet, clientId ? { fileName, clientId } : { fileName }),
 }

@@ -15,7 +15,7 @@ use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 use crate::plugins::frp::models::{FrpLogPayload, FrpLogStream, FrpRuntimeState, FrpStateName};
 use crate::plugins::frp::verify::clean_line;
-use crate::plugins::frp::{binary, profile};
+use crate::plugins::frp::{clients, profile};
 
 /// `starting` 超时（秒）：迟迟不见成功/失败行即判 error，避免假绿灯
 const STARTUP_TIMEOUT_SECS: u64 = 30;
@@ -298,12 +298,8 @@ pub(crate) async fn start(
     }
     let dir = crate::plugins::frp::profile_dir(app)?;
     let config = profile::require_profile(&dir, file_name).await?;
-    let binary = binary::detect(app).await;
-    let Some(exe) = binary.path else {
-        return Err(binary
-            .error
-            .unwrap_or_else(|| "未找到 frpc 可执行文件，请在设置中指定路径或先下载".into()));
-    };
+    // 按档案绑定解析客户端：档案指定 → 默认客户端 → 兜底自动探测（保证清单为空也能跑）
+    let exe = clients::resolve(app, file_name).await?;
     let mut cmd = Command::new(&exe);
     cmd.arg("-c")
         .arg(&config)
@@ -316,7 +312,7 @@ pub(crate) async fn start(
     cmd.creation_flags(0x0800_0000);
     let child = cmd
         .spawn()
-        .map_err(|e| format!("启动 frpc 失败：{e}（路径 {}）", exe))?;
+        .map_err(|e| format!("启动 frpc 失败：{e}（路径 {}）", exe.display()))?;
     let pid = child.id();
     let (stop_tx, stop_rx) = oneshot::channel();
     // 同一临界区完成：建条目 → 起快照 → spawn 监控（spawn 同步，不引入等待）

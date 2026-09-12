@@ -5,13 +5,17 @@
  * 无可用 frpc 时右侧显示引导卡；切换档案前若有未保存改动会拦截确认。
  */
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUiStore } from '@/stores/ui'
 import { UiEmptyState, UiSpinner } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import BinarySetupCard from './binary/BinarySetupCard.vue'
 import { useFrpBinary } from './binary/useFrpBinary'
+import ClientManagerDialog from './client/ClientManagerDialog.vue'
+import { FRP_CLIENTS_KEY } from './client/context'
+import { clientTitle, hasUsableClient } from './client/frpClient'
+import { useFrpClients } from './client/useFrpClients'
 import type { FrpTemplateId } from './contracts'
 import ProfileDetail from './profile/ProfileDetail.vue'
 import ProfileSidebar from './profile/ProfileSidebar.vue'
@@ -23,6 +27,8 @@ const ui = useUiStore()
 const binary = useFrpBinary()
 const profiles = useFrpProfiles()
 const runtime = useFrpRuntime()
+// 客户端清单由工作台持有并向下注入：弹窗里改完，详情页与左栏立刻看到同一份状态
+const clients = useFrpClients()
 
 /** 当前选中的档案文件名 */
 const activeFile = ref('')
@@ -30,11 +36,30 @@ const activeFile = ref('')
 const dirty = ref(false)
 /** 待切换的目标档案（有脏改动时暂存） */
 const pendingSwitch = ref<string | null>(null)
+/** 客户端管理弹窗是否可见 */
+const showClients = ref(false)
 
-/** 是否缺少可用的 frpc（右侧显示引导卡） */
-const needSetup = computed(() => binary.info.value === null || !binary.info.value.ok)
+provide(FRP_CLIENTS_KEY, clients)
+
+/** 是否缺少可用的 frpc（右侧显示引导卡）。以客户端清单为准：清单里有记录但文件已丢失也算缺失 */
+const needSetup = computed(() => !hasUsableClient(clients.clients.value))
+
+/** 当前选中档案绑定的客户端 id（未绑定为 undefined，即跟随默认） */
+const activeClientId = computed(
+  () => profiles.items.value.find((item) => item.fileName === activeFile.value)?.clientId
+)
+
+/** 左栏栏脚展示的默认客户端名 */
+const defaultClientLabel = computed(() => {
+  const id = clients.defaultId.value
+  if (id === undefined) return ''
+  const found = clients.clients.value.find((item) => item.id === id)
+  return found === undefined ? '' : clientTitle(found)
+})
 
 onMounted(async () => {
+  // 先拉客户端清单：服务端会在首次调用时把既有 frpc 自动登记为默认客户端
+  await clients.refresh()
   await binary.detect()
   await profiles.refresh()
   if (profiles.items.value.length > 0) activeFile.value = profiles.items.value[0].fileName
@@ -126,6 +151,13 @@ async function openDir() {
 /** frpc 引导完成后重新探测 */
 async function onBinaryChanged() {
   await binary.detect()
+  await clients.refresh()
+}
+
+/** 客户端管理里改动了清单（新增 / 移除 / 换默认）：刷新档案列表以同步绑定展示 */
+async function onClientsChanged() {
+  await binary.detect()
+  await profiles.refresh()
 }
 </script>
 
@@ -139,6 +171,7 @@ async function onBinaryChanged() {
       :dir="profiles.dir.value || t('frp.dirUnknown')"
       :loading="profiles.loading.value"
       :error="profiles.error.value"
+      :client-label="defaultClientLabel"
       @select="selectProfile"
       @create="onCreate"
       @rename="onRename"
@@ -146,6 +179,7 @@ async function onBinaryChanged() {
       @remark="onRemark"
       @remove="onRemove"
       @open-dir="openDir"
+      @open-clients="showClients = true"
     />
 
     <!-- 右：引导卡 / 详情 -->
@@ -167,6 +201,7 @@ async function onBinaryChanged() {
         :state="runtime.stateOf(activeFile)"
         :busy="runtime.busy.value[activeFile] === true"
         :logs="runtime.logsOf(activeFile)"
+        :client-id="activeClientId"
         @start="runtime.start"
         @stop="runtime.stop"
         @restart="runtime.restart"
@@ -181,6 +216,13 @@ async function onBinaryChanged() {
         :description="t('frp.binaryHint')"
       />
     </div>
+
+    <!-- 客户端管理 -->
+    <ClientManagerDialog
+      :open="showClients"
+      @changed="onClientsChanged"
+      @close="showClients = false"
+    />
 
     <!-- 未保存改动拦截 -->
     <ConfirmDialog
