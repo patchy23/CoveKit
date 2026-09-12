@@ -9,7 +9,14 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { UiSelect } from '@/core/ui'
 import type { FrpClient } from '../contracts'
-import { clientOptions, effectiveClient, clientTitle } from './frpClient'
+import {
+  clientOptions,
+  effectiveClient,
+  clientTitle,
+  FOLLOW_DEFAULT_VALUE,
+  toBoundId,
+  toSelectValue,
+} from './frpClient'
 
 const props = defineProps<{
   /** 已登记的客户端清单 */
@@ -30,14 +37,14 @@ const { t } = useI18n()
 
 /** 下拉选项：「跟随默认」置首，其余按默认项优先排列 */
 const options = computed(() => [
-  { value: '', label: t('frp.clientFollowDefault') },
+  { value: FOLLOW_DEFAULT_VALUE, label: t('frp.clientFollowDefault') },
   ...clientOptions(props.clients, props.defaultId, t),
 ])
 
-/** 当前选中的值（未绑定时为空串，即「跟随默认」） */
+/** 当前选中的值；未绑定时显示「跟随默认」的哨兵项，变更时再换算回绑定 id */
 const current = computed({
-  get: () => props.boundId ?? '',
-  set: (value: string) => emit('change', value),
+  get: () => toSelectValue(props.boundId),
+  set: (value: string) => emit('change', toBoundId(value)),
 })
 
 /** 当前实际生效的客户端（未绑定时即默认项） */

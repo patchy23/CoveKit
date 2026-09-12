@@ -8,6 +8,23 @@ import type { FrpClient } from '../contracts'
 type Translate = (key: string, named?: Record<string, unknown>) => string
 
 /**
+ * 「跟随默认」在下拉里的哨兵值。
+ * reka 的 SelectItem 会在 value 为空串时直接抛错（空串被保留用于「清空选择」），
+ * 所以「跟随默认」必须用一个非空占位值，在 get/set 两侧与空串互转。
+ */
+export const FOLLOW_DEFAULT_VALUE = '__follow_default__'
+
+/** 绑定的客户端 id → 下拉选中值（未绑定、或绑定为空串时显示「跟随默认」） */
+export function toSelectValue(boundId: string | undefined): string {
+  return boundId === undefined || boundId === '' ? FOLLOW_DEFAULT_VALUE : boundId
+}
+
+/** 下拉选中值 → 要落库的绑定 id（选中哨兵值即解除绑定，回填空串） */
+export function toBoundId(selectValue: string): string {
+  return selectValue === FOLLOW_DEFAULT_VALUE ? '' : selectValue
+}
+
+/**
  * 客户端展示标题：有版本号用「frpc 版本」，否则退回文件名。
  * 定制客户端常没有版本输出，此时文件名就是用户唯一的辨识依据。
  */

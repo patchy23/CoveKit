@@ -28,6 +28,12 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
 
 /** 新建选项的哨兵值（选中它 = 打开新建表单） */
 const CREATE_VALUE = '__create__'
+/**
+ * 「不使用凭证」的哨兵值（选中它 = 清空选择）。
+ * reka 的 SelectItem 在 value 为空串时会直接抛错——空串被它保留表示「清空选择」，
+ * 所以空值选项必须用非空占位值，在选中时换算回空串。
+ */
+const NONE_VALUE = '__none__'
 
 const list = ref<CredentialSummary[]>([])
 const formOpen = ref(false)
@@ -40,7 +46,7 @@ const options = computed(() => {
     value: c.id,
     label: `${c.name}（${c.masked}）`,
   }))
-  items.push({ value: '', label: '不使用凭证' })
+  items.push({ value: NONE_VALUE, label: '不使用凭证' })
   items.push({ value: CREATE_VALUE, label: '+ 新建凭证' })
   return items
 })
@@ -76,7 +82,7 @@ function onSelect(value: string) {
     formOpen.value = true
     return
   }
-  emit('update:modelValue', value)
+  emit('update:modelValue', value === NONE_VALUE ? '' : value)
 }
 
 /** 新建保存成功：刷新列表并自动选中 */
@@ -88,7 +94,7 @@ function onSaved(summary: CredentialSummary) {
 
 <template>
   <UiSelect
-    :model-value="modelValue"
+    :model-value="modelValue === '' ? NONE_VALUE : modelValue"
     :options="options"
     :placeholder="placeholder"
     :disabled="disabled"

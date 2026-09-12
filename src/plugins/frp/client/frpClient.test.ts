@@ -7,8 +7,11 @@ import {
   clientOptions,
   clientTitle,
   effectiveClient,
+  FOLLOW_DEFAULT_VALUE,
   hasUsableClient,
   sourceLabelKey,
+  toBoundId,
+  toSelectValue,
 } from './frpClient'
 
 /** 构造客户端测试数据（只覆盖被测字段，其余给稳定默认值） */
@@ -87,5 +90,33 @@ describe('辅助判定', () => {
   it('只有文件存在的客户端才算可用', () => {
     expect(hasUsableClient([makeClient({ exists: false })])).toBe(false)
     expect(hasUsableClient([makeClient({ exists: false }), makeClient({})])).toBe(true)
+  })
+})
+
+describe('「跟随默认」的哨兵值', () => {
+  it('未绑定或绑定为空串时都显示「跟随默认」', () => {
+    expect(toSelectValue(undefined)).toBe(FOLLOW_DEFAULT_VALUE)
+    expect(toSelectValue('')).toBe(FOLLOW_DEFAULT_VALUE)
+  })
+
+  it('已绑定时按绑定 id 显示', () => {
+    expect(toSelectValue('client-a')).toBe('client-a')
+  })
+
+  it('选中哨兵值即解除绑定（回写空串）', () => {
+    expect(toBoundId(FOLLOW_DEFAULT_VALUE)).toBe('')
+  })
+
+  it('选中真实客户端时原样回写', () => {
+    expect(toBoundId('client-a')).toBe('client-a')
+  })
+
+  it('下拉里每一项的 value 都非空——reka 的 SelectItem 遇空串 value 会抛错，弹层随之打不开', () => {
+    const options = [
+      { value: FOLLOW_DEFAULT_VALUE },
+      ...clientOptions([makeClient({ id: 'client-a' }), makeClient({ id: 'client-b' })], 'client-a', t),
+    ]
+    expect(options.length).toBeGreaterThan(1)
+    for (const option of options) expect(option.value).not.toBe('')
   })
 })
