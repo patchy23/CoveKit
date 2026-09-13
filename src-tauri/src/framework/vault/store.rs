@@ -209,38 +209,6 @@ pub(crate) fn summary_of(credential: &Credential) -> CredentialSummary {
     }
 }
 
-/// 凭证引用计数（供删除提示）。这里只扫描后端持久化配置；
-/// SSH localStorage 引用由前端登记表补充，避免框架反向依赖插件前端实现。
-pub(crate) fn reference_count(app: &AppHandle, credential_id: &str) -> usize {
-    dns_reference_count(app, credential_id)
-}
-
-/// 统计 dns.db 中阿里云 / DNSPod / Cloudflare 配置对凭证的引用。
-fn dns_reference_count(app: &AppHandle, credential_id: &str) -> usize {
-    let Ok(path) = crate::framework::store::plugin_db_path(app, "dns") else {
-        return 0;
-    };
-    if !path.exists() {
-        return 0;
-    }
-    let Ok(conn) =
-        rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-    else {
-        return 0;
-    };
-    count_dns_references(&conn, credential_id)
-}
-
-/// 在已打开的 DNS 数据库连接上统计引用；独立函数便于覆盖旧表结构与多引用单测。
-fn count_dns_references(conn: &rusqlite::Connection, credential_id: &str) -> usize {
-    conn.query_row(
-        "SELECT COUNT(*) FROM dns_config WHERE credential_ref = ?1",
-        [credential_id],
-        |row| row.get::<_, usize>(0),
-    )
-    .unwrap_or(0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,34 +238,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    #[test]
-    fn dns_reference_count_handles_current_and_legacy_schema() {
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        conn.execute_batch(
-            "CREATE TABLE dns_config (
-                platform TEXT PRIMARY KEY,
-                credential_ref TEXT
-            );
-            INSERT INTO dns_config VALUES ('aliyun', 'credential-1');
-            INSERT INTO dns_config VALUES ('dnspod', 'credential-1');",
-        )
-        .unwrap();
-        assert_eq!(count_dns_references(&conn, "credential-1"), 2);
-
-        let legacy = rusqlite::Connection::open_in_memory().unwrap();
-        legacy
-            .execute_batch("CREATE TABLE dns_config (platform TEXT PRIMARY KEY);")
-            .unwrap();
-        assert_eq!(count_dns_references(&legacy, "credential-1"), 0);
-    }
-
-    /// 测试用临时目录（进程 id + 名称唯一）
-    fn temp_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("vault-test-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     /// 构造测试凭证
     fn sample_credential(id: &str) -> Credential {
         let now = chrono::Utc::now().timestamp();
@@ -315,7 +255,13 @@ mod tests {
         }
     }
 
-    /// 崩溃恢复：写入提交前中断（只剩 `.bak`）→ 读路径把备份转正，数据不丢
+    /// 测试用临时目录（进程 id + 名称唯一）
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("vault-test-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
     #[test]
     fn interrupted_write_recovers_backup_on_read() {
         let dir = temp_dir("vault-bak-recover");

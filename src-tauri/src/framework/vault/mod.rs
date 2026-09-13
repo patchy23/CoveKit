@@ -19,6 +19,8 @@ pub use store::resolve;
 
 use tauri::AppHandle;
 
+use crate::framework::credential_refs;
+
 /// 入参校验：名称非空、kind 与 fields 标签一致、各类型必填字段非空
 fn validate_payload(payload: &CredentialSavePayload) -> Result<(), String> {
     if payload.name.trim().is_empty() {
@@ -120,10 +122,40 @@ pub fn vault_save(
     Ok(store::summary_of(&saved))
 }
 
-/// 删除凭证（返回被引用计数供前端提示；引用扫描随设计 §6 迁移接入）
+/// 删除凭证：删除前由后端重新核对当前引用，不依赖前端可能过期的计数
+///
+/// 参数语义：
+/// - `expected_references`：前端确认弹窗里展示的引用总数；与当前不一致说明确认期间引用变了，
+///   直接返回错误让界面重新提示（不能拿旧计数当作已经确认过）。
+/// - `force`：用户显式确认删除。存在引用或有插件扫描失败（计数未知）时，没有显式确认一律拒绝。
 #[tauri::command]
-pub fn vault_delete(app: AppHandle, id: String) -> Result<VaultDeleteResult, String> {
-    let referenced_by = store::reference_count(&app, &id);
+pub fn vault_delete(
+    app: AppHandle,
+    id: String,
+    force: Option<bool>,
+    expected_references: Option<usize>,
+) -> Result<VaultDeleteResult, String> {
+    let summary = credential_refs::summarize(&app, &id);
+    let referenced_by = summary.total;
+    if !force.unwrap_or(false) {
+        if summary.has_unknown() {
+            return Err(format!(
+                "有插件暂时无法统计引用（{}），为避免误删请先确认后再强制删除",
+                summary.unknown_owners.join("、")
+            ));
+        }
+        if summary.total > 0 {
+            return Err(format!(
+                "该凭证仍被 {referenced_by} 处配置引用，请先改绑或确认强制删除"
+            ));
+        }
+    } else if let Some(expected) = expected_references {
+        if !summary.matches_total(expected) {
+            return Err(format!(
+                "引用情况已变化（确认时 {expected} 处，当前 {referenced_by} 处），请重新确认后删除"
+            ));
+        }
+    }
     let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
     let dir = store::data_dir_of(&app)?;
     let mut all = store::read_all_at(&dir, &store::KeyringStore)?;
@@ -144,10 +176,16 @@ pub fn vault_delete(app: AppHandle, id: String) -> Result<VaultDeleteResult, Str
     })
 }
 
-/// 删除前查询后端持久化插件中的凭证引用数；浏览器侧引用由前端登记表补充。
+/// 查询凭证引用概况（按 owner 批量扫描各插件的自报能力）
+///
+/// 返回每个插件的引用对象清单与扫描状态；扫描失败的插件进入 `unknownOwners`，
+/// 前端必须显示「计数未知」，不能当成 0 条引用。
 #[tauri::command]
-pub fn vault_reference_count(app: AppHandle, id: String) -> usize {
-    store::reference_count(&app, &id)
+pub fn vault_credential_references(
+    app: AppHandle,
+    id: String,
+) -> credential_refs::ReferenceSummary {
+    credential_refs::summarize(&app, &id)
 }
 
 /// 读取单条凭证明文（仅用户点「显示/复制」时调用；列表永远走脱敏数据）

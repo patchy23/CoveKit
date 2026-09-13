@@ -5,6 +5,7 @@
 
 mod alidns;
 mod cloudflare;
+mod credential_refs;
 mod dnspod;
 mod models;
 mod query;
@@ -451,6 +452,8 @@ crate::patchybox_module! {
 /// 插件注册：命令入库 + State
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
+    // 凭证引用自报：框架删除凭证前据此判断还有哪些平台配置在用
+    credential_refs::register_provider();
     builder.manage(DnsState(Mutex::new(None)))
 }
 

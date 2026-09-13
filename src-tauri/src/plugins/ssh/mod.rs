@@ -11,6 +11,7 @@
 
 pub(crate) mod conn; // conn/ 目录：会话注册表 + 连接/重连（能力域下沉，引用路径经 mod.rs pub use 保持不变）
 pub(crate) mod credential;
+mod credential_refs;
 pub(crate) mod docker;
 pub(crate) mod edit;
 pub(crate) mod host_keys;
@@ -98,6 +99,8 @@ crate::patchybox_module! {
 /// 插件注册：命令 + 会话/终端/主机密钥/配置库 State + IPC 命令入库
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
+    // 凭证引用自报：框架删除凭证前据此判断还有哪些服务器在用
+    credential_refs::register_provider();
     builder
         .manage(SshState(std::sync::Mutex::new(
             std::collections::HashMap::new(),

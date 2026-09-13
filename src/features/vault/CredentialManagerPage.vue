@@ -20,7 +20,7 @@ import {
   primarySecret,
 } from '@/core/vault/useVault'
 import { CredentialForm } from '@/core/vault'
-import { clientCredentialReferenceCount } from '@/core/vault/references'
+import type { CredentialReferenceSummary } from '@/core/ipc/contracts'
 import VaultTransferDialog from './VaultTransferDialog.vue'
 import VaultToolbar from './VaultToolbar.vue'
 import VaultCredentialTable from './VaultCredentialTable.vue'
@@ -113,44 +113,75 @@ async function copyValue(id: string) {
   }
 }
 
-// ── 删除（确认弹窗；被引用时提示引用数） ──
+// ── 删除（确认弹窗；引用情况由各插件自报，扫描失败按「未知」显示） ──
 const deleteTarget = ref<CredentialSummary | null>(null)
 const deleteError = ref('')
-const deleteReferenceCount = ref(0)
+/** 后端批量扫描得到的引用概况（查询失败时保持 null：按未知处理） */
+const deleteReferences = ref<CredentialReferenceSummary | null>(null)
+/** 引用查询本身失败：不允许当作「无引用」诱导删除 */
+const deleteReferenceQueryFailed = ref(false)
+
+/** 有引用，或有插件无法统计引用：需要显式强制确认 */
+const deleteNeedsForce = computed(
+  () =>
+    deleteReferenceQueryFailed.value ||
+    (deleteReferences.value?.total ?? 0) > 0 ||
+    (deleteReferences.value?.unknownOwners.length ?? 0) > 0
+)
+
+/** 删除确认文案：逐条列出引用对象，扫描失败的插件明确标为未知 */
+const deleteMessage = computed(() => {
+  const name = deleteTarget.value?.name ?? ''
+  if (deleteReferenceQueryFailed.value) {
+    return `无法统计「${name}」的引用情况。删除后相关连接可能失效，确定删除吗？`
+  }
+  const summary = deleteReferences.value
+  if (!summary) return `确定删除「${name}」吗？此操作无法撤销。`
+  const lines = summary.owners
+    .filter((owner) => owner.references.length > 0)
+    .map((owner) => `${owner.owner}：${owner.references.map((item) => item.objectName).join('、')}`)
+  if (summary.unknownOwners.length > 0) {
+    lines.push(`以下插件无法统计引用：${summary.unknownOwners.join('、')}`)
+  }
+  if (lines.length === 0) return `确定删除「${name}」吗？此操作无法撤销。`
+  return `「${name}」仍被 ${summary.total} 处配置引用。${lines.join('；')}。删除后这些连接会失效，需重新选择或改用手工凭据。确定强制删除吗？`
+})
 
 async function startDelete(item: CredentialSummary) {
   deleteError.value = ''
-  const clientCount = clientCredentialReferenceCount(item.id)
-  let backendCount = 0
-  try {
-    backendCount = await ipc.vaultReferenceCount(item.id)
-  } catch {
-    // 浏览器预览或后端旧版本不可用时，至少保留前端 SSH 引用警告。
-  }
-  deleteReferenceCount.value = clientCount + backendCount
+  deleteReferenceQueryFailed.value = false
+  deleteReferences.value = null
   deleteTarget.value = item
+  try {
+    deleteReferences.value = await ipc.vaultCredentialReferences(item.id)
+  } catch {
+    // 查询失败：按未知处理，界面按「可能仍有引用」提示
+    deleteReferenceQueryFailed.value = true
+  }
 }
 
 function closeDelete() {
   deleteTarget.value = null
   deleteError.value = ''
-  deleteReferenceCount.value = 0
+  deleteReferences.value = null
+  deleteReferenceQueryFailed.value = false
 }
 
 async function confirmDelete() {
   const target = deleteTarget.value
   if (!target) return
   try {
-    const result = await ipc.vaultDelete(target.id)
+    // 带上确认时看到的引用总数：后端删除前重新核对，期间引用变化会返回错误要求重新确认
+    const result = await ipc.vaultDelete(target.id, {
+      force: deleteNeedsForce.value,
+      expectedReferences: deleteReferences.value?.total,
+    })
     if (!result.ok) {
       deleteError.value = result.error ?? '删除失败'
       return
     }
-    if (deleteReferenceCount.value > 0) {
-      ui.toast(`已删除，原有 ${deleteReferenceCount.value} 处引用需手动改绑`)
-    } else {
-      ui.toast('凭证已删除')
-    }
+    const count = deleteReferences.value?.total ?? 0
+    ui.toast(count > 0 ? `已删除，原有 ${count} 处引用需手动改绑` : '凭证已删除')
     closeDelete()
     void reload()
   } catch (e) {
@@ -256,11 +287,7 @@ async function confirmTransfer() {
     <ConfirmDialog
       :open="deleteTarget !== null"
       title="删除凭证"
-      :message="
-        deleteReferenceCount > 0
-          ? `「${deleteTarget?.name ?? ''}」仍被 ${deleteReferenceCount} 处工具配置引用。确定强制删除吗？相关连接会失效，需重新选择或改用手工凭据。`
-          : `确定删除「${deleteTarget?.name ?? ''}」吗？此操作无法撤销。`
-      "
+      :message="deleteMessage"
       :error="deleteError"
       confirm-label="删除"
       danger
