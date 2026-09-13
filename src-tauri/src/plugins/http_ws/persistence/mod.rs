@@ -229,15 +229,16 @@ mod tests {
         let expected = create_legacy_db(&legacy_path);
 
         // 布局迁移：<root>/api.db → <root>/data/api.db（启动早期由 lib.rs setup 调用）
-        let moved = crate::framework::paths::migrate_layout_at(&root).expect("布局迁移");
-        assert_eq!(moved, 1, "老布局的 api.db 应被搬入 data 分区");
+        let report = crate::framework::storage::layout::migrate_layout_at(&root).expect("布局迁移");
+        assert_eq!(report.moved(), 1, "老布局的 api.db 应被搬入 data 分区");
+        assert!(!report.has_failures(), "{:?}", report.failures());
         let db_path = root.join("data").join("api.db");
         assert!(db_path.exists(), "迁移后库应落在 data 分区");
         assert!(!legacy_path.exists(), "原位置的文件应已搬走");
 
         // 版本迁移：补 type 列（历史库里没有这一列）
-        let conn = rusqlite::Connection::open(&db_path).expect("打开迁移后的库");
-        migrate(&conn, MIGRATIONS).expect("版本迁移");
+        let mut conn = rusqlite::Connection::open(&db_path).expect("打开迁移后的库");
+        migrate(&mut conn, MIGRATIONS).expect("版本迁移");
 
         let rows = read_all(&conn);
         assert_eq!(rows.len(), expected.len(), "老数据条数不变");
@@ -282,8 +283,8 @@ mod tests {
         let expected = create_legacy_db(&legacy_path);
 
         // 刻意不跑 migrate_layout_at：模拟迁移失败/被跳过的极端情况
-        let conn = rusqlite::Connection::open(&legacy_path).expect("按原路径打开旧库");
-        migrate(&conn, MIGRATIONS).expect("原路径上补版本迁移");
+        let mut conn = rusqlite::Connection::open(&legacy_path).expect("按原路径打开旧库");
+        migrate(&mut conn, MIGRATIONS).expect("原路径上补版本迁移");
         let rows = read_all(&conn);
         assert_eq!(rows.len(), expected.len(), "原路径上的老数据可读");
         assert_eq!(rows[0].0, expected[0].0, "原路径上数据内容不变");
@@ -299,8 +300,8 @@ mod tests {
         let root = temp_dir("fresh");
         let path = root.join("api.db");
         {
-            let conn = rusqlite::Connection::open(&path).expect("建新库");
-            migrate(&conn, MIGRATIONS).expect("首轮迁移");
+            let mut conn = rusqlite::Connection::open(&path).expect("建新库");
+            migrate(&mut conn, MIGRATIONS).expect("首轮迁移");
             conn.execute(
                 "INSERT INTO api_list (type, name, method, url, updated_at)
                  VALUES ('http', '接口', 'GET', 'https://a.example.com', '2026-01-01 00:00:00')",
@@ -309,8 +310,8 @@ mod tests {
             .expect("写入");
         }
         // 第二次打开：版本号已到位，迁移整体跳过；即使重放也要幂等
-        let conn = rusqlite::Connection::open(&path).expect("重开新库");
-        migrate(&conn, MIGRATIONS).expect("重复迁移不报错");
+        let mut conn = rusqlite::Connection::open(&path).expect("重开新库");
+        migrate(&mut conn, MIGRATIONS).expect("重复迁移不报错");
         let rows = read_all(&conn);
         assert_eq!(rows.len(), 1, "重复迁移不动数据");
         assert_eq!(rows[0].1, "http");

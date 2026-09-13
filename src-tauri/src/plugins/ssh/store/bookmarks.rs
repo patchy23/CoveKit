@@ -112,8 +112,8 @@ mod tests {
     use crate::framework::store::migrate;
 
     fn open_memory() -> Connection {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn, super::super::MIGRATIONS).expect("内存库迁移失败");
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate(&mut conn, super::super::MIGRATIONS).expect("内存库迁移失败");
         conn
     }
 

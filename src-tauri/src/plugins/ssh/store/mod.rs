@@ -78,8 +78,8 @@ pub(crate) fn with_db<T>(
 /// 打开内存库并跑同一份迁移（单测用）
 #[cfg(test)]
 pub(crate) fn open_memory() -> Connection {
-    let conn = Connection::open_in_memory().expect("内存库打开失败");
-    crate::framework::store::migrate(&conn, MIGRATIONS).expect("内存库迁移失败");
+    let mut conn = Connection::open_in_memory().expect("内存库打开失败");
+    crate::framework::store::migrate(&mut conn, MIGRATIONS).expect("内存库迁移失败");
     conn
 }
 
