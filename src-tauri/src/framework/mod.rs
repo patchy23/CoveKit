@@ -6,6 +6,7 @@
 //! 静态模块清单（module_manifest）：命令/入库元数据/route 三处一份声明，禁止手写第二份
 //! 数据上下文（context）：存储位置/空间代际/启动 epoch 与维护互斥的唯一来源
 //! 关闭协调（lifecycle）：唯一关闭入口（prepare/dispose + 总超时），清理由模块提供
+//! 退出协商命令（exit）：界面/托盘退出走同一入口，业务拒绝时可见并可由用户强退
 //! 本地凭证管理（credentials）：插件按命名空间+键存取，不关心存储实现
 //! Vault 凭证管理（vault）：统一凭证库（keyring 主密钥 + AES-256-GCM + Argon2id 备份）
 //! 框架能力不属于业务插件（插件 = 工具，框架 = 基建）。
@@ -13,6 +14,7 @@
 pub mod context;
 pub mod credential_refs;
 pub mod credentials;
+pub mod exit;
 pub mod ipc_registry;
 pub mod lifecycle;
 pub mod module_manifest;
@@ -45,6 +47,8 @@ crate::patchybox_module! {
     commands: {
         window_toggle => "切换主窗口显示/隐藏（返回切换后可见性）",
         window_hide => "隐藏主窗口（最小化到托盘）",
+        exit::app_request_exit => "请求退出应用（业务可拒绝，拒绝原因交回前端展示）",
+        exit::app_force_exit => "用户强制退出（跳过业务拦截，清理仍受总超时约束）",
         open_external => "打开外部链接（tauri-plugin-opener，安全替代 shell 插件）",
         ipc_registry::framework_commands => "查询全量已入库 IPC 命令（名称 + 说明）",
         settings::settings_get => "读取应用设置（可指定 key）",

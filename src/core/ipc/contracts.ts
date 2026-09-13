@@ -66,6 +66,16 @@ export interface WindowState {
   visible: boolean
 }
 
+/** 退出决策（与 Rust `framework::exit::ExitDecision` 的 serde camelCase 字段同步） */
+export interface ExitDecision {
+  /** 是否已进入退出流程（false = 被业务拒绝，进程仍在运行） */
+  started: boolean
+  /** 是否由用户强制退出触发（跳过业务拦截） */
+  forced: boolean
+  /** 拒绝原因（形如 `owner: 原因`，直接可展示） */
+  blockers: string[]
+}
+
 // ── Vault 凭证管理（src-tauri framework/vault，serde camelCase 同步）──
 
 /** 凭证类型（kebab-case，与 Rust CredentialKind 同步；数据库凭证复用 password） */
@@ -318,6 +328,9 @@ export const frameworkCommands = {
   updateAvailability: 'update_availability',
   windowToggle: 'window_toggle',
   windowHide: 'window_hide',
+  // 退出协商（框架命令，src-tauri framework/exit）
+  appRequestExit: 'app_request_exit',
+  appForceExit: 'app_force_exit',
   openExternal: 'open_external',
   frameworkCommandsList: 'framework_commands',
   // 存储位置（框架命令，src-tauri framework/storage）
@@ -347,6 +360,8 @@ export type FrameworkPayloads = {
   update_availability: Record<string, never>
   window_toggle: Record<string, never>
   window_hide: Record<string, never>
+  app_request_exit: { reason: string }
+  app_force_exit: Record<string, never>
   open_external: { url: string }
   framework_commands: Record<string, never>
   storage_info: Record<string, never>
@@ -374,6 +389,8 @@ export type FrameworkResults = {
   update_availability: UpdateAvailability
   window_toggle: WindowState
   window_hide: void
+  app_request_exit: ExitDecision
+  app_force_exit: ExitDecision
   open_external: void
   framework_commands: { name: string; doc: string }[]
   storage_info: StorageInfo

@@ -17,9 +17,8 @@ use tauri::AppHandle;
 
 /// 关闭原因：唯一入口据此区分场景（页签/退出/重启/更新/空间切换）
 ///
-/// 契约枚举：应用自身当前只产生 `Exit`（进程退出）；`tab` / `restart` / `update` /
-/// `space-switch` 由后续消费方（页签关闭、更新安装、空间激活）提供，接入时删除下面这行 `allow`。
-#[allow(dead_code)]
+/// 契约枚举：应用自身产生 `Exit`（托盘/界面退出）；`update` / `restart` / `space-switch`
+/// 由更新安装与空间激活路径传入；`tab` 供工具页签关闭复用同一套 prepare/dispose 语义。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CloseReason {
     /// 关闭单个工具页签（可能伴随未保存内容）
@@ -47,9 +46,6 @@ impl CloseReason {
     }
 
     /// 由稳定字符串解析（未知值返回 None，调用方给明确报错，不猜默认值）
-    ///
-    /// 契约入口：前端/生命周期消费方接入关闭协商后使用，当前仅单元测试覆盖。
-    #[allow(dead_code)]
     pub fn from_code(code: &str) -> Option<Self> {
         match code {
             "tab" => Some(Self::Tab),
@@ -83,6 +79,28 @@ pub struct ModuleLifecycle {
 
 /// dispose 阶段总超时：超时按失败计入，不无限等待
 pub const DISPOSE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 用户显式强退标记（进程级）：置位后 prepare 不再拦截，清理阶段仍受总超时约束。
+///
+/// 只允许由用户显式动作（`exit::app_force_exit`）置位——业务代码不得自行置位，
+/// 否则「未保存内容」这类拦截会被内部路径悄悄绕过。
+static FORCE_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// 设置强退标记（用户显式动作；重复调用无副作用）
+pub fn set_force_exit() {
+    FORCE_EXIT.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// 是否处于用户强退流程
+pub fn force_requested() -> bool {
+    FORCE_EXIT.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// 测试期复位强退标记（生产不调用）：用例之间必须互不污染
+#[cfg(test)]
+pub(crate) fn clear_force_for_test() {
+    FORCE_EXIT.store(false, std::sync::atomic::Ordering::SeqCst);
+}
 
 /// 已登记的模块钩子（进程级，启动期一次性登记）
 static HOOKS: Mutex<Vec<ModuleLifecycle>> = Mutex::new(Vec::new());
@@ -264,6 +282,18 @@ mod tests {
 
     fn failing_hook(_app: Option<&AppHandle>, _reason: CloseReason) -> Vec<String> {
         vec!["断开连接失败".into()]
+    }
+
+    /// 强退标记：只由显式动作置位，读到 true 后由用户流程负责复位（用例内复位以免污染他人）
+    #[test]
+    fn force_flag_round_trip() {
+        let _guard = isolated();
+        clear_force_for_test();
+        assert!(!force_requested(), "默认不处于强退流程");
+        set_force_exit();
+        assert!(force_requested());
+        clear_force_for_test();
+        assert!(!force_requested());
     }
 
     /// 关闭原因：稳定字符串与解析互为逆运算；未知值不猜默认

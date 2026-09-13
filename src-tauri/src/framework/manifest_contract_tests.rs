@@ -118,6 +118,16 @@ mod tests {
         ("dns", "dns_update_record", "云解析更新记录"),
         (
             "framework",
+            "app_force_exit",
+            "用户强制退出（跳过业务拦截，清理仍受总超时约束）",
+        ),
+        (
+            "framework",
+            "app_request_exit",
+            "请求退出应用（业务可拒绝，拒绝原因交回前端展示）",
+        ),
+        (
+            "framework",
             "framework_commands",
             "查询全量已入库 IPC 命令（名称 + 说明）",
         ),

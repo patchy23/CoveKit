@@ -184,16 +184,19 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
         .run(|app_handle, event| match event {
-            // prepare 阶段允许业务拒绝（未保存内容、任务进行中）；清理由各模块 dispose 钩子提供
+            // prepare 阶段允许业务拒绝（未保存内容、任务进行中）；清理由各模块 dispose 钩子提供。
+            // 用户显式强退（app_force_exit）时跳过拦截：拒绝原因仍会写日志，但不再阻止进程退出。
             tauri::RunEvent::ExitRequested { api, .. } => {
-                let outcome = framework::lifecycle::prepare_close(
-                    app_handle,
-                    framework::lifecycle::CloseReason::Exit,
-                );
-                if !outcome.proceed {
-                    for blocker in &outcome.blockers {
+                let reason = framework::lifecycle::CloseReason::Exit;
+                let outcome = framework::lifecycle::prepare_close(app_handle, reason);
+                let decision =
+                    framework::exit::decide(framework::lifecycle::force_requested(), outcome);
+                if !decision.started {
+                    for blocker in &decision.blockers {
                         eprintln!("[lifecycle] 退出被拒绝: {blocker}");
                     }
+                    // 让用户看到「为什么不退」并能选择强退：OS/托盘发起的退出走同一条提示
+                    framework::exit::surface_veto(app_handle, &decision);
                     api.prevent_exit();
                 }
             }

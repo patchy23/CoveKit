@@ -4,14 +4,17 @@
  * 页签条 + 内容区：首页（工具库）/ 各工具页签（v-show 保持组件状态，切换不销毁）。
  * 页签过多时：新页签在首页后第一位，超出显示宽度的页签收纳进「···」下拉。
  */
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, type Component } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getTool } from '@/core/registry/toolRegistry'
+import { publishToolVisibility, watchToolCloseState, type ToolCloseState } from '@/core/lifecycle'
 import { UiTabsOverflow } from '@/core/ui'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import RecentStrip from '@/features/recent/RecentStrip.vue'
 import ToolGrid from '@/features/grid/ToolGrid.vue'
 import ToolList from '@/features/grid/ToolList.vue'
+import ToolHost from './ToolHost.vue'
+import CloseConfirmDialog from './CloseConfirmDialog.vue'
 import { useToolsStore } from '@/stores/tools'
 import { useUiStore } from '@/stores/ui'
 
@@ -21,13 +24,79 @@ const tools = useToolsStore()
 const hasTools = computed(() => tools.tools.length > 0)
 const searching = computed(() => ui.searchQuery.trim().length > 0)
 
-// 页签组件缓存：同一工具只创建一次异步组件（v-show 保持组件状态，切换不销毁）
-const compCache = new Map<string, Component>()
-function compFor(id: string): Component | null {
-  const m = getTool(id)
-  if (!m) return null
-  if (!compCache.has(id)) compCache.set(id, defineAsyncComponent(m.component))
-  return compCache.get(id)!
+/** 组件加载器（宿主负责异步加载、加载态与失败重试） */
+function loaderFor(id: string) {
+  return getTool(id)?.component ?? (() => Promise.reject(new Error(`未登记的工具：${id}`)))
+}
+
+/* ── 页签未保存/运行中标记 + 工具可见性分发（T10-1/T10-2）── */
+/** 各页签的关闭状态（订阅登记表，页签上显示「未保存」小圆点） */
+const tabState = ref<Record<string, ToolCloseState>>({})
+/** 每个页签的关闭状态退订函数 */
+const stateStops = new Map<string, () => void>()
+
+/** 按当前打开的页签订阅/退订关闭状态变化，避免订阅长期挂在已关闭的工具上 */
+watch(
+  () => [...ui.openTabs],
+  (ids) => {
+    for (const id of ids) {
+      if (stateStops.has(id)) continue
+      stateStops.set(
+        id,
+        watchToolCloseState(id, (state) => {
+          tabState.value = { ...tabState.value, [id]: state }
+        })
+      )
+    }
+    for (const [id, stop] of [...stateStops]) {
+      if (ids.includes(id)) continue
+      stop()
+      stateStops.delete(id)
+      const rest = { ...tabState.value }
+      delete rest[id]
+      tabState.value = rest
+    }
+  },
+  { immediate: true }
+)
+
+/**
+ * 向工具广播可见性：激活页签 / 被设置页覆盖 / 窗口隐藏分别可见。
+ *
+ * 插件据此决定「降频刷新」还是「保持心跳」——失焦不等于断开，隐藏不等于停止。
+ */
+watch(
+  () => [ui.activeTab, ui.settingsOpen, ui.workspaceHidden, ui.openTabs.length] as const,
+  () => {
+    for (const id of ui.openTabs) {
+      publishToolVisibility(id, {
+        active: ui.activeTab === id,
+        covered: ui.settingsOpen,
+        hidden: ui.workspaceHidden,
+      })
+    }
+  },
+  { immediate: true }
+)
+
+// 清理失败必须被看见：关页签时插件清理出错，用 toast 报出来（禁止静默）
+watch(
+  () => ui.lastCloseFailures,
+  (failures) => {
+    if (failures.length === 0) return
+    const owners = failures.map((item) => item.owner).join('、')
+    ui.toast(`关闭时有清理失败：${owners}`)
+  }
+)
+
+/** 某页签是否有未保存内容（页签标记用） */
+function tabDirty(id: string) {
+  return tabState.value[id]?.dirty ?? false
+}
+
+/** 某页签是否有运行中的任务（页签标记用） */
+function tabRunning(id: string) {
+  return tabState.value[id]?.running ?? false
 }
 
 function tabTitle(id: string) {
@@ -50,7 +119,7 @@ function onTabKeydown(event: KeyboardEvent) {
     // 首页不可关；无工具页签时不拦截（避免与系统/其他快捷键语义冲突）
     if (!ui.activeTab) return
     event.preventDefault()
-    ui.closeTab(ui.activeTab)
+    void ui.requestClose(ui.activeTab)
     return
   }
   if (event.key === 'Tab' && ui.openTabs.length > 1) {
@@ -66,7 +135,16 @@ function onTabKeydown(event: KeyboardEvent) {
 }
 
 onMounted(() => window.addEventListener('keydown', onTabKeydown))
-onUnmounted(() => window.removeEventListener('keydown', onTabKeydown))
+onUnmounted(() => {
+  window.removeEventListener('keydown', onTabKeydown)
+  for (const stop of stateStops.values()) stop()
+  stateStops.clear()
+})
+
+/** 溢出下拉里关闭页签：与页签关闭走同一条协商路径 */
+function onOverflowClose(id: string) {
+  void ui.requestClose(id)
+}
 
 /* ── 页签溢出收纳：按页签条可用宽度逐页签估算，放得下几个显示几个，其余进「···」下拉 ── */
 // extra=60：图标15 + 间距12 + 关闭18 + padding 15；maxLabel=120 与页签 max-w-[120px] 对齐。
@@ -133,10 +211,21 @@ const hiddenTabItems = computed(() => hiddenItems.value)
           class="text-tertiary-strong dark:text-tertiary-dark"
         />
         <span class="max-w-[120px] truncate">{{ tabTitle(id) }}</span>
+        <!-- 关闭前会中断的状态标记：运行中（实心点）/ 未保存（空心点），避免用户以为直接关没事 -->
+        <span
+          v-if="tabRunning(id)"
+          class="h-[6px] w-[6px] shrink-0 rounded-full bg-tertiary-strong dark:bg-tertiary-dark"
+          title="任务进行中"
+        />
+        <span
+          v-else-if="tabDirty(id)"
+          class="h-[6px] w-[6px] shrink-0 rounded-full border border-warning-strong dark:border-warning-dark"
+          title="有未保存内容"
+        />
         <button
           class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] text-text-muted opacity-0 transition-opacity hover:bg-border hover:text-tertiary-strong group-hover:opacity-100 dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-tertiary-dark"
           title="关闭页签"
-          @click.stop="ui.closeTab(id)"
+          @click.stop="ui.requestClose(id)"
         >
           <AppIcon name="close" :size="11" />
         </button>
@@ -148,7 +237,7 @@ const hiddenTabItems = computed(() => hiddenItems.value)
         :items="hiddenTabItems"
         :model-value="ui.activeTab ?? ''"
         @select="openHiddenTool"
-        @close="ui.closeTab"
+        @close="onOverflowClose"
       />
       <div class="flex-1" />
     </div>
@@ -226,8 +315,11 @@ const hiddenTabItems = computed(() => hiddenItems.value)
 
       <!-- 工具页签（v-show 保持状态，切换不销毁；h-full 让工具可内部滚动） -->
       <div v-for="id in ui.openTabs" v-show="ui.activeTab === id" :key="id" class="h-full">
-        <component :is="compFor(id)" v-if="compFor(id)" />
+        <ToolHost :tool-id="id" :title="tabTitle(id)" :loader="loaderFor(id)" />
       </div>
     </div>
+
+    <!-- 关闭确认：有未保存内容或运行中任务时先问用户（T10-2） -->
+    <CloseConfirmDialog />
   </div>
 </template>
