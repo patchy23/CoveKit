@@ -35,9 +35,7 @@ fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
     // 迁移 2：AES-GCM 阶段（db-secrets.enc + db-master.key）→ 公共库
     let legacy_file = dir.join("db-secrets.enc");
     let legacy_key = dir.join("db-master.key");
-    if legacy_file.exists()
-        && legacy_key.exists()
-        && !credentials::secrets_file(app, NAMESPACE)?.exists()
+    if legacy_file.exists() && legacy_key.exists() && !credentials::has_stored_data(app, NAMESPACE)?
     {
         let key_bytes = std::fs::read(&legacy_key).map_err(|e| format!("旧主密钥读取失败: {e}"))?;
         if key_bytes.len() != 32 {

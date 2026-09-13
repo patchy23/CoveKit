@@ -91,6 +91,35 @@ export interface VaultImportResult {
   skipped: number
 }
 
+/** 主密钥实际保护后端（kebab-case，与 Rust ProtectionBackend 同步） */
+export type VaultProtectionBackend = 'system-keyring' | 'file-fallback' | 'unavailable'
+
+/** 单个数据域的可用性（kebab-case，与 Rust ProtectionAvailability 同步） */
+export type VaultProtectionAvailability = 'available' | 'locked' | 'uninitialized'
+
+/** 单个数据域（vault / credentials）的保护状态 */
+export interface VaultDomainProtection {
+  /** 域名：`vault` / `credentials` */
+  domain: string
+  backend: VaultProtectionBackend
+  availability: VaultProtectionAvailability
+  /** 走降级路径或锁定时的原因（无秘密，可直接展示；正常情况为 null） */
+  fallbackReason: string | null
+  /** 系统密钥库里是否有该域的主密钥记录 */
+  keyringHasKey: boolean
+  /** 本地降级密钥文件是否存在 */
+  fallbackFileExists: boolean
+  /** 该域是否已有密文（主文件或备份） */
+  ciphertextExists: boolean
+}
+
+/** vault_protection_status 返回（T04-5：设置页持久展示「到底有没有系统级保护」） */
+export interface VaultProtectionStatus {
+  /** 本平台是否编译进系统密钥库原生后端（false = 只能降级到本机文件，绝不显示为系统保护） */
+  nativeBackend: boolean
+  domains: VaultDomainProtection[]
+}
+
 // ── 存储位置（src-tauri framework/storage，serde camelCase 同步）──
 
 /** 单个分区（data / vault / logs / cache）的路径与占用 */
@@ -159,6 +188,7 @@ export const frameworkCommands = {
   vaultDelete: 'vault_delete',
   vaultReferenceCount: 'vault_reference_count',
   vaultReveal: 'vault_reveal',
+  vaultProtectionStatus: 'vault_protection_status',
   vaultExport: 'vault_export',
   vaultImport: 'vault_import',
 } as const
@@ -178,6 +208,7 @@ export type FrameworkPayloads = {
   vault_delete: { id: string }
   vault_reference_count: { id: string }
   vault_reveal: { id: string }
+  vault_protection_status: Record<string, never>
   vault_export: { path: string; password: string }
   vault_import: { path: string; password: string; overwrite: boolean }
 }
@@ -197,6 +228,7 @@ export type FrameworkResults = {
   vault_delete: VaultDeleteResult
   vault_reference_count: number
   vault_reveal: Credential
+  vault_protection_status: VaultProtectionStatus
   vault_export: void
   vault_import: VaultImportResult
 }

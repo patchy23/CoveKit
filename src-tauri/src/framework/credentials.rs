@@ -1,27 +1,31 @@
-//! 框架级本地凭证管理（AES-256-GCM 加密存储）
-//! 设计：插件不关心凭证怎么存怎么取——按「命名空间 + 键」读写即可；
-//! 存储：app_data_dir/credentials/<namespace>.enc（每命名空间一个文件，
-//! nonce(12B)||ciphertext，明文为 JSON map<String, Value>），
-//! 主密钥 app_data_dir/credentials-master.key（32B，一次性生成）。
-//! 后续若更换存储实现（如系统钥匙串/stronghold），只需改本模块。
-//! 安全性：命名空间白名单防路径穿越；原子替换 + 备份恢复防半截密文。
+//! 框架级本地凭证管理（按「命名空间 + 键」读写任意 JSON 值）
+//! - 存储：`<数据目录>/credentials/<namespace>.enc`，明文为 `JSON map<String, Value>`；
+//!   加解密、主密钥来源、原子替换与备份恢复统一走 `framework/secure_store`（T05：与 Vault 共用同一套原语）
+//! - 主密钥：系统密钥库 account `credentials-master-key` → 兼容本地文件 `credentials-master.key` → 首次生成；
+//!   兼容既有密文时以密文为准（文件里的旧密钥能解开既有 `.enc` 就采用它并把来源如实上报），
+//!   两处候选都解不开则锁死报错，**绝不生成会覆盖既有密文的新密钥**
+//! - 安全性：命名空间白名单防路径穿越；写路径唯一临时名 + fsync + 旧文件转 `.bak`；
+//!   读路径先恢复中断遗留备份再判空，只有主文件与备份都不存在才当空数据
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
-};
-use rand::RngCore;
 use tauri::AppHandle;
 
-/// 凭证目录（app_data_dir 下）
+use crate::framework::secure_store::{
+    ciphertext_evidence, encrypt_payload, load_verified, replace_file, resolve_master_key,
+    MasterKeyStore, CREDENTIALS_KEY_SPEC,
+};
+
+/// 系统密钥库实现（测试与命令层共用；各平台 account 由 `secure_store::KeySpec` 决定）
+pub(crate) use crate::framework::secure_store::KeyringStore;
+
+/// 密文备份路径（与 secure_store 的原子替换协议一致：`X.enc` → `X.bak`）
+pub(crate) use crate::framework::secure_store::backup_path;
+
+/// 凭证目录（数据分区下）
 const CREDENTIALS_DIR: &str = "credentials";
-/// 框架主密钥文件名（32 字节随机）
-const MASTER_KEY_FILE: &str = "credentials-master.key";
 
 /// 命名空间合法字符（防路径穿越）
 fn valid_namespace(namespace: &str) -> bool {
@@ -32,7 +36,7 @@ fn valid_namespace(namespace: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
-/// 凭证文件进程内互斥锁（并发写防丢更新；全局一把锁最简单）
+/// 凭证文件进程内互斥锁（读改写整体串行，避免并发丢更新；全局一把锁最简单）
 fn credential_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
@@ -42,26 +46,7 @@ fn credential_lock() -> &'static Mutex<()> {
 // 核心实现（以目录为参数，便于单测）
 // ──────────────────────────────────────────────────────────────────────────
 
-/// 主密钥：已存在则读取，否则生成 32 随机字节落盘（一次性）
-fn master_key_at(dir: &Path) -> Result<[u8; 32], String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("创建数据目录失败: {e}"))?;
-    let path = dir.join(MASTER_KEY_FILE);
-    if path.exists() {
-        let bytes = std::fs::read(&path).map_err(|e| format!("主密钥读取失败: {e}"))?;
-        if bytes.len() != 32 {
-            return Err("主密钥文件损坏（长度不是 32 字节），为避免凭证丢失已停止操作".into());
-        }
-        let mut key = [0u8; 32];
-        key.copy_from_slice(&bytes);
-        return Ok(key);
-    }
-    let mut key = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut key);
-    replace_file(&path, &key).map_err(|e| format!("主密钥写入失败: {e}"))?;
-    Ok(key)
-}
-
-/// 凭证文件路径（校验命名空间）
+/// 命名空间密文文件路径（校验命名空间）
 fn secrets_file_at(dir: &Path, namespace: &str) -> Result<PathBuf, String> {
     if !valid_namespace(namespace) {
         return Err(format!("凭证命名空间非法：{namespace}"));
@@ -69,98 +54,59 @@ fn secrets_file_at(dir: &Path, namespace: &str) -> Result<PathBuf, String> {
     Ok(dir.join(CREDENTIALS_DIR).join(format!("{namespace}.enc")))
 }
 
-/// 使用主密钥解密 nonce(12B)||ciphertext，先校验最小长度避免损坏文件触发 panic。
-fn decrypt_payload(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, String> {
-    // AES-GCM 密文至少包含 12 字节 nonce 与 16 字节认证标签。
-    if data.len() < 28 {
-        return Err("凭证文件损坏（密文长度不足）".into());
-    }
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
-    let (nonce, ct) = data.split_at(12);
-    cipher
-        .decrypt(Nonce::from_slice(nonce), ct)
-        .map_err(|_| "凭证解密失败（主密钥不匹配或数据损坏）".into())
+/// 解析该命名空间的主密钥（有既有密文时以能否解开密文为准）
+fn key_for_at(dir: &Path, path: &Path, store: &dyn MasterKeyStore) -> Result<[u8; 32], String> {
+    let evidence = ciphertext_evidence(&[path.to_path_buf()])?;
+    Ok(resolve_master_key(dir, &CREDENTIALS_KEY_SPEC, store, &evidence)?.key)
 }
 
-/// 使用主密钥加密明文，返回 nonce(12B)||ciphertext。
-fn encrypt_payload(key: &[u8; 32], plain: &[u8]) -> Result<Vec<u8>, String> {
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
-    let mut nonce = [0u8; 12];
-    rand::rngs::OsRng.fill_bytes(&mut nonce);
-    let ct = cipher
-        .encrypt(Nonce::from_slice(&nonce), plain)
-        .map_err(|_| "凭证加密失败")?;
-    let mut out = Vec::with_capacity(12 + ct.len());
-    out.extend_from_slice(&nonce);
-    out.extend_from_slice(&ct);
-    Ok(out)
-}
-
-/// 先完整写入临时文件并刷盘，再替换目标，避免进程中断留下半截密文。
-fn replace_file(path: &Path, content: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建凭证目录失败: {e}"))?;
-    }
-    let tmp = path.with_extension("tmp");
-    let mut file = std::fs::File::create(&tmp).map_err(|e| format!("临时凭证文件创建失败: {e}"))?;
-    file.write_all(content)
-        .map_err(|e| format!("临时凭证文件写入失败: {e}"))?;
-    file.sync_all()
-        .map_err(|e| format!("临时凭证文件刷盘失败: {e}"))?;
-    if !path.exists() {
-        return std::fs::rename(&tmp, path).map_err(|e| format!("凭证文件写入失败: {e}"));
-    }
-    let backup = path.with_extension("bak");
-    if backup.exists() {
-        std::fs::remove_file(&backup).map_err(|e| format!("旧凭证备份清理失败: {e}"))?;
-    }
-    std::fs::rename(path, &backup).map_err(|e| format!("旧凭证文件备份失败: {e}"))?;
-    if let Err(error) = std::fs::rename(&tmp, path) {
-        let restore = std::fs::rename(&backup, path);
-        return match restore {
-            Ok(()) => Err(format!("凭证文件替换失败，已恢复旧数据: {error}")),
-            Err(restore_error) => Err(format!(
-                "凭证文件替换与恢复均失败: {error}; {restore_error}（旧数据位于 {}）",
-                backup.display()
-            )),
-        };
-    }
-    if let Err(error) = std::fs::remove_file(&backup) {
-        eprintln!("[credentials] 凭证已保存，但备份清理失败: {error}");
-    }
-    Ok(())
-}
-
-/// 读取命名空间全部凭证（解密；无文件时返回空表）
-fn read_map_at(dir: &Path, namespace: &str) -> Result<HashMap<String, serde_json::Value>, String> {
+/// 读取命名空间全部凭证（解密；主文件与备份都不存在时返回空表；先恢复中断遗留备份）
+fn read_map_at(
+    dir: &Path,
+    namespace: &str,
+    store: &dyn MasterKeyStore,
+) -> Result<HashMap<String, serde_json::Value>, String> {
     let path = secrets_file_at(dir, namespace)?;
-    let data = match std::fs::read(&path) {
-        Ok(data) => data,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
-        Err(error) => return Err(format!("凭证文件读取失败: {error}")),
+    let key = key_for_at(dir, &path, store)?;
+    let decode = |plain: &[u8]| {
+        serde_json::from_slice::<HashMap<String, serde_json::Value>>(plain)
+            .map_err(|e| format!("凭证数据解析失败: {e}"))
     };
-    let key = master_key_at(dir)?;
-    let plain = decrypt_payload(&key, &data)?;
-    serde_json::from_slice(&plain).map_err(|e| format!("凭证数据解析失败: {e}"))
+    Ok(load_verified(&path, &key, &decode)?.unwrap_or_default())
 }
 
-/// 写回命名空间全部凭证（加密落盘）
+/// 写回命名空间全部凭证（加密落盘，唯一临时名 + 原子替换）
 fn write_map_at(
     dir: &Path,
     namespace: &str,
+    store: &dyn MasterKeyStore,
     map: &HashMap<String, serde_json::Value>,
 ) -> Result<(), String> {
-    let key = master_key_at(dir)?;
-    let plain = serde_json::to_vec(map).map_err(|e| e.to_string())?;
+    let path = secrets_file_at(dir, namespace)?;
+    let key = key_for_at(dir, &path, store)?;
+    let plain = serde_json::to_vec(map).map_err(|e| format!("凭证序列化失败: {e}"))?;
     let out = encrypt_payload(&key, &plain)?;
-    replace_file(&secrets_file_at(dir, namespace)?, &out)
+    replace_file(&path, &out)
+}
+
+/// 锁内读改写（调用方不必自己拼「读 → 改 → 写」，并发保存不同键都不丢）
+fn update_map_at(
+    dir: &Path,
+    namespace: &str,
+    store: &dyn MasterKeyStore,
+    update: impl FnOnce(&mut HashMap<String, serde_json::Value>),
+) -> Result<(), String> {
+    let _guard = credential_lock().lock().map_err(|e| e.to_string())?;
+    let mut map = read_map_at(dir, namespace, store)?;
+    update(&mut map);
+    write_map_at(dir, namespace, store, &map)
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // 对外 API（AppHandle 封装）
 // ──────────────────────────────────────────────────────────────────────────
 
-/// 框架凭证目录（数据分区下，经 `framework::paths` 统一解析并带旧布局回落）
+/// 框架数据分区目录（经 `framework::paths` 统一解析并带旧布局回落）
 fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     crate::framework::paths::data_dir(app)
 }
@@ -170,6 +116,32 @@ pub fn secrets_file(app: &AppHandle, namespace: &str) -> Result<PathBuf, String>
     secrets_file_at(&app_data_dir(app)?, namespace)
 }
 
+/// 该命名空间是否已有落盘凭证（主文件或中断遗留的备份都算，避免把「只剩备份」当没数据）
+pub fn has_stored_data(app: &AppHandle, namespace: &str) -> Result<bool, String> {
+    let path = secrets_file(app, namespace)?;
+    Ok(path.exists() || backup_path(&path).exists())
+}
+
+/// 数据分区下全部命名空间密文文件（保护状态查询用：目录不存在返回空清单）
+pub(crate) fn all_namespace_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    let dir = dir.join(CREDENTIALS_DIR);
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let entries = std::fs::read_dir(&dir)
+        .map_err(|e| format!("凭证目录读取失败（{}）: {e}", dir.display()))?;
+    let mut files = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("凭证目录读取失败（{}）: {e}", dir.display()))?;
+        let path = entry.path();
+        if path.is_file() {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
 /// 保存/更新凭证（命名空间 + 键 + 任意 JSON 值）
 pub fn save_secret(
     app: &AppHandle,
@@ -177,11 +149,11 @@ pub fn save_secret(
     key: &str,
     value: &serde_json::Value,
 ) -> Result<(), String> {
-    let _guard = credential_lock().lock().map_err(|e| e.to_string())?;
     let dir = app_data_dir(app)?;
-    let mut map = read_map_at(&dir, namespace)?;
-    map.insert(key.to_string(), value.clone());
-    write_map_at(&dir, namespace, &map)
+    let value = value.clone();
+    update_map_at(&dir, namespace, &KeyringStore, move |map| {
+        map.insert(key.to_string(), value);
+    })
 }
 
 /// 读取凭证（无记录返回 None）
@@ -190,34 +162,39 @@ pub fn get_secret(
     namespace: &str,
     key: &str,
 ) -> Result<Option<serde_json::Value>, String> {
-    let _guard = credential_lock().lock().map_err(|e| e.to_string())?;
     let dir = app_data_dir(app)?;
-    Ok(read_map_at(&dir, namespace)?.get(key).cloned())
+    let _guard = credential_lock().lock().map_err(|e| e.to_string())?;
+    Ok(read_map_at(&dir, namespace, &KeyringStore)?
+        .get(key)
+        .cloned())
 }
 
 /// 删除凭证
 pub fn delete_secret(app: &AppHandle, namespace: &str, key: &str) -> Result<(), String> {
-    let _guard = credential_lock().lock().map_err(|e| e.to_string())?;
     let dir = app_data_dir(app)?;
-    let mut map = read_map_at(&dir, namespace)?;
-    map.remove(key);
-    write_map_at(&dir, namespace, &map)
+    update_map_at(&dir, namespace, &KeyringStore, move |map| {
+        map.remove(key);
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::framework::secure_store::test_support::MemoryKeyStore;
+    use crate::framework::secure_store::{
+        authenticates, promotion_test_guard, reset_promotion_attempts, seed_fallback_file,
+        CREDENTIALS_KEY_SPEC,
+    };
 
-    /// 加解密往返 + 错误密钥/损坏密文校验
-    #[test]
-    fn encrypt_decrypt_roundtrip() {
-        let key = [7u8; 32];
-        let plain = b"{\"conn-1\":\"s3cret\"}";
-        let ct = encrypt_payload(&key, plain).unwrap();
-        assert_eq!(decrypt_payload(&key, &ct).unwrap(), plain);
-        let wrong = [8u8; 32];
-        assert!(decrypt_payload(&wrong, &ct).is_err());
-        assert!(decrypt_payload(&key, b"short").is_err());
+    /// 测试用临时目录（进程 id + 随机名唯一）
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "cred-store-test-{name}-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
     }
 
     /// 命名空间白名单
@@ -234,47 +211,269 @@ mod tests {
         assert!(!valid_namespace(&"x".repeat(33)));
     }
 
-    /// 完整链路：主密钥生成复用 + 保存/读取/删除往返 + 命名空间隔离
+    /// 完整链路：保存/读取/删除往返 + 命名空间隔离 + 空表只在两个文件都不存在时出现
     #[test]
-    fn credential_save_read_delete_roundtrip() {
-        let dir = std::env::temp_dir().join(format!("cred-store-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+    fn save_read_delete_roundtrip() {
+        let dir = temp_dir("roundtrip");
+        let store = MemoryKeyStore::new();
 
-        // 主密钥：首次生成，二次复用
-        let k1 = master_key_at(&dir).unwrap();
-        let k2 = master_key_at(&dir).unwrap();
-        assert_eq!(k1, k2);
-        assert_eq!(k1.len(), 32);
-
-        // 保存/读取
         write_map_at(
             &dir,
             "database",
+            &store,
             &HashMap::from([("conn-1".into(), serde_json::json!("s3cret"))]),
         )
         .unwrap();
-        let map = read_map_at(&dir, "database").unwrap();
+        let map = read_map_at(&dir, "database", &store).unwrap();
         assert_eq!(map.get("conn-1").and_then(|v| v.as_str()), Some("s3cret"));
 
-        // 命名空间隔离：另一命名空间为空
-        assert!(read_map_at(&dir, "ssh").unwrap().is_empty());
+        // 命名空间隔离：另一命名空间为空（且不产生文件）
+        assert!(read_map_at(&dir, "ssh", &store).unwrap().is_empty());
+        assert!(!dir.join(CREDENTIALS_DIR).join("ssh.enc").exists());
 
-        // 删除
-        let mut m = read_map_at(&dir, "database").unwrap();
-        m.remove("conn-1");
-        write_map_at(&dir, "database", &m).unwrap();
-        assert!(read_map_at(&dir, "database").unwrap().is_empty());
+        // 删除后回到空表
+        update_map_at(&dir, "database", &store, |map| {
+            map.remove("conn-1");
+        })
+        .unwrap();
+        assert!(read_map_at(&dir, "database", &store).unwrap().is_empty());
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 损坏主密钥报错
+    /// 并发保存不同键都不丢（读改写整体串行）
     #[test]
-    fn corrupt_master_key_errors() {
-        let dir = std::env::temp_dir().join(format!("cred-badkey-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(MASTER_KEY_FILE), b"short").unwrap();
-        assert!(master_key_at(&dir).is_err());
+    fn concurrent_saves_do_not_lose_updates() {
+        let dir = temp_dir("concurrent");
+        let mut handles = Vec::new();
+        for index in 0..8 {
+            let dir = dir.clone();
+            let store = MemoryKeyStore::with_key(CREDENTIALS_KEY_SPEC.account, [0x77u8; 32]);
+            handles.push(std::thread::spawn(move || {
+                update_map_at(&dir, "database", &store, |map| {
+                    map.insert(format!("conn-{index}"), serde_json::json!(index));
+                })
+            }));
+        }
+        for handle in handles {
+            handle.join().unwrap().unwrap();
+        }
+        let map = read_map_at(
+            &dir,
+            "database",
+            &MemoryKeyStore::with_key(CREDENTIALS_KEY_SPEC.account, [0x77u8; 32]),
+        )
+        .unwrap();
+        assert_eq!(map.len(), 8, "并发保存不同键不应互相覆盖: {map:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 崩溃恢复：主文件已转 `.bak` 而新文件未转正 → 读回旧完整版本，不能当空表
+    #[test]
+    fn recovers_backup_instead_of_empty_table() {
+        let dir = temp_dir("recover");
+        let store = MemoryKeyStore::new();
+        write_map_at(
+            &dir,
+            "database",
+            &store,
+            &HashMap::from([("conn-1".into(), serde_json::json!("s3cret"))]),
+        )
+        .unwrap();
+        let path = dir.join(CREDENTIALS_DIR).join("database.enc");
+        // 模拟「旧文件已改名成 .bak、新文件尚未转正」的中断现场
+        std::fs::rename(&path, backup_path(&path)).unwrap();
+
+        let map = read_map_at(&dir, "database", &store).unwrap();
+        assert_eq!(
+            map.get("conn-1").and_then(|v| v.as_str()),
+            Some("s3cret"),
+            "只剩备份时必须读回旧数据而不是空表"
+        );
+        assert!(path.exists(), "备份应被转正");
+        assert!(!backup_path(&path).exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 主文件损坏而备份可解 → 采用备份，坏文件留档，绝不直接删备份
+    #[test]
+    fn adopts_backup_when_main_corrupt() {
+        let dir = temp_dir("adopt");
+        let store = MemoryKeyStore::new();
+        write_map_at(
+            &dir,
+            "database",
+            &store,
+            &HashMap::from([("conn-1".into(), serde_json::json!("s3cret"))]),
+        )
+        .unwrap();
+        let path = dir.join(CREDENTIALS_DIR).join("database.enc");
+        std::fs::copy(&path, backup_path(&path)).unwrap();
+        std::fs::write(&path, b"broken").unwrap();
+
+        let map = read_map_at(&dir, "database", &store).unwrap();
+        assert_eq!(map.get("conn-1").and_then(|v| v.as_str()), Some("s3cret"));
+        let archives: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|name| name.contains(".corrupt-"))
+            .collect();
+        assert_eq!(archives.len(), 1, "坏文件应留档: {archives:?}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 既有密文用降级密钥文件里的旧密钥加密 → 仍然读得出来（不能用新生成的密钥覆盖语义）
+    #[test]
+    fn existing_ciphertext_wins_over_new_key() {
+        let dir = temp_dir("existing-wins");
+        let old_key = [0x21u8; 32];
+        seed_fallback_file(&dir, &CREDENTIALS_KEY_SPEC, &old_key).expect("写入降级密钥文件");
+        let plain = serde_json::to_vec(&HashMap::from([(
+            "conn-1".to_string(),
+            serde_json::json!("legacy"),
+        )]))
+        .unwrap();
+        let path = dir.join(CREDENTIALS_DIR).join("database.enc");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, encrypt_payload(&old_key, &plain).unwrap()).unwrap();
+
+        // 系统密钥库里是另一把（不对应密文）的密钥；断言「旧密钥被登记」要与其它登记用例串行，
+        // 并先清掉进程内的一次性记录，否则结果取决于用例执行顺序
+        let store = MemoryKeyStore::with_key(CREDENTIALS_KEY_SPEC.account, [0x22u8; 32]);
+        let _serialize = promotion_test_guard();
+        reset_promotion_attempts();
+        let map = read_map_at(&dir, "database", &store).unwrap();
+        assert_eq!(map.get("conn-1").and_then(|v| v.as_str()), Some("legacy"));
+        // 正确旧密钥被登记进系统密钥库，降级文件保留
+        assert_eq!(
+            store.key_of(CREDENTIALS_KEY_SPEC.account).unwrap(),
+            Some(old_key)
+        );
+        assert!(dir.join(CREDENTIALS_KEY_SPEC.fallback_file).exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 密文在而两处密钥都对不上 → 锁死：报错、不生成新密钥、密文摘要不变
+    #[test]
+    fn locked_when_no_key_matches_ciphertext() {
+        let dir = temp_dir("locked");
+        let path = dir.join(CREDENTIALS_DIR).join("database.enc");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let blob = encrypt_payload(&[0x33u8; 32], b"{\"conn-1\":\"secret\"}").unwrap();
+        std::fs::write(&path, &blob).unwrap();
+
+        let store = MemoryKeyStore::new();
+        let error = read_map_at(&dir, "database", &store).unwrap_err();
+        assert!(error.contains("无法解锁"), "应报锁死: {error}");
+        // 没有生成会覆盖既有密文的新密钥
+        assert!(!dir.join(CREDENTIALS_KEY_SPEC.fallback_file).exists());
+        assert_eq!(store.write_attempts(), 0, "锁死时不得写密钥库");
+        assert_eq!(std::fs::read(&path).unwrap(), blob, "密文必须保持原样");
+
+        // 写入路径同样锁死，不覆盖既有密文
+        let write_error = update_map_at(&dir, "database", &store, |map| {
+            map.insert("conn-2".into(), serde_json::json!("x"));
+        })
+        .unwrap_err();
+        assert!(write_error.contains("无法解锁"));
+        assert_eq!(std::fs::read(&path).unwrap(), blob);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 密文被篡改 → 报错且原文件摘要不变（不落空表、不改写文件）
+    #[test]
+    fn tampered_ciphertext_errors_without_touching_file() {
+        let dir = temp_dir("tampered");
+        let store = MemoryKeyStore::new();
+        write_map_at(
+            &dir,
+            "database",
+            &store,
+            &HashMap::from([("conn-1".into(), serde_json::json!("s3cret"))]),
+        )
+        .unwrap();
+        let path = dir.join(CREDENTIALS_DIR).join("database.enc");
+        let digest_before = std::fs::read(&path).unwrap();
+        let mut tampered = digest_before.clone();
+        let last = tampered.len() - 1;
+        tampered[last] ^= 0xFF;
+        std::fs::write(&path, &tampered).unwrap();
+
+        assert!(read_map_at(&dir, "database", &store).is_err());
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            tampered,
+            "读失败不得改写文件"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 损坏文件不 panic：长度不足与截断密文都只报错
+    #[test]
+    fn short_ciphertext_errors_no_panic() {
+        let dir = temp_dir("short");
+        let store = MemoryKeyStore::new();
+        let path = dir.join(CREDENTIALS_DIR).join("database.enc");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"short").unwrap();
+        assert!(read_map_at(&dir, "database", &store).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 中断残留的临时文件不参与读取，也不影响下一次写入
+    #[test]
+    fn stale_tmp_files_are_ignored() {
+        let dir = temp_dir("stale-tmp");
+        let store = MemoryKeyStore::new();
+        write_map_at(
+            &dir,
+            "database",
+            &store,
+            &HashMap::from([("conn-1".into(), serde_json::json!("s3cret"))]),
+        )
+        .unwrap();
+        let path = dir.join(CREDENTIALS_DIR).join("database.enc");
+        let stale = path.with_file_name("database.enc.tmp-00000000-0000-0000-0000-000000000000");
+        std::fs::write(&stale, b"garbage").unwrap();
+
+        assert_eq!(
+            read_map_at(&dir, "database", &store)
+                .unwrap()
+                .get("conn-1")
+                .and_then(|v| v.as_str()),
+            Some("s3cret")
+        );
+        update_map_at(&dir, "database", &store, |map| {
+            map.insert("conn-2".into(), serde_json::json!("second"));
+        })
+        .unwrap();
+        // 既有残留不被当成新内容，也不阻碍写入
+        assert_eq!(std::fs::read(&stale).unwrap(), b"garbage");
+        assert_eq!(read_map_at(&dir, "database", &store).unwrap().len(), 2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 备份里的密文同样纳入密钥候选判定：只有备份时也能读出正确密钥
+    #[test]
+    fn backup_only_environment_uses_existing_key() {
+        let dir = temp_dir("backup-only");
+        let _serialize = promotion_test_guard();
+        let key = [0x44u8; 32];
+        seed_fallback_file(&dir, &CREDENTIALS_KEY_SPEC, &key).expect("写入降级密钥文件");
+        let plain = serde_json::to_vec(&HashMap::from([("k".to_string(), serde_json::json!("v"))]))
+            .unwrap();
+        let path = dir.join(CREDENTIALS_DIR).join("database.enc");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let blob = encrypt_payload(&key, &plain).unwrap();
+        assert!(authenticates(&key, &blob));
+        std::fs::write(backup_path(&path), &blob).unwrap();
+
+        let map = read_map_at(&dir, "database", &MemoryKeyStore::new()).unwrap();
+        assert_eq!(map.get("k").and_then(|v| v.as_str()), Some("v"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }

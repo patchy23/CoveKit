@@ -248,6 +248,16 @@ export default {
     manageVault: 'Manage credentials',
     vaultDescription:
       'Secrets are encrypted in the local vault with a keyring-backed master key. Tools only receive credential IDs; plaintext stays in the backend.',
+    protectionDomainVault: 'Vault',
+    protectionDomainCredentials: 'Plugin credentials',
+    protectionSystem: 'System keyring',
+    protectionFallback: 'Local key file',
+    protectionUnavailable: 'Local key file (no system keyring)',
+    protectionLocked: 'Locked',
+    protectionUninitialized: 'Not initialized',
+    protectionUnknown: 'Could not read protection status',
+    protectionRecover:
+      '{reason}. Restore a backup via "Manage credentials → Import"; the original files are kept',
     toolSettings: '{name} Settings',
     noToolSettings: 'No tools expose settings yet.',
     storage: 'Storage Location',

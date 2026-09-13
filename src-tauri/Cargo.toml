@@ -56,7 +56,10 @@ russh-sftp = "2.4.0"
 aes-gcm = "0.10"
 rand = "0.8"
 # Vault 凭证库（framework/vault）：系统密钥库存主密钥 + Argon2id 导出备份派生密钥
-keyring = "3"
+# keyring 3 没有 default feature，必须显式启用平台原生后端，否则 Windows/macOS 会退回进程内 mock
+# （写后回读在同进程可能"成功"，但换进程/重启就读不到，等于没有系统级保护）。
+# 两个 feature 的依赖在 keyring 内部已按 target 门控，非对应平台是空操作；本应用只发布 Windows/macOS。
+keyring = { version = "3", features = ["apple-native", "windows-native"] }
 argon2 = "0.5"
 uuid = { version = "1", features = ["v4"] }
 # 数据库工作台（database 插件）：驱动与 dbx 项目同款
@@ -87,9 +90,14 @@ syn = { version = "=2.0.119", default-features = false, features = [
 proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
 
 [target.'cfg(windows)'.dependencies]
+# framework/secure_store/win_acl：降级主密钥文件的 DACL 收紧（仅当前用户）
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Threading",
   "Win32_UI_WindowsAndMessaging",
 ] }
 

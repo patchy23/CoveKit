@@ -49,6 +49,7 @@ export const ipc = {
   vaultDelete: (id: string) => call('vault_delete', { id }),
   vaultReferenceCount: (id: string) => call('vault_reference_count', { id }),
   vaultReveal: (id: string) => call('vault_reveal', { id }),
+  vaultProtectionStatus: () => call('vault_protection_status', {}),
   vaultExport: (path: string, password: string) => call('vault_export', { path, password }),
   vaultImport: (path: string, password: string, overwrite: boolean) =>
     call('vault_import', { path, password, overwrite }),

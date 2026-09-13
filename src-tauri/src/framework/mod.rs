@@ -16,6 +16,7 @@ pub mod ipc_registry;
 pub mod lifecycle;
 pub mod module_manifest;
 pub mod paths;
+pub mod secure_store;
 pub mod settings;
 pub mod storage;
 pub mod store;
@@ -53,6 +54,7 @@ crate::patchybox_module! {
         vault::vault_delete => "删除凭证（返回被引用计数供前端提示）",
         vault::vault_reference_count => "删除前查询后端插件凭证引用数",
         vault::vault_reveal => "读取单条凭证明文（仅用户点显示/复制时调用）",
+        vault::vault_protection_status => "凭证保护状态（主密钥实际来源与可用性，设置页展示）",
         vault::vault_export => "密码加密导出 .pbvault 备份（Argon2id 派生密钥）",
         vault::vault_import => "解密导入 .pbvault 备份（合并/覆盖由 UI 选择）",
     },

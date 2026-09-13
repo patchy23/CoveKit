@@ -9,7 +9,9 @@ import { useI18n } from 'vue-i18n'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { getTools } from '@/core/registry/toolRegistry'
 import type { SettingsField } from '@/core/registry/types'
-import { UiButton, UiCheckbox, UiInput, UiModal, UiSelect as Select } from '@/core/ui'
+import { UiBadge, UiButton, UiCheckbox, UiInput, UiModal, UiSelect as Select } from '@/core/ui'
+import type { UiTone } from '@/core/ui'
+import type { VaultDomainProtection, VaultProtectionStatus } from '@/core/ipc/contracts'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
@@ -46,6 +48,48 @@ async function refreshVaultCount() {
 onMounted(refreshVaultCount)
 watch(vaultVisible, (v) => {
   if (!v) void refreshVaultCount()
+})
+
+/**
+ * 凭证保护状态（T04-5）：主密钥实际存放在系统密钥库还是降级文件、能否解锁，都要如实展示。
+ * 读取失败保持 null（显示「状态未知」），不猜测也不阻塞页面。
+ */
+const protection = ref<VaultProtectionStatus | null>(null)
+async function refreshProtection() {
+  try {
+    protection.value = await ipc.vaultProtectionStatus()
+  } catch {
+    protection.value = null
+  }
+}
+onMounted(refreshProtection)
+
+/** 保护状态主文案（按可用性与后端组合，不把降级说成系统密钥库） */
+function protectionLabel(domain: VaultDomainProtection): string {
+  if (domain.availability === 'locked') return t('settings.protectionLocked')
+  if (domain.availability === 'uninitialized') return t('settings.protectionUninitialized')
+  if (domain.backend === 'system-keyring') return t('settings.protectionSystem')
+  if (domain.backend === 'file-fallback') return t('settings.protectionFallback')
+  return t('settings.protectionUnavailable')
+}
+/** 保护状态色调：绿 = 系统密钥库保护，橙 = 降级密钥文件，红 = 不可用/无法解锁 */
+function protectionTone(domain: VaultDomainProtection): UiTone {
+  if (domain.availability === 'locked' || domain.backend === 'unavailable') return 'danger'
+  if (domain.backend === 'system-keyring') return 'success'
+  return 'warning'
+}
+/** 数据域显示名 */
+function protectionDomainName(domain: VaultDomainProtection): string {
+  return domain.domain === 'vault'
+    ? t('settings.protectionDomainVault')
+    : t('settings.protectionDomainCredentials')
+}
+/** 细节说明（Rust 侧文案不含密钥材料）：锁死时附上备份恢复入口，降级时说明原因 */
+const protectionDetail = computed(() => {
+  const domains = protection.value?.domains ?? []
+  const locked = domains.find((d) => d.availability === 'locked')
+  if (locked) return t('settings.protectionRecover', { reason: locked.fallbackReason ?? '' })
+  return domains.find((d) => d.fallbackReason)?.fallbackReason ?? ''
 })
 
 /** 打开凭证管理弹窗 */
@@ -185,6 +229,28 @@ async function chooseDownloadDirectory() {
               {{ t('settings.vaultSummary', { count: vaultCount ?? '—' }) }}
             </p>
             <UiButton @click="openVault">{{ t('settings.manageVault') }}</UiButton>
+          </div>
+          <!-- 保护状态（T04-5）：主密钥实际来源与可用性，降级 / 无法解锁必须如实可见 -->
+          <div class="mt-[10px] space-y-[6px]">
+            <div
+              v-for="domain in protection?.domains ?? []"
+              :key="domain.domain"
+              class="flex items-center gap-[8px] text-body-sm"
+            >
+              <span class="w-[64px] shrink-0 text-text-muted dark:text-text-muted-dark">
+                {{ protectionDomainName(domain) }}
+              </span>
+              <UiBadge :tone="protectionTone(domain)">{{ protectionLabel(domain) }}</UiBadge>
+            </div>
+            <p v-if="!protection" class="text-body-sm text-text-muted dark:text-text-muted-dark">
+              {{ t('settings.protectionUnknown') }}
+            </p>
+            <p
+              v-else-if="protectionDetail"
+              class="text-body-sm text-text-muted dark:text-text-muted-dark"
+            >
+              {{ protectionDetail }}
+            </p>
           </div>
         </section>
 

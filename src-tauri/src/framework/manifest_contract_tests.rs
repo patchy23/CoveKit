@@ -164,6 +164,11 @@ mod tests {
         ),
         (
             "framework",
+            "vault_protection_status",
+            "凭证保护状态（主密钥实际来源与可用性，设置页展示）",
+        ),
+        (
+            "framework",
             "vault_reference_count",
             "删除前查询后端插件凭证引用数",
         ),

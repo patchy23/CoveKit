@@ -1,35 +1,29 @@
-//! 存储与加密：主密钥（系统密钥库 + 降级文件）/ AES-256-GCM 密文文件 / 原子写与备份恢复
-//! - 主密钥：首次 OsRng 生成 32B，存系统密钥库（keyring crate：Windows Credential Manager /
-//!   macOS Keychain / Linux Secret Service）；keyring 不可用时降级 app_data_dir/vault-master.key
-//!   并告警。keyring 只存这把主密钥，凭证本体不进 keyring（Credential Manager 单条 ~2.5KB 上限）。
-//! - 凭证密文：AES-256-GCM，每次加密新 nonce，落盘 nonce(12B)‖ciphertext → app_data_dir/vault.dat；
-//!   解密先校验 ≥28B（12 nonce + 16 认证标签），损坏即报错不 panic。
-//! - 原子写 + 备份恢复：replace_file / recover_backup 原语下沉自 plugins/ssh/credential.rs；
-//!   SSH 原手工凭据文件继续保留，公共 Vault 作为可选来源。
-//! - 安全边界：防「凭证明文落盘、文件被拷走即泄密」；不防「已登录当前系统账户的恶意进程」。
+//! Vault 凭证库存储层：凭证条目模型 + 读写 + 汇总/引用统计
+//! - 加解密、主密钥来源、原子替换与备份恢复统一来自 `framework/secure_store`（T05：与 credentials 共用一套原语）
+//! - 主密钥：系统密钥库 account `vault-master-key` → 兼容本地文件 `vault-master.key` → 首次生成；
+//!   有既有密文时以能否解开密文为准（旧降级密钥是迁移输入，不允许「密钥库优先」掩盖正确旧密钥）
+//! - 凭证密文：`<vault 分区>/vault.dat`，明文为 `Credential` 数组；读路径先恢复中断遗留备份，
+//!   只有主文件与备份都不存在才当空库
+//! - 安全边界：防「凭证明文落盘、文件被拷走即泄密」；不防「已登录当前系统账户的恶意进程」，
+//!   也不提供抗离线解密能力（主密钥与密文同目录被整份复制时仍可解）。
 //!   stronghold（内存隔离）与主密码解锁为后续升级项，接入时只换存储/解锁层，数据模型不变。
 
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
-use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
-};
-use rand::RngCore;
 use tauri::AppHandle;
 
 use super::models::{Credential, CredentialSummary};
+use crate::framework::credentials;
+use crate::framework::secure_store::{
+    ciphertext_evidence, encrypt_payload, inspect_domain, load_verified, native_backend_available,
+    replace_file, resolve_master_key, ProtectionStatus, CREDENTIALS_KEY_SPEC, VAULT_KEY_SPEC,
+};
+// 密钥库实现与安全原语统一来自 `framework/secure_store`（T05：本文件不再重复实现）
+pub(crate) use crate::framework::secure_store::{KeyringStore, MasterKeyStore};
 
-/// 凭证密文文件名（app_data_dir 下）
+/// 凭证密文文件名（vault 分区下）
 pub(crate) const VAULT_FILE: &str = "vault.dat";
-/// 主密钥降级文件名（keyring 不可用时回退）
-pub(crate) const FALLBACK_KEY_FILE: &str = "vault-master.key";
-/// 系统密钥库 service 名（应用 identifier）
-const KEYRING_SERVICE: &str = "com.patchy23.patchybox";
-/// 系统密钥库 account 名
-const KEYRING_ACCOUNT: &str = "vault-master-key";
 
 /// vault 全量读改写进程内互斥锁（防并发丢更新）
 pub(crate) fn vault_lock() -> &'static Mutex<()> {
@@ -57,230 +51,77 @@ pub(crate) fn orphan_vault_file(dir: &Path) -> Result<(), String> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// 主密钥外部存储抽象（生产实现 = 系统密钥库；单测注入内存实现）
+// 安全原语：统一来自 `framework/secure_store`（T05）
+// 此处原先内联的「主密钥外部存储抽象 / 主密钥解析 / AES-GCM 加解密 / 原子写与备份恢复」
+// 已收敛为一份实现，避免 Vault 与 credentials 各写一套导致修复只落到一边：
+// - 主密钥来源与降级登记：`secure_store::resolve_master_key`（有既有密文时以密文为准）
+// - 加解密：`secure_store::encrypt_payload` / `load_verified`
+// - 原子替换与择版恢复：`secure_store::replace_file` / `secure_store::load_verified`
+// 本文件只保留 Vault 自己的凭证条目模型、路径、锁与引用统计。
 // ──────────────────────────────────────────────────────────────────────────
-
-/// 主密钥外部存储抽象（隔离 keyring 便于单测；实现方必须能表达「不存在」与「调用失败」）
-pub(crate) trait MasterKeyStore {
-    /// 读取主密钥（Ok(None) = 密钥库中没有记录）
-    fn read(&self) -> Result<Option<[u8; 32]>, String>;
-    /// 写入主密钥
-    fn write(&self, key: &[u8; 32]) -> Result<(), String>;
-}
-
-/// 系统密钥库实现（keyring crate；各平台原生后端）
-pub(crate) struct KeyringStore;
-
-impl MasterKeyStore for KeyringStore {
-    fn read(&self) -> Result<Option<[u8; 32]>, String> {
-        let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
-            .map_err(|e| format!("密钥库初始化失败: {e}"))?;
-        match entry.get_secret() {
-            Ok(bytes) => {
-                let key: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| "密钥库中的主密钥长度不是 32 字节".to_string())?;
-                Ok(Some(key))
-            }
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(format!("密钥库读取失败: {e}")),
-        }
-    }
-
-    fn write(&self, key: &[u8; 32]) -> Result<(), String> {
-        let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
-            .map_err(|e| format!("密钥库初始化失败: {e}"))?;
-        entry
-            .set_secret(key)
-            .map_err(|e| format!("密钥库写入失败: {e}"))
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// 主密钥解析（keyring 优先 → 降级文件 → 首次生成；vault.dat 存在而无密钥时宁可锁死）
-// ──────────────────────────────────────────────────────────────────────────
-
-/// 生成 32B 随机主密钥并写入外部存储；keyring 写失败或写后回读校验不过时降级本地文件并告警
-fn create_master_key(dir: &Path, store: &dyn MasterKeyStore) -> Result<[u8; 32], String> {
-    let mut key = [0u8; 32];
-    rand::rngs::OsRng.fill_bytes(&mut key);
-    // 写入后立刻回读校验：Windows 凭据管理器存在「写返回成功但条目没落库」的静默丢失场景，
-    // 不校验的话 vault.dat 会用一把没存住的密钥加密，下次启动永远无法解锁（死数据）
-    let persisted = match store.write(&key) {
-        Ok(()) => match store.read() {
-            Ok(Some(readback)) if readback == key => true,
-            other => {
-                eprintln!(
-                    "[vault] 密钥库写入后回读校验失败（{other:?}），主密钥降级为本地文件存储"
-                );
-                false
-            }
-        },
-        Err(e) => {
-            eprintln!("[vault] 密钥库写入失败（{e}），主密钥降级为本地文件存储");
-            false
-        }
-    };
-    if !persisted {
-        replace_file(&dir.join(FALLBACK_KEY_FILE), &key)
-            .map_err(|e| format!("降级主密钥写入失败: {e}"))?;
-    }
-    Ok(key)
-}
-
-/// 从降级文件读取主密钥（存在则必须恰好 32B）
-fn read_fallback_key(dir: &Path) -> Result<Option<[u8; 32]>, String> {
-    let path = dir.join(FALLBACK_KEY_FILE);
-    recover_backup(&path)?;
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = std::fs::read(&path).map_err(|e| format!("降级主密钥读取失败: {e}"))?;
-    let key: [u8; 32] = bytes.try_into().map_err(|_| {
-        "降级主密钥文件损坏（长度不是 32 字节），为避免凭证丢失已停止操作".to_string()
-    })?;
-    Ok(Some(key))
-}
-
-/// 解析主密钥：密钥库 → 降级文件 → 首次生成。
-/// 密钥丢失但 vault.dat 存在时明确报「无法解锁凭证库」，绝不重新生成密钥覆盖语义（防误毁数据）。
-pub(crate) fn master_key_at(dir: &Path, store: &dyn MasterKeyStore) -> Result<[u8; 32], String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("创建数据目录失败: {e}"))?;
-    // 1) 系统密钥库优先；读取失败仅告警继续降级（无桌面环境等场景）
-    match store.read() {
-        Ok(Some(key)) => return Ok(key),
-        Ok(None) => {}
-        Err(e) => eprintln!("[vault] {e}，尝试降级主密钥文件"),
-    }
-    // 2) 降级文件
-    if let Some(key) = read_fallback_key(dir)? {
-        return Ok(key);
-    }
-    // 3) 两处都没有：密文还在就是密钥丢失，宁可锁死不可误删
-    if dir.join(VAULT_FILE).exists() {
-        return Err(
-            "无法解锁凭证库：系统密钥库中找不到主密钥（可能原因：换机 / 重装 / 密钥库被清空）。\
-             可通过「导入备份」恢复，或手动删除数据目录下的 vault.dat 重新初始化（原文件未被清除）"
-                .into(),
-        );
-    }
-    // 4) 首次启动：生成新主密钥
-    create_master_key(dir, store)
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// 加密原语（AES-256-GCM，nonce(12B)‖ciphertext；与 ssh/credential.rs 同源下沉）
-// ──────────────────────────────────────────────────────────────────────────
-
-/// 使用主密钥解密 nonce(12B)||ciphertext，先校验最小长度避免损坏文件触发 panic。
-pub(crate) fn decrypt_payload(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, String> {
-    // AES-GCM 密文至少包含 12 字节 nonce 与 16 字节认证标签。
-    if data.len() < 28 {
-        return Err("凭证文件损坏（密文长度不足）".into());
-    }
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
-    let (nonce, ct) = data.split_at(12);
-    cipher
-        .decrypt(Nonce::from_slice(nonce), ct)
-        .map_err(|_| "凭证解密失败（主密钥不匹配或数据损坏）".into())
-}
-
-/// 使用主密钥加密明文，返回 nonce(12B)||ciphertext（每次新 nonce）。
-pub(crate) fn encrypt_payload(key: &[u8; 32], plain: &[u8]) -> Result<Vec<u8>, String> {
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
-    let mut nonce = [0u8; 12];
-    rand::rngs::OsRng.fill_bytes(&mut nonce);
-    let ct = cipher
-        .encrypt(Nonce::from_slice(&nonce), plain)
-        .map_err(|_| "凭证加密失败")?;
-    let mut out = Vec::with_capacity(12 + ct.len());
-    out.extend_from_slice(&nonce);
-    out.extend_from_slice(&ct);
-    Ok(out)
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// 原子写 + 备份恢复（原语下沉自 plugins/ssh/credential.rs；SSH 手工路径继续兼容）
-// ──────────────────────────────────────────────────────────────────────────
-
-/// 先完整写入临时文件并刷盘，再替换目标（旧文件改 .bak，替换成功后删除），避免半截密文。
-pub(crate) fn replace_file(path: &Path, content: &[u8]) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建凭证目录失败: {e}"))?;
-    }
-    let tmp = path.with_extension("tmp");
-    let mut file = std::fs::File::create(&tmp).map_err(|e| format!("临时凭证文件创建失败: {e}"))?;
-    file.write_all(content)
-        .map_err(|e| format!("临时凭证文件写入失败: {e}"))?;
-    file.sync_all()
-        .map_err(|e| format!("临时凭证文件刷盘失败: {e}"))?;
-    if !path.exists() {
-        return std::fs::rename(&tmp, path).map_err(|e| format!("凭证文件写入失败: {e}"));
-    }
-    let backup = path.with_extension("bak");
-    if backup.exists() {
-        std::fs::remove_file(&backup).map_err(|e| format!("旧凭证备份清理失败: {e}"))?;
-    }
-    std::fs::rename(path, &backup).map_err(|e| format!("旧凭证文件备份失败: {e}"))?;
-    if let Err(error) = std::fs::rename(&tmp, path) {
-        let restore = std::fs::rename(&backup, path);
-        return match restore {
-            Ok(()) => Err(format!("凭证文件替换失败，已恢复旧数据: {error}")),
-            Err(restore_error) => Err(format!(
-                "凭证文件替换与恢复均失败: {error}; {restore_error}（旧数据位于 {}）",
-                backup.display()
-            )),
-        };
-    }
-    if let Err(error) = std::fs::remove_file(&backup) {
-        eprintln!("[vault] 凭证已保存，但备份清理失败: {error}");
-    }
-    Ok(())
-}
-
-/// 恢复进程中断遗留的备份；主文件存在时仅清理已过期备份。
-pub(crate) fn recover_backup(path: &Path) -> Result<(), String> {
-    let backup = path.with_extension("bak");
-    match (path.exists(), backup.exists()) {
-        (false, true) => {
-            std::fs::rename(&backup, path).map_err(|e| format!("凭证备份恢复失败: {e}"))
-        }
-        (true, true) => std::fs::remove_file(&backup).map_err(|e| format!("凭证备份清理失败: {e}")),
-        _ => Ok(()),
-    }
-}
 
 // ──────────────────────────────────────────────────────────────────────────
 // vault 读改写（目录参数便于单测；明文 = JSON 数组）
 // ──────────────────────────────────────────────────────────────────────────
 
-/// 读取全部凭证（解密；无文件时返回空表；先恢复中断遗留备份）
+/// 读取全部凭证（解密；主文件与备份都不存在时返回空表）
 pub(crate) fn read_all_at(
     dir: &Path,
     store: &dyn MasterKeyStore,
 ) -> Result<Vec<Credential>, String> {
     let path = dir.join(VAULT_FILE);
-    recover_backup(&path)?;
-    let data = match std::fs::read(&path) {
-        Ok(data) => data,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(format!("凭证文件读取失败: {error}")),
+    let evidence = ciphertext_evidence(std::slice::from_ref(&path))?;
+    let key = resolve_master_key(dir, &VAULT_KEY_SPEC, store, &evidence)?.key;
+    let decode = |plain: &[u8]| -> Result<Vec<Credential>, String> {
+        serde_json::from_slice(plain).map_err(|e| format!("凭证数据解析失败: {e}"))
     };
-    let key = master_key_at(dir, store)?;
-    let plain = decrypt_payload(&key, &data)?;
-    serde_json::from_slice(&plain).map_err(|e| format!("凭证数据解析失败: {e}"))
+    // 读路径内完成择版：主文件可解就用主文件，只有备份可用则备份转正（见 secure_store::load_verified）
+    Ok(load_verified(&path, &key, &decode)?.unwrap_or_default())
 }
 
-/// 写回全部凭证（加密落盘，原子写）
+/// 写回全部凭证（加密落盘，原子替换 + 备份恢复）
 pub(crate) fn write_all_at(
     dir: &Path,
     store: &dyn MasterKeyStore,
     credentials: &[Credential],
 ) -> Result<(), String> {
-    let key = master_key_at(dir, store)?;
+    let path = dir.join(VAULT_FILE);
+    // 先按现有密文解析主密钥：既不能在半途另生成新密钥，也不能覆盖既有密文的语义
+    let evidence = ciphertext_evidence(std::slice::from_ref(&path))?;
+    let key = resolve_master_key(dir, &VAULT_KEY_SPEC, store, &evidence)?.key;
     let plain = serde_json::to_vec(credentials).map_err(|e| e.to_string())?;
     let out = encrypt_payload(&key, &plain)?;
-    replace_file(&dir.join(VAULT_FILE), &out)
+    replace_file(&path, &out)
+}
+
+/// 凭证保护状态（T04-5）：vault 与 credentials 两个域共用一套判定，供设置页展示
+pub(crate) fn protection_status_at(
+    vault_dir: &Path,
+    data_dir: &Path,
+    store: &dyn MasterKeyStore,
+) -> Result<ProtectionStatus, String> {
+    let vault_files = [vault_dir.join(VAULT_FILE)];
+    let credential_files = credentials::all_namespace_files(data_dir)?;
+    Ok(ProtectionStatus {
+        native_backend: native_backend_available(),
+        domains: vec![
+            inspect_domain("vault", vault_dir, &VAULT_KEY_SPEC, store, &vault_files),
+            inspect_domain(
+                "credentials",
+                data_dir,
+                &CREDENTIALS_KEY_SPEC,
+                store,
+                &credential_files,
+            ),
+        ],
+    })
+}
+
+/// 凭证保护状态（AppHandle 封装；命令层入口）
+pub(crate) fn protection_status(app: &AppHandle) -> Result<ProtectionStatus, String> {
+    let data_dir = data_dir_of(app)?;
+    let vault_dir = crate::framework::paths::vault_dir(app)?;
+    protection_status_at(&vault_dir, &data_dir, &KeyringStore)
 }
 
 /// 锁内读全量（AppHandle 封装）
@@ -385,7 +226,8 @@ fn count_dns_references(conn: &rusqlite::Connection, credential_id: &str) -> usi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::cell::RefCell;
+    use crate::framework::secure_store::seed_fallback_file;
+    use crate::framework::secure_store::test_support::{promotion_test_guard, MemoryKeyStore};
 
     use super::super::models::{CredentialFields, CredentialKind};
 
@@ -410,48 +252,6 @@ mod tests {
         assert_eq!(count_dns_references(&legacy, "credential-1"), 0);
     }
 
-    /// 内存密钥库桩（可注入读/写失败，模拟无桌面环境）
-    struct MemStore {
-        /// 已存储的密钥（None = 密钥库中无记录）
-        key: RefCell<Option<[u8; 32]>>,
-        /// 注入读失败
-        fail_read: bool,
-        /// 注入写失败
-        fail_write: bool,
-        /// 注入静默丢写（write 返回 Ok 但不落库，模拟 Windows 凭据管理器丢失场景）
-        lose_writes: bool,
-    }
-
-    impl MemStore {
-        /// 构造空密钥库桩
-        fn new() -> Self {
-            MemStore {
-                key: RefCell::new(None),
-                fail_read: false,
-                fail_write: false,
-                lose_writes: false,
-            }
-        }
-    }
-
-    impl MasterKeyStore for MemStore {
-        fn read(&self) -> Result<Option<[u8; 32]>, String> {
-            if self.fail_read {
-                return Err("注入的读失败".into());
-            }
-            Ok(*self.key.borrow())
-        }
-        fn write(&self, key: &[u8; 32]) -> Result<(), String> {
-            if self.fail_write {
-                return Err("注入的写失败".into());
-            }
-            if !self.lose_writes {
-                *self.key.borrow_mut() = Some(*key);
-            }
-            Ok(())
-        }
-    }
-
     /// 测试用临时目录（进程 id + 名称唯一）
     fn temp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("vault-test-{name}-{}", std::process::id()));
@@ -459,148 +259,172 @@ mod tests {
         dir
     }
 
-    /// 加解密往返 + 错误密钥/损坏密文校验
-    #[test]
-    fn encrypt_decrypt_roundtrip() {
-        let key = [7u8; 32];
-        let plain = br#"[{"id":"a"}]"#;
-        let ct = encrypt_payload(&key, plain).unwrap();
-        assert_eq!(decrypt_payload(&key, &ct).unwrap(), plain);
-        assert!(decrypt_payload(&[8u8; 32], &ct).is_err());
+    /// 构造测试凭证
+    fn sample_credential(id: &str) -> Credential {
+        let now = chrono::Utc::now().timestamp();
+        Credential {
+            id: id.into(),
+            name: "生产 MySQL".into(),
+            kind: CredentialKind::Password,
+            fields: CredentialFields::Password {
+                username: "root".into(),
+                password: "s3cret".into(),
+            },
+            note: String::new(),
+            created_at: now,
+            updated_at: now,
+        }
     }
 
-    /// nonce 唯一性：同明文同密钥两次加密密文必须不同（否则 AES-GCM  nonce 重用是安全事故）
+    /// 崩溃恢复：写入提交前中断（只剩 `.bak`）→ 读路径把备份转正，数据不丢
     #[test]
-    fn nonce_uniqueness() {
-        let key = [7u8; 32];
-        let plain = b"same plaintext";
-        let a = encrypt_payload(&key, plain).unwrap();
-        let b = encrypt_payload(&key, plain).unwrap();
-        assert_ne!(a, b);
-        // 且两次都能解出同一明文
-        assert_eq!(decrypt_payload(&key, &a).unwrap(), plain);
-        assert_eq!(decrypt_payload(&key, &b).unwrap(), plain);
-    }
+    fn interrupted_write_recovers_backup_on_read() {
+        let dir = temp_dir("vault-bak-recover");
+        let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, [0x21u8; 32]);
+        let credential = sample_credential("id-bak");
+        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
 
-    /// 损坏文件报错不 panic：长度过短与篡改密文都必须返回 Err
-    #[test]
-    fn corrupted_ciphertext_errors_no_panic() {
-        let key = [7u8; 32];
-        assert!(decrypt_payload(&key, b"short").is_err());
-        assert!(decrypt_payload(&key, &[0u8; 27]).is_err());
-        let mut ct = encrypt_payload(&key, b"hello vault").unwrap();
-        let last = ct.len() - 1;
-        ct[last] ^= 0xFF; // 篡改认证标签
-        assert!(decrypt_payload(&key, &ct).is_err());
-    }
-
-    /// 原子写 + 备份恢复：正常替换清理 .bak；中断遗留 .bak 时启动恢复
-    #[test]
-    fn replace_and_recover_backup() {
-        let dir = temp_dir("replace-recover");
-        let path = dir.join("vault.dat");
-
-        // 首次写入（无 .bak 产生）
-        replace_file(&path, b"v1").unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"v1");
-
-        // 二次写入：旧文件改 .bak，成功后清理
-        replace_file(&path, b"v2").unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"v2");
-        assert!(!path.with_extension("bak").exists());
-
-        // 模拟中断：只剩 .bak，无主文件 → recover_backup 恢复
+        // 模拟崩溃点：旧文件已改名为 .bak，新文件尚未就位
+        let path = dir.join(VAULT_FILE);
+        let backup = path.with_extension("bak");
         std::fs::rename(&path, path.with_extension("bak")).unwrap();
-        recover_backup(&path).unwrap();
-        assert_eq!(std::fs::read(&path).unwrap(), b"v2");
-        assert!(!path.with_extension("bak").exists());
+        assert!(!path.exists());
 
-        // 主文件存在且 .bak 残留 → 清理 .bak
-        std::fs::write(path.with_extension("bak"), b"stale").unwrap();
-        recover_backup(&path).unwrap();
-        assert!(!path.with_extension("bak").exists());
-        assert_eq!(std::fs::read(&path).unwrap(), b"v2");
+        assert_eq!(read_all_at(&dir, &store).unwrap(), vec![credential]);
+        assert!(path.exists(), "读取后备份应已转正为主文件");
+        assert!(!backup.exists(), "转正后残留备份应清理");
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 主密钥：首次生成入密钥库并复用；密钥库读失败时走降级文件
+    /// 主文件可解时清理残留 `.bak`，不把过期版本当数据源
     #[test]
-    fn master_key_generate_reuse_and_fallback() {
-        let dir = temp_dir("master-key");
-        let store = MemStore::new();
+    fn stale_backup_is_cleaned_when_main_is_readable() {
+        let dir = temp_dir("vault-stale-bak");
+        let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, [0x22u8; 32]);
+        let credential = sample_credential("id-stale");
+        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
 
-        // 首次：生成并写入密钥库；二次：复用同一把
-        let k1 = master_key_at(&dir, &store).unwrap();
-        let k2 = master_key_at(&dir, &store).unwrap();
-        assert_eq!(k1, k2);
-        assert_eq!(store.key.borrow().unwrap(), k1);
+        let path = dir.join(VAULT_FILE);
+        let backup = path.with_extension("bak");
+        std::fs::write(&backup, b"stale").unwrap();
 
-        // 密钥库读失败 + 降级文件存在 → 走降级文件
-        let dir2 = temp_dir("master-key-fallback");
-        let fallback_key = [9u8; 32];
-        replace_file(&dir2.join(FALLBACK_KEY_FILE), &fallback_key).unwrap();
-        let failing = MemStore {
-            key: RefCell::new(None),
-            fail_read: true,
-            fail_write: false,
-            lose_writes: false,
-        };
-        assert_eq!(master_key_at(&dir2, &failing).unwrap(), fallback_key);
-
-        // 降级文件损坏（长度不足）→ 明确报错
-        std::fs::write(dir2.join(FALLBACK_KEY_FILE), b"short").unwrap();
-        assert!(master_key_at(&dir2, &failing).is_err());
-
-        std::fs::remove_dir_all(&dir).ok();
-        std::fs::remove_dir_all(&dir2).ok();
-    }
-
-    /// 密钥库静默丢写（write 返回 Ok 但回读无记录）→ 回读校验失败必须降级文件，
-    /// 否则 vault.dat 会用没存住的密钥加密成死数据（Windows 凭据管理器真实场景回归）
-    #[test]
-    fn silent_write_loss_falls_back_to_file() {
-        let dir = temp_dir("silent-loss");
-        let store = MemStore {
-            lose_writes: true,
-            ..MemStore::new()
-        };
-
-        // 生成主密钥：密钥库没存住 → 降级文件兜底，且两次解析拿到同一把
-        let k1 = master_key_at(&dir, &store).unwrap();
-        assert!(dir.join(FALLBACK_KEY_FILE).exists());
-        let k2 = master_key_at(&dir, &store).unwrap();
-        assert_eq!(k1, k2);
+        assert_eq!(read_all_at(&dir, &store).unwrap(), vec![credential]);
+        assert!(!backup.exists(), "主文件可读时应清理过期备份");
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 密钥丢失宁可锁死：vault.dat 存在而密钥库与降级文件都没有密钥 → 报「无法解锁」，不重新生成
+    /// 主文件损坏而备份完好 → 改用备份，坏文件留档不删除
     #[test]
-    fn lost_key_never_regenerates() {
-        let dir = temp_dir("lost-key");
-        // 用一把密钥写好 vault.dat，再丢掉密钥（新空密钥库）
-        let store_with_key = MemStore::new();
-        let key = master_key_at(&dir, &store_with_key).unwrap();
-        let blob = encrypt_payload(&key, b"[]").unwrap();
-        replace_file(&dir.join(VAULT_FILE), &blob).unwrap();
+    fn unreadable_main_falls_back_to_backup_and_archives_corrupt() {
+        let dir = temp_dir("vault-corrupt-main");
+        let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, [0x23u8; 32]);
+        let credential = sample_credential("id-corrupt");
+        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
 
-        let empty_store = MemStore::new();
-        let err = master_key_at(&dir, &empty_store).unwrap_err();
-        assert!(err.contains("无法解锁凭证库"));
-        // 没有偷偷生成降级文件覆盖语义
-        assert!(!dir.join(FALLBACK_KEY_FILE).exists());
-        // vault.dat 原样保留
+        let path = dir.join(VAULT_FILE);
+        let backup = path.with_extension("bak");
+        std::fs::copy(&path, &backup).unwrap();
+        // 主文件被写坏（长度足够但认证不过），备份仍是好的
+        std::fs::write(&path, vec![0xABu8; 64]).unwrap();
+
+        assert_eq!(read_all_at(&dir, &store).unwrap(), vec![credential]);
+        let archived = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .any(|entry| entry.file_name().to_string_lossy().contains(".corrupt-"));
+        assert!(archived, "坏文件应改名留档");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 密钥丢失宁可锁死：密文在而密钥库与降级文件都没有密钥 → 报「无法解锁」，
+    /// 不生成降级密钥文件、不改动密文
+    #[test]
+    fn missing_key_locks_instead_of_regenerating() {
+        let dir = temp_dir("vault-locked");
+        let store_with_key = MemoryKeyStore::new();
+        let credential = sample_credential("id-locked");
+        write_all_at(&dir, &store_with_key, std::slice::from_ref(&credential)).unwrap();
+        let blob = std::fs::read(dir.join(VAULT_FILE)).unwrap();
+
+        // 新空密钥库（换机 / 重装 / 密钥库被清空）
+        let empty_store = MemoryKeyStore::new();
+        let error = read_all_at(&dir, &empty_store).unwrap_err();
+        assert!(error.contains("无法解锁"), "错误应指向解锁失败: {error}");
+        assert!(
+            !dir.join(VAULT_KEY_SPEC.fallback_file).exists(),
+            "锁死时不得偷偷生成降级密钥文件"
+        );
         assert_eq!(std::fs::read(dir.join(VAULT_FILE)).unwrap(), blob);
 
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    /// 读写全量往返：含备份恢复入口 + 损坏 vault.dat 报错不 panic
+    /// 写入路径同样不许生成新密钥：密文在而密钥不可用 → 写失败且密文原样保留
+    #[test]
+    fn write_refuses_when_key_is_missing() {
+        let dir = temp_dir("vault-write-locked");
+        let store_with_key = MemoryKeyStore::new();
+        write_all_at(
+            &dir,
+            &store_with_key,
+            std::slice::from_ref(&sample_credential("id-1")),
+        )
+        .unwrap();
+        let blob = std::fs::read(dir.join(VAULT_FILE)).unwrap();
+
+        let empty_store = MemoryKeyStore::new();
+        assert!(write_all_at(&dir, &empty_store, &[]).is_err());
+        assert_eq!(
+            std::fs::read(dir.join(VAULT_FILE)).unwrap(),
+            blob,
+            "写失败不得覆盖既有密文"
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 状态查询无副作用：不生成密钥、不写密钥库、不落降级文件，且两个域都要报告
+    #[test]
+    fn protection_status_has_no_side_effects() {
+        let dir = temp_dir("vault-status");
+        let store = MemoryKeyStore::new();
+        let status = protection_status_at(&dir, &dir, &store).unwrap();
+        let domains: Vec<&str> = status.domains.iter().map(|d| d.domain.as_str()).collect();
+        assert_eq!(domains, vec!["vault", "credentials"]);
+        assert!(status.domains.iter().all(|d| !d.ciphertext_exists));
+        assert!(!dir.join(VAULT_KEY_SPEC.fallback_file).exists());
+        assert_eq!(store.write_attempts(), 0, "查询状态不应写密钥库");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 降级密钥是迁移输入：密钥库为空但本地密钥文件能解开既有密文 → 照常读取
+    #[test]
+    fn fallback_key_file_still_unlocks_existing_ciphertext() {
+        let dir = temp_dir("vault-fallback-unlock");
+        // 本用例会走「降级密钥登记」分支（进程级共享记录），与同类用例串行
+        let _serialize = promotion_test_guard();
+        let key = [0x24u8; 32];
+        let credential = sample_credential("id-fallback");
+        // 用降级文件里的密钥写入密文，密钥库为空
+        seed_fallback_file(&dir, &VAULT_KEY_SPEC, &key).expect("写入降级密钥文件");
+        let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, key);
+        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
+
+        let empty_store = MemoryKeyStore::new();
+        assert_eq!(read_all_at(&dir, &empty_store).unwrap(), vec![credential]);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 读写全量往返：损坏 vault.dat 报错不 panic
     #[test]
     fn read_write_roundtrip_and_corrupt_file() {
         let dir = temp_dir("read-write");
-        let store = MemStore::new();
+        let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, [0x25u8; 32]);
         let now = chrono::Utc::now().timestamp();
         let credential = Credential {
             id: "id-1".into(),

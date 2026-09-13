@@ -156,6 +156,15 @@ pub fn vault_reveal(app: AppHandle, id: String) -> Result<Credential, String> {
     store::resolve(&app, &id)
 }
 
+/// 凭证保护状态（T04-5）：主密钥实际来源（系统密钥库 / 本地降级文件 / 不可用）与可用性。
+/// 设置页据此持久展示「是否真的受系统密钥库保护」，无法可用时给出原因。
+#[tauri::command]
+pub fn vault_protection_status(
+    app: AppHandle,
+) -> Result<crate::framework::secure_store::ProtectionStatus, String> {
+    store::protection_status(&app)
+}
+
 /// 导出 .pbvault 备份（用户设一次性密码 → Argon2id 派生密钥 → AES-256-GCM；路径由前端 dialog 选定）
 #[tauri::command]
 pub async fn vault_export(app: AppHandle, path: String, password: String) -> Result<(), String> {
