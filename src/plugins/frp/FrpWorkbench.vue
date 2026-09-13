@@ -21,12 +21,15 @@ import ProfileDetail from './profile/ProfileDetail.vue'
 import ProfileSidebar from './profile/ProfileSidebar.vue'
 import { useFrpProfiles } from './profile/useFrpProfiles'
 import { useFrpRuntime } from './runtime/useFrpRuntime'
+import { useFrpToolLifecycle } from './toolLifecycle'
 
 const { t } = useI18n()
 const ui = useUiStore()
 const binary = useFrpBinary()
 const profiles = useFrpProfiles()
 const runtime = useFrpRuntime()
+// 工具资源生命周期：关闭页签/退出时停止本工具启动的 frpc 进程（T10-4）
+useFrpToolLifecycle()
 // 客户端清单由工作台持有并向下注入：弹窗里改完，详情页与左栏立刻看到同一份状态
 const clients = useFrpClients()
 

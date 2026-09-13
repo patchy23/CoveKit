@@ -9,11 +9,14 @@ import { ipc } from './ipc'
 import HttpPanel from './HttpPanel.vue'
 import ApiSidebar from './ApiSidebar.vue'
 import type { ApiDraft } from './useHttp'
+import { useHttpWsToolLifecycle } from './toolLifecycle'
 import { useUiStore } from '@/stores/ui'
 import { UiButton, UiInput, UiModal } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
 const ui = useUiStore()
+// 工具资源生命周期：关闭页签/退出时关闭全部 WebSocket 会话（T10-4）
+useHttpWsToolLifecycle()
 
 const panel = ref<InstanceType<typeof HttpPanel> | null>(null)
 

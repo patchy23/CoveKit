@@ -4,8 +4,9 @@
  * 方法下拉含 WS 同级选项：选择 WS 动态显示请求头 + 消息收发区；
  * 选择 HTTP 方法显示 Params/Headers/Body + 响应区。
  */
-import { computed, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { HttpMethod, HttpResponseResult, WsSession } from './contracts'
+import { useToolScope } from '@/core/lifecycle'
 import { ipc } from './ipc'
 import { UiButton, UiInput, UiSelect as Select } from '@/core/ui'
 import HttpRequestBuilder from './HttpRequestBuilder.vue'
@@ -46,7 +47,14 @@ const body = ref('')
 /* WebSocket 会话 */
 const wsSession = ref<WsSession | null>(null)
 const wsConnecting = ref(false)
-let pollTimer: ReturnType<typeof setInterval> | null = null
+
+// WS 消息轮询挂在工具作用域上（T10-5/T10-7）：卸载即释放；
+// 窗口隐藏 / 页签切走时降频到 1s（消息仍会被拉到，只是不那么勤）
+const { scope, visibility, onResume } = useToolScope('http-ws', 'http-ws.wspoll')
+const WS_POLL_VISIBLE_MS = 300
+const WS_POLL_HIDDEN_MS = 1000
+/** 轮询开关：停止后不再排下一轮（定时器本身由 scope 持有并释放） */
+let polling = false
 
 const isWs = computed(() => method.value === 'WEBSOCKET')
 const wsConnected = computed(() => wsSession.value?.open === true)
@@ -124,17 +132,25 @@ async function sendWsMessage(text: string) {
   await pollOnce()
 }
 
-/** 300ms 轮询拉取消息 */
-function startPoll() {
-  stopPoll()
-  pollTimer = setInterval(pollOnce, 300)
+/** 排下一轮轮询：可见 300ms，隐藏/非激活降频到 1s（不停止，避免漏掉会话侧消息） */
+function armPoll(delay: number): void {
+  scope.timeout(() => {
+    if (!polling) return
+    void pollOnce()
+    const hidden = !visibility.value.active || visibility.value.covered || visibility.value.hidden
+    armPoll(hidden ? WS_POLL_HIDDEN_MS : WS_POLL_VISIBLE_MS)
+  }, delay)
 }
 
+/** 开始轮询 */
+function startPoll() {
+  polling = true
+  armPoll(WS_POLL_VISIBLE_MS)
+}
+
+/** 停止轮询（定时器由 scope 释放，这里只关掉「继续排下一轮」） */
 function stopPoll() {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
+  polling = false
 }
 
 async function pollOnce() {
@@ -146,8 +162,14 @@ async function pollOnce() {
   }
 }
 
+onMounted(() => {
+  // 恢复可见时立刻补一次消息拉取，不等下一个周期
+  onResume(() => {
+    void pollOnce()
+  })
+})
+
 onUnmounted(() => {
-  stopPoll()
   if (wsSession.value) {
     ipc.wsClose(wsSession.value.id).catch(() => {})
   }

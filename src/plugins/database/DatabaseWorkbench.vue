@@ -14,8 +14,11 @@ import RedisTab from './RedisTab.vue'
 import DatabaseInspectorPane from './DatabaseInspectorPane.vue'
 import ConnectionDialog from './ConnectionDialog.vue'
 import type { ConnConfig, DbConnectionInfo } from './contracts'
+import { useDatabaseToolLifecycle } from './toolLifecycle'
 
 const db = useDatabase()
+// 工具资源生命周期：关闭页签/退出时断开全部数据库连接（T10-4）
+useDatabaseToolLifecycle()
 const inspectorOpen = ref(true)
 
 /** 右侧摘要宽度（默认 220，可拖拽；不持久化） */

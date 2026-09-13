@@ -19,8 +19,11 @@ import {
 } from './useSshWorkspace'
 import { UiIcon, UiIconButton, UiTabs, type UiTabItem } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { useSshToolLifecycle } from './toolLifecycle'
 
 const workspace = useSshWorkspace()
+// 工具资源生命周期：关闭页签/退出时断开会话与隧道（T10-4）
+useSshToolLifecycle()
 const {
   profiles,
   groups,

@@ -2,19 +2,22 @@
  * frp 运行状态与日志（事件驱动为主，5s 轮询兜底）
  * 状态机判定在 Rust 侧（runtime.rs），这里只维护展示态与调用命令。
  */
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { throttledInterval, useToolLifecycle } from '@/core/lifecycle'
 import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '../ipc'
 import type { FrpLogPayload, FrpRuntimeState } from '../contracts'
+import { isFrpLive } from '../toolLifecycle'
 import { appendLogLine, logLevel, type FrpLogLine } from './frpStatus'
 
 /** 工具 id（工具级设置的分区键） */
 const TOOL_ID = 'frp'
 /** 轮询兜底间隔：事件丢失时还能纠正状态 */
 const POLL_INTERVAL_MS = 5000
+/** 工具非激活或被窗口隐藏时的轮询间隔（T10-7：降频但不完全停摆，避免回来时状态过期） */
+const HIDDEN_POLL_INTERVAL_MS = 30000
 /** 日志缓冲默认行数 */
 const DEFAULT_MAX_LINES = 2000
 
@@ -31,8 +34,14 @@ export function useFrpRuntime() {
   /** 正在执行启停操作的档案（按钮禁用以防连点） */
   const busy = ref<Record<string, boolean>>({})
 
-  let unlisteners: UnlistenFn[] = []
-  let timer: ReturnType<typeof setInterval> | null = null
+  // 生命周期（T10-1/T10-5/T10-7）：订阅与定时器都挂在 scope 上，卸载统一释放；
+  // visibility 区分「页签切换/设置页覆盖/窗口隐藏」，只有真正不可见时才降频
+  const { scope, visibility, running } = useToolLifecycle(TOOL_ID)
+
+  /** 当前是否处于「用户看得见」的状态（激活且未被覆盖、窗口可见） */
+  function engaged(): boolean {
+    return visibility.value.active && !visibility.value.covered && !visibility.value.hidden
+  }
 
   /** 日志缓冲上限（读工具设置，非法值回落默认） */
   function maxLines(): number {
@@ -84,6 +93,8 @@ export function useFrpRuntime() {
       const next: Record<string, FrpRuntimeState> = {}
       for (const item of list) next[item.fileName] = item
       states.value = next
+      // 运行标记进关闭协商：关页签时用户能看到「还有进程在跑」（T10-4）
+      running.value = list.some((item) => isFrpLive(item.state))
     } catch {
       // 状态查询失败不打扰用户（轮询会自愈）；操作路径上的失败一定有 toast
     }
@@ -123,24 +134,33 @@ export function useFrpRuntime() {
     return runCommand(fileName, () => ipc.restart(fileName), 'frp.restartRequested')
   }
 
-  onMounted(async () => {
-    unlisteners = await Promise.all([
-      listen<FrpRuntimeState>('frp://state', (event) => applyState(event.payload)),
-      listen<FrpLogPayload>('frp://log', (event) => applyLog(event.payload)),
-    ])
-    await refresh()
-    timer = setInterval(() => {
-      void refresh()
-    }, POLL_INTERVAL_MS)
-  })
+  /** 兜底轮询：间隔随可见性变化，重新可见时立刻刷新一次（不丢状态） */
+  function schedulePoll(): void {
+    const delay = throttledInterval(POLL_INTERVAL_MS, HIDDEN_POLL_INTERVAL_MS, !engaged())
+    scope.timeout(() => {
+      void refresh().finally(schedulePoll)
+    }, delay)
+  }
 
-  onBeforeUnmount(() => {
-    for (const off of unlisteners) off()
-    unlisteners = []
-    if (timer !== null) {
-      clearInterval(timer)
-      timer = null
-    }
+  onMounted(async () => {
+    await scope.listenEvent<FrpRuntimeState>('frp://state', (payload) => applyState(payload))
+    await scope.listenEvent<FrpLogPayload>('frp://log', (payload) => applyLog(payload))
+    await refresh()
+    schedulePoll()
+    // 从隐藏/被覆盖回到可见时立即补一次刷新，不等下一个轮询周期
+    watch(visibility, (next, previous) => {
+      if (
+        next.active &&
+        !next.covered &&
+        !next.hidden &&
+        !(previous.active && !previous.covered && !previous.hidden)
+      ) {
+        void refresh()
+      }
+    })
+    scope.onResume(() => {
+      void refresh()
+    })
   })
 
   return { states, logs, busy, stateOf, logsOf, isBusy, clearLogs, refresh, start, stop, restart }

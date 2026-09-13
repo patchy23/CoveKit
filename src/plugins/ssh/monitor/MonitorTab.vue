@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /** SSH 资源监控：关键指标概览、容量进度和 3 秒趋势。 */
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, MonitorData } from '../contracts'
+import { throttledInterval, useToolScope } from '@/core/lifecycle'
 import { formatBytes } from '../connection/useSsh'
 import { ipc } from '../ipc'
 import MonitorSystemPanel from './MonitorSystemPanel.vue'
@@ -12,7 +13,26 @@ const data = ref<MonitorData | null>(null)
 const history = ref<MonitorData[]>([])
 const errorMessage = ref('')
 const refreshing = ref(false)
-let timer: number | null = null
+
+// 采样轮询走作用域：页签切走/设置页覆盖/窗口隐藏时降到 30s（T10-7），
+// 回到可见立刻补一次采样；卸载时 scope 统一释放，不会留下关不掉的定时器
+const { scope, visibility, onResume } = useToolScope('ssh', 'ssh.monitor')
+/** 采样间隔：可见 3s（趋势需要密度），不可见 30s（只为不丢状态） */
+const POLL_VISIBLE_MS = 3000
+const POLL_HIDDEN_MS = 30000
+
+/** 当前是否处于用户可见状态 */
+function engaged(): boolean {
+  return visibility.value.active && !visibility.value.covered && !visibility.value.hidden
+}
+
+/** 自调度轮询：每轮按当前可见性重新计算间隔 */
+function schedulePoll(): void {
+  const delay = throttledInterval(POLL_VISIBLE_MS, POLL_HIDDEN_MS, !engaged())
+  scope.timeout(() => {
+    void refresh().finally(schedulePoll)
+  }, delay)
+}
 
 async function refresh() {
   const connectionId = props.connection?.sessionId
@@ -62,11 +82,10 @@ const memoryPath = computed(() =>
 
 onMounted(() => {
   void refresh()
-  timer = window.setInterval(refresh, 3000)
-})
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
+  schedulePoll()
+  onResume(() => {
+    void refresh()
+  })
 })
 
 watch(
