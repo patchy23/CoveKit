@@ -22,12 +22,14 @@ import Toast from '@/features/ui/Toast.vue'
 import { useFavoritesStore } from '@/stores/favorites'
 import { useSettingsStore } from '@/stores/settings'
 import { useToolsStore } from '@/stores/tools'
+import { useTasksStore } from '@/stores/tasks'
 import { useUiStore } from '@/stores/ui'
 
 const tools = useToolsStore()
 const favorites = useFavoritesStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
+const tasks = useTasksStore()
 
 /**
  * 窗口隐藏状态来源一：页面可见性（最小化、切到其他虚拟桌面时浏览器层会更新）。
@@ -56,6 +58,8 @@ async function watchWindowVisibility() {
 }
 
 onMounted(async () => {
+  // 启动期就有框架长任务（存储迁移）：界面一起来就订阅，避免错过进度与结果
+  void tasks.start()
   document.addEventListener('visibilitychange', onVisibilityChange)
   onVisibilityChange()
   await watchWindowVisibility()

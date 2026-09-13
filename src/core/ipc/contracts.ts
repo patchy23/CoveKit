@@ -61,6 +61,47 @@ export interface UpdateAvailability {
   channel: string
 }
 
+/** 框架长任务事件名（与 Rust `framework::tasks::TASK_EVENT` 一致；负载为 TaskSnapshot） */
+export const FRAMEWORK_TASK_EVENT = 'framework://task'
+
+/** 框架任务状态（与 Rust `framework::tasks::TaskState` 同步） */
+export type TaskState = 'running' | 'succeeded' | 'failed'
+
+/** 任务错误：稳定 code + 面向用户 message（Rust `TaskError`） */
+export interface TaskError {
+  /** 稳定错误码（如 storage.migrate.failed），界面与诊断按它归类 */
+  code: string
+  /** 面向用户的说明，可直接展示 */
+  message: string
+}
+
+/** 任务快照（Rust `TaskSnapshot`） */
+export interface TaskSnapshot {
+  id: string
+  /** 归属模块，如 storage */
+  owner: string
+  /** 任务类型，如 storage.migrate */
+  kind: string
+  state: TaskState
+  /** 进度百分比 0..=100；不可估算时为 null，不假装 0 */
+  progress: number | null
+  /** 是否允许取消 */
+  cancellable: boolean
+  /** 不可取消的原因（cancellable 为 true 时为 null） */
+  cancellableReason: string | null
+  error: TaskError | null
+  /** 登记时间（epoch 毫秒） */
+  startedAt: number
+  /** 最近变更时间（epoch 毫秒） */
+  updatedAt: number
+}
+
+/** 任务清单（Rust `TaskList`） */
+export interface TaskList {
+  active: TaskSnapshot[]
+  finished: TaskSnapshot[]
+}
+
 /** 窗口状态 */
 export interface WindowState {
   visible: boolean
@@ -331,6 +372,7 @@ export const frameworkCommands = {
   // 退出协商（框架命令，src-tauri framework/exit）
   appRequestExit: 'app_request_exit',
   appForceExit: 'app_force_exit',
+  frameworkTasks: 'framework_tasks',
   openExternal: 'open_external',
   frameworkCommandsList: 'framework_commands',
   // 存储位置（框架命令，src-tauri framework/storage）
@@ -362,6 +404,7 @@ export type FrameworkPayloads = {
   window_hide: Record<string, never>
   app_request_exit: { reason: string }
   app_force_exit: Record<string, never>
+  framework_tasks: Record<string, never>
   open_external: { url: string }
   framework_commands: Record<string, never>
   storage_info: Record<string, never>
@@ -391,6 +434,7 @@ export type FrameworkResults = {
   window_hide: void
   app_request_exit: ExitDecision
   app_force_exit: ExitDecision
+  framework_tasks: TaskList
   open_external: void
   framework_commands: { name: string; doc: string }[]
   storage_info: StorageInfo

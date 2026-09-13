@@ -19,6 +19,7 @@
 use std::time::{Duration, Instant};
 
 use crate::framework::paths;
+use crate::framework::tasks;
 
 use super::{plan, recovery, scan, transfer, verify, PARTITIONS};
 
@@ -343,8 +344,27 @@ fn fail(
 /// 该函数**不返回错误**：启动过程不能因为一次迁移失败而整体失败（那样用户看不到任何提示）。
 pub fn run_pending(app: &tauri::AppHandle, configured_root: &str) -> MigrationOutcome {
     let cfg = plan::AppConfig(app);
+    // 没有待执行计划就不登记任务：否则每次启动都会在任务清单里留一条「无事发生」的记录
+    if plan::load_pending(&cfg).is_none() {
+        return MigrationOutcome::NoPlan;
+    }
+    // 迁移在启动维护阶段一次跑完：中断会留下半成品（下次启动会重试），因此不提供中途取消
+    let task = tasks::begin(
+        Some(app),
+        "storage",
+        "storage.migrate",
+        false,
+        Some("迁移在启动维护阶段一次执行，中断会留下半成品，因此不能中途取消"),
+    );
+    if task.is_rejected() {
+        // 登记表满只影响可观测性，不影响迁移本身：这一步必须说清楚，避免用户以为界面卡住
+        eprintln!("[storage] 长任务登记已达上限，本次迁移不记录进度（不影响迁移本身）");
+    }
     let emit = |phase: &'static str, files: u64, bytes: u64, total: u64| {
         super::emit_progress(app, phase, files, bytes, total);
+        if total > 0 {
+            task.progress(Some(app), bytes.saturating_mul(100) / total);
+        }
     };
     let outcome = match execute_pending(&cfg, &emit) {
         Ok(outcome) => outcome,
@@ -356,10 +376,14 @@ pub fn run_pending(app: &tauri::AppHandle, configured_root: &str) -> MigrationOu
     };
     match &outcome {
         MigrationOutcome::NoPlan => {}
-        MigrationOutcome::Committed { .. } => eprintln!("[storage] {}", outcome.summary()),
+        MigrationOutcome::Committed { .. } => {
+            task.succeed(Some(app));
+            eprintln!("[storage] {}", outcome.summary());
+        }
         MigrationOutcome::Failed {
             plan_id, detail, ..
         } => {
+            task.fail(Some(app), "storage.migrate.failed", detail);
             eprintln!("[storage] {}", outcome.summary());
             // 失败时生效根仍停在源目录（提交从不半途生效）：恢复页展示的就是它
             let active = plan::load_pending(&cfg)

@@ -53,6 +53,7 @@ export const ipc = {
   windowHide: () => call('window_hide', {}),
   openExternal: (url: string) => call('open_external', { url }),
   frameworkCommandsList: () => call('framework_commands', {}),
+  frameworkTasks: () => call('framework_tasks', {}),
   storageInfo: () => call('storage_info', {}),
   storageScheduleMigration: (target: string) => call('storage_schedule_migration', { target }),
   storageCancelMigration: () => call('storage_cancel_migration', {}),

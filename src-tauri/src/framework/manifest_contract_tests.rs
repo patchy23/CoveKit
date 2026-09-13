@@ -128,6 +128,11 @@ mod tests {
         ),
         (
             "framework",
+            "framework_tasks",
+            "查询框架长任务清单（活跃与最近结束，供界面与诊断使用）",
+        ),
+        (
+            "framework",
             "framework_commands",
             "查询全量已入库 IPC 命令（名称 + 说明）",
         ),
