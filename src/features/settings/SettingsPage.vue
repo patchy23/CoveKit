@@ -188,6 +188,19 @@ async function chooseDownloadDirectory() {
               <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
                 {{ t('settings.hotkeyHint') }}
               </span>
+              <!-- 注册失败/被占用时不谎称已生效：显示系统实际状态 -->
+              <span
+                v-if="!settings.hotkeyActive"
+                class="text-body-sm text-warning-strong dark:text-warning-dark"
+              >
+                {{ t('settings.hotkeyInactive') }}
+              </span>
+              <span
+                v-if="settings.saveError"
+                class="text-body-sm text-warning-strong dark:text-warning-dark"
+              >
+                {{ t('settings.saveFailed', { message: settings.saveError }) }}
+              </span>
             </label>
             <label
               class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"

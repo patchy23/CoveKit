@@ -6,16 +6,59 @@
 
 // ── 出参结构 ──
 
-/** 应用设置（Rust framework/settings.rs 全量读写） */
+/**
+ * 应用设置（Rust framework/settings.rs 全量读写）
+ *
+ * 本文件是 AppSettings 的唯一事实源（`core/registry/types.ts` 只做再导出）。
+ * `globalHotkeyActive` 由 Rust 维护，是实际注册成功的快捷键（空串 = 未生效），
+ * 用于让界面显示与系统状态一致，前端不得写入。
+ */
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system'
   language: 'zh-CN' | 'en-US'
   globalHotkey: string
+  /** 实际生效的快捷键（Rust 只读字段；与 globalHotkey 不同表示注册失败/被占用） */
+  globalHotkeyActive: string
   launchAtStartup: boolean
   /** 工具箱级默认下载目录；各工具的保存对话框优先从这里打开。 */
   defaultDownloadDirectory: string
-  recentTools: string[]
   tools: Record<string, Record<string, unknown>>
+}
+
+/**
+ * 工具级设置字段（判别联合：类型决定可用参数）
+ *
+ * 说明：**没有 secret 类型**。普通设置文件是明文，秘密材料必须走凭证管理
+ * （`framework::vault`）；历史 schema 若声明 secret，前端不渲染、Rust 侧也会按敏感键名拒绝写入。
+ * 数字字段可声明 min/max，越界由渲染层与保存前校验一起拦截。
+ */
+export type SettingsField =
+  | { key: string; type: 'toggle'; label: string; default?: boolean }
+  | { key: string; type: 'text'; label: string; default?: string }
+  | {
+      key: string
+      type: 'number'
+      label: string
+      default?: number
+      min?: number
+      max?: number
+      step?: number
+    }
+  | {
+      key: string
+      type: 'select'
+      label: string
+      default?: string
+      options: { label: string; value: string }[]
+    }
+
+/** 更新可用性（占位公钥等无效配置按不可用上报） */
+export interface UpdateAvailability {
+  available: boolean
+  /** 不可用原因（可直接展示；可用时为空串） */
+  reason: string
+  /** 更新通道（下载地址） */
+  channel: string
 }
 
 /** 窗口状态 */
@@ -80,8 +123,33 @@ export interface CredentialSavePayload {
 export interface VaultDeleteResult {
   ok: boolean
   error: string | null
-  /** 仍引用该凭证的插件 profile 数量（引用扫描随设计 §6 迁移接入） */
+  /** 仍引用该凭证的插件对象数量（后端删除前重新核对的结果） */
   referencedBy: number
+}
+
+/** 一条凭证引用：哪个插件的哪个对象在用 */
+export interface CredentialReferenceItem {
+  owner: string
+  credentialId: string
+  objectId: string
+  objectName: string
+}
+
+/** 单插件扫描结果（status.state=unknown 表示该插件计数未知，必须提示而不是当成无引用） */
+export interface CredentialReferenceOwner {
+  owner: string
+  references: CredentialReferenceItem[]
+  status: { state: 'ok' } | { state: 'unknown'; reason: string }
+}
+
+/** 凭证引用概况（按插件自报能力批量扫描） */
+export interface CredentialReferenceSummary {
+  credentialId: string
+  owners: CredentialReferenceOwner[]
+  /** 扫描成功的插件里引用总数 */
+  total: number
+  /** 扫描失败、计数未知的插件 */
+  unknownOwners: string[]
 }
 
 /** vault_import 返回 */
@@ -244,6 +312,10 @@ export type StorageRecoveryAction = 'retry' | 'use-default' | 'choose'
 export const frameworkCommands = {
   settingsGet: 'settings_get',
   settingsSet: 'settings_set',
+  settingsPatch: 'settings_patch',
+  settingsSetTool: 'settings_set_tool',
+  settingsRevision: 'settings_revision',
+  updateAvailability: 'update_availability',
   windowToggle: 'window_toggle',
   windowHide: 'window_hide',
   openExternal: 'open_external',
@@ -258,7 +330,7 @@ export const frameworkCommands = {
   vaultList: 'vault_list',
   vaultSave: 'vault_save',
   vaultDelete: 'vault_delete',
-  vaultReferenceCount: 'vault_reference_count',
+  vaultCredentialReferences: 'vault_credential_references',
   vaultReveal: 'vault_reveal',
   vaultProtectionStatus: 'vault_protection_status',
   vaultExport: 'vault_export',
@@ -269,6 +341,10 @@ export const frameworkCommands = {
 export type FrameworkPayloads = {
   settings_get: { key?: string }
   settings_set: { key: string; value: unknown }
+  settings_patch: { revision?: number; patch: Record<string, unknown> }
+  settings_set_tool: { tool: string; key: string; value: unknown }
+  settings_revision: Record<string, never>
+  update_availability: Record<string, never>
   window_toggle: Record<string, never>
   window_hide: Record<string, never>
   open_external: { url: string }
@@ -280,8 +356,8 @@ export type FrameworkPayloads = {
   storage_recovery_action: { action: StorageRecoveryAction; target?: string }
   vault_list: Record<string, never>
   vault_save: { payload: CredentialSavePayload }
-  vault_delete: { id: string }
-  vault_reference_count: { id: string }
+  vault_delete: { id: string; force?: boolean; expectedReferences?: number }
+  vault_credential_references: { id: string }
   vault_reveal: { id: string }
   vault_protection_status: Record<string, never>
   vault_export: { path: string; password: string }
@@ -291,7 +367,11 @@ export type FrameworkPayloads = {
 /** 框架命令返回 */
 export type FrameworkResults = {
   settings_get: AppSettings
-  settings_set: void
+  settings_set: number
+  settings_patch: number
+  settings_set_tool: number
+  settings_revision: number
+  update_availability: UpdateAvailability
   window_toggle: WindowState
   window_hide: void
   open_external: void
@@ -304,7 +384,7 @@ export type FrameworkResults = {
   vault_list: CredentialSummary[]
   vault_save: CredentialSummary
   vault_delete: VaultDeleteResult
-  vault_reference_count: number
+  vault_credential_references: CredentialReferenceSummary
   vault_reveal: Credential
   vault_protection_status: VaultProtectionStatus
   vault_export: void

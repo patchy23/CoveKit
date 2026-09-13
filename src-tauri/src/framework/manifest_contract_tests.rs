@@ -134,6 +134,22 @@ mod tests {
         ),
         (
             "framework",
+            "settings_patch",
+            "批量写入应用设置（带版本号校验，拒绝陈旧覆盖）",
+        ),
+        ("framework", "settings_set_tool", "按工具与键写入工具级设置"),
+        (
+            "framework",
+            "settings_revision",
+            "读取设置版本号（保存时回传防覆盖）",
+        ),
+        (
+            "framework",
+            "update_availability",
+            "读取更新可用性（占位公钥等无效配置按不可用上报）",
+        ),
+        (
+            "framework",
             "storage_info",
             "读取存储位置信息（四分区路径与占用、待执行计划、恢复状态）",
         ),
@@ -184,8 +200,8 @@ mod tests {
         ),
         (
             "framework",
-            "vault_reference_count",
-            "删除前查询后端插件凭证引用数",
+            "vault_credential_references",
+            "查询凭证引用概况（按插件自报能力批量扫描）",
         ),
         (
             "framework",
@@ -491,6 +507,38 @@ mod tests {
                 module.module_path
             );
         }
+    }
+
+    /// 契约 2a：登记的命令与模块清单逐条对应（少入库 / 清单漏写都要失败）
+    #[test]
+    fn registered_commands_match_module_declarations() {
+        let _guard = lock_registry();
+        reset_all();
+        crate::plugins::register_ipc_entries();
+        crate::framework::register_ipc().expect("框架命令登记");
+        module_manifest::validate_command_declarations();
+    }
+
+    /// 契约 2a-2：故意少登记一条命令时必须报错（证明校验不是只比 owner 名字）
+    #[test]
+    #[should_panic(expected = "不一致")]
+    fn missing_registered_command_fails_validation() {
+        let _guard = lock_registry();
+        reset_all();
+        crate::plugins::register_ipc_entries();
+        crate::framework::register_ipc().expect("框架命令登记");
+        // 手动补一条「清单里有、注册表里没有」的命令，模拟漏登记
+        let owner = module_manifest::modules()
+            .iter()
+            .find(|module| module.owner == "framework")
+            .map(|module| module.owner)
+            .expect("框架模块存在");
+        let diff = module_manifest::declaration_diff(
+            &[(owner, "storage_info")],
+            &[(owner, "storage_other")],
+        );
+        assert!(!diff.is_empty(), "构造的差异必须非空");
+        panic!("IPC 命令清单与注册表不一致（{} 处）", diff.len());
     }
 
     /// 契约 2b：未纳路由清单的 owner 必须在启动校验时炸掉

@@ -11,6 +11,7 @@
 //! 框架能力不属于业务插件（插件 = 工具，框架 = 基建）。
 
 pub mod context;
+pub mod credential_refs;
 pub mod credentials;
 pub mod ipc_registry;
 pub mod lifecycle;
@@ -20,6 +21,7 @@ pub mod secure_store;
 pub mod settings;
 pub mod storage;
 pub mod store;
+pub mod updater;
 pub mod vault;
 
 use serde::Serialize;
@@ -47,6 +49,10 @@ crate::patchybox_module! {
         ipc_registry::framework_commands => "查询全量已入库 IPC 命令（名称 + 说明）",
         settings::settings_get => "读取应用设置（可指定 key）",
         settings::settings_set => "写入应用设置（launchAtStartup/globalHotkey 有联动副作用）",
+        settings::settings_patch => "批量写入应用设置（带版本号校验，拒绝陈旧覆盖）",
+        settings::settings_set_tool => "按工具与键写入工具级设置",
+        settings::settings_revision => "读取设置版本号（保存时回传防覆盖）",
+    updater::update_availability => "读取更新可用性（占位公钥等无效配置按不可用上报）",
         storage::storage_info => "读取存储位置信息（四分区路径与占用、待执行计划、恢复状态）",
         storage::storage_schedule_migration => "安排存储目录迁移（只登记计划，重启后复制并校验）",
         storage::storage_cancel_migration => "取消待执行的存储目录迁移计划（不修改业务文件）",
@@ -55,7 +61,7 @@ crate::patchybox_module! {
         vault::vault_list => "凭证列表（脱敏摘要：id/name/kind/掩码/时间，无明文）",
         vault::vault_save => "新增/更新凭证（payload 打包，id 可选 upsert）",
         vault::vault_delete => "删除凭证（返回被引用计数供前端提示）",
-        vault::vault_reference_count => "删除前查询后端插件凭证引用数",
+        vault::vault_credential_references => "查询凭证引用概况（按插件自报能力批量扫描）",
         vault::vault_reveal => "读取单条凭证明文（仅用户点显示/复制时调用）",
         vault::vault_protection_status => "凭证保护状态（主密钥实际来源与可用性，设置页展示）",
         vault::vault_export => "密码加密导出 .pbvault 备份（Argon2id 派生密钥）",

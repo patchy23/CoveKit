@@ -43,6 +43,12 @@ async function call<K extends keyof FrameworkPayloads & keyof FrameworkResults>(
 export const ipc = {
   settingsGet: (key?: string) => call('settings_get', { key }),
   settingsSet: (key: string, value: unknown) => call('settings_set', { key, value }),
+  settingsPatch: (patch: Record<string, unknown>, revision?: number) =>
+    call('settings_patch', { revision, patch }),
+  settingsSetTool: (tool: string, key: string, value: unknown) =>
+    call('settings_set_tool', { tool, key, value }),
+  settingsRevision: () => call('settings_revision', {}),
+  updateAvailability: () => call('update_availability', {}),
   windowToggle: () => call('window_toggle', {}),
   windowHide: () => call('window_hide', {}),
   openExternal: (url: string) => call('open_external', { url }),
@@ -55,8 +61,9 @@ export const ipc = {
     call('storage_recovery_action', { action, target }),
   vaultList: () => call('vault_list', {}),
   vaultSave: (payload: CredentialSavePayload) => call('vault_save', { payload }),
-  vaultDelete: (id: string) => call('vault_delete', { id }),
-  vaultReferenceCount: (id: string) => call('vault_reference_count', { id }),
+  vaultDelete: (id: string, options?: { force?: boolean; expectedReferences?: number }) =>
+    call('vault_delete', { id, ...options }),
+  vaultCredentialReferences: (id: string) => call('vault_credential_references', { id }),
   vaultReveal: (id: string) => call('vault_reveal', { id }),
   vaultProtectionStatus: () => call('vault_protection_status', {}),
   vaultExport: (path: string, password: string) => call('vault_export', { path, password }),

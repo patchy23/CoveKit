@@ -10,7 +10,7 @@ const settingsSchema: SettingsField[] = [
     key: 'indent',
     type: 'select',
     label: 'JSON 缩进宽度',
-    default: 2,
+    default: '2',
     options: [
       { label: '2 空格', value: '2' },
       { label: '4 空格', value: '4' },

@@ -3,18 +3,10 @@
  * 与 docs/standards/02-架构.md §3 同步。
  */
 import type { Component } from 'vue'
+import type { SettingsField } from '@/core/ipc/contracts'
 
 /** 工具分类（分类是数据不是枚举：新增分类 = 扩展联合 + 图标表） */
 export type CategoryId = 'dev' | 'text' | 'image' | 'net' | 'sys'
-
-/** 工具级设置声明式 schema：框架自动渲染设置表单并存 settings.tools[id] */
-export interface SettingsField {
-  key: string
-  type: 'toggle' | 'text' | 'number' | 'select' | 'secret'
-  label: string
-  default?: unknown
-  options?: { label: string; value: string }[]
-}
 
 /** 工具清单：工具目录自注册，新增工具 = 建目录 + registerTool 一行 */
 export interface ToolManifest {
@@ -35,13 +27,8 @@ export interface ToolManifest {
   tags?: string[]
 }
 
-/** 应用设置（与 core/ipc/contracts.ts AppSettings 一致；此类型供前端各层引用） */
-export interface AppSettings {
-  theme: 'light' | 'dark' | 'system'
-  language: 'zh-CN' | 'en-US'
-  globalHotkey: string
-  launchAtStartup: boolean
-  defaultDownloadDirectory: string
-  recentTools: string[]
-  tools: Record<string, Record<string, unknown>>
-}
+/**
+ * 设置类型直接从 IPC 契约再导出：契约文件是 AppSettings 与 SettingsField 的唯一事实源，
+ * 此处只做转发，避免出现两份定义各自漂移。
+ */
+export type { AppSettings, SettingsField } from '@/core/ipc/contracts'

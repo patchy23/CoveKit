@@ -17,7 +17,10 @@ const output = ref('')
 const errorMsg = ref('')
 
 function runFormat() {
-  const r = formatJson(input.value, settings.getToolSetting('format-tools', 'indent', 2))
+  // 选项值是字符串：'tab' 用制表符，其余按数字宽度（直接传 '2' 会让 JSON.stringify 用字符 '2' 当缩进）
+  const indentSetting = settings.getToolSetting<string>('format-tools', 'indent', '2')
+  const indent = indentSetting === 'tab' ? '	' : Number(indentSetting) || 2
+  const r = formatJson(input.value, indent)
   errorMsg.value = r.error
     ? `${r.error.message}（第 ${r.error.line} 行，第 ${r.error.col} 列）`
     : ''
