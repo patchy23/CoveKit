@@ -1,81 +1,55 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+/**
+ * 更新设置卡片（可靠性 T11-2）
+ *
+ * 卡片只负责展示与转发：状态、重入保护、取消口径都在 `stores/update` 里，
+ * 因此离开设置页再回来仍能看到「正在下载/待安装/上次失败原因」，句柄也不会随组件卸载丢掉。
+ * 下载阶段可取消，安装阶段不可取消——原因由 store 给出并直接展示。
+ */
+import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { check, type Update } from '@tauri-apps/plugin-updater'
-import { relaunch } from '@tauri-apps/plugin-process'
 import { UiButton } from '@/core/ui'
-import { ipc } from '@/core/ipc/ipc'
+import { useUpdateStore } from '@/stores/update'
 
 const { t } = useI18n()
-const state = ref<'idle' | 'checking' | 'latest' | 'available' | 'installing' | 'error'>('idle')
-const update = ref<Update | null>(null)
-const downloaded = ref(0)
-const total = ref<number | undefined>()
-const error = ref('')
-const updaterSupported = '__TAURI_INTERNALS__' in window
-/** 后端判定的更新可用性：占位公钥等无效配置一律按不可用显示原因 */
-const unavailableReason = ref('')
+const update = useUpdateStore()
 
-onMounted(async () => {
-  if (!updaterSupported) return
-  try {
-    const status = await ipc.updateAvailability()
-    unavailableReason.value = status.available ? '' : status.reason
-  } catch (reason) {
-    unavailableReason.value = reason instanceof Error ? reason.message : String(reason)
-  }
+onMounted(() => {
+  // 进设置页刷新一次可用性：更新通道可能因为配置变化而变可用/不可用
+  void update.ensureAvailability()
 })
 
-/** 真正可以发起检查：桌面环境且后端确认更新通道有效 */
-const canCheck = computed(() => updaterSupported && !unavailableReason.value)
-
+/** 进度展示：总量未知时退化成已下载字节数 */
 const progress = computed(() => {
-  if (!total.value) return `${Math.round(downloaded.value / 1024)} KB`
-  return `${Math.min(100, Math.round((downloaded.value / total.value) * 100))}%`
+  if (update.phase !== 'downloading') return ''
+  if (update.percent === null) return `${Math.round(update.downloaded / 1024)} KB`
+  return `${update.percent}%`
 })
+
 const statusText = computed(() => {
-  if (state.value === 'checking') return t('settings.updateChecking')
-  if (state.value === 'latest') return t('settings.updateLatest')
-  if (state.value === 'available')
-    return t('settings.updateAvailable', { version: update.value?.version })
-  if (state.value === 'installing')
-    return t('settings.updateInstalling', { progress: progress.value })
-  if (state.value === 'error') return t('settings.updateError', { message: error.value })
-  if (!updaterSupported) return t('settings.updateUnsupported')
-  if (unavailableReason.value)
-    return t('settings.updateUnavailable', { reason: unavailableReason.value })
-  return t('settings.updateIdle')
+  switch (update.phase) {
+    case 'unsupported':
+      return t('settings.updateUnsupported')
+    case 'unavailable':
+      return t('settings.updateUnavailable', { reason: update.unavailableReason })
+    case 'checking':
+      return t('settings.updateChecking')
+    case 'latest':
+      return t('settings.updateLatest')
+    case 'available':
+      return t('settings.updateAvailable', { version: update.version })
+    case 'downloading':
+      return t('settings.updateDownloading', { progress: progress.value })
+    case 'ready':
+      return t('settings.updateReady', { version: update.version })
+    case 'installing':
+      return t('settings.updateInstalling')
+    case 'error':
+      return t('settings.updateError', { message: update.errorMessage })
+    default:
+      return t('settings.updateIdle')
+  }
 })
-
-async function checkForUpdate() {
-  state.value = 'checking'
-  error.value = ''
-  try {
-    update.value = await check()
-    state.value = update.value ? 'available' : 'latest'
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : String(reason)
-    state.value = 'error'
-  }
-}
-
-async function installUpdate() {
-  if (!update.value) return
-  state.value = 'installing'
-  downloaded.value = 0
-  try {
-    await update.value.downloadAndInstall((event) => {
-      if (event.event === 'Started') total.value = event.data.contentLength
-      if (event.event === 'Progress') downloaded.value += event.data.chunkLength
-    })
-    await relaunch()
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : String(reason)
-    state.value = 'error'
-  }
-}
-
-onBeforeUnmount(() => void update.value?.close())
 </script>
 
 <template>
@@ -83,14 +57,26 @@ onBeforeUnmount(() => void update.value?.close())
     <h3 class="text-h2 font-bold dark:text-primary-dark">{{ t('settings.update') }}</h3>
     <div class="mt-sm flex items-center justify-between gap-sm">
       <p class="text-body-sm text-text-muted dark:text-text-muted-dark">{{ statusText }}</p>
-      <UiButton
-        v-if="state !== 'available'"
-        :disabled="state === 'checking' || state === 'installing' || !canCheck"
-        @click="checkForUpdate"
-      >
-        {{ t('settings.checkUpdate') }}
-      </UiButton>
-      <UiButton v-else @click="installUpdate">{{ t('settings.installUpdate') }}</UiButton>
+      <div class="flex items-center gap-sm">
+        <UiButton v-if="update.canCancel" variant="ghost" @click="update.cancel()">
+          {{ t('settings.cancelDownload') }}
+        </UiButton>
+        <UiButton v-if="update.phase === 'available'" @click="update.download()">
+          {{ t('settings.downloadUpdate') }}
+        </UiButton>
+        <UiButton v-else-if="update.phase === 'ready'" @click="update.install()">
+          {{ t('settings.installUpdate') }}
+        </UiButton>
+        <UiButton v-else :disabled="!update.canCheck" @click="update.checkNow()">
+          {{ t('settings.checkUpdate') }}
+        </UiButton>
+      </div>
     </div>
+    <p
+      v-if="update.phase === 'installing'"
+      class="mt-xs text-body-sm text-text-muted dark:text-text-muted-dark"
+    >
+      {{ update.installNotCancellableReason }}
+    </p>
   </section>
 </template>

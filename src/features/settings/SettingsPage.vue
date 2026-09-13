@@ -19,6 +19,7 @@ import { ipc } from '@/core/ipc/ipc'
 import CredentialManagerPage from '@/features/vault/CredentialManagerPage.vue'
 import UpdateSettingsCard from './UpdateSettingsCard.vue'
 import StorageSettingsCard from './StorageSettingsCard.vue'
+import DiagnosticsCard from './DiagnosticsCard.vue'
 
 const settings = useSettingsStore()
 const ui = useUiStore()
@@ -270,6 +271,7 @@ async function chooseDownloadDirectory() {
         <StorageSettingsCard />
 
         <UpdateSettingsCard />
+        <DiagnosticsCard />
 
         <!-- 工具级设置（settingsSchema 自动渲染） -->
         <section
