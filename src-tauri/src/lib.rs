@@ -66,6 +66,8 @@ pub fn run() {
 
     // 启动校验：清单与登记表 owner 均有路由分支（登记了命令却没有分支 = 启动即炸，不等运行期静默 404）
     plugins::validate_routing();
+    // 启动校验：登记的命令与模块清单逐条对应（少入库 / 清单漏写都在启动期暴露，而不是运行期 404）
+    framework::module_manifest::validate_command_declarations();
 
     builder
         // 关窗行为：最小化到托盘（开放问题默认值）
@@ -136,7 +138,12 @@ pub fn run() {
             }
             framework::settings::init(app)?;
 
-            // 屏蔽 WebView2 原生右键菜单（不再干扰程序内自绘右键菜单；仅 Windows 生效）
+            // 资源协议（asset://）范围跟随本次生效根：只授权可播放的 cache/tts
+            framework::paths::grant_asset_scope(app.handle());
+
+            // 屏蔽 WebView2 原生右键菜单（不再干扰程序内自绘右键菜单）
+            // Windows 专属：其他平台没有 WebView2 原生菜单，明确不调用而不是让非 Windows 构建失败
+            #[cfg(windows)]
             disable_native_context_menu(app);
 
             // 托盘：左键显示主窗；菜单含 显示/退出

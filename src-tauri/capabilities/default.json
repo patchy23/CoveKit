@@ -12,6 +12,8 @@
     "core:window:allow-is-maximized",
     "core:window:allow-close",
     "core:window:allow-start-dragging",
+    "core:window:allow-theme",
+    "core:window:allow-set-theme",
     "opener:default",
     "store:default",
     "clipboard-manager:default",

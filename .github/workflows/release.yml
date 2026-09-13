@@ -8,8 +8,51 @@ permissions:
   contents: write
 
 jobs:
+  # 标签发布前先跑与 CI 同口径的门禁：main 之前绿过不代表这个标签安全（T08-5）
+  gates:
+    name: 发布前质量门禁
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: 标签与三处版本号一致
+        run: python scripts/check_versions.py "${{ github.ref_name }}"
+      - name: 文档与开发体系守卫
+        run: |
+          python -m unittest discover -s scripts -p test_doc_checks.py
+          python scripts/check_markdown.py
+          python scripts/check_progress.py
+          python scripts/check_doc_budget.py
+      - name: 前端门禁
+        run: |
+          pnpm run lint
+          pnpm run test
+          pnpm run build
+          pnpm run format:check
+      - name: Rust 门禁
+        working-directory: src-tauri
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --no-default-features --all-targets -- -D warnings
+          cargo test --no-default-features
+      - name: Rust 规范检查
+        run: python scripts/check_rust_rules.py
+
   publish:
     name: Build ${{ matrix.platform }}
+    needs: [gates]
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +80,8 @@ jobs:
         run: pnpm release:config
         env:
           TAURI_UPDATER_PUBLIC_KEY: ${{ vars.TAURI_UPDATER_PUBLIC_KEY }}
+      - name: 校验更新公钥已覆盖（占位公钥不得进入正式发布）
+        run: python scripts/check_release_config.py
       - uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

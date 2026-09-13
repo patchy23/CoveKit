@@ -208,6 +208,34 @@ pub fn data_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     Ok(target)
 }
 
+/// 需要授权给资源协议（asset://）的目录清单
+///
+/// 只授权可播放产物所在目录（`cache/tts`）：其他分区（data / vault / 布局文件、设置文件）
+/// 一律不得通过 asset URL 访问，避免把整个数据目录暴露给 WebView。
+/// 清单跟随本次生效根，因此自定义存储位置后播放仍然可用。
+pub fn asset_scope_dirs(root: &Path) -> Vec<PathBuf> {
+    vec![root.join("cache").join("tts")]
+}
+
+/// 启动时把资源协议范围收敛到本次生效根下的可播放目录
+///
+/// 拿不到生效根时**不授权**（宁可不播放，也不放宽到任意磁盘）。
+pub fn grant_asset_scope(app: &AppHandle) {
+    let root = match storage_root(app) {
+        Ok(root) => root,
+        Err(error) => {
+            eprintln!("[asset] 未取到存储根，跳过资源协议授权: {error}");
+            return;
+        }
+    };
+    let scope = app.asset_protocol_scope();
+    for dir in asset_scope_dirs(&root) {
+        if let Err(error) = scope.allow_directory(&dir, true) {
+            eprintln!("[asset] 授权目录失败（{}）: {error}", dir.display());
+        }
+    }
+}
+
 /// 当前时间戳字符串（归档名用；本地时间 yyyymmddHHMMSS）
 ///
 /// 仅用于生成人类可读的归档后缀，不参与任何判定，因此不要求时钟单调。

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { check, type Update } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { UiButton } from '@/core/ui'
+import { ipc } from '@/core/ipc/ipc'
 
 const { t } = useI18n()
 const state = ref<'idle' | 'checking' | 'latest' | 'available' | 'installing' | 'error'>('idle')
@@ -12,6 +13,21 @@ const downloaded = ref(0)
 const total = ref<number | undefined>()
 const error = ref('')
 const updaterSupported = '__TAURI_INTERNALS__' in window
+/** 后端判定的更新可用性：占位公钥等无效配置一律按不可用显示原因 */
+const unavailableReason = ref('')
+
+onMounted(async () => {
+  if (!updaterSupported) return
+  try {
+    const status = await ipc.updateAvailability()
+    unavailableReason.value = status.available ? '' : status.reason
+  } catch (reason) {
+    unavailableReason.value = reason instanceof Error ? reason.message : String(reason)
+  }
+})
+
+/** 真正可以发起检查：桌面环境且后端确认更新通道有效 */
+const canCheck = computed(() => updaterSupported && !unavailableReason.value)
 
 const progress = computed(() => {
   if (!total.value) return `${Math.round(downloaded.value / 1024)} KB`
@@ -25,7 +41,10 @@ const statusText = computed(() => {
   if (state.value === 'installing')
     return t('settings.updateInstalling', { progress: progress.value })
   if (state.value === 'error') return t('settings.updateError', { message: error.value })
-  return updaterSupported ? t('settings.updateIdle') : t('settings.updateUnsupported')
+  if (!updaterSupported) return t('settings.updateUnsupported')
+  if (unavailableReason.value)
+    return t('settings.updateUnavailable', { reason: unavailableReason.value })
+  return t('settings.updateIdle')
 })
 
 async function checkForUpdate() {
@@ -66,7 +85,7 @@ onBeforeUnmount(() => void update.value?.close())
       <p class="text-body-sm text-text-muted dark:text-text-muted-dark">{{ statusText }}</p>
       <UiButton
         v-if="state !== 'available'"
-        :disabled="state === 'checking' || state === 'installing' || !updaterSupported"
+        :disabled="state === 'checking' || state === 'installing' || !canCheck"
         @click="checkForUpdate"
       >
         {{ t('settings.checkUpdate') }}
