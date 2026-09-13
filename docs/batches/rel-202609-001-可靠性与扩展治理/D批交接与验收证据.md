@@ -1,69 +1,103 @@
 # D 批交接与验收证据（rel-202609-001 可靠性与扩展治理）
 
-> 范围：D 批计划为 T10 → T11 → T12 残余 → T13。
-> **本轮实际完成：T12 残余、T13（部分）。T10、T11 未开工。**
-> 未开工原因：这两项是行为密集的工作区生命周期改造（关闭协商入口、退出协调、资源释放、
-> 统一长任务观察与诊断），需要在真实应用里反复走查（页签快速开关、隐藏/恢复、退出时长任务可取消），
-> 无人值守时段无法取得可复核的真机证据，因此没有开工，避免留下半成品架构。
+> 范围：D 批为 T10 → T11 → T12 → T13。
+> 首轮完成了 T12 与 T13 主体；**T10、T11 在第二轮补齐**（见下方两节），
+> T13 剩余项（文档同步、三条架构守卫、public UI 死代码复核）仍未完成。
 
-## T12 残余 · 注册表与 IPC 边界可验证（已完成）
+## T10 · 工具生命周期（已完成）
 
-- 工具注册表重复 id、非法分类、工具内设置键重复、select 缺选项一律**立刻抛错**并指出冲突双方，
-  不再 `console.warn` 后覆盖（覆盖会静默少一个工具或一组设置）。
-- 注册表改为可实例化（`createToolRegistry`），默认实例供应用使用；测试与嵌入式场景互不污染。
-- 新增命令级一致性校验 `validate_command_declarations`：模块清单声明的命令与注册表登记的命令
-  **逐条**比对，少登记或漏声明都在启动期失败；此前只比对归属者名字，命令少一条要等到运行期 404。
-- 校验已接入启动路径（`lib.rs`），并有负例用例证明「只差一条命令」也会失败。
-- 关于锚点里的 `window` / `open_external` / `framework_commands`：当前实现中三者都在框架命令表里声明
-  且已登记，新校验通过即为证据；真出现漏登记时新校验会立刻失败。
+### 关闭协商（T10-1、T10-2）
 
-## T13 · 去除事实源冗余与框架结构治理（部分完成）
+- 新增 `src/core/lifecycle/toolContext.ts`：插件以 owner 身份登记「怎么关」——`prepare` 返回
+  拒绝理由（未保存内容、任务运行中）、`dispose` 负责释放资源；框架只做协调，不替插件决定。
+- 关闭变成异步协商：**任一 owner 拒绝就不清理、不关闭**，界面把理由逐条列出，用户可取消或
+  「放弃并关闭」。逐 owner 的清理失败单独收集并成条上报，不把「清到一半」当成功。
+- 清理有总超时（默认 5 秒，`DEFAULT_DISPOSE_TIMEOUT_MS`）：超时按失败计入但仍完成关闭，不拖死界面。
+- 关闭入口统一：页签关闭按钮、`Ctrl/Cmd+W`、溢出菜单全部走 `ui.requestClose`；
+  低层 `closeTab`/`closeAllTabs` **不再从 store 导出**，绕过路径在类型层面拿不到（`vue-tsc` 把关）。
+- 页签上以圆点标记「未保存 / 运行中」，来自 `watchToolCloseState` 的订阅，不是各页面自己猜。
 
-已完成：
+### 退出协调（T10-3）
 
-- `framework/storage/layout.rs`（921 行）拆为四个文件：编排（`layout.rs` 371 行）、集合矩阵
-  （`layout/groups.rs` 185 行）、结果模型（`layout/report.rs` 125 行）、搬运引擎（`layout/engine.rs` 336 行），
-  迁移用例随实现归位并纳入同一套行数约束。
-- `framework/secure_store/key.rs`（640 行）拆为声明层（`key/mod.rs` 396 行）与解析层（`key/resolve.rs` 256 行），
-  解析入口保持原路径导出，调用方零改动。
-- 拆分后仍通过文档覆盖规则：迁移矩阵的常量补齐职责注释，新增文件都有 `//!` 模块职责说明。
-- T13-2（加密原语重复）与 T13-3 的 AppSettings / 镜像冗余已由 T05、T07 完成。
+- 新增 `framework/exit.rs`：`app_request_exit`（业务可拒绝）与 `app_force_exit`（用户显式强退，
+  跳过拦截但仍在总超时约束内），前端 `src/core/lifecycle/appClose.ts` 是对应唯一入口。
+- 被拒绝时后端把主窗口唤到前台并推送 `app://close-vetoed`，界面弹窗给出重试 / 强制退出 / 取消；
+  托盘退出的 `ExitRequested` 复用同一套提示与强制标记，不再只写一行日志。
+- 事件在窗口隐藏时不带标记的强制退出仍会先跑 dispose 钩子，超时按失败记录。
 
-未完成（需要后续会话）：
+### 插件资源接入（T10-4）
 
-- T13-4 文档同步：`docs/02` 当前架构、`docs/03` 目录与数据库规则、`docs/05` 平台例外、
-  AGENTS 待办与 TODO 与现状对齐（本轮只更新了台账与 TODO，未通读三份规范文档）。
-- T13-5 新增架构守卫（禁止绕过 paths 取业务落盘根、禁止新建明文 secret 设置、
-  框架层禁止直接引用业务表）：现有层级守卫（framework 引用 plugins、插件互相 import）保持有效，
-  三条新守卫未实现。注意框架引用业务表的守卫在 T09 完成后已有事实基础（框架里已无插件 SQL）。
-- T13-6 public UI 死代码复核未做。
+| 插件 | 关闭工具页签时 | 有活动资源时 |
+| --- | --- | --- |
+| SSH | 断开全部会话并停止隧道 | 先询问（列出连接数） |
+| FRP | 停止本工具启动的 frpc 进程 | 先询问（列出运行中档案数） |
+| 数据库 | 断开全部连接（连接池随页签释放） | 不询问（无数据丢失风险） |
+| 接口调试 | 关闭已打开的 WebSocket 会话 | 不询问；HTTP 请求后端一次性执行，不做假清理 |
 
-## 验证
+策略写在各插件 `toolLifecycle.ts` 的模块注释里，行为由 4 个测试文件锁住（15 项）。
 
-- Rust：`cargo fmt --check`、`cargo clippy --all-targets -D warnings`、`cargo test --no-default-features` 通过；
-  lib 285 项通过 / 3 忽略，`source_rules`（代码规则 + 文档规则）29 项通过。
-- 新增用例：命令级一致性正例与负例各 1 项；工具注册表 6 项（重复 id、非法分类、设置键重复、
-  select 缺选项、实例隔离、分类计数）。
-- 前端：`pnpm run lint`、`pnpm run test`、`pnpm run build`、`pnpm run format:check` 通过。
-- 脚本：`check_rust_rules.py`、`check_docs.py`、`check_progress.py`、`check_markdown.py`、`check_doc_budget.py` 通过。
+### 作用域订阅与错误边界（T10-5、T10-6）
 
-## 拆分后的文件规模
+- `src/core/lifecycle/scope.ts`：订阅与定时器集中在作用域里释放；**卸载早于 `listen` resolve 时
+  resolve 后立即解绑**；建订阅部分失败时清理已建部分；dispose 之后拒绝再建定时器。
+- `src/features/workspace/ToolHost.vue`：单个工具页签的宿主，加载失败与渲染异常都收敛在页签内，
+  可单独重试（重建组件实例），不影响其它页签；工具是异步组件，重试必须换新实例才生效。
 
-| 文件 | 行数 |
-| --- | --- |
-| `framework/storage/layout.rs` | 371 |
-| `framework/storage/layout/engine.rs` | 336 |
-| `framework/storage/layout/groups.rs` | 185 |
-| `framework/storage/layout/report.rs` | 125 |
-| `framework/secure_store/key/mod.rs` | 396 |
-| `framework/secure_store/key/resolve.rs` | 256 |
-| `framework/paths.rs` | 324（布局迁移与旧 helper 移出后） |
-| `framework/vault/store.rs` | 458（删除框架侧插件 SQL 后的现状，仍超 400，见下） |
+### 隐藏降频（T10-7）
 
-## 未验证项与限制
+- `toolVisibility` 区分**激活 / 被设置页覆盖 / 窗口隐藏**三种来源，切换页签不再等于断开连接。
+- FRP 轮询、SSH 监控、接口调试的 WS 轮询接 `throttledInterval`：页签切走或窗口隐藏后降频，
+  恢复可见时立刻取一次最新状态（`scope.onResume`），隐藏期间不停止协议心跳本身。
 
-- 未开工项：T10、T11 全部子项（含验收里的「快速开关 100 次订阅回到基线」「退出时长任务可取消退性」
-  「隐藏再显示连接仍正常」「单工具抛错其它工具可用」）都需要真机走查，本轮无证据，因此不勾选。
-- `framework/vault/store.rs` 仍超过 400 行（458 行）：拆分需要同时处理 `read_all_at` / `write_all_at` /
-  保护状态与凭据模型多处调用，留待 T13 后续会话一并处理，不用豁免掩盖。
-- 守卫只覆盖现有两条层级规则；新增三条守卫未实现，故意注入违规的验证因此也没有证据。
+## T11 · 长任务与诊断（已完成）
+
+### 长任务登记（T11-1）
+
+- 新增 `framework/tasks.rs`：任务带 id / 归属 / 类型 / 状态 / 进度 / 失败错误码 / 不可取消原因；
+  活跃任务上限 8、已完成历史 20 条，超出拒绝登记并明确提示。进度不可估算时保持为空，不填 0。
+- 存储迁移在启动维护阶段登记为任务并上报进度，成功与失败都进最近结果；无待执行计划时不登记，
+  避免每次启动留一条「无事发生」的记录。
+- 取消口径如实声明：框架长任务当前**都不可中途取消**（迁移中断会留下半成品，下次启动续跑），
+  因此没有伪造 `pending`/`cancelled` 状态，也不提供取消命令；需要取消的阶段由前端自己管（见下）。
+
+### 更新状态脱离设置页（T11-2）
+
+- `src/stores/update.ts`：检查 / 下载 / 安装状态、进度、待安装版本、失败原因都在 store 里，
+  离开设置页再回来仍可见；组件不再持有更新句柄的局部状态。
+- 阶段口径明确：`downloading` 与 `ready` 可取消（关闭句柄并丢弃已下载内容），
+  `installing` 不可取消并说明中断后果；各阶段重入保护，连点不会起第二次检查/下载。
+
+### 错误留档与诊断（T11-3、T11-4、T11-5、T11-6）
+
+- `src/core/diagnostics/errors-core.ts`：有界清单（50 条上限、说明 300 字符、明细 600 字符），
+  `code + message` 相同则合并计数；`errors.ts` 装 Vue 错误钩子、未处理 Promise 拒绝与全局脚本错误。
+- `src/core/diagnostics/report.ts`：诊断报告只含白名单字段（版本、Tauri 版本、平台、存储根是否默认、
+  保护模式、活跃任务数、最近任务、错误码），路径统一脱敏为 `<path>`，**只在本机生成、不做任何上传**。
+- 更新失败带稳定错误码（`update.check_failed` / `update.download_failed` / `update.install_failed`），
+  并进入错误清单；设置页新增诊断卡片可复制报告与清空记录。
+- 渐进迁移口径：插件 IPC 的字符串错误**本轮未改**（未统一成 `{code,message,requestId}` 信封），
+  框架侧只保证新增路径带稳定 code，避免一次性改动全部插件契约。
+
+## 验证（HEAD `b7f02fb`）
+
+- Rust：`cargo fmt --all -- --check`、`cargo clippy --no-default-features --all-targets -- -D warnings`、
+  `cargo test --no-default-features` 全绿；lib **296 项通过 / 3 忽略**（此前 285），
+  `source_rules` **29 项通过**。
+- 前端：`pnpm run build`（含 `vue-tsc`）、`pnpm run lint`、`pnpm run format:check` 全绿；
+  `pnpm run test` **478 项通过 / 54 文件**（此前 419 / 43）。
+- 脚本：`check_rust_rules.py`、`check_docs.py`、`check_progress.py`、`check_markdown.py`、
+  `check_doc_budget.py`、`test_doc_checks.py`、`check_versions.py` 全绿。
+- `check_release_config.py` 属发布环境检查：本机无 `TAURI_UPDATER_PUBLIC_KEY` 时按设计失败，
+  用临时密钥生成配置后校验通过（临时配置已删除，未留在工作区）。
+
+## 未验证项与限制（必须真机复核）
+
+- T10 验收里的真机走查本轮**没有证据**：页签快速开关 100 次后订阅/定时器回到基线、
+  隐藏再显示后连接仍正常、退出时长任务可取消退性、macOS 上与系统快捷键冲突场景。
+- T11 的真机走查同样未做：真实更新下载/安装（占位公钥环境下不可用）、诊断报告在真实
+  WebView 里复制到剪贴板、错误清单在真实崩溃路径下的留档。
+- 「关闭页签前提供保存入口」只实现了「取消 / 放弃并关闭」两个出路：保存动作属于各插件自己的
+  编辑流程，框架不代它决定，需要产品确认是否要求插件在 `prepare` 里提供保存钩子。
+- T13 剩余未做：`docs/02`、`docs/03`、`docs/05` 与 AGENTS 待办对齐；三条新架构守卫
+  （绕过 `paths` 落盘、明文 secret 设置、框架引用业务表）；public UI 死代码复核；
+  `framework/vault/store.rs` 458 行仍超 400 行。
