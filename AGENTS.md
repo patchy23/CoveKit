@@ -64,6 +64,22 @@
 - 深色模式走 `-dark` token 变体，不新造色值；卡片网格 `auto-fill minmax(228px,1fr)`
 - **暗色覆盖写 `main.css` 全局 unlayered 区**：组件 scoped 样式里 `:global()+:deep()` 混写会被编译静默丢弃
 
+## 文档与上下文纪律
+
+- **开工只读最小必读集**（[`docs/README.md`](docs/README.md) §最小必读集）：`AGENTS.md` → `docs/进度台账.md` → `docs/standards/10-AI开发工作流.md` → `docs/README.md`；其余文档按任务按需读，**禁止全量扫 `docs/`**（仓库 75 份 md / 约 50 万字符，全读会当场吃光上下文）。读大文档用 `read_file` 的 `offset`/`limit` 只取需要的节
+- **体量红线**：单份文档 ≤ 30,000 字符 / 500 行，本文件 ≤ 10,000 字符，最小必读集 ≤ 30,000 字符；`python scripts/check_doc_budget.py` 把关（棘轮式，存量超标只减不增）。写文档时记住：你写下的每个字，将来每个会话都要为它付上下文
+
+## 检查器（收尾必跑）
+
+```bash
+python scripts/check_rust_rules.py   # Rust 规范棘轮（动 src-tauri/ 时必跑）
+python scripts/check_docs.py         # 文档规范与 Rust 注释门禁（需能编译，应用在跑会报 os error 5）
+python scripts/check_progress.py     # 进度台账与实际文件是否一致（提交号是否真实存在）
+python scripts/check_doc_budget.py   # 文档体量预算（棘轮，防上下文爆炸）
+```
+
+四个脚本退出码非 0 即失败。**文档类改动**至少跑后三个；**代码类改动**跑前两个 + 相关测试；发布与跨层合入跑全量门禁。
+
 ## 工程约束（合入红线）
 
 - **规模是评审信号，不是自动失败条件**：Vue SFC 约 300 物理行、Rust 生产实现约 400 行、插件目录 8/15 个业务文件时**触发职责审查**（模板、生产逻辑、声明、测试分别统计）；超线须在提交说明写职责与拆分依据，无需每次申请例外。**必须重构的条件与行数无关**：多个独立修改原因、重复状态或重复实现、互传大批可写状态、资源释放无唯一所有者（细则 docs/03 §1）
