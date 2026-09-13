@@ -39,6 +39,12 @@
 | [`12-reka-ui坑.md`](standards/12-reka-ui坑.md) | reka 原语、浮层 z 序、模态 pointer-events 陷阱与排查配方 |
 | [`13-表单排版约定.md`](standards/13-表单排版约定.md) | 配置类表单的分节、「更多配置」折叠、必填与提示范式 |
 | [`14-编辑器主题配方.md`](standards/14-编辑器主题配方.md) | UiCodeEditor 观感基线、GitHub Light / VS Code Light+ 配方色值 |
+| [`15-测试与走查.md`](standards/15-测试与走查.md) | 按需求/设计做插件测试：测试计划、覆盖矩阵、单测、UI 走查清单、两阶段安排 |
+| [`16-多角色编排.md`](standards/16-多角色编排.md) | 多 agent/多会话并行开发：冲突规避三层、角色分工、文件通信协议、接手已停会话 |
+| [`17-文档组织与批次.md`](standards/17-文档组织与批次.md) | 文档按生命周期分层与批次号关联的组织方法 |
+| [`18-重构与搬移验证.md`](standards/18-重构与搬移验证.md) | 拆分/搬移类交付的独立复核配方（公开面比对脚本骨架） |
+| [`19-Tauri契约审计.md`](standards/19-Tauri契约审计.md) | Tauri 五层命令矩阵、事件数据流、注册覆盖与错误语义审计方法 |
+| [`templates/`](standards/templates/) | 任务书模板：设计 / 后端 / 测试 / 待决策书（复制改占位符即用） |
 
 根目录另有：
 
