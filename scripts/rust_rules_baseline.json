@@ -37,6 +37,12 @@
       "symbol": "hmac_sha256",
       "kind": "expect",
       "reason": "HMAC 接受任意长度密钥，length 已按块大小取模，属可证不变量"
+    },
+    {
+      "path": "src-tauri/src/framework/module_manifest.rs",
+      "symbol": "validate_command_declarations",
+      "kind": "assert",
+      "reason": "启动期命令清单一致性校验：模块清单声明的命令与注册表登记必须逐条对应，少一条即装配错误，必须 fail-fast（docs/05 §1 例外）"
     }
   ]
 }
