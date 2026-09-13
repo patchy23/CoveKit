@@ -34,9 +34,10 @@ SINGLE_FILE_LINES = 500       # 单份文档行数
 AUTO_INJECT = ["AGENTS.md"]
 
 # ---- 棘轮基线：历史存量，只减不增（字符数）----
-BASELINE = {
-    "docs/standards/07-产品需求.md": 40_716,
-    "docs/standards/11-插件UI开发约定.md": 36_026,
+# 棘轮基线：仅收「行数超标但字符数达标」的表格密集文档——行数上限本意是便于分片读取，
+# 这类文档每行短、总量可控（20,487 字符可一次读完），加基线后仍不许增长。
+BASELINE: dict[str, int] = {
+    "docs/standards/07-产品需求.md": 20_487,
 }
 
 # 文档总检范围

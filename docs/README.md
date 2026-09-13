@@ -23,12 +23,13 @@
 
 | 任务类型 | 追加读 |
 | --- | --- |
-| 改插件 UI | `standards/11-插件UI开发约定.md`、`04-公共UI组件.md`、根目录 `DESIGN.md` |
+| 改插件 UI | `standards/11-插件UI开发约定.md`（红线与契约）；查组件签名追加 `standards/11a-公共组件API备忘.md`；用浏览器实走查追加 `standards/11b-浏览器驱动验证UI.md` |
 | 渲染层怪问题（下拉点不开、浮层被吞） | `standards/12-reka-ui坑.md` |
 | 写配置类表单 | `standards/13-表单排版约定.md` |
 | 动 Rust | `standards/05-Rust代码规范.md`（含检查器入口） |
 | 动框架 / 公共契约 | `standards/02-架构.md`、`03-模块开发规则.md` |
 | 做测试与走查 | `standards/15-测试与走查.md`、`19-Tauri契约审计.md` |
+| 查某个工具的需求边界 | `standards/07a`–`07d` 按工具域选一册；判断要不要加功能才读 `07-产品需求.md` 总纲 |
 | 多会话并行开发 | `standards/16-多角色编排.md` |
 | 查术语、编号、批次号 | `standards/08-术语与编号.md` |
 | 查平台支持情况 | `standards/09-平台能力矩阵.md` |
@@ -59,12 +60,18 @@
 | [`04-公共UI组件.md`](standards/04-公共UI组件.md) | 公共 UI 组件规范 |
 | [`05-Rust代码规范.md`](standards/05-Rust代码规范.md) | Rust 代码规范（panic / clone / 生命周期 / 异步 / 注释 / 依赖评审） |
 | [`06-发布与更新.md`](standards/06-发布与更新.md) | 发布、自动更新与代码签名配置 |
-| [`07-产品需求.md`](standards/07-产品需求.md) | 产品需求文档 |
+| [`07-产品需求.md`](standards/07-产品需求.md) | 产品需求**总纲**：定位、信息架构、跨域需求、路线图、取舍矩阵、开放决策 |
+| [`07a-需求-SSH远程管理.md`](standards/07a-需求-SSH远程管理.md) | SSH 远程管理需求（分册，做该模块时读） |
+| [`07b-需求-网络与调试.md`](standards/07b-需求-网络与调试.md) | HTTP/WebSocket、网络诊断、端口查看器需求（分册） |
+| [`07c-需求-DNS与Hosts.md`](standards/07c-需求-DNS与Hosts.md) | DNS 查询与云解析、Hosts 管理需求（分册） |
+| [`07d-需求-数据与媒体工具.md`](standards/07d-需求-数据与媒体工具.md) | 格式转换、文字转语音、数据库工作台需求（分册） |
 | [`08-术语与编号.md`](standards/08-术语与编号.md) | 术语、缩写与编号体系（AR / T / L / P 等） |
 | [`09-平台能力矩阵.md`](standards/09-平台能力矩阵.md) | Windows / macOS 能力矩阵，unsupported 项必须显式记录 |
 | [`10-AI开发工作流.md`](standards/10-AI开发工作流.md) | **动手写代码前必读**：四档流程（S1 小改 → S4 新工具）、各档确认门禁与验证命令 |
 | [`10b-修复分析模板.md`](standards/10b-修复分析模板.md) | S2 大修复的根因分析落盘模板 |
-| [`11-插件UI开发约定.md`](standards/11-插件UI开发约定.md) | 插件页布局范式（红线）、公共组件契约、组件真实 API 备忘、弹窗与下拉层级 |
+| [`11-插件UI开发约定.md`](standards/11-插件UI开发约定.md) | 插件页布局范式（红线）、公共组件契约、弹窗与下拉层级 |
+| [`11a-公共组件API备忘.md`](standards/11a-公共组件API备忘.md) | 各公共组件的真实 props/emits 与用法样例（用到再查） |
+| [`11b-浏览器驱动验证UI.md`](standards/11b-浏览器驱动验证UI.md) | 用浏览器实走查 Vue 页面的实测坑与配方 |
 | [`12-reka-ui坑.md`](standards/12-reka-ui坑.md) | reka 原语、浮层 z 序、模态 pointer-events 陷阱与排查配方 |
 | [`13-表单排版约定.md`](standards/13-表单排版约定.md) | 配置类表单的分节、「更多配置」折叠、必填与提示范式 |
 | [`14-编辑器主题配方.md`](standards/14-编辑器主题配方.md) | UiCodeEditor 观感基线、GitHub Light / VS Code Light+ 配方色值 |

@@ -54,7 +54,12 @@ def main() -> int:
         p for p in BATCHES.rglob("*.md")
         if any(k in p.name for k in TRACKED_KEYWORDS)
     )
-    missing = [p for p in tracked if p.name not in text]
+    # 判据：台账中必须存在一行同时含「批次目录名」与「文件名」——只比文件名会漏掉整批未登记
+    rows = text.splitlines()
+    missing = [
+        p for p in tracked
+        if not any(p.parent.name in r and p.name in r for r in rows)
+    ]
     if missing:
         for p in missing:
             fail(f"未登记进台账：{p.relative_to(ROOT)}")
