@@ -38,6 +38,7 @@
 | 公共UI规范与tokens | [04](standards/04-公共UI组件.md)、[DESIGN](../DESIGN.md) |
 | 发布/平台 | [06](standards/06-发布与更新.md)、[09](standards/09-平台能力矩阵.md)、[发布记录](releases/) |
 | 术语、编号 | [08](standards/08-术语与编号.md) |
+| Git提交信息 | [21](standards/21-Git提交规范.md)，只约束新提交 |
 | 编辑器主题 | [14](standards/14-编辑器主题配方.md) |
 | 跨批次决策 | [ADR索引](adr/README.md) |
 | 插件现行说明 | [SSH](plugins/ssh/)、[Database](plugins/database/)、[Vault](plugins/vault/) |
