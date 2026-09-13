@@ -23,3 +23,7 @@ src-tauri/tauri.release.conf.json
 *.njsproj
 *.sln
 *.sw?
+
+# Python 缓存（运行 scripts/check_*.py 规范检查脚本时产生，避免误提交）
+__pycache__/
+*.pyc
