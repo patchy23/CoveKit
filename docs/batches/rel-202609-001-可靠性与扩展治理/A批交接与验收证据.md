@@ -50,7 +50,7 @@
 ## 4. 真实数据处置
 
 - 动代码前已整份备份：`G:\workspace\back\patchybox-data-20260913-225543`（源 `%APPDATA%\com.patchy23.patchybox`，33MB）。
-- 收尾复核：`data/credentials-master.key`、`data/db-master.key`、`vault/vault.dat`、`vault/vault-master.key` 四个文件的 sha256 与备份**完全一致**，密文未被重写、未生成任何新密钥。
+- 收尾复核（全量比对，非抽样）：对 `%APPDATA%\com.patchy23.patchybox` 下除 `cache/` 外的 **21 个文件**逐个与备份 `cmp` 比较，结果「相同 21 / 不同 0 / 备份中缺失 0」——密文未被重写，也未新建任何文件（`data/credentials-master.key`、`data/credentials/database.enc`、`data/db-master.key`、`data/ssh-master.key`、`vault/vault-master.key`、`vault/vault.dat` 等逐个一致）。
 - 冷启动运行真实应用期间未发生密钥写入：`cmdkey /list` 中当前**没有** patchybox 相关条目（此前探针泄漏的条目已删除，残留计数 0）。
 - 需要用户拍板的行为（已实现、未由我触发）：降级密钥在通过既有密文认证后，会被**登记**进系统密钥库并回读校验（降级文件保留）。首次真实触发发生在应用真正读取该域凭证时（例如打开设置页查询状态后使用凭证管理）。它不生成新密钥、不改密文；如用户不接受「降级密钥自动登记」，需要单独裁决，按现实现可通过只读解析路径退化为「只提示不登记」。
 
