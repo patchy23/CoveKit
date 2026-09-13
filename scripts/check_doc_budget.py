@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """文档体量预算守卫（棘轮式：只减不增）。
 
-防的是「一次会话被迫加载海量文档」——中文 1 字约合 1 token，几万字符的文档
-会在开工阶段就吃掉上下文的大半，直接导致后续工作被动截断。
+字符数是跨模型可比较的体量代理，不等于token数。限制默认读取和新文档超限。
 
 四条硬约束：
 
@@ -26,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # ---- 预算（字符）----
 AUTO_INJECT_BUDGET = 10_000   # 每次会话自动注入的文件（AGENTS.md）
-READ_SET_BUDGET = 30_000      # 新会话最小必读集总量
+READ_SET_BUDGET = 15_000      # 新会话最小必读集总量
 SINGLE_FILE_BUDGET = 30_000   # 单份文档
 SINGLE_FILE_LINES = 500       # 单份文档行数
 
@@ -96,10 +95,19 @@ def main() -> int:
     if not read_set:
         errors.append("docs/README.md 里找不到 §最小必读集 一节（新会话不知道该读哪几份）")
     else:
+        resolved = {resolve(ref).resolve() for ref in read_set}
+        if (ROOT / "TODO.md").resolve() not in resolved:
+            errors.append("最小必读集必须包含TODO.md中的用户裁决")
+        if (ROOT / "AGENTS.md").resolve() not in resolved:
+            errors.append("最小必读集必须包含AGENTS.md")
         total = 0
         detail = []
+        seen = set()
         for ref in read_set:
             f = resolve(ref)
+            if f.resolve() in seen:
+                continue
+            seen.add(f.resolve())
             if not f.exists():
                 errors.append(f"最小必读集引用了不存在的文件：{ref}")
                 continue
@@ -138,8 +146,8 @@ def main() -> int:
         if n > SINGLE_FILE_BUDGET or lines > SINGLE_FILE_LINES:
             oversized.append((n, lines, rel))
     for n, lines, rel in sorted(oversized, reverse=True):
-        warnings.append(
-            f"{rel}：{n:,} 字符 / {lines} 行，超出单份上限（{SINGLE_FILE_BUDGET:,} 字符 / {SINGLE_FILE_LINES} 行）——应拆分或加入 BASELINE"
+        errors.append(
+            f"{rel}：{n:,} 字符 / {lines} 行，超出单份上限（{SINGLE_FILE_BUDGET:,} 字符 / {SINGLE_FILE_LINES} 行）——按读取时机拆分，不得加基线隐藏新增超限"
         )
 
     for w in warnings:

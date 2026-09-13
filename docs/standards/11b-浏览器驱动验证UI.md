@@ -11,7 +11,7 @@
 ## 浏览器驱动验证 Vue UI 的坑（本会话实测）
 
 - **实测前先确认 dev 进程与窗口活着**：`ps -W | grep -i patchybox`（空 = 进程没了）+ `curl -s -o /dev/null -w '%{http_code}' http://localhost:1420/`（`000` = vite 已死）。dev 退出后所有 capture/click 都是空转，还会拿着过期界面状态判断「改动没生效」。后台重启 `pnpm tauri dev`，等输出出现 `Running `target\debug\patchybox.exe`` 再操作（vite ready 只代表前端就绪，窗口还没起）
-- **dev 起不来先查端口占用**：`netstat -ano | grep ':1420'` 看 LISTENING 的 WINPID，`ps -W | grep -i node` 对上是哪个 node；本仓残留的 vite（没有配套 patchybox.exe 窗口的裸 dev server）用 `powershell -NoProfile -Command "Stop-Process -Id <PID> -Force"` 停掉再起。**git-bash 里 `taskkill //F //PID` 会被 MSYS 拆错参数、报「无效参数/选项」，别在它上面耗轮次**；停之前先确认是不是别的会话正在用的 server（有配套应用窗口就别动，先问用户）
+- **dev端口占用**：核对PID、命令行、工作目录与启动归属。没有应用窗口不能证明服务无人使用；只停止本任务启动且确认可清理的实例，未知归属不强杀，已有合适开发服务可协调复用。
 - **用户要「跑起来我测、带后台黑窗口看日志」时**：`background=true` 跑 `export PATH="/c/Users/patchy/AppData/Roaming/npm:$PATH"; pnpm tauri dev`，配 `notify=["Running"]`（匹配 dev 打印的就绪行，`Running` 开头那行），日志留在会话里随时 poll 读，别重定向到文件（用户会在终端标签里自己看）；报告里给 PID 与就绪证据，并提醒改前端走 HMR、改 Rust 我会重编
 - **每次交互后重新 querySelector**：Vue 重渲染会替换 DOM 节点，旧引用上 dispatchEvent 静默无效；且状态更新在 nextTick，断言要包 `setTimeout(…, 150)` 或 Promise
 - **只发 `.click()` 经常静默无效**（2026-09-05 实测）：对挂 Vue 组件事件的按钮要发完整事件序列 `mousedown(bubbles) + click(bubbles)`；断言前等 nextTick
