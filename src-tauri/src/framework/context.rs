@@ -24,7 +24,7 @@ pub const DEFAULT_SPACE_ID: &str = "default";
 /// 默认空间代际：空间切换/导入激活后由 L1 递增；当前进程内不重新赋值
 pub const DEFAULT_GENERATION_ID: u64 = 1;
 
-/// 存储位置四分区（与 `docs/02-architecture.md` §3.1 的四分区布局一致）
+/// 存储位置四分区（与 `docs/standards/02-架构.md` §3.1 的四分区布局一致）
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StorageLocation {
     /// 存储根目录（配置项的生效值，或降级后的默认目录）

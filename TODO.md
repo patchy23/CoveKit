@@ -7,7 +7,7 @@
 
 ## 一、✅ 已完成 · 公共编辑器组件（2026-09-11 四批全部落地）
 
-任务书：`docs/tasks/2026-09-11-编辑器组件任务书.md`（契约已冻结，含 22 项功能清单与性能预算）
+任务书：`docs/batches/editor-202609-001-公共编辑器组件/编辑器组件任务书.md`（契约已冻结，含 22 项功能清单与性能预算）
 
 背景：工具内编辑器现状是两套不成熟实现——自研 `LineNumberTextarea`（7 处调用）+ 手搓 CodeMirror（3 处，主题重复定义）。用户要求做成一个**高性能、低占用、功能齐全**的公共组件，供后续所有工具引用。
 
@@ -32,7 +32,7 @@
 
 实测：1 万行首帧 15.4ms（热态）；10 万行 38.1ms；`vendor-editor` gzip **135.62KB**（预算 ≤500KB）；空实例内存 **224KB**（预算 <10MB）；`pnpm lint / test / build` 全绿（29 文件 / 237 用例），Rust `cargo check` + 规范脚本通过。
 
-后续补充（2026-09-12）：三轮视觉打磨（选区色统一为 `#79b8ff` / 暗色 `#264F78`）+ **编辑器统一契约固化为测试** `editorUnification.test.ts`（禁止第三方基座、禁止工具层直引 `core/ui/editor/*`、禁止残留 `LineNumberTextarea`/`CodeViewer`）+ 基座对比文档 `docs/tasks/2026-09-12-编辑器基座对比-CodeMirror6-vs-Monaco.md`（维持 CM6 结论）。
+后续补充（2026-09-12）：三轮视觉打磨（选区色统一为 `#79b8ff` / 暗色 `#264F78`）+ **编辑器统一契约固化为测试** `editorUnification.test.ts`（禁止第三方基座、禁止工具层直引 `core/ui/editor/*`、禁止残留 `LineNumberTextarea`/`CodeViewer`）+ 基座对比文档 `docs/batches/editor-202609-001-公共编辑器组件/编辑器基座对比-CodeMirror6与Monaco.md`（维持 CM6 结论）。
 
 遗留：SSH 冲突差异未做真实服务器联调（需真实并发写入场景），首次联调建议在测试服务器临时文件上手工制造 mtime 变化。
 
@@ -40,7 +40,7 @@
 
 ## 二、✅ 已完成 · 框架存储目录配置（2026-09-12）
 
-任务书：`docs/tasks/2026-09-11-存储目录配置任务书.md`
+任务书：`docs/batches/storage-202609-001-存储目录配置/存储目录配置任务书.md`
 
 用户 2026-09-11 提出：希望有一个公共配置，统一管理缓存 / 日志 / 数据目录，可人工修改与迁移。现状是 8 处硬编码 `app_data_dir()`，无配置、无 UI、无迁移。
 
@@ -62,7 +62,7 @@
 
 ## 三、✅ 已完成 · SSH 工具扩展四项（2026-09-12）
 
-任务书：`docs/plugins/ssh/2026-09-11-扩展任务书.md`
+任务书：`docs/batches/ssh-202609-003-ssh工具扩展/扩展任务书.md`
 
 | #   | 待办                | 状态       | 实现要点                                                                                                                                                                       |
 | --- | ------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -75,8 +75,8 @@
 
 ## 四、✅ 已完成 · FRP 客户端配置管理工具（2026-09-12）
 
-调研：`docs/plugins/frp/2026-09-12-调研与可行性.md`（官方能力面 + ≥17 个同类开源项目 + 仓库可行性）
-任务书：`docs/plugins/frp/2026-09-12-任务书.md`（契约冻结：17 条 IPC / 数据表 / 设置项 / 状态机 / 测试矩阵）
+调研：`docs/batches/frp-202609-001-frp客户端管理/调研与可行性.md`（官方能力面 + ≥17 个同类开源项目 + 仓库可行性）
+任务书：`docs/batches/frp-202609-001-frp客户端管理/任务书.md`（契约冻结：17 条 IPC / 数据表 / 设置项 / 状态机 / 测试矩阵）
 
 形态四个决策（2026-09-12 用户拍板，全选推荐项）：
 
@@ -104,7 +104,7 @@
 
 ## 五、待办 · 框架可靠性与扩展治理
 
-任务书：`docs/tasks/2026-09-12-框架可靠性与扩展治理任务书.md`
+任务书：`docs/batches/rel-202609-001-可靠性与扩展治理/可靠性与扩展治理任务书.md`
 
 - [x] 2026-09-12：完成现有框架静态审查与详细任务书（23 条发现、13 项可靠性必修任务）；用户补充后增加1项必做本地数据功能，保留2项可选扩展。供后续 agent 执行，尚未实施代码整改或完成运行时验证。
 - [ ] A 批：T04 / T05，系统密钥库真实接入、旧密钥兼容与凭证崩溃恢复。
@@ -112,7 +112,7 @@
 - [ ] C 批：T07 / T08 / T09，设置一致性、双平台交付与凭证引用。
 - [ ] D 批：T10 / T11 / T12 / T13，工作区生命周期、诊断、IPC 契约与结构治理。
 
-- [x] T15 专项任务书：`docs/tasks/2026-09-12-本地数据导入导出与云同步预留任务书.md`，已明确分类选择、数据空间隔离、融合冲突、凭证引用与故障恢复方案。
+- [x] T15 专项任务书：`docs/batches/sync-202609-001-导入导出与云同步/导入导出与云同步预留任务书.md`，已明确分类选择、数据空间隔离、融合冲突、凭证引用与故障恢复方案。
 - [ ] E 批（近期必做）：T15 / L0–L5，本地数据导入导出、隔离/合并与云同步数据接口预留；**L0 数据边界冻结已于 2026-09-13 定稿**（见导入导出任务书 §13），L1 起进入实现，实施按 A–D 前置依赖推进。
 
 用户 2026-09-12 确认：云账户为后期规划，用于多地登录同步配置、凭证、使用习惯；当前不做登录/云服务/实际同步，但必须预留稳定身份、空间与账户分离、传输适配和密钥边界。本期先实现本地数据功能。
@@ -121,27 +121,27 @@ P2 扩展 T14 / T16（工具意图、资源预算）仍仅为建议。后续执�
 
 ### 架构与规范独立评审（2026-09-12）
 
-> 2026-09-13执行口径：`docs/tasks/2026-09-13-架构重构剩余项决策书.md`已对D1–D6定案，覆盖下方历史记录的“待确认测试手法/执行者”和无回复默认动作。采用IPC行为测试、主执行会话串行、L0先冻结、P7基线与最终验收分开；AR05/AR07下方勾选仅表示结构交付，其整体行为验收尚未完成。
+> 2026-09-13执行口径：`docs/batches/arch-202609-001-架构重构与规范调整/剩余项决策书.md`已对D1–D6定案，覆盖下方历史记录的“待确认测试手法/执行者”和无回复默认动作。采用IPC行为测试、主执行会话串行、L0先冻结、P7基线与最终验收分开；AR05/AR07下方勾选仅表示结构交付，其整体行为验收尚未完成。
 
 - [x] 2026-09-13：完成剩余项独立决策书，明确实施顺序、测试与环境边界、遗漏验收和收口条件，本次仅文档。
-- [ ] 按决策补AR07旧库与装配验收（AR03 挂载证据、AR05 域级行为网与驱动矩阵、P3 状态拆分及迁移事后核对已于 2026-09-13 完成；**AR07 旧库实测与路由清单比对已于 2026-09-13 补齐**，提交 `4965dd1`，记录见 `docs/tasks/2026-09-13-AR07-补证据记录.md` —— 老布局 `api.db` 迁移后原数据完整可读、新增/修改重开不丢、v2 迁移幂等，以及源码级比对 `patchybox_module!` 声明与路由清单、漏写清单模块的启动校验负例，已实测该用例能抓出漏行；余 macOS 缺项，用户 2026-09-13 裁决「不管，现阶段没条件」，记为长期环境缺项、不作为阻塞项。收尾阶段的待决策事项见 `docs/tasks/2026-09-13-架构重构收尾待决策事项.md`）。
+- [ ] 按决策补AR07旧库与装配验收（AR03 挂载证据、AR05 域级行为网与驱动矩阵、P3 状态拆分及迁移事后核对已于 2026-09-13 完成；**AR07 旧库实测与路由清单比对已于 2026-09-13 补齐**，提交 `4965dd1`，记录见 `docs/batches/arch-202609-001-架构重构与规范调整/AR07补证据记录.md` —— 老布局 `api.db` 迁移后原数据完整可读、新增/修改重开不丢、v2 迁移幂等，以及源码级比对 `patchybox_module!` 声明与路由清单、漏写清单模块的启动校验负例，已实测该用例能抓出漏行；余 macOS 缺项，用户 2026-09-13 裁决「不管，现阶段没条件」，记为长期环境缺项、不作为阻塞项。收尾阶段的待决策事项见 `docs/batches/arch-202609-001-架构重构与规范调整/收尾待决策事项.md`）。
 - [ ] 按决策完成L0、可靠性前置与P4/P5/P6接入，P7a/P7b分别记录；平台/真实协议缺项不得以单测或构建替代（**真机协议冒烟经用户 2026-09-13 裁决改由用户自测**，助手不代跑、不申请凭证；macOS 平台缺项已裁决不追求补齐）。
-- [x] 2026-09-13：L0 数据边界冻结定稿（落 `docs/tasks/2026-09-12-本地数据导入导出与云同步预留任务书.md` §13）——空间/设备字段归属表（逐项标归属与可移植性，未声明字段按设备级）、稳定身份（`default/1` 仅兼容承载位，新空间用 UUIDv4 目录名，`AccountId`/`RemoteSpaceId` 分别建模）、兼容布局（`LegacyFlat` 与 `Partitioned` 由启动解析出的唯一 `StorageLocation` 表达，首次升级不硬搬全部数据）、generation 激活（单活动空间、重启生效、共用维护互斥、不轮换既有密钥、旧代际保留到一次成功启动并人工确认）、密钥作用域（默认空间沿用既有 keyring 条目，降级文件实测位于 `<storageRoot>/vault/`；新增约束：只分目录不分 keyring account 会让多空间共用同一把主密钥）、接口冻结（`DataContext` 字段、设置路由、adapter 六方法、8 条 IPC 命令名、传输策略枚举）、旧 `api.db` 不改名与 staging 全量克隆保留未选数据。本节只冻结设计，不代表 L1 已实现。
-- [x] 2026-09-13：P7a 平台启动基线（Windows · dev）已记录 —— 落 `docs/tasks/2026-09-13-P7a-平台启动基线.md`：当前 HEAD `f4433b9` 冷启动通过（Vite 606 ms、Rust 增量 35.23s、`patchybox.exe` 常驻无 panic、窗口标题 CoveKit、可访问性树 73 元素/9 张工具卡、日志 12 行无 error），并记下首启失败是残留 vite 占用 1420 端口（PID 66092）的环境问题。**缺项按「环境待补」记**：真实鼠标键盘交互未取证（合成输入 `unverifiable`、foreground 被拒）、macOS、release 构建、托盘与全局快捷键。
+- [x] 2026-09-13：L0 数据边界冻结定稿（落 `docs/batches/sync-202609-001-导入导出与云同步/导入导出与云同步预留任务书.md` §13）——空间/设备字段归属表（逐项标归属与可移植性，未声明字段按设备级）、稳定身份（`default/1` 仅兼容承载位，新空间用 UUIDv4 目录名，`AccountId`/`RemoteSpaceId` 分别建模）、兼容布局（`LegacyFlat` 与 `Partitioned` 由启动解析出的唯一 `StorageLocation` 表达，首次升级不硬搬全部数据）、generation 激活（单活动空间、重启生效、共用维护互斥、不轮换既有密钥、旧代际保留到一次成功启动并人工确认）、密钥作用域（默认空间沿用既有 keyring 条目，降级文件实测位于 `<storageRoot>/vault/`；新增约束：只分目录不分 keyring account 会让多空间共用同一把主密钥）、接口冻结（`DataContext` 字段、设置路由、adapter 六方法、8 条 IPC 命令名、传输策略枚举）、旧 `api.db` 不改名与 staging 全量克隆保留未选数据。本节只冻结设计，不代表 L1 已实现。
+- [x] 2026-09-13：P7a 平台启动基线（Windows · dev）已记录 —— 落 `docs/batches/arch-202609-001-架构重构与规范调整/P7a平台启动基线.md`：当前 HEAD `f4433b9` 冷启动通过（Vite 606 ms、Rust 增量 35.23s、`patchybox.exe` 常驻无 panic、窗口标题 CoveKit、可访问性树 73 元素/9 张工具卡、日志 12 行无 error），并记下首启失败是残留 vite 占用 1420 端口（PID 66092）的环境问题。**缺项按「环境待补」记**：真实鼠标键盘交互未取证（合成输入 `unverifiable`、foreground 被拒）、macOS、release 构建、托盘与全局快捷键。
 
-- [x] 完成 `docs/tasks/2026-09-12-架构与工程规范独立评审.md`：评审架构与 AGENTS 规则本身，包含8项架构判断、规范逐项修订建议、检查器探针和替换条文草案。
-- [x] 确定调整方案并完成独立任务书：`docs/tasks/2026-09-12-架构重构与工程规范调整任务书.md`。评审建议已收敛为 AR01–AR07，尚未修改生效规范或实施代码重构。
+- [x] 完成 `docs/batches/arch-202609-001-架构重构与规范调整/架构与工程规范独立评审.md`：评审架构与 AGENTS 规则本身，包含8项架构判断、规范逐项修订建议、检查器探针和替换条文草案。
+- [x] 确定调整方案并完成独立任务书：`docs/batches/arch-202609-001-架构重构与规范调整/架构重构与工程规范调整任务书.md`。评审建议已收敛为 AR01–AR07，尚未修改生效规范或实施代码重构。
 - [x] AR01 规范切换（2026-09-12）：AGENTS / docs/01 / docs/02 / docs/03 / docs/05 / docs/README 与旧任务书冲突条文按任务书 §4.1–§4.2 收敛——owner 边界、规模改评审信号、composable 与注释按语义、锁与 clone 按成本、验证按风险分层；docs/02 拆分现行架构与设计期留档。
 - [x] AR01 配套的两个工程 skill 同步（2026-09-12）：`patchybox-feature-flow` v1.2.0→v1.3.0（Rust 门禁与验证改按风险分层、本地只格式化本次文件、S3 不再要求四件全绿）、`patchybox-plugin-ui-conventions` v1.0.0→v1.1.0（规模红线改评审信号、新增 `core/ui` 不得依赖 stores/vault/业务 IPC）。源在 `C:\Users\patchy\AppData\Local\hermes\skills\software-development\`，该目录不受 git 管理：回退方式 = 按新版本号还原上述条目，生效时间以本条记录为准。
 - [x] AR02 规范检查器重做（2026-09-12）：`src-tauri/tests/source_rules/`（syn 2 AST + 29 个夹具用例，入口 `scan_rust_rules` / `scan_docs`）取代逐行正则；旧实现的 2 处误报与 2 处漏检先用夹具复现旧行为、再验证新实现（测试模块之后的生产代码被整段截断、注释/字符串里的候选名误报、缩进 impl 方法漏检、`// SAFETY:` 与 `unsafe` 之间夹属性行误报）。两个 Python 入口改为薄 wrapper（`--exact` 过滤 + 必须实测运行 1 个测试才算通过）。基线改为「分类棘轮 + 14 条按路径/符号/类别/原因登记」的例外表。前端依赖守卫 `scripts/check_frontend_deps.mjs`（4 条规则 + 19 个夹具用例，8 条存量违规登记）。新增 dev 依赖 `syn =2.0.119` / `proc-macro2 =1.0.107`（对齐锁文件既有传递版本，未引入新包）。CI 显式跑 `--test source_rules` 与 `pnpm check:deps`（AR03 处理后须同步删除对应登记条目）。
 - [x] AR02 遗留已随 AR03 解决（2026-09-12）：`EditorGoToLineBar.vue` / `EditorSearchBar.vue` 与 `ConfirmDialog.vue` / `InputDialog.vue` 改相对具体组件路径，不再经 `@/core/ui` 自身 barrel 回流；`scripts/frontend_deps_baseline.json` 的 8 条存量登记（R1×4 / R3×1 / R4×3，含编辑器两个 barrel 环）已全部清零。
-- [x] AR03 基础 UI 与服务解耦（2026-09-12）：`core/ui/CredentialPicker.vue` → `core/vault/ui/`、`core/vault/CredentialForm.vue` → `core/vault/ui/`，新增 `core/vault/index.ts` 公开凭证复合组件与类型；`core/ui/useClipboard.ts` 拆为 `core/platform/clipboard.ts`（返回 ok/empty/failed，不提示）+ `core/feedback/useCopy.ts`（组合平台调用与 toast，三种反馈文案不变）；`core/ui/windowCtl.ts` → `core/platform/window.ts`（窗口操作收敛为 `runWindowAction`，界面不再持句柄）；消费方（dns 设置页、凭证管理页、SSH 服务器表单、8 个 useCopy 点、TitleBar）全部改新入口；`core/ui` 内部与凭证/编辑器组件改相对路径，R1/R3/R4 违规与环全部消失（守卫先跑一次输出 8 条「失效例外」= 旧问题已消除的取证，基线随即清零）。**原自认缺口「基础 Ui 在无 Pinia/Vault 时可挂载，只有守卫 + 构建证据」已于 2026-09-13 补成挂载用例**：`components.test.ts` 真挂 `UiModal/UiTree/UiDataGrid/UiSplitPane/UiCombobox`（无插件宿主，断言无注入缺失告警）并扫源码禁 `pinia`/`@/stores`/`@/core/(vault|ipc|platform|feedback)`；新增 `core/vault/ui/credentialComposite.test.ts`（凭证选择 5 例 + 新建失败 4 例）与 `core/feedback/useCopy.test.ts`（复制三态 6 例），记录见 `docs/tasks/2026-09-13-AR03-补证据记录.md`。
-- [ ] AR04 SSH 状态所有权重构（2026-09-13 代码拆分完成，**真机与平台验收待补**）：已完成 —— 60+ 平铺文件按 8 个能力域归位（profiles/connection/workspace/terminal/files/monitor/docker/tunnels），根目录只留入口与页面，仅路径与引用变化、零行为改动（pnpm lint/test/build/check:deps 全绿）。未完成 —— **真机协议冒烟**（连接、取消、重连、并发主机密钥确认/拒绝、关闭后后台资源释放）与 macOS、release 构建验证：按决策书 §4.2 标「实现完成，验收待补」，需用户在线时一起做。开工前盘点已落盘于 `docs/plugins/ssh/2026-09-12-AR04状态拆分方案与行为清单.md`（提交 `b247dc9`）：同一职责现有三份实现（活跃根文件 723 行、无人消费的 `profiles/useSshProfiles.ts` 161 行与 `workspace/useSshIdleWatch.ts` 155 行），且孤儿实现缺根的迁移失败可见提示、`legacyCredentialsFailed` 分支、删除服务器连带关闭其连接工作区等较新逻辑；**测试手法与执行者已于 2026-09-13 定案**（`docs/tasks/2026-09-13-架构重构剩余项决策书.md`：IPC 行为测试先行、主执行会话串行 P3a/P3b/P3c，删除旧实现与拆分同步完成），按决策推进。**P3a 行为网已于 2026-09-13 完成**：`src/plugins/ssh/useSshWorkspace.behavior.test.ts` 32 用例 / 7 组全绿（仓库首个 `vi.mock('./ipc')` 组件级行为网，`pnpm test` 39 文件 / 362 用例），基线记录与观察项见 `docs/plugins/ssh/2026-09-13-AR04-P3a-行为网与基线记录.md`；**P3b 已完成（2026-09-13）**：`profiles/useSshProfiles.ts` 成为配置与分组唯一所有者（含 `SshProfilePorts` 端口），根 723 → 581 行、P3a 网零修改全绿；**P3c 已完成（2026-09-13）**：三域拆出（`connection/useSshConnections.ts` / `connection/useHostKeyQueue.ts` / `workspace/useSshLifecycle.ts`），根缩为 112 行组合门面，孤儿 `workspace/useSshIdleWatch.ts` 与零引用 `files/FileTransferStrip.vue` 删除，逐文件事后迁移核对表见 `docs/plugins/ssh/2026-09-13-AR04-P3c-三域拆分与事后迁移核对表.md`，行为网仍 32 条零修改全绿。
-- [x] AR05 Database 前端与驱动职责重构（2026-09-12 **Rust 驱动与前端四域拆分均已提交**）：已完成 —— `drivers/mod.rs`（726 行）拆为 `session.rs`（会话注册表/取消句柄/快照）、`connection.rs`（建连/测试/断开）、`probe.rs`（版本与时延）、`execution.rs`（查询执行与取消分派），`mod.rs` 22 行只做声明与重导出（公开路径 `drivers::connect`/`drivers::DbState` 等保持不变，封闭枚举与 agent/dialect 边界未动）。前端已完成 —— `useDatabase.ts`（1416 行）按 §8.1 拆为 `connection/useDatabaseConnections.ts`(212 行)、`workspace/useQueryWorkspace.ts`(676)、`catalog/useDatabaseCatalog.ts`(702)、`library/useQueryLibrary.ts`(78) 与 175 行兼容门面（返回面 77 个 key 与拆分前逐一相等、14 处消费方 import 不变），提交 `5edcb4a`。**行为网已于 2026-09-13 完成**：`src/plugins/database/useDatabase.behavior.test.ts` 28 用例 / 6 组覆盖决策书 §2.3 全部七个必需场景（两连接两页签结果归属、旧响应晚到、取消后重试、关页签连带、元数据缓存按连接与 schema 隔离及失效、历史收藏成功失败、保存期间切页签归属），首轮即复现 5 处失败 —— 结果按「当前活动页签」回填、取消按连接一刀切 —— 已按最小请求身份修复（新增 `requestId.ts`，`dbc_execute`/`dbc_cancel` 契约同步携带请求身份，后端取消句柄改按请求身份登记），`pnpm test` 40 文件 / 390 用例全绿；证据与逐条覆盖表见 `docs/plugins/database/2026-09-13-AR05-行为网与驱动矩阵.md`。未完成 —— 真实驱动矩阵只实测 SQLite 临时文件库落盘（`drivers/sqlite.rs` 5 用例）：MySQL/PG/Redis 本机无服务、无 docker、无客户端，Oracle/达梦/金仓/Vastbase/PolarDB 需远端 agent 与实例，均按「环境待补」记录并附可执行补齐步骤；应用内真库冒烟需真实实例与凭证（凭证不入库）。
+- [x] AR03 基础 UI 与服务解耦（2026-09-12）：`core/ui/CredentialPicker.vue` → `core/vault/ui/`、`core/vault/CredentialForm.vue` → `core/vault/ui/`，新增 `core/vault/index.ts` 公开凭证复合组件与类型；`core/ui/useClipboard.ts` 拆为 `core/platform/clipboard.ts`（返回 ok/empty/failed，不提示）+ `core/feedback/useCopy.ts`（组合平台调用与 toast，三种反馈文案不变）；`core/ui/windowCtl.ts` → `core/platform/window.ts`（窗口操作收敛为 `runWindowAction`，界面不再持句柄）；消费方（dns 设置页、凭证管理页、SSH 服务器表单、8 个 useCopy 点、TitleBar）全部改新入口；`core/ui` 内部与凭证/编辑器组件改相对路径，R1/R3/R4 违规与环全部消失（守卫先跑一次输出 8 条「失效例外」= 旧问题已消除的取证，基线随即清零）。**原自认缺口「基础 Ui 在无 Pinia/Vault 时可挂载，只有守卫 + 构建证据」已于 2026-09-13 补成挂载用例**：`components.test.ts` 真挂 `UiModal/UiTree/UiDataGrid/UiSplitPane/UiCombobox`（无插件宿主，断言无注入缺失告警）并扫源码禁 `pinia`/`@/stores`/`@/core/(vault|ipc|platform|feedback)`；新增 `core/vault/ui/credentialComposite.test.ts`（凭证选择 5 例 + 新建失败 4 例）与 `core/feedback/useCopy.test.ts`（复制三态 6 例），记录见 `docs/batches/arch-202609-001-架构重构与规范调整/AR03补证据记录.md`。
+- [ ] AR04 SSH 状态所有权重构（2026-09-13 代码拆分完成，**真机与平台验收待补**）：已完成 —— 60+ 平铺文件按 8 个能力域归位（profiles/connection/workspace/terminal/files/monitor/docker/tunnels），根目录只留入口与页面，仅路径与引用变化、零行为改动（pnpm lint/test/build/check:deps 全绿）。未完成 —— **真机协议冒烟**（连接、取消、重连、并发主机密钥确认/拒绝、关闭后后台资源释放）与 macOS、release 构建验证：按决策书 §4.2 标「实现完成，验收待补」，需用户在线时一起做。开工前盘点已落盘于 `docs/batches/ssh-202609-005-ssh状态所有权拆分/AR04状态拆分方案与行为清单.md`（提交 `b247dc9`）：同一职责现有三份实现（活跃根文件 723 行、无人消费的 `profiles/useSshProfiles.ts` 161 行与 `workspace/useSshIdleWatch.ts` 155 行），且孤儿实现缺根的迁移失败可见提示、`legacyCredentialsFailed` 分支、删除服务器连带关闭其连接工作区等较新逻辑；**测试手法与执行者已于 2026-09-13 定案**（`docs/batches/arch-202609-001-架构重构与规范调整/剩余项决策书.md`：IPC 行为测试先行、主执行会话串行 P3a/P3b/P3c，删除旧实现与拆分同步完成），按决策推进。**P3a 行为网已于 2026-09-13 完成**：`src/plugins/ssh/useSshWorkspace.behavior.test.ts` 32 用例 / 7 组全绿（仓库首个 `vi.mock('./ipc')` 组件级行为网，`pnpm test` 39 文件 / 362 用例），基线记录与观察项见 `docs/batches/ssh-202609-005-ssh状态所有权拆分/P3a行为网与基线记录.md`；**P3b 已完成（2026-09-13）**：`profiles/useSshProfiles.ts` 成为配置与分组唯一所有者（含 `SshProfilePorts` 端口），根 723 → 581 行、P3a 网零修改全绿；**P3c 已完成（2026-09-13）**：三域拆出（`connection/useSshConnections.ts` / `connection/useHostKeyQueue.ts` / `workspace/useSshLifecycle.ts`），根缩为 112 行组合门面，孤儿 `workspace/useSshIdleWatch.ts` 与零引用 `files/FileTransferStrip.vue` 删除，逐文件事后迁移核对表见 `docs/batches/ssh-202609-005-ssh状态所有权拆分/P3c三域拆分与事后迁移核对表.md`，行为网仍 32 条零修改全绿。
+- [x] AR05 Database 前端与驱动职责重构（2026-09-12 **Rust 驱动与前端四域拆分均已提交**）：已完成 —— `drivers/mod.rs`（726 行）拆为 `session.rs`（会话注册表/取消句柄/快照）、`connection.rs`（建连/测试/断开）、`probe.rs`（版本与时延）、`execution.rs`（查询执行与取消分派），`mod.rs` 22 行只做声明与重导出（公开路径 `drivers::connect`/`drivers::DbState` 等保持不变，封闭枚举与 agent/dialect 边界未动）。前端已完成 —— `useDatabase.ts`（1416 行）按 §8.1 拆为 `connection/useDatabaseConnections.ts`(212 行)、`workspace/useQueryWorkspace.ts`(676)、`catalog/useDatabaseCatalog.ts`(702)、`library/useQueryLibrary.ts`(78) 与 175 行兼容门面（返回面 77 个 key 与拆分前逐一相等、14 处消费方 import 不变），提交 `5edcb4a`。**行为网已于 2026-09-13 完成**：`src/plugins/database/useDatabase.behavior.test.ts` 28 用例 / 6 组覆盖决策书 §2.3 全部七个必需场景（两连接两页签结果归属、旧响应晚到、取消后重试、关页签连带、元数据缓存按连接与 schema 隔离及失效、历史收藏成功失败、保存期间切页签归属），首轮即复现 5 处失败 —— 结果按「当前活动页签」回填、取消按连接一刀切 —— 已按最小请求身份修复（新增 `requestId.ts`，`dbc_execute`/`dbc_cancel` 契约同步携带请求身份，后端取消句柄改按请求身份登记），`pnpm test` 40 文件 / 390 用例全绿；证据与逐条覆盖表见 `docs/batches/db-202609-001-database四域重构/AR05行为网与驱动矩阵.md`。未完成 —— 真实驱动矩阵只实测 SQLite 临时文件库落盘（`drivers/sqlite.rs` 5 用例）：MySQL/PG/Redis 本机无服务、无 docker、无客户端，Oracle/达梦/金仓/Vastbase/PolarDB 需远端 agent 与实例，均按「环境待补」记录并附可执行补齐步骤；应用内真库冒烟需真实实例与凭证（凭证不入库）。
 - [ ] AR06 数据上下文与统一生命周期（2026-09-12 **机制部分落地，按任务书 §9.3 仍未完成**）：已落地 —— `framework/context.rs`（不可变 `DataContext{spaceId, generationId, location, epoch}`：四分区位置启动时解析一次并固定，`paths`/`PluginDb` 消费同一实例，不再每次调用现读 `settings.json`；`is_current`/`stale_dropped` 承担晚到事件判定与可诊断计数；`maintenance_guard()` 是根迁移/导入提交/空间激活/更新安装的唯一互斥）与 `framework/lifecycle.rs`（唯一关闭入口：`prepare_close` 可拒绝、`dispose` 受 5s 总超时约束且兜住钩子异常；`CloseReason = tab/exit/restart/update/space-switch`；`lib.rs` 的 `RunEvent::ExitRequested/Exit` 已改走该入口，frp 进程清理与 http_ws 会话断开已登记为模块钩子）。未完成（有外部前置）—— ① 默认空间身份/索引与空间-设备字段路由依赖导入导出 L0/L1（未交付），当前 `spaceId=default`/`generationId=1` 只是承载位，设置仍是单文件；② 关闭流程的「未保存则拒绝」消费方（前端页签 + 可靠性 T10/T11）未接入；③ key 与凭证上下文（T04/T05/T09）未接入；④ 双平台冷启动与旧数据夹具验证未做。仅机制与接口落地不算完成。
 - [x] AR07 统一 HTTP owner 与静态装配（2026-09-12）：`plugins/api/{mod,models}.rs` → `plugins/http_ws/persistence/`（`api_*` 命令名、`storageKey: api` 与 `data/api.db` 均不变，模块描述里显式记录历史存储键）；新增 `framework/module_manifest.rs` 静态清单宏（`patchybox_module!` 一处声明生成 IPC 入库元数据 + handler + 模块描述，注册名取实现路径末段，兼容别名须显式 `as "名"`）与路由宏 `patchybox_routes!`（一行/模块生成路由分支、装配顺序与 `validate_routing()`），删除全部手写命令表、8 个手写 `invoke_handler` 与 owner 枚举；未纳路由的 owner 由 `unrouted_owner()` 明确报错（不再静默 false）。**顺带修复实测缺陷**：迁移中发现 11 条命令（`tts_synthesize`、`frp_profile_create`、`dbc_connection_save`、`ssh_connect`、`ssh_profile_import`、`ssh_terminal_log_start` 等）实现并进了 handler 但从未入库 → 前端调用一直 command not found，清单化后自动入库并纳入契约表（147 条已发布命令）。
 
-- [ ] 剩余项逐项计划（用户 2026-09-12 要求「一项一项做」）：`docs/tasks/2026-09-12-架构重构剩余项执行计划.md`。已完成 —— P1 AR05 前端四域拆分（`5edcb4a`）、P2 文档漂移清理（`55af37e` 补测试 / `2b3c5cb` 文档）。待办 —— P3 AR04 状态拆分**代码部分已完成（P3a 行为网 / P3b 配置域 / P3c 三域拆分，2026-09-13）**，余真机与平台验收；AR05 的 Database 四域行为测试已完成（2026-09-13，含 5 处归属缺陷复现与前后端修复）；AR03 挂载与凭证/复制反馈证据已完成（2026-09-13）；AR07 旧库/装配补证据已完成（2026-09-13，提交 `4965dd1`，余 macOS 与 release 实测待补）；P4–P6 AR06 的三个外部前置（可靠性 A 批 T04/T05、D 批 T10/T11、E 批 L0/L1）、P7 AR06 收口（双平台冷启动 + 旧数据夹具）。决策已定案：`docs/tasks/2026-09-13-架构重构剩余项决策书.md`（D1–D6，取代待决策书的候选与默认动作）；执行顺序 L0 → P7a 平台基线 → P3a/P3b/P3c → Database 与 AR03/AR07 补证据 → 公共能力前置与接入 → P7b/B7，全程串行、一项一验收一提交。
+- [ ] 剩余项逐项计划（用户 2026-09-12 要求「一项一项做」）：`docs/batches/arch-202609-001-架构重构与规范调整/剩余项执行计划.md`。已完成 —— P1 AR05 前端四域拆分（`5edcb4a`）、P2 文档漂移清理（`55af37e` 补测试 / `2b3c5cb` 文档）。待办 —— P3 AR04 状态拆分**代码部分已完成（P3a 行为网 / P3b 配置域 / P3c 三域拆分，2026-09-13）**，余真机与平台验收；AR05 的 Database 四域行为测试已完成（2026-09-13，含 5 处归属缺陷复现与前后端修复）；AR03 挂载与凭证/复制反馈证据已完成（2026-09-13）；AR07 旧库/装配补证据已完成（2026-09-13，提交 `4965dd1`，余 macOS 与 release 实测待补）；P4–P6 AR06 的三个外部前置（可靠性 A 批 T04/T05、D 批 T10/T11、E 批 L0/L1）、P7 AR06 收口（双平台冷启动 + 旧数据夹具）。决策已定案：`docs/batches/arch-202609-001-架构重构与规范调整/剩余项决策书.md`（D1–D6，取代待决策书的候选与默认动作）；执行顺序 L0 → P7a 平台基线 → P3a/P3b/P3c → Database 与 AR03/AR07 补证据 → 公共能力前置与接入 → P7b/B7，全程串行、一项一验收一提交。
 
 执行顺序与完成标准以独立调整任务书为准；不要再按评审中的候选路线分别创建实现。既有密钥/迁移风险修复可先行，不等目录整理。
 

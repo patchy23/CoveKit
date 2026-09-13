@@ -14,9 +14,9 @@ CoveKit 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，集�
 | 文档                                                             | 说明                                              |
 | ---------------------------------------------------------------- | ------------------------------------------------- |
 | [DESIGN.md](DESIGN.md)                                           | 设计规范（颜色 / 字体 / 组件 tokens，单一事实源） |
-| [docs/01-tech-stack.md](docs/01-tech-stack.md)                   | 技术选型分析                                      |
-| [docs/02-architecture.md](docs/02-architecture.md)               | 详细设计（架构 / IPC 契约 / 数据模型 / 路线图）   |
-| [docs/06-release.md](docs/06-release.md)                         | 发布、自动更新与代码签名配置                 |
+| [docs/standards/01-技术选型.md](docs/standards/01-技术选型.md)                   | 技术选型分析                                      |
+| [docs/standards/02-架构.md](docs/standards/02-架构.md)               | 详细设计（架构 / IPC 契约 / 数据模型 / 路线图）   |
+| [docs/standards/06-发布与更新.md](docs/standards/06-发布与更新.md)                         | 发布、自动更新与代码签名配置                 |
 | [sketches/002-clean-light/](sketches/002-clean-light/index.html) | 已采纳 UI 方向的交互原型（浏览器直接打开）        |
 
 ## 当前进度
@@ -29,7 +29,7 @@ CoveKit 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，集�
 - SSH 已支持终端、SFTP、远程编辑、资源监控、进程、systemd 服务和 Docker 管理。
 - 框架级 Vault 已采用系统 keyring + AES-256-GCM 落地；SSH、DNS 可引用 Vault 凭证并保留手工输入方式（数据库暂为插件私有加密存储）。
 - 中英文核心界面可在运行时切换；已接入 Tauri 自动更新与 GitHub Release 工作流，实际签名发布需在 GitHub 配置私钥和平台证书。
-- Windows x64 NSIS 生产包已在本地构建通过；发布候选版验证记录见 `docs/releases/v0.1.0-rc.md`。
+- Windows x64 NSIS 生产包已在本地构建通过；发布候选版验证记录见 `docs/releases/v0.1.0-发布候选.md`。
 
 ## 开发
 

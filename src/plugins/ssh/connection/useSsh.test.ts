@@ -19,7 +19,7 @@ import {
 } from './useSsh'
 import type { ConnectionStatus } from '../contracts'
 
-describe('statusDotClass（状态 → 圆点样式，UI.md §3 五状态）', () => {
+describe('statusDotClass（状态 → 圆点样式，界面设计.md §3 五状态）', () => {
   it('已连接 = 绿色（success）', () => {
     expect(statusDotClass('connected')).toBe('bg-success-strong dark:bg-success-dark')
   })

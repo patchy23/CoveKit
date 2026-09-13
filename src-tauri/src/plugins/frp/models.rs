@@ -1,5 +1,5 @@
 //! frp 插件 · serde 数据结构（与前端 src/plugins/frp/contracts.ts 逐字段同步）
-//! 契约冻结基线：docs/plugins/frp/2026-09-12-任务书.md §3（命令名与字段名两侧必须一致）。
+//! 契约冻结基线：docs/batches/frp-202609-001-frp客户端管理/任务书.md §3（命令名与字段名两侧必须一致）。
 //! 约定：Rust 侧 snake_case + `rename_all = "camelCase"`；可选字段缺省时不序列化（对应前端 `field?`）。
 
 use serde::{Deserialize, Serialize};

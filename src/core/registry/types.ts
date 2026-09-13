@@ -1,6 +1,6 @@
 /**
  * 工具注册表 · 数据模型
- * 与 docs/02-architecture.md §3 同步。
+ * 与 docs/standards/02-架构.md §3 同步。
  */
 import type { Component } from 'vue'
 
