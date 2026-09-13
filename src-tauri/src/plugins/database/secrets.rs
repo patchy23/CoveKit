@@ -50,10 +50,20 @@ fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
         let plain = decrypt_legacy(&key, &data)?;
         let map: std::collections::HashMap<String, String> =
             serde_json::from_slice(&plain).map_err(|e| format!("旧凭据数据解析失败: {e}"))?;
-        for (conn_id, password) in &map {
-            credentials::save_secret(app, NAMESPACE, conn_id, &serde_json::json!(password))?;
-        }
-        // 迁移成功后清理旧文件
+
+        // 全量读入 → 全量写入（一次原子替换）→ 解密回读确认 → 才清理旧文件
+        let values: std::collections::HashMap<String, serde_json::Value> = map
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::json!(v)))
+            .collect();
+        credentials::save_secrets(app, NAMESPACE, &values)?;
+        let read_back = |key: &str| -> Result<Option<String>, String> {
+            Ok(credentials::get_secret(app, NAMESPACE, key)?
+                .and_then(|v| v.as_str().map(|s| s.to_string())))
+        };
+        verify_migrated(&map, &read_back)?;
+
+        // 回读确认全部通过后才清理旧文件（确认失败会提前返回，旧文件原样保留）
         std::fs::remove_file(&legacy_file).ok();
         std::fs::remove_file(&legacy_key).ok();
         std::fs::remove_file(dir.join("db-secrets.bak")).ok();
@@ -68,6 +78,32 @@ fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
         std::fs::remove_file(&stronghold_file).ok();
         std::fs::remove_file(dir.join("db-client.snapshot")).ok();
         eprintln!("[database] 已清理旧 stronghold 快照（凭据需重新输入）");
+    }
+    Ok(())
+}
+
+/// 迁移回读校验：旧表每一条都必须能在新库读回且值一致
+///
+/// 为什么要回读：写入成功不代表解密可读（主密钥、命名空间、序列化任一环节出问题都会静默丢数据），
+/// 只有逐条回读一致才允许清理旧文件，否则保留旧数据并可重试。
+fn verify_migrated(
+    expected: &std::collections::HashMap<String, String>,
+    read_back: &dyn Fn(&str) -> Result<Option<String>, String>,
+) -> Result<(), String> {
+    for (key, want) in expected {
+        match read_back(key)? {
+            Some(got) if got == *want => {}
+            Some(_) => {
+                return Err(format!(
+                    "旧凭据迁移回读校验失败（{key} 的值不一致），旧文件已保留，请重试"
+                ))
+            }
+            None => {
+                return Err(format!(
+                    "旧凭据迁移回读校验失败（{key} 读不到），旧文件已保留，请重试"
+                ))
+            }
+        }
     }
     Ok(())
 }
@@ -115,4 +151,40 @@ pub fn secret_delete(
 ) -> Result<(), String> {
     secrets(app, state)?;
     credentials::delete_secret(app, NAMESPACE, conn_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    /// 全部一致时通过
+    #[test]
+    fn verify_migrated_accepts_matching_values() {
+        let mut expected = HashMap::new();
+        expected.insert("a".to_string(), "1".to_string());
+        expected.insert("b".to_string(), "2".to_string());
+        let read = |key: &str| -> Result<Option<String>, String> { Ok(expected.get(key).cloned()) };
+        assert!(verify_migrated(&expected, &read).is_ok());
+    }
+
+    /// 值不一致（写入串了）必须报失败，不能当迁移完成
+    #[test]
+    fn verify_migrated_rejects_mismatched_value() {
+        let mut expected = HashMap::new();
+        expected.insert("a".to_string(), "1".to_string());
+        let read = |_: &str| -> Result<Option<String>, String> { Ok(Some("9".to_string())) };
+        let error = verify_migrated(&expected, &read).unwrap_err();
+        assert!(error.contains("值不一致"), "{error}");
+    }
+
+    /// 读不到（静默丢条目）同样必须报失败
+    #[test]
+    fn verify_migrated_rejects_missing_entry() {
+        let mut expected = HashMap::new();
+        expected.insert("a".to_string(), "1".to_string());
+        let read = |_: &str| -> Result<Option<String>, String> { Ok(None) };
+        let error = verify_migrated(&expected, &read).unwrap_err();
+        assert!(error.contains("读不到"), "{error}");
+    }
 }

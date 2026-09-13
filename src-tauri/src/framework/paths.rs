@@ -30,7 +30,14 @@ pub(crate) fn read_setting(app: &AppHandle, key: &str) -> Option<serde_json::Val
 }
 
 /// 写入设置项（settings.json → app.<key>；失败返回错误）
-fn write_setting(app: &AppHandle, key: &str, value: serde_json::Value) -> Result<(), String> {
+/// 写入存储根目录配置（空字符串 = 恢复默认；重启后生效）。
+///
+/// 只有 `storage` 模块的「安排迁移 / 恢复动作」入口可以调用；通用设置写入会拒绝该键。
+pub(crate) fn write_setting(
+    app: &AppHandle,
+    key: &str,
+    value: serde_json::Value,
+) -> Result<(), String> {
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
     let mut current = store.get("app").unwrap_or_else(|| serde_json::json!({}));
     if let serde_json::Value::Object(map) = &mut current {
@@ -88,11 +95,35 @@ pub fn default_root(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("数据目录获取失败: {e}"))
 }
 
+/// 删除配置键（供存储计划等一次性状态使用；缺失即视为已删除）
+pub(crate) fn remove_setting(app: &AppHandle, key: &str) -> Result<(), String> {
+    let store = app
+        .store("settings.json")
+        .map_err(|e| format!("打开设置存储失败: {e}"))?;
+    let mut app_obj = store
+        .get("app")
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
+    app_obj.remove(key);
+    store.set("app", serde_json::Value::Object(app_obj));
+    store.save().map_err(|e| format!("保存设置失败: {e}"))
+}
+
+/// 配置里的存储根目录（未配置或空字符串时为 None）
+pub fn configured_root(app: &AppHandle) -> Option<String> {
+    read_setting(app, KEY_STORAGE_ROOT)
+        .and_then(|v| v.as_str().map(String::from))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// 当前生效的存储根目录。
 ///
-/// 取值优先走固定下来的数据上下文（`context::init_from_app` 在启动时解析一次：
-/// 配置优先、目录不可用则降级默认目录）：运行期改配置不再中途换根，也不会每次调用重读
-/// settings.json。上下文尚未初始化时（单元测试或框架极早期）退回一次即时解析。
+/// 取值只走固定下来的数据上下文（`context::init_from_app` 在启动维护阶段之后解析一次）：
+/// 运行期改配置不再中途换根，也不会每次调用重读 settings.json 或探测可写性。
+/// 配置根不可用**不再**降级到默认目录：由 `context::init_from_app` 登记可见恢复状态，
+/// 生效根保持配置值，业务读写失败可见，不会静默新建一套空环境。
+/// 上下文尚未初始化时（单元测试或框架极早期）退回一次即时解析。
 pub fn storage_root(app: &AppHandle) -> Result<PathBuf, String> {
     if let Some(root) = crate::framework::context::root() {
         return Ok(root.to_path_buf());
@@ -100,21 +131,11 @@ pub fn storage_root(app: &AppHandle) -> Result<PathBuf, String> {
     resolve_root_now(app)
 }
 
-/// 即时解析存储根（无上下文时的回落路径）：配置优先，不可写则降级默认目录并告警
+/// 即时解析存储根（无上下文时的回落路径）：配置优先，不做可写性探测与降级
 fn resolve_root_now(app: &AppHandle) -> Result<PathBuf, String> {
     let default = default_root(app)?;
-    let configured = read_setting(app, KEY_STORAGE_ROOT)
-        .and_then(|v| v.as_str().map(String::from))
-        .unwrap_or_default();
-    let root = resolve_root(&configured, &default);
-    if root != default && !is_writable_dir(&root) {
-        eprintln!(
-            "[storage] 配置的存储目录不可用，已降级到默认目录: {}",
-            root.display()
-        );
-        return Ok(default);
-    }
-    Ok(root)
+    let configured = configured_root(app).unwrap_or_default();
+    Ok(resolve_root(&configured, &default))
 }
 
 /// 校验作用域名（单段目录名，防路径穿越）
@@ -139,11 +160,6 @@ pub fn partition_dir(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
 /// 数据分区 `<root>/data`（插件 SQLite、known_hosts、本地凭据文件）
 pub fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     partition_dir(app, "data")
-}
-
-/// 凭证分区 `<root>/vault`
-pub fn vault_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    partition_dir(app, "vault")
 }
 
 // 会话日志（SSH）等日志消费方接入后即被使用；在此之前仅为统一入口的完整性保留。
@@ -192,127 +208,11 @@ pub fn data_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     Ok(target)
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// 老布局一次性迁移
-// ──────────────────────────────────────────────────────────────────────────
-
-/// 迁移计划的固定项：`(根下旧名, 目标分区)`；`*.db` 由扫描补充
-const FIXED_MOVES: [(&str, &str); 10] = [
-    ("ssh-known-hosts", "data"),
-    ("credentials", "data"),
-    ("credentials-master.key", "data"),
-    ("ssh-credentials.json", "data"),
-    ("ssh-master.key", "data"),
-    ("db-master.key", "data"),
-    ("vault.dat", "vault"),
-    ("vault-master.key", "vault"),
-    ("tts", "cache"),
-    ("agents", "cache"),
-];
-
-/// 老布局 → 四分区迁移（幂等；已完成则直接返回）。
-/// 调用时机：`lib.rs` 的 setup 中**最先**执行，早于任何插件打开数据库。
-pub fn migrate_layout(app: &AppHandle) -> Result<(), String> {
-    let done = layout_version(app);
-    if done >= LAYOUT_VERSION {
-        return Ok(());
-    }
-    let root = storage_root(app)?;
-    let moved = migrate_layout_at(&root)?;
-    write_setting(app, KEY_LAYOUT_VERSION, serde_json::json!(LAYOUT_VERSION))?;
-    if moved > 0 {
-        eprintln!("[storage] 已完成布局迁移：{moved} 项移入 data/vault/cache 分区");
-    }
-    Ok(())
-}
-
-/// 老布局迁移的纯实现（不需要 AppHandle，便于用临时目录单测）：
-/// 把根下的固定项与插件数据库 `*.db` 搬入四分区，返回实际搬移项数。
-/// 单项失败只告警不中断（保留原位置，`data_path` 会回落读取），因此升级不会丢数据。
-pub fn migrate_layout_at(root: &Path) -> Result<usize, String> {
-    let mut moved = 0usize;
-    // 固定项：known_hosts / 本地凭据 / Vault / 缓存
-    for (name, partition) in FIXED_MOVES {
-        let from = root.join(name);
-        let to = root.join(partition).join(name);
-        match move_path(&from, &to) {
-            Ok(true) => moved += 1,
-            Ok(false) => {}
-            Err(e) => eprintln!("[storage] 迁移 {name} 失败（保留原位置）: {e}"),
-        }
-    }
-    // 插件数据库：根下 *.db → data/
-    if let Ok(entries) = std::fs::read_dir(root) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|e| e.to_str()) != Some("db") {
-                continue;
-            }
-            let Some(file_name) = path.file_name() else {
-                continue;
-            };
-            let to = root.join("data").join(file_name);
-            match move_path(&path, &to) {
-                Ok(true) => moved += 1,
-                Ok(false) => {}
-                Err(e) => eprintln!("[storage] 迁移 {} 失败（保留原位置）: {e}", path.display()),
-            }
-        }
-    }
-    Ok(moved)
-}
-
-/// 移动单一路径（文件或目录）。返回是否真的搬了。
-/// - 源不存在或目标已存在 → 跳过（绝不覆盖目标，避免破坏已有数据）
-/// - 同卷 rename 优先；跨卷失败退化为复制 + 大小校验 + 删源
-pub fn move_path(from: &Path, to: &Path) -> Result<bool, String> {
-    if !from.exists() || to.exists() {
-        return Ok(false);
-    }
-    if let Some(parent) = to.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("创建 {} 失败: {e}", parent.display()))?;
-    }
-    if std::fs::rename(from, to).is_ok() {
-        return Ok(true);
-    }
-    // 跨卷/被占用：复制 → 校验 → 删源
-    copy_recursive(from, to)?;
-    if dir_size(from)? != dir_size(to)? {
-        return Err("复制体积不一致，已放弃删源".into());
-    }
-    remove_recursive(from)?;
-    Ok(true)
-}
-
-/// 递归复制（文件或目录）
-pub fn copy_recursive(from: &Path, to: &Path) -> Result<(), String> {
-    let meta = std::fs::metadata(from).map_err(|e| format!("读取 {} 失败: {e}", from.display()))?;
-    if meta.is_file() {
-        if let Some(parent) = to.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        std::fs::copy(from, to).map_err(|e| format!("复制 {} 失败: {e}", from.display()))?;
-        return Ok(());
-    }
-    std::fs::create_dir_all(to).map_err(|e| e.to_string())?;
-    for entry in std::fs::read_dir(from)
-        .map_err(|e| format!("读取目录 {} 失败: {e}", from.display()))?
-        .flatten()
-    {
-        let name = entry.file_name();
-        copy_recursive(&entry.path(), &to.join(name))?;
-    }
-    Ok(())
-}
-
-/// 递归删除（仅用于跨卷迁移成功后的源清理）
-pub fn remove_recursive(path: &Path) -> Result<(), String> {
-    if path.is_dir() {
-        std::fs::remove_dir_all(path).map_err(|e| format!("删除 {} 失败: {e}", path.display()))
-    } else {
-        std::fs::remove_file(path).map_err(|e| format!("删除 {} 失败: {e}", path.display()))
-    }
+/// 当前时间戳字符串（归档名用；本地时间 yyyymmddHHMMSS）
+///
+/// 仅用于生成人类可读的归档后缀，不参与任何判定，因此不要求时钟单调。
+pub fn now_stamp() -> String {
+    chrono::Local::now().format("%Y%m%d%H%M%S").to_string()
 }
 
 /// 路径总字节数（文件返回自身大小；目录递归累加；不存在返回 0）
@@ -325,10 +225,10 @@ pub fn dir_size(path: &Path) -> Result<u64, String> {
         return Ok(meta.len());
     }
     let mut total = 0u64;
-    for entry in std::fs::read_dir(path)
-        .map_err(|e| format!("读取目录 {} 失败: {e}", path.display()))?
-        .flatten()
-    {
+    let entries =
+        std::fs::read_dir(path).map_err(|e| format!("读取目录 {} 失败: {e}", path.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("读取目录 {} 项失败: {e}", path.display()))?;
         total += dir_size(&entry.path())?;
     }
     Ok(total)
@@ -380,100 +280,6 @@ mod tests {
         assert!(is_writable_dir(&dir.join("nested")));
         // 探针文件不残留
         assert!(!dir.join("nested").join(".patchybox-write-probe").exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn move_path_moves_file_and_skips_existing_target() {
-        let dir = temp_dir("move");
-        let from = dir.join("root-level.db");
-        let to = dir.join("data").join("root-level.db");
-        std::fs::write(&from, b"payload").unwrap();
-        assert!(move_path(&from, &to).unwrap());
-        assert!(!from.exists());
-        assert_eq!(std::fs::read(&to).unwrap(), b"payload");
-
-        // 目标已存在时不覆盖
-        let again = dir.join("again.db");
-        std::fs::write(&again, b"new").unwrap();
-        assert!(!move_path(&again, &to).unwrap());
-        assert_eq!(std::fs::read(&to).unwrap(), b"payload");
-        assert!(again.exists());
-
-        // 源不存在时也不报错
-        assert!(!move_path(&dir.join("missing.db"), &to).unwrap());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn move_path_moves_directory_tree() {
-        let dir = temp_dir("move-dir");
-        let src = dir.join("credentials");
-        std::fs::create_dir_all(src.join("nested")).unwrap();
-        std::fs::write(src.join("ssh.enc"), b"abc").unwrap();
-        std::fs::write(src.join("nested").join("x.enc"), b"de").unwrap();
-        let dst = dir.join("data").join("credentials");
-        assert!(move_path(&src, &dst).unwrap());
-        assert!(!src.exists());
-        assert_eq!(std::fs::read(dst.join("ssh.enc")).unwrap(), b"abc");
-        assert!(dst.join("nested").join("x.enc").exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn migrate_layout_at_moves_legacy_items_into_partitions() {
-        let dir = temp_dir("migrate");
-        // 造老布局：根下的数据库、vault 密文、凭据目录、缓存目录
-        std::fs::write(dir.join("ssh.db"), b"db").unwrap();
-        std::fs::write(dir.join("vault.dat"), vec![0u8; 32]).unwrap();
-        std::fs::write(dir.join("vault-master.key"), vec![0u8; 32]).unwrap();
-        std::fs::create_dir_all(dir.join("credentials")).unwrap();
-        std::fs::write(dir.join("credentials").join("ssh.enc"), b"enc").unwrap();
-        std::fs::create_dir_all(dir.join("tts")).unwrap();
-        std::fs::write(dir.join("tts").join("a.mp3"), b"mp3").unwrap();
-        std::fs::create_dir_all(dir.join("agents")).unwrap();
-        std::fs::write(dir.join("agents").join("d.jar"), b"jar").unwrap();
-        std::fs::write(dir.join("config.json"), b"{}").unwrap();
-
-        let moved = migrate_layout_at(&dir).unwrap();
-        assert_eq!(
-            moved, 6,
-            "应为 ssh.db + vault.dat + vault-master.key + credentials + tts + agents 共 6 项"
-        );
-        // 分区落位
-        assert!(dir.join("data").join("ssh.db").exists());
-        assert!(dir.join("vault").join("vault.dat").exists());
-        assert!(dir.join("vault").join("vault-master.key").exists());
-        assert!(dir
-            .join("data")
-            .join("credentials")
-            .join("ssh.enc")
-            .exists());
-        assert!(dir.join("cache").join("tts").join("a.mp3").exists());
-        assert!(dir.join("cache").join("agents").join("d.jar").exists());
-        // 配置类根下文件永不搬移
-        assert!(dir.join("config.json").exists());
-        // 幂等：再跑一次无事发生
-        assert_eq!(migrate_layout_at(&dir).unwrap(), 0);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn migrate_layout_at_keeps_source_when_target_exists() {
-        let dir = temp_dir("migrate-conflict");
-        std::fs::create_dir_all(dir.join("data")).unwrap();
-        std::fs::write(dir.join("ssh.db"), b"legacy").unwrap();
-        std::fs::write(dir.join("data").join("ssh.db"), b"current").unwrap();
-        assert_eq!(
-            migrate_layout_at(&dir).unwrap(),
-            0,
-            "目标已存在时跳过，不覆盖"
-        );
-        assert_eq!(
-            std::fs::read(dir.join("data").join("ssh.db")).unwrap(),
-            b"current"
-        );
-        assert!(dir.join("ssh.db").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

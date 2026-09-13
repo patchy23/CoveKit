@@ -4,7 +4,12 @@
  * - 业务插件在各自 ipc.ts 用 invokeCommand 封装自己的命令（命令名/类型见插件 contracts.ts）。
  */
 import { invoke } from '@tauri-apps/api/core'
-import type { CredentialSavePayload, FrameworkPayloads, FrameworkResults } from './contracts'
+import type {
+  CredentialSavePayload,
+  FrameworkPayloads,
+  FrameworkResults,
+  StorageRecoveryAction,
+} from './contracts'
 
 /** 归一化 IPC 错误：Tauri 侧错误可能是任意字符串/对象 */
 export class IpcError extends Error {
@@ -43,7 +48,11 @@ export const ipc = {
   openExternal: (url: string) => call('open_external', { url }),
   frameworkCommandsList: () => call('framework_commands', {}),
   storageInfo: () => call('storage_info', {}),
-  storageMigrate: (target: string) => call('storage_migrate', { target }),
+  storageScheduleMigration: (target: string) => call('storage_schedule_migration', { target }),
+  storageCancelMigration: () => call('storage_cancel_migration', {}),
+  storageRecoveryStatus: () => call('storage_recovery_status', {}),
+  storageRecoveryAction: (action: StorageRecoveryAction, target?: string) =>
+    call('storage_recovery_action', { action, target }),
   vaultList: () => call('vault_list', {}),
   vaultSave: (payload: CredentialSavePayload) => call('vault_save', { payload }),
   vaultDelete: (id: string) => call('vault_delete', { id }),

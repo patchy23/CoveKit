@@ -78,14 +78,62 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // ── 维护阶段（必须最早执行）：待执行的存储根迁移 ──
+            // 复制与校验在任何业务资源初始化之前完成；校验通过才提交新根配置，
+            // 失败则保留源、计划与错误详情并登记可见恢复状态（不阻塞启动，用户能看到提示）。
+            let configured_before =
+                framework::paths::configured_root(app.handle()).unwrap_or_else(|| {
+                    framework::paths::default_root(app.handle())
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default()
+                });
+            let migration = framework::storage::run_pending(app.handle(), &configured_before);
+            eprintln!("[storage] {}", migration.summary());
+
             // ── 框架启动初始化 ──
             // 数据上下文最先固定：存储位置、空间代际与启动 epoch 由它唯一给出，
             // 之后 paths / PluginDb / 插件一律取该实例，不再各自现读配置
             framework::context::init_from_app(app.handle())
                 .map_err(|e| format!("数据上下文初始化失败: {e}"))?;
-            // 存储布局迁移必须最先执行：早于任何插件打开数据库、凭证与已知主机文件
-            framework::paths::migrate_layout(app.handle())
-                .map_err(|e| format!("存储布局迁移失败: {e}"))?;
+            // 存储布局迁移必须最先执行：早于任何插件打开数据库、凭证与已知主机文件。
+            // 恢复状态（配置盘不可用/迁移失败）下跳过：此时目录不可写，强行迁移只会失败，
+            // 而且它属于「必须用户处理的故障」，不该让启动整体失败而看不到恢复提示。
+            if framework::storage::recovery::current().is_some() {
+                eprintln!("[storage] 存在未处理的存储故障，跳过布局迁移，等待用户在恢复页处理");
+            } else {
+                // 失败不再让启动整体失败：单项失败会保留原位置并由 data_path 回落读取，
+                // 用户需要看到恢复提示而不是一个打不开的应用。
+                match framework::storage::layout::migrate_layout(app.handle()) {
+                    Ok(report) if report.has_failures() => {
+                        framework::storage::recovery::set(
+                            framework::storage::recovery::StorageRecovery::migration_failed(
+                                "",
+                                &framework::paths::storage_root(app.handle())?
+                                    .display()
+                                    .to_string(),
+                                None,
+                                format!(
+                                    "旧布局迁移有 {} 项失败（数据保留在原位置）",
+                                    report.failures().len()
+                                ),
+                            ),
+                        );
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        framework::storage::recovery::set(
+                            framework::storage::recovery::StorageRecovery::migration_failed(
+                                "",
+                                &framework::paths::storage_root(app.handle())?
+                                    .display()
+                                    .to_string(),
+                                None,
+                                error,
+                            ),
+                        );
+                    }
+                }
+            }
             framework::settings::init(app)?;
 
             // 屏蔽 WebView2 原生右键菜单（不再干扰程序内自绘右键菜单；仅 Windows 生效）

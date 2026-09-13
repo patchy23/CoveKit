@@ -101,24 +101,28 @@ pub fn init(location: StorageLocation) -> &'static DataContext {
     })
 }
 
-/// 启动期固定上下文：解析存储根（配置优先、不可写时降级默认目录）后固定下来。
+/// 启动期固定上下文：解析存储根（配置优先）后固定下来，**在维护阶段之后调用**。
 ///
-/// 可写性降级与告警的语义与迁移前一致，只是从「每次调用都判定」变为「启动时判定一次」。
+/// 配置根不可用时不降级默认目录：生效根保持配置值并登记可见恢复状态（`storage::recovery`），
+/// 业务读写自然失败且用户能看到恢复页，不会静默在默认目录新建一套空环境。
+/// 恢复动作（重试/选择新环境/改用默认）一律需要重启，因此本函数不做运行期换根。
 pub fn init_from_app(app: &AppHandle) -> Result<&'static DataContext, String> {
     let default = paths::default_root(app)?;
-    let configured = paths::read_setting(app, paths::KEY_STORAGE_ROOT)
-        .and_then(|v| v.as_str().map(String::from))
-        .unwrap_or_default();
+    let configured = paths::configured_root(app).unwrap_or_default();
     let root = paths::resolve_root(&configured, &default);
-    let root = if root != default && !paths::is_writable_dir(&root) {
+    if root != default && !paths::is_writable_dir(&root) {
+        // 磁盘未连接或路径失效：登记恢复状态，生效根保持配置值
+        crate::framework::storage::recovery::set(
+            crate::framework::storage::recovery::StorageRecovery::configured_unavailable(
+                &root.display().to_string(),
+                &root.display().to_string(),
+            ),
+        );
         eprintln!(
-            "[storage] 配置的存储目录不可用，已降级到默认目录: {}",
+            "[storage] 配置的存储目录不可用，进入恢复状态（不回退默认目录）: {}",
             root.display()
         );
-        default
-    } else {
-        root
-    };
+    }
     Ok(init(StorageLocation::new(root)))
 }
 

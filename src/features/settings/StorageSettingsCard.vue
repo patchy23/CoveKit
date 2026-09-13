@@ -3,19 +3,20 @@
  * StorageSettingsCard · 设置页「存储位置」卡片（框架级）
  *
  * 展示当前存储根目录与 data / vault / logs / cache 四分区占用；
- * 「修改位置」「恢复默认」走统一迁移流程（预检 → 复制 → 校验 → 写配置），**重启生效**。
- * 迁移只复制不删除源目录；任一步失败都不写配置，现状不变。
+ * 「修改位置」「恢复默认」只**登记迁移计划**（预检通过即返回），复制与校验在下次启动的
+ * 维护阶段执行，校验通过才切换生效根，**必须重启生效**（运行期不换根、不写任何句柄）。
+ * 迁移只复制不删除源目录；任一步失败都不写配置，现状不变，计划与失败原因保留可重试/取消。
+ * 配置盘不可用（未插盘/只读）时由 StorageRecoveryOverlay 展示恢复入口，本卡片不再兜底降级。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { relaunch } from '@tauri-apps/plugin-process'
-import { UiButton, UiModal, UiProgress } from '@/core/ui'
+import { UiButton, UiModal } from '@/core/ui'
 import { formatBytes } from '@/core/format'
 import { ipc } from '@/core/ipc/ipc'
-import type { StorageInfo, StorageMigrateProgress } from '@/core/ipc/contracts'
+import type { StorageInfo } from '@/core/ipc/contracts'
 import { useUiStore } from '@/stores/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
 
@@ -26,20 +27,16 @@ const ui = useUiStore()
 const info = ref<StorageInfo | null>(null)
 /** 读取失败原因（展示为错误行） */
 const loadError = ref('')
-/** 迁移进行中（按钮禁用 + 进度条） */
-const migrating = ref(false)
-/** 迁移进度（来自 storage://progress 事件） */
-const progress = ref<StorageMigrateProgress | null>(null)
-/** 迁移失败原因 */
-const migrateError = ref('')
+/** 登记请求进行中（按钮禁用） */
+const busy = ref(false)
+/** 登记/取消失败原因 */
+const actionError = ref('')
 /** 待确认的目标目录 */
 const pendingTarget = ref('')
 /** 迁移确认弹窗 */
 const confirmVisible = ref(false)
-/** 迁移完成弹窗（提示重启） */
+/** 安排完成弹窗（提示重启） */
 const doneVisible = ref(false)
-/** 进度事件取消订阅句柄 */
-let unlisten: UnlistenFn | null = null
 
 /** 分区标识 → i18n 键（四个固定分区） */
 const PARTITION_KEYS: Record<string, string> = {
@@ -58,26 +55,17 @@ const totalText = computed(() => {
   })
 })
 
-/** 迁移阶段文案（precheck / copy / verify / done） */
-const phaseText = computed(() => {
+/** 待执行计划的阶段文案 */
+const pendingPhaseText = computed(() => {
   const map: Record<string, string> = {
-    precheck: 'settings.storagePhasePrecheck',
-    copy: 'settings.storagePhaseCopy',
-    verify: 'settings.storagePhaseVerify',
-    done: 'settings.storagePhaseDone',
+    scheduled: 'settings.storagePendingPhaseScheduled',
+    copying: 'settings.storagePendingPhaseCopying',
+    verifying: 'settings.storagePendingPhaseVerifying',
   }
-  return t(map[progress.value?.phase ?? 'precheck'])
+  return t(map[info.value?.pendingMigration?.phase ?? 'scheduled'])
 })
 
-/** 迁移进度文案（阶段 + 已复制体积） */
-const progressText = computed(() =>
-  t('settings.storageMigrating', {
-    phase: phaseText.value,
-    bytes: formatBytes(progress.value?.copiedBytes ?? 0),
-  })
-)
-
-/** 读取存储信息（进入页面与迁移完成后刷新） */
+/** 读取存储信息（进入页面与登记/取消后刷新） */
 async function loadInfo() {
   loadError.value = ''
   try {
@@ -87,14 +75,7 @@ async function loadInfo() {
   }
 }
 
-onMounted(async () => {
-  await loadInfo()
-  // 迁移进度：Rust 侧分阶段推送，用于进度条与阶段文案
-  unlisten = await listen<StorageMigrateProgress>('storage://progress', (event) => {
-    progress.value = event.payload
-  })
-})
-onBeforeUnmount(() => unlisten?.())
+onMounted(loadInfo)
 
 /** 选择新目录 → 打开确认弹窗 */
 async function chooseTarget() {
@@ -119,23 +100,39 @@ function resetToDefault() {
   confirmVisible.value = true
 }
 
-/** 执行迁移（确认后；失败不改配置，仅提示） */
-async function runMigrate() {
+/** 登记迁移计划（不复制文件；重启后由维护阶段复制并校验） */
+async function scheduleMigration() {
   confirmVisible.value = false
-  migrating.value = true
-  migrateError.value = ''
-  progress.value = null
+  busy.value = true
+  actionError.value = ''
   try {
-    const result = await ipc.storageMigrate(pendingTarget.value)
-    if (!result.ok) throw new Error(result.error ?? t('settings.storageUnknownError'))
-    ui.toast(t('settings.storageMigrateDone'))
+    const result = await ipc.storageScheduleMigration(pendingTarget.value)
+    ui.toast(result.message)
     await loadInfo()
     doneVisible.value = true
   } catch (reason) {
-    migrateError.value = reason instanceof Error ? reason.message : String(reason)
-    ui.toast(t('settings.storageMigrateFailed', { message: migrateError.value }))
+    actionError.value = reason instanceof Error ? reason.message : String(reason)
+    ui.toast(t('settings.storageScheduleFailed', { message: actionError.value }))
   } finally {
-    migrating.value = false
+    busy.value = false
+  }
+}
+
+/** 取消待执行计划（不修改任何业务文件） */
+async function cancelPending() {
+  busy.value = true
+  actionError.value = ''
+  try {
+    const cancelled = await ipc.storageCancelMigration()
+    ui.toast(
+      cancelled ? t('settings.storagePendingCancelled') : t('settings.storagePendingMissing')
+    )
+    await loadInfo()
+  } catch (reason) {
+    actionError.value = reason instanceof Error ? reason.message : String(reason)
+    ui.toast(t('settings.storagePendingCancelFailed', { message: actionError.value }))
+  } finally {
+    busy.value = false
   }
 }
 
@@ -153,7 +150,7 @@ async function openDir() {
   }
 }
 
-/** 立即重启应用（迁移成功后生效） */
+/** 立即重启应用（迁移计划在下次启动的维护阶段执行） */
 async function restartNow() {
   doneVisible.value = false
   await relaunch()
@@ -216,22 +213,48 @@ async function restartNow() {
         {{ t('settings.storageHint') }}
       </p>
 
-      <!-- 迁移进度 -->
-      <div v-if="migrating" class="flex flex-col gap-[6px]">
-        <UiProgress
-          :value="progress?.copiedBytes ?? 0"
-          :max="progress?.totalBytes || 1"
-          size="sm"
-          :label="progressText"
-        />
+      <!-- 待执行计划：重启后维护阶段执行，可取消 -->
+      <div
+        v-if="info?.pendingMigration"
+        class="flex flex-col gap-[6px] rounded-sm border border-warning-strong/40 bg-warning-soft/40 p-[10px] dark:border-warning-dark/40 dark:bg-warning-soft-dark/30"
+      >
+        <p class="text-body-sm font-medium dark:text-primary-dark">
+          {{ t('settings.storagePendingTitle') }}
+        </p>
+        <code class="block font-mono text-body-sm break-all dark:text-primary-dark">{{
+          info.pendingMigration.target
+        }}</code>
+        <p class="text-body-sm text-text-muted dark:text-text-muted-dark">
+          {{
+            t('settings.storagePendingMeta', {
+              phase: pendingPhaseText,
+              attempts: info.pendingMigration.attempts,
+            })
+          }}
+        </p>
+        <p
+          v-if="info.pendingMigration.lastError"
+          class="text-body-sm text-danger-strong dark:text-danger-dark"
+        >
+          {{ t('settings.storagePendingFailed', { message: info.pendingMigration.lastError }) }}
+        </p>
+        <div class="flex items-center justify-end">
+          <UiButton :disabled="busy" @click="cancelPending">
+            {{ t('settings.storagePendingCancel') }}
+          </UiButton>
+        </div>
       </div>
 
       <!-- 操作 -->
       <div class="flex items-center gap-[8px]">
-        <UiButton :disabled="migrating || !info" @click="chooseTarget">
+        <UiButton :disabled="busy || !info || !!info.pendingMigration" @click="chooseTarget">
           {{ t('settings.storageChange') }}
         </UiButton>
-        <UiButton v-if="info && !info.isDefault" :disabled="migrating" @click="resetToDefault">
+        <UiButton
+          v-if="info && !info.isDefault"
+          :disabled="busy || !!info.pendingMigration"
+          @click="resetToDefault"
+        >
           {{ t('settings.storageReset') }}
         </UiButton>
         <UiButton :disabled="!info" @click="openDir">{{ t('settings.storageOpen') }}</UiButton>
@@ -240,21 +263,21 @@ async function restartNow() {
       <p v-if="loadError" class="text-body-sm text-danger-strong dark:text-danger-dark">
         {{ loadError }}
       </p>
-      <p v-if="migrateError" class="text-body-sm text-danger-strong dark:text-danger-dark">
-        {{ t('settings.storageMigrateFailed', { message: migrateError }) }}
+      <p v-if="actionError" class="text-body-sm text-danger-strong dark:text-danger-dark">
+        {{ actionError }}
       </p>
     </div>
 
     <!-- 迁移确认（危险/破坏性操作：给足信息 + 显式确认，禁遮罩误触由 UiModal 保证） -->
     <UiModal
       :open="confirmVisible"
-      :title="t('settings.storageMigrateTitle')"
+      :title="t('settings.storageScheduleTitle')"
       size="md"
       @close="confirmVisible = false"
     >
       <div class="flex flex-col gap-sm">
         <p class="text-body text-secondary dark:text-secondary-dark">
-          {{ t('settings.storageMigrateBody', { size: formatBytes(info?.totalBytes ?? 0) }) }}
+          {{ t('settings.storageScheduleBody', { size: formatBytes(info?.totalBytes ?? 0) }) }}
         </p>
         <div class="rounded-sm border border-border p-[10px] dark:border-border-dark">
           <p class="text-body-sm text-text-muted dark:text-text-muted-dark">
@@ -265,18 +288,18 @@ async function restartNow() {
           }}</code>
         </div>
         <p class="text-body-sm text-text-muted dark:text-text-muted-dark">
-          {{ t('settings.storageMigrateNote') }}
+          {{ t('settings.storageScheduleNote') }}
         </p>
         <div class="mt-[4px] flex items-center justify-end gap-[8px]">
           <UiButton @click="confirmVisible = false">{{ t('settings.storageCancel') }}</UiButton>
-          <UiButton :disabled="migrating" @click="runMigrate">
-            {{ t('settings.storageMigrateConfirm') }}
+          <UiButton :disabled="busy" @click="scheduleMigration">
+            {{ t('settings.storageScheduleConfirm') }}
           </UiButton>
         </div>
       </div>
     </UiModal>
 
-    <!-- 迁移完成：提示重启生效 -->
+    <!-- 安排完成：提示重启执行 -->
     <UiModal
       :open="doneVisible"
       :title="t('settings.storageDoneTitle')"

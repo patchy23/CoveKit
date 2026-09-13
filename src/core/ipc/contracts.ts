@@ -151,24 +151,93 @@ export interface StorageInfo {
   spaceId: string
   /** 空间代际（导入激活/空间切换后递增） */
   generationId: number
+  /** 待执行的迁移计划（重启后执行；运行期不换根） */
+  pendingMigration: StoragePendingMigration | null
+  /** 最近一次成功迁移的留档 */
+  lastMigration: StorageLastMigration | null
+  /** 恢复状态（配置盘不可用或迁移失败；非空时前端显示恢复页） */
+  recovery: StorageRecovery | null
 }
 
-/** 迁移结果（storage_migrate 返回；ok=false 时未写配置，现状不变） */
-export interface StorageMigrateResult {
-  ok: boolean
+/** 迁移阶段（崩溃后靠阶段值识别半截状态） */
+export type StorageMigrationPhase = 'scheduled' | 'copying' | 'verifying'
+
+/** 待执行的迁移计划（重启后由维护阶段执行；运行期不换根） */
+export interface StoragePendingMigration {
+  /** 计划标识 */
+  id: string
+  /** 源根目录（登记时的生效根） */
+  source: string
+  /** 目标根目录 */
   target: string
+  /** 登记时的布局版本 */
+  layoutVersion: number
+  /** 当前阶段 */
+  phase: StorageMigrationPhase
+  /** 登记时间（Unix 毫秒） */
+  createdAt: number
+  /** 启动尝试次数 */
+  attempts: number
+  /** 最近一次失败原因（成功提交时随计划清除） */
+  lastError: string | null
+}
+
+/** 最近一次成功迁移的留档 */
+export interface StorageLastMigration {
+  id: string
+  source: string
+  target: string
+  completedAt: number
   copiedFiles: number
   copiedBytes: number
-  error: string | null
+}
+
+/** 存储恢复原因 */
+export type StorageRecoveryReason = 'configuredRootUnavailable' | 'migrationFailed'
+
+/** 存储恢复状态（配置盘不可用或迁移失败） */
+export interface StorageRecovery {
+  reason: StorageRecoveryReason
+  /** 配置里指向的数据目录 */
+  configuredRoot: string
+  /** 本次运行生效的根（恢复态下等于 configuredRoot，不回退默认目录） */
+  activeRoot: string
+  /** 关联的迁移计划标识 */
+  planId: string | null
+  /** 面向用户的说明 */
+  detail: string
+  canRetry: boolean
+  canUseDefault: boolean
+  createdAt: number
 }
 
 /** 迁移进度事件负载（事件名 `storage://progress`） */
 export interface StorageMigrateProgress {
-  phase: 'precheck' | 'copy' | 'verify' | 'done'
+  phase: 'copy' | 'verify' | 'done'
   copiedFiles: number
   copiedBytes: number
   totalBytes: number
 }
+
+/** 安排迁移的结果（登记成功即返回；复制在重启后执行） */
+export interface StorageScheduleResult {
+  ok: boolean
+  planId: string
+  target: string
+  source: string
+  /** 目标目录登记时是否非空（非空按合并写入） */
+  message: string
+}
+
+/** 恢复动作结果（动作一律需要重启生效） */
+export interface RecoveryActionResult {
+  ok: boolean
+  restartRequired: boolean
+  message: string
+}
+
+/** 恢复动作类型 */
+export type StorageRecoveryAction = 'retry' | 'use-default' | 'choose'
 
 // ── 框架命令清单 ──
 
@@ -181,7 +250,10 @@ export const frameworkCommands = {
   frameworkCommandsList: 'framework_commands',
   // 存储位置（框架命令，src-tauri framework/storage）
   storageInfo: 'storage_info',
-  storageMigrate: 'storage_migrate',
+  storageScheduleMigration: 'storage_schedule_migration',
+  storageCancelMigration: 'storage_cancel_migration',
+  storageRecoveryStatus: 'storage_recovery_status',
+  storageRecoveryAction: 'storage_recovery_action',
   // Vault 凭证管理（框架命令，src-tauri framework/vault）
   vaultList: 'vault_list',
   vaultSave: 'vault_save',
@@ -202,7 +274,10 @@ export type FrameworkPayloads = {
   open_external: { url: string }
   framework_commands: Record<string, never>
   storage_info: Record<string, never>
-  storage_migrate: { target: string }
+  storage_schedule_migration: { target: string }
+  storage_cancel_migration: Record<string, never>
+  storage_recovery_status: Record<string, never>
+  storage_recovery_action: { action: StorageRecoveryAction; target?: string }
   vault_list: Record<string, never>
   vault_save: { payload: CredentialSavePayload }
   vault_delete: { id: string }
@@ -222,7 +297,10 @@ export type FrameworkResults = {
   open_external: void
   framework_commands: { name: string; doc: string }[]
   storage_info: StorageInfo
-  storage_migrate: StorageMigrateResult
+  storage_schedule_migration: StorageScheduleResult
+  storage_cancel_migration: boolean
+  storage_recovery_status: StorageRecovery | null
+  storage_recovery_action: RecoveryActionResult
   vault_list: CredentialSummary[]
   vault_save: CredentialSummary
   vault_delete: VaultDeleteResult

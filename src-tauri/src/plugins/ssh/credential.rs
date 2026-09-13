@@ -17,16 +17,15 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use rand::RngCore;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// 主密钥文件（不存在则生成 32 随机字节）
 fn master_key(app: &AppHandle) -> Result<[u8; 32], String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("数据目录获取失败: {e}"))?;
+    // 走框架统一路径解析：数据分区（含旧布局回落），不再直接用系统 app_data_dir，
+    // 否则自定义存储位置后这里会另生成一份密钥/凭证，与真实数据分叉
+    let dir = crate::framework::paths::data_dir(app)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建数据目录失败: {e}"))?;
-    let path = dir.join("ssh-master.key");
+    let path = crate::framework::paths::data_path(app, "ssh-master.key")?;
     recover_backup(&path)?;
     if path.exists() {
         let bytes = std::fs::read(&path).map_err(|e| format!("主密钥读取失败: {e}"))?;
@@ -103,11 +102,7 @@ fn recover_backup(path: &Path) -> Result<(), String> {
 
 /// 凭证文件路径
 fn creds_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("数据目录获取失败: {e}"))?;
-    Ok(dir.join("ssh-credentials.json"))
+    crate::framework::paths::data_path(app, "ssh-credentials.json")
 }
 
 /// 读取全部旧凭证（解密；无文件时返回空表；供一次性迁移使用，明文不离开本模块的调用方）

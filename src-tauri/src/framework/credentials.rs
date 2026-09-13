@@ -106,9 +106,30 @@ fn update_map_at(
 // 对外 API（AppHandle 封装）
 // ──────────────────────────────────────────────────────────────────────────
 
+/// 凭据数据目录解析（含旧布局回落；纯函数便于单测）
+///
+/// 新布局：`<root>/data/credentials/<命名空间>.enc` 与 `<root>/data/credentials-master.key`；
+/// 旧布局：`<root>/credentials/<命名空间>.enc` 与 `<root>/credentials-master.key`。
+/// 只有「新布局没有凭据目录、旧位置有」时才回落：布局迁移可能整组保留原位，
+/// 此时必须按旧位置读写，否则会表现为凭据丢失、甚至用新密钥覆盖旧密文。
+fn resolve_data_dir(root: &Path) -> PathBuf {
+    let data = root.join("data");
+    if !data.join(CREDENTIALS_DIR).exists() && root.join(CREDENTIALS_DIR).exists() {
+        return root.to_path_buf();
+    }
+    data
+}
+
 /// 框架数据分区目录（经 `framework::paths` 统一解析并带旧布局回落）
 fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    crate::framework::paths::data_dir(app)
+    Ok(resolve_data_dir(&crate::framework::paths::storage_root(
+        app,
+    )?))
+}
+
+/// 凭据数据目录（含旧布局回落；保护状态查询用）
+pub(crate) fn resolved_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app_data_dir(app)
 }
 
 /// 凭证文件路径（供前端展示/诊断）
@@ -156,6 +177,24 @@ pub fn save_secret(
     })
 }
 
+/// 批量保存凭证（一次读改写、一次原子替换）
+///
+/// 用途：旧存储一次性迁移。逐条 `save_secret` 会在中途失败时留下「新库已有部分数据」的中间态，
+/// 迁移逻辑再判断「新库有数据就跳过」就会永久丢掉剩余条目，因此迁移必须走批量写入。
+pub fn save_secrets(
+    app: &AppHandle,
+    namespace: &str,
+    values: &HashMap<String, serde_json::Value>,
+) -> Result<(), String> {
+    let dir = app_data_dir(app)?;
+    let values = values.clone();
+    update_map_at(&dir, namespace, &KeyringStore, move |map| {
+        for (key, value) in values {
+            map.insert(key, value);
+        }
+    })
+}
+
 /// 读取凭证（无记录返回 None）
 pub fn get_secret(
     app: &AppHandle,
@@ -195,6 +234,24 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// 旧布局回落：新布局没有凭据目录、根下有 credentials/ 时按存储根解析
+    /// （密文与主密钥必须落在同一目录，否则会读不到旧密文）
+    #[test]
+    fn data_dir_falls_back_to_root_for_legacy_layout() {
+        let dir = temp_dir("legacy-layout-fallback");
+        std::fs::create_dir_all(dir.join(CREDENTIALS_DIR)).unwrap();
+        std::fs::write(dir.join(CREDENTIALS_DIR).join("database.enc"), b"legacy").unwrap();
+        assert_eq!(resolve_data_dir(&dir), dir, "旧位置有凭据时应回落");
+
+        std::fs::create_dir_all(dir.join("data").join(CREDENTIALS_DIR)).unwrap();
+        assert_eq!(
+            resolve_data_dir(&dir),
+            dir.join("data"),
+            "新位置有凭据目录时用新布局"
+        );
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     /// 命名空间白名单

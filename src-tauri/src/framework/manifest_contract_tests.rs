@@ -135,12 +135,27 @@ mod tests {
         (
             "framework",
             "storage_info",
-            "读取存储位置信息（四分区路径与占用）",
+            "读取存储位置信息（四分区路径与占用、待执行计划、恢复状态）",
         ),
         (
             "framework",
-            "storage_migrate",
-            "迁移存储目录到新根目录（重启生效）",
+            "storage_schedule_migration",
+            "安排存储目录迁移（只登记计划，重启后复制并校验）",
+        ),
+        (
+            "framework",
+            "storage_cancel_migration",
+            "取消待执行的存储目录迁移计划（不修改业务文件）",
+        ),
+        (
+            "framework",
+            "storage_recovery_status",
+            "读取存储恢复状态（配置盘不可用或迁移失败）",
+        ),
+        (
+            "framework",
+            "storage_recovery_action",
+            "执行存储恢复动作（retry/use-default/choose）",
         ),
         (
             "framework",

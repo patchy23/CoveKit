@@ -11,6 +11,7 @@ import Sidebar from '@/features/sidebar/Sidebar.vue'
 import TopBar from '@/features/topbar/TopBar.vue'
 import ToolWorkspace from '@/features/workspace/ToolWorkspace.vue'
 import SettingsPage from '@/features/settings/SettingsPage.vue'
+import StorageRecoveryOverlay from '@/features/settings/StorageRecoveryOverlay.vue'
 import TitleBar from '@/features/ui/TitleBar.vue'
 import Toast from '@/features/ui/Toast.vue'
 import { useFavoritesStore } from '@/stores/favorites'
@@ -40,6 +41,9 @@ onMounted(async () => {
         <ToolWorkspace v-show="!ui.settingsOpen" />
       </main>
     </div>
+
+    <!-- 存储恢复页：配置盘不可用或上次迁移失败时覆盖整个窗口，必须用户显式选择动作 -->
+    <StorageRecoveryOverlay />
 
     <Toast />
   </div>

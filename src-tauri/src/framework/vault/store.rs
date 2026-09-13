@@ -31,9 +31,24 @@ pub(crate) fn vault_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// Vault 目录解析（含旧布局回落；纯函数便于单测）
+///
+/// 新布局：`<root>/vault/vault.dat`（主密钥同目录）；旧布局：`<root>/vault.dat`。
+/// 只有「vault 分区不存在、根下仍有旧 vault.dat」时才回落：布局迁移可能整组保留原位，
+/// 此时必须按旧位置读写，否则会表现为凭证库为空、甚至用新密钥覆盖旧密文。
+pub(crate) fn resolve_vault_dir(root: &Path) -> PathBuf {
+    let dir = root.join("vault");
+    if !dir.exists() && root.join(VAULT_FILE).exists() {
+        return root.to_path_buf();
+    }
+    dir
+}
+
 /// 凭证分区目录（`<root>/vault`；命令层用，测试走 *_at 目录参数版本）
 pub(crate) fn data_dir_of(app: &AppHandle) -> Result<PathBuf, String> {
-    crate::framework::paths::vault_dir(app)
+    Ok(resolve_vault_dir(&crate::framework::paths::storage_root(
+        app,
+    )?))
 }
 
 /// 将无法读取的 vault.dat 改名留档（密钥丢失/文件损坏时导入的前置保护，绝不静默清空）
@@ -118,10 +133,13 @@ pub(crate) fn protection_status_at(
 }
 
 /// 凭证保护状态（AppHandle 封装；命令层入口）
+///
+/// 两个域各自解析目录（都带旧布局回落）：vault 走 vault 分区，
+/// credentials 走数据分区，避免把 vault 目录当成凭据目录去扫。
 pub(crate) fn protection_status(app: &AppHandle) -> Result<ProtectionStatus, String> {
-    let data_dir = data_dir_of(app)?;
-    let vault_dir = crate::framework::paths::vault_dir(app)?;
-    protection_status_at(&vault_dir, &data_dir, &KeyringStore)
+    let vault_dir = data_dir_of(app)?;
+    let credential_dir = credentials::resolved_data_dir(app)?;
+    protection_status_at(&vault_dir, &credential_dir, &KeyringStore)
 }
 
 /// 锁内读全量（AppHandle 封装）
@@ -230,6 +248,27 @@ mod tests {
     use crate::framework::secure_store::test_support::{promotion_test_guard, MemoryKeyStore};
 
     use super::super::models::{CredentialFields, CredentialKind};
+
+    /// 旧布局回落：vault 分区不存在而根下仍有旧 vault.dat 时按存储根解析
+    #[test]
+    fn vault_dir_falls_back_to_root_for_legacy_layout() {
+        let dir = std::env::temp_dir().join(format!(
+            "vault-legacy-dir-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(VAULT_FILE), b"legacy").unwrap();
+        assert_eq!(resolve_vault_dir(&dir), dir, "vault 分区不存在时应回落到根");
+
+        std::fs::create_dir_all(dir.join("vault")).unwrap();
+        assert_eq!(
+            resolve_vault_dir(&dir),
+            dir.join("vault"),
+            "vault 分区存在时用分区"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn dns_reference_count_handles_current_and_legacy_schema() {
