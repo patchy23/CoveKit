@@ -74,6 +74,64 @@ pub(crate) fn unrouted_owner(owner: &str) -> ! {
     panic!("IPC 归属者 {owner} 已登记命令但没有路由分支（plugins/mod.rs 清单缺该模块）");
 }
 
+/// 命令级一致性比较（纯函数，便于单测）：返回差异描述清单
+///
+/// 两侧都按 (owner, 命令名) 比较：
+/// - 模块清单里声明了、注册表里没有 → 声明了却没实现（启动后调用必然失败）
+/// - 注册表里有、模块清单里没声明 → 实现了却没入库（清单漏写，路由与文档都会对不上）
+pub(crate) fn declaration_diff(
+    declared: &[(&str, &str)],
+    registered: &[(&str, &str)],
+) -> Vec<String> {
+    use std::collections::BTreeSet;
+    let declared: BTreeSet<(&str, &str)> = declared.iter().copied().collect();
+    let registered: BTreeSet<(&str, &str)> = registered.iter().copied().collect();
+    let mut diff = Vec::new();
+    for (owner, name) in declared.difference(&registered) {
+        diff.push(format!(
+            "命令 {owner}::{name} 已声明但未登记（清单有、注册表无）"
+        ));
+    }
+    for (owner, name) in registered.difference(&declared) {
+        diff.push(format!(
+            "命令 {owner}::{name} 已登记但清单未声明（实现了却没入库）"
+        ));
+    }
+    diff.sort();
+    diff
+}
+
+/// 命令级校验（T12-1）：登记的命令与模块清单逐条对应，少一条就 fail-fast
+///
+/// 只校验归属者名字出现在路由清单里是不够的：命令少入库或清单漏写时，
+/// owner 级校验仍然通过，问题会推迟到运行期变成 404。
+pub(crate) fn validate_command_declarations() {
+    let declared: Vec<(&str, &str)> = modules()
+        .iter()
+        .flat_map(|module| {
+            module
+                .commands
+                .iter()
+                .map(move |(name, _doc)| (module.owner, *name))
+        })
+        .collect();
+    let registered: Vec<(&str, &str)> = crate::framework::ipc_registry::snapshot()
+        .iter()
+        .map(|entry| (entry.owner, entry.name))
+        .collect();
+    let diff = declaration_diff(&declared, &registered);
+    assert!(
+        diff.is_empty(),
+        "IPC 命令清单与注册表不一致（{} 处）：
+{}",
+        diff.len(),
+        diff.join(
+            "
+"
+        )
+    );
+}
+
 /// 已登记模块（顺序 = 登记顺序），供启动校验与契约测试遍历
 pub fn modules() -> Vec<&'static ModuleSpec> {
     MODULE_TABLE.lock().map(|t| t.clone()).unwrap_or_default()
@@ -276,6 +334,20 @@ macro_rules! patchybox_routes {
 
 #[cfg(test)]
 mod tests {
+    use super::declaration_diff;
+
+    /// 命令级比较：只差一条也能被抓出来（两边方向都要覆盖）
+    #[test]
+    fn declaration_diff_reports_both_directions() {
+        let declared = [("ssh", "ssh_list"), ("dns", "dns_config_get")];
+        let registered = [("ssh", "ssh_list"), ("dns", "dns_config_set")];
+        let diff = declaration_diff(&declared, &registered);
+        assert_eq!(diff.len(), 2, "{diff:?}");
+        assert!(diff.iter().any(|line| line.contains("dns::dns_config_get")));
+        assert!(diff.iter().any(|line| line.contains("dns::dns_config_set")));
+        assert!(declaration_diff(&declared, &declared).is_empty());
+    }
+
     /// 路径末段提取：单段路径与多段路径都应取到函数名
     #[test]
     fn last_segment_extracts_function_name() {
