@@ -18,7 +18,6 @@ export interface ToolManifest {
   description: string
   /** 搜索同义词 */
   keywords: string[]
-  hotkey?: string
   /** 懒加载工厂：dynamic import 工具组件 */
   component: () => Promise<{ default: Component }>
   /** 后台服务型工具（剪贴板/番茄钟），第二批用 */

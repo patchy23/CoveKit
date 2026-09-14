@@ -1,5 +1,5 @@
 /**
- * 应用设置（Pinia）：主题 / 语言 / 全局快捷键 / 自启 / 默认下载目录 / 工具级设置
+ * 应用设置（Pinia）：主题 / 语言 / 自启 / 默认下载目录 / 工具级设置
  *
  * 保存语义（T07）：
  * - 桌面环境（WebView）只走 IPC：失败时把界面值回滚到磁盘上的旧值并暴露错误、不保留草稿，
@@ -10,11 +10,10 @@
  * - 工具级设置按 owner/key 粒度提交，不再回传整个 tools 对象。
  */
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ipc } from '@/core/ipc/ipc'
 import type { AppSettings } from '@/core/ipc/contracts'
-import { sameShortcut } from '@/core/platform/shortcut'
 import { storage } from '@/core/storage'
 import { setLocale } from '@/i18n'
 
@@ -28,8 +27,6 @@ const isDesktop = (): boolean => typeof window !== 'undefined' && '__TAURI_INTER
 const createDefaults = (): AppSettings => ({
   theme: 'system',
   language: 'zh-CN',
-  globalHotkey: 'Ctrl+Shift+Space',
-  globalHotkeyActive: '',
   launchAtStartup: false,
   defaultDownloadDirectory: '',
   tools: {},
@@ -180,22 +177,11 @@ export const useSettingsStore = defineStore('settings', () => {
     return task
   }
 
-  /**
-   * 全局快捷键是否真的生效。
-   *
-   * 框架写入的是 Shortcut 规范形式（`shift+control+Space`），设置页保存的是显示形式
-   * （`Ctrl+Shift+Space`），必须规范化后比较，否则每台机器都会误报「未生效」。
-   */
-  const hotkeyActive = computed(() =>
-    sameShortcut(settings.value.globalHotkey, settings.value.globalHotkeyActive)
-  )
-
   return {
     settings,
     loaded,
     saveError,
     revision,
-    hotkeyActive,
     init,
     set,
     applyTheme,

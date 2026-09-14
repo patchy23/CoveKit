@@ -145,7 +145,7 @@ mod tests {
         (
             "framework",
             "settings_set",
-            "写入应用设置（launchAtStartup/globalHotkey 有联动副作用）",
+            "写入应用设置（launchAtStartup 有联动副作用）",
         ),
         (
             "framework",

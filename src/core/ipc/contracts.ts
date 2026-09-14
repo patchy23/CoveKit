@@ -10,15 +10,10 @@
  * 应用设置（Rust framework/settings.rs 全量读写）
  *
  * 本文件是 AppSettings 的唯一事实源（`core/registry/types.ts` 只做再导出）。
- * `globalHotkeyActive` 由 Rust 维护，是实际注册成功的快捷键（空串 = 未生效），
- * 用于让界面显示与系统状态一致，前端不得写入。
  */
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system'
   language: 'zh-CN' | 'en-US'
-  globalHotkey: string
-  /** 实际生效的快捷键（Rust 只读字段；与 globalHotkey 不同表示注册失败/被占用） */
-  globalHotkeyActive: string
   launchAtStartup: boolean
   /** 工具箱级默认下载目录；各工具的保存对话框优先从这里打开。 */
   defaultDownloadDirectory: string

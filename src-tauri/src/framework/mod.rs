@@ -1,5 +1,5 @@
-//! 框架层：窗口控制命令 + 外链打开（托盘/快捷键/前端共用）
-//! 设置存储与全局快捷键（framework/settings.rs）
+//! 框架层：窗口控制命令 + 外链打开（托盘/前端共用）
+//! 设置存储（framework/settings.rs）
 //! 统一存储路径（framework/paths.rs）：四分区布局 + 老布局迁移，禁止插件手拼路径
 //! 存储位置管理（framework/storage/）：信息查询与迁移（只复制不删源，重启生效）
 //! IPC 接口入库（ipc_registry）与插件数据管理（store）
@@ -36,7 +36,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 // owner "framework" 不参与插件路由：应用级 handler 对其余命令直接落到本模块。
 //
 // 分派入口 `invoke_handler` 由宏生成；应用级 Builder 只能安装一个 invoke_handler。
-/// 框架装配：命令入库（清单生成）+ 设置/快捷键等框架 State。
+/// 框架装配：命令入库（清单生成）。
 /// 业务插件的装配顺序在 plugins/mod.rs 的路由清单里，框架命令不参与插件路由。
 pub(crate) fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
@@ -55,7 +55,7 @@ crate::patchybox_module! {
         open_external => "打开外部链接（tauri-plugin-opener，安全替代 shell 插件）",
         ipc_registry::framework_commands => "查询全量已入库 IPC 命令（名称 + 说明）",
         settings::settings_get => "读取应用设置（可指定 key）",
-        settings::settings_set => "写入应用设置（launchAtStartup/globalHotkey 有联动副作用）",
+        settings::settings_set => "写入应用设置（launchAtStartup 有联动副作用）",
         settings::settings_patch => "批量写入应用设置（带版本号校验，拒绝陈旧覆盖）",
         settings::settings_set_tool => "按工具与键写入工具级设置",
         settings::settings_revision => "读取设置版本号（保存时回传防覆盖）",
@@ -84,12 +84,12 @@ pub struct WindowState {
     visible: bool,
 }
 
-/// 获取主窗口引用（托盘/快捷键/命令共用）
+/// 获取主窗口引用（托盘/命令共用）
 fn main_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("main")
 }
 
-/// 显示并聚焦主窗口（托盘左键 / 二次唤起 / 全局快捷键复用）
+/// 显示并聚焦主窗口（托盘左键 / 二次唤起复用）
 pub fn show_main(app: &AppHandle) {
     if let Some(win) = main_window(app) {
         let _ = win.show();
@@ -98,7 +98,7 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
-/// 切换主窗口显示/隐藏（托盘左键与快捷键呼出）
+/// 切换主窗口显示/隐藏（托盘左键呼出）
 #[tauri::command]
 pub fn window_toggle(app: AppHandle) -> Result<WindowState, String> {
     let Some(win) = main_window(&app) else {

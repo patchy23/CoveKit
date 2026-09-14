@@ -20,7 +20,6 @@
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "dialog:default",
-    "global-shortcut:default",
     "autostart:default",
     "window-state:default",
     "updater:default",

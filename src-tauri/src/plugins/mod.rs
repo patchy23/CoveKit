@@ -2,7 +2,7 @@
 //! 每个插件统一目录结构：<id>/mod.rs（门面）+ models.rs（serde）+ 能力子模块
 //! 新增插件 = plugins/<id>/ 目录 + 本文件 `patchybox_routes!` 一行（路由分支、装配顺序与
 //! 启动校验都由该行生成，不必再手写 match 或 owner 清单）。
-//! 框架级能力（设置/快捷键/窗口/数据管理）在 framework/，不属于插件。
+//! 框架级能力（设置/窗口/数据管理）在 framework/，不属于插件。
 
 pub mod database;
 pub mod dns;

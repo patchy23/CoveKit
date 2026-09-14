@@ -2,7 +2,7 @@
 /**
  * SettingsPage · 设置页（框架级整页模式，铺满右侧内容区含页签条区域）
  * 由侧栏「设置」触发 ui.openSettings()，与工作区整体互切（v-show 保留工具页签状态）；
- * 右上角返回按钮退出。外观 / 快捷键与通用 / 凭证管理 / 工具级设置（settingsSchema 自动渲染）。
+ * 右上角返回按钮退出。外观 / 启动与通用 / 凭证管理 / 工具级设置（settingsSchema 自动渲染）。
  */
 import { computed, ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -145,6 +145,14 @@ async function chooseDownloadDirectory() {
         </button>
       </div>
 
+      <!-- 保存失败提示：任何分区的保存失败都在这里显示，不静默吞错误 -->
+      <p
+        v-if="settings.saveError"
+        class="mt-[10px] text-body-sm text-warning-strong dark:text-warning-dark"
+      >
+        {{ t('settings.saveFailed', { message: settings.saveError }) }}
+      </p>
+
       <div class="mt-[20px] flex flex-col gap-md pb-[24px]">
         <!-- 外观 -->
         <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
@@ -169,40 +177,10 @@ async function chooseDownloadDirectory() {
           </div>
         </section>
 
-        <!-- 快捷键与通用 -->
+        <!-- 启动与通用 -->
         <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
           <h3 class="text-h2 font-bold dark:text-primary-dark">{{ t('settings.general') }}</h3>
           <div class="mt-sm flex flex-col gap-sm">
-            <label class="field-label flex flex-col gap-[6px]">
-              {{ t('settings.hotkey') }}
-              <Select
-                :model-value="settings.settings.globalHotkey"
-                :options="[
-                  { value: 'Ctrl+Shift+Space', label: 'Ctrl + Shift + Space' },
-                  { value: 'Alt+Space', label: 'Alt + Space' },
-                  { value: 'Ctrl+Alt+Space', label: 'Ctrl + Alt + Space' },
-                  { value: 'Ctrl+Shift+`', label: 'Ctrl + Shift + `' },
-                  { value: 'Ctrl+Shift+O', label: 'Ctrl + Shift + O' },
-                ]"
-                @update:model-value="settings.set('globalHotkey', $event)"
-              />
-              <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-                {{ t('settings.hotkeyHint') }}
-              </span>
-              <!-- 注册失败/被占用时不谎称已生效：显示系统实际状态 -->
-              <span
-                v-if="!settings.hotkeyActive"
-                class="text-body-sm text-warning-strong dark:text-warning-dark"
-              >
-                {{ t('settings.hotkeyInactive') }}
-              </span>
-              <span
-                v-if="settings.saveError"
-                class="text-body-sm text-warning-strong dark:text-warning-dark"
-              >
-                {{ t('settings.saveFailed', { message: settings.saveError }) }}
-              </span>
-            </label>
             <label
               class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"
             >

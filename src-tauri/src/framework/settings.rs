@@ -1,35 +1,27 @@
 //! 设置模块：settings_get / settings_set / settings_patch / settings_set_tool / settings_revision
 //!
 //! 契约见前端 `src/core/ipc/contracts.ts`（唯一事实源）。本模块负责：
-//! - 字段级校验（枚举、类型、快捷键可解析、数字有限），错误信息可直接展示给用户；
+//! - 字段级校验（枚举、类型、数字有限），错误信息可直接展示给用户；
 //! - 读改写串行化 + 版本号（revision）校验：并发保存不同字段不会互相覆盖，陈旧写入被拒绝；
 //! - 工具级设置按 owner/key 粒度更新，前端不再回传可能陈旧的整个 `tools` 对象；
-//! - 系统副作用（开机自启、全局快捷键）先执行、成功才落盘：失败不保存虚假状态，
-//!   并把实际生效的快捷键写入只读字段 `globalHotkeyActive`，使界面显示与系统状态一致。
+//! - 系统副作用（开机自启）先执行、成功才落盘：失败不保存虚假状态，
+//!   界面显示的即系统真实状态。
 //!
 //! 自举键（存储根、布局版本、迁移计划）由 `framework::storage` 管理，普通写入一律拒绝：
 //! 它们带「重启后生效」语义，被通用接口改写会直接破坏换根约束。
 
-use std::str::FromStr;
 use std::sync::{Mutex, OnceLock};
 
 use serde_json::{Map, Value};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 use tauri_plugin_store::StoreExt;
-
-/// 当前已注册的全局快捷键（改键失败时必须保留旧值）
-pub struct HotkeyState(pub Mutex<Option<Shortcut>>);
 
 /// 设置对象在 settings.json 中的键
 const APP_KEY: &str = "app";
 
 /// 版本号键（顶层，保证不进入 app 设置对象）
 const REVISION_KEY: &str = "settingsRevision";
-
-/// 由 Rust 维护的只读字段：实际生效的全局快捷键（空串 = 未生效）
-const ACTIVE_HOTKEY_KEY: &str = "globalHotkeyActive";
 
 /// 自举键：只能由 `framework::storage` 的计划/恢复流程写入
 const RESERVED_KEYS: [&str; 4] = [
@@ -55,36 +47,6 @@ fn settings_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-/// 解析快捷键（空值与非法格式都返回可直接展示的错误）
-pub fn parse_shortcut(hotkey: &str) -> Result<Shortcut, String> {
-    let trimmed = hotkey.trim();
-    if trimmed.is_empty() {
-        return Err("快捷键不能为空，示例：Ctrl+Shift+Space".into());
-    }
-    Shortcut::from_str(trimmed)
-        .map_err(|e| format!("快捷键格式无效（{e}），示例：Ctrl+Shift+Space / Alt+Space"))
-}
-
-/// 切换到目标快捷键：**先注册新的成功后才注销旧的**，失败时旧键仍然有效。
-///
-/// 这样「注册失败」不会留下「旧键已注销、新键没生效」的空档，
-/// 调用方也能据此拒绝保存设置，界面显示与系统状态保持一致。
-pub fn register_hotkey(app: &AppHandle, hotkey: &str) -> Result<(), String> {
-    let desired = parse_shortcut(hotkey)?;
-    let state = app.state::<HotkeyState>();
-    let current = *state.0.lock().map_err(|e| e.to_string())?;
-    if current == Some(desired) {
-        return Ok(());
-    }
-    app.global_shortcut()
-        .register(desired)
-        .map_err(|e| format!("注册失败（可能已被其他程序占用）: {e}"))?;
-    if let Some(old) = current {
-        let _ = app.global_shortcut().unregister(old);
-    }
-    *state.0.lock().map_err(|e| e.to_string())? = Some(desired);
-    Ok(())
-}
 /// 读取设置：key 为空返回整个应用设置对象，否则返回指定字段
 ///
 /// 读写位置统一在 `app` 对象下；历史版本曾把字段写在顶层，这里保留读取回落，
@@ -173,11 +135,6 @@ pub fn settings_patch(
     store.set(REVISION_KEY, serde_json::json!(next_revision));
     store.save().map_err(|e| e.to_string())?;
 
-    // 快捷键实际生效值由 Rust 维护（只读字段），界面据此显示与系统一致的状态
-    if patch.contains_key("globalHotkey") {
-        persist_active_hotkey(&app, &store)?;
-        store.save().map_err(|e| e.to_string())?;
-    }
     Ok(next_revision)
 }
 
@@ -212,34 +169,8 @@ fn apply_side_effects(app: &AppHandle, key: &str, value: &Value) -> Result<(), S
                 .map_err(|e| format!("关闭开机自启失败: {e}")),
             None => Err("launchAtStartup 必须是布尔值".into()),
         },
-        "globalHotkey" => {
-            let hotkey = value
-                .as_str()
-                .ok_or_else(|| "globalHotkey 必须是字符串".to_string())?;
-            register_hotkey(app, hotkey)
-        }
         _ => Ok(()),
     }
-}
-
-/// 把实际生效的快捷键写进只读字段（无注册成功时为默认值）
-fn persist_active_hotkey(
-    app: &AppHandle,
-    store: &tauri_plugin_store::Store<tauri::Wry>,
-) -> Result<(), String> {
-    let active = app
-        .state::<HotkeyState>()
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .map(|s| s.to_string())
-        .unwrap_or_default();
-    let mut current = store.get(APP_KEY).unwrap_or_else(|| serde_json::json!({}));
-    if let Some(object) = current.as_object_mut() {
-        object.insert(ACTIVE_HOTKEY_KEY.to_string(), Value::String(active));
-    }
-    store.set(APP_KEY, current);
-    Ok(())
 }
 
 /// 校验单个设置字段（错误信息可直接展示）
@@ -249,7 +180,7 @@ fn validate_field(key: &str, value: &Value) -> Result<(), String> {
             "设置项 {key} 由存储模块管理，请使用「存储位置」设置安排迁移或恢复动作"
         ));
     }
-    if key == REVISION_KEY || key == ACTIVE_HOTKEY_KEY {
+    if key == REVISION_KEY {
         return Err(format!("设置项 {key} 由应用维护，不可直接写入"));
     }
     if suggests_secret(key) {
@@ -266,13 +197,6 @@ fn validate_field(key: &str, value: &Value) -> Result<(), String> {
         }
         "recentTools" => expect_string_array(value, "最近使用工具"),
         "tools" => expect_tools_object(value),
-        "globalHotkey" => {
-            let hotkey = value
-                .as_str()
-                .ok_or_else(|| "globalHotkey 必须是字符串".to_string())?;
-            parse_shortcut(hotkey)?;
-            Ok(())
-        }
         _ => {
             reject_non_finite(value)?;
             Ok(())
@@ -372,17 +296,17 @@ fn merge_tools(target: &mut Map<String, Value>, incoming: &Value) -> Result<(), 
     }
     Ok(())
 }
-/// 框架装配：只注册 State（命令入库与分派 handler 由 framework/mod.rs 的静态清单生成）
+/// 框架装配（`patchybox_module!` 按模块调用本入口）：设置模块已无自有 State，
+/// 命令入库与分派 handler 由 framework/mod.rs 的静态清单生成，故原样返回。
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
-    builder.manage(HotkeyState(std::sync::Mutex::new(None)))
+    builder
 }
 
-/// 插件启动初始化：注册全局快捷键，并核对设置与系统实际状态
+/// 插件启动初始化：核对设置与系统实际状态
 ///
 /// 核对口径：以**系统实际状态**为准修正设置里的值，
 /// 这样设置页显示的就是真实生效情况（自启被系统拒绝时不会显示「已开启」）。
 pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
-    let handle = app.handle();
     let store = match tauri_plugin_store::StoreExt::store(app, "settings.json") {
         Ok(store) => store,
         Err(e) => {
@@ -391,15 +315,6 @@ pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let mut current = store.get(APP_KEY).unwrap_or_else(|| serde_json::json!({}));
-
-    let hotkey = current
-        .get("globalHotkey")
-        .and_then(|v| v.as_str())
-        .map(String::from)
-        .unwrap_or_else(|| "Ctrl+Shift+Space".to_string());
-    if let Err(e) = register_hotkey(handle, &hotkey) {
-        eprintln!("[shortcut] 全局快捷键注册失败（可能被占用）: {e}");
-    }
 
     let desired = current
         .get("launchAtStartup")
@@ -416,14 +331,11 @@ pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    let active = handle
-        .state::<HotkeyState>()
-        .0
-        .lock()
-        .map(|guard| guard.map(|s| s.to_string()).unwrap_or_default())
-        .unwrap_or_default();
+    // 已移除的全局快捷键配置属于历史残留：连同只读生效值一并清掉，
+    // 避免设置文件里长期留着不会再被读取、却可能被误认为生效的键。
     if let Some(object) = current.as_object_mut() {
-        object.insert(ACTIVE_HOTKEY_KEY.to_string(), Value::String(active));
+        object.remove("globalHotkey");
+        object.remove("globalHotkeyActive");
     }
     store.set(APP_KEY, current);
     store.save().map_err(|e| e.to_string())?;
@@ -445,16 +357,6 @@ mod tests {
         assert!(null_error.contains("必须是字符串"), "{null_error}");
         assert!(validate_field("language", &serde_json::json!("en-US")).is_ok());
         assert!(validate_field("language", &serde_json::json!("ja-JP")).is_err());
-    }
-
-    /// 快捷键：格式非法与空值都要在写入前被拒
-    #[test]
-    fn hotkey_is_validated_before_save() {
-        assert!(validate_field("globalHotkey", &serde_json::json!("Ctrl+Shift+Space")).is_ok());
-        let empty = validate_field("globalHotkey", &serde_json::json!("  ")).unwrap_err();
-        assert!(empty.contains("不能为空"), "{empty}");
-        let bad = validate_field("globalHotkey", &serde_json::json!("绝对不是快捷键")).unwrap_err();
-        assert!(bad.contains("格式无效"), "{bad}");
     }
 
     /// 结构与类型校验
@@ -486,7 +388,6 @@ mod tests {
             assert!(error.contains("存储模块管理"), "{key}: {error}");
         }
         assert!(validate_field("settingsRevision", &serde_json::json!(9)).is_err());
-        assert!(validate_field("globalHotkeyActive", &serde_json::json!("x")).is_err());
         for key in ["vaultPassword", "apiToken", "my_secret_note", "privateKey"] {
             let error = validate_field(key, &serde_json::json!("plain")).unwrap_err();
             assert!(error.contains("敏感信息"), "{key}: {error}");

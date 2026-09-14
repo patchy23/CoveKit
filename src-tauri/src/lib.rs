@@ -11,7 +11,6 @@ use tauri::{
     tray::{MouseButton, TrayIconBuilder, TrayIconEvent},
     Manager,
 };
-use tauri_plugin_global_shortcut::ShortcutState;
 use tauri_plugin_single_instance::init as single_instance_init;
 
 /// 应用入口：装配框架与全部插件后启动（tauri 主循环）
@@ -33,23 +32,6 @@ pub fn run() {
         .plugin(single_instance_init(|app, _args, _cwd| {
             framework::show_main(app);
         }))
-        // 全局快捷键：Ctrl+Shift+Space 呼出/隐藏主窗（注册失败降级告警）
-        .plugin(
-            tauri_plugin_global_shortcut::Builder::new()
-                .with_handler(|app, _shortcut, event| {
-                    if event.state() == ShortcutState::Pressed {
-                        let Some(win) = app.get_webview_window("main") else {
-                            return;
-                        };
-                        if win.is_visible().unwrap_or(false) {
-                            let _ = win.hide();
-                        } else {
-                            framework::show_main(app);
-                        }
-                    }
-                })
-                .build(),
-        )
         .invoke_handler(|invoke| {
             if plugins::is_command(invoke.message.command()) {
                 plugins::invoke_handler(invoke)
