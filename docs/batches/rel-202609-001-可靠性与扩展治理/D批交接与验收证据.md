@@ -98,6 +98,69 @@
   WebView 里复制到剪贴板、错误清单在真实崩溃路径下的留档。
 - 「关闭页签前提供保存入口」只实现了「取消 / 放弃并关闭」两个出路：保存动作属于各插件自己的
   编辑流程，框架不代它决定，需要产品确认是否要求插件在 `prepare` 里提供保存钩子。
-- T13 剩余未做：`docs/02`、`docs/03`、`docs/05` 与 AGENTS 待办对齐；三条新架构守卫
-  （绕过 `paths` 落盘、明文 secret 设置、框架引用业务表）；public UI 死代码复核；
-  `framework/vault/store.rs` 458 行仍超 400 行。
+- T13 于第二轮收尾完成：文档同步、架构守卫、`vault/store.rs` 拆分与 public UI 死代码复核均见下节；
+  仅剩「明文 secret 设置」未另加源码级守卫（由设置层运行期拒绝覆盖，见下节口径）。
+
+## T13 收尾（结构治理、文档同步与架构守卫）
+
+### 结构拆分
+
+- `framework/vault/store.rs` 由 458 行拆为父文件 273 行 + `store/{api,io,paths,status,summary}.rs`
+  （26/42/49/47/49 行），采用仓库既有 `foo.rs` + `foo/` 形式（同 `framework/storage/layout`），
+  对外入口经重导出保持同名，`vault/mod.rs` 调用点未改。
+- 主密钥解析与 AES-GCM 加解密仍只在 `secure_store`，本模块不重复实现；拆分只搬移布局、读写、
+  保护状态与脱敏摘要四类职责。
+- `framework/tasks.rs` 用例加串行守卫：登记表是进程级全局，并行跑会互相清空或占满上限，
+  之前全量跑随机挂 2 条、单跑全过；改为每用例持有守卫后单跑与全量跑一致。
+
+### 文档同步（对源码核对后修改，非按印象）
+
+- `docs/standards/02-架构.md`：前端目录补 `core/lifecycle`、`core/diagnostics`；Rust 结构补
+  `secure_store`、`credential_refs`、`exit`、`tasks`；依赖方向改为设置写入权威已收敛到 Rust；
+  §3.1 存储布局改为现行行为（根不可用不静默回退默认目录、老布局迁移改为登记计划并在启动维护
+  阶段执行+重启生效），并把 §3.1 明确划出「2026-08 设计留档」范围。
+- `docs/standards/03-模块开发规则.md`：`sqlx` 改为原生驱动会话；`stronghold` 改为框架凭证库
+  （系统密钥库主密钥 + AES-256-GCM）。
+- `docs/standards/05-Rust代码规范.md`：`unsafe` 处数由「1 处」更正为 2 处（`win_acl.rs` ACL、
+  `lib.rs` WebView2 菜单封禁）；`std::fs` 计数改为 2026-09-14 实测口径（395 处引用含测试，只作
+  参考不作门禁）；日志一节如实标注 Rust 侧级别体系与轮转**尚未落地**，不再指向已完成的 T11。
+
+### 架构守卫
+
+- 前端（新增）：`src/core/registry/pluginBoundary.test.ts` 禁止业务插件互相 import，只允许
+  `@/core/*`；当前真实树 0 违规，注入夹具能抓出违规。
+- Rust 引擎（新增，零容忍）：`paths_bypass` 拦截绕过 `framework::paths` 直接取落盘根
+  （`app_data_dir` / `app_config_dir` / `app_local_data_dir` / `app_cache_dir` / `app_log_dir`，
+  `paths.rs` 为自举例外）；`foreign_table` 拦截 `framework` 下字符串字面量命中插件建表名，
+  表名从插件 `CREATE TABLE` / `CREATE INDEX` 现场推导，不在守卫里硬编码。
+- 两条 Rust 守卫统一取值范围：只扫首个 `#[cfg(test)]` 之前的生产前缀，并跳过 `*_tests.rs`
+  测试专用文件；文本级近似与其边界写进 `COVERAGE_LIMITS`。
+- 注入验证：把「`app_data_dir` 直取落盘根 + 字面量引用 `ssh_profiles`」注入
+  `framework/ipc_registry.rs` 生产区后，`cargo test --test source_rules` **失败**并分别报出
+  `paths_bypass`、`foreign_table`；还原后 32 用例全过（探针未留在工作区，已核对）。
+- 「禁止新建明文 secret 设置」未另加源码级守卫：设置层已用 `SECRET_KEY_HINTS` +
+  `suggests_secret()` 在写入前拒绝密钥类键，并有 `internal_and_secret_keys_are_refused`
+  用例覆盖注入场景，再写一遍源码扫描只会更弱。是否要加第二道源码级守卫待定。
+
+### public UI 死代码复核
+
+- `core/ui` barrel 38 项导出全部有消费方；目录内 44 个组件无孤儿（`EditorGoToLineBar`、
+  `EditorStatusBar` 由 `UiCodeEditor` 内部使用，非死代码）。
+- `UiIcon`（通用线性图标）与 `features/ui/AppIcon`（应用/工具图标）职责不同、各有消费方，
+  不属重复实现。
+- `src/plugins/component-lab` 是注册在案的组件验收工具（category `dev`，无环境过滤，正式构建
+  可见），文件头已写明用途，按「标注明确用途」保留；是否改为仅开发构建注册属产品决策，待定。
+
+### 本轮验证（HEAD `b6b6d25`）
+
+- Rust：`cargo fmt --all -- --check`、`cargo clippy --no-default-features --all-targets -- -D warnings`
+  通过；`cargo test --no-default-features` lib **296 通过 / 3 忽略 / 0 失败**；
+  `--test source_rules` **32 通过**（此前 29，新增 3 条夹具）。
+- 前端：`pnpm run build`（含 `vue-tsc`）、`pnpm run lint`、`pnpm run format:check` 通过；
+  `pnpm run test` **483 通过 / 55 文件**（新增插件边界守卫 5 项）。
+- 脚本：`check_rust_rules.py`、`check_docs.py`、`check_progress.py`、`check_markdown.py`、
+  `check_doc_budget.py`、`check_versions.py` 全绿；`check_release_config.py` 仍为发布环境项，
+  本机按设计红。
+- 本轮提交：`5bfa448`（凭证存储拆分）、`9016ffe`（长任务用例串行）、`aa92e2c`（文档同步）、
+  `b6b6d25`（架构守卫）。
+
