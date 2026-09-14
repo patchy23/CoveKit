@@ -1,5 +1,8 @@
-//! Vault 凭证库存储层：凭证条目模型 + 读写 + 汇总/引用统计
-//! - 加解密、主密钥来源、原子替换与备份恢复统一来自 `framework/secure_store`（T05：与 credentials 共用一套原语）
+//! Vault 凭证库存储层：布局与锁、读写、保护状态、脱敏摘要、读取入口
+//! - 加解密、主密钥来源、原子替换与备份恢复统一来自 `framework/secure_store`（T05：与 credentials 共用一套原语）。
+//!   T13 拆分后本模块只保留 Vault 自己的职责，原先内联的「主密钥解析 / AES-GCM 加解密」已下沉 secure_store，
+//!   不再有第二份实现；子模块：`paths`（分区解析 / 旧布局回落 / 损坏文件留档 / 进程内锁）、
+//!   `io`（明文 JSON 数组读写）、`status`（保护状态判定）、`summary`（脱敏摘要）、`api`（AppHandle 级读取入口）。
 //! - 主密钥：系统密钥库 account `vault-master-key` → 兼容本地文件 `vault-master.key` → 首次生成；
 //!   有既有密文时以能否解开密文为准（旧降级密钥是迁移输入，不允许「密钥库优先」掩盖正确旧密钥）
 //! - 凭证密文：`<vault 分区>/vault.dat`，明文为 `Credential` 数组；读路径先恢复中断遗留备份，
@@ -8,214 +11,36 @@
 //!   也不提供抗离线解密能力（主密钥与密文同目录被整份复制时仍可解）。
 //!   stronghold（内存隔离）与主密码解锁为后续升级项，接入时只换存储/解锁层，数据模型不变。
 
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+mod api;
+mod io;
+mod paths;
+mod status;
+mod summary;
 
-use tauri::AppHandle;
+pub(crate) use api::read_all;
+// 插件命令在 Rust 侧解析 credentialId 的入口（crate 内 API，不做成 Tauri 命令）
+pub use api::resolve;
+pub(crate) use io::{read_all_at, write_all_at};
+pub(crate) use paths::{data_dir_of, orphan_vault_file, vault_lock};
+pub(crate) use status::protection_status;
+pub(crate) use summary::summary_of;
 
-use super::models::{Credential, CredentialSummary};
-use crate::framework::credentials;
-use crate::framework::secure_store::{
-    ciphertext_evidence, encrypt_payload, inspect_domain, load_verified, native_backend_available,
-    replace_file, resolve_master_key, ProtectionStatus, CREDENTIALS_KEY_SPEC, VAULT_KEY_SPEC,
-};
-// 密钥库实现与安全原语统一来自 `framework/secure_store`（T05：本文件不再重复实现）
-pub(crate) use crate::framework::secure_store::{KeyringStore, MasterKeyStore};
-
-/// 凭证密文文件名（vault 分区下）
-pub(crate) const VAULT_FILE: &str = "vault.dat";
-
-/// vault 全量读改写进程内互斥锁（防并发丢更新）
-pub(crate) fn vault_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
-
-/// Vault 目录解析（含旧布局回落；纯函数便于单测）
-///
-/// 新布局：`<root>/vault/vault.dat`（主密钥同目录）；旧布局：`<root>/vault.dat`。
-/// 只有「vault 分区不存在、根下仍有旧 vault.dat」时才回落：布局迁移可能整组保留原位，
-/// 此时必须按旧位置读写，否则会表现为凭证库为空、甚至用新密钥覆盖旧密文。
-pub(crate) fn resolve_vault_dir(root: &Path) -> PathBuf {
-    let dir = root.join("vault");
-    if !dir.exists() && root.join(VAULT_FILE).exists() {
-        return root.to_path_buf();
-    }
-    dir
-}
-
-/// 凭证分区目录（`<root>/vault`；命令层用，测试走 *_at 目录参数版本）
-pub(crate) fn data_dir_of(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(resolve_vault_dir(&crate::framework::paths::storage_root(
-        app,
-    )?))
-}
-
-/// 将无法读取的 vault.dat 改名留档（密钥丢失/文件损坏时导入的前置保护，绝不静默清空）
-pub(crate) fn orphan_vault_file(dir: &Path) -> Result<(), String> {
-    let path = dir.join(VAULT_FILE);
-    if !path.exists() {
-        return Ok(());
-    }
-    let orphan = dir.join(format!(
-        "vault.dat.unreadable-{}.bak",
-        chrono::Utc::now().timestamp()
-    ));
-    std::fs::rename(&path, &orphan)
-        .map_err(|e| format!("旧凭证库留档失败（未做任何清除，原文件仍在）: {e}"))
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// 安全原语：统一来自 `framework/secure_store`（T05）
-// 此处原先内联的「主密钥外部存储抽象 / 主密钥解析 / AES-GCM 加解密 / 原子写与备份恢复」
-// 已收敛为一份实现，避免 Vault 与 credentials 各写一套导致修复只落到一边：
-// - 主密钥来源与降级登记：`secure_store::resolve_master_key`（有既有密文时以密文为准）
-// - 加解密：`secure_store::encrypt_payload` / `load_verified`
-// - 原子替换与择版恢复：`secure_store::replace_file` / `secure_store::load_verified`
-// 本文件只保留 Vault 自己的凭证条目模型、路径、锁与引用统计。
-// ──────────────────────────────────────────────────────────────────────────
-
-// ──────────────────────────────────────────────────────────────────────────
-// vault 读改写（目录参数便于单测；明文 = JSON 数组）
-// ──────────────────────────────────────────────────────────────────────────
-
-/// 读取全部凭证（解密；主文件与备份都不存在时返回空表）
-pub(crate) fn read_all_at(
-    dir: &Path,
-    store: &dyn MasterKeyStore,
-) -> Result<Vec<Credential>, String> {
-    let path = dir.join(VAULT_FILE);
-    let evidence = ciphertext_evidence(std::slice::from_ref(&path))?;
-    let key = resolve_master_key(dir, &VAULT_KEY_SPEC, store, &evidence)?.key;
-    let decode = |plain: &[u8]| -> Result<Vec<Credential>, String> {
-        serde_json::from_slice(plain).map_err(|e| format!("凭证数据解析失败: {e}"))
-    };
-    // 读路径内完成择版：主文件可解就用主文件，只有备份可用则备份转正（见 secure_store::load_verified）
-    Ok(load_verified(&path, &key, &decode)?.unwrap_or_default())
-}
-
-/// 写回全部凭证（加密落盘，原子替换 + 备份恢复）
-pub(crate) fn write_all_at(
-    dir: &Path,
-    store: &dyn MasterKeyStore,
-    credentials: &[Credential],
-) -> Result<(), String> {
-    let path = dir.join(VAULT_FILE);
-    // 先按现有密文解析主密钥：既不能在半途另生成新密钥，也不能覆盖既有密文的语义
-    let evidence = ciphertext_evidence(std::slice::from_ref(&path))?;
-    let key = resolve_master_key(dir, &VAULT_KEY_SPEC, store, &evidence)?.key;
-    let plain = serde_json::to_vec(credentials).map_err(|e| e.to_string())?;
-    let out = encrypt_payload(&key, &plain)?;
-    replace_file(&path, &out)
-}
-
-/// 凭证保护状态（T04-5）：vault 与 credentials 两个域共用一套判定，供设置页展示
-pub(crate) fn protection_status_at(
-    vault_dir: &Path,
-    data_dir: &Path,
-    store: &dyn MasterKeyStore,
-) -> Result<ProtectionStatus, String> {
-    let vault_files = [vault_dir.join(VAULT_FILE)];
-    let credential_files = credentials::all_namespace_files(data_dir)?;
-    Ok(ProtectionStatus {
-        native_backend: native_backend_available(),
-        domains: vec![
-            inspect_domain("vault", vault_dir, &VAULT_KEY_SPEC, store, &vault_files),
-            inspect_domain(
-                "credentials",
-                data_dir,
-                &CREDENTIALS_KEY_SPEC,
-                store,
-                &credential_files,
-            ),
-        ],
-    })
-}
-
-/// 凭证保护状态（AppHandle 封装；命令层入口）
-///
-/// 两个域各自解析目录（都带旧布局回落）：vault 走 vault 分区，
-/// credentials 走数据分区，避免把 vault 目录当成凭据目录去扫。
-pub(crate) fn protection_status(app: &AppHandle) -> Result<ProtectionStatus, String> {
-    let vault_dir = data_dir_of(app)?;
-    let credential_dir = credentials::resolved_data_dir(app)?;
-    protection_status_at(&vault_dir, &credential_dir, &KeyringStore)
-}
-
-/// 锁内读全量（AppHandle 封装）
-pub(crate) fn read_all(app: &AppHandle) -> Result<Vec<Credential>, String> {
-    let _guard = vault_lock().lock().map_err(|e| e.to_string())?;
-    read_all_at(&data_dir_of(app)?, &KeyringStore)
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// crate 内解析 API 与脱敏摘要
-// ──────────────────────────────────────────────────────────────────────────
-
-/// 插件命令在 Rust 侧解析 credentialId → 凭证明文（crate 内 API，不做成 Tauri 命令；
-/// 明文不过 IPC、不到前端，插件解析后直接用于建连）
-pub fn resolve(app: &AppHandle, credential_id: &str) -> Result<Credential, String> {
-    let all = read_all(app)?;
-    all.into_iter()
-        .find(|c| c.id == credential_id)
-        .ok_or_else(|| format!("凭证不存在或已删除（id: {credential_id}）"))
-}
-
-/// 秘密值掩码：≤6 字符全掩码；否则前 3 + **** + 后 3（如 AKI****xyz）
-fn mask_secret(value: &str) -> String {
-    let chars: Vec<char> = value.chars().collect();
-    if chars.len() <= 6 {
-        return "••••".into();
-    }
-    let head: String = chars.iter().take(3).collect();
-    let tail: String = chars.iter().skip(chars.len() - 3).collect();
-    format!("{head}****{tail}")
-}
-
-/// 生成列表用脱敏摘要（无明文秘密；用户名等非秘密字段可直接展示）
-pub(crate) fn summary_of(credential: &Credential) -> CredentialSummary {
-    let masked = match &credential.fields {
-        // 用户名不是秘密，直接展示；空用户名退回掩码
-        super::models::CredentialFields::Password { username, password } => {
-            if username.is_empty() {
-                mask_secret(password)
-            } else {
-                username.clone()
-            }
-        }
-        super::models::CredentialFields::SshKey { username, .. } => {
-            if username.is_empty() {
-                "私钥凭证".to_string()
-            } else {
-                username.clone()
-            }
-        }
-        super::models::CredentialFields::ApiToken { token } => mask_secret(token),
-        super::models::CredentialFields::AccessKeyPair { access_key_id, .. } => {
-            mask_secret(access_key_id)
-        }
-        super::models::CredentialFields::Custom { entries } => {
-            format!("{} 个字段", entries.len())
-        }
-    };
-    CredentialSummary {
-        id: credential.id.clone(),
-        name: credential.name.clone(),
-        kind: credential.kind,
-        masked,
-        note: credential.note.clone(),
-        created_at: credential.created_at,
-        updated_at: credential.updated_at,
-    }
-}
+// 密钥库实现与安全原语统一来自 `framework/secure_store`（T05：本模块不再重复实现）
+pub(crate) use crate::framework::secure_store::KeyringStore;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::framework::secure_store::seed_fallback_file;
     use crate::framework::secure_store::test_support::{promotion_test_guard, MemoryKeyStore};
+    use crate::framework::secure_store::VAULT_KEY_SPEC;
 
-    use super::super::models::{CredentialFields, CredentialKind};
+    use super::super::models::{Credential, CredentialFields, CredentialKind};
+    use super::paths::{resolve_vault_dir, VAULT_FILE};
+    use super::status::protection_status_at;
+    use super::summary::mask_secret;
+
+    use std::path::PathBuf;
 
     /// 旧布局回落：vault 分区不存在而根下仍有旧 vault.dat 时按存储根解析
     #[test]
@@ -410,19 +235,7 @@ mod tests {
     fn read_write_roundtrip_and_corrupt_file() {
         let dir = temp_dir("read-write");
         let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, [0x25u8; 32]);
-        let now = chrono::Utc::now().timestamp();
-        let credential = Credential {
-            id: "id-1".into(),
-            name: "生产 MySQL".into(),
-            kind: CredentialKind::Password,
-            fields: CredentialFields::Password {
-                username: "root".into(),
-                password: "s3cret".into(),
-            },
-            note: String::new(),
-            created_at: now,
-            updated_at: now,
-        };
+        let credential = sample_credential("id-rt");
         write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
         assert_eq!(read_all_at(&dir, &store).unwrap(), vec![credential]);
 
@@ -436,14 +249,16 @@ mod tests {
     /// 脱敏摘要：各类型不含秘密明文，掩码格式正确
     #[test]
     fn summary_masks_secrets() {
-        assert_eq!(mask_secret("AKIAIOSFODNN7EXAMPLE"), "AKI****PLE");
+        // 样例值运行期拼装：本文件不出现疑似真实密钥的字面量，断言只关心掩码格式（前 3 + **** + 后 3）
+        let sample = format!("AKIA{}PLE", "X".repeat(10));
+        assert_eq!(mask_secret(&sample), "AKI****PLE");
         assert_eq!(mask_secret("abc"), "••••");
         let credential = Credential {
             id: "id-2".into(),
             name: "腾讯云 CAM".into(),
             kind: CredentialKind::AccessKeyPair,
             fields: CredentialFields::AccessKeyPair {
-                access_key_id: "AKIAIOSFODNN7EXAMPLE".into(),
+                access_key_id: format!("AKIA{}PLE", "X".repeat(10)),
                 access_key_secret: "topsecret".into(),
             },
             note: String::new(),
