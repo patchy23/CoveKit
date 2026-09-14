@@ -323,7 +323,17 @@ pub fn framework_tasks() -> TaskList {
 mod tests {
     use super::*;
 
-    /// 用例之间共享全局登记表，逐个清理避免串味
+    /// 用例串行守卫：登记表是进程级全局（活跃上限 / 历史容量 / 自增序号），
+    /// 并行执行会互相清空或占满上限，故每个用例持有守卫到结束
+    fn test_serial() -> std::sync::MutexGuard<'static, ()> {
+        static SERIAL: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        SERIAL
+            .get_or_init(|| std::sync::Mutex::new(()))
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// 用例之间共享全局登记表，逐个清理避免串味（须先持有 `test_serial`）
     fn reset() {
         let mut guard = lock();
         guard.active.clear();
@@ -333,6 +343,7 @@ mod tests {
 
     #[test]
     fn begin_reports_running_without_fake_progress() {
+        let _serial = test_serial();
         reset();
         let _handle = begin(
             None,
@@ -353,6 +364,7 @@ mod tests {
 
     #[test]
     fn progress_is_clamped_and_finish_moves_to_history() {
+        let _serial = test_serial();
         reset();
         let handle = begin(None, "storage", "storage.migrate", false, None);
         handle.progress(None, 42);
@@ -370,6 +382,7 @@ mod tests {
 
     #[test]
     fn failure_keeps_code_and_message() {
+        let _serial = test_serial();
         reset();
         let handle = begin(None, "storage", "storage.migrate", false, None);
         handle.fail(None, "storage.migrate.failed", "复制校验失败");
@@ -382,6 +395,7 @@ mod tests {
 
     #[test]
     fn late_progress_after_finish_does_not_resurrect_task() {
+        let _serial = test_serial();
         reset();
         let handle = begin(None, "storage", "storage.migrate", false, None);
         handle.fail(None, "storage.migrate.failed", "失败");
@@ -394,6 +408,7 @@ mod tests {
 
     #[test]
     fn finished_history_is_bounded_and_newest_first() {
+        let _serial = test_serial();
         reset();
         for index in 0..FINISHED_HISTORY_CAP + 5 {
             let handle = begin(None, "storage", "storage.migrate", false, None);
@@ -408,6 +423,7 @@ mod tests {
 
     #[test]
     fn active_tasks_are_capped_without_overwriting() {
+        let _serial = test_serial();
         reset();
         for _ in 0..MAX_ACTIVE_TASKS {
             let handle = begin(None, "storage", "storage.migrate", false, None);
