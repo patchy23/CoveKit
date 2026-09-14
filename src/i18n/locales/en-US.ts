@@ -208,6 +208,7 @@ export default {
     binaryDownloadingUnknown: 'Downloaded {received} (total unknown)',
     binaryPreparing: 'Preparing…',
     binaryDownloaded: 'frpc {version} is ready',
+    binaryDownloadWarning: 'Installed, but the SHA256 checksum could not be confirmed: {message}',
     binaryDownloadFailed: 'Download failed: {message}',
     binaryVersionsFailed: 'Failed to load releases: {message}',
     binaryLoadingVersions: 'Loading releases…',

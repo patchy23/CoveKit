@@ -1,7 +1,8 @@
 //! frp 插件 · frpc 可执行文件（定位 / 版本查询 / 一键下载安装）
 //!
 //! 定位优先级：工具设置 `frpcPath` → 本工具下载目录 → PATH → 用户目录常见位置。
-//! 下载走 GitHub Release（可配镜像前缀），优先用 release 附带的 checksums 文件做 SHA256 校验；
+//! 下载走 GitHub Release（直连优先、内置镜像自动回退），并用 release 附带的
+//! `frp_sha256_checksums.txt` 做 SHA256 强校验；
 //! 解压复用系统工具（Windows `Expand-Archive`、其它平台 `tar`），不为此引入压缩库依赖——
 //! 代价是必须绕开系统解压工具的扩展名与退出码坑，详见 `extract` 注释。
 //! 下载中任一步失败都不改动已配置路径（调用方只在成功时记录新路径）。
@@ -85,9 +86,11 @@ fn asset_name(version: &str) -> String {
     }
 }
 
-/// checksums 文件名（上游随 release 提供时用于 SHA256 强校验）
-fn checksums_name(version: &str) -> String {
-    format!("frp_{version}_checksums.txt")
+/// checksums 文件名（上游与版本无关，随 release 固定提供这一个）
+///
+/// 上游实际资产名是 `frp_sha256_checksums.txt`，文件内每行形如 `<sha256>  <资产名>`。
+fn checksums_name() -> &'static str {
+    "frp_sha256_checksums.txt"
 }
 
 /// 工具设置读取（settings.json 的 `app.tools.frp.<key>`）
@@ -495,25 +498,79 @@ fn sha256_of(path: &Path) -> Result<String, String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-/// 尝试强校验：从上游 checksums 文件取出该资产的期望值并比对；上游未提供时返回 None（调用方提示未强校验）
+/// 强校验结论
+enum ChecksumStatus {
+    /// 取到期望值且与本地压缩包一致
+    Verified,
+    /// 取到期望值但与本地不一致：调用方必须丢弃下载文件
+    Mismatch { expected: String, actual: String },
+    /// 拿不到期望值，附可直接展示给用户的原因（与「不一致」严格区分）
+    Unavailable(String),
+}
+
+/// 强校验结果：结论 + 本地压缩包实测 SHA256
 ///
-/// 取 checksums 与下载共用同一组下载源（下载成功的那个排最前）：
-/// 上游缺该文件、或所有源都取不到时返回 None，由调用方提示「未强校验」而不是判下载失败。
+/// 无论结论如何都带上实测值：拿不到期望值时它就是用户与上游
+/// `frp_sha256_checksums.txt` 对照的唯一依据——上游列的是压缩包哈希，
+/// 拿解压后可执行文件的哈希去比对没有意义。
+struct VerifyOutcome {
+    status: ChecksumStatus,
+    archive_hash: String,
+}
+
+/// 从 checksums 文本里取指定资产的期望 SHA256
+///
+/// 上游每行是 `<sha256>  <资产名>`；这里按任意空白切分以兼容 CRLF 与多余空格，
+/// 并只认 64 位十六进制的哈希，避免把格式异常的行当成有效期望值。
+fn parse_expected_hash(text: &str, asset: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        let mut parts = line.split_whitespace();
+        let hash = parts.next()?;
+        if parts.next()? != asset {
+            return None;
+        }
+        let valid = hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit());
+        valid.then(|| hash.to_lowercase())
+    })
+}
+
+/// 用 checksums 文本判定结论（纯函数，便于覆盖「一致 / 不一致 / 未列出」三种结果）
+fn judge_checksum(text: &str, asset: &str, archive_hash: &str) -> ChecksumStatus {
+    match parse_expected_hash(text, asset) {
+        Some(expected) if expected == archive_hash => ChecksumStatus::Verified,
+        Some(expected) => ChecksumStatus::Mismatch {
+            expected,
+            actual: archive_hash.to_string(),
+        },
+        None => ChecksumStatus::Unavailable(format!(
+            "上游 checksums 未列出 {asset}（上游资产命名可能已变），未强校验"
+        )),
+    }
+}
+
+/// 强校验：取上游 checksums 并与本地压缩包比对
+///
+/// 取 checksums 与下载共用同一组下载源（下载成功的那个排最前）。三种结果分开报——
+/// 通过、不一致（上层丢弃文件并报错）、拿不到期望值；后者还要区分「上游没有这个文件」
+/// 与「网络取不到」，不能笼统写成「未强校验」。只有读取本地压缩包失败才返回 Err。
 async fn verify_checksum(
     version: &str,
     archive: &Path,
     preferred: &str,
-) -> Result<Option<bool>, String> {
+) -> Result<VerifyOutcome, String> {
     let asset = asset_name(version);
+    let archive_hash = sha256_of(archive)?;
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(QUERY_TIMEOUT_SECS))
         .build()
         .map_err(|e| e.to_string())?;
     let mut text: Option<String> = None;
+    // 有源明确回 404：该版本确实没有这个文件，与「网络不通」是两回事
+    let mut missing_upstream = false;
     for prefix in sources_in_order(preferred) {
         let url = format!(
             "{prefix}https://github.com/{REPO}/releases/download/v{version}/{}",
-            checksums_name(version)
+            checksums_name()
         );
         let Ok(response) = client
             .get(&url)
@@ -523,6 +580,10 @@ async fn verify_checksum(
         else {
             continue;
         };
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            missing_upstream = true;
+            continue;
+        }
         if !response.status().is_success() {
             continue;
         }
@@ -531,21 +592,21 @@ async fn verify_checksum(
             break;
         }
     }
-    let Some(text) = text else { return Ok(None) };
-    let expected = text.lines().find_map(|line| {
-        let mut parts = line.split_whitespace();
-        let hash = parts.next()?;
-        let name = parts.next()?;
-        if name == asset {
-            Some(hash.to_lowercase())
-        } else {
-            None
-        }
-    });
-    match expected {
-        Some(hash) => Ok(Some(hash == sha256_of(archive)?)),
-        None => Ok(None),
-    }
+    let status = match text {
+        Some(text) => judge_checksum(&text, &asset, &archive_hash),
+        None if missing_upstream => ChecksumStatus::Unavailable(format!(
+            "上游未提供 {}（版本 {version} 可能较旧），未强校验",
+            checksums_name()
+        )),
+        None => ChecksumStatus::Unavailable(format!(
+            "{} 取不到（网络不通或上游拒绝），未强校验",
+            checksums_name()
+        )),
+    };
+    Ok(VerifyOutcome {
+        status,
+        archive_hash,
+    })
 }
 
 /// 从单个下载源抓取压缩包到 `archive`：成功返回（已下载字节，总大小）
@@ -680,11 +741,11 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         total,
         None,
     );
-    let checked = verify_checksum(version, &archive, source).await?;
-    if checked == Some(false) {
+    let outcome = verify_checksum(version, &archive, source).await?;
+    if let ChecksumStatus::Mismatch { expected, actual } = &outcome.status {
         let _ = tokio::fs::remove_file(&archive).await;
         return Err(format!(
-            "SHA256 校验失败，已丢弃下载文件（来源 {}，可重试）",
+            "SHA256 校验不通过，已丢弃下载文件（来源 {}）：期望 {expected}，实际 {actual}；可重试或稍后再试",
             source_label(source)
         ));
     }
@@ -741,10 +802,10 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         None,
     );
     let mut info = describe(target.clone(), FrpBinarySource::Downloaded, None).await;
-    if checked.is_none() {
+    if let ChecksumStatus::Unavailable(reason) = &outcome.status {
         info.error = Some(format!(
-            "上游未提供 checksums，仅校验了解压完整性；本地 SHA256：{}",
-            sha256_of(&target).unwrap_or_else(|_| "计算失败".to_string())
+            "{reason}；仅校验了解压完整性。压缩包 SHA256：{}",
+            outcome.archive_hash
         ));
     }
     // 登记到客户端清单：下载完即可被档案绑定。登记失败不阻断下载结果
@@ -862,5 +923,70 @@ mod tests {
         // 用系统上必然存在的可执行文件探测（windows: cmd.exe，其它: sh）
         let probe = which(if cfg!(windows) { "cmd.exe" } else { "sh" });
         assert!(probe.is_some());
+    }
+
+    /// checksums 资产名固定，不能按版本拼
+    ///
+    /// 回归「强校验从未生效」：代码曾请求 `frp_{version}_checksums.txt`，而上游实际
+    /// 提供的是固定的 `frp_sha256_checksums.txt`（v0.44 起，更早版本没有这个文件），
+    /// 于是每次下载都拿到 404、静默退化成「仅校验解压完整性」。
+    #[test]
+    fn checksums_name_matches_upstream_asset() {
+        assert_eq!(checksums_name(), "frp_sha256_checksums.txt");
+    }
+
+    /// 解析上游 checksums：CRLF、Tab 分隔、大写哈希、注释行与格式异常行都要处理对
+    #[test]
+    fn parse_expected_hash_reads_upstream_format() {
+        let text = "a872a46b08ff971462f311dce3d9b3c538f3c130ed7cdee3ea75b6728b9f5d3c  frp_0.70.1_android_arm64.tar.gz\r\n\
+                    CBF69CF26E5553E914E97D37F5D4367FA30F5F531D073A889465AF4719281E25\tfrp_0.70.1_darwin_amd64.tar.gz\n";
+        let asset = "frp_0.70.1_darwin_amd64.tar.gz";
+        assert_eq!(
+            parse_expected_hash(text, asset).as_deref(),
+            Some("cbf69cf26e5553e914e97d37f5d4367fa30f5f531d073a889465af4719281e25")
+        );
+        // 未列出的资产、注释行、长度不足的哈希都不认作期望值
+        assert_eq!(
+            parse_expected_hash(text, "frp_0.70.1_windows_amd64.zip"),
+            None
+        );
+        assert_eq!(parse_expected_hash("# 说明行 frp_x.zip", "frp_x.zip"), None);
+        assert_eq!(
+            parse_expected_hash("deadbeef  frp_x.zip", "frp_x.zip"),
+            None
+        );
+    }
+
+    /// 「不一致」必须与「拿不到期望值」分开，且原因要能指明具体资产
+    #[test]
+    fn judge_checksum_separates_mismatch_from_unavailable() {
+        let hash = "cbf69cf26e5553e914e97d37f5d4367fa30f5f531d073a889465af4719281e25";
+        let other = "0".repeat(64);
+        let asset = "frp_0.70.1_darwin_amd64.tar.gz";
+        let text = format!("{hash}  {asset}\n");
+
+        assert!(matches!(
+            judge_checksum(&text, asset, hash),
+            ChecksumStatus::Verified
+        ));
+
+        match judge_checksum(&text, asset, &other) {
+            ChecksumStatus::Mismatch { expected, actual } => {
+                assert_eq!(expected, hash);
+                assert_eq!(actual, other);
+            }
+            _ => panic!("哈希不符必须判 Mismatch"),
+        }
+
+        // 资产未列在 checksums 里：是「拿不到期望值」，不是「校验失败」
+        match judge_checksum(&text, "frp_0.70.1_windows_amd64.zip", hash) {
+            ChecksumStatus::Unavailable(reason) => {
+                assert!(
+                    reason.contains("frp_0.70.1_windows_amd64.zip"),
+                    "原因要指明具体资产：{reason}"
+                );
+            }
+            _ => panic!("未列出应判 Unavailable"),
+        }
     }
 }

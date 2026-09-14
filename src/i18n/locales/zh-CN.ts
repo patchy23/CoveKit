@@ -203,6 +203,7 @@ export default {
     binaryDownloadingUnknown: '已下载 {received}（总大小未知）',
     binaryPreparing: '准备中…',
     binaryDownloaded: 'frpc {version} 已就绪',
+    binaryDownloadWarning: '安装完成，但未通过 SHA256 强校验：{message}',
     binaryDownloadFailed: '下载失败：{message}',
     binaryVersionsFailed: '获取版本列表失败：{message}',
     binaryLoadingVersions: '正在获取版本列表…',

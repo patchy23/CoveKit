@@ -128,12 +128,16 @@ onMounted(() => {
           :speed="binary.speed.value"
         />
 
-        <!-- 版本列表失败：给出可操作提示（手填路径与镜像前缀） -->
+        <!-- 版本列表失败：官方接口不可达时的提示（下载仍走内置镜像回退） -->
         <UiAlert v-if="binary.versionsError.value !== ''" tone="warning">
           {{ t('frp.binaryVersionsFailed', { message: binary.versionsError.value }) }}
         </UiAlert>
         <UiAlert v-if="binary.downloadError.value !== ''" tone="danger">
           {{ t('frp.binaryDownloadFailed', { message: binary.downloadError.value }) }}
+        </UiAlert>
+        <!-- 装好了但没通过强校验：必须让用户看见，否则无从判断这次安装是否可信 -->
+        <UiAlert v-if="binary.downloadWarning.value !== ''" tone="warning">
+          {{ t('frp.binaryDownloadWarning', { message: binary.downloadWarning.value }) }}
         </UiAlert>
       </div>
 

@@ -28,6 +28,13 @@ export function useFrpBinary() {
   const speed = ref<number | null>(null)
   /** 下载失败原因 */
   const downloadError = ref('')
+  /**
+   * 下载成功的附带提示（如「未强校验」）
+   *
+   * 后端在「装好了但没能与上游 checksums 比对」时用 `error` 字段带出原因；
+   * 这里必须接住并展示，否则用户无从知道这次安装有没有被强校验过。
+   */
+  const downloadWarning = ref('')
 
   let unlisten: UnlistenFn | null = null
   /** 速率采样窗口（每次下载重新累积） */
@@ -68,6 +75,7 @@ export function useFrpBinary() {
   async function download(version: string): Promise<FrpBinaryInfo | null> {
     downloading.value = true
     downloadError.value = ''
+    downloadWarning.value = ''
     progress.value = null
     speed.value = null
     samples = []
@@ -75,6 +83,7 @@ export function useFrpBinary() {
       const result = await ipc.binaryDownload(version)
       if (!result.ok) throw new Error(result.error ?? '下载失败')
       info.value = result
+      downloadWarning.value = result.error ?? ''
       return result
     } catch (reason) {
       downloadError.value = reason instanceof Error ? reason.message : String(reason)
@@ -110,6 +119,7 @@ export function useFrpBinary() {
     progress,
     speed,
     downloadError,
+    downloadWarning,
     detect,
     loadVersions,
     download,
