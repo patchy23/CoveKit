@@ -136,7 +136,7 @@ pub async fn test_connection(
         }
         DbType::Oracle | DbType::Vastbase | DbType::Kingbase => {
             let store = DriverStore::new(app)?;
-            let binary = store.ensure_driver(app, config.db_type).await?;
+            let binary = store.ensure_driver(config.db_type)?;
             let client = agent_client_for(app, runtimes, config.db_type, &binary).await?;
             let params = connect_params(&config, password, "test-conn");
             client.test_connection(&params).await?;
@@ -199,7 +199,7 @@ async fn agent_session(
     password: &str,
 ) -> Result<(Arc<AgentClient>, String), String> {
     let store = DriverStore::new(app)?;
-    let binary = store.ensure_driver(app, config.db_type).await?;
+    let binary = store.ensure_driver(config.db_type)?;
     let client = agent_client_for(app, runtimes, config.db_type, &binary).await?;
     let session_id = format!(
         "{}-{}",

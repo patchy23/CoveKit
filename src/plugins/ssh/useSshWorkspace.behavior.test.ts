@@ -798,28 +798,6 @@ describe('SSH 工作区 · 断线与自动重连', () => {
     expect(toastText()).toContain('已恢复')
   })
 
-  it('关闭自动重连时直接置为断开并提示，不排重连', async () => {
-    useFakeTimers()
-    useSettingsStore().settings.tools = {
-      ssh: { autoReconnect: false, idleDisconnectMinutes: '10', idleDisconnectV2: true },
-    }
-    env.commands.sshProfileList.mockResolvedValue([profile('profile-a', '生产服务器')])
-    const { api } = mountWorkspace()
-    await settle()
-    await api.openConnection('profile-a')
-    const workspace = api.connectionWorkspaces.value[0]
-
-    push.terminalClosed({ terminalId: 'term-1', connectionId: 'conn-profile-a' })
-    await settle(2)
-
-    expect(workspace.connection.status).toBe('disconnected')
-    expect(workspace.connection.error).toBe('连接已断开')
-    expect(toastText()).toContain('已断开')
-
-    await advance(60_000)
-    expect(env.commands.sshReconnect).not.toHaveBeenCalled()
-  })
-
   it('手动关闭页签后，已排定的重连计时器不复活连接', async () => {
     useFakeTimers()
     env.commands.sshProfileList.mockResolvedValue([profile('profile-a', '生产服务器')])

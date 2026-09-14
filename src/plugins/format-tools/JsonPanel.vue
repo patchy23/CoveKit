@@ -1,15 +1,13 @@
 <script setup lang="ts">
 /**
  * JSON 面板 · 格式化/压缩/校验 + 错误行号定位（格式转换工具子页签）
- * 布局：输入/输出左右分栏，占满高度；文本框内部滚动。缩进宽度走工具级设置。
+ * 布局：输入/输出左右分栏，占满高度；文本框内部滚动。缩进固定 2 空格（2026-09-14 起不再做成设置项）。
  */
 import { ref } from 'vue'
 import { formatJson, minifyJson } from './useFormat'
 import { useCopy } from '@/core/feedback/useCopy'
-import { useSettingsStore } from '@/stores/settings'
 import { UiAlert, UiButton, UiCodeEditor, UiToolbar } from '@/core/ui'
 
-const settings = useSettingsStore()
 const { copyText } = useCopy()
 
 const input = ref('{\n  "name": "patchyBox",\n  "tools": 8\n}')
@@ -17,10 +15,9 @@ const output = ref('')
 const errorMsg = ref('')
 
 function runFormat() {
-  // 选项值是字符串：'tab' 用制表符，其余按数字宽度（直接传 '2' 会让 JSON.stringify 用字符 '2' 当缩进）
-  const indentSetting = settings.getToolSetting<string>('format-tools', 'indent', '2')
-  const indent = indentSetting === 'tab' ? '	' : Number(indentSetting) || 2
-  const r = formatJson(input.value, indent)
+  // 缩进固定 2 空格：输出缩进是格式化结果的一部分，但为它长期占一个配置项不划算，
+  // 2 空格在 JSON 场景是压倒性默认；真需要 4 空格 / Tab 时再考虑做进面板工具条
+  const r = formatJson(input.value, 2)
   errorMsg.value = r.error
     ? `${r.error.message}（第 ${r.error.line} 行，第 ${r.error.col} 列）`
     : ''

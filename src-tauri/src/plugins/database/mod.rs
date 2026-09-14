@@ -222,7 +222,7 @@ pub async fn dbc_driver_status(
         "kind": "agent",
         "dir": dir.display().to_string(),
         "version": version,
-        "note": "agent 驱动需手动放置或配置镜像（设置 database.agentMirror，模板 {type}/{version}）",
+        "note": "agent 驱动需手动放置到上述目录（大文件不随安装包分发）",
     }))
 }
 

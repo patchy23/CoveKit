@@ -14,28 +14,10 @@ registerTool({
   component: () => import('./FrpWorkbench.vue'),
   settingsSchema: [
     {
-      key: 'frpcPath',
-      type: 'text',
-      label: 'frpc 可执行文件路径（留空则自动探测 PATH 与常见位置）',
-      default: '',
-    },
-    {
       key: 'profileDir',
       type: 'text',
       label: '配置文件目录（留空则用应用数据目录下的 frp/profiles）',
       default: '',
-    },
-    {
-      key: 'downloadMirror',
-      type: 'text',
-      label: '下载镜像前缀（GitHub 不可达时填写，例如 https://ghfast.top/）',
-      default: '',
-    },
-    {
-      key: 'maxLogLines',
-      type: 'number',
-      label: '日志缓冲行数',
-      default: 2000,
     },
   ],
   tags: ['网络'],

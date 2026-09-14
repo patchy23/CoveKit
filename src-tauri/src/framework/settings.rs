@@ -302,6 +302,43 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     builder
 }
 
+/// 清理已移除的设置键（历史残留）
+///
+/// 这些键已不再被任何代码读取，长期留在设置文件里会被误认为仍然生效。
+/// 工具级设置见 2026-09-14 的设置项缩减：四项改为写死或自动处理，对应键一并清除；
+/// `frp.frpcPath` 是例外——二进制探测仍把它当作自定义路径的第一优先级，不能清。
+fn prune_removed_settings(app_config: &mut Value) {
+    if let Some(object) = app_config.as_object_mut() {
+        object.remove("globalHotkey");
+        object.remove("globalHotkeyActive");
+    }
+    // 工具级设置：键被清空后整个工具分区一并移除，不留空对象
+    let removed: [(&str, &[&str]); 4] = [
+        ("format-tools", &["indent"]),
+        ("ssh", &["autoReconnect"]),
+        ("frp", &["downloadMirror", "maxLogLines"]),
+        ("database", &["agentMirror"]),
+    ];
+    let Some(tools) = app_config.get_mut("tools").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let mut emptied: Vec<&str> = Vec::new();
+    for (tool, keys) in removed {
+        let Some(entry) = tools.get_mut(tool).and_then(Value::as_object_mut) else {
+            continue;
+        };
+        for key in keys {
+            entry.remove(*key);
+        }
+        if entry.is_empty() {
+            emptied.push(tool);
+        }
+    }
+    for tool in emptied {
+        tools.remove(tool);
+    }
+}
+
 /// 插件启动初始化：核对设置与系统实际状态
 ///
 /// 核对口径：以**系统实际状态**为准修正设置里的值，
@@ -331,12 +368,7 @@ pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // 已移除的全局快捷键配置属于历史残留：连同只读生效值一并清掉，
-    // 避免设置文件里长期留着不会再被读取、却可能被误认为生效的键。
-    if let Some(object) = current.as_object_mut() {
-        object.remove("globalHotkey");
-        object.remove("globalHotkeyActive");
-    }
+    prune_removed_settings(&mut current);
     store.set(APP_KEY, current);
     store.save().map_err(|e| e.to_string())?;
     Ok(())
@@ -345,6 +377,57 @@ pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 已移除的设置键在启动核对时被清掉，仍在使用的键与无关分区不受影响
+    #[test]
+    fn prune_removed_settings_drops_stale_keys_only() {
+        let mut config = serde_json::json!({
+            "theme": "light",
+            "globalHotkey": "Ctrl+Shift+Space",
+            "globalHotkeyActive": true,
+            "tools": {
+                "format-tools": { "indent": "4" },
+                "ssh": { "autoReconnect": false, "idleDisconnectMinutes": "30" },
+                "frp": { "downloadMirror": "https://ghfast.top/", "maxLogLines": 500, "frpcPath": "D:/frp/frpc.exe" },
+                "database": { "agentMirror": "https://mirror.example.com/{type}" }
+            }
+        });
+
+        prune_removed_settings(&mut config);
+
+        assert!(config.get("globalHotkey").is_none(), "快捷键键应清除");
+        assert!(
+            config.get("globalHotkeyActive").is_none(),
+            "只读生效值应清除"
+        );
+        assert_eq!(config.get("theme").and_then(Value::as_str), Some("light"));
+        let tools = config
+            .get("tools")
+            .and_then(Value::as_object)
+            .expect("tools 仍在");
+        // 键被清空的分区整体移除
+        assert!(
+            tools.get("format-tools").is_none(),
+            "缩进设置已写死，分区应移除"
+        );
+        assert!(tools.get("database").is_none(), "死配置分区应移除");
+        let ssh = tools
+            .get("ssh")
+            .and_then(Value::as_object)
+            .expect("ssh 分区");
+        assert!(ssh.get("autoReconnect").is_none());
+        assert_eq!(
+            ssh.get("idleDisconnectMinutes").and_then(Value::as_str),
+            Some("30")
+        );
+        let frp = tools
+            .get("frp")
+            .and_then(Value::as_object)
+            .expect("frp 分区");
+        assert!(frp.get("downloadMirror").is_none());
+        assert!(frp.get("maxLogLines").is_none());
+        assert!(frp.get("frpcPath").is_some(), "探测仍在读该键，不能清");
+    }
 
     /// 枚举字段：合法值通过，非法值与类型不符都能给出可展示错误
     #[test]

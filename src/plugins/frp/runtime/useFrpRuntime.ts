@@ -5,7 +5,6 @@
 import { onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { throttledInterval, useToolLifecycle } from '@/core/lifecycle'
-import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '../ipc'
 import type { FrpLogPayload, FrpRuntimeState } from '../contracts'
@@ -18,14 +17,13 @@ const TOOL_ID = 'frp'
 const POLL_INTERVAL_MS = 5000
 /** 工具非激活或被窗口隐藏时的轮询间隔（T10-7：降频但不完全停摆，避免回来时状态过期） */
 const HIDDEN_POLL_INTERVAL_MS = 30000
-/** 日志缓冲默认行数 */
-const DEFAULT_MAX_LINES = 2000
+/** 日志缓冲行数上限（2026-09-14 起写死：环形缓冲约几百 KB，没有值得调节的空间） */
+const LOG_MAX_LINES = 2000
 
 /** 运行状态与日志（供工作台与详情面板共用） */
 export function useFrpRuntime() {
   const { t } = useI18n()
   const ui = useUiStore()
-  const settings = useSettingsStore()
 
   /** 各档案的运行状态（key = fileName） */
   const states = ref<Record<string, FrpRuntimeState>>({})
@@ -41,12 +39,6 @@ export function useFrpRuntime() {
   /** 当前是否处于「用户看得见」的状态（激活且未被覆盖、窗口可见） */
   function engaged(): boolean {
     return visibility.value.active && !visibility.value.covered && !visibility.value.hidden
-  }
-
-  /** 日志缓冲上限（读工具设置，非法值回落默认） */
-  function maxLines(): number {
-    const value = Number(settings.getToolSetting(TOOL_ID, 'maxLogLines', DEFAULT_MAX_LINES))
-    return Number.isFinite(value) && value > 0 ? value : DEFAULT_MAX_LINES
   }
 
   /** 单个档案的运行状态（未运行过则 undefined，调用方按 stopped 展示） */
@@ -78,7 +70,7 @@ export function useFrpRuntime() {
       stream: payload.stream,
       level: logLevel(payload.line),
     }
-    logs.value = { ...logs.value, [payload.fileName]: appendLogLine(current, line, maxLines()) }
+    logs.value = { ...logs.value, [payload.fileName]: appendLogLine(current, line, LOG_MAX_LINES) }
   }
 
   /** 清空某档案的日志缓冲 */

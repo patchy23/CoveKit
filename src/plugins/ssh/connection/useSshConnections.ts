@@ -10,7 +10,6 @@
  * 用于丢弃卸载后晚到的连接结果（防会话泄漏）。
  */
 import { reactive, ref } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '../ipc'
 import type { ConnectStage, ServerConnection, ServerProfile } from '../contracts'
@@ -79,7 +78,6 @@ function stageTextFor(stage: string, status: string): string {
 
 export function useSshConnections(ports: SshConnectionPorts) {
   const ui = useUiStore()
-  const settings = useSettingsStore()
   const connectionWorkspaces = ref<SshConnectionWorkspace[]>([])
   const activeProfileId = ref<string | null>(null)
 
@@ -227,20 +225,12 @@ export function useSshConnections(ports: SshConnectionPorts) {
 
   /**
    * 意外断线（终端通道异常关闭）后的自动重连：指数退避 1/2/5/10/30 秒，最多 5 次。
-   * 用户手动断开或关闭页签会移出 reconnecting 状态，从而中止后续尝试。
+   * 始终开启（2026-09-14 起不再提供关闭开关）；用户手动断开或关闭页签会移出
+   * reconnecting 状态，从而中止后续尝试。
    */
   function handleLinkDead(workspaceId: string) {
     const workspace = connectionWorkspaces.value.find((item) => item.id === workspaceId)
     if (!workspace || workspace.connection.status !== 'connected') return
-    if (!settings.getToolSetting<boolean>('ssh', 'autoReconnect', true)) {
-      workspace.connection = {
-        ...workspace.connection,
-        status: 'disconnected',
-        error: '连接已断开',
-      }
-      ui.toast(`连接「${workspace.title}」已断开`)
-      return
-    }
     scheduleAutoReconnect(workspace)
   }
 

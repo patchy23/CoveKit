@@ -1,14 +1,15 @@
-//! agent 驱动 store：目录布局 + versions.json + 镜像下载
+//! agent 驱动 store：目录布局 + versions.json + 本地查找
 //! 布局：app_data_dir/agents/drivers/<key>/（agent 可执行文件或 agent.jar + versions.json）
 //! 获取策略（与 dbx 一致但无物理依赖）：
 //!   1. 本地已有驱动二进制 → 直接使用
-//!   2. 设置 database.agentMirror 配置了镜像 URL → 按 {type}/{version} 模板下载
-//!   3. 均不可用 → 返回带指引的错误（手动放置或配置镜像）
+//!   2. 没有 → 返回带指引的错误（给出该放的目录）
 //!
-//! 大文件不随安装包分发；下载产物仅存本地 store。
+//! 大文件不随安装包分发。2026-09-14 移除「镜像下载」分支：它读 `app.database.agentMirror`，
+//! 而工具级设置实际落在 `app.tools.database.*` 且 database 插件从未声明设置项，
+//! 条件恒为假、下载从未执行过；报错文案却还让用户去设置里配镜像。
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::plugins::database::agent::driver_key;
 use crate::plugins::database::models::DbType;
@@ -67,12 +68,8 @@ impl DriverStore {
         serde_json::from_str(&text).unwrap_or_default()
     }
 
-    /// 确保某类型驱动可用：本地二进制 → 镜像下载 → 明确报错
-    pub async fn ensure_driver(
-        &self,
-        app: &tauri::AppHandle,
-        db_type: DbType,
-    ) -> Result<PathBuf, String> {
+    /// 确保某类型驱动可用：本地二进制 → 缺失时给出放置指引
+    pub fn ensure_driver(&self, db_type: DbType) -> Result<PathBuf, String> {
         // 达梦本批次未实现（需要 Java agent + JRE，工作量大；UI 保留入口）
         if matches!(db_type, DbType::Dameng) {
             return Err("达梦驱动暂未支持（本版本未实现，后续版本提供）。".to_string());
@@ -80,60 +77,12 @@ impl DriverStore {
         if let Some(binary) = self.agent_binary(db_type) {
             return Ok(binary);
         }
-        // 尝试按镜像下载（设置 database.agentMirror，空则跳过）
-        let mirror = mirror_url(app).unwrap_or_default();
-        if !mirror.is_empty() {
-            let version = self
-                .versions()
-                .get(driver_key(db_type))
-                .cloned()
-                .ok_or_else(|| format!("versions.json 缺少 {} 驱动版本", driver_key(db_type)))?;
-            let dir = self.driver_dir(db_type)?;
-            let url = mirror
-                .replace("{type}", driver_key(db_type))
-                .replace("{version}", &version);
-            download_file(&url, &dir.join("agent")).await?;
-            if let Some(binary) = self.agent_binary(db_type) {
-                return Ok(binary);
-            }
-        }
         Err(format!(
-            "缺少 {} 驱动。请将 agent 可执行文件放入 {}，或在设置中配置驱动镜像（URL 模板支持 {{type}}/{{version}}）。",
+            "缺少 {} 驱动。请将 agent 可执行文件放入 {}。",
             driver_key(db_type),
             self.root.join(driver_key(db_type)).display()
         ))
     }
-}
-
-/// 读取设置的驱动镜像 URL（database.agentMirror；空串 = 不下载）
-fn mirror_url(app: &tauri::AppHandle) -> Result<String, String> {
-    let value = crate::framework::settings::settings_get(app.clone(), None)?;
-    Ok(value
-        .get("database")
-        .and_then(|d| d.get("agentMirror"))
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string())
-}
-
-/// 下载文件到目标路径（reqwest；超时 60s；覆盖已存在的临时文件）
-async fn download_file(url: &str, target: &Path) -> Result<(), String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(60))
-        .build()
-        .map_err(|e| format!("HTTP 客户端构建失败: {e}"))?;
-    let bytes = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("下载驱动失败（{url}）：{e}"))?
-        .bytes()
-        .await
-        .map_err(|e| format!("读取下载内容失败: {e}"))?;
-    let tmp = target.with_extension("tmp");
-    std::fs::write(&tmp, &bytes).map_err(|e| format!("写入驱动临时文件失败: {e}"))?;
-    std::fs::rename(&tmp, target).map_err(|e| format!("驱动文件落位失败: {e}"))?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -146,13 +95,5 @@ mod tests {
         assert_eq!(driver_key(DbType::Kingbase), "kingbase");
         assert_eq!(driver_key(DbType::Vastbase), "vastbase");
         assert_eq!(driver_key(DbType::Dameng), "dameng");
-    }
-
-    #[test]
-    fn mirror_url_template_replacement() {
-        let url = "https://mirror.example.com/{type}/{version}/agent"
-            .replace("{type}", "oracle")
-            .replace("{version}", "0.1.48");
-        assert_eq!(url, "https://mirror.example.com/oracle/0.1.48/agent");
     }
 }

@@ -91,6 +91,9 @@ fn checksums_name(version: &str) -> String {
 }
 
 /// 工具设置读取（settings.json 的 `app.tools.frp.<key>`）
+///
+/// 2026-09-14 起只剩 `frpcPath` 一个读取方，且它是历史兼容读取：
+/// 设置页已不再提供该配置项，新入口是客户端管理弹窗「引用外部文件」。
 fn setting(app: &AppHandle, key: &str) -> Option<String> {
     let store = app.store("settings.json").ok()?;
     let app_config = store.get("app")?;
@@ -98,18 +101,34 @@ fn setting(app: &AppHandle, key: &str) -> Option<String> {
     value.as_str().map(String::from)
 }
 
-/// 镜像前缀（可配置；非空时统一补一个 `/`，用于拼在原始 URL 前）
-fn mirror(app: &AppHandle) -> String {
-    let raw = setting(app, "downloadMirror").unwrap_or_default();
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return String::new();
-    }
-    if trimmed.ends_with('/') {
-        trimmed.to_string()
+/// 下载源前缀：直连 GitHub 官方优先，失败后依次回退到内置镜像。
+///
+/// 2026-09-14 起不再提供「下载镜像」设置项——能否访问 GitHub 取决于网络环境，
+/// 属于应用该自己处理的问题（自动回退），而不是让用户去填前缀（填错只会更难排查）。
+/// 三个镜像按本机实测可达性挑选（真实 release 资产 206 响应）。
+const DOWNLOAD_SOURCES: [&str; 4] = [
+    "",
+    "https://ghfast.top/",
+    "https://ghproxy.net/",
+    "https://gh.llkk.cc/",
+];
+
+/// 下载源可读名（错误信息用；空前缀表示直连官方）
+fn source_label(prefix: &str) -> &str {
+    if prefix.is_empty() {
+        "GitHub 官方"
     } else {
-        format!("{trimmed}/")
+        prefix
     }
+}
+
+/// 按「优先源 → 其余源」的顺序排列下载源，用于同源兜底取 checksums
+fn sources_in_order(preferred: &str) -> Vec<&'static str> {
+    let mut ordered: Vec<&'static str> = DOWNLOAD_SOURCES.to_vec();
+    if let Some(index) = ordered.iter().position(|prefix| *prefix == preferred) {
+        ordered.swap(0, index);
+    }
+    ordered
 }
 
 /// 本工具的 frpc 下载目录（`<存储根>/data/frp/bin`）
@@ -279,7 +298,7 @@ pub(crate) async fn detect(app: &AppHandle) -> FrpBinaryInfo {
 }
 
 /// 查询上游可用版本（GitHub Releases API；响应结构只取前端需要的字段）
-pub(crate) async fn versions(app: &AppHandle, limit: u32) -> Result<Vec<FrpReleaseInfo>, String> {
+pub(crate) async fn versions(limit: u32) -> Result<Vec<FrpReleaseInfo>, String> {
     /// Releases API 响应的最小字段集
     #[derive(serde::Deserialize)]
     struct Release {
@@ -296,10 +315,9 @@ pub(crate) async fn versions(app: &AppHandle, limit: u32) -> Result<Vec<FrpRelea
     }
 
     let per_page = limit.clamp(1, 50);
-    let url = format!(
-        "{}https://api.github.com/repos/{REPO}/releases?per_page={per_page}",
-        mirror(app)
-    );
+    // 版本列表只能走官方 API：几个常用镜像前缀都拒绝代理 api.github.com（实测 403），
+    // 所以这里不做镜像回退，只在失败时把原因说清楚
+    let url = format!("https://api.github.com/repos/{REPO}/releases?per_page={per_page}");
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(QUERY_TIMEOUT_SECS))
         .build()
@@ -310,10 +328,10 @@ pub(crate) async fn versions(app: &AppHandle, limit: u32) -> Result<Vec<FrpRelea
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
-        .map_err(|e| format!("请求上游版本失败（可尝试配置下载镜像）：{e}"))?;
+        .map_err(|e| format!("请求上游版本失败（请检查网络能否访问 api.github.com）：{e}"))?;
     if !response.status().is_success() {
         return Err(format!(
-            "上游返回 {}（可尝试配置下载镜像）",
+            "上游返回 {}（api.github.com 不可达或已触发限流）",
             response.status().as_u16()
         ));
     }
@@ -343,9 +361,9 @@ pub(crate) async fn versions(app: &AppHandle, limit: u32) -> Result<Vec<FrpRelea
 /// GitHub 的下载地址会 302 到 objects.githubusercontent.com，重定向后的响应是分块传输、
 /// **不带 `Content-Length`**（实测 `response.content_length()` 为 None），此时前端只能显示
 /// 「总大小未知」。release API 的 `assets[].size` 是该资产的权威大小，用它兜底。
-async fn asset_size(app: &AppHandle, version: &str) -> Option<u64> {
+async fn asset_size(version: &str) -> Option<u64> {
     let asset = asset_name(version);
-    let releases = versions(app, 20).await.ok()?;
+    let releases = versions(20).await.ok()?;
     releases
         .into_iter()
         .find(|release| release.version == version)
@@ -478,34 +496,42 @@ fn sha256_of(path: &Path) -> Result<String, String> {
 }
 
 /// 尝试强校验：从上游 checksums 文件取出该资产的期望值并比对；上游未提供时返回 None（调用方提示未强校验）
+///
+/// 取 checksums 与下载共用同一组下载源（下载成功的那个排最前）：
+/// 上游缺该文件、或所有源都取不到时返回 None，由调用方提示「未强校验」而不是判下载失败。
 async fn verify_checksum(
-    app: &AppHandle,
     version: &str,
     archive: &Path,
+    preferred: &str,
 ) -> Result<Option<bool>, String> {
     let asset = asset_name(version);
-    let url = format!(
-        "{}https://github.com/{REPO}/releases/download/v{version}/{}",
-        mirror(app),
-        checksums_name(version)
-    );
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(QUERY_TIMEOUT_SECS))
         .build()
         .map_err(|e| e.to_string())?;
-    let response = match client
-        .get(&url)
-        .header("User-Agent", "patchyBox")
-        .send()
-        .await
-    {
-        Ok(response) => response,
-        Err(_) => return Ok(None),
-    };
-    if !response.status().is_success() {
-        return Ok(None);
+    let mut text: Option<String> = None;
+    for prefix in sources_in_order(preferred) {
+        let url = format!(
+            "{prefix}https://github.com/{REPO}/releases/download/v{version}/{}",
+            checksums_name(version)
+        );
+        let Ok(response) = client
+            .get(&url)
+            .header("User-Agent", "patchyBox")
+            .send()
+            .await
+        else {
+            continue;
+        };
+        if !response.status().is_success() {
+            continue;
+        }
+        if let Ok(body) = response.text().await {
+            text = Some(body);
+            break;
+        }
     }
-    let text = response.text().await.map_err(|e| e.to_string())?;
+    let Some(text) = text else { return Ok(None) };
     let expected = text.lines().find_map(|line| {
         let mut parts = line.split_whitespace();
         let hash = parts.next()?;
@@ -522,51 +548,41 @@ async fn verify_checksum(
     }
 }
 
-/// 下载并安装指定版本的 frpc（失败不修改任何已配置路径）
-pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinaryInfo, String> {
-    let version = version.trim().trim_start_matches('v');
-    if version.is_empty() {
-        return Err("版本号为空".to_string());
-    }
-    let asset = asset_name(version);
-    let url = format!(
-        "{}https://github.com/{REPO}/releases/download/v{version}/{asset}",
-        mirror(app)
-    );
-    let bin = bin_dir(app)?;
-    // 下载与解压共用一个临时目录：压缩包必须保持原始文件名（含 .zip/.tar.gz 扩展名），
-    // 见 `extract` 注释——在文件名后追加 .tmp 会让两个系统解压器都拒绝处理
-    let staging = bin.join("staging");
-    let _ = tokio::fs::remove_dir_all(&staging).await;
-    std::fs::create_dir_all(&staging)
-        .map_err(|e| format!("创建下载临时目录失败（{}）：{e}", staging.display()))?;
-    let archive = staging.join(&asset);
-
-    // ── 下载（流式写盘，按块推送进度）──
-    // 首个进度事件要等响应头到达后再发：此时才知道总大小，否则会先闪一次「总大小未知」
+/// 从单个下载源抓取压缩包到 `archive`：成功返回（已下载字节，总大小）
+///
+/// `budget` 是本次尝试可用的时间额度（调用方按已耗时递减），超时即中断本次尝试；
+/// 失败时保留已写入的半截文件，由调用方清理——只有调用方知道后面还有没有别的源要试。
+async fn fetch_archive(
+    app: &AppHandle,
+    url: &str,
+    archive: &Path,
+    version: &str,
+    budget: Duration,
+) -> Result<(u64, Option<u64>), String> {
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(DOWNLOAD_TIMEOUT_SECS))
+        .timeout(budget)
         .build()
         .map_err(|e| format!("初始化网络客户端失败：{e}"))?;
     let mut response = client
-        .get(&url)
+        .get(url)
         .header("User-Agent", "patchyBox")
         .send()
         .await
-        .map_err(|e| format!("下载失败（可尝试配置下载镜像）：{e}"))?;
+        .map_err(|e| e.to_string())?;
     if !response.status().is_success() {
         return Err(format!(
-            "下载失败：上游返回 {}（版本 {version} 可能没有 {} 资产）",
+            "上游返回 HTTP {}（版本 {version} 可能没有 {} 资产）",
             response.status().as_u16(),
-            asset
+            asset_name(version)
         ));
     }
     // 优先用响应头的 Content-Length；上游重定向后缺失时取 release 资产大小，
     // 保证进度条与「已下载 / 总大小」始终有分母（否则只能显示总大小未知）
     let total = match response.content_length() {
         Some(size) if size > 0 => Some(size),
-        _ => asset_size(app, version).await,
+        _ => asset_size(version).await,
     };
+    // 首个进度事件要等响应头到达后再发：此时才知道总大小，否则会先闪一次「总大小未知」
     emit(
         app,
         version,
@@ -575,7 +591,7 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         total,
         None,
     );
-    let mut file = tokio::fs::File::create(&archive)
+    let mut file = tokio::fs::File::create(archive)
         .await
         .map_err(|e| format!("创建临时文件失败（{}）：{e}", archive.display()))?;
     let mut received: u64 = 0;
@@ -601,6 +617,59 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         .await
         .map_err(|e| format!("写入临时文件失败：{e}"))?;
     drop(file);
+    Ok((received, total))
+}
+
+/// 下载并安装指定版本的 frpc（失败不修改任何已配置路径）
+pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinaryInfo, String> {
+    let version = version.trim().trim_start_matches('v');
+    if version.is_empty() {
+        return Err("版本号为空".to_string());
+    }
+    let asset = asset_name(version);
+    let bin = bin_dir(app)?;
+    // 下载与解压共用一个临时目录：压缩包必须保持原始文件名（含 .zip/.tar.gz 扩展名），
+    // 见 `extract` 注释——在文件名后追加 .tmp 会让两个系统解压器都拒绝处理
+    let staging = bin.join("staging");
+    let _ = tokio::fs::remove_dir_all(&staging).await;
+    std::fs::create_dir_all(&staging)
+        .map_err(|e| format!("创建下载临时目录失败（{}）：{e}", staging.display()))?;
+    let archive = staging.join(&asset);
+
+    // ── 下载（流式写盘，按块推送进度）──
+    // 逐个下载源尝试：直连失败自动走内置镜像。每次失败先删掉半截文件，
+    // 否则下一个源会接着往残包里写，最后报「校验失败」而不是「下载失败」，把原因指偏。
+    // 换源共享同一份总时间额度（默认 5 分钟）：源越多越不能各自跑满一份超时，
+    // 否则网络黑洞下用户要等 20 分钟才看到失败。
+    let mut budget = Duration::from_secs(DOWNLOAD_TIMEOUT_SECS);
+    let mut picked: Option<(&'static str, u64, Option<u64>)> = None;
+    let mut failures: Vec<String> = Vec::new();
+    for prefix in DOWNLOAD_SOURCES {
+        if budget.is_zero() {
+            failures.push("已用完本次下载的时间额度".to_string());
+            break;
+        }
+        let url = format!("{prefix}https://github.com/{REPO}/releases/download/v{version}/{asset}");
+        let started = std::time::Instant::now();
+        match fetch_archive(app, &url, &archive, version, budget).await {
+            Ok((received, total)) => {
+                picked = Some((prefix, received, total));
+                break;
+            }
+            Err(error) => {
+                let _ = tokio::fs::remove_file(&archive).await;
+                failures.push(format!("{}：{error}", source_label(prefix)));
+            }
+        }
+        budget = budget.saturating_sub(started.elapsed());
+    }
+    let Some((source, received, total)) = picked else {
+        return Err(format!(
+            "下载失败，已尝试 {} 个源（{}）",
+            failures.len(),
+            failures.join("；")
+        ));
+    };
 
     // ── 校验（上游提供 checksums 时强校验）──
     emit(
@@ -611,10 +680,13 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         total,
         None,
     );
-    let checked = verify_checksum(app, version, &archive).await?;
+    let checked = verify_checksum(version, &archive, source).await?;
     if checked == Some(false) {
         let _ = tokio::fs::remove_file(&archive).await;
-        return Err("SHA256 校验失败，已丢弃下载文件（可换镜像重试）".to_string());
+        return Err(format!(
+            "SHA256 校验失败，已丢弃下载文件（来源 {}，可重试）",
+            source_label(source)
+        ));
     }
 
     // ── 解压并取出 frpc ──
@@ -770,6 +842,19 @@ mod tests {
         assert_eq!(version_key("0.71.0"), vec![0, 71, 0]);
         // 带预发布后缀时非数字段按 0 处理，不 panic（rc1 解析失败记为 0）
         assert_eq!(version_key("0.71.0-rc1"), vec![0, 71, 0, 0]);
+    }
+
+    #[test]
+    fn download_sources_try_direct_first_and_hoist_the_working_one() {
+        // 直连排首位：能直连就不该绕镜像
+        assert_eq!(DOWNLOAD_SOURCES[0], "");
+        assert_eq!(source_label(""), "GitHub 官方");
+        // 已成功的源提到最前（同源取 checksums），其余顺序不变
+        let ordered = sources_in_order("https://ghproxy.net/");
+        assert_eq!(ordered[0], "https://ghproxy.net/");
+        assert_eq!(ordered.len(), DOWNLOAD_SOURCES.len());
+        // 未知来源不改动顺序、不 panic
+        assert_eq!(sources_in_order("https://example.invalid/")[0], "");
     }
 
     #[test]

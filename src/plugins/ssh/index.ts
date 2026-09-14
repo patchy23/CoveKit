@@ -26,12 +26,6 @@ registerTool({
         { value: '0', label: '永不自动断开' },
       ],
     },
-    {
-      key: 'autoReconnect',
-      type: 'toggle',
-      label: '意外断线自动重连（指数退避，最多 5 次）',
-      default: true,
-    },
   ],
   tags: ['网络', '热门'],
 })

@@ -396,10 +396,10 @@ pub async fn frp_binary_detect(
 /// 上游可用版本列表
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_binary_versions(
-    app: AppHandle,
+    _app: AppHandle,
     limit: Option<u32>,
 ) -> Result<Vec<FrpReleaseInfo>, String> {
-    binary::versions(&app, limit.unwrap_or(10)).await
+    binary::versions(limit.unwrap_or(10)).await
 }
 
 /// 下载并安装 frpc（进度走 `frp://download` 事件；失败不改动已配置路径）
