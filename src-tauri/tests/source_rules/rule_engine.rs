@@ -22,6 +22,8 @@ pub const RULES: &[(&str, &str)] = &[
     ("lifetime_escape", "禁止的生命周期逃逸调用：Box::leak / mem::forget / transmute / transmute_copy（零容忍）"),
     ("unsafe_without_safety", "unsafe（块/函数/impl/trait）缺少紧邻 `// SAFETY:` 论证（零容忍）"),
     ("layer_violation", "层级依赖越界：framework 引用 plugins、插件之间互相 import（零容忍）"),
+    ("paths_bypass", "绕过 framework::paths 直接取落盘根：Tauri 的 app_data_dir / app_config_dir / app_local_data_dir / app_cache_dir / app_log_dir（零容忍，framework/paths.rs 为自举例外）"),
+    ("foreign_table", "框架层直接引用业务表名：framework 下字符串字面量命中插件自报的建表名（零容忍）"),
     ("module_doc", "文件缺少 //! 模块职责注释"),
     ("api_doc", "pub / pub(crate) / pub(super) 项（含固有 impl 方法）缺少 /// 职责注释"),
     ("field_doc", "pub 结构体的字段缺少 /// 语义注释"),
@@ -33,6 +35,10 @@ pub const COVERAGE_LIMITS: &[&str] = &[
     "层级规则只解析 `crate::plugins::<owner>` 绝对路径；`super::`/`self::` 拼出的跨插件引用不在覆盖范围",
     "枚举变体与 trait 实现的关联项不强制文档（语义充分性由人工审查）",
     "集合索引 panic、Clippy 已覆盖的编译后诊断不在本工具范围",
+    "paths_bypass 只认 Tauri 路径访问器的方法名：自己再包一层同名函数、或用别名调用不在覆盖范围（这正是要禁的间接绕过）",
+    "foreign_table 为文本级扫描（去行注释后取字符串字面量，按词边界匹配建表名），不做宏展开与词法分析；注释里的表名不算引用",
+    "foreign_table 的表名清单由插件源码里的 CREATE TABLE/INDEX 动态推导，长度 <3 的名字（临时表 t/t1）不纳入，避免误伤通用代码",
+    "两条架构守卫（paths_bypass / foreign_table）只判定生产前缀（首个 `#[cfg(test)]` 标记之前）并跳过 `*_tests.rs` 测试专用文件；文件内测试夹具不算违规",
 ];
 
 /// 扫描模式：code = 代码级规则（panic/逃逸/unsafe/层级）；docs = 文档级规则。
@@ -259,6 +265,8 @@ impl ScanReport {
                 "lifetime_escape",
                 "unsafe_without_safety",
                 "layer_violation",
+                "paths_bypass",
+                "foreign_table",
             ] {
                 let n = self.count(rule);
                 if n > 0 {
@@ -398,11 +406,201 @@ pub fn plugin_owners(scan_dir: &Path) -> Vec<String> {
     names
 }
 
+/// 绕过 `framework::paths` 直接取落盘根的 Tauri 路径访问器（零容忍）。
+///
+/// 唯一例外是路径解析的自举文件 `framework/paths.rs`：其它任何位置都要经 `paths::*` 拿目录，
+/// 否则存储根切换、旧布局回落与只读探测会被绕过。
+pub const PATHS_BYPASS_METHODS: &[&str] = &[
+    "app_data_dir",
+    "app_config_dir",
+    "app_local_data_dir",
+    "app_cache_dir",
+    "app_log_dir",
+];
+
+/// 是否为测试专用文件（`*_tests.rs`）：其内容整体跑在 cfg(test) 下，不参与架构守卫判定。
+fn is_test_only_file(rel: &str) -> bool {
+    rel.ends_with("_tests.rs")
+}
+
+/// 是否为路径解析的自举文件（唯一允许直接调 Tauri 路径 API 的位置）。
+fn is_paths_bootstrap(rel: &str) -> bool {
+    rel.ends_with("framework/paths.rs")
+}
+
+/// 从插件源码收集业务表名（`CREATE TABLE/INDEX [IF NOT EXISTS] <name>`）。
+///
+/// 表名清单由插件自己的 DDL 推导，不在守卫里硬编码：插件新增表自动纳入判定。
+/// 长度 <3 的名字（测试里的临时表 `t`/`t1`）忽略；`SHOW CREATE TABLE` 不是建表语句，跳过。
+pub fn plugin_tables(plugins_dir: &Path) -> BTreeSet<String> {
+    let mut files = Vec::new();
+    collect_rs_files(plugins_dir, &mut files);
+    let mut names = BTreeSet::new();
+    for path in files {
+        if let Ok(source) = std::fs::read_to_string(&path) {
+            collect_ddl_names(&source, &mut names);
+        }
+    }
+    names
+}
+
+/// 从一段文本里提取建表名。
+fn collect_ddl_names(source: &str, out: &mut BTreeSet<String>) {
+    const KEYWORDS: &[&str] = &[
+        "CREATE TABLE IF NOT EXISTS ",
+        "CREATE INDEX IF NOT EXISTS ",
+        "CREATE TABLE ",
+        "CREATE INDEX ",
+    ];
+    for keyword in KEYWORDS {
+        let mut rest = source;
+        while let Some(idx) = rest.find(keyword) {
+            let before = rest[..idx].trim_end();
+            let show = before.to_ascii_uppercase().ends_with("SHOW");
+            let after = &rest[idx + keyword.len()..];
+            let name: String = after
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if !show && name.len() >= 3 {
+                out.insert(name);
+            }
+            rest = &rest[idx + keyword.len()..];
+        }
+    }
+}
+
+/// 截断到首个 `#[cfg(test)]` 标记之前：测试夹具里出现的业务表名不算框架层引用。
+///
+/// 这是文本级近似，与引擎按 AST 排除 `#[cfg(test)]` 子树的口径略有差异，边界见 [`COVERAGE_LIMITS`]。
+fn production_prefix(source: &str) -> &str {
+    let mut offset = 0;
+    for line in source.split_inclusive('\n') {
+        if line.trim_start().starts_with("#[cfg(test)]") {
+            return &source[..offset];
+        }
+        offset += line.len();
+    }
+    source
+}
+
+/// 框架层直接引用业务表名的候选：`framework` 下的字符串字面量命中插件建表名（零容忍）。
+///
+/// 覆盖边界见 [`COVERAGE_LIMITS`]：文本级扫描，去行注释后按词边界匹配。
+pub fn foreign_table_candidates(
+    rel: &str,
+    source: &str,
+    tables: &BTreeSet<String>,
+) -> Vec<Candidate> {
+    if tables.is_empty() || !rel.contains("/framework/") || is_test_only_file(rel) {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (idx, raw) in production_prefix(source).lines().enumerate() {
+        let code = strip_line_comment(raw);
+        for literal in string_literals(&code) {
+            for table in tables {
+                if contains_word(&literal, table) {
+                    out.push(Candidate {
+                        rule: "foreign_table",
+                        kind: "foreign_table",
+                        path: rel.to_string(),
+                        symbol: "<literal>".to_string(),
+                        line: idx + 1,
+                        detail: format!("框架层引用业务表 `{table}`：{literal}"),
+                    });
+                }
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// 去掉行注释（引号内的 `//` 不算注释起点）。
+fn strip_line_comment(line: &str) -> String {
+    let chars: Vec<char> = line.chars().collect();
+    let mut in_string = false;
+    let mut out = String::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\\' && in_string {
+            out.push(c);
+            if i + 1 < chars.len() {
+                out.push(chars[i + 1]);
+            }
+            i += 2;
+            continue;
+        }
+        if c == '"' {
+            in_string = !in_string;
+        }
+        if !in_string && c == '/' && i + 1 < chars.len() && chars[i + 1] == '/' {
+            break;
+        }
+        out.push(c);
+        i += 1;
+    }
+    out
+}
+
+/// 提取一行里的字符串字面量内容（不处理原始字符串 `r#"..."#`）。
+fn string_literals(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    let mut in_string = false;
+    let mut escaped = false;
+    for c in line.chars() {
+        if escaped {
+            current.push(c);
+            escaped = false;
+            continue;
+        }
+        match c {
+            '\\' if in_string => escaped = true,
+            '"' => {
+                if in_string {
+                    out.push(current.clone());
+                    current.clear();
+                }
+                in_string = !in_string;
+            }
+            _ if in_string => current.push(c),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// 是否包含整词（前后不是标识符字符）。
+fn contains_word(haystack: &str, needle: &str) -> bool {
+    let mut from = 0;
+    while let Some(pos) = haystack[from..].find(needle) {
+        let start = from + pos;
+        let end = start + needle.len();
+        let is_word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+        let before_ok = haystack[..start]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !is_word(c));
+        let after_ok = haystack[end..].chars().next().is_none_or(|c| !is_word(c));
+        if before_ok && after_ok {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
 /// 扫描整个目录树，收集候选与未覆盖项。
 pub fn scan_repo(mode: Mode) -> ScanReport {
     let root = scan_root(mode);
     let mut report = ScanReport::new(mode, root.clone());
     let owners = plugin_owners(&root);
+    // 业务表名清单由插件 DDL 推导（框架层不得直接引用业务表）
+    let tables = plugin_tables(&root.join("plugins"));
     let mut files = Vec::new();
     collect_rs_files(&root, &mut files);
     files.sort();
@@ -422,6 +620,11 @@ pub fn scan_repo(mode: Mode) -> ScanReport {
         };
         report.files += 1;
         report.bytes += source.len();
+        if mode.wants_code() {
+            report
+                .candidates
+                .extend(foreign_table_candidates(&rel, &source, &tables));
+        }
         let mut outcome = scan_source(mode, &rel, &source, &owners);
         if outcome.parse_failed {
             *report
@@ -502,6 +705,11 @@ pub fn scan_source(mode: Mode, rel_path: &str, source: &str, owners: &[String]) 
         notes: Vec::new(),
         other_macro_calls: 0,
         risky_macros: BTreeSet::new(),
+        // 架构守卫只看生产前缀：文件内联测试的夹具不算违规
+        production_lines: lines
+            .iter()
+            .position(|l| l.trim_start().starts_with("#[cfg(test)]"))
+            .unwrap_or(lines.len()),
         risky_macro_calls: BTreeSet::new(),
         clone_count: 0,
     };
@@ -576,6 +784,8 @@ struct Visitor<'a> {
     risky_macro_calls: BTreeSet<String>,
     /// `.clone()` 出现次数（仅报告，不判定）：clone 按数据规模与所有权评审，不数数量。
     clone_count: usize,
+    /// 生产前缀行数：首个 `#[cfg(test)]` 标记之前（测试体内的代码不参与架构守卫）。
+    production_lines: usize,
 }
 
 impl Visitor<'_> {
@@ -1141,6 +1351,17 @@ impl<'ast> Visit<'ast> for Visitor<'_> {
                 let detail = format!("`{name}` 直接 panic：{}", self.snippet(line));
                 self.report("panic", kind, line, detail);
             }
+        }
+        // 架构守卫：落盘根必须经 framework::paths 解析（自举文件除外）
+        let method_line = line_of(node.method.span());
+        if self.mode.wants_code()
+            && PATHS_BYPASS_METHODS.contains(&name.as_str())
+            && !is_paths_bootstrap(self.rel)
+            && !is_test_only_file(self.rel)
+            && method_line <= self.production_lines
+        {
+            let detail = format!("`{name}` 直接取落盘根：{}", self.snippet(method_line));
+            self.report("paths_bypass", "paths_bypass", method_line, detail);
         }
         visit::visit_expr_method_call(self, node);
     }

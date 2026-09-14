@@ -535,3 +535,77 @@ pub mod inner {
     assert!(symbols.contains(&"Store::save"), "{symbols:?}");
     assert!(symbols.contains(&"inner::run"), "{symbols:?}");
 }
+
+/// 架构守卫：绕过 `framework::paths` 直取落盘根必须被抓出，自举文件放行。
+#[test]
+fn paths_bypass_is_detected_and_bootstrap_file_is_allowed() {
+    let src = r#"
+//! 模块职责
+pub fn secrets_file(app: &AppHandle) -> PathBuf {
+    app.path().app_data_dir().unwrap_or_default()
+}
+"#;
+    assert_eq!(
+        kinds(&code("src-tauri/src/plugins/api/store.rs", src)),
+        vec!["paths_bypass"]
+    );
+    assert!(
+        code("src-tauri/src/framework/paths.rs", src).is_empty(),
+        "framework/paths.rs 是路径解析的自举实现，允许直接调 Tauri 路径 API"
+    );
+}
+
+/// 架构守卫：框架层引用业务表名必须被抓出，插件自身引用不算违规。
+#[test]
+fn framework_referencing_plugin_table_is_detected() {
+    let mut tables = std::collections::BTreeSet::new();
+    tables.insert("ssh_profiles".to_string());
+    let src = r#"
+//! 模块职责
+pub fn vacuum_sql() -> &'static str {
+    // ssh_profiles 只是注释里的名字，不算引用
+    "SELECT count(*) FROM ssh_profiles"
+}
+"#;
+    let found =
+        rule_engine::foreign_table_candidates("src-tauri/src/framework/vacuum.rs", src, &tables);
+    assert_eq!(kinds(&found), vec!["foreign_table"]);
+    assert!(
+        rule_engine::foreign_table_candidates("src-tauri/src/plugins/ssh/store.rs", src, &tables)
+            .is_empty(),
+        "插件引用自己的表不算框架层越界"
+    );
+    let unrelated = r#"
+//! 模块职责
+pub const NOTE: &str = "没有命中任何业务表名的普通字面量";
+"#;
+    assert!(rule_engine::foreign_table_candidates(
+        "src-tauri/src/framework/note.rs",
+        unrelated,
+        &tables
+    )
+    .is_empty());
+}
+
+/// 架构守卫：表名清单由插件 DDL 推导，`SHOW CREATE TABLE` 与短名不入清单。
+#[test]
+fn plugin_tables_are_derived_from_ddl_only() {
+    let dir = std::env::temp_dir().join(format!("pb-tables-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let ddl = concat!(
+        "const DDL: &str = \"CREATE TABLE IF NOT EXISTS ssh_profiles (id TEXT); ",
+        "CREATE TABLE t1 (id INTEGER);\";\n",
+        "const SHOW: &str = \"SHOW CREATE TABLE `shop`.`orders`\";\n"
+    );
+    std::fs::write(dir.join("mod.rs"), ddl).unwrap();
+    let names = rule_engine::plugin_tables(&dir);
+    assert!(names.contains("ssh_profiles"), "建表名应入清单：{names:?}");
+    assert!(
+        !names
+            .iter()
+            .any(|n| n == "t1" || n == "shop" || n == "orders"),
+        "临时表与 SHOW CREATE TABLE 不应入清单：{names:?}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

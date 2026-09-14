@@ -7,6 +7,8 @@
 3. unsafe 论证：每处 unsafe 必须带紧邻的 `// SAFETY:` 注释（零容忍）；
 4. clone 统计：只报告不拦截；
 5. 层级依赖：framework 不得引用插件、插件之间不得互相 import（零容忍）。
+6. 路径入口：不得绕过 framework::paths 直接取落盘根（零容忍，paths.rs 自举例外）。
+7. 业务表：framework 下不得出现插件建表名（零容忍，表名由插件 DDL 推导）。
 
 棘轮基线在 scripts/rust_rules_baseline.json：各分类计数只降不升，例外按「路径 + 符号 + 类别 + 原因」逐条登记。
 
