@@ -315,6 +315,7 @@ export default {
     diagnosticsNoErrors: '暂无错误记录。',
     diagnosticsMoreErrors: '另有 {count} 条未显示',
     diagnosticsCopied: '已复制到剪贴板',
+    diagnosticsCopyFailed: '复制失败，请检查系统剪贴板后重试',
     copyDiagnostics: '复制诊断信息',
     clearDiagnostics: '清空记录',
     updateError: '更新检查失败：{message}',

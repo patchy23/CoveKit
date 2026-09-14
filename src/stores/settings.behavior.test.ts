@@ -51,7 +51,8 @@ describe('设置保存行为', () => {
       theme: 'light',
       language: 'zh-CN',
       globalHotkey: 'Ctrl+Shift+Space',
-      globalHotkeyActive: 'Ctrl+Shift+Space',
+      // 框架写入的是 Shortcut 规范形式，与设置页显示形式不同（真机走查实测）
+      globalHotkeyActive: 'shift+control+Space',
       launchAtStartup: false,
       defaultDownloadDirectory: '',
       tools: {},
@@ -110,6 +111,29 @@ describe('设置保存行为', () => {
     await store.setToolSetting('dns', 'platform', 'dnspod')
     expect(ipcMock.settingsSetTool).toHaveBeenCalledWith('dns', 'platform', 'dnspod')
     expect(ipcMock.settingsPatch).not.toHaveBeenCalled()
+  })
+
+  it('快捷键写法不同但同一组合视为生效', async () => {
+    const store = useSettingsStore()
+    await store.init()
+    expect(store.settings.globalHotkey).toBe('Ctrl+Shift+Space')
+    expect(store.settings.globalHotkeyActive).toBe('shift+control+Space')
+    expect(store.hotkeyActive).toBe(true)
+  })
+
+  it('未注册成功（生效值为空）时判为不生效', async () => {
+    ipcMock.settingsGet.mockResolvedValue({
+      theme: 'light',
+      language: 'zh-CN',
+      globalHotkey: 'Ctrl+Shift+Space',
+      globalHotkeyActive: '',
+      launchAtStartup: false,
+      defaultDownloadDirectory: '',
+      tools: {},
+    })
+    const store = useSettingsStore()
+    await store.init()
+    expect(store.hotkeyActive).toBe(false)
   })
 
   it('浏览器预览环境降级 localStorage', async () => {

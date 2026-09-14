@@ -325,6 +325,7 @@ export default {
     diagnosticsNoErrors: 'No errors recorded.',
     diagnosticsMoreErrors: '{count} more not shown',
     diagnosticsCopied: 'Copied to clipboard',
+    diagnosticsCopyFailed: 'Copy failed — check clipboard access and retry',
     copyDiagnostics: 'Copy diagnostics',
     clearDiagnostics: 'Clear records',
     updateError: 'Update check failed: {message}',

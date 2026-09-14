@@ -14,6 +14,7 @@ import { ref, computed } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { ipc } from '@/core/ipc/ipc'
 import type { AppSettings } from '@/core/ipc/contracts'
+import { sameShortcut } from '@/core/platform/shortcut'
 import { storage } from '@/core/storage'
 import { setLocale } from '@/i18n'
 
@@ -179,9 +180,14 @@ export const useSettingsStore = defineStore('settings', () => {
     return task
   }
 
-  /** 全局快捷键是否真的生效（Rust 维护的只读字段与实际注册状态对齐） */
-  const hotkeyActive = computed(
-    () => settings.value.globalHotkeyActive === settings.value.globalHotkey
+  /**
+   * 全局快捷键是否真的生效。
+   *
+   * 框架写入的是 Shortcut 规范形式（`shift+control+Space`），设置页保存的是显示形式
+   * （`Ctrl+Shift+Space`），必须规范化后比较，否则每台机器都会误报「未生效」。
+   */
+  const hotkeyActive = computed(() =>
+    sameShortcut(settings.value.globalHotkey, settings.value.globalHotkeyActive)
   )
 
   return {

@@ -11,6 +11,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { UiButton } from '@/core/ui'
+import { writeClipboardText } from '@/core/platform/clipboard'
 import { useTasksStore } from '@/stores/tasks'
 import {
   clearErrors,
@@ -53,7 +54,11 @@ async function copyDiagnostics() {
   copyError.value = ''
   try {
     const report = await collectDiagnostics()
-    await navigator.clipboard.writeText(formatDiagnostics(report))
+    const result = await writeClipboardText(formatDiagnostics(report))
+    if (!result.ok) {
+      copyError.value = t('settings.diagnosticsCopyFailed')
+      return
+    }
     copied.value = t('settings.diagnosticsCopied')
     window.setTimeout(() => {
       copied.value = ''
