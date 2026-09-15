@@ -18,7 +18,10 @@ use tauri::AppHandle;
 /// 关闭原因：唯一入口据此区分场景（页签/退出/重启/更新/空间切换）
 ///
 /// 契约枚举：应用自身产生 `Exit`（托盘/界面退出）；`update` / `restart` / `space-switch`
-/// 由更新安装与空间激活路径传入；`tab` 供工具页签关闭复用同一套 prepare/dispose 语义。
+/// 当前真实构造点只有 [`CloseReason::Exit`]（`lib.rs` 退出路径与 `exit.rs::parse_reason`）。
+/// `Tab` / `Restart` / `Update` / `SpaceSwitch` 是既定接口面、尚无产者，保留不删：
+/// `Tab` 由工具页签关闭协商接入，`Restart` / `Update` 由更新安装路径接入，`SpaceSwitch` 由数据空间切换（E 批 L1）接入。
+/// 它们已被 `code()` / `from_code()` 与用例引用，不产生死代码告警；新增变体时同步补这两处映射。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CloseReason {
     /// 关闭单个工具页签（可能伴随未保存内容）
