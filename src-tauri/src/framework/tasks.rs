@@ -144,6 +144,9 @@ pub struct TaskHandle {
     id: String,
     /// 是否因容量上限被拒绝登记（此时所有变更都是空操作）
     rejected: bool,
+    /// 登记时所在的数据上下文代际（`None` = 登记时上下文尚未初始化，如极早调用与单元测试）：
+    /// 晚到的进度与结束结果据此丢弃，空间切换后旧空间的回包不会污染新空间的任务视图
+    epoch: Option<u64>,
 }
 
 impl TaskHandle {
@@ -152,12 +155,24 @@ impl TaskHandle {
         self.rejected
     }
 
-    /// 变更登记项并推送事件（拒绝登记的句柄为空操作）
+    /// 该句柄的结果是否已晚到（登记时的上下文代际与当前不一致）
+    fn is_stale(&self) -> bool {
+        match self.epoch {
+            Some(epoch) => !crate::framework::context::is_current(epoch),
+            None => false,
+        }
+    }
+
+    /// 变更登记项并推送事件（拒绝登记的句柄为空操作；晚到结果丢弃并计数）
     fn mutate<F>(&self, app: Option<&AppHandle>, change: F)
     where
         F: FnOnce(&mut TaskRecord),
     {
         if self.rejected {
+            return;
+        }
+        if self.is_stale() {
+            crate::framework::context::note_stale_dropped();
             return;
         }
         let snapshot = {
@@ -208,6 +223,10 @@ impl TaskHandle {
     /// 结束任务并移入历史
     fn finish(&self, app: Option<&AppHandle>, state: TaskState, error: Option<TaskError>) {
         if self.rejected {
+            return;
+        }
+        if self.is_stale() {
+            crate::framework::context::note_stale_dropped();
             return;
         }
         let snapshot = {
@@ -264,13 +283,39 @@ pub fn begin(
     cancellable: bool,
     cancellable_reason: Option<&str>,
 ) -> TaskHandle {
+    begin_with_epoch(
+        app,
+        owner,
+        kind,
+        cancellable,
+        cancellable_reason,
+        crate::framework::context::current().map(|ctx| ctx.epoch()),
+    )
+}
+
+/// 登记一个长任务（代际显式传入）
+///
+/// 生产路径一律经 [`begin`] 取当前代际；本函数额外供测试构造「晚到结果」场景
+/// （用例里上下文通常未初始化，无法靠 `begin` 造出不匹配的代际）。
+pub(crate) fn begin_with_epoch(
+    app: Option<&AppHandle>,
+    owner: &str,
+    kind: &str,
+    cancellable: bool,
+    cancellable_reason: Option<&str>,
+    epoch: Option<u64>,
+) -> TaskHandle {
     let mut guard = lock();
     guard.seq += 1;
     let id = format!("t{}", guard.seq);
     if guard.active.len() >= MAX_ACTIVE_TASKS {
         // 容量上限：不登记、不覆盖，调用方通过 is_rejected + 失败句柄的语义知道没记上
         eprintln!("[tasks] 活跃任务已达上限 {MAX_ACTIVE_TASKS}，{kind} 未登记");
-        return TaskHandle { id, rejected: true };
+        return TaskHandle {
+            id,
+            rejected: true,
+            epoch,
+        };
     }
     let now = now_ms();
     let snapshot = TaskSnapshot {
@@ -297,6 +342,7 @@ pub fn begin(
     TaskHandle {
         id,
         rejected: false,
+        epoch,
     }
 }
 
@@ -404,6 +450,26 @@ mod tests {
         assert!(list.active.is_empty(), "已结束任务不能被进度改回活跃");
         assert_eq!(list.finished[0].progress, None);
         assert_eq!(list.finished[0].state, TaskState::Failed);
+    }
+
+    #[test]
+    fn late_results_from_other_context_epoch_are_dropped() {
+        let _serial = test_serial();
+        reset();
+        let before = crate::framework::context::stale_dropped();
+        // 用例里上下文未初始化，任何具体代际都不属于当前上下文，正好用来构造「晚到」
+        let handle = begin_with_epoch(None, "storage", "storage.migrate", false, None, Some(7));
+        handle.progress(None, 42);
+        handle.succeed(None);
+        let list = list();
+        assert!(list.finished.is_empty(), "晚到结果不得写入历史");
+        assert_eq!(list.active.len(), 1, "晚到结果不得改动登记项");
+        assert_eq!(list.active[0].progress, None);
+        assert_eq!(
+            crate::framework::context::stale_dropped() - before,
+            2,
+            "丢弃的晚到事件必须计数（进度与结束各一次）"
+        );
     }
 
     #[test]

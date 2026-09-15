@@ -143,9 +143,8 @@ pub fn root() -> Option<&'static Path> {
 
 /// 事件/任务是否属于当前启动上下文（false = 晚到，调用方应丢弃并 `note_stale_dropped`）
 ///
-/// 契约入口：消费方（可靠性 T04/T05/T09/T10/T11 的晚到结果判定）尚未接入，
-/// 当前仅单元测试覆盖；接入时删除下面这行 `allow`。
-#[allow(dead_code)]
+/// 消费方：`tasks` 的长任务出口（登记时记下 epoch，进度与结束前判一次，
+/// 晚到则丢弃并计数）——空间切换（E 批 L1）落地后消费方不必再改。
 pub fn is_current(epoch: u64) -> bool {
     match current() {
         Some(ctx) => ctx.epoch() == epoch,
@@ -155,8 +154,7 @@ pub fn is_current(epoch: u64) -> bool {
 
 /// 记录一次被丢弃的晚到事件（诊断统计）
 ///
-/// 契约入口：与 `is_current` 同批接入，当前仅单元测试覆盖；接入时删除下面这行 `allow`。
-#[allow(dead_code)]
+/// 与 `is_current` 同批接入：调用点见 `tasks` 的长任务出口与退出日志的统计打印。
 pub fn note_stale_dropped() {
     STALE_DROPPED.fetch_add(1, Ordering::Relaxed);
 }
