@@ -7,12 +7,12 @@ import { computed, ref, watch } from 'vue'
 import { getCategoryCounts, getTools } from '@/core/registry/toolRegistry'
 import type { ToolManifest } from '@/core/registry/types'
 import { highlightChunks, initSearch, searchWithHits } from '@/core/search/fuzzy'
-import { storage } from '@/core/storage'
+import { isStringArray, spaceData } from '@/core/spaceData'
 import { useUiStore } from './ui'
 import { useFavoritesStore } from './favorites'
 
-const STORE_FILE = 'patchybox.json'
-const RECENT_KEY = 'recent'
+/** 最近使用键（与 Rust 白名单一致；不再复用前端历史键名 `recent`） */
+const RECENT_KEY = 'recentTools'
 const RECENT_LIMIT = 6
 
 export const useToolsStore = defineStore('tools', () => {
@@ -73,12 +73,22 @@ export const useToolsStore = defineStore('tools', () => {
   /* ── 最近使用 ── */
 
   async function initRecent() {
-    recent.value = (await storage.get<string[]>(STORE_FILE, RECENT_KEY)) ?? []
+    recent.value = (await spaceData.get<string[]>(RECENT_KEY, isStringArray)) ?? []
   }
 
+  /**
+   * 记录最近使用
+   *
+   * 写入失败只记控制台并保留内存值：最近使用是打开工具时的附带记账，
+   * 失败不该升级成「工具打不开」；收藏是用户主动操作，走 favorites store 的回滚 + 报错路径。
+   */
   async function pushRecent(id: string) {
     recent.value = [id, ...recent.value.filter((x) => x !== id)].slice(0, RECENT_LIMIT)
-    await storage.set(STORE_FILE, RECENT_KEY, recent.value)
+    try {
+      await spaceData.set(RECENT_KEY, recent.value)
+    } catch (error) {
+      console.error('[tools] 最近使用写入失败（工具已打开，仅记账未落盘）', error)
+    }
   }
 
   /** 打开工具：打开页签 + 记录最近使用 */

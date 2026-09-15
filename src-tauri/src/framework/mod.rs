@@ -62,6 +62,8 @@ crate::patchybox_module! {
         settings::settings_patch => "批量写入应用设置（带版本号校验，拒绝陈旧覆盖）",
         settings::settings_set_tool => "按工具与键写入工具级设置",
         settings::settings_revision => "读取设置版本号（保存时回传防覆盖）",
+        settings::preferences_get => "读取空间级用户数据（收藏、最近使用）",
+        settings::preferences_set => "写入空间级用户数据（收藏、最近使用）",
     updater::update_availability => "读取更新可用性（占位公钥等无效配置按不可用上报）",
         storage::storage_info => "读取存储位置信息（四分区路径与占用、待执行计划、恢复状态）",
         storage::storage_schedule_migration => "安排存储目录迁移（只登记计划，重启后复制并校验）",

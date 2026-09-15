@@ -8,6 +8,7 @@ import type {
   CredentialSavePayload,
   FrameworkPayloads,
   FrameworkResults,
+  SpaceDataKey,
   StorageRecoveryAction,
 } from './contracts'
 
@@ -48,6 +49,8 @@ export const ipc = {
   settingsSetTool: (tool: string, key: string, value: unknown) =>
     call('settings_set_tool', { tool, key, value }),
   settingsRevision: () => call('settings_revision', {}),
+  preferencesGet: (key: SpaceDataKey) => call('preferences_get', { key }),
+  preferencesSet: (key: SpaceDataKey, value: unknown) => call('preferences_set', { key, value }),
   updateAvailability: () => call('update_availability', {}),
   windowToggle: () => call('window_toggle', {}),
   windowHide: () => call('window_hide', {}),

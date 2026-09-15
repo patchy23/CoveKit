@@ -21,6 +21,15 @@ export interface AppSettings {
 }
 
 /**
+ * 空间级用户数据键（收藏、最近使用）
+ *
+ * 这两项是**用户数据**而非设置字段：与设置一样随空间隔离、落当前空间偏好文件，
+ * 但经 `preferences_get` / `preferences_set` 读写，不递增设置版本号。
+ * 取值必须与 Rust `framework::settings::SPACE_DATA_KEYS` 白名单一致。
+ */
+export type SpaceDataKey = 'favorites' | 'recentTools'
+
+/**
  * 工具级设置字段（判别联合：类型决定可用参数）
  *
  * 说明：**没有 secret 类型**。普通设置文件是明文，秘密材料必须走凭证管理
@@ -363,6 +372,8 @@ export const frameworkCommands = {
   settingsPatch: 'settings_patch',
   settingsSetTool: 'settings_set_tool',
   settingsRevision: 'settings_revision',
+  preferencesGet: 'preferences_get',
+  preferencesSet: 'preferences_set',
   updateAvailability: 'update_availability',
   windowToggle: 'window_toggle',
   windowHide: 'window_hide',
@@ -397,6 +408,8 @@ export type FrameworkPayloads = {
   settings_patch: { revision?: number; patch: Record<string, unknown> }
   settings_set_tool: { tool: string; key: string; value: unknown }
   settings_revision: Record<string, never>
+  preferences_get: { key: SpaceDataKey }
+  preferences_set: { key: SpaceDataKey; value: unknown }
   update_availability: Record<string, never>
   window_toggle: Record<string, never>
   window_hide: Record<string, never>
@@ -428,6 +441,8 @@ export type FrameworkResults = {
   settings_patch: number
   settings_set_tool: number
   settings_revision: number
+  preferences_get: unknown
+  preferences_set: void
   update_availability: UpdateAvailability
   window_toggle: WindowState
   window_hide: void

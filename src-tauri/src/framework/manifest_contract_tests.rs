@@ -165,6 +165,16 @@ mod tests {
         ),
         (
             "framework",
+            "preferences_get",
+            "读取空间级用户数据（收藏、最近使用）",
+        ),
+        (
+            "framework",
+            "preferences_set",
+            "写入空间级用户数据（收藏、最近使用）",
+        ),
+        (
+            "framework",
             "update_availability",
             "读取更新可用性（占位公钥等无效配置按不可用上报）",
         ),

@@ -20,8 +20,13 @@ const nameChunks = computed(() => tools.nameChunks(props.tool))
 const isFav = computed(() => favorites.has(props.tool.id))
 
 async function toggleFav() {
-  const nowFav = await favorites.toggle(props.tool.id)
-  ui.toast(nowFav ? `已收藏「${props.tool.name}」` : `已取消收藏「${props.tool.name}」`)
+  try {
+    const nowFav = await favorites.toggle(props.tool.id)
+    ui.toast(nowFav ? `已收藏「${props.tool.name}」` : `已取消收藏「${props.tool.name}」`)
+  } catch (error) {
+    // 写盘失败必须可见（store 已回滚，界面不会显示成已收藏）
+    ui.toast(`收藏未保存：${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 </script>
 

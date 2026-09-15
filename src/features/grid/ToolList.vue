@@ -23,8 +23,13 @@ const catNames: Record<string, string> = {
 const isFav = (id: string) => favorites.has(id)
 
 async function toggleFav(t: ToolManifest) {
-  const nowFav = await favorites.toggle(t.id)
-  ui.toast(nowFav ? `已收藏「${t.name}」` : `已取消收藏「${t.name}」`)
+  try {
+    const nowFav = await favorites.toggle(t.id)
+    ui.toast(nowFav ? `已收藏「${t.name}」` : `已取消收藏「${t.name}」`)
+  } catch (error) {
+    // 写盘失败必须可见（store 已回滚，界面不会显示成已收藏）
+    ui.toast(`收藏未保存：${error instanceof Error ? error.message : String(error)}`)
+  }
 }
 </script>
 

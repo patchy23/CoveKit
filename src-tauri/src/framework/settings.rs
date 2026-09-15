@@ -1,4 +1,5 @@
 //! 设置模块：settings_get / settings_set / settings_patch / settings_set_tool / settings_revision
+//! / preferences_get / preferences_set
 //!
 //! 契约见前端 `src/core/ipc/contracts.ts`（唯一事实源）。本模块负责：
 //! - 字段级校验（枚举、类型、数字有限），错误信息可直接展示给用户；
@@ -192,6 +193,49 @@ pub fn settings_set_tool(
     settings_patch(app, None, patch)
 }
 
+/// 空间级用户数据键白名单：收藏与最近使用是**用户数据**而非设置项
+///
+/// 它们与设置一样随空间隔离（任务书 §13.1 冻结表），但写入**不递增设置版本号**：
+/// 收藏一下就让设置页缓存的版本号过期，会导致随后一次设置保存被误判为陈旧而拒绝。
+/// 白名单是显式的：若通用接口能写任意空间级键，等于绕开设置字段的归属划分。
+const SPACE_DATA_KEYS: [&str; 2] = ["favorites", "recentTools"];
+
+/// 校验空间级数据键（纯函数，便于用例直接覆盖）
+pub(crate) fn validate_space_data_key(key: &str) -> Result<(), String> {
+    if SPACE_DATA_KEYS.contains(&key) {
+        return Ok(());
+    }
+    Err(format!(
+        "{} 不是空间级用户数据，此处只接受 {}；设置字段请使用 settings_patch",
+        key,
+        SPACE_DATA_KEYS.join("、")
+    ))
+}
+
+/// 读空间级用户数据（收藏、最近使用）
+///
+/// 只读当前空间的偏好文件，**不做设备层回落**：这两项在设备层没有历史值，
+/// 回落会让非默认空间读到别处的数据（旧 `patchybox.json` 里的收藏只属于默认空间）。
+#[tauri::command]
+pub fn preferences_get(app: AppHandle, key: String) -> Result<Value, String> {
+    validate_space_data_key(&key)?;
+    Ok(preferences::read_current(&app)?
+        .get(&key)
+        .cloned()
+        .unwrap_or(Value::Null))
+}
+
+/// 写空间级用户数据：白名单 + 字段校验 → 合并进当前空间偏好文件（同目录原子替换）
+#[tauri::command]
+pub fn preferences_set(app: AppHandle, key: String, value: Value) -> Result<(), String> {
+    validate_space_data_key(&key)?;
+    validate_field(&key, &value)?;
+    let _guard = settings_lock().lock().map_err(|e| e.to_string())?;
+    let mut space = preferences::read_current(&app)?;
+    space.insert(key, value);
+    preferences::write_current(&app, &space)
+}
+
 /// 执行某字段的系统副作用（失败即返回错误，调用方不得落盘）
 fn apply_side_effects(app: &AppHandle, key: &str, value: &Value) -> Result<(), String> {
     match key {
@@ -233,6 +277,7 @@ fn validate_field(key: &str, value: &Value) -> Result<(), String> {
             expect_type(value, Value::is_string, "默认下载目录必须是字符串")
         }
         "recentTools" => expect_string_array(value, "最近使用工具"),
+        "favorites" => expect_string_array(value, "收藏工具"),
         "tools" => expect_tools_object(value),
         _ => {
             reject_non_finite(value)?;
@@ -414,6 +459,54 @@ pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 空间级用户数据键只接受收藏与最近使用：其余键必须被拒，避免绕开设置字段的归属划分
+    #[test]
+    fn space_data_keys_are_allowlisted() {
+        for key in SPACE_DATA_KEYS {
+            assert!(validate_space_data_key(key).is_ok());
+        }
+
+        // 设置字段与自举键都不允许走这条路径（自举键改写会破坏换根约束）
+        assert!(validate_space_data_key("theme").is_err());
+        assert!(validate_space_data_key("tools").is_err());
+        assert!(validate_space_data_key("storageRoot").is_err());
+        assert!(validate_space_data_key("activeSpaceId").is_err());
+        // 近似键同样拒绝：白名单是精确匹配，不是前缀匹配
+        assert!(validate_space_data_key("favorites2").is_err());
+        assert!(validate_space_data_key("Favorite").is_err());
+
+        // 错误信息要说清「这里能写什么、设置该走哪条命令」，前端可直接展示
+        let err = validate_space_data_key("theme").unwrap_err();
+        assert!(err.contains("theme"));
+        assert!(err.contains("favorites"));
+        assert!(err.contains("settings_patch"));
+    }
+
+    /// 收藏与最近使用的值必须是字符串数组：类型错误当场报错，不落盘
+    #[test]
+    fn user_data_fields_expect_string_arrays() {
+        assert!(validate_field("favorites", &serde_json::json!(["ssh"])).is_ok());
+        assert!(validate_field("favorites", &serde_json::json!([])).is_ok());
+        assert!(validate_field("recentTools", &serde_json::json!(["dns", "frp"])).is_ok());
+
+        assert!(validate_field("favorites", &serde_json::json!("ssh")).is_err());
+        assert!(validate_field("favorites", &serde_json::json!(["ssh", 3])).is_err());
+        assert!(validate_field("recentTools", &serde_json::json!({"ssh": true})).is_err());
+    }
+
+    /// 这两项按空间级处理（不在设备级清单里）：换空间后各自独立
+    #[test]
+    fn user_data_stays_space_scoped() {
+        for key in SPACE_DATA_KEYS {
+            assert!(
+                !preferences::is_device_key(key),
+                "{key} 必须是空间级：设备级会让换空间后仍看到别处的收藏"
+            );
+        }
+        // 对照：真正的设备级事实仍留在设备层
+        assert!(preferences::is_device_key("storageRoot"));
+    }
 
     /// 已移除的设置键在启动核对时被清掉，仍在使用的键与无关分区不受影响
     #[test]
