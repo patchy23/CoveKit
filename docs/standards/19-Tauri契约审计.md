@@ -20,6 +20,7 @@
 ## 必查契约维度
 
 - 顶层参数包裹：TS 业务 payload 与 Tauri 顶层参数不是同一类型；为 wire args 单独建类型。
+- 形参名与扁平字段（2026-09-15 实测）：Rust 侧写成 `fn cmd(app, request: Option<Struct>)` 时形参名是 `request`，前端传扁平 `{ reason }` 不会报错——`Option` 形参缺省合法，该参数静默取 `None`，`reason` 永远落到默认分支。契约文件写着扁平字段也拦不住，必须逐命令核对形参名与前端 payload 的键。
 - camelCase：核对 Tauri command 参数规则和 serde `rename_all`，不要仅看 Rust 字段名。
 - 可选值：missing、`undefined`、`null`、Rust `Option<T>`、serde 是否省略。
 - 数字宽度：`u16/u32/u64` 对 TS `number`；输入范围、强制 cast 截断、`2^53-1` 精度。

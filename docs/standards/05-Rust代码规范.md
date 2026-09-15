@@ -136,6 +136,7 @@ node scripts/check_frontend_deps.mjs    # 前端依赖守卫（等价 pnpm check
 - 生命周期类（`Box::leak` / `transmute` / `mem::forget`）**零容忍无基线**，出现即失败
 - `unsafe` 本身不算违规，但**每处必须带紧邻的 `// SAFETY:` 注释**（逐处校验注释块，缺失即失败；属性行可以夹在两者之间）
 - §1 的合法例外必须绑定**仓库锚定相对路径 + 归属符号 + 调用类别 + 原因**（基线文件 `exceptions` 数组，不再用同一句 `expect` 文案全局放行）；符号移动或删除即失效并报错
+- **独立用例文件的 panic 计数（2026-09-15 实测）**：`*_tests.rs` 被 `#[path]` 引入时扫描器按单文件独立分析，看不到引入处的 `#[cfg(test)]`，文件里的 `assert!` 会照常计入 panic 候选并触发棘轮失败。写法是文件内再包一层 `#[cfg(test)] mod …`；`is_test_only_file` 的豁免只对架构守卫（paths_bypass / foreign_table）生效，不覆盖 panic 候选
 - **覆盖边界（工具自己在报告里声明，不声称语义全覆盖）**：不做 cfg 真假求值（只按属性 AST 字面排除直接 `#[cfg(test)]` 子树，`cfg(all(test, …))` / `cfg(not(test))` 一律保守扫描并列入未覆盖项）、不展开宏（`macro_rules!` 体内含候选时逐个提示，第三方/派生宏只汇总数量）、层级规则只解析 `crate::plugins::<owner>` 绝对路径（`super::` 拼出的跨插件引用不在范围）；枚举变体与 trait 实现关联项不强制文档
 
 ## 附录 · 参考来源（2026-09-05 对照验证）
