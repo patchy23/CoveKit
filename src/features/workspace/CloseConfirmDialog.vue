@@ -7,6 +7,7 @@
  */
 import { computed } from 'vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { formatClosePromptMessage } from '@/core/lifecycle/closePrompt'
 import { getTool } from '@/core/registry/toolRegistry'
 import { useUiStore } from '@/stores/ui'
 
@@ -22,13 +23,10 @@ const toolName = computed(() => {
 /** 弹窗标题 */
 const title = computed(() => `${toolName.value} 还没准备好关闭`)
 
-/** 拒绝原因逐条列出（owner：原因） */
-const message = computed(() => {
-  const prompt = ui.closePrompt
-  if (!prompt) return ''
-  const lines = prompt.blockers.map((item) => `· ${item.owner}：${item.message}`)
-  return `关闭后以下状态会丢失或中断：；${lines.join('；')}`
-})
+/** 拒绝原因逐条列出（owner：原因）；无待确认请求时为空串（此时弹窗本身不渲染） */
+const message = computed(() =>
+  ui.closePrompt ? formatClosePromptMessage(ui.closePrompt.blockers) : ''
+)
 
 /** 用户确认放弃并关闭 */
 async function confirm() {

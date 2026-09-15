@@ -89,8 +89,25 @@ pub(crate) fn surface_veto(app: &AppHandle, decision: &CloseDecision) {
 /// 请求关闭（prepare 阶段）：只裁决，不清理也不退出
 ///
 /// 返回 `proceed=false` 表示被业务或页面 owner 拒绝：进程/页签仍在，前端应展示 `blockers`。
+///
+/// 参数**扁平**（不是 `request: {...}`）：Tauri 按参数名取实参（Rust `snake_case` ↔ 前端
+/// `camelCase`），前端传 `{ reason, toolId, blockers, force }` 即可，与 `contracts.ts` 的声明一一对应。
+/// 曾因写成单参结构体导致运行期 `missing required key request`：编译期与契约表都看不出来，
+/// 只有真机走一次关闭协商才暴露。
 #[tauri::command]
-pub fn app_request_close(app: AppHandle, request: CloseRequest) -> Result<CloseDecision, String> {
+pub fn app_request_close(
+    app: AppHandle,
+    reason: Option<String>,
+    tool_id: Option<String>,
+    blockers: Option<Vec<String>>,
+    force: Option<bool>,
+) -> Result<CloseDecision, String> {
+    let request = CloseRequest {
+        reason,
+        tool_id,
+        blockers: blockers.unwrap_or_default(),
+        force: force.unwrap_or(false),
+    };
     let (reason, tool) = parse_request(&request)?;
     let outcome = match tool.as_deref() {
         Some(tool) => lifecycle::prepare_close_tool(&app, tool, reason),
@@ -109,8 +126,22 @@ pub fn app_request_close(app: AppHandle, request: CloseRequest) -> Result<CloseD
 ///
 /// - 页签关闭：执行该工具作用域的清理（没有声明 `tab` 作用域的模块就不会被碰）；
 /// - 退出族：只发起退出，进程级清理由 `RunEvent::Exit` 统一执行。
+///
+/// 参数扁平的理由与 `app_request_close` 相同（Tauri 按参数名取实参）。
 #[tauri::command]
-pub fn app_commit_close(app: AppHandle, request: CloseRequest) -> Result<CloseDecision, String> {
+pub fn app_commit_close(
+    app: AppHandle,
+    reason: Option<String>,
+    tool_id: Option<String>,
+    blockers: Option<Vec<String>>,
+    force: Option<bool>,
+) -> Result<CloseDecision, String> {
+    let request = CloseRequest {
+        reason,
+        tool_id,
+        blockers: blockers.unwrap_or_default(),
+        force: force.unwrap_or(false),
+    };
     let (reason, tool) = parse_request(&request)?;
     let forced = request.force || lifecycle::force_requested();
     if reason == CloseReason::Tab {
