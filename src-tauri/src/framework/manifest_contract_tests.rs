@@ -123,8 +123,13 @@ mod tests {
         ),
         (
             "framework",
-            "app_request_exit",
-            "请求退出应用（业务可拒绝，拒绝原因交回前端展示）",
+            "app_commit_close",
+            "提交关闭：裁决通过后执行页签级清理或发起退出",
+        ),
+        (
+            "framework",
+            "app_request_close",
+            "请求关闭（页签或退出）：只裁决，业务可拒绝，原因交回前端展示",
         ),
         (
             "framework",

@@ -171,9 +171,14 @@ pub fn run() {
             tauri::RunEvent::ExitRequested { api, .. } => {
                 let reason = framework::lifecycle::CloseReason::Exit;
                 let outcome = framework::lifecycle::prepare_close(app_handle, reason);
-                let decision =
-                    framework::exit::decide(framework::lifecycle::force_requested(), outcome);
-                if !decision.started {
+                // OS/托盘发起的退出没有同步询问页面的通道，只按后端 blockers 裁决：
+                // 页面内「未保存内容」在这条路径上不参与（边界见 AR06 实现方案 §9）。
+                let decision = framework::lifecycle::compose_decision(
+                    framework::lifecycle::force_requested(),
+                    Vec::new(),
+                    outcome,
+                );
+                if !decision.proceed {
                     for blocker in &decision.blockers {
                         eprintln!("[lifecycle] 退出被拒绝: {blocker}");
                     }
@@ -190,9 +195,10 @@ pub fn run() {
                     eprintln!("[lifecycle] 退出清理失败: {failure}");
                 }
                 eprintln!(
-                    "[lifecycle] 关闭完成(原因={}, 模块={}, 超时={}, epoch={}, 丢弃晚到事件={})",
+                    "[lifecycle] 关闭完成(原因={}, 模块={}[{}], 超时={}, epoch={}, 丢弃晚到事件={})",
                     reason.code(),
-                    outcome.ran,
+                    outcome.owners.len(),
+                    outcome.owners.join(","),
                     outcome.timed_out,
                     framework::context::current()
                         .map(|c| c.epoch())

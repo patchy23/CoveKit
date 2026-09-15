@@ -5,6 +5,12 @@
  * 清理卡住时不能把关闭流程一起拖死。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const invokeCommand = vi.fn()
+vi.mock('@/core/ipc/ipc', () => ({
+  invokeCommand: (...args: unknown[]) => invokeCommand(...args),
+}))
+
 import {
   disposeAllTools,
   disposeToolOwners,
@@ -19,6 +25,23 @@ import {
 describe('工具关闭协商', () => {
   beforeEach(() => {
     resetToolOwnersForTest()
+    invokeCommand.mockReset()
+    // 后端裁决的替身：与 Rust `lifecycle::compose_decision` 同规则
+    // （页面上报的 blockers 任一条即拒绝，用户强制则放行并把原因原样带回）
+    invokeCommand.mockImplementation(
+      async (command: string, payload?: { blockers?: string[]; force?: boolean }) => {
+        const blockers = payload?.blockers ?? []
+        if (command === 'app_request_close') {
+          return {
+            proceed: payload?.force === true || blockers.length === 0,
+            forced: payload?.force === true,
+            blockers,
+            failures: [],
+          }
+        }
+        return { proceed: true, forced: false, blockers: [], failures: [] }
+      }
+    )
   })
 
   it('任一 owner 拒绝时既不清理也不关闭，并保留原因归属', async () => {
@@ -136,5 +159,64 @@ describe('工具关闭协商', () => {
 
     expect(first).not.toHaveBeenCalled()
     expect(second).toHaveBeenCalledTimes(1)
+  })
+
+  it('顺序不变式：裁决通过之前不清理任何一侧', async () => {
+    const calls: string[] = []
+    invokeCommand.mockImplementation(async (command: string) => {
+      calls.push(command)
+      return { proceed: false, forced: false, blockers: ['ssh.session: 有会话'], failures: [] }
+    })
+    registerToolOwner('ssh', 'ssh.sessions').onDispose(() => {
+      calls.push('frontend-dispose')
+    })
+
+    const outcome = await negotiateToolClose('ssh')
+
+    expect(outcome.ok).toBe(false)
+    expect(calls).toEqual(['app_request_close'])
+    expect(outcome.blockers).toContainEqual({ owner: 'ssh.session', message: '有会话' })
+  })
+
+  it('后端拒绝时页签留在原地，两侧原因合并后不重复展示', async () => {
+    registerToolOwner('frp', 'frp.profiles').setRunning(true)
+
+    const outcome = await negotiateToolClose('frp')
+
+    expect(outcome.ok).toBe(false)
+    // 页面上报的「运行中」与后端原样带回的同一条原因只出现一次
+    expect(outcome.blockers).toEqual([{ owner: 'frp.profiles', message: '有任务正在运行' }])
+  })
+
+  it('裁决通过后先清前端 owner 再提交后端，后端清理失败按失败回报', async () => {
+    const calls: string[] = []
+    registerToolOwner('frp', 'frp.profiles').onDispose(() => {
+      calls.push('frontend-dispose')
+    })
+    invokeCommand.mockImplementation(async (command: string) => {
+      calls.push(command)
+      if (command === 'app_commit_close') {
+        return { proceed: true, forced: false, blockers: [], failures: ['frp: 结束 frpc 失败'] }
+      }
+      return { proceed: true, forced: false, blockers: [], failures: [] }
+    })
+
+    const outcome = await negotiateToolClose('frp')
+
+    expect(calls).toEqual(['app_request_close', 'frontend-dispose', 'app_commit_close'])
+    expect(outcome.ok).toBe(true)
+    expect(outcome.failures).toEqual([{ owner: 'frp', message: '结束 frpc 失败' }])
+  })
+
+  it('问不到后端时不允许关闭：关到一半比关不掉更难查', async () => {
+    const dispose = vi.fn()
+    registerToolOwner('ssh', 'ssh.sessions').onDispose(dispose)
+    invokeCommand.mockRejectedValue(new Error('IPC 断了'))
+
+    const outcome = await negotiateToolClose('ssh')
+
+    expect(outcome.ok).toBe(false)
+    expect(dispose).not.toHaveBeenCalled()
+    expect(outcome.blockers[0].message).toContain('IPC 断了')
   })
 })

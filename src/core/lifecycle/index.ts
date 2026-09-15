@@ -5,6 +5,8 @@
  * 退出应用走 `requestAppExit`；插件不直接操作页签数组，也不直接调原生退出能力。
  */
 export {
+  collectAllToolBlockers,
+  collectToolBlockers,
   DEFAULT_DISPOSE_TIMEOUT_MS,
   disposeAllTools,
   disposeToolOwners,
@@ -17,6 +19,7 @@ export {
   watchToolCloseState,
   type ToolOwnerHandle,
 } from './toolContext'
+export { closeIssuesFromBackend, toBlockerLines, type CloseBridgeRequest } from './closeBridge'
 export {
   watchToolVisibility,
   publishGlobalHidden,
@@ -32,7 +35,7 @@ export {
   forceAppExit,
   requestAppExit,
   watchExitVeto,
-  type ExitDecision,
+  type CloseDecision,
 } from './appClose'
 export {
   useToolLifecycle,

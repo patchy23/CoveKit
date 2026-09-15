@@ -9,13 +9,13 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import UiButton from '@/core/ui/UiButton.vue'
 import UiModal from '@/core/ui/UiModal.vue'
-import { forceAppExit, requestAppExit, watchExitVeto, type ExitDecision } from '@/core/lifecycle'
+import { forceAppExit, requestAppExit, watchExitVeto, type CloseDecision } from '@/core/lifecycle'
 import { useUiStore } from '@/stores/ui'
 
 const ui = useUiStore()
 
 /** 后端上报的拒绝原因（null = 无待处理退出） */
-const decision = ref<ExitDecision | null>(null)
+const decision = ref<CloseDecision | null>(null)
 /** 处理中（防连点；按钮禁用并显示等待态） */
 const busy = ref(false)
 let stopWatch: (() => void) | null = null
@@ -36,7 +36,7 @@ async function retryExit() {
   busy.value = true
   try {
     const result = await requestAppExit('exit')
-    decision.value = result.started ? null : result
+    decision.value = result.proceed ? null : result
   } catch (error) {
     ui.toast(`退出请求失败：${error instanceof Error ? error.message : String(error)}`)
   } finally {

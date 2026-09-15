@@ -7,7 +7,7 @@
 //! 数据上下文（context）：存储位置/空间代际/启动 epoch 与维护互斥的唯一来源
 //! 关闭协调（lifecycle）：唯一关闭入口（prepare/dispose + 总超时），清理由模块提供
 //! 长任务登记（tasks）：框架长任务的状态与进度，前端订阅 `framework://task` 获知变化
-//! 退出协商命令（exit）：界面/托盘退出走同一入口，业务拒绝时可见并可由用户强退
+//! 关闭协商命令（exit）：页签关闭与退出共用同一入口（先裁决后提交），业务拒绝时可见并可由用户强退
 //! 本地凭证管理（credentials）：插件按命名空间+键存取，不关心存储实现
 //! Vault 凭证管理（vault）：统一凭证库（keyring 主密钥 + AES-256-GCM + Argon2id 备份）
 //! 框架能力不属于业务插件（插件 = 工具，框架 = 基建）。
@@ -49,7 +49,8 @@ crate::patchybox_module! {
     commands: {
         window_toggle => "切换主窗口显示/隐藏（返回切换后可见性）",
         window_hide => "隐藏主窗口（最小化到托盘）",
-        exit::app_request_exit => "请求退出应用（业务可拒绝，拒绝原因交回前端展示）",
+        exit::app_request_close => "请求关闭（页签或退出）：只裁决，业务可拒绝，原因交回前端展示",
+        exit::app_commit_close => "提交关闭：裁决通过后执行页签级清理或发起退出",
         tasks::framework_tasks => "查询框架长任务清单（活跃与最近结束，供界面与诊断使用）",
         exit::app_force_exit => "用户强制退出（跳过业务拦截，清理仍受总超时约束）",
         open_external => "打开外部链接（tauri-plugin-opener，安全替代 shell 插件）",

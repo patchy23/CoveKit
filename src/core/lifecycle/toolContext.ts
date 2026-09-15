@@ -1,17 +1,28 @@
 /**
- * 框架 · 工具关闭协商的唯一入口（可靠性 T10-1/T10-2）
+ * 框架 · 工具关闭协商的唯一入口（可靠性 T10-1/T10-2、AR06 §9.2）
  *
  * 为什么要有它：页签关闭原来就是一行 `openTabs.filter`，没有任何地方能「问一句」——
  * 插件里的未保存内容、正在跑的会话与进程都被静默丢弃。这里把关闭改成协商：
  *
- * 1. **prepare**：先问每个 owner「现在能关吗」。任一拒绝就不清理、不关闭，把原因交回界面；
- * 2. **dispose**：只在允许关闭后执行，逐个 owner 清理并收集结果；
+ * 1. **prepare**：先问页面内每个 owner「现在能关吗」，回答连同上报给后端，
+ *    由后端与模块自己的 prepare **合成一次裁决**（裁决只在 `lifecycle::compose_decision`）；
+ * 2. **dispose**：只在裁决通过后执行——先页面内 owner，再提交后端清理它那一侧；
  * 3. **总超时**：清理卡住时按失败计并继续（与后端 `lifecycle::DISPOSE_TIMEOUT` 同一口径），
  *    界面不会因为某个 owner 卡死而关不掉。
  *
  * owner 未显式声明时按标记兜底：`dirty` → 「有未保存内容」，`running` → 「有任务正在运行」，
  * 这样「插件忘了写 prepare」也不会退化成静默丢弃。
+ *
+ * 顺序不变式（AR06 修的就是这条）：**裁决没通过之前，任何一侧都不许先清**——
+ * 原来退出路径先清理再请后端裁决，用户点「取消」时前端其实已经清完了。
  */
+import type { CloseDecision } from '@/core/ipc/contracts'
+import {
+  closeIssuesFromBackend,
+  commitBackendClose,
+  mergeBlockers,
+  requestBackendClose,
+} from './closeBridge'
 import type {
   CloseIssue,
   CloseOutcome,
@@ -189,50 +200,109 @@ function normalizeRefusal(value: unknown): string | null {
   return text.length > 0 ? text : null
 }
 
+/** 后端裁决与文案翻译在 `./closeBridge`（本文件只负责页面内 owner 与流程顺序） */
+
+/**
+ * 询问该工具的页面内 owner（**只问不清理**）。
+ *
+ * @param force 用户已确认放弃：不调用 prepare，只收集兜底标记作为记录
+ */
+export async function collectToolBlockers(
+  toolId: string,
+  reason: CloseReason,
+  force = false
+): Promise<CloseIssue[]> {
+  const blockers: CloseIssue[] = []
+  for (const entry of ownersOf(toolId)) {
+    if (force) {
+      // 强制关闭：记录「本来不同意」的 owner，但不阻断（诊断与报告需要）
+      const refusal = fallbackBlocker(entry)
+      if (refusal) blockers.push({ owner: entry.owner, message: refusal })
+      continue
+    }
+    try {
+      const refusal = entry.prepare
+        ? normalizeRefusal(await entry.prepare(reason))
+        : fallbackBlocker(entry)
+      if (refusal) blockers.push({ owner: entry.owner, message: refusal })
+    } catch (error) {
+      // 询问本身出错不能当成允许关闭：宁可拦下来让用户处理
+      blockers.push({
+        owner: entry.owner,
+        message: `关闭前询问失败：${error instanceof Error ? error.message : String(error)}`,
+      })
+    }
+  }
+  return blockers
+}
+
+/** 询问全部已登记工具的页面内 owner（退出前；**只问不清理**，与页签关闭同一套语义） */
+export async function collectAllToolBlockers(reason: CloseReason): Promise<CloseIssue[]> {
+  const blockers: CloseIssue[] = []
+  for (const toolId of registeredToolIds()) {
+    blockers.push(...(await collectToolBlockers(toolId, reason)))
+  }
+  return blockers
+}
+
 /**
  * 询问 + 清理的完整流程（不负责改页面状态，调用方按结果决定是否移除页签）。
  *
+ * 顺序：问页面内 owner → 后端合成唯一裁决 → **裁决通过后**才清理（先页面后后端）。
+ *
  * @param toolId 工具 id
- * @param reason 关闭原因
- * @param options `force` = 用户已确认放弃（跳过 prepare）；`timeoutMs` = 清理总超时
+ * @param reason 关闭原因（页签关闭为 `tab`）
+ * @param options `force` = 用户已确认放弃（跳过拦截，原因仍上报留痕）；`timeoutMs` = 清理总超时
  */
 export async function negotiateToolClose(
   toolId: string,
   reason: CloseReason = 'tab',
   options: { force?: boolean; timeoutMs?: number } = {}
 ): Promise<CloseOutcome> {
-  const owners = ownersOf(toolId)
-  const blockers: CloseIssue[] = []
+  const force = options.force === true
+  const blockers = await collectToolBlockers(toolId, reason, force)
 
-  if (!options.force) {
-    for (const entry of owners) {
-      try {
-        const refusal = entry.prepare
-          ? normalizeRefusal(await entry.prepare(reason))
-          : fallbackBlocker(entry)
-        if (refusal) blockers.push({ owner: entry.owner, message: refusal })
-      } catch (error) {
-        // 询问本身出错不能当成允许关闭：宁可拦下来让用户处理
-        blockers.push({
-          owner: entry.owner,
-          message: `关闭前询问失败：${error instanceof Error ? error.message : String(error)}`,
-        })
-      }
-    }
-  } else {
-    // 强制关闭：记录「本来不同意」的 owner，但不阻断（诊断与报告需要）
-    for (const entry of owners) {
-      const refusal = fallbackBlocker(entry)
-      if (refusal) blockers.push({ owner: entry.owner, message: refusal })
+  let decision: CloseDecision
+  try {
+    decision = await requestBackendClose(reason, toolId, blockers, force)
+  } catch (error) {
+    // 问不到后端时不允许关闭：宁可拦下让用户重试，也不能把「问不到」当成允许
+    return {
+      ok: false,
+      blockers: [
+        ...blockers,
+        {
+          owner: toolId,
+          message: `关闭前询问后端失败：${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
+      failures: [],
+      timedOut: false,
     }
   }
 
-  if (blockers.length > 0 && !options.force) {
-    return { ok: false, blockers, failures: [], timedOut: false }
+  if (!decision.proceed) {
+    return {
+      ok: false,
+      blockers: mergeBlockers(blockers, decision.blockers),
+      failures: [],
+      timedOut: false,
+    }
   }
 
+  // 裁决已通过：先清页面内 owner，再提交后端清它那一侧
   const disposal = await disposeToolOwners(toolId, reason, options.timeoutMs)
-  return { ok: true, blockers, failures: disposal.failures, timedOut: disposal.timedOut }
+  const failures = [...disposal.failures]
+  try {
+    const commit = await commitBackendClose(reason, toolId, force)
+    failures.push(...closeIssuesFromBackend(commit.failures))
+  } catch (error) {
+    failures.push({
+      owner: toolId,
+      message: `后端清理失败：${error instanceof Error ? error.message : String(error)}`,
+    })
+  }
+  return { ok: true, blockers, failures, timedOut: disposal.timedOut }
 }
 
 /** 只执行清理阶段（退出应用时对全部工具调用；不做询问） */

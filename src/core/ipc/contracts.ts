@@ -102,14 +102,16 @@ export interface WindowState {
   visible: boolean
 }
 
-/** 退出决策（与 Rust `framework::exit::ExitDecision` 的 serde camelCase 字段同步） */
-export interface ExitDecision {
-  /** 是否已进入退出流程（false = 被业务拒绝，进程仍在运行） */
-  started: boolean
-  /** 是否由用户强制退出触发（跳过业务拦截） */
+/** 关闭决策（与 Rust `framework::lifecycle::CloseDecision` 的 serde camelCase 字段同步） */
+export interface CloseDecision {
+  /** 是否允许关闭（false = 被业务拒绝，进程仍在运行、页签仍在） */
+  proceed: boolean
+  /** 是否由用户强制关闭触发（跳过业务拦截） */
   forced: boolean
-  /** 拒绝原因（形如 `owner: 原因`，直接可展示） */
+  /** 拒绝原因（形如 `owner: 原因`，两侧 blockers 合并后直接可展示） */
   blockers: string[]
+  /** 清理失败原因（只在提交段返回：允许关闭但某个模块没清干净） */
+  failures: string[]
 }
 
 // ── Vault 凭证管理（src-tauri framework/vault，serde camelCase 同步）──
@@ -364,8 +366,9 @@ export const frameworkCommands = {
   updateAvailability: 'update_availability',
   windowToggle: 'window_toggle',
   windowHide: 'window_hide',
-  // 退出协商（框架命令，src-tauri framework/exit）
-  appRequestExit: 'app_request_exit',
+  // 关闭协商（框架命令，src-tauri framework/exit；页签关闭与退出共用一条裁决链）
+  appRequestClose: 'app_request_close',
+  appCommitClose: 'app_commit_close',
   appForceExit: 'app_force_exit',
   frameworkTasks: 'framework_tasks',
   openExternal: 'open_external',
@@ -397,7 +400,8 @@ export type FrameworkPayloads = {
   update_availability: Record<string, never>
   window_toggle: Record<string, never>
   window_hide: Record<string, never>
-  app_request_exit: { reason: string }
+  app_request_close: { reason: string; toolId?: string; blockers?: string[]; force?: boolean }
+  app_commit_close: { reason: string; toolId?: string; force?: boolean }
   app_force_exit: Record<string, never>
   framework_tasks: Record<string, never>
   open_external: { url: string }
@@ -427,8 +431,9 @@ export type FrameworkResults = {
   update_availability: UpdateAvailability
   window_toggle: WindowState
   window_hide: void
-  app_request_exit: ExitDecision
-  app_force_exit: ExitDecision
+  app_request_close: CloseDecision
+  app_commit_close: CloseDecision
+  app_force_exit: CloseDecision
   framework_tasks: TaskList
   open_external: void
   framework_commands: { name: string; doc: string }[]
