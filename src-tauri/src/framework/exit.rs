@@ -135,6 +135,32 @@ pub fn app_commit_close(app: AppHandle, request: CloseRequest) -> Result<CloseDe
     })
 }
 
+/// 退出裁决：托盘菜单退出与系统退出（`RunEvent::ExitRequested`）共用这一处。
+///
+/// 只裁决、不退出：调用方按 `proceed` 决定是 `app.exit(0)` 还是阻止退出。
+/// 被拒绝时唤窗口并抛事件，由页面给出重试 / 强制退出 / 取消三个出路。
+///
+/// 为什么托盘退出也要走这里：原来直接 `app.exit(0)` 会绕过 prepare，
+/// 未保存内容与进行中的任务都拦不住，「唯一关闭入口」就成了空话。
+pub fn decide_exit(app: &AppHandle) -> CloseDecision {
+    let outcome = lifecycle::prepare_close(app, CloseReason::Exit);
+    let decision = lifecycle::compose_decision(lifecycle::force_requested(), Vec::new(), outcome);
+    if !decision.proceed {
+        for blocker in &decision.blockers {
+            eprintln!("[lifecycle] 退出被拒绝: {blocker}");
+        }
+        surface_veto(app, &decision);
+    }
+    decision
+}
+
+/// 托盘菜单「退出」：裁决通过才退出
+pub fn quit_from_tray(app: &AppHandle) {
+    if decide_exit(app).proceed {
+        app.exit(0);
+    }
+}
+
 /// 用户显式强制退出：跳过业务拦截，清理阶段仍受总超时约束
 #[tauri::command]
 pub fn app_force_exit(app: AppHandle) -> CloseDecision {

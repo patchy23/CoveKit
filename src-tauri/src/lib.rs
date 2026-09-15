@@ -144,7 +144,8 @@ pub fn run() {
                     .on_menu_event(|app: &tauri::AppHandle, event: tauri::menu::MenuEvent| {
                         match event.id().as_ref() {
                             "show" => framework::show_main(app),
-                            "quit" => app.exit(0),
+                            // 退出不直接 app.exit：与页面/系统发起同一条裁决，业务可拒绝
+                            "quit" => framework::exit::quit_from_tray(app),
                             _ => {}
                         }
                     })
@@ -169,21 +170,10 @@ pub fn run() {
             // prepare 阶段允许业务拒绝（未保存内容、任务进行中）；清理由各模块 dispose 钩子提供。
             // 用户显式强退（app_force_exit）时跳过拦截：拒绝原因仍会写日志，但不再阻止进程退出。
             tauri::RunEvent::ExitRequested { api, .. } => {
-                let reason = framework::lifecycle::CloseReason::Exit;
-                let outcome = framework::lifecycle::prepare_close(app_handle, reason);
                 // OS/托盘发起的退出没有同步询问页面的通道，只按后端 blockers 裁决：
                 // 页面内「未保存内容」在这条路径上不参与（边界见 AR06 实现方案 §9）。
-                let decision = framework::lifecycle::compose_decision(
-                    framework::lifecycle::force_requested(),
-                    Vec::new(),
-                    outcome,
-                );
-                if !decision.proceed {
-                    for blocker in &decision.blockers {
-                        eprintln!("[lifecycle] 退出被拒绝: {blocker}");
-                    }
-                    // 让用户看到「为什么不退」并能选择强退：OS/托盘发起的退出走同一条提示
-                    framework::exit::surface_veto(app_handle, &decision);
+                // 裁决与托盘菜单退出共用一处（framework::exit::decide_exit），避免两条退出路径语义分叉。
+                if !framework::exit::decide_exit(app_handle).proceed {
                     api.prevent_exit();
                 }
             }
