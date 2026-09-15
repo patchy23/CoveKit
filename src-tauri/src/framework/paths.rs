@@ -2,8 +2,11 @@
 //!
 //! 设计要点：
 //! - **单一入口**：所有落盘路径必须经本模块解析，禁止插件手拼 `app_data_dir()`。
-//! - **四分区**：`<root>/data`（插件数据库与本地文件）、`<root>/vault`（凭证密文与降级密钥）、
-//!   `<root>/logs/<scope>`（日志）、`<root>/cache/<scope>`（可重建缓存）。
+//! - **取值来自描述符**：四个分区（`data` / `vault` / `logs` / `cache`）一律取自
+//!   `context` 固定下来的存储位置描述符（`StorageLocation`），本模块不做二次拼接；
+//!   描述符有两种形态（旧扁平 / 分区），见 `context::LayoutKind`。
+//! - **设备级与空间级分清**：`storage_root` 是**设备级**根（日志缓存分层基、根迁移源，
+//!   跨空间共享）；空间内的数据与凭证取描述符的 `data` / `vault` 字段。
 //! - **配置位置**：`settings.json` 的 `app.storageRoot`（空串 = 默认 `app_data_dir`）。
 //!   配置类根下文件（`settings.json` / `patchybox.json` / `.window-state.json`）永不搬移，
 //!   因此配置的读取位置是常量，与数据根目录指向哪个盘无关（自举安全，见任务书 §3.1）。
@@ -12,9 +15,12 @@
 //!   迁移完成写 `layoutVersion` 防重放。
 //! - **失败不丢数据**：迁移失败或未迁移时，`data_path` 会回落旧位置，升级后数据不会「消失」。
 
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_store::StoreExt;
+
+use crate::framework::context::StorageLocation;
 
 /// 存储根目录配置键（位于 `settings.json` 的 `app` 对象内）
 pub const KEY_STORAGE_ROOT: &str = "storageRoot";
@@ -117,18 +123,35 @@ pub fn configured_root(app: &AppHandle) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// 当前生效的存储根目录。
+/// 当前生效的存储根目录（**设备级根**）。
 ///
 /// 取值只走固定下来的数据上下文（`context::init_from_app` 在启动维护阶段之后解析一次）：
 /// 运行期改配置不再中途换根，也不会每次调用重读 settings.json 或探测可写性。
 /// 配置根不可用**不再**降级到默认目录：由 `context::init_from_app` 登记可见恢复状态，
 /// 生效根保持配置值，业务读写失败可见，不会静默新建一套空环境。
 /// 上下文尚未初始化时（单元测试或框架极早期）退回一次即时解析。
+///
+/// 语义提醒：本函数返回**设备级**根（日志缓存分层基与根迁移源，跨空间共享）。
+/// 空间内的数据与凭证分区请经 `location_now` 取描述符字段，不要在此之上拼 `data` / `vault`。
 pub fn storage_root(app: &AppHandle) -> Result<PathBuf, String> {
     if let Some(root) = crate::framework::context::root() {
         return Ok(root.to_path_buf());
     }
     resolve_root_now(app)
+}
+
+/// 本次调用使用的存储位置描述符。
+///
+/// 优先借走固定上下文里的那一份（一次运行只解析一次，是数据位置的唯一来源）；
+/// 上下文尚未初始化时（单元测试或框架极早期）退回即时解析的旧扁平布局，与改动前行为一致。
+pub(crate) fn current_location(app: &AppHandle) -> Result<Cow<'static, StorageLocation>, String> {
+    if let Some(location) = crate::framework::context::location() {
+        return Ok(Cow::Borrowed(location));
+    }
+    Ok(Cow::Owned(StorageLocation::legacy_for(
+        resolve_root_now(app)?,
+        crate::framework::context::DEFAULT_SPACE_ID,
+    )))
 }
 
 /// 即时解析存储根（无上下文时的回落路径）：配置优先，不做可写性探测与降级
@@ -147,35 +170,47 @@ pub fn valid_scope(scope: &str) -> bool {
         && scope != "."
 }
 
-/// 分区目录（自动创建）：data / logs / vault
+/// 分区名 → 分区目录（纯函数：四个分区一律取自描述符字段，不做二次拼接）
+pub(crate) fn partition_path(location: &StorageLocation, name: &str) -> Option<PathBuf> {
+    match name {
+        "data" => Some(location.data.clone()),
+        "vault" => Some(location.vault.clone()),
+        "logs" => Some(location.logs.clone()),
+        "cache" => Some(location.cache.clone()),
+        _ => None,
+    }
+}
+
+/// 分区目录（自动创建）：data / vault / logs / cache，取值一律来自存储位置描述符
 pub fn partition_dir(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     if !valid_scope(name) {
         return Err(format!("分区名非法: {name}"));
     }
-    let dir = storage_root(app)?.join(name);
+    let location = current_location(app)?;
+    // 四个分区之外的自定义目录落在空间根下（旧扁平布局下与设备级根相同）
+    let dir = partition_path(&location, name).unwrap_or_else(|| location.root.join(name));
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建 {} 失败: {e}", dir.display()))?;
     Ok(dir)
 }
 
-/// 数据分区 `<root>/data`（插件 SQLite、known_hosts、本地凭据文件）
+/// 数据分区 `<空间根>/data`（插件 SQLite、known_hosts、本地凭据文件）
 pub fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     partition_dir(app, "data")
 }
 
-// 会话日志（SSH）等日志消费方接入后即被使用；在此之前仅为统一入口的完整性保留。
+// 日志分区根目录：SSH 会话日志按作用域取目录（`logs_dir_for`），根目录仅为统一入口的完整性保留。
 #[allow(dead_code)]
-/// 日志根目录 `<root>/logs`
+/// 日志分区（旧扁平布局 `<设备根>/logs`；分区布局 `<设备根>/logs/<空间 id>`）
 pub fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
     partition_dir(app, "logs")
 }
 
-#[allow(dead_code)]
-/// 带作用域的日志目录 `<root>/logs/<scope>`（如 ssh）
+/// 带作用域的日志目录（如 ssh）
 pub fn logs_dir_for(app: &AppHandle, scope: &str) -> Result<PathBuf, String> {
     scoped_dir(app, "logs", scope)
 }
 
-/// 带作用域的缓存目录 `<root>/cache/<scope>`（如 agents / tts）
+/// 带作用域的缓存目录（如 agents / tts）
 pub fn cache_dir(app: &AppHandle, scope: &str) -> Result<PathBuf, String> {
     scoped_dir(app, "cache", scope)
 }
@@ -185,23 +220,22 @@ fn scoped_dir(app: &AppHandle, partition: &str, scope: &str) -> Result<PathBuf, 
     if !valid_scope(scope) {
         return Err(format!("作用域名非法: {scope}"));
     }
-    let dir = storage_root(app)?.join(partition).join(scope);
+    let dir = partition_dir(app, partition)?.join(scope);
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建 {} 失败: {e}", dir.display()))?;
     Ok(dir)
 }
 
 /// 数据分区下某项的路径（**带旧布局回落**）。
 ///
-/// 新位置（`data/<name>`）不存在而根下旧位置存在时返回旧位置：布局迁移失败或被跳过的
+/// 新位置（`data/<name>`）不存在而设备根下旧位置存在时返回旧位置：布局迁移失败或被跳过的
 /// 极端情况下仍能读到老数据，避免「升级后数据消失」。
 pub fn data_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     if !valid_scope(name) {
         return Err(format!("文件名非法: {name}"));
     }
-    let root = storage_root(app)?;
-    let dir = data_dir(app)?;
-    let target = dir.join(name);
-    let legacy = root.join(name);
+    let location = current_location(app)?;
+    let target = location.data.join(name);
+    let legacy = location.device_root.join(name);
     if !target.exists() && legacy.exists() {
         return Ok(legacy);
     }
@@ -210,26 +244,26 @@ pub fn data_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
 
 /// 需要授权给资源协议（asset://）的目录清单
 ///
-/// 只授权可播放产物所在目录（`cache/tts`）：其他分区（data / vault / 布局文件、设置文件）
+/// 只授权可播放产物所在目录（缓存分区下的 `tts`）：其他分区（data / vault / 布局文件、设置文件）
 /// 一律不得通过 asset URL 访问，避免把整个数据目录暴露给 WebView。
-/// 清单跟随本次生效根，因此自定义存储位置后播放仍然可用。
-pub fn asset_scope_dirs(root: &Path) -> Vec<PathBuf> {
-    vec![root.join("cache").join("tts")]
+/// 清单跟随本次生效的位置，因此自定义存储位置或空间切换后播放仍然可用。
+pub fn asset_scope_dirs(location: &StorageLocation) -> Vec<PathBuf> {
+    vec![location.cache.join("tts")]
 }
 
-/// 启动时把资源协议范围收敛到本次生效根下的可播放目录
+/// 启动时把资源协议范围收敛到本次生效位置下的可播放目录
 ///
-/// 拿不到生效根时**不授权**（宁可不播放，也不放宽到任意磁盘）。
+/// 拿不到生效位置时**不授权**（宁可不播放，也不放宽到任意磁盘）。
 pub fn grant_asset_scope(app: &AppHandle) {
-    let root = match storage_root(app) {
-        Ok(root) => root,
+    let location = match current_location(app) {
+        Ok(location) => location,
         Err(error) => {
-            eprintln!("[asset] 未取到存储根，跳过资源协议授权: {error}");
+            eprintln!("[asset] 未取到存储位置，跳过资源协议授权: {error}");
             return;
         }
     };
     let scope = app.asset_protocol_scope();
-    for dir in asset_scope_dirs(&root) {
+    for dir in asset_scope_dirs(&location) {
         if let Err(error) = scope.allow_directory(&dir, true) {
             eprintln!("[asset] 授权目录失败（{}）: {error}", dir.display());
         }
@@ -320,5 +354,39 @@ mod tests {
         assert_eq!(dir_size(&dir).unwrap(), 9);
         assert_eq!(dir_size(&dir.join("missing")).unwrap(), 0);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 四分区取值只来自描述符字段：两种形态下都与描述符一致，且不二次拼接
+    #[test]
+    fn partition_path_follows_descriptor_fields() {
+        let legacy = StorageLocation::legacy_for(PathBuf::from("D:/pb-root"), "default");
+        assert_eq!(partition_path(&legacy, "data").unwrap(), legacy.data);
+        assert_eq!(partition_path(&legacy, "vault").unwrap(), legacy.vault);
+        assert_eq!(partition_path(&legacy, "logs").unwrap(), legacy.logs);
+        assert_eq!(partition_path(&legacy, "cache").unwrap(), legacy.cache);
+        // 四个分区之外的名字不映射到分区（由调用方决定落位）
+        assert!(partition_path(&legacy, "spaces").is_none());
+
+        let partitioned = StorageLocation::partitioned(PathBuf::from("D:/pb-root"), "9f1c4e2a", 1);
+        assert_eq!(
+            partition_path(&partitioned, "data").unwrap(),
+            partitioned.data
+        );
+        assert_eq!(
+            partition_path(&partitioned, "logs").unwrap(),
+            PathBuf::from("D:/pb-root/logs/9f1c4e2a")
+        );
+    }
+
+    /// 资源协议只授权缓存分区下的可播放目录（不得因为空间变化而放宽到整个数据目录）
+    #[test]
+    fn asset_scope_stays_inside_cache_partition() {
+        let location = StorageLocation::partitioned(PathBuf::from("D:/pb-root"), "9f1c4e2a", 1);
+        let dirs = asset_scope_dirs(&location);
+        assert_eq!(dirs, vec![PathBuf::from("D:/pb-root/cache/9f1c4e2a/tts")]);
+        for dir in dirs {
+            assert!(!dir.starts_with(&location.data), "不得授权数据分区");
+            assert!(!dir.starts_with(&location.vault), "不得授权凭证分区");
+        }
     }
 }

@@ -26,7 +26,6 @@ pub(crate) use status::protection_status;
 pub(crate) use summary::summary_of;
 
 // 密钥库实现与安全原语统一来自 `framework/secure_store`（T05：本模块不再重复实现）
-pub(crate) use crate::framework::secure_store::KeyringStore;
 
 #[cfg(test)]
 mod tests {
@@ -42,7 +41,8 @@ mod tests {
 
     use std::path::PathBuf;
 
-    /// 旧布局回落：vault 分区不存在而根下仍有旧 vault.dat 时按存储根解析
+    /// 旧布局回落：vault 分区不存在而空间根下仍有旧 vault.dat 时按空间根解析；
+    /// 分区布局（非默认空间）下两个参数不同，回落仍只发生在同一空间内部
     #[test]
     fn vault_dir_falls_back_to_root_for_legacy_layout() {
         let dir = std::env::temp_dir().join(format!(
@@ -52,13 +52,32 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(VAULT_FILE), b"legacy").unwrap();
-        assert_eq!(resolve_vault_dir(&dir), dir, "vault 分区不存在时应回落到根");
+        assert_eq!(
+            resolve_vault_dir(&dir, &dir),
+            dir,
+            "vault 分区不存在时应回落到根"
+        );
 
         std::fs::create_dir_all(dir.join("vault")).unwrap();
         assert_eq!(
-            resolve_vault_dir(&dir),
+            resolve_vault_dir(&dir.join("vault"), &dir),
             dir.join("vault"),
             "vault 分区存在时用分区"
+        );
+
+        // 分区布局：空间根与 vault 分区都在 spaces/<id>/generations/1 之下，
+        // 回落目标必须是本空间根，而不是设备根
+        let space_root = dir
+            .join("spaces")
+            .join("space-a")
+            .join("generations")
+            .join("1");
+        std::fs::create_dir_all(&space_root).unwrap();
+        std::fs::write(space_root.join(VAULT_FILE), b"legacy-in-space").unwrap();
+        assert_eq!(
+            resolve_vault_dir(&space_root.join("vault"), &space_root),
+            space_root,
+            "空间内旧位置有 vault.dat 时回落到该空间根"
         );
         std::fs::remove_dir_all(&dir).ok();
     }

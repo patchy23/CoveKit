@@ -17,18 +17,22 @@ use tauri::AppHandle;
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_store::StoreExt;
 
+use crate::framework::preferences;
+
 /// 设置对象在 settings.json 中的键
 const APP_KEY: &str = "app";
 
 /// 版本号键（顶层，保证不进入 app 设置对象）
 const REVISION_KEY: &str = "settingsRevision";
 
-/// 自举键：只能由 `framework::storage` 的计划/恢复流程写入
-const RESERVED_KEYS: [&str; 4] = [
+/// 自举键：只能由 `framework::storage` 的计划/恢复流程与 `framework::space` 的空间解析写入
+pub(crate) const RESERVED_KEYS: [&str; 5] = [
     "storageRoot",
     "layoutVersion",
     "pendingMigration",
     "lastMigration",
+    // 活动空间标识（设备级）：本机空间选择，改名/覆盖会让数据位置整体改变，必须走空间解析入口
+    "activeSpaceId",
 ];
 
 /// 敏感字段名特征：普通设置文件是明文，不允许出现秘密材料
@@ -49,19 +53,23 @@ fn settings_lock() -> &'static Mutex<()> {
 
 /// 读取设置：key 为空返回整个应用设置对象，否则返回指定字段
 ///
-/// 读写位置统一在 `app` 对象下；历史版本曾把字段写在顶层，这里保留读取回落，
-/// 保证升级后旧值仍可见（写回时自动落到 `app`）。
+/// 归属两层的合并视图（任务书 §13.1）：空间级取本空间 `preferences.json`、缺失回落自举配置里的
+/// 历史值（升级零迁移可读）；设备级只取自举配置。历史版本曾把字段写在 settings.json 顶层，
+/// 这里保留读取回落，保证升级后旧值仍可见（写回时自动落到正确层）。
 #[tauri::command]
 pub fn settings_get(app: AppHandle, key: Option<String>) -> Result<Value, String> {
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
-    let app_object = store.get(APP_KEY).unwrap_or_else(|| serde_json::json!({}));
+    let device = store.get(APP_KEY).unwrap_or_else(|| serde_json::json!({}));
+    let space = preferences::read_current(&app)?;
     match key {
-        None => Ok(app_object),
-        Some(k) => Ok(app_object
-            .get(&k)
-            .cloned()
-            .or_else(|| store.get(&k))
-            .unwrap_or(Value::Null)),
+        None => Ok(preferences::merge_view(&device, &space)),
+        Some(k) => {
+            let value = preferences::read_view(&device, &space, &k);
+            if !value.is_null() {
+                return Ok(value);
+            }
+            Ok(store.get(&k).unwrap_or(Value::Null))
+        }
     }
 }
 
@@ -118,11 +126,27 @@ pub fn settings_patch(
         apply_side_effects(&app, key, value)?;
     }
 
+    // 按归属拆两层（任务书 §13.1）：设备级进自举配置、空间级进本空间偏好文件。
+    // 空间级先落盘：偏好写失败即整体失败，避免出现「界面提示成功、偏好其实没存」。
+    let (device_patch, space_patch) = preferences::split_patch(&patch)?;
+    if !space_patch.is_empty() {
+        let mut current_space = preferences::read_current(&app)?;
+        for (key, value) in &space_patch {
+            // 工具级设置按 owner 合并，避免整对象覆盖丢掉别的窗口刚写入的字段
+            if key == "tools" {
+                merge_tools(&mut current_space, value)?;
+                continue;
+            }
+            current_space.insert(key.clone(), value.clone());
+        }
+        preferences::write_current(&app, &current_space)?;
+    }
+
     let mut current = store.get(APP_KEY).unwrap_or_else(|| serde_json::json!({}));
     let object = current
         .as_object_mut()
         .ok_or_else(|| "设置根对象损坏（app 不是对象），请在设置页恢复默认后重试".to_string())?;
-    for (key, value) in &patch {
+    for (key, value) in &device_patch {
         // 工具级设置走 settings_set_tool；批量写入 tools 时按 owner 合并，避免整对象覆盖
         if key == "tools" {
             merge_tools(object, value)?;
@@ -131,11 +155,24 @@ pub fn settings_patch(
         object.insert(key.clone(), value.clone());
     }
     store.set(APP_KEY, current);
+    // 版本号只在自举配置里维护一处，空间级写入也递增：并发窗口看到的是同一个计数器
     let next_revision = current_revision.saturating_add(1);
     store.set(REVISION_KEY, serde_json::json!(next_revision));
     store.save().map_err(|e| e.to_string())?;
 
     Ok(next_revision)
+}
+
+/// 读某个工具设置（合并视图：空间级偏好优先、设备级历史值回落）
+///
+/// 插件**禁止**直读 `settings.json`：归属拆两层后直读只能看到设备层，
+/// 换空间时会读到别的空间的值或直接读不到（FRP 的 `frpcPath`/`profileDir` 曾如此）。
+pub fn tool_setting(app: &AppHandle, owner: &str, key: &str) -> Option<String> {
+    let store = app.store("settings.json").ok()?;
+    let device = store.get(APP_KEY).unwrap_or_else(|| serde_json::json!({}));
+    let space = preferences::read_current(app).ok()?;
+    let tools = preferences::merged_tools(&device, &space);
+    tools.get(owner)?.get(key)?.as_str().map(String::from)
 }
 
 /// 工具级设置：按 owner/key 粒度更新（前端不发送整个 tools 对象）

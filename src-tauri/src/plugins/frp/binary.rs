@@ -11,7 +11,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter};
-use tauri_plugin_store::StoreExt;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
@@ -98,10 +97,8 @@ fn checksums_name() -> &'static str {
 /// 2026-09-14 起只剩 `frpcPath` 一个读取方，且它是历史兼容读取：
 /// 设置页已不再提供该配置项，新入口是客户端管理弹窗「引用外部文件」。
 fn setting(app: &AppHandle, key: &str) -> Option<String> {
-    let store = app.store("settings.json").ok()?;
-    let app_config = store.get("app")?;
-    let value = app_config.get("tools")?.get("frp")?.get(key)?;
-    value.as_str().map(String::from)
+    // 经框架读路径（合并设备层与空间层）：插件不得直读设置文件，否则换空间后读到错的一层
+    crate::framework::settings::tool_setting(app, "frp", key)
 }
 
 /// 下载源前缀：直连 GitHub 官方优先，失败后依次回退到内置镜像。

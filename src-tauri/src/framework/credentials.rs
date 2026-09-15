@@ -18,9 +18,6 @@ use crate::framework::secure_store::{
     MasterKeyStore, CREDENTIALS_KEY_SPEC,
 };
 
-/// 系统密钥库实现（测试与命令层共用；各平台 account 由 `secure_store::KeySpec` 决定）
-pub(crate) use crate::framework::secure_store::KeyringStore;
-
 /// 密文备份路径（与 secure_store 的原子替换协议一致：`X.enc` → `X.bak`）
 pub(crate) use crate::framework::secure_store::backup_path;
 
@@ -108,23 +105,24 @@ fn update_map_at(
 
 /// 凭据数据目录解析（含旧布局回落；纯函数便于单测）
 ///
-/// 新布局：`<root>/data/credentials/<命名空间>.enc` 与 `<root>/data/credentials-master.key`；
-/// 旧布局：`<root>/credentials/<命名空间>.enc` 与 `<root>/credentials-master.key`。
+/// 新布局：`<空间根>/data/credentials/<命名空间>.enc` 与 `<空间根>/data/credentials-master.key`；
+/// 旧布局：`<空间根>/credentials/<命名空间>.enc` 与 `<空间根>/credentials-master.key`。
 /// 只有「新布局没有凭据目录、旧位置有」时才回落：布局迁移可能整组保留原位，
 /// 此时必须按旧位置读写，否则会表现为凭据丢失、甚至用新密钥覆盖旧密文。
-fn resolve_data_dir(root: &Path) -> PathBuf {
-    let data = root.join("data");
-    if !data.join(CREDENTIALS_DIR).exists() && root.join(CREDENTIALS_DIR).exists() {
-        return root.to_path_buf();
+///
+/// 两个参数都取自**同一个**存储位置描述符（分区数据目录 + 空间根），因此非默认空间
+/// 天然落在自己的 `spaces/<空间 id>/generations/<代际>` 之下，不会读到别的空间的凭据。
+fn resolve_data_dir(data: &Path, space_root: &Path) -> PathBuf {
+    if !data.join(CREDENTIALS_DIR).exists() && space_root.join(CREDENTIALS_DIR).exists() {
+        return space_root.to_path_buf();
     }
-    data
+    data.to_path_buf()
 }
 
 /// 框架数据分区目录（经 `framework::paths` 统一解析并带旧布局回落）
 fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(resolve_data_dir(&crate::framework::paths::storage_root(
-        app,
-    )?))
+    let location = crate::framework::paths::current_location(app)?;
+    Ok(resolve_data_dir(&location.data, &location.root))
 }
 
 /// 凭据数据目录（含旧布局回落；保护状态查询用）
@@ -172,9 +170,14 @@ pub fn save_secret(
 ) -> Result<(), String> {
     let dir = app_data_dir(app)?;
     let value = value.clone();
-    update_map_at(&dir, namespace, &KeyringStore, move |map| {
-        map.insert(key.to_string(), value);
-    })
+    update_map_at(
+        &dir,
+        namespace,
+        &crate::framework::space::keyring_store(),
+        move |map| {
+            map.insert(key.to_string(), value);
+        },
+    )
 }
 
 /// 批量保存凭证（一次读改写、一次原子替换）
@@ -188,11 +191,16 @@ pub fn save_secrets(
 ) -> Result<(), String> {
     let dir = app_data_dir(app)?;
     let values = values.clone();
-    update_map_at(&dir, namespace, &KeyringStore, move |map| {
-        for (key, value) in values {
-            map.insert(key, value);
-        }
-    })
+    update_map_at(
+        &dir,
+        namespace,
+        &crate::framework::space::keyring_store(),
+        move |map| {
+            for (key, value) in values {
+                map.insert(key, value);
+            }
+        },
+    )
 }
 
 /// 读取凭证（无记录返回 None）
@@ -203,17 +211,24 @@ pub fn get_secret(
 ) -> Result<Option<serde_json::Value>, String> {
     let dir = app_data_dir(app)?;
     let _guard = credential_lock().lock().map_err(|e| e.to_string())?;
-    Ok(read_map_at(&dir, namespace, &KeyringStore)?
-        .get(key)
-        .cloned())
+    Ok(
+        read_map_at(&dir, namespace, &crate::framework::space::keyring_store())?
+            .get(key)
+            .cloned(),
+    )
 }
 
 /// 删除凭证
 pub fn delete_secret(app: &AppHandle, namespace: &str, key: &str) -> Result<(), String> {
     let dir = app_data_dir(app)?;
-    update_map_at(&dir, namespace, &KeyringStore, move |map| {
-        map.remove(key);
-    })
+    update_map_at(
+        &dir,
+        namespace,
+        &crate::framework::space::keyring_store(),
+        move |map| {
+            map.remove(key);
+        },
+    )
 }
 
 #[cfg(test)]
@@ -236,20 +251,46 @@ mod tests {
         dir
     }
 
-    /// 旧布局回落：新布局没有凭据目录、根下有 credentials/ 时按存储根解析
+    /// 旧布局回落：新布局没有凭据目录、空间根下有 credentials/ 时按空间根解析
     /// （密文与主密钥必须落在同一目录，否则会读不到旧密文）
     #[test]
     fn data_dir_falls_back_to_root_for_legacy_layout() {
         let dir = temp_dir("legacy-layout-fallback");
+        let data = dir.join("data");
         std::fs::create_dir_all(dir.join(CREDENTIALS_DIR)).unwrap();
         std::fs::write(dir.join(CREDENTIALS_DIR).join("database.enc"), b"legacy").unwrap();
-        assert_eq!(resolve_data_dir(&dir), dir, "旧位置有凭据时应回落");
-
-        std::fs::create_dir_all(dir.join("data").join(CREDENTIALS_DIR)).unwrap();
         assert_eq!(
-            resolve_data_dir(&dir),
-            dir.join("data"),
+            resolve_data_dir(&data, &dir),
+            dir,
+            "旧位置有凭据时应回落到空间根"
+        );
+
+        std::fs::create_dir_all(data.join(CREDENTIALS_DIR)).unwrap();
+        assert_eq!(
+            resolve_data_dir(&data, &dir),
+            data,
             "新位置有凭据目录时用新布局"
+        );
+
+        // 分区布局：空间根与 data 分区都在 spaces/<id>/generations/1 之下，
+        // 回落目标必须是本空间根（跨空间读到别人的凭据正是本批要防的事）
+        let space_root = dir
+            .join("spaces")
+            .join("space-a")
+            .join("generations")
+            .join("1");
+        let space_data = space_root.join("data");
+        std::fs::create_dir_all(&space_root).unwrap();
+        std::fs::create_dir_all(space_root.join(CREDENTIALS_DIR)).unwrap();
+        std::fs::write(
+            space_root.join(CREDENTIALS_DIR).join("database.enc"),
+            b"legacy-in-space",
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_data_dir(&space_data, &space_root),
+            space_root,
+            "空间内旧位置有凭据时回落到该空间根"
         );
         std::fs::remove_dir_all(&dir).ok();
     }

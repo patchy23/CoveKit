@@ -18,7 +18,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use tauri::{AppHandle, State};
-use tauri_plugin_store::StoreExt;
 
 use crate::framework::store::PluginDb;
 use crate::plugins::frp::models::{
@@ -66,10 +65,8 @@ pub(crate) fn now_ms() -> i64 {
 
 /// 工具设置读取（settings.json 的 `app.tools.frp.<key>`）
 fn tool_setting(app: &AppHandle, key: &str) -> Option<String> {
-    let store = app.store("settings.json").ok()?;
-    let app_config = store.get("app")?;
-    let value = app_config.get("tools")?.get(TOOL_ID)?.get(key)?;
-    value.as_str().map(String::from)
+    // 经框架读路径（合并设备层与空间层）：插件不得直读设置文件
+    crate::framework::settings::tool_setting(app, TOOL_ID, key)
 }
 
 /// 配置目录：工具设置 `profileDir` 优先，否则 `<存储根>/data/frp/profiles`

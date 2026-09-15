@@ -142,7 +142,7 @@ mod test_support {
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
-use crate::framework::{context, paths};
+use crate::framework::{context, paths, space};
 
 /// 四分区名称（顺序即设置页展示顺序）
 const PARTITIONS: [&str; 4] = ["data", "vault", "logs", "cache"];
@@ -151,8 +151,10 @@ const PARTITIONS: [&str; 4] = ["data", "vault", "logs", "cache"];
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageInfo {
-    /// 当前生效的根目录
+    /// 当前生效的根目录（设备级根）
     root: String,
+    /// 落盘形态：`legacyFlat`（旧扁平，默认空间保持此形态）或 `partitioned`（按空间分区）
+    layout: String,
     /// 是否使用默认根目录（app_data_dir）
     is_default: bool,
     /// 默认根目录（「恢复默认」按钮的目标值）
@@ -169,6 +171,8 @@ pub struct StorageInfo {
     space_id: String,
     /// 空间代际（导入激活/空间切换后递增；用于判定计划是否过期）
     generation_id: u64,
+    /// 空间回落登记（活动空间标识非法时回落默认空间的原因；None = 正常）
+    space_fallback: Option<space::SpaceFallback>,
     /// 待执行的迁移计划（重启后由维护阶段执行）
     pending_migration: Option<plan::PendingPlan>,
     /// 最近一次成功迁移的留档（诊断用）
@@ -261,12 +265,15 @@ pub fn storage_info(app: AppHandle) -> Result<StorageInfo, String> {
     let root = paths::storage_root(&app)?;
     let default_root = paths::default_root(&app)?;
     let cfg = plan::AppConfig(&app);
+    // 分区明细与落盘取值同源：都来自本次生效的位置描述符
+    let location = paths::current_location(&app)?;
 
     let mut partitions = Vec::with_capacity(PARTITIONS.len());
     let mut total_bytes = 0u64;
     let mut file_count = 0u64;
     for name in PARTITIONS {
-        let dir = root.join(name);
+        let dir =
+            paths::partition_path(&location, name).unwrap_or_else(|| location.root.join(name));
         let bytes = paths::dir_size(&dir).unwrap_or(0);
         let files = transfer::count_files(&dir).unwrap_or(0);
         total_bytes += bytes;
@@ -281,6 +288,7 @@ pub fn storage_info(app: AppHandle) -> Result<StorageInfo, String> {
 
     Ok(StorageInfo {
         root: root.display().to_string(),
+        layout: location.layout.as_str().to_string(),
         is_default: root == default_root,
         default_root: default_root.display().to_string(),
         partitions,
@@ -293,6 +301,7 @@ pub fn storage_info(app: AppHandle) -> Result<StorageInfo, String> {
         generation_id: context::current()
             .map(context::DataContext::generation_id)
             .unwrap_or(context::DEFAULT_GENERATION_ID),
+        space_fallback: space::fallback(),
         pending_migration: plan::load_pending(&cfg),
         last_migration: plan::load_last(&cfg),
         recovery: recovery::current(),

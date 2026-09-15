@@ -26,8 +26,8 @@ mod win_acl;
 pub(crate) use crypto::encrypt_payload;
 pub(crate) use file::{backup_path, ciphertext_evidence, load_verified, replace_file};
 pub(crate) use key::{
-    native_backend_available, resolve_master_key, KeyringStore, MasterKeyStore,
-    CREDENTIALS_KEY_SPEC, VAULT_KEY_SPEC,
+    keyring_store_for, native_backend_available, resolve_master_key, MasterKeyStore,
+    ScopedKeyringStore, CREDENTIALS_KEY_SPEC, VAULT_KEY_SPEC,
 };
 pub(crate) use status::inspect_domain;
 pub use status::ProtectionStatus;

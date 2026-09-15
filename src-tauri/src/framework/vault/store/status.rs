@@ -9,7 +9,7 @@ use tauri::AppHandle;
 use super::paths::{data_dir_of, VAULT_FILE};
 use crate::framework::credentials;
 use crate::framework::secure_store::{
-    inspect_domain, native_backend_available, KeyringStore, MasterKeyStore, ProtectionStatus,
+    inspect_domain, native_backend_available, MasterKeyStore, ProtectionStatus,
     CREDENTIALS_KEY_SPEC, VAULT_KEY_SPEC,
 };
 
@@ -43,5 +43,9 @@ pub(crate) fn protection_status_at(
 pub(crate) fn protection_status(app: &AppHandle) -> Result<ProtectionStatus, String> {
     let vault_dir = data_dir_of(app)?;
     let credential_dir = credentials::resolved_data_dir(app)?;
-    protection_status_at(&vault_dir, &credential_dir, &KeyringStore)
+    protection_status_at(
+        &vault_dir,
+        &credential_dir,
+        &crate::framework::space::keyring_store(),
+    )
 }

@@ -7,13 +7,15 @@ use tauri::AppHandle;
 
 use super::io::read_all_at;
 use super::paths::{data_dir_of, vault_lock};
-use crate::framework::secure_store::KeyringStore;
 use crate::framework::vault::models::Credential;
 
 /// 锁内读全量（AppHandle 封装）
 pub(crate) fn read_all(app: &AppHandle) -> Result<Vec<Credential>, String> {
     let _guard = vault_lock().lock().map_err(|e| e.to_string())?;
-    read_all_at(&data_dir_of(app)?, &KeyringStore)
+    read_all_at(
+        &data_dir_of(app)?,
+        &crate::framework::space::keyring_store(),
+    )
 }
 
 /// 插件命令在 Rust 侧解析 credentialId → 凭证明文（crate 内 API，不做成 Tauri 命令；

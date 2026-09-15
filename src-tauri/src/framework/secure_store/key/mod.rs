@@ -8,8 +8,20 @@
 //! 3. 降级文件里的正确旧密钥会被**登记**进系统密钥库（写后回读校验），但**不删除降级文件**；
 //! 4. 诊断文案只描述「有没有记录 / 长度对不对 / 读了还是写失败」，不打印任何密钥字节。
 
-/// 系统密钥库 service 名（应用 identifier；修改会导致既有凭证不可访问，未经单独需求禁止改动）
+/// 系统密钥库 service 名（默认空间沿用；修改会导致既有凭证不可访问，未经单独需求禁止改动）
 pub(crate) const KEYRING_SERVICE: &str = "com.patchy23.patchybox";
+
+/// 指定空间的系统密钥库 service 名。
+///
+/// 默认空间（兼容承载位）沿用历史 service，保证既有条目零迁移可读；
+/// 其它空间按空间标识分服务，避免「目录分开了但条目仍共用一把密钥」的伪隔离。
+pub(crate) fn keyring_service(space_id: &str) -> String {
+    if space_id == crate::framework::context::DEFAULT_SPACE_ID {
+        KEYRING_SERVICE.to_string()
+    } else {
+        format!("{KEYRING_SERVICE}.{space_id}")
+    }
+}
 
 /// 一个主密钥域：系统密钥库 account + 兼容用的本地降级密钥文件
 #[derive(Debug, Clone, Copy)]
@@ -46,23 +58,26 @@ pub(crate) trait MasterKeyStore {
 
 /// 指定 service 的系统密钥库实现。
 ///
-/// 生产用 `KEYRING_SERVICE`；测试用专用 service（如 `com.patchy23.patchybox.tests`），
-/// 避免测试条目混进用户真实凭据管理器。target 名由 keyring 拼成 `{account}.{service}`。
-pub(crate) struct ScopedKeyringStore<'a> {
-    /// 系统密钥库中的 service 名
-    service: &'a str,
+/// 生产按空间作用域构造（`keyring_store_for`）；测试用专用 service
+/// （如 `com.patchy23.patchybox.tests`），避免测试条目混进用户真实凭据管理器。
+/// target 名由 keyring 拼成 `{account}.{service}`。
+pub(crate) struct ScopedKeyringStore {
+    /// 系统密钥库中的 service 名（按空间作用域，构造后不变）
+    service: String,
 }
 
-impl<'a> ScopedKeyringStore<'a> {
+impl ScopedKeyringStore {
     /// 构造（只绑定 service 名，不接触密钥材料）
-    pub(crate) fn new(service: &'a str) -> Self {
-        Self { service }
+    pub(crate) fn new(service: impl Into<String>) -> Self {
+        Self {
+            service: service.into(),
+        }
     }
 
     /// 删除条目（测试清理用）。条目不存在不算失败，重复清理不应报错。
     #[cfg(test)]
     pub(crate) fn delete(&self, account: &str) -> Result<(), String> {
-        let entry = keyring::Entry::new(self.service, account)
+        let entry = keyring::Entry::new(&self.service, account)
             .map_err(|e| format!("密钥库初始化失败: {e}"))?;
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -71,9 +86,9 @@ impl<'a> ScopedKeyringStore<'a> {
     }
 }
 
-impl MasterKeyStore for ScopedKeyringStore<'_> {
+impl MasterKeyStore for ScopedKeyringStore {
     fn read(&self, account: &str) -> Result<Option<[u8; 32]>, String> {
-        let entry = keyring::Entry::new(self.service, account)
+        let entry = keyring::Entry::new(&self.service, account)
             .map_err(|e| format!("密钥库初始化失败: {e}"))?;
         match entry.get_secret() {
             Ok(bytes) => {
@@ -88,7 +103,7 @@ impl MasterKeyStore for ScopedKeyringStore<'_> {
     }
 
     fn write(&self, account: &str, key: &[u8; 32]) -> Result<(), String> {
-        let entry = keyring::Entry::new(self.service, account)
+        let entry = keyring::Entry::new(&self.service, account)
             .map_err(|e| format!("密钥库初始化失败: {e}"))?;
         entry
             .set_secret(key)
@@ -96,17 +111,9 @@ impl MasterKeyStore for ScopedKeyringStore<'_> {
     }
 }
 
-/// 生产用系统密钥库实现（keyring crate；Windows Credential Manager / macOS Keychain）
-pub(crate) struct KeyringStore;
-
-impl MasterKeyStore for KeyringStore {
-    fn read(&self, account: &str) -> Result<Option<[u8; 32]>, String> {
-        ScopedKeyringStore::new(KEYRING_SERVICE).read(account)
-    }
-
-    fn write(&self, account: &str, key: &[u8; 32]) -> Result<(), String> {
-        ScopedKeyringStore::new(KEYRING_SERVICE).write(account, key)
-    }
+/// 生产用系统密钥库访问（按空间作用域；默认空间沿用历史 service）
+pub(crate) fn keyring_store_for(space_id: &str) -> ScopedKeyringStore {
+    ScopedKeyringStore::new(keyring_service(space_id))
 }
 
 /// 本平台是否编译进了系统密钥库原生后端。
@@ -392,5 +399,83 @@ mod tests {
             native_backend_available(),
             cfg!(any(target_os = "windows", target_os = "macos"))
         );
+    }
+
+    /// 密钥库 service 按空间作用域：默认空间沿用历史 service（既有条目零迁移），
+    /// 其它空间按空间标识分服务，两空间不会落到同一组条目上
+    #[test]
+    fn keyring_service_is_scoped_per_space() {
+        use crate::framework::context::DEFAULT_SPACE_ID;
+        const SPACE_A: &str = "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23";
+        const SPACE_B: &str = "7c1d0a94-2b6f-4e83-8f52-1a9de4c7b305";
+
+        assert_eq!(keyring_service(DEFAULT_SPACE_ID), KEYRING_SERVICE);
+        assert_eq!(
+            keyring_service(SPACE_A),
+            format!("{KEYRING_SERVICE}.{SPACE_A}")
+        );
+        assert_ne!(keyring_service(SPACE_A), keyring_service(SPACE_B));
+        assert_ne!(keyring_service(SPACE_A), keyring_service(DEFAULT_SPACE_ID));
+        // account 不随空间变：同一空间里两个域的条目名保持稳定
+        assert_eq!(VAULT_KEY_SPEC.account, "vault-master-key");
+        assert_eq!(CREDENTIALS_KEY_SPEC.account, "credentials-master-key");
+    }
+
+    /// 空间密钥隔离（夹具构造第二空间）：A 空间密文用 B 空间密钥解不开，
+    /// 且在 B 空间里解析 A 的密文必须锁死报错，不得生成新密钥冒充成功
+    ///
+    /// 只分目录不分密钥库 service 时，两空间会共用同一把主密钥，这条用例就会失败。
+    #[test]
+    fn space_keys_do_not_open_each_others_ciphertext() {
+        use crate::framework::context::DEFAULT_SPACE_ID;
+        const SPACE_B: &str = "7c1d0a94-2b6f-4e83-8f52-1a9de4c7b305";
+
+        let dir_a = temp_dir("space-a");
+        let dir_b = temp_dir("space-b");
+        // 两个空间各自的密钥库（生产环境里由 service 名字隔开）
+        let store_a = MemoryKeyStore::new();
+        let store_b = MemoryKeyStore::new();
+        let key_a = resolve_master_key(&dir_a, &CREDENTIALS_KEY_SPEC, &store_a, &[])
+            .unwrap()
+            .key;
+        let blob = encrypt_payload(&key_a, b"{\"database\":\"secret\"}").unwrap();
+
+        // A 空间能解开自己的密文
+        let reopened = resolve_master_key(
+            &dir_a,
+            &CREDENTIALS_KEY_SPEC,
+            &store_a,
+            std::slice::from_ref(&blob),
+        )
+        .unwrap();
+        assert_eq!(reopened.key, key_a, "同一空间应能解开自己的密文");
+
+        // B 空间：既没有这条条目，也不该用新密钥「成功」打开 A 的密文
+        let error =
+            resolve_master_key(&dir_b, &CREDENTIALS_KEY_SPEC, &store_b, &[blob]).unwrap_err();
+        assert!(error.contains("无法解锁"), "跨空间读取应锁死: {error}");
+        assert_eq!(
+            store_b.key_of(CREDENTIALS_KEY_SPEC.account).unwrap(),
+            None,
+            "跨空间解析不得在 B 空间登记任何密钥"
+        );
+        assert!(
+            !dir_b.join(CREDENTIALS_KEY_SPEC.fallback_file).exists(),
+            "跨空间解析不得在 B 空间生成降级密钥文件"
+        );
+
+        // 两空间各解析一次 → 拿到的是两把不同的密钥（目录分开 + 条目分开）
+        let key_b = resolve_master_key(&dir_b, &CREDENTIALS_KEY_SPEC, &store_b, &[])
+            .unwrap()
+            .key;
+        assert_ne!(key_a, key_b, "两个空间必须持有各自的主密钥");
+        assert_eq!(
+            keyring_service(DEFAULT_SPACE_ID),
+            KEYRING_SERVICE,
+            "默认空间 service 保持历史值"
+        );
+        assert_ne!(keyring_service(SPACE_B), KEYRING_SERVICE);
+        std::fs::remove_dir_all(&dir_a).ok();
+        std::fs::remove_dir_all(&dir_b).ok();
     }
 }

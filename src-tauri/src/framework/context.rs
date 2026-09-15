@@ -19,53 +19,125 @@ use tauri::AppHandle;
 
 use super::paths;
 
-/// 默认空间标识：L0/L1 交付前唯一空间（禁止模块自建空间 id 或把账号 id 当空间 id）
+/// 默认空间标识：L1 只放置这一个空间（禁止模块自建空间 id 或把账号 id 当空间 id）
 pub const DEFAULT_SPACE_ID: &str = "default";
-/// 默认空间代际：空间切换/导入激活后由 L1 递增；当前进程内不重新赋值
+/// 默认空间代际：空间切换/导入激活后由后续批次递增；当前进程内不重新赋值
 pub const DEFAULT_GENERATION_ID: u64 = 1;
 
-/// 存储位置四分区（与 `docs/standards/02-架构.md` §3.1 的四分区布局一致）
+/// 空间数据的落盘形态。
+///
+/// 两种形态都要能被同一个启动解析表达（数据边界冻结条款 §13.3）：
+/// - `LegacyFlat`：空间即设备根，数据与凭证在 `<deviceRoot>/{data,vault}`。默认空间在迁移或
+///   导入提交之前保持此形态，**不硬搬**；
+/// - `Partitioned`：空间落在 `<deviceRoot>/spaces/<spaceId>/generations/<generationId>/` 之下，
+///   日志与缓存按空间分层放在设备根下（不随空间迁移、不参与导出）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LayoutKind {
+    /// 旧扁平布局（默认空间当前形态）
+    LegacyFlat,
+    /// 分区布局（后续批次的空间形态）
+    Partitioned,
+}
+
+impl LayoutKind {
+    /// 稳定展示名（设置页与诊断输出用；前端契约的取值来源）
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::LegacyFlat => "legacyFlat",
+            Self::Partitioned => "partitioned",
+        }
+    }
+}
+
+/// 存储位置：一次运行只解析一次的落盘位置描述符。
+///
+/// 分三层含义，改动前先分清，避免把设备级产物写进空间目录（或反过来）：
+/// - `device_root`：设备级根（配置项生效值或默认目录）。日志/缓存分层基、根迁移的源与目标、
+///   「存储位置」卡片展示的都是它，**跨空间共享**；
+/// - `root`：空间根，数据与凭证分区之上。旧扁平布局下与设备根相同；
+/// - `data` / `vault` / `logs` / `cache`：实际分区目录，所有消费方只取这四个字段。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StorageLocation {
-    /// 存储根目录（配置项的生效值，或降级后的默认目录）
+    /// 落盘形态（旧扁平 / 分区）
+    pub layout: LayoutKind,
+    /// 设备级存储根（跨空间共享；日志缓存分层基与根迁移的源）
+    pub device_root: PathBuf,
+    /// 空间根（数据与凭证之上；旧扁平布局下与设备根相同）
     pub root: PathBuf,
-    /// 数据分区 `<root>/data`（插件 SQLite、known_hosts、本地凭据文件）
+    /// 空间标识（本批只有一个默认空间；后续批次由空间解析给出）
+    pub space_id: String,
+    /// 数据分区 `<空间根>/data`（插件 SQLite、known_hosts、本地凭据文件）
     pub data: PathBuf,
-    /// 凭证分区 `<root>/vault`
+    /// 凭证分区 `<空间根>/vault`
     pub vault: PathBuf,
-    /// 日志分区 `<root>/logs`
+    /// 日志分区：旧扁平布局为 `<设备根>/logs`，分区布局为 `<设备根>/logs/<空间 id>`
     pub logs: PathBuf,
+    /// 缓存分区：旧扁平布局为 `<设备根>/cache`，分区布局为 `<设备根>/cache/<空间 id>`
+    pub cache: PathBuf,
 }
 
 impl StorageLocation {
-    /// 由存储根推导四分区（纯计算，不触碰文件系统）
-    pub fn new(root: impl Into<PathBuf>) -> Self {
+    /// 指定空间标识的旧扁平布局（默认空间在迁移/导入提交前保持此形态）。
+    ///
+    /// 纯计算，不触碰文件系统。
+    pub fn legacy_for(root: impl Into<PathBuf>, space_id: &str) -> Self {
         let root = root.into();
         Self {
+            layout: LayoutKind::LegacyFlat,
+            device_root: root.clone(),
             data: root.join("data"),
             vault: root.join("vault"),
             logs: root.join("logs"),
+            cache: root.join("cache"),
             root,
+            space_id: space_id.to_string(),
+        }
+    }
+
+    /// 分区布局：空间在 `<设备根>/spaces/<空间 id>/generations/<代际>/` 之下，
+    /// 日志与缓存按空间分层落在设备根下（可重建产物，不随空间迁移）。
+    ///
+    /// 纯计算，不触碰文件系统；目录建立与可读性校验由空间激活流程负责。
+    pub fn partitioned(
+        device_root: impl Into<PathBuf>,
+        space_id: &str,
+        generation_id: u64,
+    ) -> Self {
+        let device_root = device_root.into();
+        let root = device_root
+            .join("spaces")
+            .join(space_id)
+            .join("generations")
+            .join(generation_id.to_string());
+        Self {
+            layout: LayoutKind::Partitioned,
+            data: root.join("data"),
+            vault: root.join("vault"),
+            logs: device_root.join("logs").join(space_id),
+            cache: device_root.join("cache").join(space_id),
+            device_root,
+            root,
+            space_id: space_id.to_string(),
         }
     }
 }
 
 /// 数据上下文：不可变，进程内唯一
 pub struct DataContext {
-    /// 空间标识（默认空间；导入导出 L0/L1 交付后由它给出真实身份，模块不得自建）
-    space_id: &'static str,
+    /// 空间标识（本批为默认空间；后续批次由空间解析给出，模块不得自建）
+    space_id: String,
     /// 空间代际（导入激活/空间切换后递增，用于判定计划是否过期）
     generation_id: u64,
     /// 本次启动标识（与 `EPOCH_SEQ` 对应，仅用于丢弃晚到事件，不是云同步 revision）
     epoch: u64,
-    /// 存储位置四分区（启动时解析一次，运行期不再更换）
+    /// 存储位置描述符（启动时解析一次，运行期不再更换）
     location: StorageLocation,
 }
 
 impl DataContext {
-    /// 空间标识（默认空间；L0/L1 交付后由导入导出层提供真实身份）
-    pub fn space_id(&self) -> &'static str {
-        self.space_id
+    /// 空间标识（取值来自存储位置描述符，不再有第二处来源）
+    pub fn space_id(&self) -> &str {
+        &self.space_id
     }
 
     /// 空间代际（导入激活/空间切换后递增，用于判定计划是否过期）
@@ -92,16 +164,26 @@ fn next_epoch() -> u64 {
 }
 
 /// 固定上下文（首次调用生效；后续调用返回同一实例，参数被忽略）
-pub fn init(location: StorageLocation) -> &'static DataContext {
-    CONTEXT.get_or_init(|| DataContext {
-        space_id: DEFAULT_SPACE_ID,
-        generation_id: DEFAULT_GENERATION_ID,
-        epoch: next_epoch(),
-        location,
+///
+/// `generation_id` 来自空间解析结果（本批为默认代际 1）：代际与空间标识必须同时落进上下文，
+/// 否则「计划是否过期」会与真实空间对不上。
+pub fn init(location: StorageLocation, generation_id: u64) -> &'static DataContext {
+    CONTEXT.get_or_init(|| {
+        let space_id = location.space_id.clone();
+        DataContext {
+            space_id,
+            generation_id,
+            epoch: next_epoch(),
+            location,
+        }
     })
 }
 
-/// 启动期固定上下文：解析存储根（配置优先）后固定下来，**在维护阶段之后调用**。
+/// 启动期固定上下文：解析存储根与活动空间后固定下来，**在维护阶段之后调用**。
+///
+/// 顺序是契约（任务书 §13.3/§13.4）：根迁移（维护阶段，可能要换盘）→ 空间解析（读设备级
+/// 自举配置）→ 固定上下文。上下文一旦固定便不再换根、不再换空间，因此三步顺序不能颠倒：
+/// 先固定上下文会让「切换空间重启生效」永远读不到新值。
 ///
 /// 配置根不可用时不降级默认目录：生效根保持配置值并登记可见恢复状态（`storage::recovery`），
 /// 业务读写自然失败且用户能看到恢复页，不会静默在默认目录新建一套空环境。
@@ -123,7 +205,11 @@ pub fn init_from_app(app: &AppHandle) -> Result<&'static DataContext, String> {
             root.display()
         );
     }
-    Ok(init(StorageLocation::new(root)))
+    // 空间解析是位置描述符的唯一来源：默认空间保持旧扁平布局（本批零迁移），
+    // 标识不可用时可见回落，绝不静默新建空环境。
+    let resolution = crate::framework::space::resolve_active(app);
+    let location = crate::framework::space::location_for(&root, &resolution);
+    Ok(init(location, resolution.generation_id))
 }
 
 /// 当前上下文（未初始化时 None：测试或极早期调用）
@@ -131,14 +217,14 @@ pub fn current() -> Option<&'static DataContext> {
     CONTEXT.get()
 }
 
-/// 当前存储位置；未初始化返回 None
+/// 当前存储位置描述符；未初始化返回 None
 pub fn location() -> Option<&'static StorageLocation> {
     CONTEXT.get().map(|ctx| &ctx.location)
 }
 
-/// 当前存储根；未初始化返回 None
+/// 设备级存储根（配置项生效值；日志缓存分层基与根迁移的源，跨空间共享）；未初始化返回 None
 pub fn root() -> Option<&'static Path> {
-    location().map(|loc| loc.root.as_path())
+    location().map(|loc| loc.device_root.as_path())
 }
 
 /// 事件/任务是否属于当前启动上下文（false = 晚到，调用方应丢弃并 `note_stale_dropped`）
@@ -183,23 +269,69 @@ pub(crate) fn reset_for_test() {
 mod tests {
     use super::*;
 
-    /// 四分区由根推导：纯计算，root 不重复出现
+    /// 旧扁平布局：分区由根推导，且与改动前的算法逐字符相同（默认空间零迁移的硬门禁）
     #[test]
     fn location_derives_partitions() {
-        let loc = StorageLocation::new(PathBuf::from("D:/pb-root"));
+        let loc = StorageLocation::legacy_for(PathBuf::from("D:/pb-root"), DEFAULT_SPACE_ID);
+        // 期望值写死为改动前的算法结果，不用 loc 自身推导，避免「自己验自己」
         assert_eq!(loc.data, PathBuf::from("D:/pb-root/data"));
         assert_eq!(loc.vault, PathBuf::from("D:/pb-root/vault"));
         assert_eq!(loc.logs, PathBuf::from("D:/pb-root/logs"));
+        assert_eq!(loc.cache, PathBuf::from("D:/pb-root/cache"));
         assert_eq!(loc.root, PathBuf::from("D:/pb-root"));
+        assert_eq!(loc.device_root, PathBuf::from("D:/pb-root"));
+        assert_eq!(loc.layout, LayoutKind::LegacyFlat);
+        assert_eq!(loc.space_id, DEFAULT_SPACE_ID);
+    }
+
+    /// 分区布局：空间在 spaces/<id>/generations/<n> 之下，日志与缓存按空间分层留在设备根下
+    #[test]
+    fn partitioned_location_keeps_logs_and_cache_on_device_root() {
+        let loc = StorageLocation::partitioned(PathBuf::from("D:/pb-root"), "9f1c4e2a", 3);
+        assert_eq!(loc.layout, LayoutKind::Partitioned);
+        assert_eq!(loc.device_root, PathBuf::from("D:/pb-root"));
+        assert_eq!(
+            loc.root,
+            PathBuf::from("D:/pb-root/spaces/9f1c4e2a/generations/3")
+        );
+        assert_eq!(loc.data, loc.root.join("data"));
+        assert_eq!(loc.vault, loc.root.join("vault"));
+        // 日志与缓存是可重建产物：不随空间迁移，因此落在设备根下按空间分层
+        assert_eq!(loc.logs, PathBuf::from("D:/pb-root/logs/9f1c4e2a"));
+        assert_eq!(loc.cache, PathBuf::from("D:/pb-root/cache/9f1c4e2a"));
+        assert_eq!(loc.space_id, "9f1c4e2a");
+    }
+
+    /// 两种形态下空间根都不得把数据写进另一个空间的目录（隔离的最小判据）
+    #[test]
+    fn layouts_do_not_share_data_dirs() {
+        let device_root = PathBuf::from("D:/pb-root");
+        let a = StorageLocation::partitioned(&device_root, "aaaa1111", 1);
+        let b = StorageLocation::partitioned(&device_root, "bbbb2222", 1);
+        let default = StorageLocation::legacy_for(&device_root, DEFAULT_SPACE_ID);
+        for (left, right) in [(&a, &b), (&a, &default), (&b, &default)] {
+            assert_ne!(left.data, right.data, "数据分区不得重叠");
+            assert_ne!(left.vault, right.vault, "凭证分区不得重叠");
+            assert_ne!(left.logs, right.logs, "日志分区不得重叠");
+            assert_ne!(left.cache, right.cache, "缓存分区不得重叠");
+        }
     }
 
     /// 上下文首次初始化即固定：再次 init 返回同一实例，运行期不会换根
     #[test]
     fn context_is_fixed_once() {
-        let first = init(StorageLocation::new(PathBuf::from("D:/pb-first")));
-        let second = init(StorageLocation::new(PathBuf::from("D:/pb-second")));
+        let first = init(
+            StorageLocation::legacy_for(PathBuf::from("D:/pb-first"), DEFAULT_SPACE_ID),
+            DEFAULT_GENERATION_ID,
+        );
+        let second = init(
+            StorageLocation::legacy_for(PathBuf::from("D:/pb-second"), DEFAULT_SPACE_ID),
+            2,
+        );
         assert!(std::ptr::eq(first, second), "上下文必须唯一");
         assert_eq!(first.location.root, PathBuf::from("D:/pb-first"));
+        // 代际也随首次初始化固定：切换空间必须重启，运行期不得改代际
+        assert_eq!(first.generation_id(), DEFAULT_GENERATION_ID);
         assert_eq!(
             current().map(|ctx| ctx.location.root.clone()),
             Some(PathBuf::from("D:/pb-first"))
@@ -209,7 +341,10 @@ mod tests {
     /// epoch：当前 epoch 有效、其他 epoch 一律判为晚到；丢弃计数可诊断
     #[test]
     fn epoch_gates_late_events() {
-        let ctx = init(StorageLocation::new(PathBuf::from("D:/pb-first")));
+        let ctx = init(
+            StorageLocation::legacy_for(PathBuf::from("D:/pb-first"), DEFAULT_SPACE_ID),
+            DEFAULT_GENERATION_ID,
+        );
         reset_for_test();
         assert!(is_current(ctx.epoch()));
         assert!(!is_current(ctx.epoch().wrapping_add(1)));
