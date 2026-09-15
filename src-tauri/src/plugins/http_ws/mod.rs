@@ -35,7 +35,11 @@ crate::patchybox_module! {
     },
 }
 
-/// 退出清理（生命周期钩子）：断开全部 WS 会话并清空注册表（幂等，无会话时不算失败）
+/// 清理（生命周期钩子，页签关闭与退出都会调用）：断开全部 WS 会话并清空注册表
+/// （幂等，无会话时不算失败）。
+///
+/// 页签作用域的理由：WS 会话挂在工具页签上，关掉页签后没有任何界面能看到或断开它，
+/// 连接会一直挂着，所以关页签即断开。
 fn on_dispose(
     app: Option<&tauri::AppHandle>,
     _reason: crate::framework::lifecycle::CloseReason,
@@ -52,11 +56,12 @@ fn on_dispose(
 /// + 退出清理登记（唯一关闭入口，见 framework/lifecycle.rs）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
-    crate::framework::lifecycle::register(crate::framework::lifecycle::ModuleLifecycle {
-        owner: IPC_OWNER,
-        prepare: None,
-        dispose: Some(on_dispose),
-    });
+    // 工具 id 用前端工具 id（`http-ws`），不是模块目录名 —— `reason=tab` 时按它筛 owner
+    crate::framework::lifecycle::register(
+        crate::framework::lifecycle::ModuleLifecycle::for_tool(IPC_OWNER, "http-ws")
+            .with_tab_scope()
+            .with_dispose(on_dispose),
+    );
     let builder = persistence::register_state(builder);
     builder.manage(WsState(std::sync::Mutex::new(
         std::collections::HashMap::new(),

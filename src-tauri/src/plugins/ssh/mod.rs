@@ -9,6 +9,7 @@
 //! - log.rs：终端会话日志（ANSI 剥离后旁路落盘）
 //! - file.rs / edit.rs / monitor.rs / system_info.rs / service.rs / process.rs / docker.rs：其余能力
 
+mod close_hooks; // 关闭清理钩子（登记到 framework/lifecycle，退出时由框架协调调用）
 pub(crate) mod conn; // conn/ 目录：会话注册表 + 连接/重连（能力域下沉，引用路径经 mod.rs pub use 保持不变）
 pub(crate) mod credential;
 mod credential_refs;
@@ -101,6 +102,11 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     register_ipc_or_fail();
     // 凭证引用自报：框架删除凭证前据此判断还有哪些服务器在用
     credential_refs::register_provider();
+    // 关闭清理登记（AR06）：会话/终端/隧道/传输由本模块自己清，框架只协调、超时与汇总
+    crate::framework::lifecycle::register(
+        crate::framework::lifecycle::ModuleLifecycle::exit_only(IPC_OWNER)
+            .with_dispose(close_hooks::on_dispose),
+    );
     builder
         .manage(SshState(std::sync::Mutex::new(
             std::collections::HashMap::new(),

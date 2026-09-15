@@ -460,8 +460,11 @@ pub fn frp_profile_client_set(
     })
 }
 
-/// 退出清理（生命周期钩子）：结束全部由本应用拉起的 frpc 进程，
+/// 清理（生命周期钩子，页签关闭与退出都会调用）：结束全部由本应用拉起的 frpc 进程，
 /// 避免关掉界面后残留后台进程；清理由本模块自己提供，应用只协调与超时。
+///
+/// 页签作用域的理由：FRP 明确「不做后台常驻」，关掉工具页签后没有任何界面能停它，
+/// 留一个看不见的转发进程比停掉更难排查，所以关页签即结束进程。
 fn on_dispose(
     app: Option<&AppHandle>,
     _reason: crate::framework::lifecycle::CloseReason,
@@ -476,11 +479,11 @@ fn on_dispose(
 /// 注册插件命令与状态（入 ipc_registry；命令体挂全局 handler；退出清理登记到统一关闭入口）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
-    crate::framework::lifecycle::register(crate::framework::lifecycle::ModuleLifecycle {
-        owner: IPC_OWNER,
-        prepare: None,
-        dispose: Some(on_dispose),
-    });
+    crate::framework::lifecycle::register(
+        crate::framework::lifecycle::ModuleLifecycle::for_tool(IPC_OWNER, "frp")
+            .with_tab_scope()
+            .with_dispose(on_dispose),
+    );
     builder.manage(FrpState::default())
 }
 

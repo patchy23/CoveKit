@@ -320,6 +320,17 @@ impl AgentClient {
         .await
     }
 
+    /// 立即结束 agent 子进程（同步；供退出清理使用）
+    ///
+    /// 为什么不走协议 `shutdown`：退出路径只有总清理预算（`framework::lifecycle::DISPOSE_TIMEOUT`），
+    /// 在这里等一次 RPC 往返可能把预算耗光、后面的模块轮不到清理；进程随即退出，
+    /// 服务端会话随 stdout 管道断开一起结束。
+    pub fn kill_now(&self) -> Result<(), String> {
+        let mut guard = self.child.lock().map_err(|e| e.to_string())?;
+        let _ = guard.start_kill();
+        Ok(())
+    }
+
     /// 关闭全部会话并终止进程
     pub async fn shutdown(&self) -> Result<(), String> {
         // shutdown 后进程自行退出；失败时由调用方 kill（start_kill 为同步信号，避免跨 await 持锁）

@@ -452,6 +452,8 @@ crate::patchybox_module! {
 /// 插件注册：命令入库 + State
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
+    // 关闭清理：本插件只有 `DnsState` 里的 PluginDb 句柄，没有会话或子进程需要回收，
+    // 故不登记关闭钩子（AR06 方案 §5；新增常驻资源时必须回来补登记）
     // 凭证引用自报：框架删除凭证前据此判断还有哪些平台配置在用
     credential_refs::register_provider();
     builder.manage(DnsState(Mutex::new(None)))

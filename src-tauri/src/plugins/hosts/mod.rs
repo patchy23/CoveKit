@@ -193,5 +193,7 @@ crate::patchybox_module! {
 /// 插件注册：命令
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
+    // 关闭清理：本插件无进程级资源（纯文件读写），没有需要回收的东西，故不登记关闭钩子
+    // （AR06 方案 §5；新增常驻资源时必须回来补登记）
     builder
 }

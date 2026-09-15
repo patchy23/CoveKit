@@ -2,10 +2,12 @@
 //! 命令前缀 `dbc_`（与既有 sqlite 插件的 `db_` 前缀区分；注册表全局唯一）。
 //! 结构：models.rs（契约）/ dialect/（方言纯函数）/ drivers/（会话注册表 + 驱动执行）/
 //! catalog.rs（查询与元数据命令）/ store.rs（本地库）/ secrets.rs（AES（插件私有） 凭据）/ agent/（侧车驱动）。
+//! close_hooks.rs（退出清理：取消查询 → 结束 agent 子进程 → 清会话注册表）。
 
 pub(crate) mod admin;
 pub(crate) mod agent;
 pub(crate) mod catalog;
+pub(crate) mod close_hooks;
 pub(crate) mod dialect;
 pub(crate) mod drivers;
 pub(crate) mod models;
@@ -265,9 +267,15 @@ crate::patchybox_module! {
     },
 }
 
-/// 插件注册：命令入库 + 全部 State 装配
+/// 插件注册：命令入库 + 全部 State 装配 + 关闭清理登记
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
+    // 关闭清理登记（AR06）：查询取消、agent 子进程与连接会话由本模块自己清，
+    // 框架只协调、超时与汇总（没有这一步，父进程退出后 agent 会变成孤儿进程）
+    crate::framework::lifecycle::register(
+        crate::framework::lifecycle::ModuleLifecycle::exit_only(IPC_OWNER)
+            .with_dispose(close_hooks::on_dispose),
+    );
     builder
         .manage(drivers::DbState(Mutex::new(HashMap::new())))
         .manage(drivers::DbCancelState(Mutex::new(HashMap::new())))

@@ -54,5 +54,7 @@ crate::patchybox_module! {
 /// 插件注册：命令入库（无 State，纯函数式）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
+    // 关闭清理：本插件无状态表、无子进程（请求在后端跑完即结束），故不登记关闭钩子
+    // （AR06 方案 §5；新增常驻资源时必须回来补登记）
     builder
 }
