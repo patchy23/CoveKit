@@ -119,6 +119,8 @@ export const ipc = {
 
   /* 进程 */
   sshProcessList: (p: Payloads['ssh_process_list']) => cmd(commands.sshProcessList, p),
+  sshProcessDetail: (connectionId: string, pid: number) =>
+    cmd(commands.sshProcessDetail, { connectionId, pid }),
   sshProcessKill: (connectionId: string, pid: number, force?: boolean) =>
     cmd(commands.sshProcessKill, { connectionId, pid, force }),
 

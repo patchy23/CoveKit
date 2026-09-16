@@ -403,6 +403,7 @@ mod tests {
             "ssh_monitor_get",
             "资源监控数据（CPU/内存/磁盘/网络）",
         ),
+        ("ssh", "ssh_process_detail", "进程详情（ps -fp）"),
         ("ssh", "ssh_process_kill", "结束进程"),
         ("ssh", "ssh_process_list", "进程列表"),
         ("ssh", "ssh_profile_delete", "删除服务器配置"),

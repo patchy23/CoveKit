@@ -20,6 +20,7 @@ import type {
   KnownHostEntry,
   LogActionResult,
   MonitorData,
+  ProcessDetail,
   ProcessInfo,
   RemoteFileContent,
   SshActionResult,
@@ -110,6 +111,7 @@ export const commands = {
   sshServiceAction: 'ssh_service_action',
   sshServiceLogs: 'ssh_service_logs',
   sshProcessList: 'ssh_process_list',
+  sshProcessDetail: 'ssh_process_detail',
   sshProcessKill: 'ssh_process_kill',
   sshDockerList: 'ssh_docker_list',
   sshDockerAction: 'ssh_docker_action',
@@ -232,6 +234,7 @@ export type Payloads = {
 
   /* 进程 */
   ssh_process_list: { connectionId: string; sortBy?: 'cpu' | 'memory' | 'pid'; keyword?: string }
+  ssh_process_detail: { connectionId: string; pid: number }
   ssh_process_kill: { connectionId: string; pid: number; force?: boolean }
 
   /* Docker */
@@ -334,6 +337,7 @@ export type Results = {
 
   /* 进程 */
   ssh_process_list: ProcessInfo[]
+  ssh_process_detail: ProcessDetail
   ssh_process_kill: SshActionResult
 
   /* Docker */

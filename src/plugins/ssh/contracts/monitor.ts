@@ -184,6 +184,46 @@ export interface ProcessInfo {
   command: string
 }
 
+/** 单进程详情（后端 `ps -fp` 输出解析，远端 ps 实现不同时字段可能缺失） */
+
+export interface ProcessDetail {
+  /** 进程 ID（查询值回显） */
+
+  pid: number
+
+  /** 远端是否存在该进程 */
+
+  found: boolean
+
+  /** 运行用户（BSD 列序下无此列） */
+
+  user?: string
+
+  /** 父进程 ID */
+
+  ppid?: number
+
+  /** 控制终端（无终端为 `?`） */
+
+  tty?: string
+
+  /** 启动时间列（ps 原样） */
+
+  started?: string
+
+  /** 累计 CPU 时间（ps 原样） */
+
+  cpuTime?: string
+
+  /** 完整命令行 */
+
+  command?: string
+
+  /** ps 原始输出（含报错文本，展示兜底） */
+
+  raw: string
+}
+
 /* ── Docker ── */
 
 /** Docker 容器条目 */

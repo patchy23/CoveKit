@@ -89,6 +89,7 @@ crate::patchybox_module! {
         service::ssh_service_logs => "服务日志（journalctl）",
         process::ssh_process_list => "进程列表",
         process::ssh_process_kill => "结束进程",
+        process::ssh_process_detail => "进程详情（ps -fp）",
         docker::ssh_docker_list => "Docker 容器列表",
         docker::ssh_docker_action => "容器启动/停止/重启/删除",
         docker::ssh_docker_logs => "容器日志",
