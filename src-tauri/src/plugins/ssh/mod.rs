@@ -25,6 +25,8 @@ pub(crate) mod sftp; // sftp/ 目录：文件浏览/传输/递归下载
 pub(crate) mod store;
 pub(crate) mod system_info;
 pub(crate) mod terminal;
+#[allow(dead_code)] // 导出适配在 C4 命令层接入前只有测试调用方（接入后删掉本行）
+mod transfer; // 导出/导入适配（数据集声明、按 id 导出、记录体检）
 pub(crate) mod tunnel;
 
 use crate::plugins::ssh::conn::{HostKeyState, SshState};
@@ -102,6 +104,8 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     register_ipc_or_fail();
     // 凭证引用自报：框架删除凭证前据此判断还有哪些服务器在用
     credential_refs::register_provider();
+    // 导出适配登记：框架做导入导出时需要知道本插件有哪些数据集、按什么粒度勾选（sync L2）
+    transfer::register();
     // 关闭清理登记（AR06）：会话/终端/隧道/传输由本模块自己清，框架只协调、超时与汇总
     crate::framework::lifecycle::register(
         crate::framework::lifecycle::ModuleLifecycle::exit_only(IPC_OWNER)

@@ -9,7 +9,8 @@
 //!   （日志 + `fallback()`），不得静默改写用户配置，也不得新建空环境冒充成功。
 //! - **越界零容忍**：空间 id 只接受小写 UUIDv4 或兼容承载位 `default`，作为目录名与 keyring
 //!   service 片段之前必须校验（禁路径穿越与名称注入）。
-//! - 本批只放置默认空间：不做新建/切换/重命名/删除，也没有空间索引与待激活状态。
+//! - 本批只放置默认空间：不做新建/切换/重命名/删除；空间索引的**读**侧在 `index` 子模块
+//!   （导出预览与来源留档要显示空间名），写入侧随隔离导入一起落地。
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -18,6 +19,11 @@ use tauri::AppHandle;
 
 use super::context::{StorageLocation, DEFAULT_GENERATION_ID, DEFAULT_SPACE_ID};
 use super::paths;
+
+#[allow(dead_code)] // 导出预览要用的读侧在 C4 命令层接入前只有测试调用方（接入后删掉本行）
+pub mod index;
+
+pub use index::display_name;
 
 /// 活动空间标识配置键（`settings.json` 的 `app` 对象内，设备级）
 ///

@@ -3,7 +3,8 @@
 //! 三条约定（L2 方案 §4.2）：
 //! - 传输标识沿用既有主键（档案 / 书签 / 隧道 / 收藏 id），不引入 `entityUid` 与 `revision`
 //!   （2026-09-15 用户裁决：不做 UID 重映射）
-//! - `secret` 策略的块**不允许携带记录**：凭证明文不进包，包内只声明「导入后需用户重填什么」
+//! - `secret` 策略的块**只在用户显式勾选时携带记录**：凭证随加密包搬移（§13.1「默认不带，勾选后仅经加密包」），
+//!   未勾选时块只声明条数、不带记录；`device-local` 的块一律只作声明，不带记录（本机路径与二进制位置不搬移）
 //! - 限额、记录数与摘要在这里统一校验：导出侧拦住超限输入，导入侧对不可信包先验后解（§4.3）
 //!
 //! 摘要约定：`sha256` 按本仓库的序列化结果计算（`serde_json::Value` 对象键有序），
@@ -144,8 +145,8 @@ pub(crate) fn json_depth(value: &Value) -> usize {
 
 /// 校验清单自身一致性：导出前与导入解密后都调用，避免「清单说一套、记录体是另一套」。
 ///
-/// 校验项：块名唯一非空、`schemaVersion` 非 0、记录数与记录体一致、`secret` 块不携带记录、
-/// 记录体摘要相符、单条记录大小与嵌套深度不超限、记录总数不超上限。
+/// 校验项：块名唯一非空、`schemaVersion` 非 0、记录数与记录体一致、`device-local` 块不携带记录、
+/// 可搬移块声明有记录时必须带记录体、记录体摘要相符、单条记录大小与嵌套深度不超限、记录总数不超上限。
 pub(crate) fn validate_manifest(manifest: &PackageManifest) -> Result<(), String> {
     if manifest.datasets.is_empty() {
         return Err("数据包清单没有任何数据集".into());
@@ -168,13 +169,16 @@ pub(crate) fn validate_manifest(manifest: &PackageManifest) -> Result<(), String
         }
         total_records = total_records.saturating_add(block.record_count);
         match (&block.records, block.policy) {
-            (Some(_), TransportPolicy::Secret) => {
+            (Some(_), TransportPolicy::DeviceLocal) => {
                 return Err(format!(
-                    "数据集 {} 声明为 secret 却携带了记录（秘密不随包搬移）",
+                    "数据集 {} 声明为 device-local 却携带了记录（本机事实不随包搬移）",
                     block.name
                 ));
             }
-            (None, policy) if policy != TransportPolicy::Secret && block.record_count > 0 => {
+            (None, TransportPolicy::DeviceLocal | TransportPolicy::Secret) => {
+                // 只声明不携带：device-local 一律如此；secret 在用户未勾选带出凭证时如此
+            }
+            (None, _) if block.record_count > 0 => {
                 return Err(format!(
                     "数据集 {} 声明有 {} 条记录但记录体缺失",
                     block.name, block.record_count
@@ -227,6 +231,222 @@ pub(crate) fn validate_manifest(manifest: &PackageManifest) -> Result<(), String
         ));
     }
     Ok(())
+}
+
+/* ── 选择集与可导出目录（C2 导出链路的输入输出） ── */
+
+/// 选择集里的一项：数据集名 → 勾选的记录 id 列表
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SelectionEntry {
+    /// 数据集名（如 `ssh.profiles`）
+    pub dataset: String,
+    /// 勾选的记录 id（该数据集声明可单独勾选时必须给出）
+    pub ids: Vec<String>,
+}
+
+/// 导出选择：前端提交、`data_export_catalog` 给默认值
+///
+/// 只表达「用户勾了什么」；依赖闭包（分组、隧道、书签、凭证）由 `catalog::resolve_selection`
+/// 从目录条目展开，前端不需要也不应该自己算。
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExportSelection {
+    /// 按条勾选的数据集（L2 只有服务器档案）
+    pub entries: Vec<SelectionEntry>,
+    /// 整块勾选的数据集（收藏 / 最近使用）
+    pub datasets: Vec<String>,
+    /// 是否把被引用凭证写进包（false = 只声明条数，导入后由用户重填）
+    pub include_credentials: bool,
+}
+
+impl ExportSelection {
+    /// 空选择：未勾选任何条目、整块数据集为空、默认可带出被引用凭证
+    pub(crate) fn empty() -> Self {
+        Self {
+            entries: Vec::new(),
+            datasets: Vec::new(),
+            include_credentials: true,
+        }
+    }
+}
+
+/// 可勾选条目（目录列表项）
+///
+/// `label` / `detail` 只是界面文案，不参与传输；记录本体由适配器按 id 重新导出。
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CatalogEntry {
+    /// 所属数据集
+    pub dataset: String,
+    /// 记录 id（导出时作为 `SelectionEntry.ids` 回传）
+    pub id: String,
+    /// 展示名（如服务器名称）
+    pub label: String,
+    /// 展示明细（如 `host:port · 用户名`）
+    pub detail: String,
+    /// 该条目引用的其他对象（由适配器给出，框架据此展开闭包）
+    pub dependencies: Vec<DependencyEdge>,
+    /// 条目级提示（如「未绑定凭证，导入后待补全」）
+    pub note: Option<String>,
+}
+
+/// 数据集跟随关系：`kind` 的依赖边指向 `dataset`
+///
+/// 例：`ssh.profiles` 声明 `{kind: "credential", dataset: "vault.credentials"}`，
+/// 表示所选档案引用到的凭证自动进入该数据集的闭包。
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DatasetPull {
+    /// 依赖边类别（与 `CatalogEntry.dependencies[].kind` 对应）
+    pub kind: String,
+    /// 被带出的数据集名
+    pub dataset: String,
+}
+
+/// 适配器声明的可导出数据集（含当前空间的条目清单）
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct DatasetDescriptor {
+    /// 数据集名（`<owner>.<类别>`）
+    pub name: String,
+    /// 界面文案（数据集类别的展示名）
+    pub label: String,
+    /// 归属 owner（与适配器的 `owner()` 一致）
+    pub owner: String,
+    /// 传输策略（§13.1 冻结取值）
+    pub policy: TransportPolicy,
+    /// 该数据集自身的 schema 版本
+    pub schema_version: u32,
+    /// 是否允许用户单独勾选（false = 只作跟随带出或被依赖带出）
+    pub selectable: bool,
+    /// 是否含秘密（含则界面必须显式确认）
+    pub contains_secret: bool,
+    /// 目录里的默认勾选（整块数据集用；按条勾选的数据集默认不勾）
+    pub default_selected: bool,
+    /// 跟随关系：本数据集记录引用了哪些数据集
+    pub pulls: Vec<DatasetPull>,
+    /// 不可单独勾选时的说明（缺省 = 可单独勾选）
+    pub note: Option<String>,
+    /// 当前空间可带出的记录数（按条勾选的数据集必须等于 `entries` 长度；整块数据集为实际条数）
+    pub record_count: usize,
+    /// 当前空间可勾选的条目（整块带出的数据集为空）
+    pub entries: Vec<CatalogEntry>,
+}
+
+impl DatasetDescriptor {
+    /// 前端展示用摘要（丢掉条目明细，只留计数与策略）
+    pub(crate) fn summary(&self) -> DatasetSummary {
+        DatasetSummary {
+            name: self.name.clone(),
+            label: self.label.clone(),
+            owner: self.owner.clone(),
+            policy: self.policy,
+            schema_version: self.schema_version,
+            selectable: self.selectable,
+            contains_secret: self.contains_secret,
+            default_selected: self.default_selected,
+            note: self.note.clone(),
+            record_count: self.record_count,
+        }
+    }
+}
+
+/// 数据集摘要（前端渲染类别卡片；不含记录明细）
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct DatasetSummary {
+    /// 数据集名
+    pub name: String,
+    /// 展示名
+    pub label: String,
+    /// 归属 owner
+    pub owner: String,
+    /// 传输策略
+    pub policy: TransportPolicy,
+    /// schema 版本
+    pub schema_version: u32,
+    /// 是否可单独勾选
+    pub selectable: bool,
+    /// 是否含秘密
+    pub contains_secret: bool,
+    /// 是否默认勾选
+    pub default_selected: bool,
+    /// 不可单独勾选时的说明
+    pub note: Option<String>,
+    /// 当前空间可带出的记录数（不是最终进包条数：跟随带出的条目取决于勾选）
+    pub record_count: usize,
+}
+
+/// 导出目录：当前空间可导出集合 + 条目清单 + 默认选择
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExportCatalog {
+    /// 来源空间 id（导出时写进清单）
+    pub source_space_id: String,
+    /// 来源空间名
+    pub source_space_name: String,
+    /// 数据集摘要（按名字排序）
+    pub datasets: Vec<DatasetSummary>,
+    /// 可勾选条目（按数据集名、条目名排序）
+    pub entries: Vec<CatalogEntry>,
+    /// 默认选择集（收藏默认勾选、最近使用默认不勾、凭证默认可带出）
+    pub defaults: ExportSelection,
+    /// 需要用户在预览里看到的提示（如未绑定凭证的档案数）
+    pub warnings: Vec<String>,
+}
+
+/// 解析后的选择集：依赖闭包已展开
+///
+/// `datasets` 的键存在即表示该数据集进包；值为空列表表示「整块带入」（收藏、最近使用）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ResolvedSelection {
+    /// 数据集名 → 进包记录 id（排序去重）
+    pub datasets: std::collections::BTreeMap<String, Vec<String>>,
+    /// 是否携带凭证记录（false = 凭证块只声明条数）
+    pub include_credentials: bool,
+}
+
+impl ResolvedSelection {
+    /// 某数据集是否进包
+    pub(crate) fn includes(&self, dataset: &str) -> bool {
+        self.datasets.contains_key(dataset)
+    }
+
+    /// 某数据集的进包条数（int 计数用；整块数据集为 None，条数由导出时给出）
+    pub(crate) fn ids_of(&self, dataset: &str) -> &[String] {
+        self.datasets
+            .get(dataset)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+}
+
+/// 由描述符与记录体构造携带记录的块（条数与摘要一次算好，禁止各处手填）
+pub(crate) fn block_carrying(
+    descriptor: &DatasetDescriptor,
+    records: Vec<Value>,
+) -> Result<DatasetBlock, String> {
+    let body = Value::Array(records);
+    Ok(DatasetBlock {
+        name: descriptor.name.clone(),
+        schema_version: descriptor.schema_version,
+        policy: descriptor.policy,
+        record_count: body.as_array().map(Vec::len).unwrap_or(0),
+        sha256: dataset_digest(&body)?,
+        records: Some(body),
+    })
+}
+
+/// 构造「只声明不携带」的块（`device-local` 与未勾选带出的 `secret`）
+pub(crate) fn block_declared(descriptor: &DatasetDescriptor, record_count: usize) -> DatasetBlock {
+    DatasetBlock {
+        name: descriptor.name.clone(),
+        schema_version: descriptor.schema_version,
+        policy: descriptor.policy,
+        record_count,
+        sha256: String::new(),
+        records: None,
+    }
 }
 
 #[cfg(test)]
@@ -292,20 +512,39 @@ mod tests {
         assert!(validate_manifest(&manifest).is_ok());
     }
 
-    /// secret 块携带记录被拒；非 secret 块声明有记录但无记录体也被拒
+    /// secret 块可携带记录（勾选后经加密包，§13.1）；只声明不带出时也合法；
+    /// device-local 块携带记录被拒；可搬移块声明有记录却无记录体被拒
     #[test]
-    fn secret_block_must_not_carry_records() {
+    fn secret_carries_records_only_when_selected() {
         let mut manifest = PackageManifest::new("default", "默认空间");
         manifest.datasets.push(block(
             "vault.credentials",
             TransportPolicy::Secret,
             vec![json!({"id": "c1", "password": "x"})],
         ));
-        assert!(validate_manifest(&manifest).is_err());
+        assert!(
+            validate_manifest(&manifest).is_ok(),
+            "勾选带出凭证时 secret 块必须能携带记录"
+        );
 
-        manifest.datasets[0].policy = TransportPolicy::Portable;
+        // 未勾选：只声明条数，不带记录体
         manifest.datasets[0].records = None;
-        assert!(validate_manifest(&manifest).is_err()); // 声明有记录却无记录体
+        assert!(validate_manifest(&manifest).is_ok());
+
+        // device-local 永远只作声明
+        let mut device = PackageManifest::new("default", "默认空间");
+        device.datasets.push(block(
+            "frp.paths",
+            TransportPolicy::DeviceLocal,
+            vec![json!({"id": "p1"})],
+        ));
+        assert!(validate_manifest(&device).is_err());
+        device.datasets[0].records = None;
+        assert!(validate_manifest(&device).is_ok());
+
+        // 可搬移块声明有记录却无记录体 = 清单自相矛盾
+        manifest.datasets[0].policy = TransportPolicy::Portable;
+        assert!(validate_manifest(&manifest).is_err());
 
         manifest.datasets[0].record_count = 0;
         assert!(validate_manifest(&manifest).is_ok());

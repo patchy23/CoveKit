@@ -43,6 +43,8 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 /// 框架装配：命令入库（清单生成）。
 /// 业务插件的装配顺序在 plugins/mod.rs 的路由清单里，框架命令不参与插件路由。
 pub(crate) fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    // 框架自有数据集适配登记（凭证 / 收藏 / 最近使用）：导入导出目录要先知道框架自己有什么
+    data_transfer::datasets::register_all();
     register_ipc_or_fail();
     crate::framework::settings::register(builder)
 }

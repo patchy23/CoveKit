@@ -1,0 +1,144 @@
+//! 数据包 owner 适配器（sync-202609-001 L2 · §13.6 冻结命名）
+//!
+//! 为什么需要：框架不能替各 owner 写业务 SQL，也不该维护一份「各插件有什么数据」的镜像
+//! （镜像会过期，过期清单就是错误导出）。所以每个 owner 实现本 trait 并在装配阶段登记，
+//! 框架只做闭包展开、限额校验与包读写。
+//!
+//! 契约（改动前先读）：
+//! - **只读优先**：`describe_datasets` / `export_records` / `enumerate_references` 只查询，
+//!   不得写入、不得触发连接或外部程序（§6.2）；
+//! - **逻辑记录**：`export_records` 返回逻辑 JSON（字段名与前端契约一致），不是原始表行；
+//!   物理路径、二进制位置、主机信任状态一律不进包（§13.1 device-local）；
+//! - **秘密边界**：返回 `Err` 表示「读不出来」，不得用空数组冒充「没有数据」——静默空包会让用户
+//!   以为已经导出成功；
+//! - `validate_records` 在导出前与导入写入前都会被调用：两边用同一份判定，不写第二套规则。
+//!
+//! 与 §13.6 的差异（2026-09-16 记录）：冻结命名里的 `plan_import` / `apply_to_staging` 属**导入侧**，
+//! 本批 C2 只做导出链路，这两个方法在 C3（隔离导入）随首个真实消费方一起加入，
+//! 避免先摆两个无人调用的空实现（§13.6 第 4 条允许未发布命名随方案调整）。
+
+use std::sync::{Mutex, OnceLock};
+
+use serde_json::Value;
+use tauri::AppHandle;
+
+use super::types::{DatasetDescriptor, DependencyEdge};
+
+/// 一个 owner 的本地导入导出能力
+pub(crate) trait DatasetAdapter: Send + Sync {
+    /// owner 标识（与 IPC owner 一致；一个 owner 只登记一个适配器）
+    fn owner(&self) -> &'static str;
+
+    /// 声明本 owner 可导出的数据集与当前空间的候选条目（含依赖边）
+    fn describe_datasets(&self, app: &AppHandle) -> Result<Vec<DatasetDescriptor>, String>;
+
+    /// 按 id 导出记录体（逻辑 JSON）
+    ///
+    /// `ids` 为闭包展开后的记录 id；整块带出的数据集（收藏、最近使用）传空列表表示「全部」。
+    fn export_records(
+        &self,
+        app: &AppHandle,
+        dataset: &str,
+        ids: &[String],
+    ) -> Result<Vec<Value>, String>;
+
+    /// 校验记录体：导出前与导入写入前共用
+    fn validate_records(&self, dataset: &str, records: &[Value]) -> Result<(), String>;
+
+    /// 枚举记录体里的引用（档案 → 凭证/分组等），写进清单 `dependencies`
+    fn enumerate_references(
+        &self,
+        dataset: &str,
+        records: &[Value],
+    ) -> Result<Vec<DependencyEdge>, String>;
+}
+
+/// 全局注册表（进程内；与 `framework::credential_refs` 同款约定）
+fn registry() -> &'static Mutex<Vec<&'static dyn DatasetAdapter>> {
+    static REGISTRY: OnceLock<Mutex<Vec<&'static dyn DatasetAdapter>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// 装配阶段登记（重复登记同一 owner 直接覆盖，保持幂等）
+pub(crate) fn register(adapter: &'static dyn DatasetAdapter) {
+    let Ok(mut list) = registry().lock() else {
+        eprintln!(
+            "[data_transfer] 适配器注册表锁定失败，跳过登记: {}",
+            adapter.owner()
+        );
+        return;
+    };
+    list.retain(|existing| existing.owner() != adapter.owner());
+    list.push(adapter);
+}
+
+/// 全部已登记适配器（按 owner 排序，保证导出的数据集顺序稳定）
+pub(crate) fn all() -> Vec<&'static dyn DatasetAdapter> {
+    let mut list: Vec<&'static dyn DatasetAdapter> = match registry().lock() {
+        Ok(list) => list.clone(),
+        Err(_) => {
+            eprintln!("[data_transfer] 适配器注册表锁定失败，按无适配器处理");
+            Vec::new()
+        }
+    };
+    list.sort_by_key(|adapter| adapter.owner());
+    list
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 测试用适配器：只有一个数据集，记录体按 id 生成
+    struct FakeAdapter;
+
+    impl DatasetAdapter for FakeAdapter {
+        fn owner(&self) -> &'static str {
+            "fake"
+        }
+
+        fn describe_datasets(&self, _app: &AppHandle) -> Result<Vec<DatasetDescriptor>, String> {
+            Ok(Vec::new())
+        }
+
+        fn export_records(
+            &self,
+            _app: &AppHandle,
+            _dataset: &str,
+            ids: &[String],
+        ) -> Result<Vec<Value>, String> {
+            Ok(ids
+                .iter()
+                .map(|id| serde_json::json!({ "id": id }))
+                .collect())
+        }
+
+        fn validate_records(&self, _dataset: &str, _records: &[Value]) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn enumerate_references(
+            &self,
+            _dataset: &str,
+            _records: &[Value],
+        ) -> Result<Vec<DependencyEdge>, String> {
+            Ok(Vec::new())
+        }
+    }
+
+    /// 登记后可见，重复登记同一 owner 不产生重复项（幂等）
+    #[test]
+    fn register_is_idempotent_per_owner() {
+        static ADAPTER: FakeAdapter = FakeAdapter;
+        let before = all().len();
+        register(&ADAPTER);
+        register(&ADAPTER);
+        let after = all();
+        assert_eq!(after.len(), before + 1);
+        assert_eq!(
+            after.iter().filter(|item| item.owner() == "fake").count(),
+            1,
+            "同一 owner 只能有一个适配器"
+        );
+    }
+}

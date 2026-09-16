@@ -16,6 +16,9 @@ pub use models::{
 };
 // crate 内解析 API：SSH/DNS 等插件在 Rust 侧解析 credentialId 后直接建连/调用云 API。
 pub use store::resolve;
+// crate 内只读导出面：数据导出（sync L2）要枚举凭证原文与脱敏摘要，走这两个窄入口，
+// 不把整个 store 开成 pub(crate)（其余写路径仍只属于本模块）。
+pub(crate) use store::{read_all as credentials_read_all, summary_of as credential_summary};
 
 use tauri::AppHandle;
 
