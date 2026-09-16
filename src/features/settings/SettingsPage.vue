@@ -20,6 +20,7 @@ import CredentialManagerPage from '@/features/vault/CredentialManagerPage.vue'
 import UpdateSettingsCard from './UpdateSettingsCard.vue'
 import StorageSettingsCard from './StorageSettingsCard.vue'
 import DiagnosticsCard from './DiagnosticsCard.vue'
+import DataCard from './data/DataCard.vue'
 
 const settings = useSettingsStore()
 const ui = useUiStore()
@@ -247,6 +248,8 @@ async function chooseDownloadDirectory() {
         </section>
 
         <StorageSettingsCard />
+
+        <DataCard />
 
         <UpdateSettingsCard />
         <DiagnosticsCard />
