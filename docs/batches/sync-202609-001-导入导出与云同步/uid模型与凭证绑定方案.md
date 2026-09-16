@@ -38,15 +38,15 @@
 
 ### 3.1 目标布局与身份
 
-- 布局：`<设备根>/spaces/<uid>/generations/1/{data,vault,preferences,…}`；自举 `activeSpaceId = uid`；空间索引以 uid 为键。
-- `DEFAULT_SPACE_ID` 常量、`LayoutKind::LegacyFlat`、`resolve_vault_dir` 的旧布局回落、密钥库历史 service 分支——**全部删除**，正常路径只有新布局。
+- 布局：`<设备根>/spaces/<uid>/{data,vault,preferences,…}`——**无 `generations/` 层**（代际机制随「合并导入原地事务提交、不重启」一并取消，见 L3 方案 §6）；自举 `activeSpaceId = uid`；空间索引以 uid 为键。
+- `DEFAULT_SPACE_ID` 常量、`LayoutKind::LegacyFlat`、`resolve_vault_dir` 的旧布局回落、密钥库历史 service 分支、`generation_root`/`DEFAULT_GENERATION_ID`/`DataContext.generationId`——**全部删除**，正常路径只有新布局。
 - 导出 manifest 的 `sourceSpaceId` 与 L3 映射键一律用 uid。
 
 ### 3.2 迁移步骤（启动维护窗口，一次跑完）
 
 1. 检测旧布局：自举 `activeSpaceId == "default"`、或设备根存在 `{data,vault}` 而 `spaces/` 下没有对应空间；
-2. 生成 uid（UUIDv4），建 `spaces/<uid>/generations/1/`；
-3. 把设备根的空间级内容（`data/`、`vault/`、`preferences.json` 等）移入新代目录；
+2. 生成 uid（UUIDv4），建 `spaces/<uid>/`；
+3. 把设备根的空间级内容（`data/`、`vault/`、`preferences.json` 等）移入新目录；同时把 L2 期间已建的空间目录（`spaces/<id>/generations/1/`）平铺为 `spaces/<id>/`；
 4. 主密钥搬家：读旧 service `com.patchy23.patchybox` → 写新 service `.<uid>` → 回读校验一致 → 删除旧 service 条目；降级密钥文件随目录搬迁；
 5. 写自举与索引（uid 为键），清理旧痕迹；
 6. **任一步失败：fail-fast 拒绝启动**，保留现场并给出明确错误与日志位置——不回落、不猜、不半途继续。
@@ -60,7 +60,7 @@
 | 用例 | 断言 |
 | --- | --- |
 | 全新安装首启 | 直接生成 uid 布局，无旧分支参与 |
-| 老安装迁移 | 数据/凭证/偏好在 `spaces/<uid>/generations/1/` 下完整可读；自举与索引一致 |
+| 老安装迁移 | 数据/凭证/偏好在 `spaces/<uid>/` 下完整可读；自举与索引一致；L2 已建空间的 `generations/1/` 已平铺 |
 | 密钥搬家 | 新 service 写入后回读一致；旧 service 条目已删；迁移后凭证可解密 |
 | 迁移失败注入（每步中断） | 现场保留、下次启动可重跑或明确报错，不出现半迁移态 |
 | 导出 manifest | `sourceSpaceId` = uid，非字面量 |
