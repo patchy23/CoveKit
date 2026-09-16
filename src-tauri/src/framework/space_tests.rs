@@ -14,8 +14,6 @@ mod cases {
         is_valid_space_id, location_for, resolve_value, SpaceResolution,
     };
 
-
-
     /// 用例里使用的第二空间标识（小写 UUIDv4 形态，与默认空间并存）
     const SPACE_A: &str = "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23";
     /// 另一个空间标识（用于「两空间互不共享路径」的对照）
