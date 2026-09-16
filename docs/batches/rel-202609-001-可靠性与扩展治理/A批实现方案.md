@@ -71,7 +71,7 @@
 - 改：`src-tauri/Cargo.toml`（keyring features；windows-sys 增加 Security/Authorization/Threading/FileSystem）
 - 改：`src/core/ipc/contracts.ts`、`src/core/ipc/ipc.ts`（新命令契约）
 - 改：`src/features/settings/SettingsPage.vue`（凭证管理区块显示保护状态与恢复入口）、`src/i18n/locales/{zh-CN,en-US}.ts`
-- 文档：本方案、`可靠性与扩展治理任务书.md` §4 T04/T05 实施说明（如行为与任务书不一致只追加说明）、`docs/进度台账.md`、`TODO.md`
+- 文档：本方案、`可靠性与扩展治理任务书.md` §4 T04/T05 实施说明（如行为与任务书不一致只追加说明）、`TODO.md`
 
 不碰：`branding/`、其它批次任务书、T15、`db-master.key`、`plugins/database/secrets.rs`（仅只读确认归属）、`paths.rs` 布局迁移（T03 范围）。
 
