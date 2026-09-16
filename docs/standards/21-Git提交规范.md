@@ -68,6 +68,20 @@ fix(ssh): 防止取消连接后重新打开会话页签
 
 提交操作继续遵守AGENTS的署名、明确路径暂存、隔离他人改动和只commit不push要求。历史提交保持原样，不执行rebase、amend或其他历史重写来追溯套用本规范。
 
+## 本地门禁
+
+标题条款由 `.githooks/commit-msg` 在提交落盘前执行：违规即中止本次提交，标题不进历史。判定逻辑在 [`scripts/check_commit_msg.py`](../../scripts/check_commit_msg.py)（纯函数可单测），钩子本身只是入口。
+
+每个克隆启用一次（`.git/hooks` 不进版本库）：
+
+```bash
+git config --local core.hooksPath .githooks
+```
+
+路径保持相对形式：写成 Git Bash 的 `/g/...` 时 git 找不到钩子会**静默放行**，比没有门禁更危险。检查器只判机械条款（编号、格式、括号与破折号、笼统描述），「标题是否真说清变化」仍靠提交前自查；规范判断确实有误时用 `git commit --no-verify` 跳过，并在当次说明理由。
+
+验证：`python -m unittest discover -s scripts -p test_check_commit_msg.py`
+
 ## 提交边界
 
 咨询不产生提交；已授权实施默认只 commit 不 push。相关代码、测试与说明可同提交，不强制实现与回填分离，不要求每次提交对应验收文档。小修验证写正文或最终回复；大任务在阶段与交接时维护必要状态。

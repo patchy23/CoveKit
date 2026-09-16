@@ -1,0 +1,36 @@
+#!/bin/sh
+# 提交标题门禁（规则见 docs/standards/21-Git提交规范.md）。
+#
+# 由 git 在提交落盘前调用：退出码非 0 即中止本次提交，标题写不进历史。
+# 逻辑在 scripts/check_commit_msg.py（可测、可读）；本文件只是入口。
+# .git/hooks 不进版本库，所以用 `git config core.hooksPath .githooks` 指向本目录。
+# 规范判断确实有误时用 `git commit --no-verify` 跳过。
+#
+# 两处路径细节（都实测踩过，别改回去）：
+# 1. 根目录从钩子自身位置推导，不用 `rev-parse --show-toplevel`——后者取的是
+#    当前仓库根，钩子被别的仓库借用时会指错地方。
+# 2. 交给 python 的路径必须转成原生形式（cygpath -m）：Git Bash 的 `pwd` 是
+#    `/g/...`，原生 python 会把它当成 `C:\g\...` 打不开。
+to_native() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -m "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
+hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 0
+root=$(CDPATH= cd -- "$hook_dir/.." && pwd) || exit 0
+
+case "$1" in
+  /*|[A-Za-z]:*) msg="$1" ;;
+  *) msg="$(pwd)/$1" ;;
+esac
+
+for py in python python3 py; do
+  if command -v "$py" >/dev/null 2>&1; then
+    exec "$py" "$(to_native "$root/scripts/check_commit_msg.py")" "$(to_native "$msg")"
+  fi
+done
+echo "⚠ 未找到 python，跳过提交标题检查" >&2
+exit 0
