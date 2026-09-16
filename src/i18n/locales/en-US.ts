@@ -312,6 +312,8 @@ export default {
       depProfile: 'Profile',
       pickOpenTitle: 'Choose a package',
       pickSaveTitle: 'Export data to…',
+      openInFolder: 'Open containing folder',
+      openInFolderFailed: 'Could not open the folder: {message}',
       dialogFilterName: 'Data package (.pbdata)',
     },
     appearance: 'Appearance',

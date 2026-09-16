@@ -303,6 +303,8 @@ export default {
       depProfile: '档案',
       pickOpenTitle: '选择数据包',
       pickSaveTitle: '导出数据到…',
+      openInFolder: '打开所在目录',
+      openInFolderFailed: '打开目录失败：{message}',
       dialogFilterName: '数据包（.pbdata）',
     },
     appearance: '外观',

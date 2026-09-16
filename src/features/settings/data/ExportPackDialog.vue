@@ -13,10 +13,12 @@
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { UiAlert, UiButton, UiCheckbox, UiEmptyState, UiField, UiInput, UiModal } from '@/core/ui'
 import { useSteps } from '@/core/ui/useSteps'
-import { fileDialog } from '@/core/dataTransfer/fileDialog'
+import { defaultPackFileName, fileDialog } from '@/core/dataTransfer/fileDialog'
 import { useDataTransferStore } from '@/stores/dataTransfer'
+import { useUiStore } from '@/stores/ui'
 import { carriesSecret, closurePreview, dependencyLabelKey, profileEntries } from './packSelection'
 
 const props = defineProps<{ open: boolean }>()
@@ -24,6 +26,7 @@ const emit = defineEmits<{ (event: 'update:open', value: boolean): void }>()
 
 const { t } = useI18n()
 const store = useDataTransferStore()
+const ui = useUiStore()
 
 /** 数据包密码（只在本组件内存里；不出组件、不进 store） */
 const password = ref('')
@@ -77,8 +80,30 @@ function toggleProfile(id: string, next: boolean): void {
 }
 
 async function choosePath(): Promise<void> {
-  const picked = await fileDialog.pickSavePath({ defaultPath: 'patchybox-data.pbdata' })
+  // 建议名带空间名与导出日期：多份包放同一目录不会互相覆盖，用户在文件管理器里也认得出
+  const picked = await fileDialog.pickSavePath({
+    defaultPath: defaultPackFileName(store.sourceSpaceName, new Date()),
+  })
   if (picked) savePath.value = picked
+}
+
+/**
+ * 在文件管理器中定位刚导出的包。
+ * 导出后用户第一件事就是去目录里找这个文件，让他自己翻路径是没必要的往返；
+ * 失败必须可见（提示），不静默吞掉（打开器被系统禁用等情况）。
+ */
+async function revealPack(): Promise<void> {
+  const path = store.exportReport?.path
+  if (!path) return
+  try {
+    await revealItemInDir(path)
+  } catch (reason) {
+    ui.toast(
+      t('settings.dataManagement.openInFolderFailed', {
+        message: reason instanceof Error ? reason.message : String(reason),
+      })
+    )
+  }
 }
 
 async function runExport(): Promise<void> {
@@ -199,6 +224,9 @@ async function runExport(): Promise<void> {
         {{ t('settings.dataManagement.totalRecords', { count: totalRecords }) }}
       </UiAlert>
       <p class="break-all text-body-sm text-text-muted">{{ store.exportReport?.path }}</p>
+      <UiButton v-if="store.exportReport?.path" variant="secondary" @click="revealPack">
+        {{ t('settings.dataManagement.openInFolder') }}
+      </UiButton>
       <p
         v-if="store.exportReport && !store.exportReport.secretIncluded"
         class="text-body-sm text-text-muted"

@@ -7,9 +7,30 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   createFileDialog,
+  defaultPackFileName,
   ensurePackExtension,
   PB_DATA_EXTENSION,
 } from '@/core/dataTransfer/fileDialog'
+
+describe('defaultPackFileName', () => {
+  it('用空间名与日期组名，避免多份包同名互相覆盖', () => {
+    expect(defaultPackFileName('默认空间', new Date(2026, 8, 16))).toBe(
+      'patchybox-默认空间-20260916.pbdata'
+    )
+  })
+
+  it('剔除文件系统非法字符，空白折成短横线', () => {
+    expect(defaultPackFileName(' work / test:1 ', new Date(2026, 0, 5))).toBe(
+      'patchybox-work-test1-20260105.pbdata'
+    )
+  })
+
+  it('名字被剔空时退回 patchybox，不产生纯日期文件名', () => {
+    expect(defaultPackFileName('///', new Date(2026, 11, 31))).toBe(
+      'patchybox-data-20261231.pbdata'
+    )
+  })
+})
 
 describe('ensurePackExtension', () => {
   it('缺扩展名时补 .pbdata', () => {

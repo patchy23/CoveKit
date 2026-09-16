@@ -18,6 +18,9 @@ import { i18n } from '@/i18n'
 /** 数据包扩展名（与 Rust 侧 `package.rs` 的容器约定一致） */
 export const PB_DATA_EXTENSION = 'pbdata'
 
+/** 文件名禁用字符（Windows 与 macOS 取交集；控制字符另按码点判断） */
+const ILLEGAL_NAME_CHARS = '\\/:*?"<>|'
+
 export interface FileDialogPort {
   save: (options: SaveDialogOptions) => Promise<string | null>
   open: (options: OpenDialogOptions) => Promise<string | null>
@@ -46,6 +49,24 @@ export function ensurePackExtension(path: string): string {
   const name = trimmed.slice(trimmed.lastIndexOf('/') + 1)
   if (name.includes('.')) return trimmed
   return `${trimmed}.${PB_DATA_EXTENSION}`
+}
+
+/**
+ * 默认保存文件名：`patchybox-<空间名>-<YYYYMMDD>.pbdata`。
+ *
+ * 为什么不用固定名：多份数据包放进同一目录会互相覆盖，用户还得自己改名；空间名与导出日期
+ * 是他在文件管理器里唯一认得出的线索。空间名先剔除文件系统禁用字符与控制字符（按码点判断，
+ * 不用正则控制字符类），空白折成短横线；剔除后为空则退回 `data`，不造出纯日期文件名。
+ */
+export function defaultPackFileName(spaceName: string, at: Date): string {
+  const cleaned = [...spaceName]
+    .filter((char) => char.charCodeAt(0) > 0x1f && !ILLEGAL_NAME_CHARS.includes(char))
+    .join('')
+    .trim()
+    .replace(/\s+/g, '-')
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  const stamp = `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}`
+  return `patchybox-${cleaned || 'data'}-${stamp}.${PB_DATA_EXTENSION}`
 }
 
 /** 默认失败提示：全局 toast（动态导入避免 core → stores 的初始化顺序耦合） */
