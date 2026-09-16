@@ -12,6 +12,7 @@ let listenRecords: Array<{ unlistenCalls: number }> = []
 let heldResolvers: Array<() => void> = []
 let holdListen = false
 let listenRejects: Error | null = null
+let unlistenThrows = false
 
 vi.mock('@tauri-apps/api/event', () => ({
   listen: (event: string, handler: (event: { payload: unknown }) => void) => {
@@ -23,6 +24,8 @@ vi.mock('@tauri-apps/api/event', () => ({
       listenRecords.push(record)
       return () => {
         record.unlistenCalls += 1
+        // 解绑失败：替身里保持订阅存在，复现「无法证明已断」的情形
+        if (unlistenThrows) throw new Error('解绑失败')
         // 解绑即停止投递：与真实 listen 返回的 unlisten 语义一致
         const index = listeners.indexOf(entry)
         if (index >= 0) listeners.splice(index, 1)
@@ -37,7 +40,7 @@ vi.mock('@tauri-apps/api/event', () => ({
   },
 }))
 
-import { createScope, throttledInterval } from './scope'
+import { createScope, scopeStats, throttledInterval } from './scope'
 
 describe('作用域副作用', () => {
   beforeEach(() => {
@@ -46,6 +49,7 @@ describe('作用域副作用', () => {
     listenRecords = []
     holdListen = false
     listenRejects = null
+    unlistenThrows = false
   })
 
   it('卸载早于订阅 resolve 时立刻解绑，不留悬挂监听', async () => {
@@ -145,5 +149,76 @@ describe('作用域副作用', () => {
     expect(throttledInterval(5000, 30000, true)).toBe(30000)
     // 非法值回退到可见间隔，避免 setInterval(0) 变成忙等
     expect(throttledInterval(5000, 0, true)).toBe(5000)
+  })
+})
+
+/**
+ * 活体计数是 T10 真机走查的取数口径（正式版没有页内计数器，只能靠开发构建钩子读回）：
+ * 口径错了走查结论就错了，因此这里把三项口径钉在测试里。
+ */
+describe('活体计数', () => {
+  beforeEach(() => {
+    listeners.length = 0
+    heldResolvers = []
+    listenRecords = []
+    holdListen = false
+    listenRejects = null
+    unlistenThrows = false
+  })
+
+  /** 只取三项活体指标：`created` 只增不减，不参与基线比较 */
+  const liveCounts = () => {
+    const snapshot = scopeStats()
+    return { live: snapshot.live, listeners: snapshot.listeners, timers: snapshot.timers }
+  }
+
+  it('作用域释放后活体作用域、订阅与定时器三项都回到基线，累计创建数保留', async () => {
+    const base = liveCounts()
+    const scope = createScope('frp')
+    await scope.listenEvent('frp://status', vi.fn())
+    scope.interval(vi.fn(), 1000)
+
+    expect(liveCounts()).toEqual({
+      live: base.live + 1,
+      listeners: base.listeners + 1,
+      timers: base.timers + 1,
+    })
+
+    await scope.dispose()
+
+    expect(liveCounts()).toEqual(base)
+  })
+
+  it('一次性定时器触发后不再计入活体，未触发前计入', async () => {
+    vi.useFakeTimers()
+    const base = liveCounts()
+    const scope = createScope('ssh')
+    const fired = vi.fn()
+    scope.timeout(fired, 1000)
+    expect(liveCounts().timers).toBe(base.timers + 1)
+
+    vi.advanceTimersByTime(1000)
+
+    expect(fired).toHaveBeenCalledTimes(1)
+    expect(liveCounts().timers).toBe(base.timers)
+    await scope.dispose()
+    expect(liveCounts()).toEqual(base)
+    vi.useRealTimers()
+  })
+
+  it('解绑抛错时不下调订阅计数，未证明已断的订阅继续计入', async () => {
+    const base = liveCounts()
+    const scope = createScope('ssh')
+    await scope.listenEvent('ssh://session', vi.fn())
+    unlistenThrows = true
+
+    const result = await scope.dispose()
+    unlistenThrows = false
+
+    expect(result.failures[0].message).toContain('解绑订阅失败')
+    // 作用域本身已释放，但订阅保留在计数里（替身里也确实没被摘掉）
+    expect(liveCounts().live).toBe(base.live)
+    expect(liveCounts().listeners).toBe(base.listeners + 1)
+    expect(listeners).toHaveLength(1)
   })
 })

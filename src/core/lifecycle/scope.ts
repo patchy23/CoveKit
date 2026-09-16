@@ -9,6 +9,9 @@
  *
  * 用法：组件在 `setup` 里 `const scope = createScope('frp')`，
  * `onUnmounted(() => void scope.dispose())`；所有订阅与定时器都从 scope 建。
+ *
+ * 另附活体计数（`scopeStats`）：页签快速开关后订阅与定时器必须回到基线，
+ * 正式版没有页内计数器、外部不可观测，走查时由开发构建的钩子读回来比对。
  */
 import { listen } from '@tauri-apps/api/event'
 import type { CloseIssue } from './types'
@@ -19,6 +22,32 @@ export interface ScopeDisposeResult {
   name: string
   /** 清理失败（含订阅建立失败、dispose 回调抛错） */
   failures: CloseIssue[]
+}
+
+/**
+ * 活体统计快照（诊断用，不做业务判断）。
+ *
+ * `created` 只增不减，用来确认循环确实跑过；其余三项在页签开关后必须回到基线。
+ */
+export interface ScopeStats {
+  /** 累计创建的作用域数 */
+  created: number
+  /** 尚未释放的作用域数 */
+  live: number
+  /** 尚未解绑的 IPC 事件订阅数（不含 DOM 监听，后者随 dispose 回调一并移除） */
+  listeners: number
+  /** 尚未清除的定时器数（含一次性定时器） */
+  timers: number
+}
+
+let createdScopes = 0
+let liveScopes = 0
+let liveListeners = 0
+let liveTimers = 0
+
+/** 读取活体统计快照；开发构建的走查钩子读它，生产代码不依赖返回值做业务判断 */
+export function scopeStats(): ScopeStats {
+  return { created: createdScopes, live: liveScopes, listeners: liveListeners, timers: liveTimers }
 }
 
 /** 作用域句柄 */
@@ -50,6 +79,8 @@ type DisposeCallback = () => void | Promise<void>
  * @param name 作用域名（建议用工具 id 或「工具 id.子模块」，失败信息里直接可见）
  */
 export function createScope(name: string): Scope {
+  createdScopes += 1
+  liveScopes += 1
   let disposed = false
   const unlisteners = new Set<() => void>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
@@ -61,6 +92,7 @@ export function createScope(name: string): Scope {
   const clearTimers = () => {
     for (const handle of timers) clearTimeout(handle)
     for (const handle of intervals) clearInterval(handle)
+    liveTimers -= timers.size + intervals.size
     timers.clear()
     intervals.clear()
   }
@@ -94,6 +126,7 @@ export function createScope(name: string): Scope {
           return
         }
         unlisteners.add(unlisten)
+        liveListeners += 1
       } catch (error) {
         failures.push({ owner: name, message: `订阅 ${event} 失败：${describe(error)}` })
       }
@@ -105,6 +138,7 @@ export function createScope(name: string): Scope {
       }
       const handle = setInterval(fn, ms)
       intervals.add(handle)
+      liveTimers += 1
       return true
     },
     timeout(fn, ms) {
@@ -114,9 +148,11 @@ export function createScope(name: string): Scope {
       }
       const handle = setTimeout(() => {
         timers.delete(handle)
+        liveTimers -= 1
         fn()
       }, ms)
       timers.add(handle)
+      liveTimers += 1
       return true
     },
     onResume(fn) {
@@ -126,14 +162,19 @@ export function createScope(name: string): Scope {
     async dispose() {
       if (disposed) return { name, failures: [...failures] }
       disposed = true
+      liveScopes -= 1
       clearTimers()
+      let unbound = 0
       for (const unlisten of unlisteners) {
         try {
           unlisten()
+          unbound += 1
         } catch (error) {
+          // 解绑抛错时不减计数：无法证明该订阅已断，失败本身进 failures 交由调用方提示
           failures.push({ owner: name, message: `解绑订阅失败：${describe(error)}` })
         }
       }
+      liveListeners -= unbound
       unlisteners.clear()
       // 逆序执行：后建立依赖的资源先释放（订阅→派生的轮询→状态）
       while (callbacks.length > 0) {

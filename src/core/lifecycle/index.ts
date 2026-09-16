@@ -29,7 +29,14 @@ export {
   HIDDEN_VISIBILITY,
   type ToolVisibility,
 } from './toolVisibility'
-export { createScope, throttledInterval, type Scope, type ScopeDisposeResult } from './scope'
+export {
+  createScope,
+  scopeStats,
+  throttledInterval,
+  type Scope,
+  type ScopeDisposeResult,
+  type ScopeStats,
+} from './scope'
 export {
   EXIT_VETO_EVENT,
   forceAppExit,
