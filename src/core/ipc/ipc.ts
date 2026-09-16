@@ -92,5 +92,6 @@ export const ipc = {
   ) => call('data_import_plan', { inspectId, selection, newSpaceName, allowDuplicate }),
   dataImportCommit: (planId: string, password: string) =>
     call('data_import_commit', { planId, password }),
-  dataTransferCancel: () => call('data_transfer_cancel', {}),
+  dataTransferCancel: (taskId?: string | null) =>
+    call('data_transfer_cancel', { taskId: taskId ?? null }),
 }

@@ -647,7 +647,7 @@ export type FrameworkPayloads = {
     allowDuplicate?: boolean
   }
   data_import_commit: { planId: string; password: string }
-  data_transfer_cancel: Record<string, never>
+  data_transfer_cancel: { taskId?: string | null }
 }
 
 /** 框架命令返回 */
