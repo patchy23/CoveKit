@@ -14,6 +14,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { relaunch } from '@tauri-apps/plugin-process'
 import { UiAlert, UiButton, UiCheckbox, UiField, UiInput, UiListRow, UiModal } from '@/core/ui'
 import { useSteps } from '@/core/ui/useSteps'
 import { fileDialog } from '@/core/dataTransfer/fileDialog'
@@ -113,6 +114,18 @@ async function runCommit(): Promise<void> {
     steps.index.value = steps.steps.indexOf('report')
     commitPassword.value = ''
   }
+}
+
+/**
+ * 直接切到刚导入的空间并重启。
+ * 导入产物是「新空间」，用户下一步必然是想看看它——让他关掉向导回设置页、再找到空间列表手动切、
+ * 再自己重启，是三次没必要的往返。切换失败时留在原步（store 已提示），不重启。
+ */
+async function switchAndRestart(): Promise<void> {
+  const spaceId = store.importReport?.spaceId
+  if (!spaceId) return
+  const switched = await store.switchSpace(spaceId)
+  if (switched) await relaunch()
 }
 
 /** 勾选/取消某个数据集的导入 */
@@ -277,6 +290,14 @@ function toggleDataset(name: string, next: boolean): void {
       </UiAlert>
       <p class="text-body-sm">{{ store.importReport?.spaceName }}</p>
       <p class="text-body-sm text-text-muted">{{ t('settings.dataManagement.spaceCardHint') }}</p>
+      <UiButton
+        v-if="store.importReport?.spaceId"
+        variant="secondary"
+        :loading="store.busy === 'switch'"
+        @click="switchAndRestart"
+      >
+        {{ t('settings.dataManagement.switchAndRestart') }}
+      </UiButton>
       <div
         v-if="store.importReport?.pending.length"
         class="rounded-md border border-border px-3 py-2"

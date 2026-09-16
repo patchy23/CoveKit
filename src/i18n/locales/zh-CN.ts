@@ -287,6 +287,7 @@ export default {
       importAck: '我确认导入到一个新空间，当前空间的数据不会被改动',
       importReportTitle: '导入完成',
       spaceCardHint: '重启后切到新空间即可看到导入的数据',
+      switchAndRestart: '切换并重启',
       outcomeAdded: '会写入',
       outcomePending: '待补全',
       outcomeExcluded: '不带入',

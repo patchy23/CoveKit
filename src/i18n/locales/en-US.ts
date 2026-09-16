@@ -296,6 +296,7 @@ export default {
       importAck: 'I confirm importing into a new space; current space data stays untouched',
       importReportTitle: 'Import finished',
       spaceCardHint: 'Restart and switch to the new space to see the imported data',
+      switchAndRestart: 'Switch and restart',
       outcomeAdded: 'Will write',
       outcomePending: 'Incomplete',
       outcomeExcluded: 'Not imported',
