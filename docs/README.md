@@ -41,6 +41,7 @@
 | Git提交信息 | [21](standards/21-Git提交规范.md)，只约束新提交 |
 | 编辑器主题 | [14](standards/14-编辑器主题配方.md) |
 | 跨批次决策 | [ADR索引](adr/README.md) |
+| 需人工/真机验证的项 | [待人工验证清单](待人工验证清单.md) |
 | 插件现行说明 | [SSH](plugins/ssh/)、[Database](plugins/database/)、[Vault](plugins/vault/) |
 
 命名与维护只见17。批次目录是检索入口，当前状态只见台账，不在本地图另建状态列。
