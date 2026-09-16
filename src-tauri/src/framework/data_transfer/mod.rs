@@ -15,10 +15,15 @@
 pub(crate) mod adapter;
 #[allow(dead_code)] // 同上
 pub(crate) mod catalog;
+/// 命令层（§5.3 的 8 条冻结命令）与请求/响应 DTO
+pub(crate) mod commands;
 #[allow(dead_code)] // 同上
 pub(crate) mod datasets;
 #[allow(dead_code)] // 同上
 pub(crate) mod import;
-#[allow(dead_code)] // C4 命令层接入前，容器与 DTO 只有测试调用方
+#[allow(dead_code)] // 同上
 pub(crate) mod package;
+/// 会话上下文（inspectId / planId）与取消标志
+mod session;
+#[allow(dead_code)] // C4 命令层接入前，容器与 DTO 只有测试调用方
 pub(crate) mod types;

@@ -16,6 +16,7 @@ use std::io::Write;
 use std::path::Path;
 
 use rand::RngCore;
+use sha2::{Digest, Sha256};
 
 use crate::framework::data_transfer::types::{validate_manifest, PackageManifest};
 use crate::framework::secure_store::{
@@ -243,6 +244,13 @@ pub(crate) fn read_package(path: &Path) -> Result<Vec<u8>, String> {
         ));
     }
     std::fs::read(path).map_err(|e| format!("数据包读取失败: {e}"))
+}
+
+/// 读包的不可信输入摘要（`inspectId` 绑定它，提交前复核文件没被换过）
+pub(crate) fn file_digest(raw: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(raw);
+    format!("{:x}", hasher.finalize())
 }
 
 /// 写包文件：唯一临时名 + 刷盘 + 原子替换，失败时不留临时文件、原文件保持不动。

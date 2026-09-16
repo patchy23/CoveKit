@@ -364,6 +364,200 @@ export interface RecoveryActionResult {
 /** 恢复动作类型 */
 export type StorageRecoveryAction = 'retry' | 'use-default' | 'choose'
 
+// ── 数据导出导入（框架命令，src-tauri framework/data_transfer） ──
+
+/** 数据传输策略（与 Rust `TransportPolicy` 逐字对应，serde kebab-case） */
+export type TransportPolicy =
+  'portable' | 'device-local' | 'secret' | 'sensitive-content' | 'history'
+
+/** 本机空间（`data_spaces_list` 条目；只含非秘密信息） */
+export interface SpaceSummary {
+  spaceId: string
+  name: string
+  createdAt: string
+  active: boolean
+  /** 兼容承载位默认空间（旧扁平布局） */
+  legacy: boolean
+  imported: boolean
+  sourceSpaceName?: string | null
+  importedAt?: string | null
+  counts: Record<string, number>
+}
+
+/** 切换活动空间的结果（本批一律需要重启） */
+export interface SpaceSwitchResult {
+  spaceId: string
+  name: string
+  restartRequired: boolean
+  revision: number
+}
+
+/** 依赖边（如档案 → 凭证） */
+export interface DatasetDependencyEdge {
+  kind: string
+  fromId: string
+  toId: string
+}
+
+/** 可勾选条目（导出目录列表项） */
+export interface ExportCatalogEntry {
+  dataset: string
+  id: string
+  label: string
+  detail: string
+  dependencies: DatasetDependencyEdge[]
+  note?: string | null
+}
+
+/** 数据集摘要（导出目录卡片） */
+export interface DatasetSummary {
+  name: string
+  label: string
+  owner: string
+  policy: TransportPolicy
+  schemaVersion: number
+  selectable: boolean
+  containsSecret: boolean
+  defaultSelected: boolean
+  note?: string | null
+  recordCount: number
+}
+
+/** 按条勾选的数据集 */
+export interface ExportSelectionEntry {
+  dataset: string
+  ids: string[]
+}
+
+/** 导出选择（前端提交；含秘密类别需显式确认） */
+export interface ExportSelection {
+  entries: ExportSelectionEntry[]
+  datasets: string[]
+  includeCredentials: boolean
+}
+
+/** 导出目录（当前空间可导出集合） */
+export interface ExportCatalog {
+  sourceSpaceId: string
+  sourceSpaceName: string
+  datasets: DatasetSummary[]
+  entries: ExportCatalogEntry[]
+  defaults: ExportSelection
+  warnings: string[]
+}
+
+/** 导出报告 */
+export interface ExportReport {
+  path: string
+  bytes: number
+  packageId: string
+  sourceSpaceName: string
+  counts: Record<string, number>
+  excluded: string[]
+  secretIncluded: boolean
+}
+
+/** 传输启动结果（导出） */
+export interface TransferStart {
+  taskId: string
+  report: ExportReport
+}
+
+/** 包内一个数据集的展示视图 */
+export interface PackageDatasetView {
+  name: string
+  label: string
+  policy: TransportPolicy
+  schemaVersion: number
+  recordCount: number
+  carried: boolean
+  supported: boolean
+  reason?: string | null
+}
+
+/** 包摘要（不可信字段只用于展示） */
+export interface PackageSummaryView {
+  packageId: string
+  sourceSpaceId: string
+  sourceSpaceName: string
+  createdAt: string
+  appVersion: string
+  platform: string
+  datasets: PackageDatasetView[]
+  excluded: string[]
+}
+
+/** 二次导入提示 */
+export interface DuplicateHint {
+  spaceId: string
+  spaceName: string
+  importedAt: string
+}
+
+/** 导入后的记录处置结论 */
+export type ImportOutcome = 'added' | 'pending-reference' | 'excluded'
+
+/** 导入计划条目（预览列表项） */
+export interface ImportPlanItem {
+  dataset: string
+  id: string
+  label: string
+  outcome: ImportOutcome
+  note?: string | null
+}
+
+/** 导入选择 */
+export interface ImportSelection {
+  datasets: string[]
+}
+
+/** 导入报告 */
+export interface ImportReport {
+  spaceId: string
+  spaceName: string
+  packageId: string
+  sourceSpaceId: string
+  sourceSpaceName: string
+  importedAt: string
+  counts: Record<string, number>
+  declaredCounts: Record<string, number>
+  pending: string[]
+  excluded: string[]
+}
+
+/** 校验数据包的结果 */
+export interface ImportInspectResult {
+  inspectId: string
+  summary: PackageSummaryView
+  defaults: ImportSelection
+  preview: ImportPlanItem[]
+  pending: string[]
+  excluded: string[]
+  duplicate?: DuplicateHint | null
+}
+
+/** 规划导入的结果 */
+export interface ImportPlanResult {
+  planId: string
+  spaceId: string
+  spaceName: string
+  preview: ImportPlanItem[]
+  pending: string[]
+  excluded: string[]
+  counts: Record<string, number>
+}
+
+/** 提交导入的结果 */
+export interface ImportCommitResult {
+  taskId: string
+  report: ImportReport
+}
+
+/** 取消传输的结果 */
+export interface CancelResult {
+  cancelled: boolean
+}
+
 // ── 框架命令清单 ──
 
 export const frameworkCommands = {
@@ -399,6 +593,15 @@ export const frameworkCommands = {
   vaultProtectionStatus: 'vault_protection_status',
   vaultExport: 'vault_export',
   vaultImport: 'vault_import',
+  // 数据导出导入（框架命令，src-tauri framework/data_transfer，sync L2）
+  dataSpacesList: 'data_spaces_list',
+  dataSpaceSwitch: 'data_space_switch',
+  dataExportCatalog: 'data_export_catalog',
+  dataExportStart: 'data_export_start',
+  dataImportInspect: 'data_import_inspect',
+  dataImportPlan: 'data_import_plan',
+  dataImportCommit: 'data_import_commit',
+  dataTransferCancel: 'data_transfer_cancel',
 } as const
 
 /** 框架命令入参（Record<string, never> = 无参命令） */
@@ -432,6 +635,19 @@ export type FrameworkPayloads = {
   vault_protection_status: Record<string, never>
   vault_export: { path: string; password: string }
   vault_import: { path: string; password: string; overwrite: boolean }
+  data_spaces_list: Record<string, never>
+  data_space_switch: { spaceId: string; revision?: number }
+  data_export_catalog: Record<string, never>
+  data_export_start: { selection: ExportSelection; password: string; path: string }
+  data_import_inspect: { path: string; password: string }
+  data_import_plan: {
+    inspectId: string
+    selection: ImportSelection
+    newSpaceName: string
+    allowDuplicate?: boolean
+  }
+  data_import_commit: { planId: string; password: string }
+  data_transfer_cancel: Record<string, never>
 }
 
 /** 框架命令返回 */
@@ -465,4 +681,12 @@ export type FrameworkResults = {
   vault_protection_status: VaultProtectionStatus
   vault_export: void
   vault_import: VaultImportResult
+  data_spaces_list: SpaceSummary[]
+  data_space_switch: SpaceSwitchResult
+  data_export_catalog: ExportCatalog
+  data_export_start: TransferStart
+  data_import_inspect: ImportInspectResult
+  data_import_plan: ImportPlanResult
+  data_import_commit: ImportCommitResult
+  data_transfer_cancel: CancelResult
 }

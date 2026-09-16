@@ -243,6 +243,46 @@ mod tests {
             "vault_save",
             "新增/更新凭证（payload 打包，id 可选 upsert）",
         ),
+        (
+            "framework",
+            "data_spaces_list",
+            "列出本机空间（名称、来源留档、当前活动标记）",
+        ),
+        (
+            "framework",
+            "data_space_switch",
+            "切换活动空间（写设备级指针，重启后生效）",
+        ),
+        (
+            "framework",
+            "data_export_catalog",
+            "当前空间可导出集合摘要与依赖关系",
+        ),
+        (
+            "framework",
+            "data_export_start",
+            "生成数据包 .pbdata（密码加密，写入用户选定路径）",
+        ),
+        (
+            "framework",
+            "data_import_inspect",
+            "校验数据包并返回预览（新增/待补全/被排除/重复包）",
+        ),
+        (
+            "framework",
+            "data_import_plan",
+            "规划导入：确定新空间与要写入的记录（不写业务数据）",
+        ),
+        (
+            "framework",
+            "data_import_commit",
+            "提交导入：建新空间并落数据（失败回滚暂存目录）",
+        ),
+        (
+            "framework",
+            "data_transfer_cancel",
+            "取消正在进行的导出/导入（清理半成品）",
+        ),
         ("framework", "window_hide", "隐藏主窗口（最小化到托盘）"),
         (
             "framework",

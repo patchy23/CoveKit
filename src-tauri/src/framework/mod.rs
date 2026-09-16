@@ -82,6 +82,14 @@ crate::patchybox_module! {
         vault::vault_protection_status => "凭证保护状态（主密钥实际来源与可用性，设置页展示）",
         vault::vault_export => "密码加密导出 .pbvault 备份（Argon2id 派生密钥）",
         vault::vault_import => "解密导入 .pbvault 备份（合并/覆盖由 UI 选择）",
+        data_transfer::commands::data_spaces_list => "列出本机空间（名称、来源留档、当前活动标记）",
+        data_transfer::commands::data_space_switch => "切换活动空间（写设备级指针，重启后生效）",
+        data_transfer::commands::data_export_catalog => "当前空间可导出集合摘要与依赖关系",
+        data_transfer::commands::data_export_start => "生成数据包 .pbdata（密码加密，写入用户选定路径）",
+        data_transfer::commands::data_import_inspect => "校验数据包并返回预览（新增/待补全/被排除/重复包）",
+        data_transfer::commands::data_import_plan => "规划导入：确定新空间与要写入的记录（不写业务数据）",
+        data_transfer::commands::data_import_commit => "提交导入：建新空间并落数据（失败回滚暂存目录）",
+        data_transfer::commands::data_transfer_cancel => "取消正在进行的导出/导入（清理半成品）",
     },
 }
 

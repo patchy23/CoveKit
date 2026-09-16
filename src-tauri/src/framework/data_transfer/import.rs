@@ -36,7 +36,7 @@ pub(crate) fn new_plan_id() -> String {
 }
 
 /// 计划里要写入的一个数据集块
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct PlannedBlock {
     /// 数据集名（`ssh.profiles` 等）
     pub dataset: String,
@@ -49,7 +49,7 @@ pub(crate) struct PlannedBlock {
 /// 导入计划：包清单 + 用户选择 → 可执行的写入清单
 ///
 /// 计划在命令层生成后**不再重复解析包**：`planId` 指向的这份结构就是唯一依据。
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ImportPlan {
     /// 计划 id（暂存目录名后缀）
     pub plan_id: String,

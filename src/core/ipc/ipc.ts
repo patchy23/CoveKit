@@ -6,8 +6,10 @@
 import { invoke } from '@tauri-apps/api/core'
 import type {
   CredentialSavePayload,
+  ExportSelection,
   FrameworkPayloads,
   FrameworkResults,
+  ImportSelection,
   SpaceDataKey,
   StorageRecoveryAction,
 } from './contracts'
@@ -73,4 +75,22 @@ export const ipc = {
   vaultExport: (path: string, password: string) => call('vault_export', { path, password }),
   vaultImport: (path: string, password: string, overwrite: boolean) =>
     call('vault_import', { path, password, overwrite }),
+  // 数据导出导入（sync L2）
+  dataSpacesList: () => call('data_spaces_list', {}),
+  dataSpaceSwitch: (spaceId: string, revision?: number) =>
+    call('data_space_switch', { spaceId, revision }),
+  dataExportCatalog: () => call('data_export_catalog', {}),
+  dataExportStart: (selection: ExportSelection, password: string, path: string) =>
+    call('data_export_start', { selection, password, path }),
+  dataImportInspect: (path: string, password: string) =>
+    call('data_import_inspect', { path, password }),
+  dataImportPlan: (
+    inspectId: string,
+    selection: ImportSelection,
+    newSpaceName: string,
+    allowDuplicate?: boolean
+  ) => call('data_import_plan', { inspectId, selection, newSpaceName, allowDuplicate }),
+  dataImportCommit: (planId: string, password: string) =>
+    call('data_import_commit', { planId, password }),
+  dataTransferCancel: () => call('data_transfer_cancel', {}),
 }

@@ -155,6 +155,11 @@ impl TaskHandle {
         self.rejected
     }
 
+    /// 任务 id：命令层要把 `taskId` 返回给界面，界面据此在任务面板里定位这次传输
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
     /// 该句柄的结果是否已晚到（登记时的上下文代际与当前不一致）
     fn is_stale(&self) -> bool {
         match self.epoch {
