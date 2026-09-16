@@ -9,12 +9,14 @@
 //! 长任务登记（tasks）：框架长任务的状态与进度，前端订阅 `framework://task` 获知变化
 //! 关闭协商命令（exit）：页签关闭与退出共用同一入口（先裁决后提交），业务拒绝时可见并可由用户强退
 //! 本地凭证管理（credentials）：插件按命名空间+键存取，不关心存储实现
+//! 本地数据导出导入（data_transfer）：`.pbdata` 包容器与清单 DTO（选定导出 / 隔离导入）
 //! Vault 凭证管理（vault）：统一凭证库（keyring 主密钥 + AES-256-GCM + Argon2id 备份）
 //! 框架能力不属于业务插件（插件 = 工具，框架 = 基建）。
 
 pub mod context;
 pub mod credential_refs;
 pub mod credentials;
+pub mod data_transfer;
 pub mod exit;
 pub mod ipc_registry;
 pub mod lifecycle;

@@ -3,7 +3,8 @@
 //! 一个「域」= 一个主密钥 + 一组密文文件。Vault（凭证条目模型）与 `credentials`
 //! （兼容 KV 命名空间）只在此共用底层原语，业务数据格式各自保留。
 //!
-//! - 加解密：`crypto`（AES-256-GCM，`nonce(12B)‖ciphertext`，解密先校验最小长度）
+//! - 加解密：`crypto`（AES-256-GCM，`nonce(12B)‖ciphertext`，解密先校验最小长度；
+//!   带 AAD 变体供数据包容器把头字节绑进认证，`derive_key_argon2id` 为框架唯一口令派生）
 //! - 主密钥：`key`（系统密钥库 → 本地降级密钥文件 → 首次生成；**有既有密文时以密文为准**）
 //! - 文件：`file`（唯一临时名 + fsync + 旧文件转 `.bak`；读路径按「认证 + 解析」择版恢复）
 //! - 保护状态：`status`（`system-keyring` / `file-fallback` / `unavailable`，供设置页展示）
@@ -23,7 +24,9 @@ pub(crate) mod test_support;
 #[cfg(windows)]
 mod win_acl;
 
-pub(crate) use crypto::encrypt_payload;
+pub(crate) use crypto::{
+    decrypt_with_aad_nonce, derive_key_argon2id, encrypt_payload, encrypt_with_aad_nonce,
+};
 pub(crate) use file::{backup_path, ciphertext_evidence, load_verified, replace_file};
 pub(crate) use key::{
     keyring_store_for, native_backend_available, resolve_master_key, MasterKeyStore,

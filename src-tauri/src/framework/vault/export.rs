@@ -8,7 +8,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
-use argon2::{Algorithm, Argon2, Params, Version};
+use argon2::Params;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 
@@ -47,20 +47,19 @@ pub struct VaultBackupFile {
     pub ciphertext: String,
 }
 
-/// 用一次性密码 + 参数派生 32B 加密密钥（Argon2id）
+/// 用一次性密码 + 参数派生 32B 加密密钥（Argon2id；派生实现走框架唯一原语）
 fn derive_key(password: &str, params: &KdfParams) -> Result<[u8; 32], String> {
     if params.algo != "argon2id" {
         return Err(format!("不支持的 KDF 算法：{}", params.algo));
     }
     let salt = hex::decode(&params.salt).map_err(|e| format!("备份盐解码失败: {e}"))?;
-    let argon_params = Params::new(params.m_cost, params.t_cost, params.p_cost, Some(32))
-        .map_err(|e| format!("备份 KDF 参数非法: {e}"))?;
-    let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, argon_params);
-    let mut key = [0u8; 32];
-    argon
-        .hash_password_into(password.as_bytes(), &salt, &mut key)
-        .map_err(|e| format!("密钥派生失败: {e}"))?;
-    Ok(key)
+    crate::framework::secure_store::derive_key_argon2id(
+        password,
+        &salt,
+        params.m_cost,
+        params.t_cost,
+        params.p_cost,
+    )
 }
 
 /// 导出加密：明文 → 备份文件结构（随机 salt + 随机 nonce，默认 Argon2id 参数）
