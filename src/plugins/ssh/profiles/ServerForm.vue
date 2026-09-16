@@ -145,7 +145,7 @@ function submit() {
     return
   }
   const p: ServerProfile = {
-    id: form.id || `profile-${Date.now()}`,
+    id: form.id || `profile-${crypto.randomUUID()}`,
     name: form.name.trim(),
     host: form.host.trim(),
     port: form.port,

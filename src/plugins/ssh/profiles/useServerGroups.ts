@@ -26,7 +26,7 @@ export function useServerGroups() {
   /** 新建分组（返回新分组；调用方 toast） */
   async function createGroup(name: string): Promise<SshGroup> {
     const group: SshGroup = {
-      id: `group-${Date.now()}`,
+      id: `group-${crypto.randomUUID()}`,
       name: name.trim(),
       sortOrder: Math.max(0, ...groups.value.map((g) => g.sortOrder)) + 1,
     }

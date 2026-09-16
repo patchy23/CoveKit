@@ -18,10 +18,7 @@ pub(crate) use handler::SshHandler;
 
 use std::{
     collections::HashMap,
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc, Mutex,
-    },
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -147,14 +144,12 @@ pub(crate) fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 生成进程内单调唯一的资源 id，避免同一毫秒并发创建时互相覆盖。
+/// 生成全局唯一的资源 id（书签 / 隧道 / 分组 / 连接会话）。
+///
+/// 用 UUIDv4 而不是「毫秒 + 进程内计数」：导入/合并会把**另一台机器**上生成的记录搬进来，
+/// 进程内计数在跨机器场景下必然撞号（同一毫秒 + 同一个起始计数），撞号的记录会互相覆盖。
 pub(crate) fn resource_id(prefix: &str) -> String {
-    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
-    format!(
-        "{prefix}-{}-{}",
-        now_ms(),
-        NEXT_ID.fetch_add(1, Ordering::Relaxed)
-    )
+    format!("{prefix}-{}", uuid::Uuid::new_v4())
 }
 
 /// POSIX shell 单引号转义；所有拼入远程命令的字符串参数必须先经过此函数。
