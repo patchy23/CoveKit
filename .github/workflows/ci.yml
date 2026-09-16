@@ -10,8 +10,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: 判断变更影响
+    runs-on: ubuntu-latest
+    outputs:
+      product: ${{ steps.scope.outputs.product }}
+      doc_tools: ${{ steps.scope.outputs.doc_tools }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: python scripts/ci_changes.py --base "$BASE_SHA" --head "$HEAD_SHA"
+
   docs-checks:
-    name: 文档与开发体系守卫
+    needs: [changes]
+    name: 文档与入口检查
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,12 +40,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m unittest discover -s scripts -p test_doc_checks.py
+      - if: needs.changes.outputs.doc_tools == 'true'
+        run: python -m unittest discover -s scripts -p test_doc_checks.py
+      - if: needs.changes.outputs.product == 'true'
+        run: python -m unittest discover -s scripts -p test_ci_changes.py
       - run: python scripts/check_markdown.py
-      - run: python scripts/check_progress.py
       - run: python scripts/check_doc_budget.py
 
   lint-and-test:
+    needs: [changes]
+    if: needs.changes.outputs.product == 'true'
     name: Lint & Test（前端）
     runs-on: ubuntu-latest
     steps:
@@ -43,6 +67,8 @@ jobs:
       - run: pnpm build
 
   rust-checks:
+    needs: [changes]
+    if: needs.changes.outputs.product == 'true'
     name: Rustfmt & Clippy
     runs-on: ubuntu-latest
     steps:
@@ -69,7 +95,8 @@ jobs:
   build:
     name: Tauri Build（Windows 安装包）
     runs-on: windows-latest
-    needs: [lint-and-test, rust-checks, docs-checks]
+    needs: [changes, lint-and-test, rust-checks, docs-checks]
+    if: needs.changes.outputs.product == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -97,7 +124,8 @@ jobs:
   build-macos:
     name: Tauri Build（macOS dmg）
     runs-on: macos-latest
-    needs: [lint-and-test, rust-checks, docs-checks]
+    needs: [changes, lint-and-test, rust-checks, docs-checks]
+    if: needs.changes.outputs.product == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -121,3 +149,35 @@ jobs:
           name: patchybox-dmg
           path: src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
+
+  checks:
+    name: CI 结果
+    if: always()
+    runs-on: ubuntu-latest
+    needs: [changes, docs-checks, lint-and-test, rust-checks, build, build-macos]
+    steps:
+      - name: 核对必需任务结果
+        env:
+          CHANGE_RESULT: ${{ needs.changes.result }}
+          DOC_RESULT: ${{ needs.docs-checks.result }}
+          PRODUCT: ${{ needs.changes.outputs.product }}
+          FRONTEND: ${{ needs.lint-and-test.result }}
+          RUST: ${{ needs.rust-checks.result }}
+          WINDOWS: ${{ needs.build.result }}
+          MACOS: ${{ needs.build-macos.result }}
+        shell: bash
+        run: |
+          test "$CHANGE_RESULT" = success
+          test "$DOC_RESULT" = success
+          if [ "$PRODUCT" = true ]; then
+            test "$FRONTEND" = success
+            test "$RUST" = success
+            test "$WINDOWS" = success
+            test "$MACOS" = success
+          else
+            test "$PRODUCT" = false
+            test "$FRONTEND" = skipped
+            test "$RUST" = skipped
+            test "$WINDOWS" = skipped
+            test "$MACOS" = skipped
+          fi

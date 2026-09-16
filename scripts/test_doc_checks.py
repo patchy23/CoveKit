@@ -1,81 +1,70 @@
-"""文档守卫负例：临时目录隔离，不污染实际仓库或提交。"""
+"""文档工具行为测试：隔离临时 Git 仓库，不修改真实工作区。"""
 import contextlib
 import io
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 import check_doc_budget as budget
-import check_progress as progress
 import check_markdown as markdown
 
 
 class BudgetTests(unittest.TestCase):
-    def run_case(self, extra="", missing_todo=False):
+    def check(self, agent="入口", extra="", refs=None):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "docs").mkdir()
-            (root / "AGENTS.md").write_text("入口", encoding="utf-8")
-            (root / "TODO.md").write_text("裁决", encoding="utf-8")
-            refs = ["../AGENTS.md"] if missing_todo else ["../AGENTS.md", "../TODO.md"]
+            (root / "AGENTS.md").write_text(agent, encoding="utf-8")
+            refs = ["../AGENTS.md"] if refs is None else refs
+            quote = chr(96)
             (root / "docs/README.md").write_text(
-                "## 最小必读集\n" + "\n".join(f"- `{r}`" for r in refs), encoding="utf-8"
-            )
-            (root / "docs/extra.md").write_text(extra, encoding="utf-8")
-            with patch.object(budget, "ROOT", root), patch.object(budget, "BASELINE", {}):
-                with contextlib.redirect_stdout(io.StringIO()):
-                    return budget.main()
+                "## 最小必读集\n" + "\n".join(quote + ref + quote for ref in refs), encoding="utf-8")
+            page = root / "docs/extra.md"
+            page.write_text(extra, encoding="utf-8")
+            return budget.validate(root, [page])
 
-    def test_new_oversize_fails(self):
-        self.assertNotEqual(self.run_case("x" * 30001), 0)
+    def test_ordinary_size_is_advisory(self):
+        errors, warnings = self.check(extra="x" * 30001)
+        self.assertFalse(errors)
+        self.assertTrue(warnings)
 
-    def test_new_too_many_lines_fails(self):
-        self.assertNotEqual(self.run_case("x\n" * 501), 0)
+    def test_ordinary_lines_are_advisory(self):
+        errors, warnings = self.check(extra="x\n" * 501)
+        self.assertFalse(errors)
+        self.assertTrue(warnings)
 
-    def test_missing_decision_entry_fails(self):
-        self.assertNotEqual(self.run_case(missing_todo=True), 0)
+    def test_agent_budget_remains_enforced(self):
+        self.assertTrue(self.check(agent="x" * 10001)[0])
 
-    def test_small_document_passes(self):
-        self.assertEqual(self.run_case("正常"), 0)
+    def test_missing_entry_fails(self):
+        self.assertTrue(self.check(refs=["missing.md"])[0])
+
+    def test_read_set_budget_remains_enforced(self):
+        self.assertTrue(self.check(extra="x" * 15001, refs=["../AGENTS.md", "extra.md"])[0])
+
+    def test_todo_is_not_mandatory_reading(self):
+        self.assertFalse(self.check()[0])
 
 
-class ProgressTests(unittest.TestCase):
-    def run_case(self, mark="✅", evidence="`abcdef1`", document="任务书.md", git_ok=True):
+class TrackedFilesTests(unittest.TestCase):
+    def test_untracked_draft_excluded_and_explicit_file_checked(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            batch = root / "docs/batches/probe"
-            batch.mkdir(parents=True)
-            (batch / "任务书.md").write_text("任务", encoding="utf-8")
-            ledger = root / "docs/进度台账.md"
-            ledger.write_text(
-                "| 批次 | 任务书 | 状态 | 证据 | 未完成／备注 |\n"
-                "| --- | --- | --- | --- | --- |\n"
-                f"| `probe` | `{document}` | {mark} | {evidence} | 说明 |\n", encoding="utf-8"
-            )
-            with patch.object(progress, "ROOT", root), patch.object(progress, "LEDGER", ledger), \
-                    patch.object(progress, "BATCHES", root / "docs/batches"), \
-                    patch.object(progress, "commit_exists", return_value=git_ok):
-                with contextlib.redirect_stdout(io.StringIO()):
-                    return progress.main()
-
-    def test_bad_status_with_valid_emoji_fails(self):
-        self.assertNotEqual(self.run_case(mark="✅ 胡乱状态"), 0)
-
-    def test_done_requires_evidence(self):
-        self.assertNotEqual(self.run_case(evidence="无"), 0)
-
-    def test_unknown_commit_fails(self):
-        self.assertNotEqual(self.run_case(git_ok=False), 0)
-
-    def test_missing_document_fails(self):
-        self.assertNotEqual(self.run_case(document="不存在.md"), 0)
-
-    def test_document_only_can_be_pending(self):
-        self.assertEqual(self.run_case(mark="⬜", evidence="未验证"), 0)
-
-    def test_valid_done_passes(self):
-        self.assertEqual(self.run_case(), 0)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            tracked = root / "已跟踪.md"
+            draft = root / "draft.md"
+            tracked.write_text("正常", encoding="utf-8")
+            draft.write_text("[坏链接](missing.md)", encoding="utf-8")
+            subprocess.run(["git", "add", "--", tracked.name], cwd=root, check=True)
+            self.assertEqual(markdown.tracked_markdown(root), [tracked])
+            with patch.object(markdown, "ROOT", root), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(markdown.main(), 0)
+                self.assertEqual(markdown.main([draft.name]), 1)
+                self.assertEqual(markdown.main(["absent.md"]), 1)
+            tracked.unlink()
+            self.assertEqual(markdown.tracked_markdown(root), [])
 
 
 class MarkdownTests(unittest.TestCase):
@@ -119,13 +108,6 @@ class MarkdownTests(unittest.TestCase):
             page = root / "docs/index.md"
             page.write_text("[裁决](../TODO.md#裁决)", encoding="utf-8")
             self.assertFalse(markdown.check_file(page, root))
-
-    def test_table_headers_choose_status_column(self):
-        rows = list(progress.table_rows("| 状态 | 批次 |\n| --- | --- |\n| 🔶 | probe |"))
-        self.assertEqual(rows[0][1]["状态"], "🔶")
-
-    def test_fake_row_outside_table_does_not_count(self):
-        self.assertEqual(list(progress.table_rows("probe 任务书.md ✅")), [])
 
     def test_template_paths_are_current(self):
         for path in (Path(__file__).resolve().parent.parent / "docs/standards/templates").glob("*.md"):

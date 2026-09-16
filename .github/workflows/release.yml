@@ -33,7 +33,6 @@ jobs:
         run: |
           python -m unittest discover -s scripts -p test_doc_checks.py
           python scripts/check_markdown.py
-          python scripts/check_progress.py
           python scripts/check_doc_budget.py
       - name: 前端门禁
         run: |

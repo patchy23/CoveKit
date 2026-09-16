@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 import unicodedata
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -84,8 +86,19 @@ def check_file(path: Path, root: Path) -> list[str]:
     return errors
 
 
-def main() -> int:
-    files = sorted((ROOT / "docs").rglob("*.md")) + sorted(ROOT.glob("*.md"))
+def tracked_markdown(root: Path) -> list[Path]:
+    """只取 Git 跟踪文件，排除未跟踪草稿；新文件由显式参数检查。"""
+    result = subprocess.run(["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True)
+    return sorted(root / name for name in result.stdout.decode("utf-8").split("\0")
+                  if name.lower().endswith(".md") and (root / name).is_file())
+
+
+def main(paths: list[str] | None = None) -> int:
+    files = [ROOT / name for name in paths] if paths else tracked_markdown(ROOT)
+    missing = [f"文件不存在：{path}" for path in files if not path.is_file()]
+    if missing:
+        print("\n".join(missing))
+        return 1
     errors = [error for path in files for error in check_file(path, ROOT)]
     for error in errors:
         print(f"✗ {error}")
@@ -94,4 +107,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(sys.argv[1:]))
