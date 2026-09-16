@@ -9,10 +9,14 @@
 use serde_json::Value;
 use tauri::AppHandle;
 
-use super::super::adapter::{self, DatasetAdapter};
-use super::super::types::{CatalogEntry, DatasetDescriptor, DependencyEdge, TransportPolicy};
+use super::super::adapter::{self, DatasetAdapter, StagingTarget};
+use super::super::types::{
+    CatalogEntry, DatasetDescriptor, DependencyEdge, ImportContext, ImportPlanItem, TransportPolicy,
+};
 use crate::framework::vault::models::Credential;
-use crate::framework::vault::{credential_summary, credentials_read_all};
+use crate::framework::vault::{
+    credential_summary, credentials_read_all, credentials_read_all_at, credentials_write_all_at,
+};
 
 /// 数据集名（owner = `vault`）
 pub(crate) const DATASET: &str = "vault.credentials";
@@ -117,6 +121,68 @@ impl DatasetAdapter for VaultAdapter {
         }
         Ok(Vec::new())
     }
+
+    /// 导入判定：凭证能进包就说明「会写入新空间」，逐条回显名称便于对账
+    fn plan_import(
+        &self,
+        dataset: &str,
+        records: &[Value],
+        _context: &ImportContext,
+    ) -> Result<Vec<ImportPlanItem>, String> {
+        if dataset != DATASET {
+            return Err(format!("凭证适配器不支持数据集 {dataset}"));
+        }
+        let mut items = Vec::with_capacity(records.len());
+        for record in records {
+            let credential = decode_credential(record)?;
+            items.push(ImportPlanItem::added(
+                DATASET,
+                &credential.id,
+                &credential.name,
+            ));
+        }
+        Ok(items)
+    }
+
+    /// 写入新空间暂存目录：按**新空间**的主密钥重新加密，再读回自查
+    ///
+    /// 不沿用来源空间的密文与密钥：那样等于把来源密钥带进新空间，
+    /// 且「跨空间不可解」这条不变量会被破坏（有测试守着）。
+    fn apply_to_staging(
+        &self,
+        dataset: &str,
+        records: &[Value],
+        target: &StagingTarget,
+    ) -> Result<usize, String> {
+        if dataset != DATASET {
+            return Err(format!("凭证适配器不支持数据集 {dataset}"));
+        }
+        let mut credentials: Vec<Credential> = Vec::with_capacity(records.len());
+        for record in records {
+            let credential = decode_credential(record)?;
+            if credentials.iter().any(|item| item.id == credential.id) {
+                return Err(format!("包内凭证 id 重复：{}", credential.id));
+            }
+            credentials.push(credential);
+        }
+        let dir = target.root.join("vault");
+        credentials_write_all_at(&dir, &target.keyring, &credentials)?;
+        // 自查：写进去的必须能按新空间密钥读回来（读不回来说明密文/密钥不匹配）
+        let back = credentials_read_all_at(&dir, &target.keyring)?;
+        if back.len() != credentials.len() {
+            return Err(format!(
+                "凭证写入后读回 {} 条，预期 {} 条",
+                back.len(),
+                credentials.len()
+            ));
+        }
+        Ok(records.len())
+    }
+}
+
+/// 传输记录 → 凭证结构（解码失败即拒绝：不猜字段、不静默丢字段）
+fn decode_credential(record: &Value) -> Result<Credential, String> {
+    serde_json::from_value(record.clone()).map_err(|e| format!("凭证记录结构不认识: {e}"))
 }
 
 /// 单条凭证 → 传输记录（逻辑结构 = `Credential` 的 serde 形态）
@@ -134,6 +200,57 @@ pub(crate) fn register() {
 mod tests {
     use super::*;
     use crate::framework::vault::models::{CredentialFields, CredentialKind};
+
+    /// 写入暂存目录：按传入的密钥库加密落盘（密文不含明文），并能读回同 id
+    #[test]
+    fn apply_to_staging_writes_ciphertext_and_reads_back() {
+        use crate::framework::secure_store::ScopedKeyringStore;
+
+        let root = std::env::temp_dir().join(format!("pb-vault-staging-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("vault")).expect("建暂存凭证目录");
+        let target = StagingTarget {
+            root: root.clone(),
+            space_id: "11111111-1111-4111-8111-111111111111".into(),
+            // 测试专用 service：不碰用户真实凭据管理器里的条目
+            keyring: ScopedKeyringStore::new("com.patchy23.patchybox.tests"),
+        };
+        let credential = Credential {
+            id: "cred-1".into(),
+            name: "跳板机".into(),
+            kind: CredentialKind::Password,
+            fields: CredentialFields::Password {
+                username: "root".into(),
+                password: "s3cret".into(),
+            },
+            note: String::new(),
+            created_at: 1,
+            updated_at: 1,
+        };
+        let record = credential_record(&credential).expect("序列化凭证");
+
+        let written = VaultAdapter
+            .apply_to_staging(DATASET, std::slice::from_ref(&record), &target)
+            .expect("写入暂存凭证成功");
+        assert_eq!(written, 1);
+
+        // 读回：同一密钥库能取到同一条凭证
+        let back = credentials_read_all_at(&root.join("vault"), &target.keyring).expect("读回凭证");
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].id, "cred-1");
+
+        // 落盘必须是密文：明文密码不能出现在文件里
+        let raw = std::fs::read(root.join("vault").join("vault.dat")).expect("读密文文件");
+        let text = String::from_utf8_lossy(&raw);
+        assert!(!text.contains("s3cret"), "明文秘密不得落盘");
+
+        // 重复 id 的包直接拒绝（同一份包导入两次不该得到两条同 id 记录）
+        assert!(VaultAdapter
+            .apply_to_staging(DATASET, &[record.clone(), record], &target)
+            .is_err());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     /// 记录体检：合法凭证通过，缺 id / 缺名称 / 缺字段结构被拒
     #[test]

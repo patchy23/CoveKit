@@ -10,8 +10,10 @@
 use serde_json::Value;
 use tauri::AppHandle;
 
-use super::super::adapter::{self, DatasetAdapter};
-use super::super::types::{DatasetDescriptor, DependencyEdge, TransportPolicy};
+use super::super::adapter::{self, DatasetAdapter, StagingTarget};
+use super::super::types::{
+    DatasetDescriptor, DependencyEdge, ImportContext, ImportPlanItem, TransportPolicy,
+};
 use crate::framework::preferences;
 
 /// 收藏数据集名（owner = `core`）
@@ -110,6 +112,86 @@ impl DatasetAdapter for PreferencesAdapter {
         key_of(dataset)?;
         Ok(Vec::new())
     }
+
+    /// 导入判定：整块带入，逐条回显工具 id（界面能看到「带进来哪些」）
+    fn plan_import(
+        &self,
+        dataset: &str,
+        records: &[Value],
+        _context: &ImportContext,
+    ) -> Result<Vec<ImportPlanItem>, String> {
+        key_of(dataset)?;
+        if records.is_empty() {
+            return Ok(vec![ImportPlanItem::excluded(
+                dataset,
+                dataset,
+                "包内这一类是空列表",
+            )]);
+        }
+        Ok(records
+            .iter()
+            .filter_map(|record| record.as_str())
+            .map(|tool| ImportPlanItem::added(dataset, tool, tool))
+            .collect())
+    }
+
+    /// 写入暂存目录的 `preferences.json`：读改写，避免两类习惯互相覆盖
+    fn apply_to_staging(
+        &self,
+        dataset: &str,
+        records: &[Value],
+        target: &StagingTarget,
+    ) -> Result<usize, String> {
+        let key = key_of(dataset)?;
+        let path = target.root.join(PREFERENCES_FILE);
+        let mut map = read_preferences_at(&path)?;
+        map.insert(key.to_string(), Value::Array(records.to_vec()));
+        write_preferences_at(&path, &map)?;
+        // 自查：读回条数一致才算写入成功
+        let back = read_preferences_at(&path)?;
+        let count = ids_of(&back, key)?.len();
+        if count != records.len() {
+            return Err(format!(
+                "{dataset} 写入后读回 {count} 条，预期 {} 条",
+                records.len()
+            ));
+        }
+        Ok(records.len())
+    }
+}
+
+/// 空间偏好文件名（四分区布局的固定落位）
+const PREFERENCES_FILE: &str = "preferences.json";
+
+/// 读取指定目录下的偏好文件：文件不存在 = 空表（新空间就是这样）
+fn read_preferences_at(path: &std::path::Path) -> Result<serde_json::Map<String, Value>, String> {
+    let raw = match std::fs::read(path) {
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(serde_json::Map::new())
+        }
+        Err(error) => return Err(format!("读取偏好文件失败: {error}")),
+    };
+    if raw.is_empty() {
+        return Ok(serde_json::Map::new());
+    }
+    let value: Value =
+        serde_json::from_slice(&raw).map_err(|e| format!("偏好文件结构不认识: {e}"))?;
+    match value {
+        Value::Object(map) => Ok(map),
+        _ => Err("偏好文件结构不认识（应为对象）".into()),
+    }
+}
+
+/// 写入偏好文件：先写临时文件再改名，避免半截文件（与框架原子写同款做法）
+fn write_preferences_at(
+    path: &std::path::Path,
+    map: &serde_json::Map<String, Value>,
+) -> Result<(), String> {
+    let body = serde_json::to_vec_pretty(map).map_err(|e| format!("偏好序列化失败: {e}"))?;
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(&temp, body).map_err(|e| format!("写入偏好临时文件失败: {e}"))?;
+    std::fs::rename(&temp, path).map_err(|e| format!("偏好文件改名失败: {e}"))
 }
 
 /// 数据集名 → `preferences.json` 键（未知数据集直接拒绝，避免把别的键当习惯带出）

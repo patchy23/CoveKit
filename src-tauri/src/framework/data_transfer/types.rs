@@ -10,6 +10,8 @@
 //! 摘要约定：`sha256` 按本仓库的序列化结果计算（`serde_json::Value` 对象键有序），
 //! 导出与导入两侧走同一序列化路径故可比；换序列化器必须同步改 `dataset_digest`，
 //! 否则旧包会在「摘要不符」处被判为损坏。
+use std::collections::{BTreeMap, BTreeSet};
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -233,95 +235,55 @@ pub(crate) fn validate_manifest(manifest: &PackageManifest) -> Result<(), String
     Ok(())
 }
 
-/* ── 选择集与可导出目录（C2 导出链路的输入输出） ── */
+/* ── 选择集与可导出目录（C2 导出链路） ───────────────────────────────── */
 
-/// 选择集里的一项：数据集名 → 勾选的记录 id 列表
+/// 可勾选条目（目录列表项；`id` 是传输用主键，`label`/`detail` 只用于展示）
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct SelectionEntry {
-    /// 数据集名（如 `ssh.profiles`）
-    pub dataset: String,
-    /// 勾选的记录 id（该数据集声明可单独勾选时必须给出）
-    pub ids: Vec<String>,
-}
-
-/// 导出选择：前端提交、`data_export_catalog` 给默认值
-///
-/// 只表达「用户勾了什么」；依赖闭包（分组、隧道、书签、凭证）由 `catalog::resolve_selection`
-/// 从目录条目展开，前端不需要也不应该自己算。
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ExportSelection {
-    /// 按条勾选的数据集（L2 只有服务器档案）
-    pub entries: Vec<SelectionEntry>,
-    /// 整块勾选的数据集（收藏 / 最近使用）
-    pub datasets: Vec<String>,
-    /// 是否把被引用凭证写进包（false = 只声明条数，导入后由用户重填）
-    pub include_credentials: bool,
-}
-
-impl ExportSelection {
-    /// 空选择：未勾选任何条目、整块数据集为空、默认可带出被引用凭证
-    pub(crate) fn empty() -> Self {
-        Self {
-            entries: Vec::new(),
-            datasets: Vec::new(),
-            include_credentials: true,
-        }
-    }
-}
-
-/// 可勾选条目（目录列表项）
-///
-/// `label` / `detail` 只是界面文案，不参与传输；记录本体由适配器按 id 重新导出。
-#[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CatalogEntry {
-    /// 所属数据集
+    /// 所属数据集名（如 `ssh.profiles`）
     pub dataset: String,
-    /// 记录 id（导出时作为 `SelectionEntry.ids` 回传）
+    /// 记录 id（勾选与依赖引用的目标）
     pub id: String,
-    /// 展示名（如服务器名称）
+    /// 展示名（服务器名 / 凭证名）
     pub label: String,
-    /// 展示明细（如 `host:port · 用户名`）
+    /// 一行补充信息（`user@host:port`）
     pub detail: String,
-    /// 该条目引用的其他对象（由适配器给出，框架据此展开闭包）
+    /// 该条目引用了谁（勾选后按 `pulls` 带出）
     pub dependencies: Vec<DependencyEdge>,
-    /// 条目级提示（如「未绑定凭证，导入后待补全」）
+    /// 待补全提示（缺省 = 无提示）
     pub note: Option<String>,
 }
 
-/// 数据集跟随关系：`kind` 的依赖边指向 `dataset`
-///
-/// 例：`ssh.profiles` 声明 `{kind: "credential", dataset: "vault.credentials"}`，
-/// 表示所选档案引用到的凭证自动进入该数据集的闭包。
-#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+/// 数据集对另一数据集的跟随关系：`kind` 的依赖边指向 `dataset`
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DatasetPull {
-    /// 依赖边类别（与 `CatalogEntry.dependencies[].kind` 对应）
+    /// 依赖边类型（如 `credential`）
     pub kind: String,
     /// 被带出的数据集名
     pub dataset: String,
 }
 
-/// 适配器声明的可导出数据集（含当前空间的条目清单）
-#[derive(Clone, Debug, PartialEq)]
+/// 适配器声明的可导出数据集
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct DatasetDescriptor {
-    /// 数据集名（`<owner>.<类别>`）
+    /// 数据集名（`<owner>.<集合>`）
     pub name: String,
-    /// 界面文案（数据集类别的展示名）
+    /// 界面文案（与 `name` 分离：文案可变，数据集名是包内标识）
     pub label: String,
-    /// 归属 owner（与适配器的 `owner()` 一致）
+    /// 归属 owner
     pub owner: String,
-    /// 传输策略（§13.1 冻结取值）
+    /// 传输策略
     pub policy: TransportPolicy,
-    /// 该数据集自身的 schema 版本
+    /// 逻辑 schema 版本
     pub schema_version: u32,
-    /// 是否允许用户单独勾选（false = 只作跟随带出或被依赖带出）
+    /// 是否可单独勾选（凭证/跟随数据集为 false）
     pub selectable: bool,
-    /// 是否含秘密（含则界面必须显式确认）
+    /// 是否含秘密（界面需要显式确认）
     pub contains_secret: bool,
-    /// 目录里的默认勾选（整块数据集用；按条勾选的数据集默认不勾）
+    /// 默认是否勾选（整块数据集用；条目级默认由界面决定）
     pub default_selected: bool,
     /// 跟随关系：本数据集记录引用了哪些数据集
     pub pulls: Vec<DatasetPull>,
@@ -329,12 +291,12 @@ pub(crate) struct DatasetDescriptor {
     pub note: Option<String>,
     /// 当前空间可带出的记录数（按条勾选的数据集必须等于 `entries` 长度；整块数据集为实际条数）
     pub record_count: usize,
-    /// 当前空间可勾选的条目（整块带出的数据集为空）
+    /// 当前空间可勾选的条目
     pub entries: Vec<CatalogEntry>,
 }
 
 impl DatasetDescriptor {
-    /// 前端展示用摘要（丢掉条目明细，只留计数与策略）
+    /// 前端展示用的摘要（不含条目明细）
     pub(crate) fn summary(&self) -> DatasetSummary {
         DatasetSummary {
             name: self.name.clone(),
@@ -351,25 +313,25 @@ impl DatasetDescriptor {
     }
 }
 
-/// 数据集摘要（前端渲染类别卡片；不含记录明细）
-#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+/// 前端展示用的数据集摘要
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DatasetSummary {
     /// 数据集名
     pub name: String,
-    /// 展示名
+    /// 界面文案
     pub label: String,
     /// 归属 owner
     pub owner: String,
     /// 传输策略
     pub policy: TransportPolicy,
-    /// schema 版本
+    /// 逻辑 schema 版本
     pub schema_version: u32,
     /// 是否可单独勾选
     pub selectable: bool,
     /// 是否含秘密
     pub contains_secret: bool,
-    /// 是否默认勾选
+    /// 默认是否勾选
     pub default_selected: bool,
     /// 不可单独勾选时的说明
     pub note: Option<String>,
@@ -377,67 +339,97 @@ pub(crate) struct DatasetSummary {
     pub record_count: usize,
 }
 
-/// 导出目录：当前空间可导出集合 + 条目清单 + 默认选择
-#[derive(Serialize, Clone, Debug, PartialEq)]
+/// 选择集里的一项：数据集名 → 勾选的记录 id 列表
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SelectionEntry {
+    /// 数据集名
+    pub dataset: String,
+    /// 勾选的记录 id
+    pub ids: Vec<String>,
+}
+
+/// 导出选择（前端提交，默认值由目录给出）
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ExportSelection {
+    /// 按条勾选的数据集（L2 = 服务器档案）
+    pub entries: Vec<SelectionEntry>,
+    /// 整块勾选的数据集（收藏 / 最近使用）
+    pub datasets: Vec<String>,
+    /// 是否把被引用凭证写进包（false = 只声明条数，导入后由用户重填）
+    pub include_credentials: bool,
+}
+
+impl ExportSelection {
+    /// 空选择：什么都没勾，但默认带出凭证（用户点开目录时的起点）
+    pub(crate) fn empty() -> Self {
+        Self {
+            entries: Vec::new(),
+            datasets: Vec::new(),
+            include_credentials: true,
+        }
+    }
+}
+
+/// 导出目录（前端渲染用）
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ExportCatalog {
-    /// 来源空间 id（导出时写进清单）
+    /// 来源空间 id
     pub source_space_id: String,
-    /// 来源空间名
+    /// 来源空间显示名
     pub source_space_name: String,
-    /// 数据集摘要（按名字排序）
+    /// 可导出数据集摘要
     pub datasets: Vec<DatasetSummary>,
-    /// 可勾选条目（按数据集名、条目名排序）
+    /// 全部候选条目（按数据集分组由前端完成；可勾选性看所属数据集的 `selectable`）
     pub entries: Vec<CatalogEntry>,
-    /// 默认选择集（收藏默认勾选、最近使用默认不勾、凭证默认可带出）
+    /// 默认选择
     pub defaults: ExportSelection,
-    /// 需要用户在预览里看到的提示（如未绑定凭证的档案数）
+    /// 结构性提醒（如「当前空间没有可导出的记录」「这些类别属本机事实，不随包搬移」）
     pub warnings: Vec<String>,
 }
 
-/// 解析后的选择集：依赖闭包已展开
-///
-/// `datasets` 的键存在即表示该数据集进包；值为空列表表示「整块带入」（收藏、最近使用）。
+/// 解析后的选择集：闭包已展开，数据集名 → 记录 id（空列表 = 整块带出）
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ResolvedSelection {
-    /// 数据集名 → 进包记录 id（排序去重）
-    pub datasets: std::collections::BTreeMap<String, Vec<String>>,
-    /// 是否携带凭证记录（false = 凭证块只声明条数）
+    /// 数据集名 → 记录 id
+    pub datasets: BTreeMap<String, Vec<String>>,
+    /// 是否把凭证记录写进包（false = 只声明条数）
     pub include_credentials: bool,
 }
 
 impl ResolvedSelection {
-    /// 某数据集是否进包
+    /// 该数据集是否进包
     pub(crate) fn includes(&self, dataset: &str) -> bool {
         self.datasets.contains_key(dataset)
     }
 
-    /// 某数据集的进包条数（int 计数用；整块数据集为 None，条数由导出时给出）
+    /// 该数据集要带出的记录 id（整块数据集为空列表）
     pub(crate) fn ids_of(&self, dataset: &str) -> &[String] {
-        self.datasets
-            .get(dataset)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
+        self.datasets.get(dataset).map(Vec::as_slice).unwrap_or(&[])
     }
 }
 
-/// 由描述符与记录体构造携带记录的块（条数与摘要一次算好，禁止各处手填）
+/// 由描述符与记录体构造「带记录」的块（条数与摘要一次算好，避免各处手填）
 pub(crate) fn block_carrying(
     descriptor: &DatasetDescriptor,
     records: Vec<Value>,
 ) -> Result<DatasetBlock, String> {
+    let record_count = records.len();
     let body = Value::Array(records);
+    let sha256 = dataset_digest(&body)?;
     Ok(DatasetBlock {
         name: descriptor.name.clone(),
         schema_version: descriptor.schema_version,
         policy: descriptor.policy,
-        record_count: body.as_array().map(Vec::len).unwrap_or(0),
-        sha256: dataset_digest(&body)?,
+        record_count,
+        sha256,
         records: Some(body),
     })
 }
 
-/// 构造「只声明不携带」的块（`device-local` 与未勾选带出的 `secret`）
+/// 由描述符构造「只声明不携带」的块（凭证未带出、device-local 类别）
 pub(crate) fn block_declared(descriptor: &DatasetDescriptor, record_count: usize) -> DatasetBlock {
     DatasetBlock {
         name: descriptor.name.clone(),
@@ -447,6 +439,160 @@ pub(crate) fn block_declared(descriptor: &DatasetDescriptor, record_count: usize
         sha256: String::new(),
         records: None,
     }
+}
+
+/* ── 导入侧（C3 隔离导入） ─────────────────────────────────────────── */
+
+/// 包内某数据集的携带情况
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CarriedBlock {
+    /// 声明条数（含只声明未携带）
+    pub record_count: usize,
+    /// 记录 id 集合；`None` = 携带了记录但没有 id 概念（整块数据集）
+    pub ids: Option<BTreeSet<String>>,
+}
+
+/// 导入判定上下文：适配器据此判「新增 / 待补全 / 被排除」
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ImportContext {
+    /// 来源空间 id（不可信，仅展示与留档）
+    pub source_space_id: String,
+    /// 数据集名 → 携带情况；**键不存在 = 该数据集没进包**
+    pub carried: BTreeMap<String, CarriedBlock>,
+}
+
+impl ImportContext {
+    /// 该数据集是否携带了记录
+    pub(crate) fn is_carried(&self, dataset: &str) -> bool {
+        self.carried
+            .get(dataset)
+            .map(|block| block.ids.is_some() || block.record_count > 0)
+            .unwrap_or(false)
+    }
+
+    /// 该 id 的记录是否真的在包里
+    pub(crate) fn carries_id(&self, dataset: &str, id: &str) -> bool {
+        self.carried
+            .get(dataset)
+            .and_then(|block| block.ids.as_ref())
+            .map(|ids| ids.contains(id))
+            .unwrap_or(false)
+    }
+
+    /// 该 id 是否**引用方声明过、但包里没有**（用于「待补全」判定）
+    pub(crate) fn declared_without_id(&self, dataset: &str, id: &str) -> bool {
+        match self.carried.get(dataset) {
+            None => true,
+            Some(block) => match &block.ids {
+                None => false,
+                Some(ids) => !ids.contains(id),
+            },
+        }
+    }
+}
+
+/// 导入后的记录处置结论
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum ImportOutcome {
+    /// 会写入新空间
+    Added,
+    /// 会写入，但引用物没进包（如档案的凭证），导入后仍是待补全
+    PendingReference,
+    /// 本次不带入（用户排除、或所属 owner 不支持）
+    Excluded,
+}
+
+/// 导入计划条目（预览列表项）
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImportPlanItem {
+    /// 所属数据集
+    pub dataset: String,
+    /// 记录 id（整块数据集为空串）
+    pub id: String,
+    /// 展示名
+    pub label: String,
+    /// 处置结论
+    pub outcome: ImportOutcome,
+    /// 结论说明（如「未绑定凭证，导入后需重新绑定」）
+    pub note: Option<String>,
+}
+
+impl ImportPlanItem {
+    /// 会写入新空间
+    pub(crate) fn added(dataset: &str, id: &str, label: &str) -> Self {
+        Self {
+            dataset: dataset.to_string(),
+            id: id.to_string(),
+            label: label.to_string(),
+            outcome: ImportOutcome::Added,
+            note: None,
+        }
+    }
+
+    /// 会写入，但引用的东西没随包带来（导入后仍需用户补全）
+    pub(crate) fn pending_reference(dataset: &str, id: &str, label: &str, note: &str) -> Self {
+        Self {
+            dataset: dataset.to_string(),
+            id: id.to_string(),
+            label: label.to_string(),
+            outcome: ImportOutcome::PendingReference,
+            note: Some(note.to_string()),
+        }
+    }
+
+    /// 本次不带入（用户排除、owner 不支持、只声明未携带）
+    pub(crate) fn excluded(dataset: &str, label: &str, note: &str) -> Self {
+        Self {
+            dataset: dataset.to_string(),
+            id: String::new(),
+            label: label.to_string(),
+            outcome: ImportOutcome::Excluded,
+            note: Some(note.to_string()),
+        }
+    }
+}
+
+/// 导入选择（前端提交）：要带入的数据集；未列出的数据集一律排除并回显
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImportSelection {
+    /// 要导入的数据集名
+    pub datasets: Vec<String>,
+}
+
+impl ImportSelection {
+    /// 是否选入该数据集
+    pub(crate) fn includes(&self, dataset: &str) -> bool {
+        self.datasets.iter().any(|item| item == dataset)
+    }
+}
+
+/// 导入报告（提交后返回；条数按数据集分项，便于界面逐项显示「带进来什么」）
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ImportReport {
+    /// 新空间 id
+    pub space_id: String,
+    /// 新空间名
+    pub space_name: String,
+    /// 包标识（查「是否导入过」用）
+    pub package_id: String,
+    /// 来源空间 id / 名（留档展示；不可信）
+    pub source_space_id: String,
+    /// 来源空间名（留档展示；不可信）
+    pub source_space_name: String,
+    /// 导入完成时间（RFC3339）
+    pub imported_at: String,
+    /// 数据集名 → 实际写入条数
+    pub counts: BTreeMap<String, usize>,
+    /// 数据集名 → 包里声明的条数（含未导入的，便于对账）
+    pub declared_counts: BTreeMap<String, usize>,
+    /// 待补全引用（如「档案 X 的凭证未随包带入」）
+    pub pending: Vec<String>,
+    /// 本次排除的数据集（含用户排除与不支持）
+    pub excluded: Vec<String>,
 }
 
 #[cfg(test)]

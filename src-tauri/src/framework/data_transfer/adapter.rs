@@ -22,7 +22,7 @@ use std::sync::{Mutex, OnceLock};
 use serde_json::Value;
 use tauri::AppHandle;
 
-use super::types::{DatasetDescriptor, DependencyEdge};
+use super::types::{DatasetDescriptor, DependencyEdge, ImportContext, ImportPlanItem};
 
 /// 一个 owner 的本地导入导出能力
 pub(crate) trait DatasetAdapter: Send + Sync {
@@ -51,6 +51,45 @@ pub(crate) trait DatasetAdapter: Send + Sync {
         dataset: &str,
         records: &[Value],
     ) -> Result<Vec<DependencyEdge>, String>;
+
+    /// 导入判定：逐条给出「新增 / 待补全 / 被排除」及理由（预览与提交前复核共用）
+    ///
+    /// 只做判定，不落盘：预览可以反复调用，且**不得**因为预览而在磁盘上留下痕迹。
+    fn plan_import(
+        &self,
+        dataset: &str,
+        records: &[Value],
+        context: &ImportContext,
+    ) -> Result<Vec<ImportPlanItem>, String>;
+
+    /// 把记录写入新空间的暂存目录（隔离导入的写入侧）
+    ///
+    /// 契约：
+    /// - 只能写 `target.root` 之内（暂存目录尚未成为任何空间，写别处等于绕过隔离）；
+    /// - 不得读取或改写**当前**空间的数据（导入失败时当前空间必须零变化）；
+    /// - 返回实际写入条数，提交方据此与清单声明条数核对，不一致即失败并回滚暂存目录。
+    fn apply_to_staging(
+        &self,
+        dataset: &str,
+        records: &[Value],
+        target: &StagingTarget,
+    ) -> Result<usize, String>;
+}
+
+/// 隔离导入的写入目标：新空间的暂存目录 + 新空间身份
+///
+/// 为什么带 `space_id` 与密钥库：凭证要按**新空间**的主密钥重新加密（跨空间不可解），
+/// 而不是沿用来源空间的密文。
+pub(crate) struct StagingTarget {
+    /// 暂存空间的**内容根**（代际目录 `<设备根>/spaces/.patchybox-staging-<planId>/generations/1`）
+    ///
+    /// 与正式空间 `StorageLocation::partitioned(..).root` 同形：适配器用 `root/data`、
+    /// `root/vault` 这类相对路径，暂存与将来「写进既有空间」共用同一条代码路径。
+    pub root: std::path::PathBuf,
+    /// 新空间 id（已定，rename 后即成为正式空间目录名）
+    pub space_id: String,
+    /// 新空间的主密钥库（服务名已按 `space_id` 作用域）
+    pub keyring: crate::framework::secure_store::ScopedKeyringStore,
 }
 
 /// 全局注册表（进程内；与 `framework::credential_refs` 同款约定）
@@ -123,6 +162,30 @@ mod tests {
             _records: &[Value],
         ) -> Result<Vec<DependencyEdge>, String> {
             Ok(Vec::new())
+        }
+
+        fn plan_import(
+            &self,
+            dataset: &str,
+            records: &[Value],
+            _context: &ImportContext,
+        ) -> Result<Vec<ImportPlanItem>, String> {
+            Ok(records
+                .iter()
+                .map(|record| {
+                    let id = record.get("id").and_then(Value::as_str).unwrap_or("?");
+                    ImportPlanItem::added(dataset, id, id)
+                })
+                .collect())
+        }
+
+        fn apply_to_staging(
+            &self,
+            _dataset: &str,
+            records: &[Value],
+            _target: &StagingTarget,
+        ) -> Result<usize, String> {
+            Ok(records.len())
         }
     }
 

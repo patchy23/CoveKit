@@ -10,6 +10,7 @@
 //! 不得把非法键静默丢掉——静默丢键等于「空间凭空消失」。
 
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -64,6 +65,30 @@ impl SpaceRecord {
             name.to_string()
         }
     }
+
+    /// 导入创建的空间条目：名称 + 创建时间 + 来源留档 + 各类别条数
+    ///
+    /// 来源信息（包 id / 来源空间）只做留档与「该包导入过」提示，不参与任何逻辑判断。
+    pub fn imported(
+        name: &str,
+        created_at: &str,
+        source_space_id: &str,
+        source_space_name: &str,
+        package_id: &str,
+        counts: &BTreeMap<String, usize>,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            created_at: created_at.to_string(),
+            imported_from: Some(ImportSource {
+                package_id: package_id.to_string(),
+                source_space_id: source_space_id.to_string(),
+                source_space_name: source_space_name.to_string(),
+                imported_at: created_at.to_string(),
+                counts: counts.clone(),
+            }),
+        }
+    }
 }
 
 /// 读取空间索引（缺失 = 尚未建立索引的旧安装，返回空表）
@@ -108,9 +133,146 @@ pub fn display_name(app: &AppHandle, space_id: &str) -> String {
     }
 }
 
+/// 暂存目录名前缀（崩溃恢复只清理带此前缀的目录；其余目录一律不碰）
+pub const STAGING_PREFIX: &str = ".patchybox-staging-";
+
+/// 空间目录集：`<设备根>/spaces`
+pub fn spaces_dir(device_root: &Path) -> PathBuf {
+    device_root.join("spaces")
+}
+
+/// 暂存空间根：`<设备根>/spaces/.patchybox-staging-<planId>`
+///
+/// 与正式空间根**同级**，rename 才是一次原子搬移（跨目录树搬移会退化成复制+删除）。
+pub fn staging_space_root(device_root: &Path, plan_id: &str) -> PathBuf {
+    spaces_dir(device_root).join(format!("{STAGING_PREFIX}{plan_id}"))
+}
+
+/// 暂存空间的**内容根**（代际目录）：`<设备根>/spaces/.patchybox-staging-<planId>/generations/<generation>`
+///
+/// 与 `generation_root` 同形，导入侧因此对「暂存写入」与「写入既有空间」共用相对路径。
+pub fn staging_content_root(device_root: &Path, plan_id: &str, generation: u64) -> PathBuf {
+    staging_space_root(device_root, plan_id)
+        .join("generations")
+        .join(generation.to_string())
+}
+
+/// 正式空间根：`<设备根>/spaces/<spaceId>`
+pub fn space_root(device_root: &Path, space_id: &str) -> PathBuf {
+    spaces_dir(device_root).join(space_id)
+}
+
+/// 空间内容根（代际目录）：`<设备根>/spaces/<spaceId>/generations/<generation>`
+///
+/// 与 `StorageLocation::partitioned(..).root` 同形：适配器只认这一层，
+/// 因此暂存写入与正式空间写入走同一套相对路径。
+pub fn generation_root(device_root: &Path, space_id: &str, generation: u64) -> PathBuf {
+    space_root(device_root, space_id)
+        .join("generations")
+        .join(generation.to_string())
+}
+
+/// 索引时间戳（RFC3339，本地时区偏移）：空间创建 / 导入留档的唯一时间来源
+pub fn now_iso() -> String {
+    chrono::Local::now().to_rfc3339()
+}
+
+/// 写入（新增或更新）索引条目：读改写，空间 id 先行校验
+pub fn write_record(app: &AppHandle, space_id: &str, record: &SpaceRecord) -> Result<(), String> {
+    if !super::is_valid_space_id(space_id) {
+        return Err(format!("空间 id 非法，拒绝写入空间索引：{space_id}"));
+    }
+    let mut index = read_index(app)?;
+    index.insert(space_id.to_string(), record.clone());
+    let value = serde_json::to_value(&index).map_err(|e| format!("空间索引序列化失败: {e}"))?;
+    paths::write_setting(app, KEY_SPACES, value)
+}
+
+/// 读当前活动空间标识（未写过的旧安装返回 None）
+pub fn read_active_id(app: &AppHandle) -> Option<String> {
+    paths::read_setting(app, super::KEY_ACTIVE_SPACE_ID)
+        .and_then(|value| value.as_str().map(str::to_string))
+}
+
+/// 清理残留的暂存空间目录（启动维护阶段调用）
+///
+/// 只删「本应用命名 + 位于空间目录集内」的目录：崩溃可能停在 rename 之前，
+/// 此时暂存目录里的数据不完整且没有任何索引引用，留着只会占空间并误导排查。
+/// 目录集不存在（全新安装）按「无残留」处理，不是错误。
+pub fn cleanup_staging(device_root: &Path) -> Result<Vec<String>, String> {
+    let spaces = spaces_dir(device_root);
+    let entries = match std::fs::read_dir(&spaces) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(format!("读取空间目录失败: {error}")),
+    };
+    let mut removed = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("读取空间目录项失败: {e}"))?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with(STAGING_PREFIX) || name.len() == STAGING_PREFIX.len() {
+            continue;
+        }
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        std::fs::remove_dir_all(&path).map_err(|e| format!("清理残留暂存目录 {name} 失败: {e}"))?;
+        removed.push(name);
+    }
+    removed.sort();
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 暂存目录与空间目录的落位（导入提交与启动清理共用同一套路径拼法）
+    #[test]
+    fn staging_and_space_paths_are_siblings() {
+        let device = std::path::Path::new("D:/CoveKit");
+        let staging = staging_space_root(device, "imp-7f3");
+        assert_eq!(
+            staging,
+            device.join("spaces").join(".patchybox-staging-imp-7f3")
+        );
+        assert_eq!(space_root(device, "abc"), device.join("spaces").join("abc"));
+        // 暂存目录的父目录必须是空间目录的父目录：rename 才是一次原子搬移
+        assert_eq!(staging.parent(), space_root(device, "abc").parent());
+    }
+
+    /// 代际根与 `StorageLocation::partitioned` 同形（适配器只认这一层）
+    #[test]
+    fn generation_root_matches_partitioned_layout() {
+        let device = std::path::Path::new("D:/CoveKit");
+        let location = crate::framework::context::StorageLocation::partitioned(device, "abc", 1);
+        assert_eq!(generation_root(device, "abc", 1), location.root);
+    }
+
+    /// 清理只删本应用命名的暂存目录，空间目录与非本应用目录一律不碰
+    #[test]
+    fn cleanup_removes_only_staging_dirs() {
+        let dir = std::env::temp_dir().join(format!("pb-staging-clean-{}", std::process::id()));
+        let spaces = spaces_dir(&dir);
+        std::fs::create_dir_all(spaces.join(".patchybox-staging-old")).expect("建暂存目录");
+        std::fs::create_dir_all(spaces.join("11111111-1111-4111-8111-111111111111"))
+            .expect("建空间目录");
+        std::fs::create_dir_all(spaces.join("用户自建目录")).expect("建无关目录");
+
+        let removed = cleanup_staging(&dir).expect("清理成功");
+        assert_eq!(removed, vec![".patchybox-staging-old".to_string()]);
+        assert!(!spaces.join(".patchybox-staging-old").exists());
+        assert!(spaces.join("11111111-1111-4111-8111-111111111111").exists());
+        assert!(spaces.join("用户自建目录").exists());
+
+        // 目录不存在（全新安装）不是错误
+        let missing = dir.join("不存在的根");
+        assert!(cleanup_staging(&missing)
+            .expect("缺失按无残留处理")
+            .is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// 名称为空时退回空间 id；有名称时用名称
     #[test]

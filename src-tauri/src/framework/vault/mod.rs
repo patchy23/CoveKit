@@ -18,7 +18,12 @@ pub use models::{
 pub use store::resolve;
 // crate 内只读导出面：数据导出（sync L2）要枚举凭证原文与脱敏摘要，走这两个窄入口，
 // 不把整个 store 开成 pub(crate)（其余写路径仍只属于本模块）。
-pub(crate) use store::{read_all as credentials_read_all, summary_of as credential_summary};
+// 导入侧另加两个定位入口：隔离导入要把凭证按**新空间**的主密钥写进暂存目录，
+// 只能走「指定目录 + 指定密钥库」这层，不能用依赖当前空间的默认路径。
+pub(crate) use store::{
+    read_all as credentials_read_all, read_all_at as credentials_read_all_at,
+    summary_of as credential_summary, write_all_at as credentials_write_all_at,
+};
 
 use tauri::AppHandle;
 

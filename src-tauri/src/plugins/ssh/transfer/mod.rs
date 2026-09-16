@@ -22,9 +22,10 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use tauri::AppHandle;
 
-use crate::framework::data_transfer::adapter::{self, DatasetAdapter};
+use crate::framework::data_transfer::adapter::{self, DatasetAdapter, StagingTarget};
 use crate::framework::data_transfer::types::{
-    CatalogEntry, DatasetDescriptor, DatasetPull, DependencyEdge, TransportPolicy,
+    CatalogEntry, DatasetDescriptor, DatasetPull, DependencyEdge, ImportContext, ImportPlanItem,
+    TransportPolicy,
 };
 use crate::framework::store::plugin_db_path;
 
@@ -101,6 +102,26 @@ impl DatasetAdapter for SshAdapter {
         records: &[Value],
     ) -> Result<Vec<DependencyEdge>, String> {
         references(dataset, records)
+    }
+
+    /// 导入判定：档案引用的凭证 / 分组没随包带来 → 标「待补全」，不当成完整导入
+    fn plan_import(
+        &self,
+        dataset: &str,
+        records: &[Value],
+        context: &ImportContext,
+    ) -> Result<Vec<ImportPlanItem>, String> {
+        plan_import(dataset, records, context)
+    }
+
+    /// 写入新空间暂存的 SSH 库：建库 → 按数据集写入 → 读回自查
+    fn apply_to_staging(
+        &self,
+        dataset: &str,
+        records: &[Value],
+        target: &StagingTarget,
+    ) -> Result<usize, String> {
+        apply_to_staging(dataset, records, target)
     }
 }
 
@@ -436,9 +457,164 @@ fn references(dataset: &str, records: &[Value]) -> Result<Vec<DependencyEdge>, S
     Ok(edges)
 }
 
+/// 导入判定：逐条给出「会写入 / 待补全」结论
+///
+/// 判定依据是**包内实际带了什么**（`ImportContext`），不是「本机现在有没有」：
+/// 本机同 id 的凭证与包里引用的凭证是两回事，导入后要不要重绑由用户决定。
+fn plan_import(
+    dataset: &str,
+    records: &[Value],
+    context: &ImportContext,
+) -> Result<Vec<ImportPlanItem>, String> {
+    let mut items = Vec::with_capacity(records.len());
+    match dataset {
+        DATASET_PROFILES => {
+            for record in records {
+                items.push(profile_plan_item(record, context)?);
+            }
+        }
+        DATASET_GROUPS => {
+            for record in records {
+                let group = decode::<SshGroup>(record, "服务器分组")?;
+                items.push(ImportPlanItem::added(
+                    DATASET_GROUPS,
+                    &group.id,
+                    &group.name,
+                ));
+            }
+        }
+        DATASET_TUNNELS => {
+            for record in records {
+                let tunnel = decode::<TunnelConfig>(record, "隧道配置")?;
+                items.push(ImportPlanItem::added(
+                    DATASET_TUNNELS,
+                    &tunnel.id,
+                    &tunnel.name,
+                ));
+            }
+        }
+        DATASET_BOOKMARKS => {
+            for record in records {
+                let bookmark = decode::<SshBookmark>(record, "目录书签")?;
+                items.push(ImportPlanItem::added(
+                    DATASET_BOOKMARKS,
+                    &bookmark.id,
+                    &bookmark.name,
+                ));
+            }
+        }
+        other => return Err(format!("SSH 适配器不支持数据集 {other}")),
+    }
+    Ok(items)
+}
+
+/// 单条档案的导入结论：引用的凭证 / 分组没随包带来就是「待补全」
+fn profile_plan_item(record: &Value, context: &ImportContext) -> Result<ImportPlanItem, String> {
+    let profile = decode::<ServerProfile>(record, "服务器档案")?;
+    let mut missing = Vec::new();
+    if let Some(id) = non_empty(profile.credential_ref.as_deref()) {
+        if !context.carries_id(CREDENTIAL_DATASET, id) {
+            missing.push(format!("凭证 {id}"));
+        }
+    }
+    if let Some(id) = non_empty(profile.group_id.as_deref()) {
+        if !context.carries_id(DATASET_GROUPS, id) {
+            missing.push(format!("分组 {id}"));
+        }
+    }
+    Ok(if missing.is_empty() {
+        ImportPlanItem::added(DATASET_PROFILES, &profile.id, &profile.name)
+    } else {
+        ImportPlanItem::pending_reference(
+            DATASET_PROFILES,
+            &profile.id,
+            &profile.name,
+            &format!("{} 未随包带出，导入后需重新绑定", missing.join("、")),
+        )
+    })
+}
+
 /// 反序列化回逻辑结构：失败即「结构不认识」，报错而不是跳过（跳过等于静默丢记录）
 fn decode<T: DeserializeOwned>(record: &Value, label: &str) -> Result<T, String> {
     serde_json::from_value(record.clone()).map_err(|e| format!("{label}记录结构不认识: {e}"))
+}
+
+/// 写入新空间暂存的插件库：建库（沿用插件同一份迁移）→ 逐条写入 → 读回自查
+///
+/// 只在 `target.root` 之内写文件；读回这一步是契约要求的自查（写坏了的包不能进空间）。
+fn apply_to_staging(
+    dataset: &str,
+    records: &[Value],
+    target: &StagingTarget,
+) -> Result<usize, String> {
+    if !owns(dataset) {
+        return Err(format!("SSH 适配器不支持数据集 {dataset}"));
+    }
+    let path = target.root.join("data").join("ssh.db");
+    let mut conn = Connection::open(&path).map_err(|e| format!("创建暂存 SSH 库失败: {e}"))?;
+    crate::framework::store::migrate(&mut conn, store::MIGRATIONS)?;
+    for record in records {
+        insert_record(&mut conn, dataset, record)?;
+    }
+    let written = count_rows(&path, dataset)?;
+    if written != records.len() {
+        return Err(format!(
+            "{dataset} 写入后读回 {written} 条，预期 {} 条",
+            records.len()
+        ));
+    }
+    Ok(records.len())
+}
+
+/// 按数据集写入一条记录（走插件既有的 upsert，不在导入侧另写 SQL）
+///
+/// 时间戳用「现在」：导入产生的是新空间里的新记录，`created_at` 表示本机登记时间；
+/// 传输记录本身不带表内时间列（逻辑 schema 里没有它们）。
+fn insert_record(conn: &mut Connection, dataset: &str, record: &Value) -> Result<(), String> {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    match dataset {
+        DATASET_PROFILES => {
+            let profile = decode::<ServerProfile>(record, "服务器档案")?;
+            store::profiles::upsert_profile(conn, &profile, now_ms)
+        }
+        DATASET_GROUPS => {
+            let group = decode::<SshGroup>(record, "服务器分组")?;
+            store::profiles::upsert_group(conn, &group)
+        }
+        DATASET_TUNNELS => {
+            let tunnel = decode::<TunnelConfig>(record, "隧道配置")?;
+            store::tunnels::upsert_tunnel(conn, &tunnel, now_ms)
+        }
+        DATASET_BOOKMARKS => {
+            let bookmark = decode::<SshBookmark>(record, "目录书签")?;
+            store::bookmarks::upsert_bookmark(conn, &bookmark)
+        }
+        other => Err(format!("SSH 适配器不支持数据集 {other}")),
+    }
+}
+
+/// 读回暂存库并按数据集计数（只读打开；用于写入后的自查）
+fn count_rows(path: &std::path::Path, dataset: &str) -> Result<usize, String> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("暂存 SSH 库不可读: {e}"))?;
+    match dataset {
+        DATASET_PROFILES => Ok(store::profiles::list_profiles(&conn)?.len()),
+        DATASET_GROUPS => Ok(store::profiles::list_groups(&conn)?.len()),
+        DATASET_TUNNELS | DATASET_BOOKMARKS => children_rows(&conn, dataset),
+        other => Err(format!("SSH 适配器不支持数据集 {other}")),
+    }
+}
+
+/// 子记录（隧道 / 书签）计数：逐档案走既有 listing，不另写一套 SQL
+fn children_rows(conn: &Connection, dataset: &str) -> Result<usize, String> {
+    let mut total = 0;
+    for profile in store::profiles::list_profiles(conn)? {
+        total += match dataset {
+            DATASET_TUNNELS => store::tunnels::list_tunnels(conn, &profile.id)?.len(),
+            _ => store::bookmarks::list_bookmarks(conn, &profile.id)?.len(),
+        };
+    }
+    Ok(total)
 }
 
 /// id 与名称必须非空（导入侧靠 id 建引用，靠名称在界面里区分条目）
@@ -515,6 +691,140 @@ mod tests {
             target_port: Some(80),
             auto_start: false,
         }
+    }
+
+    /// 导入判定：引用的凭证随包带来 → 会写入；没带来 → 待补全并说明缺什么
+    #[test]
+    fn plan_import_marks_missing_references() {
+        use crate::framework::data_transfer::types::{CarriedBlock, ImportOutcome};
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let mut bound = profile("p1");
+        bound.credential_ref = Some("cred-1".into());
+        let record = serde_json::to_value(&bound).expect("序列化档案");
+
+        let carried = BTreeMap::from([(
+            CREDENTIAL_DATASET.to_string(),
+            CarriedBlock {
+                record_count: 1,
+                ids: Some(BTreeSet::from(["cred-1".to_string()])),
+            },
+        )]);
+        let with_credential = ImportContext {
+            source_space_id: "default".into(),
+            carried: carried.clone(),
+        };
+        let items =
+            plan_import(DATASET_PROFILES, &[record.clone()], &with_credential).expect("判定成功");
+        assert_eq!(items[0].outcome, ImportOutcome::Added);
+        assert_eq!(items[0].id, "p1");
+
+        // 包内只声明未携带（键存在但 ids 为空集）→ 待补全
+        let declared_only = ImportContext {
+            source_space_id: "default".into(),
+            carried: BTreeMap::from([(
+                CREDENTIAL_DATASET.to_string(),
+                CarriedBlock {
+                    record_count: 1,
+                    ids: None,
+                },
+            )]),
+        };
+        let items = plan_import(DATASET_PROFILES, &[record], &declared_only).expect("判定成功");
+        assert_eq!(items[0].outcome, ImportOutcome::PendingReference);
+        assert!(
+            items[0].note.as_deref().unwrap_or("").contains("cred-1"),
+            "说明里要点名缺了哪条凭证：{:?}",
+            items[0].note
+        );
+    }
+
+    /// 写入暂存库：建库、写入、读回计数一致，且 id 原样保留
+    #[test]
+    fn apply_to_staging_writes_readable_db() {
+        let root = std::env::temp_dir().join(format!("pb-ssh-staging-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("data")).expect("建暂存数据目录");
+        let target = StagingTarget {
+            root: root.clone(),
+            space_id: "11111111-1111-4111-8111-111111111111".into(),
+            keyring: crate::framework::secure_store::ScopedKeyringStore::new(
+                "com.patchy23.patchybox.tests",
+            ),
+        };
+
+        let group = SshGroup {
+            id: "g1".into(),
+            name: "生产".into(),
+            sort_order: 1,
+        };
+        let mut bound = profile("p1");
+        bound.group_id = Some("g1".into());
+        bound.credential_ref = Some("cred-1".into());
+        let tunnel = tunnel("t1", "p1");
+        let bookmark = SshBookmark {
+            id: "b1".into(),
+            profile_id: "p1".into(),
+            name: "日志".into(),
+            path: "/var/log".into(),
+            sort: 1,
+        };
+
+        let written = |dataset: &str, value: &Value| -> usize {
+            apply_to_staging(dataset, std::slice::from_ref(value), &target).expect("写入成功")
+        };
+        assert_eq!(
+            written(
+                DATASET_GROUPS,
+                &serde_json::to_value(&group).expect("序列化分组")
+            ),
+            1
+        );
+        assert_eq!(
+            written(
+                DATASET_PROFILES,
+                &serde_json::to_value(&bound).expect("序列化档案")
+            ),
+            1
+        );
+        assert_eq!(
+            written(
+                DATASET_TUNNELS,
+                &serde_json::to_value(&tunnel).expect("序列化隧道")
+            ),
+            1
+        );
+        assert_eq!(
+            written(
+                DATASET_BOOKMARKS,
+                &serde_json::to_value(&bookmark).expect("序列化书签")
+            ),
+            1
+        );
+
+        // 读回：条数一致、id 原样保留（导入必须保留传输标识）
+        let conn = Connection::open(root.join("data").join("ssh.db")).expect("打开暂存库");
+        let profiles = store::profiles::list_profiles(&conn).expect("读档案");
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].id, "p1");
+        assert_eq!(profiles[0].credential_ref.as_deref(), Some("cred-1"));
+        assert_eq!(
+            store::profiles::list_groups(&conn).expect("读分组").len(),
+            1
+        );
+        assert_eq!(
+            store::tunnels::list_tunnels(&conn, "p1").expect("读隧道")[0].id,
+            "t1"
+        );
+        let bookmarks = store::bookmarks::list_bookmarks(&conn, "p1").expect("读书签");
+        assert_eq!(bookmarks[0].id, "b1");
+        assert_eq!(bookmarks[0].path, "/var/log");
+        assert_eq!(
+            count_rows(&root.join("data").join("ssh.db"), DATASET_BOOKMARKS).expect("计数"),
+            1
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// 目录：档案可勾选，分组/隧道/书签不可勾选且条目数与记录数一致

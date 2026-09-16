@@ -72,6 +72,27 @@ pub fn delete_bookmark(conn: &Connection, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// 按主键写入书签（数据导入用：保留原有 id 与顺序）
+///
+/// 为什么不复用 `add_bookmark`：那条路径是给交互用的，会按路径去重并生成新 id，
+/// 导入必须原样保留传输标识，否则同一份包导入两次会得到不同的书签。
+pub fn upsert_bookmark(conn: &Connection, bookmark: &SshBookmark) -> Result<(), String> {
+    conn.execute(
+        "INSERT INTO profile_bookmarks (id, profile_id, name, path, sort) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(id) DO UPDATE SET profile_id = excluded.profile_id, name = excluded.name,
+           path = excluded.path, sort = excluded.sort",
+        rusqlite::params![
+            bookmark.id,
+            bookmark.profile_id,
+            bookmark.name,
+            bookmark.path,
+            bookmark.sort
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// 书签列表（命令入口）
 #[tauri::command(rename_all = "camelCase")]
 pub fn ssh_bookmark_list(
