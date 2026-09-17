@@ -64,6 +64,7 @@ crate::patchybox_module! {
         terminal::ssh_terminal_close => "关闭终端通道",
         terminal::ssh_terminal_list => "某连接下的全部终端会话",
         log::ssh_terminal_log_stop => "停止录制并返回日志路径与字节数",
+        log::ssh_terminal_log_open_dir => "打开 SSH 终端日志目录",
         sftp::browse::ssh_file_list => "远程目录列表（SFTP）",
         sftp::transfer::ssh_file_upload => "上传文件（进度事件推送）",
         sftp::transfer::ssh_file_download => "下载文件（进度事件推送）",

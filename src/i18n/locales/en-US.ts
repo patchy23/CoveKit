@@ -217,6 +217,8 @@ export default {
       'You can also point to a path manually; if auto-extract fails, unpack it yourself and pick frpc.',
   },
   sshLog: {
+    openDirectory: 'Open log folder',
+    openDirectoryFailed: 'Failed to open log folder: {message}',
     buttonStart: 'Record log',
     buttonStartTitle: 'Record terminal output to a log file (ANSI escapes stripped)',
     buttonStop: 'Stop recording',

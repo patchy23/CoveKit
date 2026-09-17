@@ -425,5 +425,17 @@ watch(
       />
     </div>
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
+    <div
+      class="flex shrink-0 items-center border-t border-border px-[12px] py-[4px] dark:border-border-dark"
+    >
+      <UiButton
+        variant="ghost"
+        size="xs"
+        :loading="terminalLog.openingDirectory.value"
+        @click="terminalLog.openDirectory()"
+      >
+        {{ t('sshLog.openDirectory') }}
+      </UiButton>
+    </div>
   </div>
 </template>

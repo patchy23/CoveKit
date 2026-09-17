@@ -80,6 +80,7 @@ export const commands = {
   sshTerminalList: 'ssh_terminal_list',
   sshTerminalLogStart: 'ssh_terminal_log_start',
   sshTerminalLogStop: 'ssh_terminal_log_stop',
+  sshTerminalLogOpenDir: 'ssh_terminal_log_open_dir',
   sshFileList: 'ssh_file_list',
   sshFileUpload: 'ssh_file_upload',
   sshFileDownload: 'ssh_file_download',
@@ -171,6 +172,7 @@ export type Payloads = {
   /** 会话日志：dir 传 null 表示用框架存储 logs 分区（<存储根>/logs/ssh） */
   ssh_terminal_log_start: { terminalId: string; dir: string | null }
   ssh_terminal_log_stop: { terminalId: string }
+  ssh_terminal_log_open_dir: Record<string, never>
 
   /* 文件管理 */
   ssh_file_list: { connectionId: string; path: string }
@@ -299,6 +301,7 @@ export type Results = {
   ssh_terminal_list: TerminalSession[]
   ssh_terminal_log_start: LogActionResult
   ssh_terminal_log_stop: LogActionResult
+  ssh_terminal_log_open_dir: void
 
   /* 文件管理 */
   ssh_file_list: FileListResult

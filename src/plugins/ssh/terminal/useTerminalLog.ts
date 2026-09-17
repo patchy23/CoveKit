@@ -30,6 +30,20 @@ export function useTerminalLog(terminalId: () => string) {
   const path = ref('')
   /** 已写入字节数 */
   const bytes = ref(0)
+  const openingDirectory = ref(false)
+
+  /** 打开后端统一解析的日志目录，不依赖录制状态或前端路径拼接。 */
+  async function openDirectory(): Promise<void> {
+    if (openingDirectory.value) return
+    openingDirectory.value = true
+    try {
+      await ipc.terminalLogOpenDir()
+    } catch (reason) {
+      ui.toast(t('sshLog.openDirectoryFailed', { message: messageOf(reason) }))
+    } finally {
+      openingDirectory.value = false
+    }
+  }
 
   /** 是否正在录制（按钮文案与红点依据） */
   function isRecording(): boolean {
@@ -95,5 +109,5 @@ export function useTerminalLog(terminalId: () => string) {
   })
   onBeforeUnmount(() => unlisten?.())
 
-  return { state, path, bytes, isRecording, start, stop, toggle }
+  return { state, path, bytes, isRecording, start, stop, toggle, openingDirectory, openDirectory }
 }

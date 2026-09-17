@@ -431,6 +431,7 @@ mod tests {
         ("ssh", "ssh_system_info_get", "远程系统信息与磁盘分区明细"),
         ("ssh", "ssh_terminal_close", "关闭终端通道"),
         ("ssh", "ssh_terminal_list", "某连接下的全部终端会话"),
+        ("ssh", "ssh_terminal_log_open_dir", "打开 SSH 终端日志目录"),
         (
             "ssh",
             "ssh_terminal_log_start",

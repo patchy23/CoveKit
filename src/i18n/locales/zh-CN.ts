@@ -211,6 +211,8 @@ export default {
     binaryFooterHint: '也可以手动指定路径；若自动解压失败，请手动解压后选择 frpc。',
   },
   sshLog: {
+    openDirectory: '打开日志目录',
+    openDirectoryFailed: '打开日志目录失败：{message}',
     buttonStart: '记录日志',
     buttonStartTitle: '把终端输出记录到日志文件（自动剥离 ANSI 转义）',
     buttonStop: '停止记录',

@@ -64,6 +64,7 @@ export const ipc = {
   terminalLogStart: (terminalId: string, dir: string | null) =>
     cmd(commands.sshTerminalLogStart, { terminalId, dir }),
   terminalLogStop: (terminalId: string) => cmd(commands.sshTerminalLogStop, { terminalId }),
+  terminalLogOpenDir: () => cmd(commands.sshTerminalLogOpenDir, {}),
   sshTerminalResize: (terminalId: string, cols: number, rows: number) =>
     cmd(commands.sshTerminalResize, { terminalId, cols, rows }),
   sshTerminalClose: (terminalId: string) => cmd(commands.sshTerminalClose, { terminalId }),

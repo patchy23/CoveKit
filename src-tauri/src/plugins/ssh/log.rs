@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tauri::{AppHandle, State};
+use tauri_plugin_opener::OpenerExt;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
@@ -94,6 +95,18 @@ pub(crate) fn strip_ansi(input: &str) -> String {
 /// SSH 会话日志根目录（**唯一**的日志路径解析入口）
 pub(crate) fn ssh_log_dir(app: &AppHandle) -> Result<PathBuf, String> {
     crate::framework::paths::logs_dir_for(app, "ssh")
+}
+
+/// 打开当前存储位置的 SSH 日志目录；首次使用时创建，不依赖活跃终端。
+#[tauri::command]
+pub async fn ssh_terminal_log_open_dir(app: AppHandle) -> Result<(), String> {
+    let dir = resolve_dir(&app, None).await?;
+    let path = dir
+        .to_str()
+        .ok_or_else(|| "日志目录路径不是有效 UTF-8".to_string())?;
+    app.opener()
+        .open_path(path, None::<&str>)
+        .map_err(|e| format!("打开日志目录失败：{e}"))
 }
 
 /// 解析目标目录：显式传入优先（用户在对话框里选的），否则用默认日志目录；顺带创建
