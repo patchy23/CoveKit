@@ -31,19 +31,21 @@ const emit = defineEmits<{
     <UiButton size="sm" variant="primary" @click="emit('create')">+ 新建凭证</UiButton>
   </div>
   <div class="mb-[8px] flex flex-wrap gap-[6px]">
-    <button
+    <UiButton
       v-for="chip in chips"
       :key="chip.value"
-      type="button"
-      class="rounded-full border px-[10px] py-[2px] text-caption transition-colors"
+      size="xs"
+      variant="ghost"
+      class="rounded-full border"
+      :aria-pressed="kindFilter === chip.value"
       :class="
         kindFilter === chip.value
-          ? 'border-tertiary-strong bg-tertiary-strong/10 text-tertiary-strong'
-          : 'border-border text-secondary hover:bg-border/50 dark:border-border-dark dark:text-secondary-dark'
+          ? 'border-tertiary-strong bg-tertiary-soft text-tertiary-strong hover:bg-tertiary-soft hover:text-tertiary-strong dark:border-tertiary-dark dark:bg-tertiary-soft-dark dark:text-tertiary-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark'
+          : 'border-border dark:border-border-dark'
       "
       @click="emit('update:kindFilter', chip.value)"
     >
       {{ chip.label }}
-    </button>
+    </UiButton>
   </div>
 </template>
