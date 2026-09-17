@@ -12,6 +12,7 @@ import {
 } from 'reka-ui'
 import { computed } from 'vue'
 import UiIcon from './UiIcon.vue'
+import UiTooltip from './UiTooltip.vue'
 import type { UiSize } from './types'
 
 export interface SelectOption {
@@ -68,26 +69,27 @@ function valueColorClass(value: string) {
       :disabled="disabled"
       @update:model-value="emit('update:modelValue', String($event))"
     >
-      <SelectTrigger
-        class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] outline-none transition-colors hover:border-border-strong focus-visible:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark dark:focus-visible:border-tertiary-dark"
-        :class="[
-          `ui-control-${size}`,
-          hasCustomValueColor
-            ? valueColorClass(modelValue)
-            : 'text-secondary dark:text-secondary-dark',
-        ]"
-        :title="title"
-      >
-        <SelectValue :placeholder="placeholder" class="truncate">{{ currentLabel }}</SelectValue>
-        <SelectIcon as-child>
-          <UiIcon
-            name="chevron-down"
-            :size="12"
-            class="shrink-0 transition-transform duration-150"
-            :class="{ 'rotate-180': open }"
-          />
-        </SelectIcon>
-      </SelectTrigger>
+      <UiTooltip :content="title" :disabled="open">
+        <SelectTrigger
+          class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] outline-none transition-colors hover:border-border-strong focus-visible:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark dark:focus-visible:border-tertiary-dark"
+          :class="[
+            `ui-control-${size}`,
+            hasCustomValueColor
+              ? valueColorClass(modelValue)
+              : 'text-secondary dark:text-secondary-dark',
+          ]"
+        >
+          <SelectValue :placeholder="placeholder" class="truncate">{{ currentLabel }}</SelectValue>
+          <SelectIcon as-child>
+            <UiIcon
+              name="chevron-down"
+              :size="12"
+              class="shrink-0 transition-transform duration-150"
+              :class="{ 'rotate-180': open }"
+            />
+          </SelectIcon>
+        </SelectTrigger>
+      </UiTooltip>
 
       <SelectPortal>
         <SelectContent

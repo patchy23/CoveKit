@@ -3,6 +3,9 @@ import { cva } from 'class-variance-authority'
 import { computed } from 'vue'
 import type { UiSize } from './types'
 import { cn } from './utils'
+import UiTooltip from './UiTooltip.vue'
+
+defineOptions({ inheritAttrs: false })
 
 const props = withDefaults(
   defineProps<{
@@ -12,8 +15,17 @@ const props = withDefaults(
     block?: boolean
     as?: 'button' | 'a'
     type?: 'button' | 'submit' | 'reset'
+    title?: string
   }>(),
-  { variant: 'secondary', size: 'md', loading: false, block: false, as: 'button', type: 'button' }
+  {
+    variant: 'secondary',
+    size: 'md',
+    loading: false,
+    block: false,
+    as: 'button',
+    type: 'button',
+    title: '',
+  }
 )
 
 const buttonVariants = cva('ui-button', {
@@ -40,13 +52,16 @@ const classes = computed(() =>
 </script>
 
 <template>
-  <component
-    :is="as"
-    :type="as === 'button' ? type : undefined"
-    :class="classes"
-    :disabled="as === 'button' ? loading || $attrs.disabled === true : undefined"
-  >
-    <span v-if="loading" class="ui-spinner" aria-hidden="true" />
-    <slot />
-  </component>
+  <UiTooltip :content="title">
+    <component
+      :is="as"
+      v-bind="$attrs"
+      :type="as === 'button' ? type : undefined"
+      :class="classes"
+      :disabled="as === 'button' ? loading || $attrs.disabled === true : undefined"
+    >
+      <span v-if="loading" class="ui-spinner" aria-hidden="true" />
+      <slot />
+    </component>
+  </UiTooltip>
 </template>

@@ -10,6 +10,8 @@
 
 ## 组件真实 API 备忘
 
+- **UiTooltip 公共悬停提示**：从 `@/core/ui` 导入，`content` 为纯文字，默认插槽只放一个触发元素；`side` 默认 `top`，`delayDuration` 默认 400ms，`disabled` 可关闭提示。复用 Reka 的定位、键盘聚焦与 Esc 关闭，自动避让视口，Portal 层级 240，适配浅深色且不增加布局包裹。提示内容允许按最大宽度换行，不放交互控件。`UiButton` 的 `title`、`UiIconButton` 的 `label/title` 和 `UiSelect` 的 `title` 已自动接入，不再输出原生 `title`。其他元素用 `<UiTooltip content="说明"><span tabindex="0">内容</span></UiTooltip>`，移除触发元素原生 `title`，图标按钮保留 `aria-label`。原生禁用按钮不可键盘聚焦，必要原因应同时显示在表单说明中。
+
 - **ContextMenu 是声明式**：`:x :y :items` + item 内联 `onClick` 回调 + `@close`，父组件 `v-if="menu"` 控制显隐——**不是** `ref.open(mouse)` 命令式；分隔线项 `{ label: '', separator: true }`。**有 `size` 档位（2026-08-15 新增）**：`md`（默认，w-150/text-body/py-7，SSH 文件等）与 `sm`（紧凑，w-124/text-body-sm/py-5，树/列表内嵌场景）；坐标收拢随档位（md `innerWidth-158`、sm `innerWidth-132`）。需要更小菜单时加档位，勿新建组件。**收拢用的固定 N 与面板最小宽度绑定，改宽度时两处一起复核。**
 - **菜单面板宽度取「最小宽度 + 按内容自适应」，不要写死宽度；菜单项一律 `whitespace-nowrap`**（现役值 sm `min-w-[140px] w-max max-w-[320px]`、md `min-w-[168px] w-max max-w-[340px]`）：菜单文案长短差异大，「在资源管理器中显示」这类偏长的项会被写死宽度挤成两行——该行行高比相邻项高出一截（实测 58px vs 36px），整块菜单看起来像坏了。**同规则适用于任何自绘浮层（下拉/气泡/提示条）**：固定宽度 + 缺 `nowrap` 是长文案换行的高发配置。
 - **UiInput/UiSelect 的 `update:modelValue` 是 `string | number`**：写入 string 型 state 必须 `String(v)` 转换，否则 vue-tsc TS2322/TS2769。
