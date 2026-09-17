@@ -82,11 +82,15 @@ const CORE_UI_FORBIDDEN_DIRS = [
   `${SRC_DIR}/features/`,
   `${SRC_DIR}/plugins/`,
   `${SRC_DIR}/core/vault/`,
+  `${SRC_DIR}/core/platform/`,
+  `${SRC_DIR}/core/feedback/`,
 ]
 
 /** core/ui 入口不得重新导出的来源目录（相对扫描根） */
 const CORE_UI_ENTRY_FORBIDDEN_DIRS = [
   `${SRC_DIR}/core/vault/`,
+  `${SRC_DIR}/core/platform/`,
+  `${SRC_DIR}/core/feedback/`,
   `${SRC_DIR}/plugins/`,
   `${SRC_DIR}/stores/`,
   `${SRC_DIR}/features/`,
@@ -99,7 +103,7 @@ export const RULES = [
     title: 'core/ui 边界',
     detail:
       'src/core/ui/** 不得依赖 src/stores/**、src/features/**、src/plugins/**、src/core/vault/** ' +
-      '或应用 IPC（src/core/ipc/ipc.ts、src/plugins/*/ipc.ts）',
+      '或平台/反馈层、pinia 与应用 IPC（src/core/ipc/ipc.ts、src/plugins/*/ipc.ts）',
   },
   {
     id: 'R2',
@@ -480,7 +484,10 @@ export function collectViolations(project) {
       : null
     const pluginOwner = pluginTail && pluginTail.includes('/') ? pluginTail.split('/')[0] : null
     for (const imp of module.imports) {
-      if (relPath.startsWith(coreUiPrefix) && isForbiddenCoreUiTarget(imp.resolved)) {
+      if (
+        relPath.startsWith(coreUiPrefix) &&
+        (isForbiddenCoreUiTarget(imp.resolved) || imp.specifier === 'pinia')
+      ) {
         violations.push({
           rule: 'R1',
           path: relPath,
@@ -841,6 +848,9 @@ export function main(argv, io = {}) {
   try {
     const { aliases, source: aliasSource } = loadAliases(rootDir)
     const project = analyzeProject({ rootDir, srcDir: SRC_DIR, aliases })
+    if (project.files.length === 0) {
+      throw new Error('扫描结果为空，请检查 src 路径与文件发现规则')
+    }
     const { violations, truncated } = collectViolations(project)
     const baseline = loadBaseline(baselinePath)
     const result = evaluate({ violations, unresolved: project.unresolved, baseline })

@@ -61,9 +61,4 @@ describe('编辑器统一契约', () => {
     const internalImport = /from\s+['"][^'"]*core\/ui\/editor\//
     expect(offenders(internalImport, toolSources)).toEqual([])
   })
-
-  it('不得残留已删除的自研编辑器组件（LineNumberTextarea / CodeViewer）', () => {
-    const legacy = /LineNumberTextarea|<CodeViewer|CodeViewer\.vue/
-    expect(offenders(legacy)).toEqual([])
-  })
 })

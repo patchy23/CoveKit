@@ -70,4 +70,4 @@ if (props.value === "") throw new Error("A <SelectItem /> must have a value prop
 
 - **reka 模态弹窗会把 `body` 置 `pointer-events: none`**：任何渲染在模态之上的自定义浮层（右键菜单、浮层面板）必须显式 `pointer-events-auto`，否则它显示正常但点不动。
 - **浮层 z 序是分层约定的**（`UiModal` `z-[180]`、`ContextMenu` `z-[200]`、`SelectContent` `z-[220]`）：新加浮层先看这几个档位再定 z-index，别随手写 `z-50`。
-- **浮层一律 portal 到 `body`**，因此不会被父级 `overflow-hidden` 裁掉——排查「弹层看不见」时别往 overflow 上找，优先怀疑渲染期抛错。
+- **公共浮层通常 Portal 到 body**：先核对实际渲染目标，再检查层级、裁剪和渲染错误；不能仅凭组件类型排除 overflow 或断言一定是异常。

@@ -41,9 +41,7 @@ jobs:
         with:
           python-version: '3.12'
       - if: needs.changes.outputs.doc_tools == 'true'
-        run: python -m unittest discover -s scripts -p test_doc_checks.py
-      - if: needs.changes.outputs.product == 'true'
-        run: python -m unittest discover -s scripts -p test_ci_changes.py
+        run: python -m unittest discover -s scripts -p 'test_*.py'
       - run: python scripts/check_markdown.py
       - run: python scripts/check_doc_budget.py
 

@@ -7,7 +7,16 @@ import globals from 'globals'
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'src-tauri/**', 'node_modules/**', 'coverage/**', '*.config.*'],
+    ignores: [
+      'dist/**',
+      'src-tauri/**',
+      'node_modules/**',
+      'coverage/**',
+      '.work/**',
+      'playwright-report/**',
+      'test-results/**',
+      '*.config.*',
+    ],
   },
   {
     // 浏览器环境全局（window/document 等）

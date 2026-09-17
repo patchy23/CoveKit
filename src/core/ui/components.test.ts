@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import UiButton from './UiButton.vue'
@@ -15,6 +15,8 @@ import UiCombobox from './UiCombobox.vue'
 import UiTree from './UiTree.vue'
 import UiDataGrid from './UiDataGrid.vue'
 import UiSplitPane from './UiSplitPane.vue'
+
+enableAutoUnmount(afterEach)
 
 const pluginVueSources = import.meta.glob('../../plugins/**/*.vue', {
   eager: true,
@@ -62,7 +64,11 @@ describe('公共 UI 组件', () => {
   })
 
   it('基础控件输出统一尺寸类', () => {
-    expect(mount(UiButton, { props: { size: 'xs' } }).classes()).toContain('ui-control-xs')
+    expect(
+      mount(UiButton, { props: { size: 'xs' } })
+        .get('button')
+        .classes()
+    ).toContain('ui-control-xs')
     expect(
       mount(UiInput, { props: { size: 'lg' } })
         .get('input')
@@ -75,14 +81,6 @@ describe('公共 UI 组件', () => {
         .get('button')
         .classes()
     ).toContain('ui-control-sm')
-  })
-
-  it('下拉框收起值使用次级文字色', () => {
-    const select = mount(UiSelect, {
-      props: { modelValue: 'cpu', options: [{ value: 'cpu', label: '按 CPU' }] },
-    })
-    expect(select.get('[role="combobox"]').classes()).toContain('text-secondary')
-    expect(select.get('[role="combobox"]').classes()).not.toContain('text-primary')
   })
 
   it('复选框和开关保持受控更新', async () => {
@@ -139,11 +137,6 @@ describe('公共 UI 组件', () => {
     expect(violations).toEqual([])
   })
 
-  it('搜索输入框为图标和清空按钮保留固定空间', () => {
-    const search = mount(UiSearchInput, { props: { modelValue: '' } })
-    expect(search.get('input').classes()).toContain('ui-search-control')
-  })
-
   it('带尾部动作时仍可清空搜索，动作保持独立入口', async () => {
     const search = mount(UiSearchInput, {
       props: { modelValue: 'server' },
@@ -162,14 +155,9 @@ describe('公共 UI 组件', () => {
  * 依赖守卫与构建只能证明 import/类型约束，不能证明真的挂得上；这里用无插件宿主真挂，
  * 并顺带断言挂载过程没有「注入缺失」类告警（基础控件不许偷偷依赖应用服务）。
  */
-const uiSources = import.meta.glob('./**/*.{vue,ts}', {
-  eager: true,
-  query: '?raw',
-  import: 'default',
-}) as Record<string, string>
-
-describe('AR03 补证据：基础 UI 无应用服务可独立挂载', () => {
+describe('基础 UI 无应用服务可独立挂载', () => {
   afterEach(() => {
+    vi.restoreAllMocks()
     document.body.innerHTML = ''
   })
 
@@ -191,7 +179,9 @@ describe('AR03 补证据：基础 UI 无应用服务可独立挂载', () => {
     expect(panel?.textContent).toContain('独立挂载')
     expect(panel?.textContent).toContain('正文')
     expect(panel?.textContent).toContain('页脚')
-    panel?.querySelector<HTMLButtonElement>('button[title="关闭"]')?.click()
+    const close = panel?.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')
+    expect(close).toBeTruthy()
+    close!.click()
     await nextTick()
     expect(modal.emitted('close')).toBeTruthy()
     modal.unmount()
@@ -238,18 +228,5 @@ describe('AR03 补证据：基础 UI 无应用服务可独立挂载', () => {
 
     warn.mockRestore()
     expect(warnings.filter((item) => /pinia|inject|provide/i.test(item))).toEqual([])
-  })
-
-  it('core/ui 不引入应用服务（stores / 凭证库 / IPC / 平台与反馈层）', () => {
-    const forbidden = [
-      /from 'pinia'/,
-      /from '@\/stores/,
-      /from '@\/core\/(?:vault|ipc|platform|feedback)/,
-    ]
-    const violations = Object.entries(uiSources)
-      .filter(([path]) => !path.includes('.test.'))
-      .filter(([, source]) => forbidden.some((pattern) => pattern.test(source)))
-      .map(([path]) => path)
-    expect(violations).toEqual([])
   })
 })

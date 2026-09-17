@@ -10,6 +10,10 @@ from pathlib import Path
 DOC_TOOLS = {
     "scripts/check_markdown.py", "scripts/check_doc_budget.py",
     "scripts/test_doc_checks.py",
+    "scripts/pre_commit.py", "scripts/test_pre_commit.py",
+    "scripts/check_commit_msg.py", "scripts/test_check_commit_msg.py",
+    "scripts/ci_changes.py", "scripts/test_ci_changes.py",
+    ".githooks/pre-commit", ".githooks/commit-msg",
 }
 ROOT_DOCS = {"AGENTS.md", "TODO.md", "DESIGN.md", "README.md", "CHANGELOG.md", "IDEA.md"}
 

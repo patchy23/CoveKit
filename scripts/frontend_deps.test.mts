@@ -13,7 +13,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import {
-  RULES,
   analyzeProject,
   collectViolations,
   evaluate,
@@ -53,13 +52,22 @@ afterAll(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true })
 })
 
-describe('前端依赖守卫 · 规则表', () => {
-  it('规则数为 4 且编号稳定', () => {
-    expect(RULES.map((rule) => rule.id)).toEqual(['R1', 'R2', 'R3', 'R4'])
-  })
-})
-
 describe('alias / 相对路径解析', () => {
+  it('基础控件不能引入 pinia、平台或反馈层，支持不同引号与相对路径', () => {
+    const root = createProject({
+      'src/core/ui/Widget.ts':
+        'import { ref } from "vue"; import { createPinia } from "pinia"; import "../platform"; import "@/core/feedback";',
+      'src/core/platform/index.ts': 'export const clipboard = 1',
+      'src/core/feedback/index.ts': 'export const notify = 1',
+    })
+    const { violations } = runGuard(root)
+    expect(
+      violationsOf(violations, 'R1')
+        .map((v) => v.target)
+        .sort()
+    ).toEqual(['../platform', '@/core/feedback', 'pinia'])
+  })
+
   it('alias import 违规：core/ui 依赖 @/stores', () => {
     const root = createProject({
       'src/stores/ui.ts': 'export const useUiStore = () => ({})\n',
@@ -408,6 +416,13 @@ describe('棘轮判定（例外命中 / 新违规 / 失效例外）', () => {
 })
 
 describe('CLI 退出码', () => {
+  it('空扫描不能作为边界检查通过', () => {
+    const root = createProject({ 'src/README.md': '无可扫描源码' })
+    const output = []
+    expect(main(['--root', root], { errorLog: (text) => output.push(text) })).toBe(2)
+    expect(output.join('\n')).toContain('扫描结果为空')
+  })
+
   it('新违规 → 1；登记后 → 0；用法/环境错误 → 2', () => {
     const root = createProject({
       'src/stores/ui.ts': 'export const useUiStore = () => ({})\n',

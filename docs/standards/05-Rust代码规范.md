@@ -118,16 +118,11 @@
 
 - **注释按语义强制（2026-09-12 修订）**：必须写的是——(a) 文件头模块职责；(b) `pub` / `pub(crate)` API 用途；(c) IPC 与持久化 DTO 的非显然字段（单位 / 空值语义 / 敏感性）；(d) 关键生命周期、锁与安全不变量。私有且语义显然的函数、测试辅助不强制；工具只做覆盖检查（`scripts/check_docs.py`，AR02 起并入 syn 检查器），注释质量由人工审查
 - 合入门槛与命令只见[20验证矩阵](20-验证矩阵.md)，本节描述规则覆盖，不重复执行同一扫描。
+- 字段文档扫描只提示：AST 无法判断字段是否语义显然，不因缺少逐字段注释阻断提交。单位、空值、凭证与兼容含义仍需开发者说明；模块和公开 API 的职责注释继续检查。
 
 ## 10. 提交前检查（不做编译期强约束，2026-09-05 用户决策）
 
-提交前运行：
-
-```bash
-python scripts/check_rust_rules.py      # 代码规则（panic / 生命周期逃逸 / unsafe 论证 / 层级越界）
-python scripts/check_docs.py            # 文档覆盖（//! 文件头、pub API、DTO 字段）
-node scripts/check_frontend_deps.mjs    # 前端依赖守卫（等价 pnpm check:deps）
-```
+命令和执行平台只见[20](20-验证矩阵.md)。`check_rust_rules.py` 与 `check_docs.py` 都会调用 Cargo，不能作为绕过本地禁止 Cargo 的“轻量脚本”。
 
 **实现位置（AR02 起）**：两个 Python 脚本只是薄 wrapper，真正的检查在 `src-tauri/tests/source_rules/`（syn 2 AST + 夹具，约定入口 `scan_rust_rules` 与 `scan_docs`），CI 显式执行 `cargo test --test source_rules`。wrapper 用 `--exact` 精确过滤并**确认真的执行了 1 个测试**——过滤器写错导致 0 个测试不得算通过。
 
@@ -138,15 +133,3 @@ node scripts/check_frontend_deps.mjs    # 前端依赖守卫（等价 pnpm check
 - §1 的合法例外必须绑定**仓库锚定相对路径 + 归属符号 + 调用类别 + 原因**（基线文件 `exceptions` 数组，不再用同一句 `expect` 文案全局放行）；符号移动或删除即失效并报错
 - **独立用例文件的 panic 计数（2026-09-15 实测）**：`*_tests.rs` 被 `#[path]` 引入时扫描器按单文件独立分析，看不到引入处的 `#[cfg(test)]`，文件里的 `assert!` 会照常计入 panic 候选并触发棘轮失败。写法是文件内再包一层 `#[cfg(test)] mod …`；`is_test_only_file` 的豁免只对架构守卫（paths_bypass / foreign_table）生效，不覆盖 panic 候选
 - **覆盖边界（工具自己在报告里声明，不声称语义全覆盖）**：不做 cfg 真假求值（只按属性 AST 字面排除直接 `#[cfg(test)]` 子树，`cfg(all(test, …))` / `cfg(not(test))` 一律保守扫描并列入未覆盖项）、不展开宏（`macro_rules!` 体内含候选时逐个提示，第三方/派生宏只汇总数量）、层级规则只解析 `crate::plugins::<owner>` 绝对路径（`super::` 拼出的跨插件引用不在范围）；枚举变体与 trait 实现关联项不强制文档
-
-## 附录 · 参考来源（2026-09-05 对照验证）
-
-本规范与以下社区公认标杆交叉验证过：
-
-| 来源 | 星数 | 与本规范的关系 |
-|------|------|---------------|
-| [rust-unofficial/patterns](https://github.com/rust-unofficial/patterns) | 8.9k★ | 官方反模式第一条「Clone to satisfy the borrow checker」= 本规范 §2 的原始出处；「`#[deny(warnings)]` 是反模式」印证我们用 CLI 的 `-D warnings` 而非代码内 deny 的做法正确 |
-| [rust-lang/api-guidelines](https://github.com/rust-lang/api-guidelines) | 1.3k★ | 官方 API 清单；本规范 §1 比官方更严（官方允许库代码 unwrap，我们因 IPC 直连用户而收紧），方向一致 |
-| [pretzelhammer/rust-blog](https://github.com/pretzelhammer/rust-blog) | 8.4k★ | 《Common Rust Lifetime Misconceptions》= §3 的理论依据 |
-| [google/comprehensive-rust](https://github.com/google/comprehensive-rust) | 33k★ | Google Android 团队课程，错误处理章节与 §5 一致 |
-| [rust-lang/rust-analyzer](https://github.com/rust-lang/rust-analyzer) | 16.8k★ | 其 dev 风格指南的锁与异步纪律 = §4 出处 |

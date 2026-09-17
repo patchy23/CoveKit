@@ -236,6 +236,20 @@ fn module_doc_is_required() {
     assert!(docs("fixture.rs", with).is_empty());
 }
 
+/// 字段说明只提示；模块与公开 API 缺失仍会使检查失败。
+#[test]
+fn field_documentation_is_advisory_without_weakening_api_checks() {
+    let baseline = Baseline::parse("{}").expect("夹具基线应可解析");
+    let source = "//! 模块职责\n/// 配置\npub struct Config { pub name: String }\n";
+    let report = rule_engine::report_for(Mode::Docs, "fixture.rs", source, &owners(), &baseline);
+    assert_eq!(report.count("field_doc"), 1);
+    assert!(report.failures(&baseline).is_empty());
+    let missing_api = format!("{source}\npub fn save() {{}}\n");
+    let report =
+        rule_engine::report_for(Mode::Docs, "fixture.rs", &missing_api, &owners(), &baseline);
+    assert!(!report.failures(&baseline).is_empty());
+}
+
 /// 例外按「路径 + 符号 + 类别」绑定：同一句 expect 文案不能让整个文件放行。
 #[test]
 fn exceptions_bind_to_symbol_not_to_text() {

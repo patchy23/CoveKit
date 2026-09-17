@@ -1,55 +1,23 @@
-# 19 · Tauri 契约审计（五层命令矩阵与事件数据流）
+# 19 · Tauri 契约核对
 
-> 本文原为 AI 助手侧技能库中的项目知识，2026-09-13 迁入仓库，作为项目自有开发手册的一部分。正文未改写（仅同步文档路径与目录规范）。
+> 改动 IPC、事件或装配时按受影响链路检查，不要求普通修改制作全仓矩阵。只读审查和已授权修复都可用此方法，执行方式服从当前请求。
 
-适用于插件阶段 B 的“只审查、不改代码”契约核对。目标不是只比对类型名，而是验证命令从声明到真实 UI 消费的完整数据流。
+## 沿真实链路核对
 
-## 五层命令矩阵
+`UI 消费方 → owner ipc.ts → invokeCommand 的 wire args → patchybox_module! 清单 → patchybox_routes! 路由 → Rust command → 结果或事件 → UI 反馈`
 
-对每个命令同时统计：
+以源码中的实际命令和字段为准，不把方案清单当实现。模块宏生成命令登记和 handler，不另造第二份注册表；应用只安装一个总 handler。装配机制有变化时再读宏和上游实现，不为每个命令重复审计整个框架。
 
-1. `contracts.ts` 命令常量、Payload、Result
-2. 前端 `ipc.ts` wrapper 与真实 wire args（特别是 `{ payload: ... }` 包裹）
-3. Rust IPC registry 文档登记
-4. `tauri::generate_handler!` 注册
-5. `#[tauri::command]` Rust 函数实现
-6. 全部前端调用点数量（额外列，用来识别死命令）
+## 重点
 
-矩阵应报告每层总数、差集、重复项和无调用命令。不要仅凭 registry 判断命令可调用。
+- 顶层参数名/包裹与业务 DTO 分开，例如 Rust `request: Option<Struct>` 必须与 wire args 的 `request` 对应，漏传可能静默成为 None。
+- 核对 camelCase、serde 字段名、missing/null/Option、枚举实际值、数字范围及 JS 精度。
+- 区分 `Result::Err` 和业务结果中的失败字段，消费方必须正确感知；远程命令非零退出码不能伪装成功。
+- 异步命令返回已启动不代表完成；沿任务标识、后台事件、监听 payload、取消订阅到 UI 完成/错误反馈核对。
+- 并发、重试、取消与关闭时校验结果归属和资源释放；不能只检查命令名及返回键一致。
 
-## 必查契约维度
+## 验证与交付
 
-- 顶层参数包裹：TS 业务 payload 与 Tauri 顶层参数不是同一类型；为 wire args 单独建类型。
-- 形参名与扁平字段（2026-09-15 实测）：Rust 侧写成 `fn cmd(app, request: Option<Struct>)` 时形参名是 `request`，前端传扁平 `{ reason }` 不会报错——`Option` 形参缺省合法，该参数静默取 `None`，`reason` 永远落到默认分支。契约文件写着扁平字段也拦不住，必须逐命令核对形参名与前端 payload 的键。
-- camelCase：核对 Tauri command 参数规则和 serde `rename_all`，不要仅看 Rust 字段名。
-- 可选值：missing、`undefined`、`null`、Rust `Option<T>`、serde 是否省略。
-- 数字宽度：`u16/u32/u64` 对 TS `number`；输入范围、强制 cast 截断、`2^53-1` 精度。
-- 返回语义：`Result::Err`、`ok=false+error`、成功时是否仍携带 error、远程 exit status 是否被吞。
-- 事件：事件名、Rust emit payload、TS listener 泛型、取消订阅、真实 UI 消费者。
-- 状态机：契约中的每个状态是否真的 emit；当前窗口的手工状态更新不能替代跨窗口事件。
-- 语义值：字段类型一致仍可能长期返回 `0/false` 占位，或后端返回展示文本而前端按枚举比较。
+复用现有装配契约、IPC 载荷与消费方行为测试。只有完整装配审计才统计全量差集、重复项或死命令；常规修改聚焦受影响链路。文本扫描识别的候选需核对宏、动态入口和真实消费方。
 
-## Tauri 注册关键坑
-
-Tauri 2 的 `Builder::invoke_handler` 是 setter，不会累加 handler。多个插件各自调用时，后调用者覆盖前调用者。审计注册必须查看应用装配顺序，并在本地 cargo registry 的 `tauri/src/app.rs` 核实当前版本实现。最佳修复是全应用单次集中 `generate_handler!` 或显式组合 dispatch。
-
-## 文件传输数据流检查
-
-异步命令常只返回“已启动”，完成结果由事件推送。必须沿以下链路核对：
-
-`invoke immediate result → transferId → Rust background emit → listener payload → component subscription → unlisten → UI completion/error`
-
-特别检查：
-
-- UI 是否错误地只检查立即返回的 `done=false`
-- listener 是否声明了后端不存在的字段
-- `write`/`flush` 错误是否被 `let _ =` 吞掉
-- `transferred/total` 是否是真实字节数，而非人为 `+1`
-
-## 推荐验证
-
-- 自动脚本提取五层集合和调用点；对多行 chained 调用要二次符号搜索，避免正则错归属。
-- `cargo test plugins::<id> --lib`
-- `vue-tsc --noEmit`
-- 审计前后运行 `git diff --exit-code -- <scope>` 和 `git status --short`，证明未修改文件。
-- 报告每个问题必须包含：严重级、`文件:行`、可执行复现、修复建议。
+问题给出位置、触发条件、影响及修复方式；结果写提交正文或已有方案，无需另建报告。命令与执行环境只见[20](20-验证矩阵.md)。

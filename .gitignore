@@ -31,5 +31,10 @@ __pycache__/
 # 本地工作草稿、原始输出与临时证据
 .work/
 
+# 可重新生成的测试输出，不忽略可复用测试源码与夹具
+coverage/
+playwright-report/
+test-results/
+
 # 本地设计素材与图标原型，不参与构建
 branding/

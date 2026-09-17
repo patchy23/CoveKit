@@ -1,68 +1,11 @@
 #!/bin/sh
-# 提交前轻量检查：只查本次暂存的文件，按类型分流，改文档的提交不会去跑 cargo。
-# 覆盖范围与 docs/standards/20-验证矩阵.md 的本地口径一致；eslint、类型检查、测试与构建不在这里，
-# 仍由推前手动执行或 CI 承担。工具缺失时打印跳过原因，不拦截提交。
-# 规范判断有误或急着提交时可用 git commit --no-verify 跳过。
-
-set -u
-
-# 从钩子自身位置推仓库根：被别的仓库借用时也指向正确位置
-hook_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P) || exit 0
-root=$(CDPATH= cd -- "$hook_dir/.." && pwd -P) || exit 0
-cd "$root" || exit 0
-
-has() { command -v "$1" >/dev/null 2>&1; }
-
-failed=""
-run() {
-    name=$1
-    shift
-    if "$@"; then
-        echo "  ✓ $name"
-    else
-        echo "  ✗ $name"
-        failed="$failed $name;"
-    fi
-}
-
-staged_md=$(git diff --cached --name-only --diff-filter=ACMR -- '*.md')
-staged_rs=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
-staged_fe=$(git diff --cached --name-only --diff-filter=ACMR -- '*.ts' '*.vue' '*.mjs' '*.js' '*.css' '*.json' '*.html' '*.yml' '*.yaml')
-
-# 文档：链接与锚点 + 入口预算（docs 目录不进 prettier，见 .prettierignore）
-if [ -n "$staged_md" ]; then
-    if has python; then
-        run "文档链接与锚点" python scripts/check_markdown.py $staged_md
-        run "文档预算" python scripts/check_doc_budget.py
-    else
-        echo "  - 跳过文档检查：python 不在 PATH"
-    fi
-fi
-
-# Rust：格式 + 规范扫描（脚本内部走 cargo test --test source_rules）
-if [ -n "$staged_rs" ]; then
-    if has cargo; then
-        run "rustfmt" cargo fmt --manifest-path src-tauri/Cargo.toml --check
-    else
-        echo "  - 跳过 rustfmt：cargo 不在 PATH"
-    fi
-    if has python; then
-        run "Rust 规范扫描" python scripts/check_rust_rules.py
-    fi
-fi
-
-# 前端与配置：只跑 prettier，eslint 与类型检查留给 pnpm run check 与 CI
-if [ -n "$staged_fe" ]; then
-    if has npx; then
-        run "prettier" npx --no-install prettier --check $staged_fe
-    else
-        echo "  - 跳过 prettier：npx 不在 PATH"
-    fi
-fi
-
-if [ -n "$failed" ]; then
-    echo "提交前检查未通过：$failed"
-    echo "修好后重新提交；确认判断有误可用 git commit --no-verify 跳过。"
-    exit 1
-fi
+# 只执行轻量门禁；Python 入口负责 NUL 路径解析，不调用 Cargo。
+cd "$(git rev-parse --show-toplevel)" || exit 1
+export PYTHONIOENCODING=utf-8
+for py in python python3 py; do
+  if command -v "$py" >/dev/null 2>&1; then
+    exec "$py" scripts/pre_commit.py
+  fi
+done
+echo "未找到 Python，提交前检查未执行" >&2
 exit 0

@@ -17,9 +17,14 @@ class ChangeTests(unittest.TestCase):
 
     def test_code_config_and_unknown_paths_run_product(self):
         for path in ["src/a.ts", "src-tauri/Cargo.toml", "pnpm-lock.yaml", ".github/workflows/ci.yml",
-                     "scripts/ci_changes.py", "docs/example.py", "src/README.md", "new.config"]:
+                     "docs/example.py", "src/README.md", "new.config"]:
             with self.subTest(path=path):
                 self.assertTrue(classify([path])["product"])
+
+    def test_engineering_tools_run_checks_without_product_builds(self):
+        for path in ['scripts/pre_commit.py', 'scripts/ci_changes.py', '.githooks/pre-commit',
+                     'scripts/test_check_commit_msg.py', '.githooks/commit-msg']:
+            self.assertEqual(classify([path]), {'product': False, 'doc_tools': True})
 
     def test_mixed_changes_run_product(self):
         self.assertTrue(classify(["docs/a.md", "src/main.ts"])["product"])

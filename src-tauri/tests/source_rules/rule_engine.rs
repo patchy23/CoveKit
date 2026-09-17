@@ -26,7 +26,7 @@ pub const RULES: &[(&str, &str)] = &[
     ("foreign_table", "框架层直接引用业务表名：framework 下字符串字面量命中插件自报的建表名（零容忍）"),
     ("module_doc", "文件缺少 //! 模块职责注释"),
     ("api_doc", "pub / pub(crate) / pub(super) 项（含固有 impl 方法）缺少 /// 职责注释"),
-    ("field_doc", "pub 结构体的字段缺少 /// 语义注释"),
+    ("field_doc", "pub 结构体字段缺少 ///，仅提示核对非显然语义"),
 ];
 
 /// 覆盖边界声明：报告里原样打印，任何一条失效都必须更新这里而不是含糊带过。
@@ -285,14 +285,20 @@ impl ScanReport {
         }
 
         if self.mode.wants_docs() {
-            let n = self.count("module_doc") + self.count("api_doc") + self.count("field_doc");
+            // AST 无法判断字段是否语义显然，字段文档只提示，不要求逐字段复述名字。
+            let n = self.count("module_doc") + self.count("api_doc");
             if n > baseline.doc_issues {
                 problems.push(format!(
                     "文档缺失 {n} 处，超过基线 {}（新增 {} 处）：",
                     baseline.doc_issues,
                     n - baseline.doc_issues
                 ));
-                let mut evidence: Vec<String> = self.candidates.iter().map(describe).collect();
+                let mut evidence: Vec<String> = self
+                    .candidates
+                    .iter()
+                    .filter(|candidate| candidate.rule != "field_doc")
+                    .map(describe)
+                    .collect();
                 evidence.sort();
                 evidence.truncate(60);
                 problems.extend(evidence);

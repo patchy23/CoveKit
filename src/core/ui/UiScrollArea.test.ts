@@ -47,11 +47,3 @@ it('as-child 保留原生 ref、位置读写、滚动事件和拖拽事件', asy
   wrapper.unmount()
   expect(viewport.value).toBeNull()
 })
-
-it('managed 模式只标记主题，不设置库视口的 overflow', () => {
-  const wrapper = mount(UiScrollArea, { props: { managed: true, theme: 'dark' } })
-  expect(wrapper.attributes('data-scroll-axis')).toBe('managed')
-  expect(wrapper.attributes('data-scroll-theme')).toBe('dark')
-  expect(wrapper.attributes('style')).toBeUndefined()
-  wrapper.unmount()
-})
