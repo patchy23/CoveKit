@@ -27,6 +27,11 @@ function cmd<K extends keyof InvokePayloads & keyof Results>(
 }
 
 export const ipc = {
+  sshComposeList: (connectionId: string) => cmd(commands.sshComposeList, { connectionId }),
+  sshComposeAction: (payload: Payloads['ssh_compose_action']) =>
+    cmd(commands.sshComposeAction, payload),
+  sshComposeCreate: (payload: Payloads['ssh_compose_create']) =>
+    cmd(commands.sshComposeCreate, payload),
   /* 连接（Rust 侧命令以 payload 对象为入参） */
   sshConnect: (p: Payloads['ssh_connect']) => cmd(commands.sshConnect, { payload: p }),
   sshDisconnect: (sessionId: string) => cmd(commands.sshDisconnect, { sessionId }),

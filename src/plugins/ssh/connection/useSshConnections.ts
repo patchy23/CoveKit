@@ -37,7 +37,7 @@ export interface SshConnectionWorkspace {
 
 /** 连接页签右侧功能区（工作区内部子页签） */
 export type SshWorkspaceSection =
-  'terminal' | 'files' | 'tunnels' | 'monitor' | 'services' | 'processes' | 'docker'
+  'terminal' | 'files' | 'tunnels' | 'monitor' | 'services' | 'processes' | 'docker' | 'compose'
 
 /** 连接域需要的外部能力（均由组装根注入，本域不反向读配置域/生命周期域内部状态） */
 export interface SshConnectionPorts {

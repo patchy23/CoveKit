@@ -9,6 +9,7 @@
 //! - file.rs / edit.rs / monitor.rs / system_info.rs / service.rs / process.rs / docker.rs：其余能力
 
 mod close_hooks; // 关闭清理钩子（登记到 framework/lifecycle，退出时由框架协调调用）
+pub(crate) mod compose;
 pub(crate) mod conn; // conn/ 目录：会话注册表 + 连接/重连（能力域下沉，引用路径经 mod.rs pub use 保持不变）
 mod credential_refs;
 pub(crate) mod docker;
@@ -37,6 +38,9 @@ crate::patchybox_module! {
     owner: "ssh",
     feature: "ssh",
     commands: {
+        compose::ssh_compose_list => "查询 Docker Compose 项目",
+        compose::ssh_compose_action => "执行 Docker Compose 项目操作",
+        compose::ssh_compose_create => "新建远程 Compose 配置",
         conn::reconnect::ssh_disconnect => "断开连接并清理会话",
         conn::reconnect::ssh_reconnect => "重新连接（新会话替换旧会话）",
         conn::ssh_connections => "全部会话快照（侧栏轮询）",

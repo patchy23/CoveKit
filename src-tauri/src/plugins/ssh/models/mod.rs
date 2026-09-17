@@ -2,6 +2,7 @@
 //! 按域拆分子模块，此处 pub use 重导出——调用方引用路径 crate::plugins::ssh::models::* 不变。
 
 mod common;
+mod compose;
 mod connect;
 mod file;
 mod host_key;
@@ -10,6 +11,7 @@ mod system_info;
 mod terminal;
 
 pub use common::*;
+pub use compose::*;
 pub use connect::*;
 pub use file::*;
 pub use host_key::*;

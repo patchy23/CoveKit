@@ -35,6 +35,7 @@ const MonitorTab = lazySection(() => import('./monitor/MonitorTab.vue'))
 const ServiceTab = lazySection(() => import('./monitor/ServiceTab.vue'))
 const ProcessTab = lazySection(() => import('./monitor/ProcessTab.vue'))
 const DockerTab = lazySection(() => import('./docker/DockerTab.vue'))
+const ComposeTab = lazySection(() => import('./compose/ComposeTab.vue'))
 
 const workspace = useSshWorkspace()
 // 工具资源生命周期：关闭页签/退出时断开会话与隧道（T10-4）
@@ -61,10 +62,16 @@ const sectionTabs: UiTabItem[] = [
   { value: 'services', label: '服务' },
   { value: 'processes', label: '进程' },
   { value: 'docker', label: 'Docker' },
+  { value: 'compose', label: '编排' },
 ]
 
 const activeWorkspaceId = ref<string | null>(null)
 const closingWorkspaceId = ref<string | null>(null)
+const composeStates = ref<Record<string, { dirty: boolean; busy: boolean }>>({})
+const composeCloseHint = computed(() => {
+  const state = closingWorkspaceId.value ? composeStates.value[closingWorkspaceId.value] : undefined
+  return `${state?.dirty ? '编排页有未保存的 YAML，关闭将丢失修改。' : ''}${state?.busy ? '编排操作仍在执行，关闭后远端操作不保证停止。' : ''}`
+})
 const openingProfileId = ref<string | null>(null)
 /** 「关闭全部会话」确认弹窗开关 */
 const cleanupAllOpen = ref(false)
@@ -132,7 +139,11 @@ function requestCloseWorkspace(id: string) {
   const workspace = connectionWorkspaces.value.find((item) => item.id === id)
   if (!workspace) return
   // 已断开（或连接失败）的页签直接关闭，无需确认；活连接才提醒会话将结束
-  if (workspace.connection.status === 'disconnected' || workspace.connection.status === 'error') {
+  if (
+    (workspace.connection.status === 'disconnected' || workspace.connection.status === 'error') &&
+    !composeStates.value[id]?.dirty &&
+    !composeStates.value[id]?.busy
+  ) {
     void confirmCloseWorkspace(id)
     return
   }
@@ -305,6 +316,15 @@ watch(
               :profile="profiles.find((profile) => profile.id === remote.profileId)"
               class="h-full"
             />
+            <ComposeTab
+              v-if="remote.visitedSections.includes('compose')"
+              v-show="remote.activeSection === 'compose'"
+              :connection="remote.connection"
+              :profile-id="remote.profileId"
+              :workspace-id="remote.id"
+              class="h-full"
+              @state="composeStates[remote.id] = $event"
+            />
           </div>
         </div>
       </template>
@@ -332,7 +352,7 @@ watch(
     <ConfirmDialog
       :open="closingWorkspaceId !== null"
       title="关闭 SSH 连接"
-      :message="`确定关闭连接「${closingWorkspace?.title ?? ''}」吗？该连接下的终端、文件传输、监控与日志任务都会结束。`"
+      :message="`确定关闭连接「${closingWorkspace?.title ?? ''}」吗？该连接下的终端、文件传输、监控与日志任务都会结束。${composeCloseHint}`"
       confirm-label="关闭连接"
       @close="closingWorkspaceId = null"
       @confirm="confirmCloseWorkspace"
@@ -340,7 +360,7 @@ watch(
     <ConfirmDialog
       :open="deleteTarget !== null"
       title="删除服务器连接信息"
-      :message="`确定删除「${deleteTarget?.name ?? ''}」（${deleteTarget?.host ?? ''}）的连接信息？该服务器已打开的全部连接也会关闭。`"
+      :message="`确定删除「${deleteTarget?.name ?? ''}」（${deleteTarget?.host ?? ''}）的连接信息？该服务器已打开的全部连接也会关闭，未保存的编排配置将丢失，正在执行的远端操作不保证停止。`"
       confirm-label="删除"
       danger
       @close="deleteTarget = null"
@@ -352,7 +372,7 @@ watch(
     <ConfirmDialog
       :open="cleanupAllOpen"
       title="关闭全部会话"
-      :message="`将断开并关闭全部 ${connectionWorkspaces.length} 个会话，未保存的终端内容将丢失。`"
+      :message="`将断开并关闭全部 ${connectionWorkspaces.length} 个会话，未保存的终端内容和编排配置将丢失；正在执行的远端操作不保证停止。`"
       confirm-label="全部关闭"
       danger
       @close="cleanupAllOpen = false"

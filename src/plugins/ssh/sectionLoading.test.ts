@@ -41,6 +41,10 @@ vi.mock('./docker/DockerTab.vue', () => {
   fixture.loads.push('docker')
   return { __esModule: true, default: { template: '<div data-section="docker" />' } }
 })
+vi.mock('./compose/ComposeTab.vue', () => {
+  fixture.loads.push('compose')
+  return { __esModule: true, default: { template: '<div data-section="compose" />' } }
+})
 enableAutoUnmount(afterEach)
 
 it('先显示主机列表，功能页首次进入才加载，返回终端保留实例', async () => {
@@ -93,7 +97,15 @@ it('先显示主机列表，功能页首次进入才加载，返回终端保留�
   await terminalInput.setValue('保留终端状态')
   const entered = ['terminal']
   let monitorElement: Element | undefined
-  for (const section of ['files', 'tunnels', 'monitor', 'services', 'processes', 'docker']) {
+  for (const section of [
+    'files',
+    'tunnels',
+    'monitor',
+    'services',
+    'processes',
+    'docker',
+    'compose',
+  ]) {
     wrapper.findAllComponents({ name: 'TabsStub' })[1].vm.$emit('update:modelValue', section)
     await flushPromises()
     entered.push(section)
