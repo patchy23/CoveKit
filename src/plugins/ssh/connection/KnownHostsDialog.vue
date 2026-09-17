@@ -6,7 +6,7 @@ import { UiTooltip } from '@/core/ui'
  * 列出 patchyBox 私有 known_hosts 的条目（算法 + SHA256 指纹），支持删除单条/整台主机。
  * 服务器重装等合法变更也可在此删除旧指纹后重连。
  */
-import { onMounted, ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { KnownHostEntry } from '../contracts'
 import { ipc } from '../ipc'
 import { UiButton, UiListRow, UiModal } from '@/core/ui'
@@ -49,9 +49,13 @@ async function remove(entry: KnownHostEntry) {
   if (entries.value.length === 0) await load()
 }
 
-onMounted(() => {
-  if (props.open) void load()
-})
+watch(
+  () => props.open,
+  (open) => {
+    if (open) void load()
+  },
+  { immediate: true }
+)
 
 defineExpose({ load })
 </script>
