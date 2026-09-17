@@ -360,3 +360,23 @@ it('切换编排后迟到的容器列表不覆盖新项目', async () => {
   expect(wrapper.text()).toContain('new-container')
   expect(wrapper.text()).not.toContain('old-container')
 })
+
+it('打开编排后真实编辑器渲染读取的 YAML 内容', async () => {
+  env.sshEditOpen.mockResolvedValue(file('services:\n  web:\n    image: nginx:stable\n'))
+  const wrapper = mount(ComposeTab, {
+    props: {
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      profileId: 'profile',
+      workspaceId: 'yaml-render',
+    },
+    global: { stubs: { ComposeContainers: true, ConfirmDialog: true, UiModal: true } },
+  })
+  await flushPromises()
+  wrapper
+    .findAllComponents(UiButton)
+    .find((button) => button.text().includes('运行中'))!
+    .vm.$emit('click')
+  await flushPromises()
+  expect(wrapper.getComponent(UiCodeEditor).props('modelValue')).toContain('nginx:stable')
+  expect(wrapper.find('.cm-content').text()).toContain('nginx:stable')
+})

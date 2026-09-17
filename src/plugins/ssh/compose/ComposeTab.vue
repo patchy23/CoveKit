@@ -249,7 +249,7 @@ function down() {
         </div>
       </UiScrollArea>
     </aside>
-    <div class="flex min-w-0 flex-1 flex-col">
+    <UiScrollArea class="flex min-h-0 min-w-0 flex-1 flex-col" axis="vertical">
       <p
         v-if="!connected"
         role="alert"
@@ -321,7 +321,7 @@ function down() {
           :connection="connection"
           :busy="busy"
         />
-        <section class="flex min-h-0 flex-1 flex-col">
+        <section class="flex min-h-[260px] shrink-0 flex-1 flex-col">
           <div class="flex shrink-0 flex-wrap items-center gap-xs px-md py-sm">
             <UiSelect
               v-if="fileOptions.length > 1"
@@ -380,15 +380,19 @@ function down() {
               }}</UiButton>
             </div>
           </div>
-          <UiCodeEditor
-            v-if="loaded"
-            v-model="content"
-            class="min-h-0 flex-1"
-            :filename="filePath"
-            language="yaml"
-            :readonly="!editing || busy"
-            @save="editing && !busy && saveFile()"
-          />
+          <!-- 为百分比高度编辑器提供确定的承载区域，避免被容器列表与输出挤到零高。 -->
+          <div v-if="loaded" class="relative min-h-[200px] flex-1">
+            <UiCodeEditor
+              v-model="content"
+              class="absolute inset-0"
+              :filename="filePath"
+              language="yaml"
+              placeholder="当前 YAML 文件内容为空"
+              :readonly="!editing || busy"
+              @error="error = $event"
+              @save="editing && !busy && saveFile()"
+            />
+          </div>
           <p v-else class="px-md py-sm text-body-sm text-text-muted dark:text-text-muted-dark">
             {{ loading ? '正在读取配置…' : '配置未加载，请检查路径和权限后重新读取。' }}
           </p>
@@ -430,7 +434,7 @@ function down() {
             >{{ resultText }}</pre>
         </UiScrollArea>
       </div>
-    </div>
+    </UiScrollArea>
     <ComposeCreateDialog
       v-if="showCreate && connection"
       v-model:content="content"
