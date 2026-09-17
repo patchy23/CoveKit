@@ -166,6 +166,7 @@ pub fn save_secret(
     key: &str,
     value: &serde_json::Value,
 ) -> Result<(), String> {
+    crate::framework::context::assert_writable()?;
     let dir = app_data_dir(app)?;
     let value = value.clone();
     update_map_at(
@@ -188,6 +189,7 @@ pub fn save_secrets(
     namespace: &str,
     values: &HashMap<String, serde_json::Value>,
 ) -> Result<(), String> {
+    crate::framework::context::assert_writable()?;
     let dir = app_data_dir(app)?;
     let values = values.clone();
     update_map_at(
@@ -223,6 +225,7 @@ pub fn get_secret(
 
 /// 删除凭证
 pub fn delete_secret(app: &AppHandle, namespace: &str, key: &str) -> Result<(), String> {
+    crate::framework::context::assert_writable()?;
     let dir = app_data_dir(app)?;
     update_map_at(
         &dir,

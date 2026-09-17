@@ -14,7 +14,7 @@
 //! - **没有代际**：2026-09-16 裁决后空间布局为 `spaces/<uid>/`（无 `generations/` 层），
 //!   合并导入用原地事务提交（SQLite 事务 + 文件原子替换），不做整目录克隆与指针切换。
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::OnceLock;
 
 use tauri::AppHandle;
@@ -190,6 +190,44 @@ pub async fn maintenance_guard() -> tokio::sync::MutexGuard<'static, ()> {
     GUARD.lock().await
 }
 
+/// 导入提交窗口的写冻结标记（进程内；只在合并/覆盖导入提交期间为 true）
+static WRITE_FROZEN: AtomicBool = AtomicBool::new(false);
+
+/// 写冻结守卫（RAII）：提交开始挂上、离开作用域自动解除
+#[allow(dead_code)] // 合并导入提交（C4）接入前只有测试调用方（接入后删掉本行）
+pub struct WriteFreezeGuard(());
+
+impl WriteFreezeGuard {
+    /// 开启写冻结（同一时间只应有一个提交窗口；由 maintenance_guard 保证互斥）
+    #[allow(dead_code)] // 同上
+    pub fn begin() -> Self {
+        WRITE_FROZEN.store(true, Ordering::SeqCst);
+        Self(())
+    }
+}
+
+impl Drop for WriteFreezeGuard {
+    fn drop(&mut self) {
+        WRITE_FROZEN.store(false, Ordering::SeqCst);
+    }
+}
+
+/// 当前是否处于导入提交窗口（写冻结）
+pub fn writes_frozen() -> bool {
+    WRITE_FROZEN.load(Ordering::SeqCst)
+}
+
+/// 写入口统一校验：提交窗口内拒绝并给出明确文案（不静默丢弃、不写进旧数据）。
+///
+/// 导入提交自身不走这条（它直接调用 `*_at` 原语）；覆盖的是用户操作进入的
+/// 框架写入口（凭证保存、偏好写入等）。SQLite 侧的并发由 busy_timeout 序列化兜底。
+pub fn assert_writable() -> Result<(), String> {
+    if writes_frozen() {
+        return Err("数据正在提交导入，请稍候重试".into());
+    }
+    Ok(())
+}
+
 /// 登记测试期的模块描述表清理入口所用（生产不调用）
 #[cfg(test)]
 pub(crate) fn reset_for_test() {
@@ -250,6 +288,20 @@ mod tests {
             current().map(|ctx| ctx.location.root.clone()),
             Some(PathBuf::from("D:/pb-first/spaces").join(SPACE_A))
         );
+    }
+
+    /// 写冻结：窗口内写入口被拒、守卫离开作用域即恢复（RAII 解除，不依赖手工复位）
+    #[test]
+    fn write_freeze_blocks_and_recovers() {
+        assert!(assert_writable().is_ok());
+        {
+            let _freeze = WriteFreezeGuard::begin();
+            assert!(writes_frozen());
+            let error = assert_writable().expect_err("冻结窗口内写入必须被拒");
+            assert!(error.contains("导入"), "{error}");
+        }
+        assert!(!writes_frozen());
+        assert!(assert_writable().is_ok(), "守卫离开后必须恢复可写");
     }
 
     /// epoch：当前 epoch 有效、其他 epoch 一律判为晚到；丢弃计数可诊断

@@ -75,6 +75,7 @@ pub(crate) fn read_current(app: &AppHandle) -> Result<Map<String, Value>, String
 
 /// 写当前空间的偏好表
 pub(crate) fn write_current(app: &AppHandle, map: &Map<String, Value>) -> Result<(), String> {
+    crate::framework::context::assert_writable()?;
     write_at(&current_path(app)?, map)
 }
 

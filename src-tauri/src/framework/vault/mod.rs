@@ -92,6 +92,7 @@ pub fn vault_save(
     app: AppHandle,
     payload: CredentialSavePayload,
 ) -> Result<CredentialSummary, String> {
+    crate::framework::context::assert_writable()?;
     validate_payload(&payload)?;
     let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
     let dir = store::data_dir_of(&app)?;
@@ -152,6 +153,7 @@ pub fn vault_delete(
     force: Option<bool>,
     expected_references: Option<usize>,
 ) -> Result<VaultDeleteResult, String> {
+    crate::framework::context::assert_writable()?;
     let summary = credential_refs::summarize(&app, &id);
     let referenced_by = summary.total;
     if !force.unwrap_or(false) {

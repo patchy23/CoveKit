@@ -50,6 +50,23 @@ impl PluginDb {
         f(&guard)
     }
 
+    /// 锁内事务写入：单事务内执行全部写入，任一失败即整体回滚（合并导入提交用）。
+    ///
+    /// rusqlite 的 `Transaction` 解引用即 `Connection`，插件的 `&Connection` 层函数直接复用；
+    /// `IMMEDIATE` 保证事务期间无其他写者（并发用户写入由 busy_timeout 排队到事务后执行）。
+    pub fn with_transaction<T>(
+        &self,
+        f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut guard = self.conn.lock().map_err(|e| e.to_string())?;
+        let tx = guard
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| format!("开启事务失败: {e}"))?;
+        let value = f(&tx)?;
+        tx.commit().map_err(|e| format!("事务提交失败: {e}"))?;
+        Ok(value)
+    }
+
     /// 便捷执行：无参写入语句（返回受影响行数）
     pub fn execute(&self, sql: &str) -> Result<usize, String> {
         self.with_conn(|c| c.execute(sql, []).map_err(|e| e.to_string()))
