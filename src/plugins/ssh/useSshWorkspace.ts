@@ -48,7 +48,6 @@ export function useSshWorkspace() {
   const lifecycle = useSshLifecycle({
     onConnectionStatusEvent: connections.applyConnectionStatus,
     onConnectStageEvent: connections.applyConnectStage,
-    onTerminalClosedEvent: connections.applyTerminalClosed,
     onHostKeyEnqueue: hostKeys.enqueue,
     onActivity: connections.touchBySessionId,
     onIdleExpired: connections.idleDisconnect,

@@ -1,7 +1,7 @@
 /**
  * useSshLifecycle · SSH 会话生命周期与空闲回收所有者
  *
- * 职责：注册六路后端事件订阅（连接状态、终端输出、传输进度、终端通道关闭、连接阶段、主机密钥确认）、
+ * 职责：注册五路后端事件订阅（连接状态、终端输出、传输进度、连接阶段、主机密钥确认）、
  * 卸载时的退订与清理编排（含「卸载先于订阅完成」时晚到的退订句柄）、空闲断开定时器与后台活动节流。
  * 事件到状态的映射逻辑不在本域：回调由组装根注入，本域只负责订阅生命周期与时间驱动。
  *
@@ -14,7 +14,6 @@ import {
   onConnectionStatus,
   onConnectStage,
   onHostKeyVerify,
-  onTerminalClosed,
   onTerminalData,
   onTransferProgress,
 } from '../ipc'
@@ -26,8 +25,6 @@ export interface SshLifecyclePorts {
   onConnectionStatusEvent: (connection: ServerConnection) => void
   /** 连接阶段进度 */
   onConnectStageEvent: (stage: ConnectStage) => void
-  /** 主终端通道关闭（可能是意外断线，判定在连接域） */
-  onTerminalClosedEvent: (connectionId: string) => void
   /** 主机密钥确认请求入队 */
   onHostKeyEnqueue: (request: HostKeyVerifyRequest) => void
   /** 后台活动（终端输出含输入回显、传输进度）刷新指定会话活跃时间 */
@@ -55,7 +52,6 @@ export function useSshLifecycle(ports: SshLifecyclePorts) {
   let unlistenConnection: (() => void) | null = null
   let unlistenActivity: (() => void) | null = null
   let unlistenTransfer: (() => void) | null = null
-  let unlistenClosed: (() => void) | null = null
   let unlistenStage: (() => void) | null = null
   let unlistenHostKey: (() => void) | null = null
   let idleTimer: ReturnType<typeof setInterval> | null = null
@@ -90,19 +86,17 @@ export function useSshLifecycle(ports: SshLifecyclePorts) {
     } catch {
       /* 浏览器预览没有 Tauri 事件系统。 */
     }
+    // 通道关闭由 TerminalTab 按终端 ID 与用途判断并上报 linkDead；不能据连接 ID 将容器退出视为断线。
     // 后台活动监听：终端有输出（含打字回显）/ 传输在进行 → 刷新对应工作区活跃时间
     try {
       const stopData = await onTerminalData((d) => touchByConnectionId(d.connectionId))
       const stopTransfer = await onTransferProgress((p) => touchByConnectionId(p.connectionId))
-      const stopClosed = await onTerminalClosed((d) => ports.onTerminalClosedEvent(d.connectionId))
       if (disposed) {
         stopData()
         stopTransfer()
-        stopClosed()
       } else {
         unlistenActivity = stopData
         unlistenTransfer = stopTransfer
-        unlistenClosed = stopClosed
       }
     } catch {
       /* 浏览器预览没有 Tauri 事件系统。 */
@@ -141,7 +135,6 @@ export function useSshLifecycle(ports: SshLifecyclePorts) {
     unlistenConnection?.()
     unlistenActivity?.()
     unlistenTransfer?.()
-    unlistenClosed?.()
     unlistenStage?.()
     unlistenHostKey?.()
     if (idleTimer) clearInterval(idleTimer)

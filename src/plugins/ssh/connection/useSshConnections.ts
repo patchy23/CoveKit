@@ -403,14 +403,6 @@ export function useSshConnections(ports: SshConnectionPorts) {
     if (workspace) workspace.stageText = stageTextFor(stage.stage, stage.status)
   }
 
-  /** 主终端通道异常关闭（本地主动关闭不经过此路径）→ 触发自动重连 */
-  function applyTerminalClosed(connectionId: string) {
-    const workspace = connectionWorkspaces.value.find(
-      (item) => item.connection.sessionId === connectionId && item.connection.status === 'connected'
-    )
-    if (workspace) handleLinkDead(workspace.id)
-  }
-
   return {
     connectionWorkspaces,
     activeProfileId,
@@ -428,6 +420,5 @@ export function useSshConnections(ports: SshConnectionPorts) {
     idleDisconnect,
     applyConnectionStatus,
     applyConnectStage,
-    applyTerminalClosed,
   }
 }

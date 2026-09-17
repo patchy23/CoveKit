@@ -641,7 +641,7 @@ describe('SSH 工作区 · 订阅与清理', () => {
   it('卸载时逐路退订，每个退订句柄只释放一次', async () => {
     const { unmount } = mountWorkspace()
     await settle()
-    expect(env.subscriptions).toHaveLength(6)
+    expect(env.subscriptions).toHaveLength(5)
 
     unmount()
     await settle(4)
@@ -662,7 +662,7 @@ describe('SSH 工作区 · 订阅与清理', () => {
     env.releasePending()
     await settle(14)
 
-    expect(env.subscriptions).toHaveLength(6)
+    expect(env.subscriptions).toHaveLength(5)
     for (const sub of env.subscriptions) expect(sub.unsubscribe).toHaveBeenCalledTimes(1)
   })
 
@@ -688,6 +688,26 @@ describe('SSH 工作区 · 订阅与清理', () => {
 /* ── 6. 断线与重连 ── */
 
 describe('SSH 工作区 · 断线与自动重连', () => {
+  it('容器或主动关闭的终端通知不重置工作区、不触发连接恢复提示', async () => {
+    useFakeTimers()
+    env.commands.sshProfileList.mockResolvedValue([profile('profile-a', '生产服务器')])
+    const { api } = mountWorkspace()
+    await settle()
+    await api.openConnection('profile-a')
+    const workspace = api.connectionWorkspaces.value[0]
+    const connected = workspace.connection
+
+    push.terminalClosed({ terminalId: 'docker-term-1', connectionId: connected.sessionId })
+    push.terminalClosed({ terminalId: 'closed-local-term', connectionId: connected.sessionId })
+    await advance(30_000)
+
+    expect(workspace.connection).toBe(connected)
+    expect(workspace.connection.status).toBe('connected')
+    expect(workspace.reconnectTick).toBe(0)
+    expect(env.commands.sshReconnect).not.toHaveBeenCalled()
+    expect(toastText()).not.toContain('已恢复')
+  })
+
   it('重连等待期忽略旧会话的断开事件，不覆盖重连态', async () => {
     useFakeTimers()
     env.commands.sshProfileList.mockResolvedValue([profile('profile-a', '生产服务器')])
@@ -696,7 +716,7 @@ describe('SSH 工作区 · 断线与自动重连', () => {
     await api.openConnection('profile-a')
     const workspace = api.connectionWorkspaces.value[0]
 
-    push.terminalClosed({ terminalId: 'term-1', connectionId: 'conn-profile-a' })
+    api.handleLinkDead(workspace.id)
     await settle(2)
     expect(workspace.connection.status).toBe('reconnecting')
 
@@ -716,7 +736,7 @@ describe('SSH 工作区 · 断线与自动重连', () => {
     const workspace = api.connectionWorkspaces.value[0]
     env.commands.sshReconnect.mockResolvedValue(connectOk('req-r', 'profile-a', 'conn-2'))
 
-    push.terminalClosed({ terminalId: 'term-1', connectionId: 'conn-profile-a' })
+    api.handleLinkDead(workspace.id)
     await settle(2)
     expect(workspace.connection.status).toBe('reconnecting')
     expect(workspace.stageText).toContain('1 秒后自动重连（第 1 次）')
@@ -740,7 +760,7 @@ describe('SSH 工作区 · 断线与自动重连', () => {
     const workspace = api.connectionWorkspaces.value[0]
     env.commands.sshReconnect.mockResolvedValue(connectOk('req-r', 'profile-a', 'conn-2'))
 
-    push.terminalClosed({ terminalId: 'term-1', connectionId: 'conn-profile-a' })
+    api.handleLinkDead(workspace.id)
     await settle(2)
     expect(workspace.connection.status).toBe('reconnecting')
 
@@ -762,7 +782,7 @@ describe('SSH 工作区 · 断线与自动重连', () => {
     const workspace = api.connectionWorkspaces.value[0]
     env.commands.sshConnect.mockResolvedValue(connectOk('req-rebuild', 'profile-a', 'conn-3'))
 
-    push.terminalClosed({ terminalId: 'term-1', connectionId: 'conn-profile-a' })
+    api.handleLinkDead(workspace.id)
     await settle(2)
     await advance(1_000)
 
