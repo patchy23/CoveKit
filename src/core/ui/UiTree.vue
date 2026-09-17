@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiScrollArea from './UiScrollArea.vue'
 import UiIcon from './UiIcon.vue'
 
 export interface UiTreeItem {
@@ -40,79 +41,81 @@ function isGroupKind(kind?: string): boolean {
 </script>
 
 <template>
-  <div role="tree" class="min-h-0 overflow-y-auto overflow-x-hidden py-[3px] text-body-sm">
-    <button
-      v-for="item in items"
-      :key="item.id"
-      type="button"
-      role="treeitem"
-      class="group flex w-full items-center gap-[4px] whitespace-nowrap pr-[6px] text-left text-secondary outline-none transition-colors hover:bg-border focus-visible:bg-border dark:text-secondary-dark dark:hover:bg-border-dark dark:focus-visible:bg-border-dark"
-      :class="[
-        modelValue === item.id
-          ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-          : '',
-        item.muted ? 'opacity-60' : '',
-      ]"
-      :style="{ height: `${rowHeight}px`, paddingLeft: `${item.depth * 14 + 5}px` }"
-      :aria-selected="modelValue === item.id"
-      :aria-expanded="item.expandable ? item.expanded : undefined"
-      @click="emit('update:modelValue', item.id)"
-      @dblclick="item.expandable ? emit('toggle', item) : emit('open', item)"
-      @contextmenu.prevent="emit('context', $event, item)"
-    >
-      <span
-        class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[4px] text-text-muted transition-colors dark:text-text-muted-dark"
-        :class="
-          item.expandable || item.loading
-            ? 'cursor-pointer hover:bg-border hover:text-secondary dark:hover:bg-border-dark dark:hover:text-secondary-dark'
-            : ''
-        "
-        @click.stop="item.expandable && emit('toggle', item)"
+  <UiScrollArea as-child axis="vertical">
+    <div role="tree" class="min-h-0 overflow-x-hidden py-[3px] text-body-sm">
+      <button
+        v-for="item in items"
+        :key="item.id"
+        type="button"
+        role="treeitem"
+        class="group flex w-full items-center gap-[4px] whitespace-nowrap pr-[6px] text-left text-secondary outline-none transition-colors hover:bg-border focus-visible:bg-border dark:text-secondary-dark dark:hover:bg-border-dark dark:focus-visible:bg-border-dark"
+        :class="[
+          modelValue === item.id
+            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+            : '',
+          item.muted ? 'opacity-60' : '',
+        ]"
+        :style="{ height: `${rowHeight}px`, paddingLeft: `${item.depth * 14 + 5}px` }"
+        :aria-selected="modelValue === item.id"
+        :aria-expanded="item.expandable ? item.expanded : undefined"
+        @click="emit('update:modelValue', item.id)"
+        @dblclick="item.expandable ? emit('toggle', item) : emit('open', item)"
+        @contextmenu.prevent="emit('context', $event, item)"
       >
-        <!-- loading：旋转圆弧 -->
-        <UiIcon
-          v-if="item.loading"
-          name="loading"
-          :size="12"
-          :stroke-width="2.5"
-          class="animate-spin"
-        />
-        <!-- 可展开：chevron（展开时旋转 90°） -->
-        <UiIcon
-          v-else-if="item.expandable"
-          name="chevron-right"
-          :size="12"
-          class="transition-transform duration-150"
-          :class="{ 'rotate-90': item.expanded }"
-        />
-      </span>
-      <slot name="icon" :item="item">
-        <svg
-          class="h-[12px] w-[12px] shrink-0 text-text-muted dark:text-text-muted-dark"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.8"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
+        <span
+          class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[4px] text-text-muted transition-colors dark:text-text-muted-dark"
+          :class="
+            item.expandable || item.loading
+              ? 'cursor-pointer hover:bg-border hover:text-secondary dark:hover:bg-border-dark dark:hover:text-secondary-dark'
+              : ''
+          "
+          @click.stop="item.expandable && emit('toggle', item)"
         >
-          <!-- 分组：文件夹；叶子：小方块 -->
-          <path
-            v-if="isGroupKind(item.kind)"
-            d="M4 6.75A1.75 1.75 0 0 1 5.75 5h3.4l1.9 2.25h7.2A1.75 1.75 0 0 1 20 9v8.25A1.75 1.75 0 0 1 18.25 19H5.75A1.75 1.75 0 0 1 4 17.25Z"
+          <!-- loading：旋转圆弧 -->
+          <UiIcon
+            v-if="item.loading"
+            name="loading"
+            :size="12"
+            :stroke-width="2.5"
+            class="animate-spin"
           />
-          <rect v-else x="7" y="7" width="10" height="10" rx="2" />
-        </svg>
-      </slot>
-      <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
-      <span
-        v-if="item.badge !== undefined"
-        class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
-      >
-        {{ item.badge }}
-      </span>
-      <slot name="suffix" :item="item" />
-    </button>
-  </div>
+          <!-- 可展开：chevron（展开时旋转 90°） -->
+          <UiIcon
+            v-else-if="item.expandable"
+            name="chevron-right"
+            :size="12"
+            class="transition-transform duration-150"
+            :class="{ 'rotate-90': item.expanded }"
+          />
+        </span>
+        <slot name="icon" :item="item">
+          <svg
+            class="h-[12px] w-[12px] shrink-0 text-text-muted dark:text-text-muted-dark"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <!-- 分组：文件夹；叶子：小方块 -->
+            <path
+              v-if="isGroupKind(item.kind)"
+              d="M4 6.75A1.75 1.75 0 0 1 5.75 5h3.4l1.9 2.25h7.2A1.75 1.75 0 0 1 20 9v8.25A1.75 1.75 0 0 1 18.25 19H5.75A1.75 1.75 0 0 1 4 17.25Z"
+            />
+            <rect v-else x="7" y="7" width="10" height="10" rx="2" />
+          </svg>
+        </slot>
+        <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+        <span
+          v-if="item.badge !== undefined"
+          class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
+        >
+          {{ item.badge }}
+        </span>
+        <slot name="suffix" :item="item" />
+      </button>
+    </div>
+  </UiScrollArea>
 </template>

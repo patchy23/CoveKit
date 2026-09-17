@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * HttpResponse · 响应查看区（Postman 式：元信息 + Pretty/Raw + 响应头分页签）
  */
@@ -74,22 +75,24 @@ const highlighted = computed(() => {
     />
 
     <!-- 响应体：Pretty（JSON 高亮）/ Raw（原样） -->
-    <div
-      v-if="viewTab !== 'headers'"
-      class="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface-muted font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
-    >
-      <pre
-        v-if="viewTab === 'pretty' && highlighted"
-        class="p-[13px]"
-      ><code class="hljs" v-html="highlighted" /></pre>
-      <pre v-else class="whitespace-pre-wrap p-[13px] text-primary dark:text-primary-dark">{{
-        response.body || '(空响应体)'
-      }}</pre>
-    </div>
+    <UiScrollArea v-if="viewTab !== 'headers'" as-child axis="both">
+      <div
+        class="min-h-0 flex-1 rounded-md border border-border bg-surface-muted font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
+      >
+        <pre
+          v-if="viewTab === 'pretty' && highlighted"
+          class="p-[13px]"
+        ><code class="hljs" v-html="highlighted" /></pre>
+        <pre v-else class="whitespace-pre-wrap p-[13px] text-primary dark:text-primary-dark">{{
+          response.body || '(空响应体)'
+        }}</pre>
+      </div>
+    </UiScrollArea>
     <!-- 响应头 -->
-    <pre
-      v-else
-      class="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed text-secondary dark:border-border-dark dark:bg-surface-muted-dark dark:text-secondary-dark"
-      >{{ formatHeaders(response.headers) }}</pre>
+    <UiScrollArea v-else as-child axis="both">
+      <pre
+        class="min-h-0 flex-1 rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed text-secondary dark:border-border-dark dark:bg-surface-muted-dark dark:text-secondary-dark"
+        >{{ formatHeaders(response.headers) }}</pre>
+    </UiScrollArea>
   </div>
 </template>

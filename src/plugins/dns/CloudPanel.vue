@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * 云解析管理 · 平台切换 + 域名列表
  * 点击域名进入记录管理（RecordPanel）；未配置密钥时给出引导提示。
@@ -110,34 +111,36 @@ onMounted(loadDomains)
     />
 
     <!-- 域名列表 -->
-    <div v-else class="min-h-0 flex-1 overflow-y-auto pr-[2px]">
-      <p
-        v-if="!busy && domains.length === 0"
-        class="text-body-sm text-text-muted dark:text-text-muted-dark"
-      >
-        {{ configured ? '暂无域名（或平台侧无解析域名）' : '—' }}
-      </p>
-      <div class="grid grid-cols-[repeat(auto-fill,minmax(228px,1fr))] gap-[10px]">
-        <UiButton
-          v-for="d in domains"
-          :key="d.domainId"
-          variant="ghost"
-          class="!h-auto !whitespace-normal flex-col !items-start gap-[6px] rounded-lg border border-border bg-surface !p-[14px] text-left hover:border-tertiary/50 dark:border-border-dark dark:bg-surface-dark dark:hover:border-tertiary-dark/50"
-          @click="activeDomain = d"
+    <UiScrollArea v-else as-child axis="vertical">
+      <div class="min-h-0 flex-1 pr-[2px]">
+        <p
+          v-if="!busy && domains.length === 0"
+          class="text-body-sm text-text-muted dark:text-text-muted-dark"
         >
-          <span class="font-mono text-body font-medium text-primary dark:text-primary-dark">
-            {{ d.domainName }}
-          </span>
-          <span
-            class="flex items-center gap-[10px] text-body-sm text-text-muted dark:text-text-muted-dark"
+          {{ configured ? '暂无域名（或平台侧无解析域名）' : '—' }}
+        </p>
+        <div class="grid grid-cols-[repeat(auto-fill,minmax(228px,1fr))] gap-[10px]">
+          <UiButton
+            v-for="d in domains"
+            :key="d.domainId"
+            variant="ghost"
+            class="!h-auto !whitespace-normal flex-col !items-start gap-[6px] rounded-lg border border-border bg-surface !p-[14px] text-left hover:border-tertiary/50 dark:border-border-dark dark:bg-surface-dark dark:hover:border-tertiary-dark/50"
+            @click="activeDomain = d"
           >
-            <span>{{
-              platform === 'cloudflare' ? '进入查看记录' : `${d.recordTotal} 条记录`
-            }}</span>
-            <span v-if="d.createTime" class="truncate">{{ d.createTime }}</span>
-          </span>
-        </UiButton>
+            <span class="font-mono text-body font-medium text-primary dark:text-primary-dark">
+              {{ d.domainName }}
+            </span>
+            <span
+              class="flex items-center gap-[10px] text-body-sm text-text-muted dark:text-text-muted-dark"
+            >
+              <span>{{
+                platform === 'cloudflare' ? '进入查看记录' : `${d.recordTotal} 条记录`
+              }}</span>
+              <span v-if="d.createTime" class="truncate">{{ d.createTime }}</span>
+            </span>
+          </UiButton>
+        </div>
       </div>
-    </div>
+    </UiScrollArea>
   </div>
 </template>

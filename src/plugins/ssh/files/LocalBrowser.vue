@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * LocalBrowser · 双栏文件管理的本地侧（目录浏览 + 选中）
@@ -126,55 +127,57 @@ defineExpose({
     </div>
 
     <!-- 列表（与远程侧同款 UiTable 布局：名称/大小/修改时间；内容超宽时横向滚动） -->
-    <div
-      class="min-h-0 flex-1 overflow-auto"
-      aria-label="本地文件列表"
-      @contextmenu="emit('blankContext', $event)"
-    >
-      <div v-if="loading" class="py-[16px] text-center text-caption text-text-muted">读取中…</div>
-      <UiTable v-else :framed="false" :styled="false" table-class="w-max min-w-full text-body-sm">
-        <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
-          <tr
-            class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-          >
-            <UiTableCell as="th" class="px-[12px] py-[8px]">名称</UiTableCell>
-            <UiTableCell as="th" class="w-[90px] px-[12px] py-[8px]">大小</UiTableCell>
-            <UiTableCell as="th" class="w-[132px] px-[12px] py-[8px]">修改时间</UiTableCell>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="file in files"
-            :key="file.path"
-            class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
-            :class="
-              selectedPaths?.has(file.path)
-                ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
-                : 'hover:bg-border dark:hover:bg-border-dark'
-            "
-            @click="onRowClick($event, file)"
-            @dblclick="open(file)"
-            @contextmenu.stop="emit('rowContext', $event, file)"
-            @pointerdown="emit('rowPointerDown', $event, file)"
-          >
-            <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">
-              <UiTooltip :content="file.path">
-                <span>
-                  <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
-                  <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
-                </span>
-              </UiTooltip>
-            </UiTableCell>
-            <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
-              file.isDir ? '-' : formatBytes(file.size)
-            }}</UiTableCell>
-            <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
-              formatTime(file.modifiedAt)
-            }}</UiTableCell>
-          </tr>
-        </tbody>
-      </UiTable>
-    </div>
+    <UiScrollArea as-child axis="both">
+      <div
+        class="min-h-0 flex-1"
+        aria-label="本地文件列表"
+        @contextmenu="emit('blankContext', $event)"
+      >
+        <div v-if="loading" class="py-[16px] text-center text-caption text-text-muted">读取中…</div>
+        <UiTable v-else :framed="false" :styled="false" table-class="w-max min-w-full text-body-sm">
+          <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
+            <tr
+              class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
+            >
+              <UiTableCell as="th" class="px-[12px] py-[8px]">名称</UiTableCell>
+              <UiTableCell as="th" class="w-[90px] px-[12px] py-[8px]">大小</UiTableCell>
+              <UiTableCell as="th" class="w-[132px] px-[12px] py-[8px]">修改时间</UiTableCell>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="file in files"
+              :key="file.path"
+              class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
+              :class="
+                selectedPaths?.has(file.path)
+                  ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
+                  : 'hover:bg-border dark:hover:bg-border-dark'
+              "
+              @click="onRowClick($event, file)"
+              @dblclick="open(file)"
+              @contextmenu.stop="emit('rowContext', $event, file)"
+              @pointerdown="emit('rowPointerDown', $event, file)"
+            >
+              <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">
+                <UiTooltip :content="file.path">
+                  <span>
+                    <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
+                    <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
+                  </span>
+                </UiTooltip>
+              </UiTableCell>
+              <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                file.isDir ? '-' : formatBytes(file.size)
+              }}</UiTableCell>
+              <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                formatTime(file.modifiedAt)
+              }}</UiTableCell>
+            </tr>
+          </tbody>
+        </UiTable>
+      </div>
+    </UiScrollArea>
 
     <!-- 状态栏 -->
     <div

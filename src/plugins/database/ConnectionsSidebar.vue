@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 import {
   UiButton,
@@ -89,80 +90,82 @@ function onTreeContext(event: MouseEvent, item: UiTreeItem) {
         >+ 新建连接</UiButton
       >
     </div>
-    <div class="min-h-0 flex-1 overflow-y-auto px-[4px] pb-[8px]">
-      <UiTree
-        v-model="db.selectedResource.value"
-        :items="db.visibleTreeItems.value"
-        :row-height="24"
-        @update:model-value="onTreeSelect"
-        @toggle="db.toggleTree"
-        @open="onTreeOpen"
-        @context="onTreeContext"
-      >
-        <template #icon="{ item }">
-          <img
-            v-if="item.depth === 0"
-            :src="
-              DB_TYPE_META[
-                db.connections.value.find((connection) => connection.id === item.id)
-                  ?.dbType as keyof typeof DB_TYPE_META
-              ]?.icon ?? ''
-            "
-            :alt="item.id"
-            class="h-[16px] w-[16px] shrink-0 object-contain"
-          />
-          <span
-            v-else
-            class="grid w-[16px] shrink-0 place-items-center text-text-muted dark:text-text-muted-dark"
-          >
-            <DbObjectIcon :kind="item.kind" />
-          </span>
-        </template>
-        <template #suffix="{ item }">
-          <template v-if="item.depth === 0">
-            <template v-if="db.connecting.value[item.id]">
-              <UiSpinner size="xs" />
-              <UiIconButton
-                label="取消连接"
-                size="xs"
-                class="text-text-muted dark:text-text-muted-dark"
-                @click.stop="db.cancelConnect(item.id)"
-              >
-                <UiIcon name="x" :size="10" :stroke-width="2.5" />
-              </UiIconButton>
-            </template>
-            <UiTooltip
-              v-else
-              :content="
-                db.connectError.value[item.id] ||
-                (db.connections.value.find((connection) => connection.id === item.id)?.status ===
-                'online'
-                  ? '已连接'
-                  : '未连接')
+    <UiScrollArea as-child axis="vertical">
+      <div class="min-h-0 flex-1 px-[4px] pb-[8px]">
+        <UiTree
+          v-model="db.selectedResource.value"
+          :items="db.visibleTreeItems.value"
+          :row-height="24"
+          @update:model-value="onTreeSelect"
+          @toggle="db.toggleTree"
+          @open="onTreeOpen"
+          @context="onTreeContext"
+        >
+          <template #icon="{ item }">
+            <img
+              v-if="item.depth === 0"
+              :src="
+                DB_TYPE_META[
+                  db.connections.value.find((connection) => connection.id === item.id)
+                    ?.dbType as keyof typeof DB_TYPE_META
+                ]?.icon ?? ''
               "
+              :alt="item.id"
+              class="h-[16px] w-[16px] shrink-0 object-contain"
+            />
+            <span
+              v-else
+              class="grid w-[16px] shrink-0 place-items-center text-text-muted dark:text-text-muted-dark"
             >
-              <span
-                class="h-[6px] w-[6px] shrink-0 rounded-full"
-                :class="
-                  db.connectError.value[item.id]
-                    ? 'bg-danger-strong dark:bg-danger-dark'
-                    : db.connections.value.find((connection) => connection.id === item.id)
-                          ?.status === 'online'
-                      ? 'bg-success-strong dark:bg-success-dark'
-                      : 'bg-text-muted/40 dark:bg-text-muted-dark/40'
-                "
-              />
-            </UiTooltip>
+              <DbObjectIcon :kind="item.kind" />
+            </span>
           </template>
-        </template>
-      </UiTree>
-      <p
-        v-if="!db.visibleTreeItems.value.length"
-        class="px-[8px] py-[16px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
-      >
-        {{ db.keyword.value ? '无匹配对象' : '暂无连接，点击上方新建' }}
-      </p>
-    </div>
+          <template #suffix="{ item }">
+            <template v-if="item.depth === 0">
+              <template v-if="db.connecting.value[item.id]">
+                <UiSpinner size="xs" />
+                <UiIconButton
+                  label="取消连接"
+                  size="xs"
+                  class="text-text-muted dark:text-text-muted-dark"
+                  @click.stop="db.cancelConnect(item.id)"
+                >
+                  <UiIcon name="x" :size="10" :stroke-width="2.5" />
+                </UiIconButton>
+              </template>
+              <UiTooltip
+                v-else
+                :content="
+                  db.connectError.value[item.id] ||
+                  (db.connections.value.find((connection) => connection.id === item.id)?.status ===
+                  'online'
+                    ? '已连接'
+                    : '未连接')
+                "
+              >
+                <span
+                  class="h-[6px] w-[6px] shrink-0 rounded-full"
+                  :class="
+                    db.connectError.value[item.id]
+                      ? 'bg-danger-strong dark:bg-danger-dark'
+                      : db.connections.value.find((connection) => connection.id === item.id)
+                            ?.status === 'online'
+                        ? 'bg-success-strong dark:bg-success-dark'
+                        : 'bg-text-muted/40 dark:bg-text-muted-dark/40'
+                  "
+                />
+              </UiTooltip>
+            </template>
+          </template>
+        </UiTree>
+        <p
+          v-if="!db.visibleTreeItems.value.length"
+          class="px-[8px] py-[16px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
+        >
+          {{ db.keyword.value ? '无匹配对象' : '暂无连接，点击上方新建' }}
+        </p>
+      </div>
+    </UiScrollArea>
     <div
       class="absolute -right-[3px] top-0 z-10 h-full w-[6px] cursor-col-resize hover:bg-tertiary/30"
       @mousedown="onDragStart"

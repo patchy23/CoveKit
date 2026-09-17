@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * ProfileSourceEditor · 源码模式（TOML 原文编辑）
  * 直接编辑用户文件原文；`frpc verify` 的错误行在编辑器下方列出（带行号，点击可定位无法实现，
@@ -54,21 +55,22 @@ function errorLabel(item: FrpVerifyError): string {
     </div>
 
     <!-- 校验结果（错误逐条列出；通过时给一行确认） -->
-    <div
-      v-if="props.errors.length > 0"
-      class="max-h-[132px] shrink-0 overflow-y-auto border-t border-danger-soft bg-danger-soft px-[10px] py-[6px] dark:border-danger-dark dark:bg-danger-soft-dark"
-    >
-      <p class="text-caption font-medium text-danger-strong dark:text-danger-dark">
-        {{ t('frp.verifyFailedCount', { count: props.errors.length }) }}
-      </p>
-      <p
-        v-for="(item, index) in props.errors"
-        :key="index"
-        class="mt-[2px] font-mono text-caption text-danger-strong dark:text-danger-dark"
+    <UiScrollArea v-if="props.errors.length > 0" as-child axis="vertical">
+      <div
+        class="max-h-[132px] shrink-0 border-t border-danger-soft bg-danger-soft px-[10px] py-[6px] dark:border-danger-dark dark:bg-danger-soft-dark"
       >
-        {{ errorLabel(item) }}
-      </p>
-    </div>
+        <p class="text-caption font-medium text-danger-strong dark:text-danger-dark">
+          {{ t('frp.verifyFailedCount', { count: props.errors.length }) }}
+        </p>
+        <p
+          v-for="(item, index) in props.errors"
+          :key="index"
+          class="mt-[2px] font-mono text-caption text-danger-strong dark:text-danger-dark"
+        >
+          {{ errorLabel(item) }}
+        </p>
+      </div>
+    </UiScrollArea>
     <p
       v-else-if="props.verified"
       class="shrink-0 border-t border-border px-[10px] py-[5px] text-caption text-success-strong dark:border-border-dark dark:text-success-dark"

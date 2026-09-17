@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { UiTooltip } from '@/core/ui'
+import { UiScrollArea } from '@/core/ui'
 import { ref } from 'vue'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import {
@@ -119,5 +120,44 @@ const rows = [
       <template #icon><AppIcon name="search" :size="22" /></template>
       <UiButton variant="primary" size="sm">开始查询</UiButton>
     </UiEmptyState>
+  </UiPanel>
+
+  <UiPanel title="公共滚动区" description="横向、纵向与双向使用同一套滚动条，支持固定暗色主题。">
+    <div class="grid min-w-0 gap-md lg:grid-cols-3">
+      <div class="min-w-0">
+        <p class="mb-sm text-body-sm">纵向</p>
+        <UiScrollArea
+          axis="vertical"
+          class="h-[140px] rounded-md border border-border p-sm dark:border-border-dark"
+        >
+          <p v-for="row in 12" :key="row" class="py-xs text-body-sm">列表条目 {{ row }}</p>
+        </UiScrollArea>
+      </div>
+      <div class="min-w-0">
+        <p class="mb-sm text-body-sm">横向</p>
+        <UiScrollArea
+          axis="horizontal"
+          class="rounded-md border border-border p-sm dark:border-border-dark"
+        >
+          <div class="flex w-max gap-sm">
+            <UiBadge v-for="item in 12" :key="item" tone="neutral">项目 {{ item }}</UiBadge>
+          </div>
+        </UiScrollArea>
+      </div>
+      <div class="min-w-0">
+        <p class="mb-sm text-body-sm">双向 · 固定暗色</p>
+        <UiScrollArea
+          axis="both"
+          theme="dark"
+          class="h-[140px] rounded-md bg-surface-dark p-sm text-secondary-dark"
+        >
+          <div class="w-[600px] font-mono text-body-sm">
+            <p v-for="row in 12" :key="row" class="py-xs">
+              {{ row }} · 长内容用于检查横纵滚动条及交汇角落
+            </p>
+          </div>
+        </UiScrollArea>
+      </div>
+    </div>
   </UiPanel>
 </template>

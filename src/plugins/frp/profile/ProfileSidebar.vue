@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * ProfileSidebar · 档案列表栏
@@ -152,70 +153,72 @@ function onRemarkSubmit(remark: string) {
     </div>
 
     <!-- 列表 -->
-    <div class="min-h-0 flex-1 overflow-y-auto px-[6px]">
-      <div v-if="loading && items.length === 0" class="flex justify-center py-[16px]">
-        <UiSpinner size="sm" />
-      </div>
-      <p
-        v-else-if="error !== ''"
-        class="px-[6px] py-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
-      >
-        {{ error }}
-      </p>
-      <p
-        v-else-if="visible.length === 0"
-        class="px-[6px] py-[8px] text-body-sm text-text-muted dark:text-text-muted-dark"
-      >
-        {{ keyword.trim() === '' ? t('frp.profilesEmpty') : t('frp.profilesNoMatch') }}
-      </p>
-      <UiListRow
-        v-for="item in visible"
-        :key="item.fileName"
-        :active="item.fileName === active"
-        cursor="pointer"
-        class="items-start gap-[8px] px-[8px] py-[6px]"
-        @click="emit('select', item.fileName)"
-        @contextmenu.prevent="openMenu($event, item)"
-      >
-        <UiTooltip :content="t(statusView(item.state).labelKey)">
-          <span
-            class="mt-[6px] h-[8px] w-[8px] shrink-0 rounded-full"
-            :class="statusView(item.state).dotClass"
-          />
-        </UiTooltip>
-        <span class="min-w-0 flex-1">
-          <UiTooltip :content="item.fileName">
-            <span class="block truncate text-body-sm dark:text-primary-dark">
-              {{ item.displayName || item.fileName }}
-            </span>
+    <UiScrollArea as-child axis="vertical">
+      <div class="min-h-0 flex-1 px-[6px]">
+        <div v-if="loading && items.length === 0" class="flex justify-center py-[16px]">
+          <UiSpinner size="sm" />
+        </div>
+        <p
+          v-else-if="error !== ''"
+          class="px-[6px] py-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
+        >
+          {{ error }}
+        </p>
+        <p
+          v-else-if="visible.length === 0"
+          class="px-[6px] py-[8px] text-body-sm text-text-muted dark:text-text-muted-dark"
+        >
+          {{ keyword.trim() === '' ? t('frp.profilesEmpty') : t('frp.profilesNoMatch') }}
+        </p>
+        <UiListRow
+          v-for="item in visible"
+          :key="item.fileName"
+          :active="item.fileName === active"
+          cursor="pointer"
+          class="items-start gap-[8px] px-[8px] py-[6px]"
+          @click="emit('select', item.fileName)"
+          @contextmenu.prevent="openMenu($event, item)"
+        >
+          <UiTooltip :content="t(statusView(item.state).labelKey)">
+            <span
+              class="mt-[6px] h-[8px] w-[8px] shrink-0 rounded-full"
+              :class="statusView(item.state).dotClass"
+            />
           </UiTooltip>
-          <span
-            class="mt-[1px] block truncate text-caption text-text-muted dark:text-text-muted-dark"
-          >
-            {{
-              item.serverAddr === ''
-                ? t('frp.profileNoServer')
-                : `${item.serverAddr}:${item.serverPort}`
-            }}
-            · {{ t('frp.proxyCount', { count: item.proxyCount }) }}
+          <span class="min-w-0 flex-1">
+            <UiTooltip :content="item.fileName">
+              <span class="block truncate text-body-sm dark:text-primary-dark">
+                {{ item.displayName || item.fileName }}
+              </span>
+            </UiTooltip>
+            <span
+              class="mt-[1px] block truncate text-caption text-text-muted dark:text-text-muted-dark"
+            >
+              {{
+                item.serverAddr === ''
+                  ? t('frp.profileNoServer')
+                  : `${item.serverAddr}:${item.serverPort}`
+              }}
+              · {{ t('frp.proxyCount', { count: item.proxyCount }) }}
+            </span>
+            <UiTooltip v-if="item.remark !== ''" :content="item.remark">
+              <span
+                class="mt-[1px] block truncate text-caption text-tertiary-strong dark:text-tertiary-dark"
+              >
+                {{ item.remark }}
+              </span>
+            </UiTooltip>
+            <UiTooltip v-if="item.lastError" :content="item.lastError">
+              <span
+                class="mt-[1px] block truncate text-caption text-danger-strong dark:text-danger-dark"
+              >
+                {{ item.lastError }}
+              </span>
+            </UiTooltip>
           </span>
-          <UiTooltip v-if="item.remark !== ''" :content="item.remark">
-            <span
-              class="mt-[1px] block truncate text-caption text-tertiary-strong dark:text-tertiary-dark"
-            >
-              {{ item.remark }}
-            </span>
-          </UiTooltip>
-          <UiTooltip v-if="item.lastError" :content="item.lastError">
-            <span
-              class="mt-[1px] block truncate text-caption text-danger-strong dark:text-danger-dark"
-            >
-              {{ item.lastError }}
-            </span>
-          </UiTooltip>
-        </span>
-      </UiListRow>
-    </div>
+        </UiListRow>
+      </div>
+    </UiScrollArea>
 
     <!-- 栏脚上：客户端管理入口（默认客户端 + 管理按钮） -->
     <div

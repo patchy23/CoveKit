@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * ClientManagerDialog · frpc 客户端管理（xl 弹窗，不随遮罩关闭以防误触）
  * 两个添加入口：引用外部已有可执行文件（只登记路径不复制，适合自编译产物持续更新）
@@ -113,15 +114,17 @@ async function onInstalled(version: string) {
       <UiEmptyState :title="t('frp.clientEmpty')" :description="t('frp.clientEmptyHint')" />
     </div>
 
-    <div v-else class="mt-[6px] flex max-h-[300px] flex-col gap-[4px] overflow-y-auto">
-      <ClientRow
-        v-for="item in clients.clients.value"
-        :key="item.id"
-        :client="item"
-        @set-default="onSetDefault"
-        @remove="pendingRemove = $event"
-      />
-    </div>
+    <UiScrollArea v-else as-child axis="vertical">
+      <div class="mt-[6px] flex max-h-[300px] flex-col gap-[4px]">
+        <ClientRow
+          v-for="item in clients.clients.value"
+          :key="item.id"
+          :client="item"
+          @set-default="onSetDefault"
+          @remove="pendingRemove = $event"
+        />
+      </div>
+    </UiScrollArea>
 
     <!-- 无可用文件时显式提醒：清单里有记录不等于能启动 -->
     <UiAlert v-if="!usable && clients.clients.value.length > 0" class="mt-[10px]" tone="warning">

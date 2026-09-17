@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * 可视化建表页签（MySQL 系）：表选项 + 列编辑网格 + 实时 DDL 预览 + 执行创建
  * DDL 由 createTableSql.buildCreateTableSql 纯函数生成（标识符引用/注释转义内置）；
@@ -140,114 +141,118 @@ async function create() {
     </div>
 
     <!-- 列编辑网格 -->
-    <div class="min-h-0 flex-1 overflow-auto">
-      <UiTable density="compact">
-        <thead>
-          <tr>
-            <UiTableCell as="th" class="w-[28px]"></UiTableCell>
-            <UiTableCell as="th">列名</UiTableCell>
-            <UiTableCell as="th" class="w-[130px]">类型</UiTableCell>
-            <UiTableCell as="th" class="w-[90px]">长度</UiTableCell>
-            <UiTableCell as="th" class="w-[48px]">可空</UiTableCell>
-            <UiTableCell as="th" class="w-[130px]">默认值</UiTableCell>
-            <UiTableCell as="th" class="w-[48px]">自增</UiTableCell>
-            <UiTableCell as="th" class="w-[48px]">主键</UiTableCell>
-            <UiTableCell as="th">注释</UiTableCell>
-            <UiTableCell as="th" class="w-[60px]"></UiTableCell>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(column, index) in columns" :key="index">
-            <UiTableCell content="numeric">{{ index + 1 }}</UiTableCell>
-            <UiTableCell>
-              <UiInput
-                v-model="column.name"
-                size="xs"
-                placeholder="column_name"
-                class="font-mono"
-              />
-            </UiTableCell>
-            <UiTableCell>
-              <UiSelect
-                v-model="column.type"
-                :options="typeOptions"
-                size="sm"
-                class="w-full"
-                @update:model-value="onTypeChange(column)"
-              />
-            </UiTableCell>
-            <UiTableCell>
-              <UiInput
-                v-model="column.length"
-                size="xs"
-                class="font-mono"
-                :disabled="!MYSQL_TYPES_WITH_LENGTH.has(column.type.toUpperCase())"
-                placeholder="64"
-              />
-            </UiTableCell>
-            <UiTableCell>
-              <UiCheckbox v-model="column.nullable" size="sm" />
-            </UiTableCell>
-            <UiTableCell>
-              <UiInput
-                v-model="column.defaultValue"
-                size="xs"
-                class="font-mono"
-                placeholder="空 = 不设"
-              />
-            </UiTableCell>
-            <UiTableCell>
-              <UiCheckbox
-                v-model="column.autoIncrement"
-                size="sm"
-                :disabled="!isIntFamily(column.type)"
-              />
-            </UiTableCell>
-            <UiTableCell>
-              <UiCheckbox v-model="column.primary" size="sm" />
-            </UiTableCell>
-            <UiTableCell>
-              <UiInput v-model="column.comment" size="xs" placeholder="可选" />
-            </UiTableCell>
-            <UiTableCell content="action">
-              <UiIconButton
-                label="上移"
-                size="xs"
-                :disabled="index === 0"
-                @click="moveColumn(index, -1)"
-              >
-                <UiIcon name="chevron-down" :size="12" class="rotate-180" />
-              </UiIconButton>
-              <UiIconButton label="删除列" size="xs" @click="removeColumn(index)">
-                <UiIcon name="x" :size="12" />
-              </UiIconButton>
-            </UiTableCell>
-          </tr>
-        </tbody>
-      </UiTable>
-      <div class="p-[8px]">
-        <UiButton size="xs" variant="secondary" @click="addColumn">+ 添加列</UiButton>
+    <UiScrollArea as-child axis="both">
+      <div class="min-h-0 flex-1">
+        <UiTable density="compact">
+          <thead>
+            <tr>
+              <UiTableCell as="th" class="w-[28px]"></UiTableCell>
+              <UiTableCell as="th">列名</UiTableCell>
+              <UiTableCell as="th" class="w-[130px]">类型</UiTableCell>
+              <UiTableCell as="th" class="w-[90px]">长度</UiTableCell>
+              <UiTableCell as="th" class="w-[48px]">可空</UiTableCell>
+              <UiTableCell as="th" class="w-[130px]">默认值</UiTableCell>
+              <UiTableCell as="th" class="w-[48px]">自增</UiTableCell>
+              <UiTableCell as="th" class="w-[48px]">主键</UiTableCell>
+              <UiTableCell as="th">注释</UiTableCell>
+              <UiTableCell as="th" class="w-[60px]"></UiTableCell>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(column, index) in columns" :key="index">
+              <UiTableCell content="numeric">{{ index + 1 }}</UiTableCell>
+              <UiTableCell>
+                <UiInput
+                  v-model="column.name"
+                  size="xs"
+                  placeholder="column_name"
+                  class="font-mono"
+                />
+              </UiTableCell>
+              <UiTableCell>
+                <UiSelect
+                  v-model="column.type"
+                  :options="typeOptions"
+                  size="sm"
+                  class="w-full"
+                  @update:model-value="onTypeChange(column)"
+                />
+              </UiTableCell>
+              <UiTableCell>
+                <UiInput
+                  v-model="column.length"
+                  size="xs"
+                  class="font-mono"
+                  :disabled="!MYSQL_TYPES_WITH_LENGTH.has(column.type.toUpperCase())"
+                  placeholder="64"
+                />
+              </UiTableCell>
+              <UiTableCell>
+                <UiCheckbox v-model="column.nullable" size="sm" />
+              </UiTableCell>
+              <UiTableCell>
+                <UiInput
+                  v-model="column.defaultValue"
+                  size="xs"
+                  class="font-mono"
+                  placeholder="空 = 不设"
+                />
+              </UiTableCell>
+              <UiTableCell>
+                <UiCheckbox
+                  v-model="column.autoIncrement"
+                  size="sm"
+                  :disabled="!isIntFamily(column.type)"
+                />
+              </UiTableCell>
+              <UiTableCell>
+                <UiCheckbox v-model="column.primary" size="sm" />
+              </UiTableCell>
+              <UiTableCell>
+                <UiInput v-model="column.comment" size="xs" placeholder="可选" />
+              </UiTableCell>
+              <UiTableCell content="action">
+                <UiIconButton
+                  label="上移"
+                  size="xs"
+                  :disabled="index === 0"
+                  @click="moveColumn(index, -1)"
+                >
+                  <UiIcon name="chevron-down" :size="12" class="rotate-180" />
+                </UiIconButton>
+                <UiIconButton label="删除列" size="xs" @click="removeColumn(index)">
+                  <UiIcon name="x" :size="12" />
+                </UiIconButton>
+              </UiTableCell>
+            </tr>
+          </tbody>
+        </UiTable>
+        <div class="p-[8px]">
+          <UiButton size="xs" variant="secondary" @click="addColumn">+ 添加列</UiButton>
+        </div>
       </div>
-    </div>
+    </UiScrollArea>
 
     <!-- DDL 预览 -->
-    <div class="max-h-[40%] shrink-0 overflow-auto border-t border-border dark:border-border-dark">
-      <div class="flex items-center justify-between px-[12px] pt-[8px]">
-        <span class="text-caption text-text-muted dark:text-text-muted-dark">DDL 预览</span>
-        <UiIconButton v-if="ddl" label="复制 DDL" size="xs" @click="copyText(ddl)">
-          <UiIcon name="copy" :size="12" />
-        </UiIconButton>
+    <UiScrollArea as-child axis="both">
+      <div class="max-h-[40%] shrink-0 border-t border-border dark:border-border-dark">
+        <div class="flex items-center justify-between px-[12px] pt-[8px]">
+          <span class="text-caption text-text-muted dark:text-text-muted-dark">DDL 预览</span>
+          <UiIconButton v-if="ddl" label="复制 DDL" size="xs" @click="copyText(ddl)">
+            <UiIcon name="copy" :size="12" />
+          </UiIconButton>
+        </div>
+        <pre
+          v-if="ddl"
+          class="whitespace-pre-wrap px-[12px] pb-[10px] pt-[4px] font-mono text-caption text-primary dark:text-primary-dark"
+          >{{ ddl }}</pre>
+        <p
+          v-else
+          class="px-[12px] pb-[10px] pt-[4px] text-caption text-text-muted dark:text-text-muted-dark"
+        >
+          填写表名与至少一列后生成 DDL
+        </p>
       </div>
-      <pre
-        v-if="ddl"
-        class="whitespace-pre-wrap px-[12px] pb-[10px] pt-[4px] font-mono text-caption text-primary dark:text-primary-dark"
-        >{{ ddl }}</pre>
-      <p
-        v-else
-        class="px-[12px] pb-[10px] pt-[4px] text-caption text-text-muted dark:text-text-muted-dark"
-      >
-        填写表名与至少一列后生成 DDL
-      </p>
-    </div>
+    </UiScrollArea>
   </div>
 </template>

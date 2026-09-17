@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { computed, ref } from 'vue'
 import {
   UiBadge,
@@ -206,52 +207,54 @@ function toggleTree(item: UiTreeItem) {
               </main>
             </template>
             <template #secondary>
-              <aside
-                class="h-full min-w-0 overflow-auto bg-surface-muted dark:bg-surface-muted-dark"
-              >
-                <div class="border-b border-border px-md py-sm dark:border-border-dark">
-                  <div class="text-body font-medium text-primary dark:text-primary-dark">users</div>
-                  <div
-                    class="mt-0.5 font-mono text-caption text-text-muted dark:text-text-muted-dark"
-                  >
-                    patchybox.public
-                  </div>
-                </div>
-                <div class="space-y-4 p-3 text-body-sm">
-                  <div>
-                    <div class="mb-2 text-label-caps text-text-muted dark:text-text-muted-dark">
-                      选中字段
+              <UiScrollArea as-child axis="both">
+                <aside class="h-full min-w-0 bg-surface-muted dark:bg-surface-muted-dark">
+                  <div class="border-b border-border px-md py-sm dark:border-border-dark">
+                    <div class="text-body font-medium text-primary dark:text-primary-dark">
+                      users
                     </div>
-                    <dl class="grid grid-cols-[76px_1fr] gap-x-2 gap-y-1.5">
-                      <dt class="text-text-muted dark:text-text-muted-dark">字段名</dt>
-                      <dd class="font-mono">username</dd>
-                      <dt class="text-text-muted dark:text-text-muted-dark">类型</dt>
-                      <dd class="font-mono">varchar(64)</dd>
-                      <dt class="text-text-muted dark:text-text-muted-dark">可空</dt>
-                      <dd>否</dd>
-                      <dt class="text-text-muted dark:text-text-muted-dark">默认值</dt>
-                      <dd class="font-mono">NULL</dd>
-                    </dl>
-                  </div>
-                  <div>
-                    <div class="mb-2 text-label-caps text-text-muted dark:text-text-muted-dark">
-                      索引
+                    <div
+                      class="mt-0.5 font-mono text-caption text-text-muted dark:text-text-muted-dark"
+                    >
+                      patchybox.public
                     </div>
-                    <div class="space-y-1.5">
-                      <div
-                        v-for="item in [
-                          'users_pkey · PRIMARY · id',
-                          'users_email_key · UNIQUE · email',
-                        ]"
-                        :key="item"
-                        class="rounded-md border border-border bg-surface px-2 py-1.5 font-mono text-caption dark:border-border-dark dark:bg-surface-dark"
-                      >
-                        {{ item }}
+                  </div>
+                  <div class="space-y-4 p-3 text-body-sm">
+                    <div>
+                      <div class="mb-2 text-label-caps text-text-muted dark:text-text-muted-dark">
+                        选中字段
+                      </div>
+                      <dl class="grid grid-cols-[76px_1fr] gap-x-2 gap-y-1.5">
+                        <dt class="text-text-muted dark:text-text-muted-dark">字段名</dt>
+                        <dd class="font-mono">username</dd>
+                        <dt class="text-text-muted dark:text-text-muted-dark">类型</dt>
+                        <dd class="font-mono">varchar(64)</dd>
+                        <dt class="text-text-muted dark:text-text-muted-dark">可空</dt>
+                        <dd>否</dd>
+                        <dt class="text-text-muted dark:text-text-muted-dark">默认值</dt>
+                        <dd class="font-mono">NULL</dd>
+                      </dl>
+                    </div>
+                    <div>
+                      <div class="mb-2 text-label-caps text-text-muted dark:text-text-muted-dark">
+                        索引
+                      </div>
+                      <div class="space-y-1.5">
+                        <div
+                          v-for="item in [
+                            'users_pkey · PRIMARY · id',
+                            'users_email_key · UNIQUE · email',
+                          ]"
+                          :key="item"
+                          class="rounded-md border border-border bg-surface px-2 py-1.5 font-mono text-caption dark:border-border-dark dark:bg-surface-dark"
+                        >
+                          {{ item }}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </aside>
+                </aside>
+              </UiScrollArea>
             </template>
           </UiSplitPane>
         </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * WsMessageArea · WebSocket 消息收发区（消息流 + 输入行）
  */
@@ -45,41 +46,43 @@ function formatMsgTime(t: number) {
 <template>
   <div class="flex min-h-0 flex-1 flex-col gap-[8px]">
     <!-- 消息流 -->
-    <div
-      ref="listEl"
-      class="min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-surface-muted p-[12px] dark:border-border-dark dark:bg-surface-muted-dark"
-    >
-      <div v-if="hasMessage() && props.session" class="flex flex-col gap-[8px]">
-        <div
-          v-for="(m, i) in props.session.messages"
-          :key="i"
-          class="flex"
-          :class="m.direction === 'sent' ? 'justify-end' : 'justify-start'"
-        >
+    <UiScrollArea as-child axis="vertical">
+      <div
+        ref="listEl"
+        class="min-h-0 flex-1 rounded-md border border-border bg-surface-muted p-[12px] dark:border-border-dark dark:bg-surface-muted-dark"
+      >
+        <div v-if="hasMessage() && props.session" class="flex flex-col gap-[8px]">
           <div
-            class="max-w-[80%] rounded-lg px-[12px] py-[8px]"
-            :class="
-              m.direction === 'sent'
-                ? 'bg-tertiary-strong text-on-tertiary dark:bg-tertiary-dark dark:text-on-tertiary-dark'
-                : 'bg-surface text-primary shadow-sm dark:bg-surface-dark dark:text-primary-dark'
-            "
+            v-for="(m, i) in props.session.messages"
+            :key="i"
+            class="flex"
+            :class="m.direction === 'sent' ? 'justify-end' : 'justify-start'"
           >
-            <div class="mb-[2px] text-caption opacity-70">
-              {{ m.direction === 'sent' ? '发送' : '接收' }} · {{ formatMsgTime(m.time) }}
-            </div>
-            <div class="whitespace-pre-wrap break-all font-mono text-body-sm leading-relaxed">
-              {{ m.content }}
+            <div
+              class="max-w-[80%] rounded-lg px-[12px] py-[8px]"
+              :class="
+                m.direction === 'sent'
+                  ? 'bg-tertiary-strong text-on-tertiary dark:bg-tertiary-dark dark:text-on-tertiary-dark'
+                  : 'bg-surface text-primary shadow-sm dark:bg-surface-dark dark:text-primary-dark'
+              "
+            >
+              <div class="mb-[2px] text-caption opacity-70">
+                {{ m.direction === 'sent' ? '发送' : '接收' }} · {{ formatMsgTime(m.time) }}
+              </div>
+              <div class="whitespace-pre-wrap break-all font-mono text-body-sm leading-relaxed">
+                {{ m.content }}
+              </div>
             </div>
           </div>
         </div>
+        <p
+          v-else
+          class="mt-[40px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
+        >
+          {{ connected() ? '暂无消息' : '连接后在此收发消息' }}
+        </p>
       </div>
-      <p
-        v-else
-        class="mt-[40px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
-      >
-        {{ connected() ? '暂无消息' : '连接后在此收发消息' }}
-      </p>
-    </div>
+    </UiScrollArea>
 
     <!-- 输入行 -->
     <div class="flex shrink-0 items-center gap-[8px]">

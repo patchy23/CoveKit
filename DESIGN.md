@@ -185,6 +185,8 @@ ToolKit 是一个面向大众用户的桌面工具箱：明净、亲和、低学
 
 ## Components
 
+- `scroll-area` 横纵厚度统一 9px，滑块透明边框 2px、圆角 full，轨道与交汇角落透明；滑块默认 border-strong、悬停 text-muted、拖动 secondary，暗色使用对应 dark tokens。保持原生滚动、触控惯性和键盘行为，终端等深色画布固定使用暗色配色。
+
 - `button-primary` 每屏至多一个；主按钮白字必须落在 tertiary-strong 上，不能直接使用 tertiary。
 - `card` 是工具列表的默认载体：图标（44px 圆角方块、tertiary-soft 底）+ 标题 + 一行描述 + 标签行。
 - `nav-item` 侧栏导航，选中态用 tertiary-soft 底 + **tertiary-strong 字**（13px 小字在浅橙底上需 ≥4.5:1，tertiary 本身仅 3.1:1）；计数徽标随选中态反色。

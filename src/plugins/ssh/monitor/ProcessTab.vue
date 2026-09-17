@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * ProcessTab · 进程管理子页签（后端 ps 真实数据）
@@ -189,73 +190,75 @@ watch(
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto">
-      <UiTable :framed="false" :styled="false" table-class="text-body-sm">
-        <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
-          <tr
-            class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-          >
-            <UiTableCell as="th" class="w-[70px] whitespace-nowrap px-[12px] py-[8px]"
-              >PID</UiTableCell
+    <UiScrollArea as-child axis="vertical">
+      <div class="min-h-0 flex-1">
+        <UiTable :framed="false" :styled="false" table-class="text-body-sm">
+          <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
+            <tr
+              class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
             >
-            <UiTableCell as="th" class="w-[90px] whitespace-nowrap px-[12px] py-[8px]"
-              >用户</UiTableCell
+              <UiTableCell as="th" class="w-[70px] whitespace-nowrap px-[12px] py-[8px]"
+                >PID</UiTableCell
+              >
+              <UiTableCell as="th" class="w-[90px] whitespace-nowrap px-[12px] py-[8px]"
+                >用户</UiTableCell
+              >
+              <UiTableCell as="th" class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
+                >CPU%</UiTableCell
+              >
+              <UiTableCell as="th" class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
+                >MEM%</UiTableCell
+              >
+              <UiTableCell as="th" class="w-[100px] whitespace-nowrap px-[12px] py-[8px]"
+                >内存</UiTableCell
+              >
+              <UiTableCell as="th" class="px-[12px] py-[8px]">命令</UiTableCell>
+              <UiTableCell as="th" class="w-[110px] whitespace-nowrap px-[12px] py-[8px]"
+                >操作</UiTableCell
+              >
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="p in filtered"
+              :key="p.pid"
+              class="border-b border-border/50 transition-colors dark:border-border-dark/50"
             >
-            <UiTableCell as="th" class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
-              >CPU%</UiTableCell
-            >
-            <UiTableCell as="th" class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
-              >MEM%</UiTableCell
-            >
-            <UiTableCell as="th" class="w-[100px] whitespace-nowrap px-[12px] py-[8px]"
-              >内存</UiTableCell
-            >
-            <UiTableCell as="th" class="px-[12px] py-[8px]">命令</UiTableCell>
-            <UiTableCell as="th" class="w-[110px] whitespace-nowrap px-[12px] py-[8px]"
-              >操作</UiTableCell
-            >
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="p in filtered"
-            :key="p.pid"
-            class="border-b border-border/50 transition-colors dark:border-border-dark/50"
-          >
-            <UiTableCell content="numeric" class="px-[12px] py-[8px]">{{ p.pid }}</UiTableCell>
-            <UiTableCell content="technical" class="px-[12px] py-[8px]">{{ p.user }}</UiTableCell>
-            <UiTableCell content="numeric" class="px-[12px] py-[8px]">{{
-              p.cpuPercent.toFixed(1)
-            }}</UiTableCell>
-            <UiTableCell content="numeric" class="px-[12px] py-[8px]">
-              {{ p.memoryPercent.toFixed(1) }}
-            </UiTableCell>
-            <UiTableCell content="numeric" class="px-[12px] py-[8px]">
-              {{ formatBytes(p.memoryBytes) }}
-            </UiTableCell>
-            <UiTooltip :content="p.command">
-              <UiTableCell content="code" class="max-w-[200px] truncate px-[12px] py-[8px]">
-                {{ p.command }}
+              <UiTableCell content="numeric" class="px-[12px] py-[8px]">{{ p.pid }}</UiTableCell>
+              <UiTableCell content="technical" class="px-[12px] py-[8px]">{{ p.user }}</UiTableCell>
+              <UiTableCell content="numeric" class="px-[12px] py-[8px]">{{
+                p.cpuPercent.toFixed(1)
+              }}</UiTableCell>
+              <UiTableCell content="numeric" class="px-[12px] py-[8px]">
+                {{ p.memoryPercent.toFixed(1) }}
               </UiTableCell>
-            </UiTooltip>
-            <UiTableCell content="action" class="whitespace-nowrap px-[12px] py-[8px]">
-              <div class="flex items-center gap-[4px]">
-                <UiButton variant="ghost" size="xs" @click="openDetail(p.pid)"> 详情 </UiButton>
-                <UiButton variant="ghost" size="xs" @click="requestKill(p.pid)"> 结束 </UiButton>
-                <UiButton
-                  variant="ghost"
-                  size="xs"
-                  class="text-danger-strong dark:text-danger-dark"
-                  @click="requestKill(p.pid, true)"
-                >
-                  强杀
-                </UiButton>
-              </div>
-            </UiTableCell>
-          </tr>
-        </tbody>
-      </UiTable>
-    </div>
+              <UiTableCell content="numeric" class="px-[12px] py-[8px]">
+                {{ formatBytes(p.memoryBytes) }}
+              </UiTableCell>
+              <UiTooltip :content="p.command">
+                <UiTableCell content="code" class="max-w-[200px] truncate px-[12px] py-[8px]">
+                  {{ p.command }}
+                </UiTableCell>
+              </UiTooltip>
+              <UiTableCell content="action" class="whitespace-nowrap px-[12px] py-[8px]">
+                <div class="flex items-center gap-[4px]">
+                  <UiButton variant="ghost" size="xs" @click="openDetail(p.pid)"> 详情 </UiButton>
+                  <UiButton variant="ghost" size="xs" @click="requestKill(p.pid)"> 结束 </UiButton>
+                  <UiButton
+                    variant="ghost"
+                    size="xs"
+                    class="text-danger-strong dark:text-danger-dark"
+                    @click="requestKill(p.pid, true)"
+                  >
+                    强杀
+                  </UiButton>
+                </div>
+              </UiTableCell>
+            </tr>
+          </tbody>
+        </UiTable>
+      </div>
+    </UiScrollArea>
 
     <div
       class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -302,19 +305,23 @@ watch(
           <div class="mb-[4px] text-caption text-text-muted dark:text-text-muted-dark">
             完整命令行
           </div>
-          <div
-            class="max-h-[120px] overflow-auto break-all whitespace-pre-wrap rounded-[6px] border border-border bg-surface-muted p-[8px] font-mono text-caption text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
-          >
-            {{ detail.command }}
-          </div>
+          <UiScrollArea as-child axis="both">
+            <div
+              class="max-h-[120px] break-all whitespace-pre-wrap rounded-[6px] border border-border bg-surface-muted p-[8px] font-mono text-caption text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+            >
+              {{ detail.command }}
+            </div>
+          </UiScrollArea>
         </div>
         <div v-if="detail?.raw" class="mt-[12px]">
           <div class="mb-[4px] text-caption text-text-muted dark:text-text-muted-dark">
             ps 原始输出
           </div>
-          <pre
-            class="max-h-[140px] overflow-auto whitespace-pre-wrap rounded-[6px] border border-border bg-surface-muted p-[8px] font-mono text-caption text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
-            >{{ detail.raw }}</pre>
+          <UiScrollArea as-child axis="both">
+            <pre
+              class="max-h-[140px] whitespace-pre-wrap rounded-[6px] border border-border bg-surface-muted p-[8px] font-mono text-caption text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+              >{{ detail.raw }}</pre>
+          </UiScrollArea>
         </div>
       </template>
       <div class="mt-[16px] flex items-center justify-end gap-[8px]">

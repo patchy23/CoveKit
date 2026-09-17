@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * FileStatusActions · 远程栏状态栏右侧双按钮（☆书签下拉 + ⇅传输进度按钮/上拉明细面板）
@@ -98,38 +99,41 @@ const currentTaskLabel = computed(() => {
       >
         <UiIcon name="star" :size="14" />
       </UiIconButton>
-      <div
-        v-if="bookmarkOpen"
-        class="absolute bottom-full right-0 z-[220] mb-[4px] max-h-[240px] w-[240px] overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-card dark:border-border-dark dark:bg-surface-dark"
-      >
+      <UiScrollArea v-if="bookmarkOpen" as-child axis="vertical">
         <div
-          v-if="!bookmarks.length"
-          class="px-[12px] py-[10px] text-caption text-text-muted dark:text-text-muted-dark"
+          class="absolute bottom-full right-0 z-[220] mb-[4px] max-h-[240px] w-[240px] rounded-lg border border-border bg-surface py-[4px] shadow-card dark:border-border-dark dark:bg-surface-dark"
         >
-          暂无书签（右键目录可添加）
-        </div>
-        <div
-          v-for="bm in bookmarks"
-          :key="bm.id"
-          class="group flex cursor-pointer items-center gap-[6px] px-[10px] py-[6px] hover:bg-border dark:hover:bg-border-dark"
-          @click="go(bm.path)"
-        >
-          <span class="shrink-0 text-body-sm">⭐</span>
-          <span class="min-w-0 flex-1">
-            <span class="block truncate text-body-sm">{{ bm.name }}</span>
-            <span class="block truncate font-mono text-caption text-text-muted">{{ bm.path }}</span>
-          </span>
-          <UiButton
-            variant="ghost"
-            size="xs"
-            class="!h-auto shrink-0 !px-[4px] !py-[1px] text-text-muted opacity-0 transition-opacity hover:text-danger-strong group-hover:opacity-100"
-            title="删除书签"
-            @click.stop="remove(bm.id)"
+          <div
+            v-if="!bookmarks.length"
+            class="px-[12px] py-[10px] text-caption text-text-muted dark:text-text-muted-dark"
           >
-            ✕
-          </UiButton>
+            暂无书签（右键目录可添加）
+          </div>
+          <div
+            v-for="bm in bookmarks"
+            :key="bm.id"
+            class="group flex cursor-pointer items-center gap-[6px] px-[10px] py-[6px] hover:bg-border dark:hover:bg-border-dark"
+            @click="go(bm.path)"
+          >
+            <span class="shrink-0 text-body-sm">⭐</span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-body-sm">{{ bm.name }}</span>
+              <span class="block truncate font-mono text-caption text-text-muted">{{
+                bm.path
+              }}</span>
+            </span>
+            <UiButton
+              variant="ghost"
+              size="xs"
+              class="!h-auto shrink-0 !px-[4px] !py-[1px] text-text-muted opacity-0 transition-opacity hover:text-danger-strong group-hover:opacity-100"
+              title="删除书签"
+              @click.stop="remove(bm.id)"
+            >
+              ✕
+            </UiButton>
+          </div>
         </div>
-      </div>
+      </UiScrollArea>
     </div>
 
     <!-- 传输按钮（本体即进度条）+ 上拉面板 -->
@@ -193,57 +197,59 @@ const currentTaskLabel = computed(() => {
             </UiButton>
           </div>
         </div>
-        <div class="min-h-0 flex-1 overflow-y-auto px-[12px] py-[6px]">
-          <div
-            v-if="!activeTransfers.length"
-            class="py-[14px] text-center text-caption text-text-muted dark:text-text-muted-dark"
-          >
-            暂无传输任务
-          </div>
-          <div
-            v-for="item in activeTransfers"
-            :key="item.id"
-            class="flex items-center gap-[8px] py-[5px] text-caption"
-          >
-            <span
-              class="shrink-0 rounded-full bg-neutral px-[7px] py-[1px] font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
+        <UiScrollArea as-child axis="vertical">
+          <div class="min-h-0 flex-1 px-[12px] py-[6px]">
+            <div
+              v-if="!activeTransfers.length"
+              class="py-[14px] text-center text-caption text-text-muted dark:text-text-muted-dark"
             >
-              {{ item.kind === 'upload' ? '上传' : '下载' }}
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-secondary dark:text-secondary-dark">{{
-                item.label
-              }}</span>
-              <!-- 单项进度条动画 -->
+              暂无传输任务
+            </div>
+            <div
+              v-for="item in activeTransfers"
+              :key="item.id"
+              class="flex items-center gap-[8px] py-[5px] text-caption"
+            >
               <span
-                v-if="!item.done && item.total > 0"
-                class="mt-[2px] block h-[3px] overflow-hidden rounded-full bg-border dark:bg-border-dark"
+                class="shrink-0 rounded-full bg-neutral px-[7px] py-[1px] font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
               >
-                <span
-                  class="block h-full bg-tertiary transition-[width] duration-300"
-                  :style="{
-                    width: `${Math.min(100, Math.round((item.transferred / item.total) * 100))}%`,
-                  }"
-                ></span>
+                {{ item.kind === 'upload' ? '上传' : '下载' }}
               </span>
-            </span>
-            <span v-if="item.total > 0" class="shrink-0 font-mono text-text-muted">
-              {{ Math.min(100, Math.round((item.transferred / item.total) * 100)) }}%
-            </span>
-            <span v-if="item.error" class="shrink-0 text-danger-strong dark:text-danger-dark">{{
-              item.error
-            }}</span>
-            <UiButton
-              v-if="!item.done"
-              variant="ghost"
-              size="xs"
-              class="!h-auto shrink-0 !px-[4px] !py-[1px] text-caption text-danger-strong dark:text-danger-dark"
-              @click="emit('cancel', item.id)"
-            >
-              取消
-            </UiButton>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-secondary dark:text-secondary-dark">{{
+                  item.label
+                }}</span>
+                <!-- 单项进度条动画 -->
+                <span
+                  v-if="!item.done && item.total > 0"
+                  class="mt-[2px] block h-[3px] overflow-hidden rounded-full bg-border dark:bg-border-dark"
+                >
+                  <span
+                    class="block h-full bg-tertiary transition-[width] duration-300"
+                    :style="{
+                      width: `${Math.min(100, Math.round((item.transferred / item.total) * 100))}%`,
+                    }"
+                  ></span>
+                </span>
+              </span>
+              <span v-if="item.total > 0" class="shrink-0 font-mono text-text-muted">
+                {{ Math.min(100, Math.round((item.transferred / item.total) * 100)) }}%
+              </span>
+              <span v-if="item.error" class="shrink-0 text-danger-strong dark:text-danger-dark">{{
+                item.error
+              }}</span>
+              <UiButton
+                v-if="!item.done"
+                variant="ghost"
+                size="xs"
+                class="!h-auto shrink-0 !px-[4px] !py-[1px] text-caption text-danger-strong dark:text-danger-dark"
+                @click="emit('cancel', item.id)"
+              >
+                取消
+              </UiButton>
+            </div>
           </div>
-        </div>
+        </UiScrollArea>
       </div>
     </div>
 

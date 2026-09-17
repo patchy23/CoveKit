@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * RuntimeLogPanel · 运行时日志
  * 等级着色、关键字过滤、自动滚动（用户上滚即暂停，符合终端直觉）、一键清空。
@@ -96,30 +97,32 @@ watch(
     </div>
 
     <!-- 日志区 -->
-    <div
-      ref="scroller"
-      class="min-h-0 flex-1 overflow-auto bg-neutral px-[10px] py-[6px] dark:bg-neutral-dark"
-      @scroll="onScroll"
-    >
-      <p
-        v-if="visible.length === 0"
-        class="flex items-center gap-[6px] py-[8px] text-body-sm text-text-muted dark:text-text-muted-dark"
-      >
-        <UiIcon name="info" :size="14" />
-        {{ props.running ? t('frp.logEmptyRunning') : t('frp.logEmptyStopped') }}
-      </p>
+    <UiScrollArea as-child axis="both">
       <div
-        v-for="(item, index) in visible"
-        :key="`${item.ts}-${index}`"
-        class="flex items-start gap-[8px] whitespace-pre font-mono text-body-sm leading-[1.5]"
+        ref="scroller"
+        class="min-h-0 flex-1 bg-neutral px-[10px] py-[6px] dark:bg-neutral-dark"
+        @scroll="onScroll"
       >
-        <span class="shrink-0 text-text-muted dark:text-text-muted-dark">{{
-          formatTime(item.ts)
-        }}</span>
-        <span class="min-w-0 flex-1 break-all" :class="logLevelClass(item.level)">{{
-          item.line
-        }}</span>
+        <p
+          v-if="visible.length === 0"
+          class="flex items-center gap-[6px] py-[8px] text-body-sm text-text-muted dark:text-text-muted-dark"
+        >
+          <UiIcon name="info" :size="14" />
+          {{ props.running ? t('frp.logEmptyRunning') : t('frp.logEmptyStopped') }}
+        </p>
+        <div
+          v-for="(item, index) in visible"
+          :key="`${item.ts}-${index}`"
+          class="flex items-start gap-[8px] whitespace-pre font-mono text-body-sm leading-[1.5]"
+        >
+          <span class="shrink-0 text-text-muted dark:text-text-muted-dark">{{
+            formatTime(item.ts)
+          }}</span>
+          <span class="min-w-0 flex-1 break-all" :class="logLevelClass(item.level)">{{
+            item.line
+          }}</span>
+        </div>
       </div>
-    </div>
+    </UiScrollArea>
   </div>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * Sidebar · 侧栏（全局模糊搜索 + 工具库导航 + 计数徽标 + 主题/设置入口）
  * 导航项与计数来自工具注册表聚合（tools store）；主题切换走 settings store；
@@ -115,41 +116,42 @@ function selectCategory(item: { id: string }) {
         </button>
       </div>
       <!-- 搜索下拉：↑↓ 选择、Enter / 点击直接打开工具 -->
-      <div
-        v-if="searchFocused && matches.length"
-        class="absolute inset-x-[10px] top-full z-30 mt-[6px] max-h-[320px] overflow-y-auto rounded-md border border-border bg-surface py-[4px] shadow-[0_12px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
-      >
-        <button
-          v-for="(match, i) in matches"
-          :key="match.tool.id"
-          class="flex w-full items-center gap-[9px] px-[10px] py-[8px] text-left transition-colors duration-100"
-          :class="i === activeIndex ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark' : ''"
-          @mousedown.prevent
-          @click="selectTool(match.tool)"
-          @mousemove="activeIndex = i"
+      <UiScrollArea v-if="searchFocused && matches.length" as-child axis="vertical">
+        <div
+          class="absolute inset-x-[10px] top-full z-30 mt-[6px] max-h-[320px] rounded-md border border-border bg-surface py-[4px] shadow-[0_12px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
         >
-          <AppIcon
-            :name="match.tool.icon"
-            :size="16"
-            class="shrink-0 text-tertiary-strong dark:text-tertiary-dark"
-          />
-          <span
-            class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
+          <button
+            v-for="(match, i) in matches"
+            :key="match.tool.id"
+            class="flex w-full items-center gap-[9px] px-[10px] py-[8px] text-left transition-colors duration-100"
+            :class="i === activeIndex ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark' : ''"
+            @mousedown.prevent
+            @click="selectTool(match.tool)"
+            @mousemove="activeIndex = i"
           >
-            <template v-if="match.chunks">
-              <template v-for="(c, ci) in match.chunks" :key="ci">
-                <mark
-                  v-if="c.hit"
-                  class="rounded-[2px] bg-tertiary-soft px-[1px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
-                  >{{ c.text }}</mark
-                >
-                <template v-else>{{ c.text }}</template>
+            <AppIcon
+              :name="match.tool.icon"
+              :size="16"
+              class="shrink-0 text-tertiary-strong dark:text-tertiary-dark"
+            />
+            <span
+              class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
+            >
+              <template v-if="match.chunks">
+                <template v-for="(c, ci) in match.chunks" :key="ci">
+                  <mark
+                    v-if="c.hit"
+                    class="rounded-[2px] bg-tertiary-soft px-[1px] text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
+                    >{{ c.text }}</mark
+                  >
+                  <template v-else>{{ c.text }}</template>
+                </template>
               </template>
-            </template>
-            <template v-else>{{ match.tool.name }}</template>
-          </span>
-        </button>
-      </div>
+              <template v-else>{{ match.tool.name }}</template>
+            </span>
+          </button>
+        </div>
+      </UiScrollArea>
     </div>
 
     <!-- 导航 -->
@@ -158,32 +160,34 @@ function selectCategory(item: { id: string }) {
     >
       {{ t('nav.library') }}
     </div>
-    <nav class="flex flex-1 flex-col gap-[2px] overflow-y-auto">
-      <button
-        v-for="item in navItems"
-        :key="item.id"
-        class="flex w-full items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium transition-colors duration-150"
-        :class="
-          ui.activeCategory === item.id
-            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-            : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
-        "
-        @click="selectCategory(item)"
-      >
-        <AppIcon :name="item.icon" :size="17" class="shrink-0" />
-        <span class="flex-1 text-left">{{ t(item.labelKey) }}</span>
-        <span
-          class="rounded-full px-[7px] py-[1px] text-caption font-semibold"
+    <UiScrollArea as-child axis="vertical">
+      <nav class="flex flex-1 flex-col gap-[2px]">
+        <button
+          v-for="item in navItems"
+          :key="item.id"
+          class="flex w-full items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium transition-colors duration-150"
           :class="
             ui.activeCategory === item.id
-              ? 'bg-tertiary-strong text-on-tertiary dark:bg-tertiary-dark dark:text-on-tertiary-dark'
-              : 'bg-border text-text-muted dark:bg-border-dark dark:text-text-muted-dark'
+              ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+              : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
           "
+          @click="selectCategory(item)"
         >
-          {{ tools.categoryCounts[item.id] ?? 0 }}
-        </span>
-      </button>
-    </nav>
+          <AppIcon :name="item.icon" :size="17" class="shrink-0" />
+          <span class="flex-1 text-left">{{ t(item.labelKey) }}</span>
+          <span
+            class="rounded-full px-[7px] py-[1px] text-caption font-semibold"
+            :class="
+              ui.activeCategory === item.id
+                ? 'bg-tertiary-strong text-on-tertiary dark:bg-tertiary-dark dark:text-on-tertiary-dark'
+                : 'bg-border text-text-muted dark:bg-border-dark dark:text-text-muted-dark'
+            "
+          >
+            {{ tools.categoryCounts[item.id] ?? 0 }}
+          </span>
+        </button>
+      </nav>
+    </UiScrollArea>
 
     <!-- 底部入口 -->
     <div class="mt-md flex flex-col gap-[2px] border-t border-border pt-md dark:border-border-dark">

@@ -166,15 +166,4 @@ export const codeEditorTheme = EditorView.theme({
     color: 'var(--color-tertiary-strong)',
   },
   '.cm-placeholder': { color: 'var(--color-text-muted)' },
-  '& .cm-scroller::-webkit-scrollbar': { width: '12px', height: '12px' },
-  '& .cm-scroller::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
-  '& .cm-scroller::-webkit-scrollbar-thumb': {
-    backgroundColor: 'var(--color-border-strong)',
-    borderRadius: '6px',
-    border: '3px solid transparent',
-    backgroundClip: 'content-box',
-  },
-  '& .cm-scroller::-webkit-scrollbar-thumb:hover': {
-    backgroundColor: 'var(--color-text-muted)',
-  },
 })

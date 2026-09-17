@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /** FileBrowser · SSH 文件页的路径工具栏、远程文件表格与键盘首字母定位。 */
 import { nextTick, onMounted, ref, watch, type ComponentPublicInstance } from 'vue'
@@ -104,76 +105,78 @@ watch(
       @up="emit('up')"
     />
 
-    <div
-      ref="listViewport"
-      class="min-h-0 flex-1 overflow-auto outline-none"
-      tabindex="0"
-      aria-label="远程文件列表，输入首字母可循环定位"
-      @keydown="jumpByInitial"
-      @contextmenu="emit('context', $event, null)"
-    >
-      <UiTable :framed="false" :styled="false" table-class="text-body-sm">
-        <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
-          <tr
-            class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-          >
-            <UiTableCell as="th" class="min-w-[160px] px-[12px] py-[8px]">
-              <UiButton variant="ghost" size="xs" @click="emit('sort', 'name')">
-                名称 {{ sortKey === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : '' }}
-              </UiButton>
-            </UiTableCell>
-            <UiTableCell as="th" class="w-[76px] px-[12px] py-[8px]">大小</UiTableCell>
-            <UiTableCell as="th" class="w-[118px] px-[12px] py-[8px]">
-              <UiButton variant="ghost" size="xs" @click="emit('sort', 'modifiedAt')">
-                修改时间
-                {{ sortKey === 'modifiedAt' ? (sortDirection === 'asc' ? '↑' : '↓') : '' }}
-              </UiButton>
-            </UiTableCell>
-            <UiTableCell as="th" class="w-[92px] px-[12px] py-[8px]">权限</UiTableCell>
-            <UiTableCell as="th" class="w-[88px] px-[12px] py-[8px]">所有者</UiTableCell>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="file in files"
-            :key="file.path"
-            :ref="(element) => setRowElement(file.path, element)"
-            class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
-            :class="
-              selectedPaths?.has(file.path)
-                ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
-                : 'hover:bg-border dark:hover:bg-border-dark'
-            "
-            @click="selectFile($event, file)"
-            @dblclick="emit('open', file)"
-            @contextmenu.stop="emit('context', $event, file)"
-            @pointerdown="emit('rowPointerDown', $event, file)"
-          >
-            <UiTableCell content="technical" class="max-w-0 px-[12px] py-[7px]">
-              <!-- 长文件名截断不换行：auto 布局下 max-w-0 单元格 + 内层 truncate（不挤掉其他列），完整名走 title -->
-              <UiTooltip :content="file.name">
-                <span class="block truncate">
-                  <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
-                  <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
-                </span>
-              </UiTooltip>
-            </UiTableCell>
-            <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">
-              {{ file.isDir ? '-' : formatBytes(file.size) }}
-            </UiTableCell>
-            <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
-              formatTime(file.modifiedAt)
-            }}</UiTableCell>
-            <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
-              file.permissions
-            }}</UiTableCell>
-            <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
-              file.owner
-            }}</UiTableCell>
-          </tr>
-        </tbody>
-      </UiTable>
-    </div>
+    <UiScrollArea as-child axis="both">
+      <div
+        ref="listViewport"
+        class="min-h-0 flex-1 outline-none"
+        tabindex="0"
+        aria-label="远程文件列表，输入首字母可循环定位"
+        @keydown="jumpByInitial"
+        @contextmenu="emit('context', $event, null)"
+      >
+        <UiTable :framed="false" :styled="false" table-class="text-body-sm">
+          <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
+            <tr
+              class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
+            >
+              <UiTableCell as="th" class="min-w-[160px] px-[12px] py-[8px]">
+                <UiButton variant="ghost" size="xs" @click="emit('sort', 'name')">
+                  名称 {{ sortKey === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : '' }}
+                </UiButton>
+              </UiTableCell>
+              <UiTableCell as="th" class="w-[76px] px-[12px] py-[8px]">大小</UiTableCell>
+              <UiTableCell as="th" class="w-[118px] px-[12px] py-[8px]">
+                <UiButton variant="ghost" size="xs" @click="emit('sort', 'modifiedAt')">
+                  修改时间
+                  {{ sortKey === 'modifiedAt' ? (sortDirection === 'asc' ? '↑' : '↓') : '' }}
+                </UiButton>
+              </UiTableCell>
+              <UiTableCell as="th" class="w-[92px] px-[12px] py-[8px]">权限</UiTableCell>
+              <UiTableCell as="th" class="w-[88px] px-[12px] py-[8px]">所有者</UiTableCell>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="file in files"
+              :key="file.path"
+              :ref="(element) => setRowElement(file.path, element)"
+              class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
+              :class="
+                selectedPaths?.has(file.path)
+                  ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
+                  : 'hover:bg-border dark:hover:bg-border-dark'
+              "
+              @click="selectFile($event, file)"
+              @dblclick="emit('open', file)"
+              @contextmenu.stop="emit('context', $event, file)"
+              @pointerdown="emit('rowPointerDown', $event, file)"
+            >
+              <UiTableCell content="technical" class="max-w-0 px-[12px] py-[7px]">
+                <!-- 长文件名截断不换行：auto 布局下 max-w-0 单元格 + 内层 truncate（不挤掉其他列），完整名走 title -->
+                <UiTooltip :content="file.name">
+                  <span class="block truncate">
+                    <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
+                    <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
+                  </span>
+                </UiTooltip>
+              </UiTableCell>
+              <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">
+                {{ file.isDir ? '-' : formatBytes(file.size) }}
+              </UiTableCell>
+              <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                formatTime(file.modifiedAt)
+              }}</UiTableCell>
+              <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                file.permissions
+              }}</UiTableCell>
+              <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                file.owner
+              }}</UiTableCell>
+            </tr>
+          </tbody>
+        </UiTable>
+      </div>
+    </UiScrollArea>
 
     <div
       class="flex h-[36px] shrink-0 items-center gap-[12px] border-t border-border px-[12px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"

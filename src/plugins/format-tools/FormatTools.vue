@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * 格式转换 · 根组件（JSON / XML / 时间戳 / Base64 四个子页签）
  * v-show 保持各面板状态，切换子页签不丢失输入内容。
@@ -30,8 +31,10 @@ const tabs = [
     <div v-show="active === 'json'" class="min-h-0 flex-1"><JsonPanel /></div>
     <div v-show="active === 'xml'" class="min-h-0 flex-1"><XmlPanel /></div>
     <div v-show="active === 'base64'" class="min-h-0 flex-1"><Base64Panel /></div>
-    <div v-show="active === 'timestamp'" class="min-h-0 flex-1 overflow-y-auto pr-[4px]">
-      <TimestampPanel />
-    </div>
+    <UiScrollArea as-child axis="vertical">
+      <div v-show="active === 'timestamp'" class="min-h-0 flex-1 pr-[4px]">
+        <TimestampPanel />
+      </div>
+    </UiScrollArea>
   </div>
 </template>

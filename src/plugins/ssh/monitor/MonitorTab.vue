@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /** SSH 资源监控：关键指标概览、容量进度和 3 秒趋势。 */
 import { computed, onMounted, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, MonitorData } from '../contracts'
@@ -128,106 +129,108 @@ watch(
       description="双击左侧服务器打开一个终端后，即可查看监控数据。"
     />
 
-    <div v-else-if="data" class="min-h-0 flex-1 space-y-[12px] overflow-y-auto p-[14px]">
-      <div class="grid grid-cols-4 gap-[10px]">
-        <UiPanel padding="sm">
-          <div class="text-caption text-text-muted dark:text-text-muted-dark">CPU 使用率</div>
-          <div
-            class="mt-[6px] font-mono text-display font-medium text-primary dark:text-primary-dark"
-          >
-            {{ data.cpuPercent.toFixed(1) }}%
-          </div>
-          <UiProgress class="mt-[10px]" :value="data.cpuPercent" size="sm" />
-        </UiPanel>
-        <UiPanel padding="sm">
-          <div class="text-caption text-text-muted dark:text-text-muted-dark">内存使用率</div>
-          <div
-            class="mt-[6px] font-mono text-display font-medium text-primary dark:text-primary-dark"
-          >
-            {{ data.memoryPercent.toFixed(1) }}%
-          </div>
-          <div class="mt-[6px] font-mono text-caption text-text-muted dark:text-text-muted-dark">
-            {{ formatBytes(data.memoryUsed) }} / {{ formatBytes(data.memoryTotal) }}
-          </div>
-        </UiPanel>
-        <UiPanel padding="sm">
-          <div class="text-caption text-text-muted dark:text-text-muted-dark">磁盘使用率</div>
-          <div
-            class="mt-[6px] font-mono text-display font-medium text-primary dark:text-primary-dark"
-          >
-            {{ data.diskPercent.toFixed(1) }}%
-          </div>
-          <div class="mt-[6px] font-mono text-caption text-text-muted dark:text-text-muted-dark">
-            {{ formatBytes(data.diskUsed) }} / {{ formatBytes(data.diskTotal) }}
-          </div>
-        </UiPanel>
-        <UiPanel padding="sm">
-          <div class="text-caption text-text-muted dark:text-text-muted-dark">实时网络</div>
-          <div
-            class="mt-[7px] font-mono text-body font-medium text-success-strong dark:text-success-dark"
-          >
-            ↓ {{ formatBytes(data.netDownloadBps) }}/s
-          </div>
-          <div
-            class="mt-[6px] font-mono text-body font-medium text-info-strong dark:text-info-dark"
-          >
-            ↑ {{ formatBytes(data.netUploadBps) }}/s
-          </div>
-        </UiPanel>
-      </div>
+    <UiScrollArea v-else-if="data" as-child axis="vertical">
+      <div class="min-h-0 flex-1 space-y-[12px] p-[14px]">
+        <div class="grid grid-cols-4 gap-[10px]">
+          <UiPanel padding="sm">
+            <div class="text-caption text-text-muted dark:text-text-muted-dark">CPU 使用率</div>
+            <div
+              class="mt-[6px] font-mono text-display font-medium text-primary dark:text-primary-dark"
+            >
+              {{ data.cpuPercent.toFixed(1) }}%
+            </div>
+            <UiProgress class="mt-[10px]" :value="data.cpuPercent" size="sm" />
+          </UiPanel>
+          <UiPanel padding="sm">
+            <div class="text-caption text-text-muted dark:text-text-muted-dark">内存使用率</div>
+            <div
+              class="mt-[6px] font-mono text-display font-medium text-primary dark:text-primary-dark"
+            >
+              {{ data.memoryPercent.toFixed(1) }}%
+            </div>
+            <div class="mt-[6px] font-mono text-caption text-text-muted dark:text-text-muted-dark">
+              {{ formatBytes(data.memoryUsed) }} / {{ formatBytes(data.memoryTotal) }}
+            </div>
+          </UiPanel>
+          <UiPanel padding="sm">
+            <div class="text-caption text-text-muted dark:text-text-muted-dark">磁盘使用率</div>
+            <div
+              class="mt-[6px] font-mono text-display font-medium text-primary dark:text-primary-dark"
+            >
+              {{ data.diskPercent.toFixed(1) }}%
+            </div>
+            <div class="mt-[6px] font-mono text-caption text-text-muted dark:text-text-muted-dark">
+              {{ formatBytes(data.diskUsed) }} / {{ formatBytes(data.diskTotal) }}
+            </div>
+          </UiPanel>
+          <UiPanel padding="sm">
+            <div class="text-caption text-text-muted dark:text-text-muted-dark">实时网络</div>
+            <div
+              class="mt-[7px] font-mono text-body font-medium text-success-strong dark:text-success-dark"
+            >
+              ↓ {{ formatBytes(data.netDownloadBps) }}/s
+            </div>
+            <div
+              class="mt-[6px] font-mono text-body font-medium text-info-strong dark:text-info-dark"
+            >
+              ↑ {{ formatBytes(data.netUploadBps) }}/s
+            </div>
+          </UiPanel>
+        </div>
 
-      <UiPanel
-        title="CPU 与内存趋势"
-        description="橙色为 CPU，蓝色为内存；纵轴范围 0–100%"
-        padding="sm"
-      >
-        <div
-          class="relative h-[180px] overflow-hidden rounded-md bg-surface-muted dark:bg-surface-muted-dark"
+        <UiPanel
+          title="CPU 与内存趋势"
+          description="橙色为 CPU，蓝色为内存；纵轴范围 0–100%"
+          padding="sm"
         >
           <div
-            class="absolute inset-x-0 top-1/4 border-t border-border/60 dark:border-border-dark/60"
-          />
-          <div
-            class="absolute inset-x-0 top-1/2 border-t border-border/60 dark:border-border-dark/60"
-          />
-          <div
-            class="absolute inset-x-0 top-3/4 border-t border-border/60 dark:border-border-dark/60"
-          />
-          <svg
-            viewBox="0 0 600 120"
-            preserveAspectRatio="none"
-            class="absolute inset-[12px] h-[156px] w-[calc(100%-24px)]"
+            class="relative h-[180px] overflow-hidden rounded-md bg-surface-muted dark:bg-surface-muted-dark"
           >
-            <path
-              :d="cpuPath"
-              fill="none"
-              stroke="var(--color-tertiary)"
-              stroke-width="2.5"
-              vector-effect="non-scaling-stroke"
+            <div
+              class="absolute inset-x-0 top-1/4 border-t border-border/60 dark:border-border-dark/60"
             />
-            <path
-              :d="memoryPath"
-              fill="none"
-              stroke="var(--color-info)"
-              stroke-width="2.5"
-              vector-effect="non-scaling-stroke"
+            <div
+              class="absolute inset-x-0 top-1/2 border-t border-border/60 dark:border-border-dark/60"
             />
-          </svg>
+            <div
+              class="absolute inset-x-0 top-3/4 border-t border-border/60 dark:border-border-dark/60"
+            />
+            <svg
+              viewBox="0 0 600 120"
+              preserveAspectRatio="none"
+              class="absolute inset-[12px] h-[156px] w-[calc(100%-24px)]"
+            >
+              <path
+                :d="cpuPath"
+                fill="none"
+                stroke="var(--color-tertiary)"
+                stroke-width="2.5"
+                vector-effect="non-scaling-stroke"
+              />
+              <path
+                :d="memoryPath"
+                fill="none"
+                stroke="var(--color-info)"
+                stroke-width="2.5"
+                vector-effect="non-scaling-stroke"
+              />
+            </svg>
+          </div>
+        </UiPanel>
+
+        <div class="grid grid-cols-2 gap-[10px]">
+          <UiPanel title="内存容量" padding="sm">
+            <UiProgress :value="data.memoryPercent" tone="accent" show-value />
+          </UiPanel>
+          <UiPanel title="根分区容量" padding="sm">
+            <UiProgress :value="data.diskPercent" tone="warning" show-value />
+          </UiPanel>
         </div>
-      </UiPanel>
 
-      <div class="grid grid-cols-2 gap-[10px]">
-        <UiPanel title="内存容量" padding="sm">
-          <UiProgress :value="data.memoryPercent" tone="accent" show-value />
-        </UiPanel>
-        <UiPanel title="根分区容量" padding="sm">
-          <UiProgress :value="data.diskPercent" tone="warning" show-value />
-        </UiPanel>
+        <!-- 系统信息与磁盘明细：采样间隔 30 秒（变化慢，避免与 3 秒指标叠加压力） -->
+        <MonitorSystemPanel :connection="connection" />
       </div>
-
-      <!-- 系统信息与磁盘明细：采样间隔 30 秒（变化慢，避免与 3 秒指标叠加压力） -->
-      <MonitorSystemPanel :connection="connection" />
-    </div>
+    </UiScrollArea>
 
     <div
       class="flex shrink-0 border-t border-border bg-surface px-[14px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:bg-surface-dark dark:text-text-muted-dark"

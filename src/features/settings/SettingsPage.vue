@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * SettingsPage · 设置页（框架级整页模式，铺满右侧内容区含页签条区域）
@@ -121,204 +122,214 @@ async function chooseDownloadDirectory() {
 
 <template>
   <!-- 整页模式：铺满右侧内容区（含页签条区域），自带滚动 -->
-  <div class="min-h-0 flex-1 overflow-y-auto px-md py-md">
-    <div class="mx-auto w-full max-w-[760px]">
-      <!-- 页头 -->
-      <div class="flex items-center gap-[12px]">
-        <div
-          class="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
-        >
-          <AppIcon name="sliders" :size="23" class="text-tertiary-strong dark:text-tertiary-dark" />
-        </div>
-        <div>
-          <h2 class="text-h1 font-extrabold tracking-[-0.02em] dark:text-primary-dark">
-            {{ t('common.settings') }}
-          </h2>
-          <p class="mt-[3px] text-body text-secondary dark:text-secondary-dark">
-            {{ t('settings.subtitle') }}
-          </p>
-        </div>
-        <UiTooltip :content="t('common.back')">
-          <button
-            class="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-[9px] bg-neutral text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-            :aria-label="t('common.back')"
-            @click="ui.closeSettings()"
+  <UiScrollArea as-child axis="vertical">
+    <div class="min-h-0 flex-1 px-md py-md">
+      <div class="mx-auto w-full max-w-[760px]">
+        <!-- 页头 -->
+        <div class="flex items-center gap-[12px]">
+          <div
+            class="grid h-[46px] w-[46px] shrink-0 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
           >
-            <AppIcon name="close" :size="14" />
-          </button>
-        </UiTooltip>
-      </div>
-
-      <!-- 保存失败提示：任何分区的保存失败都在这里显示，不静默吞错误 -->
-      <p
-        v-if="settings.saveError"
-        class="mt-[10px] text-body-sm text-warning-strong dark:text-warning-dark"
-      >
-        {{ t('settings.saveFailed', { message: settings.saveError }) }}
-      </p>
-
-      <div class="mt-[20px] flex flex-col gap-md pb-[24px]">
-        <!-- 外观 -->
-        <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-          <h3 class="text-h2 font-bold dark:text-primary-dark">{{ t('settings.appearance') }}</h3>
-          <div class="mt-sm grid grid-cols-2 gap-sm">
-            <label class="field-label flex flex-col gap-[6px]">
-              {{ t('settings.theme') }}
-              <Select
-                :model-value="settings.settings.theme"
-                :options="themeOptions"
-                @update:model-value="settings.set('theme', $event as 'light' | 'dark' | 'system')"
-              />
-            </label>
-            <label class="field-label flex flex-col gap-[6px]">
-              {{ t('settings.language') }}
-              <Select
-                :model-value="settings.settings.language"
-                :options="languageOptions"
-                @update:model-value="settings.set('language', $event as 'zh-CN' | 'en-US')"
-              />
-            </label>
-          </div>
-        </section>
-
-        <!-- 启动与通用 -->
-        <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-          <h3 class="text-h2 font-bold dark:text-primary-dark">{{ t('settings.general') }}</h3>
-          <div class="mt-sm flex flex-col gap-sm">
-            <label
-              class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"
-            >
-              <span class="dark:text-primary-dark">{{ t('settings.launchAtStartup') }}</span>
-              <UiCheckbox
-                :model-value="settings.settings.launchAtStartup"
-                @update:model-value="settings.set('launchAtStartup', $event)"
-              />
-            </label>
-            <label class="field-label flex flex-col gap-[6px]">
-              {{ t('settings.downloadDirectory') }}
-              <div class="flex gap-[8px]">
-                <UiInput
-                  :model-value="settings.settings.defaultDownloadDirectory"
-                  class="flex-1 font-mono"
-                  :placeholder="t('settings.downloadPlaceholder')"
-                  @update:model-value="settings.set('defaultDownloadDirectory', String($event))"
-                />
-                <UiButton @click="chooseDownloadDirectory">{{
-                  t('settings.chooseDirectory')
-                }}</UiButton>
-              </div>
-              <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-                {{ t('settings.downloadHint') }}
-              </span>
-            </label>
-          </div>
-        </section>
-
-        <!-- 凭证管理（框架功能，弹窗承载） -->
-        <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
-          <h3 class="flex items-center gap-[8px] text-h2 font-bold dark:text-primary-dark">
-            <AppIcon name="lock" :size="15" class="text-tertiary-strong dark:text-tertiary-dark" />
-            {{ t('settings.vault') }}
-          </h3>
-          <div class="mt-sm flex items-center justify-between gap-sm">
-            <p class="text-body-sm text-text-muted dark:text-text-muted-dark">
-              {{ t('settings.vaultSummary', { count: vaultCount ?? '—' }) }}
-            </p>
-            <UiButton @click="openVault">{{ t('settings.manageVault') }}</UiButton>
-          </div>
-          <!-- 保护状态（T04-5）：主密钥实际来源与可用性，降级 / 无法解锁必须如实可见 -->
-          <div class="mt-[10px] space-y-[6px]">
-            <div
-              v-for="domain in protection?.domains ?? []"
-              :key="domain.domain"
-              class="flex items-center gap-[8px] text-body-sm"
-            >
-              <span class="w-[64px] shrink-0 text-text-muted dark:text-text-muted-dark">
-                {{ protectionDomainName(domain) }}
-              </span>
-              <UiBadge :tone="protectionTone(domain)">{{ protectionLabel(domain) }}</UiBadge>
-            </div>
-            <p v-if="!protection" class="text-body-sm text-text-muted dark:text-text-muted-dark">
-              {{ t('settings.protectionUnknown') }}
-            </p>
-            <p
-              v-else-if="protectionDetail"
-              class="text-body-sm text-text-muted dark:text-text-muted-dark"
-            >
-              {{ protectionDetail }}
-            </p>
-          </div>
-        </section>
-
-        <StorageSettingsCard />
-
-        <DataCard />
-
-        <UpdateSettingsCard />
-        <DiagnosticsCard />
-
-        <!-- 工具级设置（settingsSchema 自动渲染） -->
-        <section
-          v-for="tool in toolsWithSettings"
-          :key="tool.id"
-          class="rounded-lg border border-border p-[16px] dark:border-border-dark"
-        >
-          <h3 class="flex items-center gap-[8px] text-h2 font-bold dark:text-primary-dark">
             <AppIcon
-              :name="tool.icon"
-              :size="15"
+              name="sliders"
+              :size="23"
               class="text-tertiary-strong dark:text-tertiary-dark"
             />
-            {{ t('settings.toolSettings', { name: tool.name }) }}
-          </h3>
-          <div class="mt-sm flex flex-col gap-sm">
-            <label
-              v-for="field in tool.settingsSchema"
-              :key="field.key"
-              class="field-label flex flex-col gap-[6px]"
-            >
-              {{ field.label }}
-              <Select
-                v-if="field.type === 'select'"
-                :model-value="String(fieldValue(field, tool.id))"
-                :options="field.options ?? []"
-                @update:model-value="onFieldChange(field, tool.id, $event)"
-              />
-              <UiCheckbox
-                v-else-if="field.type === 'toggle'"
-                :model-value="Boolean(fieldValue(field, tool.id))"
-                @update:model-value="onFieldChange(field, tool.id, $event)"
-              />
-              <UiInput
-                v-else-if="field.type === 'number'"
-                type="number"
-                :model-value="Number(fieldValue(field, tool.id))"
-                @update:model-value="onFieldChange(field, tool.id, Number($event))"
-              />
-              <UiInput
-                v-else
-                :model-value="String(fieldValue(field, tool.id))"
-                @update:model-value="onFieldChange(field, tool.id, $event)"
-              />
-            </label>
           </div>
-        </section>
+          <div>
+            <h2 class="text-h1 font-extrabold tracking-[-0.02em] dark:text-primary-dark">
+              {{ t('common.settings') }}
+            </h2>
+            <p class="mt-[3px] text-body text-secondary dark:text-secondary-dark">
+              {{ t('settings.subtitle') }}
+            </p>
+          </div>
+          <UiTooltip :content="t('common.back')">
+            <button
+              class="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-[9px] bg-neutral text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+              :aria-label="t('common.back')"
+              @click="ui.closeSettings()"
+            >
+              <AppIcon name="close" :size="14" />
+            </button>
+          </UiTooltip>
+        </div>
 
-        <p v-if="!toolsWithSettings.length" class="text-body-sm text-text-muted">
-          {{ t('settings.noToolSettings') }}
+        <!-- 保存失败提示：任何分区的保存失败都在这里显示，不静默吞错误 -->
+        <p
+          v-if="settings.saveError"
+          class="mt-[10px] text-body-sm text-warning-strong dark:text-warning-dark"
+        >
+          {{ t('settings.saveFailed', { message: settings.saveError }) }}
         </p>
-      </div>
 
-      <!-- 凭证管理弹窗（xl；框架功能，独立于工具页签体系） -->
-      <UiModal
-        :open="vaultVisible"
-        :title="t('settings.vault')"
-        :description="t('settings.vaultDescription')"
-        size="xl"
-        @close="vaultVisible = false"
-      >
-        <CredentialManagerPage />
-      </UiModal>
+        <div class="mt-[20px] flex flex-col gap-md pb-[24px]">
+          <!-- 外观 -->
+          <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
+            <h3 class="text-h2 font-bold dark:text-primary-dark">{{ t('settings.appearance') }}</h3>
+            <div class="mt-sm grid grid-cols-2 gap-sm">
+              <label class="field-label flex flex-col gap-[6px]">
+                {{ t('settings.theme') }}
+                <Select
+                  :model-value="settings.settings.theme"
+                  :options="themeOptions"
+                  @update:model-value="settings.set('theme', $event as 'light' | 'dark' | 'system')"
+                />
+              </label>
+              <label class="field-label flex flex-col gap-[6px]">
+                {{ t('settings.language') }}
+                <Select
+                  :model-value="settings.settings.language"
+                  :options="languageOptions"
+                  @update:model-value="settings.set('language', $event as 'zh-CN' | 'en-US')"
+                />
+              </label>
+            </div>
+          </section>
+
+          <!-- 启动与通用 -->
+          <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
+            <h3 class="text-h2 font-bold dark:text-primary-dark">{{ t('settings.general') }}</h3>
+            <div class="mt-sm flex flex-col gap-sm">
+              <label
+                class="flex cursor-pointer items-center justify-between rounded-sm border border-border px-[12px] py-[9px] text-body font-medium dark:border-border-dark"
+              >
+                <span class="dark:text-primary-dark">{{ t('settings.launchAtStartup') }}</span>
+                <UiCheckbox
+                  :model-value="settings.settings.launchAtStartup"
+                  @update:model-value="settings.set('launchAtStartup', $event)"
+                />
+              </label>
+              <label class="field-label flex flex-col gap-[6px]">
+                {{ t('settings.downloadDirectory') }}
+                <div class="flex gap-[8px]">
+                  <UiInput
+                    :model-value="settings.settings.defaultDownloadDirectory"
+                    class="flex-1 font-mono"
+                    :placeholder="t('settings.downloadPlaceholder')"
+                    @update:model-value="settings.set('defaultDownloadDirectory', String($event))"
+                  />
+                  <UiButton @click="chooseDownloadDirectory">{{
+                    t('settings.chooseDirectory')
+                  }}</UiButton>
+                </div>
+                <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
+                  {{ t('settings.downloadHint') }}
+                </span>
+              </label>
+            </div>
+          </section>
+
+          <!-- 凭证管理（框架功能，弹窗承载） -->
+          <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
+            <h3 class="flex items-center gap-[8px] text-h2 font-bold dark:text-primary-dark">
+              <AppIcon
+                name="lock"
+                :size="15"
+                class="text-tertiary-strong dark:text-tertiary-dark"
+              />
+              {{ t('settings.vault') }}
+            </h3>
+            <div class="mt-sm flex items-center justify-between gap-sm">
+              <p class="text-body-sm text-text-muted dark:text-text-muted-dark">
+                {{ t('settings.vaultSummary', { count: vaultCount ?? '—' }) }}
+              </p>
+              <UiButton @click="openVault">{{ t('settings.manageVault') }}</UiButton>
+            </div>
+            <!-- 保护状态（T04-5）：主密钥实际来源与可用性，降级 / 无法解锁必须如实可见 -->
+            <div class="mt-[10px] space-y-[6px]">
+              <div
+                v-for="domain in protection?.domains ?? []"
+                :key="domain.domain"
+                class="flex items-center gap-[8px] text-body-sm"
+              >
+                <span class="w-[64px] shrink-0 text-text-muted dark:text-text-muted-dark">
+                  {{ protectionDomainName(domain) }}
+                </span>
+                <UiBadge :tone="protectionTone(domain)">{{ protectionLabel(domain) }}</UiBadge>
+              </div>
+              <p v-if="!protection" class="text-body-sm text-text-muted dark:text-text-muted-dark">
+                {{ t('settings.protectionUnknown') }}
+              </p>
+              <p
+                v-else-if="protectionDetail"
+                class="text-body-sm text-text-muted dark:text-text-muted-dark"
+              >
+                {{ protectionDetail }}
+              </p>
+            </div>
+          </section>
+
+          <StorageSettingsCard />
+
+          <DataCard />
+
+          <UpdateSettingsCard />
+          <DiagnosticsCard />
+
+          <!-- 工具级设置（settingsSchema 自动渲染） -->
+          <section
+            v-for="tool in toolsWithSettings"
+            :key="tool.id"
+            class="rounded-lg border border-border p-[16px] dark:border-border-dark"
+          >
+            <h3 class="flex items-center gap-[8px] text-h2 font-bold dark:text-primary-dark">
+              <AppIcon
+                :name="tool.icon"
+                :size="15"
+                class="text-tertiary-strong dark:text-tertiary-dark"
+              />
+              {{ t('settings.toolSettings', { name: tool.name }) }}
+            </h3>
+            <div class="mt-sm flex flex-col gap-sm">
+              <label
+                v-for="field in tool.settingsSchema"
+                :key="field.key"
+                class="field-label flex flex-col gap-[6px]"
+              >
+                {{ field.label }}
+                <Select
+                  v-if="field.type === 'select'"
+                  :model-value="String(fieldValue(field, tool.id))"
+                  :options="field.options ?? []"
+                  @update:model-value="onFieldChange(field, tool.id, $event)"
+                />
+                <UiCheckbox
+                  v-else-if="field.type === 'toggle'"
+                  :model-value="Boolean(fieldValue(field, tool.id))"
+                  @update:model-value="onFieldChange(field, tool.id, $event)"
+                />
+                <UiInput
+                  v-else-if="field.type === 'number'"
+                  type="number"
+                  :model-value="Number(fieldValue(field, tool.id))"
+                  @update:model-value="onFieldChange(field, tool.id, Number($event))"
+                />
+                <UiInput
+                  v-else
+                  :model-value="String(fieldValue(field, tool.id))"
+                  @update:model-value="onFieldChange(field, tool.id, $event)"
+                />
+              </label>
+            </div>
+          </section>
+
+          <p v-if="!toolsWithSettings.length" class="text-body-sm text-text-muted">
+            {{ t('settings.noToolSettings') }}
+          </p>
+        </div>
+
+        <!-- 凭证管理弹窗（xl；框架功能，独立于工具页签体系） -->
+        <UiModal
+          :open="vaultVisible"
+          :title="t('settings.vault')"
+          :description="t('settings.vaultDescription')"
+          size="xl"
+          @close="vaultVisible = false"
+        >
+          <CredentialManagerPage />
+        </UiModal>
+      </div>
     </div>
-  </div>
+  </UiScrollArea>
 </template>

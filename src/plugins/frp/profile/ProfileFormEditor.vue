@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * ProfileFormEditor · 表单模式
  *
@@ -72,133 +73,135 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
 </script>
 
 <template>
-  <div class="h-full min-h-0 overflow-y-auto p-[12px]">
-    <div class="flex flex-col gap-[12px]">
-      <!-- 服务器（常用） -->
-      <UiPanel :title="t('frp.formSectionServer')" padding="sm">
-        <div class="grid grid-cols-[1fr_120px] gap-[10px]">
-          <UiField :label="t('frp.formServerAddr')" required>
-            <UiInput
-              :model-value="props.modelValue.serverAddr"
-              :placeholder="t('frp.formServerAddrPlaceholder')"
-              @update:model-value="setField('serverAddr', String($event))"
-            />
-          </UiField>
-          <UiField :label="t('frp.formServerPort')">
-            <UiInput
-              type="number"
-              :model-value="props.modelValue.serverPort ?? ''"
-              placeholder="7000"
-              @update:model-value="setNumber('serverPort', $event)"
-            />
-          </UiField>
-        </div>
-      </UiPanel>
-
-      <!-- 认证（常用） -->
-      <UiPanel :title="t('frp.formSectionAuth')" padding="sm">
-        <div class="flex flex-col gap-[10px]">
-          <UiField :label="t('frp.formAuthMethod')">
-            <UiSelect
-              :model-value="props.modelValue.authMethod"
-              :options="authOptions"
-              @update:model-value="setField('authMethod', String($event))"
-            />
-          </UiField>
-          <UiField :label="t('frp.formAuthToken')" :description="t('frp.formAuthTokenHint')">
-            <UiInput
-              :model-value="props.modelValue.authToken"
-              type="password"
-              @update:model-value="setField('authToken', String($event))"
-            />
-          </UiField>
-        </div>
-      </UiPanel>
-
-      <!-- 更多配置（默认收起，保持默认值即可） -->
-      <UiPanel
-        collapsible
-        :default-open="false"
-        :title="t('frp.formSectionAdvanced')"
-        :description="t('frp.formSectionAdvancedHint')"
-        padding="sm"
-      >
-        <div class="flex flex-col gap-[10px]">
-          <UiField :label="t('frp.formUser')">
-            <UiInput
-              :model-value="props.modelValue.user"
-              @update:model-value="setField('user', String($event))"
-            />
-          </UiField>
+  <UiScrollArea as-child axis="vertical">
+    <div class="h-full min-h-0 p-[12px]">
+      <div class="flex flex-col gap-[12px]">
+        <!-- 服务器（常用） -->
+        <UiPanel :title="t('frp.formSectionServer')" padding="sm">
           <div class="grid grid-cols-[1fr_120px] gap-[10px]">
-            <UiField :label="t('frp.formProtocol')">
-              <UiSelect
-                :model-value="props.modelValue.protocol"
-                :options="protocolOptions"
-                @update:model-value="setField('protocol', String($event))"
+            <UiField :label="t('frp.formServerAddr')" required>
+              <UiInput
+                :model-value="props.modelValue.serverAddr"
+                :placeholder="t('frp.formServerAddrPlaceholder')"
+                @update:model-value="setField('serverAddr', String($event))"
               />
             </UiField>
-            <UiField :label="t('frp.formPoolCount')" :description="t('frp.formPoolCountHint')">
+            <UiField :label="t('frp.formServerPort')">
               <UiInput
                 type="number"
-                :model-value="props.modelValue.poolCount ?? ''"
-                @update:model-value="setNumber('poolCount', $event)"
+                :model-value="props.modelValue.serverPort ?? ''"
+                placeholder="7000"
+                @update:model-value="setNumber('serverPort', $event)"
               />
             </UiField>
           </div>
-          <!-- 开关与字段不同构：做成左标签右开关的一行，避免独占半列留出大片空白 -->
-          <div class="flex items-center justify-between gap-[10px]">
-            <span class="field-label text-body">{{ t('frp.formTls') }}</span>
-            <UiSwitch
-              :model-value="props.modelValue.tlsEnable"
-              @update:model-value="setField('tlsEnable', Boolean($event))"
+        </UiPanel>
+
+        <!-- 认证（常用） -->
+        <UiPanel :title="t('frp.formSectionAuth')" padding="sm">
+          <div class="flex flex-col gap-[10px]">
+            <UiField :label="t('frp.formAuthMethod')">
+              <UiSelect
+                :model-value="props.modelValue.authMethod"
+                :options="authOptions"
+                @update:model-value="setField('authMethod', String($event))"
+              />
+            </UiField>
+            <UiField :label="t('frp.formAuthToken')" :description="t('frp.formAuthTokenHint')">
+              <UiInput
+                :model-value="props.modelValue.authToken"
+                type="password"
+                @update:model-value="setField('authToken', String($event))"
+              />
+            </UiField>
+          </div>
+        </UiPanel>
+
+        <!-- 更多配置（默认收起，保持默认值即可） -->
+        <UiPanel
+          collapsible
+          :default-open="false"
+          :title="t('frp.formSectionAdvanced')"
+          :description="t('frp.formSectionAdvancedHint')"
+          padding="sm"
+        >
+          <div class="flex flex-col gap-[10px]">
+            <UiField :label="t('frp.formUser')">
+              <UiInput
+                :model-value="props.modelValue.user"
+                @update:model-value="setField('user', String($event))"
+              />
+            </UiField>
+            <div class="grid grid-cols-[1fr_120px] gap-[10px]">
+              <UiField :label="t('frp.formProtocol')">
+                <UiSelect
+                  :model-value="props.modelValue.protocol"
+                  :options="protocolOptions"
+                  @update:model-value="setField('protocol', String($event))"
+                />
+              </UiField>
+              <UiField :label="t('frp.formPoolCount')" :description="t('frp.formPoolCountHint')">
+                <UiInput
+                  type="number"
+                  :model-value="props.modelValue.poolCount ?? ''"
+                  @update:model-value="setNumber('poolCount', $event)"
+                />
+              </UiField>
+            </div>
+            <!-- 开关与字段不同构：做成左标签右开关的一行，避免独占半列留出大片空白 -->
+            <div class="flex items-center justify-between gap-[10px]">
+              <span class="field-label text-body">{{ t('frp.formTls') }}</span>
+              <UiSwitch
+                :model-value="props.modelValue.tlsEnable"
+                @update:model-value="setField('tlsEnable', Boolean($event))"
+              />
+            </div>
+            <UiField :label="t('frp.formTlsServerName')">
+              <UiInput
+                :model-value="props.modelValue.tlsServerName"
+                @update:model-value="setField('tlsServerName', String($event))"
+              />
+            </UiField>
+            <UiField :label="t('frp.formLogLevel')">
+              <UiSelect
+                :model-value="props.modelValue.logLevel"
+                :options="logLevelOptions"
+                @update:model-value="setField('logLevel', String($event))"
+              />
+            </UiField>
+          </div>
+        </UiPanel>
+
+        <!-- 代理列表（核心，始终展开） -->
+        <UiPanel
+          :title="t('frp.formSectionProxies', { count: props.modelValue.proxies.length })"
+          padding="sm"
+        >
+          <template #actions>
+            <UiButton size="xs" @click="addProxy">{{ t('frp.formProxyAdd') }}</UiButton>
+          </template>
+          <p
+            v-if="props.modelValue.proxies.length === 0"
+            class="text-body-sm text-text-muted dark:text-text-muted-dark"
+          >
+            {{ t('frp.formProxyEmpty') }}
+          </p>
+          <div v-else class="flex flex-col gap-[10px]">
+            <ProxyEntryCard
+              v-for="(proxy, index) in props.modelValue.proxies"
+              :key="index"
+              :model-value="proxy"
+              :index="index"
+              @update:model-value="updateProxy(index, $event)"
+              @remove="removeProxy(index)"
             />
           </div>
-          <UiField :label="t('frp.formTlsServerName')">
-            <UiInput
-              :model-value="props.modelValue.tlsServerName"
-              @update:model-value="setField('tlsServerName', String($event))"
-            />
-          </UiField>
-          <UiField :label="t('frp.formLogLevel')">
-            <UiSelect
-              :model-value="props.modelValue.logLevel"
-              :options="logLevelOptions"
-              @update:model-value="setField('logLevel', String($event))"
-            />
-          </UiField>
-        </div>
-      </UiPanel>
+        </UiPanel>
 
-      <!-- 代理列表（核心，始终展开） -->
-      <UiPanel
-        :title="t('frp.formSectionProxies', { count: props.modelValue.proxies.length })"
-        padding="sm"
-      >
-        <template #actions>
-          <UiButton size="xs" @click="addProxy">{{ t('frp.formProxyAdd') }}</UiButton>
-        </template>
-        <p
-          v-if="props.modelValue.proxies.length === 0"
-          class="text-body-sm text-text-muted dark:text-text-muted-dark"
-        >
-          {{ t('frp.formProxyEmpty') }}
+        <p class="text-caption text-text-muted dark:text-text-muted-dark">
+          {{ t('frp.formAdvancedHint') }}
         </p>
-        <div v-else class="flex flex-col gap-[10px]">
-          <ProxyEntryCard
-            v-for="(proxy, index) in props.modelValue.proxies"
-            :key="index"
-            :model-value="proxy"
-            :index="index"
-            @update:model-value="updateProxy(index, $event)"
-            @remove="removeProxy(index)"
-          />
-        </div>
-      </UiPanel>
-
-      <p class="text-caption text-text-muted dark:text-text-muted-dark">
-        {{ t('frp.formAdvancedHint') }}
-      </p>
+      </div>
     </div>
-  </div>
+  </UiScrollArea>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiScrollArea from './UiScrollArea.vue'
 withDefaults(
   defineProps<{
     density?: 'compact' | 'default' | 'comfortable' | 'custom'
@@ -20,22 +21,21 @@ withDefaults(
 </script>
 
 <template>
-  <div
-    v-if="framed"
-    class="overflow-x-auto rounded-lg border border-border dark:border-border-dark"
-  >
-    <table
-      class="w-full border-collapse text-left text-secondary dark:text-secondary-dark"
-      :class="[
-        tableClass,
-        { 'ui-data-table': styled },
-        styled ? `ui-data-table-${density}` : '',
-        { 'ui-data-table-striped': striped, 'ui-data-table-hoverable': hoverable },
-      ]"
-    >
-      <slot />
-    </table>
-  </div>
+  <UiScrollArea v-if="framed" as-child axis="horizontal">
+    <div class="rounded-lg border border-border dark:border-border-dark">
+      <table
+        class="w-full border-collapse text-left text-secondary dark:text-secondary-dark"
+        :class="[
+          tableClass,
+          { 'ui-data-table': styled },
+          styled ? `ui-data-table-${density}` : '',
+          { 'ui-data-table-striped': striped, 'ui-data-table-hoverable': hoverable },
+        ]"
+      >
+        <slot />
+      </table>
+    </div>
+  </UiScrollArea>
   <table
     v-else
     class="w-full border-collapse text-left text-secondary dark:text-secondary-dark"

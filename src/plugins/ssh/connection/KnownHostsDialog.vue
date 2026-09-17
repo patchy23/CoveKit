@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * KnownHostsDialog · 已知主机管理
@@ -74,40 +75,39 @@ defineExpose({ load })
       暂无已知主机（首次连接服务器并选择「保存并连接」后出现在这里）。
     </div>
 
-    <div
-      v-else
-      class="max-h-[380px] overflow-y-auto rounded-md border border-border dark:border-border-dark"
-    >
-      <UiTooltip
-        v-for="entry in entries"
-        :key="`${entry.host}:${entry.port}:${entry.fingerprint}`"
-        :content="entry.fingerprint"
-      >
-        <UiListRow size="sm">
-          <div class="flex min-w-0 flex-1 items-center gap-[10px]">
-            <span class="font-mono text-body-sm text-primary dark:text-primary-dark">
-              {{ entry.host }}<span v-if="entry.port !== 22">:{{ entry.port }}</span>
-            </span>
-            <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
-              {{ entry.algorithm }}
-            </span>
-            <span
-              class="min-w-0 flex-1 truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+    <UiScrollArea v-else as-child axis="vertical">
+      <div class="max-h-[380px] rounded-md border border-border dark:border-border-dark">
+        <UiTooltip
+          v-for="entry in entries"
+          :key="`${entry.host}:${entry.port}:${entry.fingerprint}`"
+          :content="entry.fingerprint"
+        >
+          <UiListRow size="sm">
+            <div class="flex min-w-0 flex-1 items-center gap-[10px]">
+              <span class="font-mono text-body-sm text-primary dark:text-primary-dark">
+                {{ entry.host }}<span v-if="entry.port !== 22">:{{ entry.port }}</span>
+              </span>
+              <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
+                {{ entry.algorithm }}
+              </span>
+              <span
+                class="min-w-0 flex-1 truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+              >
+                {{ entry.fingerprint }}
+              </span>
+            </div>
+            <UiButton
+              variant="ghost"
+              size="xs"
+              class="!h-auto !px-[8px] !py-[3px] text-caption text-danger-strong dark:text-danger-dark"
+              @click="remove(entry)"
             >
-              {{ entry.fingerprint }}
-            </span>
-          </div>
-          <UiButton
-            variant="ghost"
-            size="xs"
-            class="!h-auto !px-[8px] !py-[3px] text-caption text-danger-strong dark:text-danger-dark"
-            @click="remove(entry)"
-          >
-            删除
-          </UiButton>
-        </UiListRow>
-      </UiTooltip>
-    </div>
+              删除
+            </UiButton>
+          </UiListRow>
+        </UiTooltip>
+      </div>
+    </UiScrollArea>
 
     <template #footer>
       <UiButton variant="ghost" @click="load()">刷新</UiButton>

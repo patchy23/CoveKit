@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * TunnelTab · SSH 端口隧道（-L 本地 / -R 远程 / -D 动态 SOCKS5）
@@ -283,115 +284,124 @@ onUnmounted(() => {
     </div>
 
     <!-- 列表 -->
-    <div class="min-h-0 flex-1 overflow-y-auto p-[12px]">
-      <div
-        v-if="loadFailed"
-        class="py-[24px] text-center text-body-sm text-danger-strong dark:text-danger-dark"
-      >
-        隧道配置加载失败，请重试。
-      </div>
-      <div
-        v-else-if="loaded && rows.length === 0"
-        class="flex flex-col items-center justify-center py-[64px] text-center"
-      >
+    <UiScrollArea as-child axis="vertical">
+      <div class="min-h-0 flex-1 p-[12px]">
         <div
-          class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
+          v-if="loadFailed"
+          class="py-[24px] text-center text-body-sm text-danger-strong dark:text-danger-dark"
         >
-          <UiIcon name="play-all" :size="20" class="text-tertiary-strong dark:text-tertiary-dark" />
+          隧道配置加载失败，请重试。
         </div>
-        <p class="mt-md text-body font-medium dark:text-primary-dark">还没有隧道</p>
-        <p class="mt-[4px] max-w-[360px] text-body-sm text-text-muted dark:text-text-muted-dark">
-          端口转发可以把远程服务映射到本机（-L）、把本机服务暴露给服务器（-R），或建立 SOCKS5
-          代理（-D）。
-        </p>
-        <UiButton variant="ghost" size="sm" class="mt-[12px]" @click="openCreate"
-          >新建第一条隧道</UiButton
+        <div
+          v-else-if="loaded && rows.length === 0"
+          class="flex flex-col items-center justify-center py-[64px] text-center"
         >
-      </div>
+          <div
+            class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
+          >
+            <UiIcon
+              name="play-all"
+              :size="20"
+              class="text-tertiary-strong dark:text-tertiary-dark"
+            />
+          </div>
+          <p class="mt-md text-body font-medium dark:text-primary-dark">还没有隧道</p>
+          <p class="mt-[4px] max-w-[360px] text-body-sm text-text-muted dark:text-text-muted-dark">
+            端口转发可以把远程服务映射到本机（-L）、把本机服务暴露给服务器（-R），或建立 SOCKS5
+            代理（-D）。
+          </p>
+          <UiButton variant="ghost" size="sm" class="mt-[12px]" @click="openCreate"
+            >新建第一条隧道</UiButton
+          >
+        </div>
 
-      <div v-else class="overflow-hidden rounded-lg border border-border dark:border-border-dark">
-        <div
-          v-for="{ config } in rows"
-          :key="config.id"
-          class="flex items-center gap-[12px] border-b border-border bg-surface px-[14px] py-[10px] last:border-b-0 dark:border-border-dark dark:bg-surface-dark"
-        >
-          <!-- 类型徽标 -->
-          <UiTooltip :content="TYPE_LABEL[config.tunnelType]">
-            <span
-              class="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] bg-tertiary-soft font-mono text-body-sm font-bold text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
-            >
-              {{ TYPE_SHORT[config.tunnelType] }}
-            </span>
-          </UiTooltip>
-          <!-- 名称 + 地址 -->
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-[8px]">
-              <span class="truncate text-body font-medium text-primary dark:text-primary-dark">
-                {{ config.name }}
+        <div v-else class="overflow-hidden rounded-lg border border-border dark:border-border-dark">
+          <div
+            v-for="{ config } in rows"
+            :key="config.id"
+            class="flex items-center gap-[12px] border-b border-border bg-surface px-[14px] py-[10px] last:border-b-0 dark:border-border-dark dark:bg-surface-dark"
+          >
+            <!-- 类型徽标 -->
+            <UiTooltip :content="TYPE_LABEL[config.tunnelType]">
+              <span
+                class="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] bg-tertiary-soft font-mono text-body-sm font-bold text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
+              >
+                {{ TYPE_SHORT[config.tunnelType] }}
               </span>
-              <UiTooltip v-if="config.autoStart" content="连接建立后自动启动">
-                <span
-                  class="shrink-0 rounded-full bg-neutral px-[7px] py-[1px] text-caption text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
-                >
-                  自动
+            </UiTooltip>
+            <!-- 名称 + 地址 -->
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-[8px]">
+                <span class="truncate text-body font-medium text-primary dark:text-primary-dark">
+                  {{ config.name }}
                 </span>
-              </UiTooltip>
+                <UiTooltip v-if="config.autoStart" content="连接建立后自动启动">
+                  <span
+                    class="shrink-0 rounded-full bg-neutral px-[7px] py-[1px] text-caption text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
+                  >
+                    自动
+                  </span>
+                </UiTooltip>
+              </div>
+              <div
+                class="mt-[2px] truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+              >
+                {{ listenText(config) }}
+                <span class="mx-[4px]">→</span>
+                {{ targetText(config) }}
+              </div>
+              <div
+                v-if="runtimeOf(config)?.status === 'error'"
+                class="mt-[2px] truncate text-caption text-danger-strong dark:text-danger-dark"
+              >
+                {{ runtimeOf(config)?.error }}
+              </div>
             </div>
-            <div
-              class="mt-[2px] truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+            <!-- 连接数 -->
+            <UiTooltip
+              v-if="runtimeOf(config)?.connections"
+              :content="`活动连接 ${runtimeOf(config)?.connections}`"
             >
-              {{ listenText(config) }}
-              <span class="mx-[4px]">→</span>
-              {{ targetText(config) }}
-            </div>
-            <div
-              v-if="runtimeOf(config)?.status === 'error'"
-              class="mt-[2px] truncate text-caption text-danger-strong dark:text-danger-dark"
+              <span
+                class="shrink-0 font-mono text-caption text-text-muted dark:text-text-muted-dark"
+              >
+                {{ runtimeOf(config)?.connections }} 连接
+              </span>
+            </UiTooltip>
+            <!-- 状态 -->
+            <span
+              class="shrink-0 rounded-full px-[9px] py-[3px] text-caption font-medium"
+              :class="STATUS_CLASS[runtimeOf(config)?.status ?? 'stopped']"
             >
-              {{ runtimeOf(config)?.error }}
-            </div>
-          </div>
-          <!-- 连接数 -->
-          <UiTooltip
-            v-if="runtimeOf(config)?.connections"
-            :content="`活动连接 ${runtimeOf(config)?.connections}`"
-          >
-            <span class="shrink-0 font-mono text-caption text-text-muted dark:text-text-muted-dark">
-              {{ runtimeOf(config)?.connections }} 连接
+              {{ STATUS_LABEL[runtimeOf(config)?.status ?? 'stopped'] }}
             </span>
-          </UiTooltip>
-          <!-- 状态 -->
-          <span
-            class="shrink-0 rounded-full px-[9px] py-[3px] text-caption font-medium"
-            :class="STATUS_CLASS[runtimeOf(config)?.status ?? 'stopped']"
-          >
-            {{ STATUS_LABEL[runtimeOf(config)?.status ?? 'stopped'] }}
-          </span>
-          <!-- 操作 -->
-          <div class="flex shrink-0 items-center gap-[2px]">
-            <UiButton
-              variant="ghost"
-              size="xs"
-              class="!h-auto !px-[8px] !py-[3px] text-caption"
-              :disabled="busyIds.has(config.id)"
-              @click="toggleStart(config)"
-            >
-              {{
-                runtimeOf(config)?.status === 'running' || runtimeOf(config)?.status === 'starting'
-                  ? '停止'
-                  : '启动'
-              }}
-            </UiButton>
-            <UiIconButton label="编辑" size="xs" title="编辑" @click="openEdit(config)">
-              <UiIcon name="pencil" :size="13" />
-            </UiIconButton>
-            <UiIconButton label="删除" size="xs" title="删除" @click="deleteTarget = config">
-              <UiIcon name="trash" :size="13" />
-            </UiIconButton>
+            <!-- 操作 -->
+            <div class="flex shrink-0 items-center gap-[2px]">
+              <UiButton
+                variant="ghost"
+                size="xs"
+                class="!h-auto !px-[8px] !py-[3px] text-caption"
+                :disabled="busyIds.has(config.id)"
+                @click="toggleStart(config)"
+              >
+                {{
+                  runtimeOf(config)?.status === 'running' ||
+                  runtimeOf(config)?.status === 'starting'
+                    ? '停止'
+                    : '启动'
+                }}
+              </UiButton>
+              <UiIconButton label="编辑" size="xs" title="编辑" @click="openEdit(config)">
+                <UiIcon name="pencil" :size="13" />
+              </UiIconButton>
+              <UiIconButton label="删除" size="xs" title="删除" @click="deleteTarget = config">
+                <UiIcon name="trash" :size="13" />
+              </UiIconButton>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </UiScrollArea>
 
     <!-- 新建/编辑弹窗 -->
     <UiModal

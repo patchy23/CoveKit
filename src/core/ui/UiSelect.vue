@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiScrollArea from './UiScrollArea.vue'
 import {
   SelectContent,
   SelectIcon,
@@ -98,29 +99,31 @@ function valueColorClass(value: string) {
           :side-offset="4"
           class="z-[220] min-w-[var(--reka-select-trigger-width)] overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
         >
-          <SelectViewport
-            class="max-h-[min(280px,var(--reka-select-content-available-height))] overflow-y-auto py-xs"
-          >
-            <SelectItem
-              v-for="option in options"
-              :key="option.value"
-              :value="option.value"
-              :disabled="option.disabled"
-              class="flex w-full cursor-default select-none items-center px-[10px] text-left font-medium outline-none transition-colors data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-border data-[state=checked]:bg-tertiary-soft dark:data-[highlighted]:bg-border-dark dark:data-[state=checked]:bg-tertiary-soft-dark"
-              :class="[
-                size === 'xs'
-                  ? 'py-xs text-caption'
-                  : size === 'sm'
-                    ? 'py-[6px] text-body-sm'
-                    : size === 'lg'
-                      ? 'py-[9px] text-body'
-                      : 'py-[7px] text-body',
-                optionColorClass(option.value),
-              ]"
+          <UiScrollArea as-child axis="vertical">
+            <SelectViewport
+              class="max-h-[min(280px,var(--reka-select-content-available-height))] py-xs"
             >
-              <SelectItemText>{{ option.label ?? option.value }}</SelectItemText>
-            </SelectItem>
-          </SelectViewport>
+              <SelectItem
+                v-for="option in options"
+                :key="option.value"
+                :value="option.value"
+                :disabled="option.disabled"
+                class="flex w-full cursor-default select-none items-center px-[10px] text-left font-medium outline-none transition-colors data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-border data-[state=checked]:bg-tertiary-soft dark:data-[highlighted]:bg-border-dark dark:data-[state=checked]:bg-tertiary-soft-dark"
+                :class="[
+                  size === 'xs'
+                    ? 'py-xs text-caption'
+                    : size === 'sm'
+                      ? 'py-[6px] text-body-sm'
+                      : size === 'lg'
+                        ? 'py-[9px] text-body'
+                        : 'py-[7px] text-body',
+                  optionColorClass(option.value),
+                ]"
+              >
+                <SelectItemText>{{ option.label ?? option.value }}</SelectItemText>
+              </SelectItem>
+            </SelectViewport>
+          </UiScrollArea>
         </SelectContent>
       </SelectPortal>
     </SelectRoot>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /** 服务与容器日志查看器：定时拉取尾部日志，并在跟随模式下自动滚动到底部。 */
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { UiButton, UiModal, UiSwitch } from '@/core/ui'
@@ -68,11 +69,13 @@ onUnmounted(() => {
         {{ errorMessage }}
       </span>
     </div>
-    <pre
-      ref="output"
-      class="max-h-[65vh] min-h-[420px] overflow-auto whitespace-pre-wrap rounded-md bg-[#0d1117] p-[14px] font-mono text-body-sm text-[#e6edf3]"
-      @wheel="following = false"
-      >{{ content || (loading ? '正在读取日志…' : '（没有输出）') }}</pre>
+    <UiScrollArea as-child axis="both" theme="dark">
+      <pre
+        ref="output"
+        class="max-h-[65vh] min-h-[420px] whitespace-pre-wrap rounded-md bg-[#0d1117] p-[14px] font-mono text-body-sm text-[#e6edf3]"
+        @wheel="following = false"
+        >{{ content || (loading ? '正在读取日志…' : '（没有输出）') }}</pre>
+    </UiScrollArea>
     <template #footer>
       <UiButton variant="ghost" :loading="loading" @click="refresh">立即刷新</UiButton>
       <UiButton variant="secondary" @click="$emit('close')">关闭</UiButton>

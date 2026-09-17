@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
@@ -197,96 +198,98 @@ onMounted(loadRecords)
       @update:ttl="formTtl = $event"
     />
 
-    <div
-      class="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface pr-[2px] dark:border-border-dark dark:bg-surface-dark"
-    >
-      <p
-        v-if="!busy && records.length === 0"
-        class="p-[14px] text-body-sm text-text-muted dark:text-text-muted-dark"
+    <UiScrollArea as-child axis="both">
+      <div
+        class="min-h-0 flex-1 rounded-lg border border-border bg-surface pr-[2px] dark:border-border-dark dark:bg-surface-dark"
       >
-        暂无解析记录，点击「添加记录」创建。
-      </p>
-      <UiTable v-else :framed="false" :styled="false" table-class="min-w-[520px]">
-        <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
-          <tr
-            class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-          >
-            <UiTableCell as="th" class="py-[8px] pl-[12px] pr-[12px]">主机记录</UiTableCell>
-            <UiTableCell as="th" class="py-[8px] pr-[12px]">类型</UiTableCell>
-            <UiTableCell as="th" class="py-[8px] pr-[12px]">TTL</UiTableCell>
-            <UiTableCell as="th" class="py-[8px] pr-[12px]">记录值</UiTableCell>
-            <UiTableCell as="th" class="py-[8px] pr-[12px]">线路</UiTableCell>
-            <UiTableCell as="th" align="right" class="py-[8px] pr-[12px]">操作</UiTableCell>
-          </tr>
-        </thead>
-        <tbody class="text-body-sm">
-          <tr
-            v-for="r in records"
-            :key="r.recordId"
-            class="border-b border-border/60 last:border-b-0 dark:border-border-dark/60"
-          >
-            <UiTableCell
-              content="technical"
-              class="whitespace-nowrap py-[7px] pl-[12px] pr-[12px] text-secondary dark:text-secondary-dark"
+        <p
+          v-if="!busy && records.length === 0"
+          class="p-[14px] text-body-sm text-text-muted dark:text-text-muted-dark"
+        >
+          暂无解析记录，点击「添加记录」创建。
+        </p>
+        <UiTable v-else :framed="false" :styled="false" table-class="min-w-[520px]">
+          <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
+            <tr
+              class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
             >
-              {{ r.rr === '@' ? '@' : r.rr }}
-            </UiTableCell>
-            <UiTableCell content="technical" class="py-[7px] pr-[12px]">
-              <span
-                class="rounded px-[6px] py-[1px] whitespace-nowrap font-medium"
-                :class="recordTypeBadgeClass(r.recordType)"
+              <UiTableCell as="th" class="py-[8px] pl-[12px] pr-[12px]">主机记录</UiTableCell>
+              <UiTableCell as="th" class="py-[8px] pr-[12px]">类型</UiTableCell>
+              <UiTableCell as="th" class="py-[8px] pr-[12px]">TTL</UiTableCell>
+              <UiTableCell as="th" class="py-[8px] pr-[12px]">记录值</UiTableCell>
+              <UiTableCell as="th" class="py-[8px] pr-[12px]">线路</UiTableCell>
+              <UiTableCell as="th" align="right" class="py-[8px] pr-[12px]">操作</UiTableCell>
+            </tr>
+          </thead>
+          <tbody class="text-body-sm">
+            <tr
+              v-for="r in records"
+              :key="r.recordId"
+              class="border-b border-border/60 last:border-b-0 dark:border-border-dark/60"
+            >
+              <UiTableCell
+                content="technical"
+                class="whitespace-nowrap py-[7px] pl-[12px] pr-[12px] text-secondary dark:text-secondary-dark"
               >
-                {{ r.recordType }}
-              </span>
-            </UiTableCell>
-            <UiTableCell
-              content="numeric"
-              class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark"
-            >
-              {{ r.ttl }}
-            </UiTableCell>
-            <UiTableCell
-              content="code"
-              class="break-all py-[7px] pr-[12px] text-secondary dark:text-secondary-dark"
-            >
-              {{ r.value }}
-            </UiTableCell>
-            <UiTableCell
-              content="text"
-              class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark"
-            >
-              {{ r.line }}
-            </UiTableCell>
-            <UiTableCell
-              content="action"
-              align="right"
-              class="whitespace-nowrap py-[7px] pr-[12px]"
-            >
-              <UiButton
-                variant="ghost"
-                size="xs"
-                class="mr-[2px] text-info-strong dark:text-info-dark"
-                @click="openEdit(r)"
+                {{ r.rr === '@' ? '@' : r.rr }}
+              </UiTableCell>
+              <UiTableCell content="technical" class="py-[7px] pr-[12px]">
+                <span
+                  class="rounded px-[6px] py-[1px] whitespace-nowrap font-medium"
+                  :class="recordTypeBadgeClass(r.recordType)"
+                >
+                  {{ r.recordType }}
+                </span>
+              </UiTableCell>
+              <UiTableCell
+                content="numeric"
+                class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark"
               >
-                编辑
-              </UiButton>
-              <UiButton
-                variant="ghost"
-                size="xs"
-                :class="
-                  confirmDeleteId === r.recordId
-                    ? 'bg-danger-soft text-danger-strong dark:bg-danger-soft-dark dark:text-danger-dark'
-                    : 'text-danger-strong hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark'
-                "
-                @click="deleteRecord(r)"
+                {{ r.ttl }}
+              </UiTableCell>
+              <UiTableCell
+                content="code"
+                class="break-all py-[7px] pr-[12px] text-secondary dark:text-secondary-dark"
               >
-                {{ confirmDeleteId === r.recordId ? '确认删除？' : '删除' }}
-              </UiButton>
-            </UiTableCell>
-          </tr>
-        </tbody>
-      </UiTable>
-    </div>
+                {{ r.value }}
+              </UiTableCell>
+              <UiTableCell
+                content="text"
+                class="whitespace-nowrap py-[7px] pr-[12px] text-text-muted dark:text-text-muted-dark"
+              >
+                {{ r.line }}
+              </UiTableCell>
+              <UiTableCell
+                content="action"
+                align="right"
+                class="whitespace-nowrap py-[7px] pr-[12px]"
+              >
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  class="mr-[2px] text-info-strong dark:text-info-dark"
+                  @click="openEdit(r)"
+                >
+                  编辑
+                </UiButton>
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  :class="
+                    confirmDeleteId === r.recordId
+                      ? 'bg-danger-soft text-danger-strong dark:bg-danger-soft-dark dark:text-danger-dark'
+                      : 'text-danger-strong hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark'
+                  "
+                  @click="deleteRecord(r)"
+                >
+                  {{ confirmDeleteId === r.recordId ? '确认删除？' : '删除' }}
+                </UiButton>
+              </UiTableCell>
+            </tr>
+          </tbody>
+        </UiTable>
+      </div>
+    </UiScrollArea>
 
     <UiPagination
       v-if="totalPages > 1"

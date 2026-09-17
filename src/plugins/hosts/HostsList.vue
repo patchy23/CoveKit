@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * HostsList · hosts 列表模式：结构化条目（启用开关 / IP / 主机名 / 注释 / 增删）
  * 编辑后通过 emit("change", text) 同步回 hosts 文本（保留注释行/空行原位）。
@@ -126,52 +127,54 @@ function addRow() {
     </div>
 
     <!-- 条目区（仅条目滚动） -->
-    <div class="min-h-0 flex-1 overflow-y-auto">
-      <div
-        v-for="e in editable"
-        :key="e.id"
-        class="mb-[8px] grid grid-cols-[40px_170px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
-        :class="
-          e.valid
-            ? 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark'
-            : 'border-tertiary/40 bg-tertiary-soft/30 dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30'
-        "
-      >
-        <UiCheckbox
-          :model-value="e.enabled"
-          :title="e.enabled ? '点击禁用（行首加 #）' : '点击启用'"
-          @update:model-value="toggleEnabled(e)"
-        />
-        <UiInput
-          :model-value="e.ip"
-          class="font-mono"
-          placeholder="127.0.0.1"
-          spellcheck="false"
-          @update:model-value="onIpInput(e, String($event))"
-        />
-        <UiInput
-          :model-value="e.hosts.join(' ')"
-          class="font-mono"
-          placeholder="example.com www.example.com"
-          spellcheck="false"
-          @update:model-value="onHostsInput(e, String($event))"
-        />
-        <UiInput
-          :model-value="e.comment.replace(/^#\s*/, '')"
-          placeholder="备注（可选）"
-          @update:model-value="onCommentInput(e, String($event))"
-        />
-        <UiIconButton label="删除此条" size="sm" @click="remove(e)">
-          <UiIcon name="trash" :size="14" />
-        </UiIconButton>
-      </div>
+    <UiScrollArea as-child axis="vertical">
+      <div class="min-h-0 flex-1">
+        <div
+          v-for="e in editable"
+          :key="e.id"
+          class="mb-[8px] grid grid-cols-[40px_170px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
+          :class="
+            e.valid
+              ? 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark'
+              : 'border-tertiary/40 bg-tertiary-soft/30 dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30'
+          "
+        >
+          <UiCheckbox
+            :model-value="e.enabled"
+            :title="e.enabled ? '点击禁用（行首加 #）' : '点击启用'"
+            @update:model-value="toggleEnabled(e)"
+          />
+          <UiInput
+            :model-value="e.ip"
+            class="font-mono"
+            placeholder="127.0.0.1"
+            spellcheck="false"
+            @update:model-value="onIpInput(e, String($event))"
+          />
+          <UiInput
+            :model-value="e.hosts.join(' ')"
+            class="font-mono"
+            placeholder="example.com www.example.com"
+            spellcheck="false"
+            @update:model-value="onHostsInput(e, String($event))"
+          />
+          <UiInput
+            :model-value="e.comment.replace(/^#\s*/, '')"
+            placeholder="备注（可选）"
+            @update:model-value="onCommentInput(e, String($event))"
+          />
+          <UiIconButton label="删除此条" size="sm" @click="remove(e)">
+            <UiIcon name="trash" :size="14" />
+          </UiIconButton>
+        </div>
 
-      <p
-        v-if="!editable.length"
-        class="py-[24px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
-      >
-        暂无映射条目，点击「+ 新增映射」添加
-      </p>
-    </div>
+        <p
+          v-if="!editable.length"
+          class="py-[24px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
+        >
+          暂无映射条目，点击「+ 新增映射」添加
+        </p>
+      </div>
+    </UiScrollArea>
   </div>
 </template>

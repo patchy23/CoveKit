@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiScrollArea from './UiScrollArea.vue'
 /**
  * 通用代码编辑器（编辑器组件的唯一对外入口）
  *
@@ -247,7 +248,9 @@ defineExpose({
     :style="{ height }"
   >
     <div class="relative min-h-0 flex-1">
-      <div ref="hostRef" class="h-full w-full" />
+      <UiScrollArea as-child axis="vertical" managed>
+        <div ref="hostRef" class="h-full w-full" />
+      </UiScrollArea>
 
       <div v-if="searchOpen" class="absolute top-2 right-3 z-20">
         <EditorSearchBar

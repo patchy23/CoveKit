@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * 导出向导（sync L2）
  *
@@ -145,16 +146,18 @@ async function runExport(): Promise<void> {
         {{ t('settings.dataManagement.exportSelectHint') }}
       </p>
       <UiEmptyState v-if="profiles.length === 0" :title="t('settings.dataManagement.noProfiles')" />
-      <div v-else class="max-h-72 space-y-2 overflow-y-auto pr-1">
-        <UiCheckbox
-          v-for="item in profiles"
-          :key="entryKey(item)"
-          :model-value="store.choice.profileIds.includes(entryKey(item))"
-          :label="`${store.catalog?.datasets.find((dataset) => dataset.name === item.dataset)?.label ?? item.dataset} · ${item.label}`"
-          :description="item.note ? `${item.detail} · ${item.note}` : item.detail"
-          @update:model-value="toggleProfile(entryKey(item), $event)"
-        />
-      </div>
+      <UiScrollArea v-else as-child axis="vertical">
+        <div class="max-h-72 space-y-2 pr-1">
+          <UiCheckbox
+            v-for="item in profiles"
+            :key="entryKey(item)"
+            :model-value="store.choice.profileIds.includes(entryKey(item))"
+            :label="`${store.catalog?.datasets.find((dataset) => dataset.name === item.dataset)?.label ?? item.dataset} · ${item.label}`"
+            :description="item.note ? `${item.detail} · ${item.note}` : item.detail"
+            @update:model-value="toggleProfile(entryKey(item), $event)"
+          />
+        </div>
+      </UiScrollArea>
       <div class="space-y-2 border-t border-border pt-3">
         <UiCheckbox
           v-model="store.choice.includeFavorites"

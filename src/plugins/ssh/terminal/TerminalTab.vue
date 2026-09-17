@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * TerminalTab · xterm 终端（PTY 通道 + 事件推送）
  * - 主终端由 connectRequest 显式驱动开启；容器终端由 Docker 页「终端」按钮打开。
@@ -418,11 +419,13 @@ watch(
 
     <!-- xterm 挂载区 -->
     <div class="min-h-0 flex-1 overflow-hidden bg-[#0d1117] p-[8px]">
-      <div
-        ref="termHost"
-        class="terminal-host h-full min-h-0 w-full overflow-hidden"
-        @contextmenu="openContextMenu"
-      />
+      <UiScrollArea as-child axis="vertical" managed theme="dark">
+        <div
+          ref="termHost"
+          class="h-full min-h-0 w-full overflow-hidden"
+          @contextmenu="openContextMenu"
+        />
+      </UiScrollArea>
     </div>
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
     <div
@@ -439,24 +442,3 @@ watch(
     </div>
   </div>
 </template>
-
-<style scoped>
-/* 终端始终使用深色画布，滚动条不继承应用亮色主题的浅色滑块和边框。 */
-.terminal-host :deep(.xterm-viewport) {
-  color-scheme: dark;
-}
-
-.terminal-host :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
-  background-color: var(--color-border-strong-dark);
-  background-clip: padding-box;
-  border-color: transparent;
-}
-
-.terminal-host :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
-  background-color: var(--color-text-muted-dark);
-}
-
-.terminal-host :deep(.xterm-viewport::-webkit-scrollbar-thumb:active) {
-  background-color: var(--color-secondary-dark);
-}
-</style>

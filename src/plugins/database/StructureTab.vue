@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * 表结构页签：子页签多维信息（列 / 索引 / DDL）
  * 列=字段表格；索引=名称/列/唯一性/类型；DDL=建表语句原文（可复制）。
@@ -73,86 +74,92 @@ function genQuery() {
     </div>
 
     <!-- 列 -->
-    <div v-if="subTab === 'columns'" class="min-h-0 flex-1 overflow-auto p-[12px]">
-      <UiTable v-if="columns.length" density="compact" :hoverable="true" :striped="true">
-        <thead>
-          <tr>
-            <UiTableCell as="th">字段</UiTableCell>
-            <UiTableCell as="th">类型</UiTableCell>
-            <UiTableCell as="th">可空</UiTableCell>
-            <UiTableCell as="th">默认值</UiTableCell>
-            <UiTableCell as="th">键</UiTableCell>
-            <UiTableCell as="th">注释</UiTableCell>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="column in columns" :key="column.name">
-            <UiTableCell content="technical">{{ column.name }}</UiTableCell>
-            <UiTableCell content="technical">{{ column.dataType }}</UiTableCell>
-            <UiTableCell>{{ column.nullable }}</UiTableCell>
-            <UiTableCell content="technical">{{ column.defaultValue || '—' }}</UiTableCell>
-            <UiTableCell>
-              <UiBadge v-if="column.key && column.key !== '—'" tone="info" size="xs">{{
-                column.key
-              }}</UiBadge>
-              <span v-else class="text-text-muted">—</span>
-            </UiTableCell>
-            <UiTableCell>{{ column.comment }}</UiTableCell>
-          </tr>
-        </tbody>
-      </UiTable>
-      <div
-        v-else
-        class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
-      >
-        加载结构中…
+    <UiScrollArea v-if="subTab === 'columns'" as-child axis="both">
+      <div class="min-h-0 flex-1 p-[12px]">
+        <UiTable v-if="columns.length" density="compact" :hoverable="true" :striped="true">
+          <thead>
+            <tr>
+              <UiTableCell as="th">字段</UiTableCell>
+              <UiTableCell as="th">类型</UiTableCell>
+              <UiTableCell as="th">可空</UiTableCell>
+              <UiTableCell as="th">默认值</UiTableCell>
+              <UiTableCell as="th">键</UiTableCell>
+              <UiTableCell as="th">注释</UiTableCell>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="column in columns" :key="column.name">
+              <UiTableCell content="technical">{{ column.name }}</UiTableCell>
+              <UiTableCell content="technical">{{ column.dataType }}</UiTableCell>
+              <UiTableCell>{{ column.nullable }}</UiTableCell>
+              <UiTableCell content="technical">{{ column.defaultValue || '—' }}</UiTableCell>
+              <UiTableCell>
+                <UiBadge v-if="column.key && column.key !== '—'" tone="info" size="xs">{{
+                  column.key
+                }}</UiBadge>
+                <span v-else class="text-text-muted">—</span>
+              </UiTableCell>
+              <UiTableCell>{{ column.comment }}</UiTableCell>
+            </tr>
+          </tbody>
+        </UiTable>
+        <div
+          v-else
+          class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+        >
+          加载结构中…
+        </div>
       </div>
-    </div>
+    </UiScrollArea>
 
     <!-- 索引 -->
-    <div v-else-if="subTab === 'indexes'" class="min-h-0 flex-1 overflow-auto p-[12px]">
-      <UiTable v-if="indexes.length" density="compact" :hoverable="true" :striped="true">
-        <thead>
-          <tr>
-            <UiTableCell as="th">索引名</UiTableCell>
-            <UiTableCell as="th">列</UiTableCell>
-            <UiTableCell as="th">唯一</UiTableCell>
-            <UiTableCell as="th">类型/定义</UiTableCell>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="index in indexes" :key="index.name">
-            <UiTableCell content="technical">{{ index.name }}</UiTableCell>
-            <UiTableCell content="technical">{{ index.columns.join(', ') || '—' }}</UiTableCell>
-            <UiTableCell>
-              <UiBadge :tone="index.nonUnique ? 'neutral' : 'success'" size="xs">
-                {{ index.nonUnique ? '否' : '是' }}
-              </UiBadge>
-            </UiTableCell>
-            <UiTableCell content="technical">{{ index.definition || '—' }}</UiTableCell>
-          </tr>
-        </tbody>
-      </UiTable>
-      <div
-        v-else
-        class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
-      >
-        无索引或该类型暂不支持
+    <UiScrollArea v-else-if="subTab === 'indexes'" as-child axis="both">
+      <div class="min-h-0 flex-1 p-[12px]">
+        <UiTable v-if="indexes.length" density="compact" :hoverable="true" :striped="true">
+          <thead>
+            <tr>
+              <UiTableCell as="th">索引名</UiTableCell>
+              <UiTableCell as="th">列</UiTableCell>
+              <UiTableCell as="th">唯一</UiTableCell>
+              <UiTableCell as="th">类型/定义</UiTableCell>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="index in indexes" :key="index.name">
+              <UiTableCell content="technical">{{ index.name }}</UiTableCell>
+              <UiTableCell content="technical">{{ index.columns.join(', ') || '—' }}</UiTableCell>
+              <UiTableCell>
+                <UiBadge :tone="index.nonUnique ? 'neutral' : 'success'" size="xs">
+                  {{ index.nonUnique ? '否' : '是' }}
+                </UiBadge>
+              </UiTableCell>
+              <UiTableCell content="technical">{{ index.definition || '—' }}</UiTableCell>
+            </tr>
+          </tbody>
+        </UiTable>
+        <div
+          v-else
+          class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+        >
+          无索引或该类型暂不支持
+        </div>
       </div>
-    </div>
+    </UiScrollArea>
 
     <!-- DDL -->
-    <div v-else class="min-h-0 flex-1 overflow-auto p-[12px]">
-      <pre
-        v-if="ddl"
-        class="whitespace-pre-wrap rounded-[8px] border border-border bg-surface-muted p-[12px] font-mono text-body-sm text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
-        >{{ ddl }}</pre>
-      <div
-        v-else
-        class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
-      >
-        加载 DDL 中…
+    <UiScrollArea v-else as-child axis="both">
+      <div class="min-h-0 flex-1 p-[12px]">
+        <pre
+          v-if="ddl"
+          class="whitespace-pre-wrap rounded-[8px] border border-border bg-surface-muted p-[12px] font-mono text-body-sm text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
+          >{{ ddl }}</pre>
+        <div
+          v-else
+          class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+        >
+          加载 DDL 中…
+        </div>
       </div>
-    </div>
+    </UiScrollArea>
   </div>
 </template>

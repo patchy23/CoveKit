@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * 新建数据库对话框（分类型表单，对齐 dbx）：
  * - mysql/polardb：库名 + 字符集/排序规则联动 + 用户授权（权限白名单）+ SQL 预览 + 分步结果
@@ -201,29 +202,31 @@ async function submit() {
             class="w-[170px]"
           />
         </div>
-        <div
-          class="max-h-[140px] overflow-y-auto rounded-[6px] border border-border p-[6px] dark:border-border-dark"
-        >
-          <UiSpinner v-if="loading" size="xs" class="mx-auto my-[8px]" />
-          <p
-            v-else-if="!users.length"
-            class="py-[8px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+        <UiScrollArea as-child axis="vertical">
+          <div
+            class="max-h-[140px] rounded-[6px] border border-border p-[6px] dark:border-border-dark"
           >
-            无可用用户（或查询失败）
-          </p>
-          <label
-            v-for="u in users"
-            :key="`${u.user}@${u.host}`"
-            class="flex cursor-pointer items-center gap-[6px] rounded-[4px] px-[6px] py-[3px] text-body-sm hover:bg-border dark:hover:bg-border-dark"
-          >
-            <UiCheckbox
-              :model-value="`${u.user}@${u.host}` in grants"
-              size="sm"
-              @update:model-value="(checked) => toggleUser(u, checked)"
-            />
-            <span class="font-mono text-caption">{{ u.user }}@{{ u.host }}</span>
-          </label>
-        </div>
+            <UiSpinner v-if="loading" size="xs" class="mx-auto my-[8px]" />
+            <p
+              v-else-if="!users.length"
+              class="py-[8px] text-center text-caption text-text-muted dark:text-text-muted-dark"
+            >
+              无可用用户（或查询失败）
+            </p>
+            <label
+              v-for="u in users"
+              :key="`${u.user}@${u.host}`"
+              class="flex cursor-pointer items-center gap-[6px] rounded-[4px] px-[6px] py-[3px] text-body-sm hover:bg-border dark:hover:bg-border-dark"
+            >
+              <UiCheckbox
+                :model-value="`${u.user}@${u.host}` in grants"
+                size="sm"
+                @update:model-value="(checked) => toggleUser(u, checked)"
+              />
+              <span class="font-mono text-caption">{{ u.user }}@{{ u.host }}</span>
+            </label>
+          </div>
+        </UiScrollArea>
         <p
           v-if="Object.keys(grants).length"
           class="mt-[4px] text-caption text-text-muted dark:text-text-muted-dark"

@@ -10,6 +10,8 @@
 
 ## 组件真实 API 备忘
 
+- **UiScrollArea 公共滚动区**：从 `@/core/ui` 导入，`axis` 为 `vertical`（默认）、`horizontal` 或 `both`；`theme` 为 `auto`（默认，继承主题）、`light` 或 `dark`。默认生成 div，`as` 可指定元素；已有滚动元素用 `as-child`，如 `<UiScrollArea as-child axis="both"><div ref="viewport" class="h-full">内容</div></UiScrollArea>`，保留原元素、引用与事件。循环 key 和条件分支放到组件上，不再单独写 `overflow-auto` 等滚动类。`managed` 仅提供公共标记与主题，供 xterm、CodeMirror 和原生文本框保留内部 overflow 管理；深色终端设 `theme="dark"`。所有滚动条视觉只在 `scrollbars.css` 定义，使用原生拖动与键盘行为，容器仍需按布局约束宽高。
+
 - **悬停入口已统一**：`UiCheckbox`、`UiSwitch` 的 `title` 也已接入 `UiTooltip`，保留键盘聚焦提示；其他元素显式包装 `UiTooltip`。原生节点和未接入的组件禁止再传 `title`，由 `tooltipUnification.test.ts` 扫描全仓模板。弹窗、面板和空状态等真正的标题保留。包装循环/条件元素时把 `v-for`、`key`、`v-if/v-else` 放在 `UiTooltip` 上；不增加 DOM 容器，保留表格层级和元素引用。空提示只禁用提示，不重建触发元素；仅鼠标无按键的悬停事件被隔离，拖拽移动继续传播。
 
 - **UiTooltip 公共悬停提示**：从 `@/core/ui` 导入，`content` 为纯文字，默认插槽只放一个触发元素；`side` 默认 `bottom`，空间不足时自动翻转；`delayDuration` 默认 400ms，`disabled` 可关闭提示。复用 Reka 的定位、键盘聚焦与 Esc 关闭，自动避让视口，Portal 层级 240，适配浅深色且不增加布局包裹。提示内容允许按最大宽度换行，不放交互控件；全局最多一个，离开立即关闭，鼠标穿透且文字不可选中，需复制的内容另设明确入口。`UiButton` 的 `title`、`UiIconButton` 的 `label/title` 和 `UiSelect` 的 `title` 已自动接入，不再输出原生 `title`。其他元素用 `<UiTooltip content="说明"><span tabindex="0">内容</span></UiTooltip>`，移除触发元素原生 `title`，图标按钮保留 `aria-label`。原生禁用按钮不可键盘聚焦，必要原因应同时显示在表单说明中。

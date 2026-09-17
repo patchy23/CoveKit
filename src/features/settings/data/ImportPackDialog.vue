@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * 导入向导（sync L3）
  *
@@ -315,11 +316,13 @@ function toggleDataset(name: string, next: boolean): void {
           <p class="mb-1 text-body-sm">
             {{ decisionLabel(group.decision) }}：{{ group.items.length }}
           </p>
-          <ul class="max-h-40 space-y-1 overflow-y-auto text-body-sm text-text-muted">
-            <li v-for="item in group.items" :key="`${item.dataset}:${item.id}`">
-              {{ item.label }}<span v-if="item.note"> · {{ item.note }}</span>
-            </li>
-          </ul>
+          <UiScrollArea as-child axis="vertical">
+            <ul class="max-h-40 space-y-1 text-body-sm text-text-muted">
+              <li v-for="item in group.items" :key="`${item.dataset}:${item.id}`">
+                {{ item.label }}<span v-if="item.note"> · {{ item.note }}</span>
+              </li>
+            </ul>
+          </UiScrollArea>
         </div>
 
         <div v-if="conflicts.length" class="rounded-md border border-border px-3 py-2">

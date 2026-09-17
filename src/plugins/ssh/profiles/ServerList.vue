@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * SSH 服务器列表（分组版）：连接按分组归组，拖拽入组；「未分组」虚拟组固定沉底。
@@ -162,47 +163,49 @@ function confirmDeleteGroup() {
       </UiSearchInput>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[8px]">
-      <!-- 搜索态：平铺列表 -->
-      <template v-if="searching">
-        <UiTooltip
-          v-for="profile in profiles"
-          :key="profile.id"
-          :content="`${profile.username}@${profile.host}:${profile.port}（双击新建连接）`"
-        >
-          <UiListRow
-            size="sm"
-            @dblclick="emit('openConnection', profile.id)"
-            @contextmenu="openProfileMenu($event, profile)"
+    <UiScrollArea as-child axis="vertical">
+      <div class="min-h-0 flex-1 px-[6px] pb-[8px]">
+        <!-- 搜索态：平铺列表 -->
+        <template v-if="searching">
+          <UiTooltip
+            v-for="profile in profiles"
+            :key="profile.id"
+            :content="`${profile.username}@${profile.host}:${profile.port}（双击新建连接）`"
           >
-            <span class="min-w-0 flex-1 truncate font-medium text-primary dark:text-primary-dark">
-              {{ profile.name }}
-            </span>
-          </UiListRow>
-        </UiTooltip>
-      </template>
+            <UiListRow
+              size="sm"
+              @dblclick="emit('openConnection', profile.id)"
+              @contextmenu="openProfileMenu($event, profile)"
+            >
+              <span class="min-w-0 flex-1 truncate font-medium text-primary dark:text-primary-dark">
+                {{ profile.name }}
+              </span>
+            </UiListRow>
+          </UiTooltip>
+        </template>
 
-      <!-- 分组态（ServerGroupList 子组件承载分组行/组内行/未分组） -->
-      <ServerGroupList
-        v-else
-        :profiles="profiles"
-        :groups="groups"
-        :expanded-ids="expandedIds"
-        :drag-over-id="dragOverId"
-        @open-connection="emit('openConnection', $event)"
-        @profile-menu="openProfileMenu"
-        @group-menu="openGroupMenu"
-        @toggle-group="emit('toggleGroup', $event)"
-        @row-pointer-down="onRowPointerDown"
-      />
+        <!-- 分组态（ServerGroupList 子组件承载分组行/组内行/未分组） -->
+        <ServerGroupList
+          v-else
+          :profiles="profiles"
+          :groups="groups"
+          :expanded-ids="expandedIds"
+          :drag-over-id="dragOverId"
+          @open-connection="emit('openConnection', $event)"
+          @profile-menu="openProfileMenu"
+          @group-menu="openGroupMenu"
+          @toggle-group="emit('toggleGroup', $event)"
+          @row-pointer-down="onRowPointerDown"
+        />
 
-      <p
-        v-if="!profiles.length"
-        class="px-[8px] py-[16px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
-      >
-        暂无服务器<br />点击「+ 添加服务器」新建配置
-      </p>
-    </div>
+        <p
+          v-if="!profiles.length"
+          class="px-[8px] py-[16px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
+        >
+          暂无服务器<br />点击「+ 添加服务器」新建配置
+        </p>
+      </div>
+    </UiScrollArea>
 
     <!-- 底部入口常驻，搜索或列表铺满时仍可管理指纹。 -->
     <div class="shrink-0 border-t border-border px-[12px] py-[8px] dark:border-border-dark">

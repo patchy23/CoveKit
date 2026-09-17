@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * ToolWorkspace · 多页签工作区（用户决策：工具以子页面形式打开，替代弹窗）
@@ -248,85 +249,87 @@ const hiddenTabItems = computed(() => hiddenItems.value)
     </div>
 
     <!-- 内容区 -->
-    <div class="min-h-0 flex-1 overflow-y-auto px-md py-md">
-      <!-- 首页：工具库（列表模式下限高自滚，滚动条收在列表边框内；卡片模式仍随内容区滚动） -->
-      <div
-        v-show="ui.activeTab === null"
-        :class="ui.listView ? 'flex h-full min-h-0 flex-col' : ''"
-      >
-        <RecentStrip />
-        <div class="mb-[12px] flex items-center gap-sm">
-          <h2 class="text-h2 font-bold tracking-[-0.01em] dark:text-primary-dark">工具列表</h2>
-          <span class="text-body-sm text-text-muted dark:text-text-muted-dark"
-            >{{ tools.filtered.length }} 个</span
-          >
-          <div class="flex-1" />
-          <!-- 视图切换（卡片/列表，默认卡片；自顶栏迁入） -->
-          <div
-            class="flex items-center gap-[2px] rounded-md border border-border bg-neutral p-[2px] dark:border-border-dark dark:bg-neutral-dark"
-          >
-            <UiTooltip content="卡片模式">
-              <button
-                class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
-                :class="
-                  !ui.listView
-                    ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
-                    : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
-                "
-                aria-label="卡片模式"
-                @click="ui.listView = false"
-              >
-                <AppIcon name="grid" :size="14" />
-              </button>
-            </UiTooltip>
-            <UiTooltip content="列表模式">
-              <button
-                class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
-                :class="
-                  ui.listView
-                    ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
-                    : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
-                "
-                aria-label="列表模式"
-                @click="ui.listView = true"
-              >
-                <AppIcon name="list" :size="14" />
-              </button>
-            </UiTooltip>
+    <UiScrollArea as-child axis="vertical">
+      <div class="min-h-0 flex-1 px-md py-md">
+        <!-- 首页：工具库（列表模式下限高自滚，滚动条收在列表边框内；卡片模式仍随内容区滚动） -->
+        <div
+          v-show="ui.activeTab === null"
+          :class="ui.listView ? 'flex h-full min-h-0 flex-col' : ''"
+        >
+          <RecentStrip />
+          <div class="mb-[12px] flex items-center gap-sm">
+            <h2 class="text-h2 font-bold tracking-[-0.01em] dark:text-primary-dark">工具列表</h2>
+            <span class="text-body-sm text-text-muted dark:text-text-muted-dark"
+              >{{ tools.filtered.length }} 个</span
+            >
+            <div class="flex-1" />
+            <!-- 视图切换（卡片/列表，默认卡片；自顶栏迁入） -->
+            <div
+              class="flex items-center gap-[2px] rounded-md border border-border bg-neutral p-[2px] dark:border-border-dark dark:bg-neutral-dark"
+            >
+              <UiTooltip content="卡片模式">
+                <button
+                  class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
+                  :class="
+                    !ui.listView
+                      ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
+                      : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
+                  "
+                  aria-label="卡片模式"
+                  @click="ui.listView = false"
+                >
+                  <AppIcon name="grid" :size="14" />
+                </button>
+              </UiTooltip>
+              <UiTooltip content="列表模式">
+                <button
+                  class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
+                  :class="
+                    ui.listView
+                      ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
+                      : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
+                  "
+                  aria-label="列表模式"
+                  @click="ui.listView = true"
+                >
+                  <AppIcon name="list" :size="14" />
+                </button>
+              </UiTooltip>
+            </div>
+          </div>
+          <ToolGrid v-if="tools.filtered.length && !ui.listView" />
+          <ToolList v-else-if="tools.filtered.length && ui.listView" class="min-h-0 flex-1" />
+          <div v-else class="flex flex-col items-center justify-center py-[96px] text-center">
+            <div
+              class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
+            >
+              <AppIcon
+                :name="searching ? 'search' : 'all'"
+                :size="22"
+                class="text-tertiary-strong dark:text-tertiary-dark"
+              />
+            </div>
+            <p class="mt-md text-h2 font-bold dark:text-primary-dark">
+              {{ searching ? '未找到匹配工具' : hasTools ? '该分类暂无工具' : '暂无工具' }}
+            </p>
+            <p class="mt-xs text-body-sm text-text-muted dark:text-text-muted-dark">
+              {{
+                searching
+                  ? '换个关键词试试'
+                  : hasTools
+                    ? '工具将在此分类上线'
+                    : '首批 8 个文本工具将在 M1 上线'
+              }}
+            </p>
           </div>
         </div>
-        <ToolGrid v-if="tools.filtered.length && !ui.listView" />
-        <ToolList v-else-if="tools.filtered.length && ui.listView" class="min-h-0 flex-1" />
-        <div v-else class="flex flex-col items-center justify-center py-[96px] text-center">
-          <div
-            class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
-          >
-            <AppIcon
-              :name="searching ? 'search' : 'all'"
-              :size="22"
-              class="text-tertiary-strong dark:text-tertiary-dark"
-            />
-          </div>
-          <p class="mt-md text-h2 font-bold dark:text-primary-dark">
-            {{ searching ? '未找到匹配工具' : hasTools ? '该分类暂无工具' : '暂无工具' }}
-          </p>
-          <p class="mt-xs text-body-sm text-text-muted dark:text-text-muted-dark">
-            {{
-              searching
-                ? '换个关键词试试'
-                : hasTools
-                  ? '工具将在此分类上线'
-                  : '首批 8 个文本工具将在 M1 上线'
-            }}
-          </p>
-        </div>
-      </div>
 
-      <!-- 工具页签（v-show 保持状态，切换不销毁；h-full 让工具可内部滚动） -->
-      <div v-for="id in ui.openTabs" v-show="ui.activeTab === id" :key="id" class="h-full">
-        <ToolHost :tool-id="id" :title="tabTitle(id)" :loader="loaderFor(id)" />
+        <!-- 工具页签（v-show 保持状态，切换不销毁；h-full 让工具可内部滚动） -->
+        <div v-for="id in ui.openTabs" v-show="ui.activeTab === id" :key="id" class="h-full">
+          <ToolHost :tool-id="id" :title="tabTitle(id)" :loader="loaderFor(id)" />
+        </div>
       </div>
-    </div>
+    </UiScrollArea>
 
     <!-- 关闭确认：有未保存内容或运行中任务时先问用户（T10-2） -->
     <CloseConfirmDialog />

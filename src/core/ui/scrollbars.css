@@ -1,0 +1,77 @@
+/* 原生滚动条唯一视觉入口；外部库生成的滚动元素继承相同主题变量。 */
+:root,
+[data-scroll-theme='light'] {
+  --ui-scroll-size: 9px;
+  --ui-scroll-thumb: var(--color-border-strong);
+  --ui-scroll-thumb-hover: var(--color-text-muted);
+  --ui-scroll-thumb-active: var(--color-secondary);
+}
+
+[data-theme='dark'],
+[data-scroll-theme='dark'] {
+  --ui-scroll-thumb: var(--color-border-strong-dark);
+  --ui-scroll-thumb-hover: var(--color-text-muted-dark);
+  --ui-scroll-thumb-active: var(--color-secondary-dark);
+}
+
+[data-scroll-theme='dark'] {
+  color-scheme: dark;
+}
+
+[data-scroll-theme='light'] {
+  color-scheme: light;
+}
+
+.ui-scroll-area[data-scroll-axis='vertical'] {
+  overflow-y: auto;
+}
+
+.ui-scroll-area[data-scroll-axis='horizontal'] {
+  overflow-x: auto;
+}
+
+.ui-scroll-area[data-scroll-axis='both'] {
+  overflow: auto;
+}
+
+/* 下拉视口不再隐藏原生滚动条，仍保留库的键盘定位和触摸滚动行为。 */
+.ui-scroll-area[data-scroll-axis] {
+  scrollbar-width: auto;
+}
+
+::-webkit-scrollbar {
+  width: var(--ui-scroll-size);
+  height: var(--ui-scroll-size);
+}
+
+.ui-scroll-area[data-scroll-axis]::-webkit-scrollbar {
+  display: block;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--ui-scroll-thumb);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: var(--radius-full, 9999px);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ui-scroll-thumb-hover);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--ui-scroll-thumb-active);
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 不支持 WebKit 伪元素的平台沿用同一组配色，保留系统拖动能力。 */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ui-scroll-thumb) transparent;
+  }
+}

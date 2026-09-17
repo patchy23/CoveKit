@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiScrollArea } from '@/core/ui'
 /**
  * ServiceTab · systemd 服务管理子页签（后端 exec 真实数据）
  */
@@ -162,65 +163,67 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto">
-      <UiTable :framed="false" :styled="false" table-class="text-body-sm">
-        <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
-          <tr
-            class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-          >
-            <UiTableCell as="th" class="px-[12px] py-[8px]">服务名</UiTableCell>
-            <UiTableCell as="th" class="px-[12px] py-[8px]">描述</UiTableCell>
-            <UiTableCell as="th" class="w-[90px] px-[12px] py-[8px]">状态</UiTableCell>
-            <UiTableCell as="th" class="w-[190px] px-[12px] py-[8px]">操作</UiTableCell>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="s in filtered"
-            :key="s.name"
-            class="border-b border-border/50 transition-colors dark:border-border-dark/50"
-          >
-            <UiTableCell content="technical" class="px-[12px] py-[8px]">{{ s.name }}</UiTableCell>
-            <UiTableCell content="technical" class="px-[12px] py-[8px]">{{
-              s.description
-            }}</UiTableCell>
-            <UiTableCell content="status" class="px-[12px] py-[8px]">
-              <span :class="stateClass(s)">{{ stateText(s) }}</span>
-            </UiTableCell>
-            <UiTableCell content="action" class="px-[12px] py-[8px]">
-              <div class="flex gap-[4px]">
-                <UiButton
-                  v-if="s.activeState !== 'active'"
-                  variant="ghost"
-                  size="xs"
-                  @click="requestAction(s, 'start')"
-                >
-                  启动
-                </UiButton>
-                <UiButton
-                  v-if="s.activeState === 'active'"
-                  variant="ghost"
-                  size="xs"
-                  @click="requestAction(s, 'stop')"
-                >
-                  停止
-                </UiButton>
-                <UiButton
-                  v-if="s.activeState === 'active'"
-                  variant="ghost"
-                  size="xs"
-                  @click="requestAction(s, 'restart')"
-                >
-                  重启
-                </UiButton>
-                <UiButton variant="ghost" size="xs" @click="logs(s)"> 日志 </UiButton>
-                <UiButton variant="ghost" size="xs" @click="configTarget = s">配置</UiButton>
-              </div>
-            </UiTableCell>
-          </tr>
-        </tbody>
-      </UiTable>
-    </div>
+    <UiScrollArea as-child axis="vertical">
+      <div class="min-h-0 flex-1">
+        <UiTable :framed="false" :styled="false" table-class="text-body-sm">
+          <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
+            <tr
+              class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
+            >
+              <UiTableCell as="th" class="px-[12px] py-[8px]">服务名</UiTableCell>
+              <UiTableCell as="th" class="px-[12px] py-[8px]">描述</UiTableCell>
+              <UiTableCell as="th" class="w-[90px] px-[12px] py-[8px]">状态</UiTableCell>
+              <UiTableCell as="th" class="w-[190px] px-[12px] py-[8px]">操作</UiTableCell>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="s in filtered"
+              :key="s.name"
+              class="border-b border-border/50 transition-colors dark:border-border-dark/50"
+            >
+              <UiTableCell content="technical" class="px-[12px] py-[8px]">{{ s.name }}</UiTableCell>
+              <UiTableCell content="technical" class="px-[12px] py-[8px]">{{
+                s.description
+              }}</UiTableCell>
+              <UiTableCell content="status" class="px-[12px] py-[8px]">
+                <span :class="stateClass(s)">{{ stateText(s) }}</span>
+              </UiTableCell>
+              <UiTableCell content="action" class="px-[12px] py-[8px]">
+                <div class="flex gap-[4px]">
+                  <UiButton
+                    v-if="s.activeState !== 'active'"
+                    variant="ghost"
+                    size="xs"
+                    @click="requestAction(s, 'start')"
+                  >
+                    启动
+                  </UiButton>
+                  <UiButton
+                    v-if="s.activeState === 'active'"
+                    variant="ghost"
+                    size="xs"
+                    @click="requestAction(s, 'stop')"
+                  >
+                    停止
+                  </UiButton>
+                  <UiButton
+                    v-if="s.activeState === 'active'"
+                    variant="ghost"
+                    size="xs"
+                    @click="requestAction(s, 'restart')"
+                  >
+                    重启
+                  </UiButton>
+                  <UiButton variant="ghost" size="xs" @click="logs(s)"> 日志 </UiButton>
+                  <UiButton variant="ghost" size="xs" @click="configTarget = s">配置</UiButton>
+                </div>
+              </UiTableCell>
+            </tr>
+          </tbody>
+        </UiTable>
+      </div>
+    </UiScrollArea>
 
     <div
       class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiScrollArea from './UiScrollArea.vue'
 /**
  * 代码差异视图（L3 档，基于 `@codemirror/merge`）
  *
@@ -150,6 +151,8 @@ watch(
       </span>
       <span v-if="stats.same" class="text-text-muted dark:text-text-muted-dark">内容一致</span>
     </div>
-    <div ref="host" class="min-h-0 flex-1 overflow-hidden" />
+    <UiScrollArea as-child axis="vertical" managed>
+      <div ref="host" class="min-h-0 flex-1 overflow-hidden" />
+    </UiScrollArea>
   </div>
 </template>

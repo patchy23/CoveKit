@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiScrollArea from './UiScrollArea.vue'
 import UiTooltip from './UiTooltip.vue'
 export interface UiWorkbenchTab {
   id: string
@@ -25,39 +26,41 @@ function kindGlyph(item: UiWorkbenchTab): string {
 </script>
 
 <template>
-  <div
-    class="flex h-[28px] min-w-0 shrink-0 overflow-x-auto border-b border-border bg-surface-muted dark:border-border-dark dark:bg-surface-muted-dark"
-  >
-    <button
-      v-for="item in items"
-      :key="item.id"
-      type="button"
-      class="relative flex h-full max-w-[190px] shrink-0 items-center gap-[5px] border-r border-border px-[9px] text-body-sm text-secondary outline-none hover:bg-surface focus-visible:bg-surface dark:border-border-dark dark:text-secondary-dark dark:hover:bg-surface-dark dark:focus-visible:bg-surface-dark"
-      :class="
-        modelValue === item.id
-          ? 'bg-surface text-primary after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-tertiary dark:bg-surface-dark dark:text-primary-dark dark:after:bg-tertiary-dark'
-          : ''
-      "
-      @click="emit('update:modelValue', item.id)"
-      @contextmenu.prevent="emit('context', $event, item)"
+  <UiScrollArea as-child axis="horizontal">
+    <div
+      class="flex h-[28px] min-w-0 shrink-0 border-b border-border bg-surface-muted dark:border-border-dark dark:bg-surface-muted-dark"
     >
-      <span class="text-caption text-text-muted dark:text-text-muted-dark">{{
-        kindGlyph(item)
-      }}</span>
-      <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
-      <UiTooltip v-if="item.dirty" content="未保存">
-        <span class="h-[6px] w-[6px] shrink-0 rounded-full bg-tertiary" />
-      </UiTooltip>
-      <span
-        v-if="item.closable !== false && !item.pinned"
-        role="button"
-        tabindex="0"
-        class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[3px] text-caption hover:bg-border dark:hover:bg-border-dark"
-        :aria-label="`关闭${item.label}`"
-        @click.stop="emit('close', item.id)"
-        @keydown.enter.stop="emit('close', item.id)"
-        >×</span
+      <button
+        v-for="item in items"
+        :key="item.id"
+        type="button"
+        class="relative flex h-full max-w-[190px] shrink-0 items-center gap-[5px] border-r border-border px-[9px] text-body-sm text-secondary outline-none hover:bg-surface focus-visible:bg-surface dark:border-border-dark dark:text-secondary-dark dark:hover:bg-surface-dark dark:focus-visible:bg-surface-dark"
+        :class="
+          modelValue === item.id
+            ? 'bg-surface text-primary after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-tertiary dark:bg-surface-dark dark:text-primary-dark dark:after:bg-tertiary-dark'
+            : ''
+        "
+        @click="emit('update:modelValue', item.id)"
+        @contextmenu.prevent="emit('context', $event, item)"
       >
-    </button>
-  </div>
+        <span class="text-caption text-text-muted dark:text-text-muted-dark">{{
+          kindGlyph(item)
+        }}</span>
+        <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+        <UiTooltip v-if="item.dirty" content="未保存">
+          <span class="h-[6px] w-[6px] shrink-0 rounded-full bg-tertiary" />
+        </UiTooltip>
+        <span
+          v-if="item.closable !== false && !item.pinned"
+          role="button"
+          tabindex="0"
+          class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[3px] text-caption hover:bg-border dark:hover:bg-border-dark"
+          :aria-label="`关闭${item.label}`"
+          @click.stop="emit('close', item.id)"
+          @keydown.enter.stop="emit('close', item.id)"
+          >×</span
+        >
+      </button>
+    </div>
+  </UiScrollArea>
 </template>

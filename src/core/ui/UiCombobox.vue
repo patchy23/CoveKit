@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiScrollArea from './UiScrollArea.vue'
 /**
  * UiCombobox · 可输入搜索的下拉选择（core/ui 公共组件）
  * 触发框可直接输入过滤选项；键盘 ↑↓ 高亮、Enter 选中、Esc 收起。
@@ -106,32 +107,34 @@ function onOpenChange(v: boolean) {
         :side-offset="4"
         class="z-[220] w-[var(--reka-combobox-trigger-width)] overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
       >
-        <ComboboxViewport
-          class="max-h-[min(280px,var(--reka-combobox-content-available-height))] overflow-y-auto py-xs"
-        >
-          <ComboboxEmpty
-            class="px-[10px] py-[8px] text-body-sm text-text-muted dark:text-text-muted-dark"
+        <UiScrollArea as-child axis="vertical">
+          <ComboboxViewport
+            class="max-h-[min(280px,var(--reka-combobox-content-available-height))] py-xs"
           >
-            {{ emptyText }}
-          </ComboboxEmpty>
-          <ComboboxItem
-            v-for="option in filtered"
-            :key="option.value"
-            :value="option.value"
-            class="flex w-full cursor-default select-none items-center px-[10px] text-left font-medium text-secondary outline-none transition-colors data-[highlighted]:bg-border data-[state=checked]:bg-tertiary-soft data-[state=checked]:text-tertiary-strong dark:text-secondary-dark dark:data-[highlighted]:bg-border-dark dark:data-[state=checked]:bg-tertiary-soft-dark dark:data-[state=checked]:text-tertiary-dark"
-            :class="[
-              size === 'xs'
-                ? 'py-xs text-caption'
-                : size === 'sm'
-                  ? 'py-[6px] text-body-sm'
-                  : size === 'lg'
-                    ? 'py-[9px] text-body'
-                    : 'py-[7px] text-body',
-            ]"
-          >
-            {{ option.label }}
-          </ComboboxItem>
-        </ComboboxViewport>
+            <ComboboxEmpty
+              class="px-[10px] py-[8px] text-body-sm text-text-muted dark:text-text-muted-dark"
+            >
+              {{ emptyText }}
+            </ComboboxEmpty>
+            <ComboboxItem
+              v-for="option in filtered"
+              :key="option.value"
+              :value="option.value"
+              class="flex w-full cursor-default select-none items-center px-[10px] text-left font-medium text-secondary outline-none transition-colors data-[highlighted]:bg-border data-[state=checked]:bg-tertiary-soft data-[state=checked]:text-tertiary-strong dark:text-secondary-dark dark:data-[highlighted]:bg-border-dark dark:data-[state=checked]:bg-tertiary-soft-dark dark:data-[state=checked]:text-tertiary-dark"
+              :class="[
+                size === 'xs'
+                  ? 'py-xs text-caption'
+                  : size === 'sm'
+                    ? 'py-[6px] text-body-sm'
+                    : size === 'lg'
+                      ? 'py-[9px] text-body'
+                      : 'py-[7px] text-body',
+              ]"
+            >
+              {{ option.label }}
+            </ComboboxItem>
+          </ComboboxViewport>
+        </UiScrollArea>
       </ComboboxContent>
     </ComboboxPortal>
   </ComboboxRoot>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiScrollArea from './UiScrollArea.vue'
 import UiTooltip from './UiTooltip.vue'
 /**
  * UiTabsOverflow · 页签溢出收纳（「···」触发器 + 下拉面板，公共组件）
@@ -76,51 +77,56 @@ onUnmounted(() => document.removeEventListener('mousedown', onDocMouseDown))
 
     <!-- 面板 Teleport 到 body（fixed 定位）：页签条 overflow-hidden 会裁掉内部绝对定位的下拉 -->
     <Teleport to="body">
-      <div
-        v-if="open"
-        class="fixed z-[220] max-h-[320px] overflow-y-auto rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
-        :style="{ top: `${panelPos.top}px`, left: `${panelPos.left}px`, width: `${PANEL_WIDTH}px` }"
-        @mousedown.stop
-      >
+      <UiScrollArea v-if="open" as-child axis="vertical">
         <div
-          v-for="item in items"
-          :key="item.value"
-          class="group flex cursor-pointer items-center gap-[8px] px-[10px] py-[7px] text-body-sm transition-colors"
-          :class="
-            item.value === modelValue
-              ? 'bg-tertiary-soft font-medium text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-              : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
-          "
-          @click="select(item.value)"
+          class="fixed z-[220] max-h-[320px] rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+          :style="{
+            top: `${panelPos.top}px`,
+            left: `${panelPos.left}px`,
+            width: `${PANEL_WIDTH}px`,
+          }"
+          @mousedown.stop
         >
-          <UiTooltip v-if="item.status" :content="item.statusTitle">
-            <span
-              class="h-[7px] w-[7px] shrink-0 rounded-full"
-              :class="{
-                'bg-success-strong dark:bg-success-dark': item.status === 'success',
-                'bg-danger-strong dark:bg-danger-dark': item.status === 'danger',
-                'bg-text-muted dark:bg-text-muted-dark': item.status === 'neutral',
-              }"
-            />
-          </UiTooltip>
-          <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
-          <span
-            v-if="item.badge !== undefined"
-            class="rounded-full bg-border px-[6px] text-caption dark:bg-border-dark"
-            >{{ item.badge }}</span
+          <div
+            v-for="item in items"
+            :key="item.value"
+            class="group flex cursor-pointer items-center gap-[8px] px-[10px] py-[7px] text-body-sm transition-colors"
+            :class="
+              item.value === modelValue
+                ? 'bg-tertiary-soft font-medium text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+                : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
+            "
+            @click="select(item.value)"
           >
-          <UiTooltip v-if="item.closable" :content="`关闭${item.label}`">
-            <button
-              type="button"
-              class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[3px] text-caption text-text-muted opacity-0 transition-opacity hover:bg-border hover:text-tertiary-strong group-hover:opacity-100 dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-tertiary-dark"
-              :aria-label="`关闭${item.label}`"
-              @click.stop="emit('close', item.value)"
+            <UiTooltip v-if="item.status" :content="item.statusTitle">
+              <span
+                class="h-[7px] w-[7px] shrink-0 rounded-full"
+                :class="{
+                  'bg-success-strong dark:bg-success-dark': item.status === 'success',
+                  'bg-danger-strong dark:bg-danger-dark': item.status === 'danger',
+                  'bg-text-muted dark:bg-text-muted-dark': item.status === 'neutral',
+                }"
+              />
+            </UiTooltip>
+            <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+            <span
+              v-if="item.badge !== undefined"
+              class="rounded-full bg-border px-[6px] text-caption dark:bg-border-dark"
+              >{{ item.badge }}</span
             >
-              ×
-            </button>
-          </UiTooltip>
+            <UiTooltip v-if="item.closable" :content="`关闭${item.label}`">
+              <button
+                type="button"
+                class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[3px] text-caption text-text-muted opacity-0 transition-opacity hover:bg-border hover:text-tertiary-strong group-hover:opacity-100 dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-tertiary-dark"
+                :aria-label="`关闭${item.label}`"
+                @click.stop="emit('close', item.value)"
+              >
+                ×
+              </button>
+            </UiTooltip>
+          </div>
         </div>
-      </div>
+      </UiScrollArea>
     </Teleport>
   </div>
 </template>
