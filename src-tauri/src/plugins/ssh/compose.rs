@@ -252,15 +252,19 @@ pub async fn ssh_compose_home(
 
 /// 项目级编排操作；拆除不删除卷，不隐式附加 --remove-orphans。
 #[tauri::command(rename_all = "camelCase")]
+#[allow(clippy::too_many_arguments)] // 保留平铺 IPC 契约；State 和 Webview 由 Tauri 注入。
 pub async fn ssh_compose_action(
     ssh_state: State<'_, SshState>,
+    webview: tauri::Webview,
     connection_id: String,
     project: ComposeProject,
     action: String,
-    progress: Option<tauri::ipc::Channel<(bool, Vec<u8>)>>,
+    progress: Option<tauri::ipc::JavaScriptChannelId>,
     draft_path: Option<String>,
     draft_content: Option<String>,
 ) -> Result<ComposeOutput, String> {
+    // Channel 仅支持顶层 CommandArg；可选参数通过可反序列化的 ID 绑定调用窗口。
+    let progress = progress.map(|id| id.channel_on::<_, (bool, Vec<u8>)>(webview));
     let mut command = compose_command(&project, &action)?;
     if let (Some(path), Some(content)) = (&draft_path, &draft_content) {
         if action != "config" || !project.config_files.contains(path) || content.len() > MAX_CONFIG
@@ -341,6 +345,17 @@ pub async fn ssh_compose_create(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optional_progress_id_accepts_channel_and_absence_but_rejects_invalid_payload() {
+        type Progress = Option<tauri::ipc::JavaScriptChannelId>;
+        assert!(serde_json::from_str::<Progress>(r#""__CHANNEL__:42""#)
+            .unwrap()
+            .is_some());
+        assert!(serde_json::from_str::<Progress>("null").unwrap().is_none());
+        assert!(serde_json::from_str::<Progress>(r#""not-a-channel""#).is_err());
+        assert!(serde_json::from_str::<Progress>("42").is_err());
+    }
 
     #[test]
     fn project_json_keeps_file_order_and_stopped_projects() {
