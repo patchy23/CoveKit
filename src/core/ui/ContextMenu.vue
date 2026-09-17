@@ -1,3 +1,8 @@
+<script lang="ts">
+/** 同一窗口只显示一个公共右键菜单；新实例接管时才关闭旧实例。 */
+let dismissActiveMenu: (() => void) | undefined
+</script>
+
 <script setup lang="ts">
 /**
  * ContextMenu · 通用右键菜单（Teleport 到 body）
@@ -54,7 +59,7 @@ function close(restoreFocus = false) {
   if (closed) return
   closed = true
   if (restoreFocus && previousFocus instanceof HTMLElement && previousFocus.isConnected) {
-    previousFocus.focus()
+    previousFocus.focus({ preventScroll: true })
   }
   emit('close')
 }
@@ -73,7 +78,7 @@ function enabledItems() {
 
 function focusMenu(event: Event) {
   event.preventDefault()
-  ;(enabledItems()[0] ?? panel.value)?.focus()
+  ;(enabledItems()[0] ?? panel.value)?.focus({ preventScroll: true })
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -108,7 +113,17 @@ function updatePosition() {
 }
 
 function onOutside(event: MouseEvent) {
+  // 右键与 macOS Ctrl+单击随后还会派发 contextmenu，不能先拆掉正在显示的菜单。
+  if (event.button === 2 || (event.button === 0 && event.ctrlKey)) return
   if (!panel.value?.contains(event.target as Node)) close()
+}
+
+function onContextMenu(event: MouseEvent) {
+  if (panel.value?.contains(event.target as Node)) return
+  // 使用捕获监听以兼容业务 stopPropagation；等目标处理完后再判断是否有自定义菜单接手。
+  queueMicrotask(() => {
+    if (!event.defaultPrevented && !closed) close()
+  })
 }
 
 watch(
@@ -137,8 +152,11 @@ const itemClass = computed(() =>
 const separatorClass = computed(() => (props.size === 'sm' ? 'my-[3px]' : 'my-[4px]'))
 
 onMounted(() => {
+  dismissActiveMenu?.()
+  dismissActiveMenu = close
   updatePosition()
   document.addEventListener('mousedown', onOutside)
+  document.addEventListener('contextmenu', onContextMenu, true)
   window.addEventListener('resize', updatePosition)
   if (typeof ResizeObserver !== 'undefined') {
     observer = new ResizeObserver(updatePosition)
@@ -146,7 +164,10 @@ onMounted(() => {
   }
 })
 onUnmounted(() => {
+  closed = true
+  if (dismissActiveMenu === close) dismissActiveMenu = undefined
   document.removeEventListener('mousedown', onOutside)
+  document.removeEventListener('contextmenu', onContextMenu, true)
   window.removeEventListener('resize', updatePosition)
   observer?.disconnect()
 })

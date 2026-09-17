@@ -1,5 +1,6 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
+import { defineComponent, ref } from 'vue'
 import ContextMenu from './ContextMenu.vue'
 import UiModal from './UiModal.vue'
 
@@ -22,6 +23,59 @@ function key(value: string) {
     new KeyboardEvent('keydown', { key: value, bubbles: true, cancelable: true })
   )
 }
+
+it('重复右键更新原菜单，不在 mousedown 与 contextmenu 之间卸载，左键仍可关闭', async () => {
+  const wrapper = mount(
+    defineComponent({
+      components: { ContextMenu },
+      setup() {
+        const open = ref(false)
+        const items = ref([{ label: '首次菜单' }])
+        function show() {
+          items.value = [{ label: open.value ? '更新菜单' : '首次菜单' }]
+          open.value = true
+        }
+        return { open, items, show }
+      },
+      template:
+        '<div><button @contextmenu.stop.prevent="show">目标</button><ContextMenu v-if="open" :x="10" :y="10" :items="items" @close="open = false" /></div>',
+    }),
+    { attachTo: document.body }
+  )
+  const target = wrapper.get('button')
+  await target.trigger('contextmenu')
+  await flushPromises()
+  const original = menu()
+  await target.trigger('mousedown', { button: 2 })
+  expect(menu()).toBe(original)
+  await target.trigger('contextmenu')
+  await flushPromises()
+  expect(menu()).toBe(original)
+  expect(menu().textContent).toContain('更新菜单')
+  await target.trigger('mousedown', { button: 0 })
+  expect(document.querySelector('[role="menu"]')).toBeNull()
+})
+
+it('另一个公共菜单接管时关闭旧菜单，未处理的外部右键也能关闭', async () => {
+  const firstClose = vi.fn()
+  mount(ContextMenu, {
+    props: { x: 10, y: 10, items: [] },
+    attrs: { onClose: firstClose },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  const secondClose = vi.fn()
+  mount(ContextMenu, {
+    props: { x: 20, y: 20, items: [] },
+    attrs: { onClose: secondClose },
+    attachTo: document.body,
+  })
+  await flushPromises()
+  expect(firstClose).toHaveBeenCalledTimes(1)
+  document.body.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+  await flushPromises()
+  expect(secondClose).toHaveBeenCalledTimes(1)
+})
 
 it('菜单焦点支持方向、首尾和 Escape，跳过禁用项及分隔线', async () => {
   const trigger = document.createElement('button')

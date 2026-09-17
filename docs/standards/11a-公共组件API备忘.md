@@ -9,6 +9,8 @@
 
 ## 组件真实 API 备忘
 
+- **右键菜单更新不先卸载**：公共 ContextMenu 不在右键按下时关闭；业务 contextmenu 已处理时保留当前实例更新内容，新公共菜单挂载才接管并关闭旧实例。未处理的外部右键、普通外部左键仍关闭；捕获监听兼容业务 stopPropagation，窗口内公共菜单保持唯一。焦点恢复使用 preventScroll，避免带动页面滚动。
+
 - **Tooltip 触发器引用与关闭**：插槽保持单个触发元素，组件内部隔离 Reka 对缓存 VNode 的修改，提示文字为空再恢复时保留原始元素/ref；关闭直接卸载浮层，避免过渡状态残留。触发元素本身不会随提示开关重建。
 
 - **UiScrollArea 公共滚动区**：从 `@/core/ui` 导入，`axis` 为 `vertical`（默认）、`horizontal` 或 `both`；`theme` 为 `auto`（默认，继承主题）、`light` 或 `dark`。默认生成 div，`as` 可指定元素；已有滚动元素用 `as-child`，如 `<UiScrollArea as-child axis="both"><div ref="viewport" class="h-full">内容</div></UiScrollArea>`，保留原元素、引用与事件。循环 key 和条件分支放到组件上，不再单独写 `overflow-auto` 等滚动类。`managed` 仅提供公共标记与主题，供 xterm、CodeMirror 和原生文本框保留内部 overflow 管理；深色终端设 `theme="dark"`。所有滚动条视觉只在 `scrollbars.css` 定义，使用原生拖动与键盘行为，容器仍需按布局约束宽高。
