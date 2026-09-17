@@ -18,7 +18,6 @@
 pub(crate) mod plan;
 pub(crate) mod recovery;
 
-pub mod layout;
 mod migrate;
 mod scan;
 mod transfer;
@@ -163,8 +162,6 @@ pub struct StorageInfo {
     total_bytes: u64,
     /// 四分区合计文件数
     file_count: u64,
-    /// 已完成的布局版本（paths::LAYOUT_VERSION 表示已是四分区布局）
-    layout_version: i64,
     /// 非秘密空间标识（全局唯一 uid；上下文缺失时为空串——恢复状态下前端只读恢复字段）
     space_id: String,
     /// 空间回落登记（活动空间标识非法时回落默认空间的原因；None = 正常）
@@ -289,7 +286,6 @@ pub fn storage_info(app: AppHandle) -> Result<StorageInfo, String> {
         partitions,
         total_bytes,
         file_count,
-        layout_version: paths::layout_version(&app),
         space_id: context::current()
             .map(|ctx| ctx.space_id().to_string())
             .unwrap_or_default(),
@@ -333,7 +329,7 @@ pub async fn storage_schedule_migration(
     }
 
     // 先生成计划标识：非空判定要放行「本计划自己的暂存目录」（上次中断留下的）
-    let pending = plan::PendingPlan::new(&source_root, &target_root, paths::LAYOUT_VERSION);
+    let pending = plan::PendingPlan::new(&source_root, &target_root);
 
     // 非空目标默认拒绝（T02-3）：不自动覆盖、不做隐式合并；
     // 恢复默认位置若已有旧数据同样在这里被拦下，由用户改选空目录。
@@ -462,7 +458,7 @@ pub async fn storage_recovery_action(
             if !paths::is_writable_dir(&target_root) {
                 return Err(format!("目标目录不可写：{}", target_root.display()));
             }
-            let pending = plan::PendingPlan::new(&source_root, &target_root, paths::LAYOUT_VERSION);
+            let pending = plan::PendingPlan::new(&source_root, &target_root);
             plan::save_pending(&cfg, &pending)?;
             recovery::clear();
             Ok(RecoveryActionResult {

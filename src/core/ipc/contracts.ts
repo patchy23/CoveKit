@@ -270,8 +270,6 @@ export interface StorageInfo {
   totalBytes: number
   /** 四分区合计文件数 */
   fileCount: number
-  /** 已完成的布局版本（等于 paths::LAYOUT_VERSION 表示已是四分区布局） */
-  layoutVersion: number
   /** 非秘密空间标识（全局唯一 uid；恢复状态下为空串） */
   spaceId: string
   /** 待执行的迁移计划（重启后执行；运行期不换根） */
@@ -293,8 +291,6 @@ export interface StoragePendingMigration {
   source: string
   /** 目标根目录 */
   target: string
-  /** 登记时的布局版本 */
-  layoutVersion: number
   /** 当前阶段 */
   phase: StorageMigrationPhase
   /** 登记时间（Unix 毫秒） */

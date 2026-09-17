@@ -425,7 +425,7 @@ mod tests {
 
     /// 登记一份计划（源 → 目标）
     fn schedule(cfg: &FileConfig, source: &Path, target: &Path) -> plan::PendingPlan {
-        let pending = plan::PendingPlan::new(source, target, paths::LAYOUT_VERSION);
+        let pending = plan::PendingPlan::new(source, target);
         plan::save_pending(cfg, &pending).unwrap();
         pending
     }

@@ -74,46 +74,6 @@ pub fn run() {
             let migration = framework::storage::run_pending(app.handle(), &configured_before);
             eprintln!("[storage] {}", migration.summary());
 
-            // 存储布局迁移必须最先执行：早于任何插件打开数据库、凭证与已知主机文件。
-            // 恢复状态（配置盘不可用/迁移失败）下跳过：此时目录不可写，强行迁移只会失败，
-            // 而且它属于「必须用户处理的故障」，不该让启动整体失败而看不到恢复提示。
-            if framework::storage::recovery::current().is_some() {
-                eprintln!("[storage] 存在未处理的存储故障，跳过布局迁移，等待用户在恢复页处理");
-            } else {
-                // 失败不再让启动整体失败：单项失败会保留原位置，用户需要看到恢复提示而不是
-                // 一个打不开的应用。
-                match framework::storage::layout::migrate_layout(app.handle()) {
-                    Ok(report) if report.has_failures() => {
-                        framework::storage::recovery::set(
-                            framework::storage::recovery::StorageRecovery::migration_failed(
-                                "",
-                                &framework::paths::storage_root(app.handle())?
-                                    .display()
-                                    .to_string(),
-                                None,
-                                format!(
-                                    "旧布局迁移有 {} 项失败（数据保留在原位置）",
-                                    report.failures().len()
-                                ),
-                            ),
-                        );
-                    }
-                    Ok(_) => {}
-                    Err(error) => {
-                        framework::storage::recovery::set(
-                            framework::storage::recovery::StorageRecovery::migration_failed(
-                                "",
-                                &framework::paths::storage_root(app.handle())?
-                                    .display()
-                                    .to_string(),
-                                None,
-                                error,
-                            ),
-                        );
-                    }
-                }
-            }
-
             // ── 空间自举（首装建 uid 空间 + 完整性自检；不读不搬任何旧布局内容）──
             // 必须在数据上下文固定之前执行：上下文要读到自举确定的空间标识。
             // fail-fast：失败即登记恢复状态（保留现场，重试 = 重启后重跑，自举幂等）。

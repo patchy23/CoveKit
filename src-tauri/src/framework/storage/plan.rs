@@ -48,8 +48,6 @@ pub struct PendingPlan {
     pub source: String,
     /// 目标根目录
     pub target: String,
-    /// 登记时的布局版本（迁移后写入 `layoutVersion`）
-    pub layout_version: i64,
     /// 当前阶段
     pub phase: MigrationPhase,
     /// 登记时间（Unix 毫秒）
@@ -62,12 +60,11 @@ pub struct PendingPlan {
 
 impl PendingPlan {
     /// 新建计划（阶段为 scheduled，未尝试）
-    pub fn new(source: &Path, target: &Path, layout_version: i64) -> Self {
+    pub fn new(source: &Path, target: &Path) -> Self {
         Self {
             id: new_plan_id(),
             source: source.display().to_string(),
             target: target.display().to_string(),
-            layout_version,
             phase: MigrationPhase::Scheduled,
             created_at: now_ms(),
             attempts: 0,
@@ -292,7 +289,7 @@ mod tests {
     fn plan_roundtrip_keeps_phase_and_error() {
         let dir = temp_dir("roundtrip");
         let cfg = FileConfig::new(&dir.join("settings.json"));
-        let plan = PendingPlan::new(Path::new("C:/old-root"), Path::new("D:/new-root"), 2);
+        let plan = PendingPlan::new(Path::new("C:/old-root"), Path::new("D:/new-root"));
         save_pending(&cfg, &plan).unwrap();
 
         let loaded = load_pending(&cfg).expect("计划应能读回");
@@ -358,8 +355,8 @@ mod tests {
 
     #[test]
     fn plan_id_is_unique_per_call() {
-        let a = PendingPlan::new(Path::new("C:/a"), Path::new("D:/b"), 2);
-        let b = PendingPlan::new(Path::new("C:/a"), Path::new("D:/b"), 2);
+        let a = PendingPlan::new(Path::new("C:/a"), Path::new("D:/b"));
+        let b = PendingPlan::new(Path::new("C:/a"), Path::new("D:/b"));
         assert_ne!(a.id, b.id);
     }
 }

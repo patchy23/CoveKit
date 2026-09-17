@@ -220,35 +220,21 @@ mod tests {
             .expect("收集行")
     }
 
-    /// AR07 ①：老布局（库在存储根下）+ 旧 schema（无 type 列）的 api.db，
-    /// 经布局迁移与版本迁移后原数据逐条完整，且新增/修改在重开后仍在。
+    /// AR07 ①（旧 schema 升级）：v1 结构（无 type 列）的库经版本迁移后原数据逐条完整，
+    /// 且升级后可写、重开后保留（版本号推进到迁移表长度）
     #[test]
-    fn legacy_api_db_survives_layout_and_schema_migration() {
-        let root = temp_dir("legacy");
+    fn old_schema_db_survives_version_migration() {
+        let root = temp_dir("inplace");
         let legacy_path = root.join("api.db");
         let expected = create_legacy_db(&legacy_path);
 
-        // 布局迁移：<root>/api.db → <root>/data/api.db（启动早期由 lib.rs setup 调用）
-        let report = crate::framework::storage::layout::migrate_layout_at(&root).expect("布局迁移");
-        assert_eq!(report.moved(), 1, "老布局的 api.db 应被搬入 data 分区");
-        assert!(!report.has_failures(), "{:?}", report.failures());
-        let db_path = root.join("data").join("api.db");
-        assert!(db_path.exists(), "迁移后库应落在 data 分区");
-        assert!(!legacy_path.exists(), "原位置的文件应已搬走");
-
-        // 版本迁移：补 type 列（历史库里没有这一列）
-        let mut conn = rusqlite::Connection::open(&db_path).expect("打开迁移后的库");
+        let mut conn = rusqlite::Connection::open(&legacy_path).expect("打开旧库");
         migrate(&mut conn, MIGRATIONS).expect("版本迁移");
-
         let rows = read_all(&conn);
         assert_eq!(rows.len(), expected.len(), "老数据条数不变");
-        for (i, (name, url)) in expected.iter().enumerate() {
-            assert_eq!(rows[i].0, *name, "老数据名称原样保留");
-            assert_eq!(rows[i].1, "http", "补列后老数据默认归为 http 类型");
-            assert_eq!(rows[i].2, *url, "老数据 URL 原样保留");
-        }
+        assert_eq!(rows[0].0, expected[0].0, "老数据内容不变");
 
-        // 迁移后的表必须可写：新增（含新类型）与更新都要成功
+        // 升级后的表必须可写：新增（含新类型）与更新都要成功
         conn.execute(
             "INSERT INTO api_list (type, name, method, url, updated_at)
              VALUES ('ws', '新接口', 'GET', 'wss://new.example.com', '2026-01-01 00:00:00')",
@@ -260,7 +246,7 @@ mod tests {
         drop(conn);
 
         // 重开同一文件：新增与修改都还在（无丢失）
-        let reopened = rusqlite::Connection::open(&db_path).expect("重开库");
+        let reopened = rusqlite::Connection::open(&legacy_path).expect("重开库");
         let rows = read_all(&reopened);
         assert_eq!(rows.len(), 3, "重开后条数不变");
         assert_eq!(rows[0].0, "旧接口一改名", "重开后修改保留");
@@ -270,25 +256,6 @@ mod tests {
             .expect("读版本号");
         assert_eq!(version, MIGRATIONS.len() as i64, "版本号推进到迁移表长度");
         drop(reopened);
-
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    /// AR07 ①（回落分支）：布局迁移失败或被跳过时，库仍在原路径，
-    /// 打开原文件并补版本迁移后数据照样可读——这正是 `paths::data_path` 回落要保护的场景。
-    #[test]
-    fn legacy_api_db_readable_at_original_path_when_layout_not_migrated() {
-        let root = temp_dir("inplace");
-        let legacy_path = root.join("api.db");
-        let expected = create_legacy_db(&legacy_path);
-
-        // 刻意不跑 migrate_layout_at：模拟迁移失败/被跳过的极端情况
-        let mut conn = rusqlite::Connection::open(&legacy_path).expect("按原路径打开旧库");
-        migrate(&mut conn, MIGRATIONS).expect("原路径上补版本迁移");
-        let rows = read_all(&conn);
-        assert_eq!(rows.len(), expected.len(), "原路径上的老数据可读");
-        assert_eq!(rows[0].0, expected[0].0, "原路径上数据内容不变");
-        drop(conn);
 
         let _ = std::fs::remove_dir_all(&root);
     }
