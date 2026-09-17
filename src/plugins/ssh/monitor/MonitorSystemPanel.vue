@@ -1,17 +1,16 @@
 <script setup lang="ts">
-import { UiTooltip } from '@/core/ui'
 /**
  * 远程系统信息面板：30 秒自动采集（可暂停）+ 手动刷新，并承载磁盘分区明细表。
  * 采集失败保留上一次数据并显式报错，不静默；切换服务器先清空再拉新。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { ServerConnection, SshSystemInfoResult } from '../contracts'
+import type { MonitorData, ServerConnection, SshSystemInfoResult } from '../contracts'
 import { ipc } from '../ipc'
 import { formatLoadAvg, textOrDash } from './sshSystemInfo'
 import MonitorDiskTable from './MonitorDiskTable.vue'
-import { UiButton, UiPanel } from '@/core/ui'
+import { UiButton } from '@/core/ui'
 
-const props = defineProps<{ connection?: ServerConnection }>()
+const props = defineProps<{ connection?: ServerConnection; metrics?: MonitorData | null }>()
 
 /** 自动刷新间隔：系统信息变化慢，30 秒足够，避免与 3 秒指标轮询叠加压力 */
 const REFRESH_MS = 30000
@@ -99,45 +98,57 @@ watch(
 </script>
 
 <template>
-  <UiPanel title="远程系统信息" description="每 30 秒自动采集，可暂停或手动刷新" padding="sm">
-    <template #actions>
-      <div class="flex items-center gap-[8px]">
-        <UiButton variant="ghost" size="sm" @click="togglePause">
-          {{ paused ? '继续自动刷新' : '暂停自动刷新' }}
-        </UiButton>
-        <UiButton variant="ghost" size="sm" :loading="loading" @click="refresh">
-          立即刷新
-        </UiButton>
+  <section>
+    <header class="flex flex-wrap items-center gap-x-[12px] gap-y-[6px] px-[16px] py-[10px]">
+      <h2 class="text-body font-medium text-primary dark:text-primary-dark">系统与存储</h2>
+      <span class="text-caption text-text-muted dark:text-text-muted-dark"
+        >每 30 秒采集 · {{ statusText }}</span
+      >
+      <div class="ml-auto flex items-center gap-[6px]">
+        <UiButton variant="ghost" size="xs" @click="togglePause">{{
+          paused ? '继续采集' : '暂停采集'
+        }}</UiButton>
+        <UiButton variant="ghost" size="xs" :loading="loading" @click="refresh"
+          >刷新系统信息</UiButton
+        >
       </div>
-    </template>
-
-    <dl class="grid grid-cols-2 gap-x-[16px] gap-y-[10px] md:grid-cols-3">
-      <div v-for="field in fields" :key="field.label" class="min-w-0">
-        <dt class="text-caption text-text-muted dark:text-text-muted-dark">{{ field.label }}</dt>
-        <UiTooltip :content="field.value">
-          <dd
-            class="mt-[2px] truncate font-mono text-body-sm text-secondary dark:text-secondary-dark"
-          >
-            {{ field.value }}
-          </dd>
-        </UiTooltip>
-      </div>
-    </dl>
-
+    </header>
     <p
       v-if="errorMessage"
-      class="mt-[10px] rounded-md border border-danger/40 px-[8px] py-[6px] text-caption text-danger-strong dark:border-danger-dark/40 dark:text-danger-dark"
+      role="alert"
+      class="mx-[16px] mb-[12px] text-body-sm text-danger-strong dark:text-danger-dark"
     >
       {{ errorMessage }}
     </p>
-
-    <div class="mt-[10px] flex items-center text-caption text-text-muted dark:text-text-muted-dark">
-      <span>{{ statusText }}</span>
-      <span class="ml-auto"
-        >数据来源：hostname / os-release / uname / uptime / nproc / df -hlPT</span
-      >
+    <div class="monitor-details grid gap-[20px] px-[16px] pb-[16px]">
+      <dl class="grid content-start gap-[12px]">
+        <div v-for="field in fields" :key="field.label" class="min-w-0">
+          <dt class="text-caption text-text-muted dark:text-text-muted-dark">{{ field.label }}</dt>
+          <dd
+            class="mt-[2px] select-text break-words font-mono text-body-sm text-primary dark:text-primary-dark"
+          >
+            {{ field.value }}
+          </dd>
+        </div>
+      </dl>
+      <MonitorDiskTable :disks="data?.disks ?? []" :loading="loading" :metrics="metrics" />
     </div>
-
-    <MonitorDiskTable class="mt-[12px]" :disks="data?.disks ?? []" :loading="loading" />
-  </UiPanel>
+  </section>
 </template>
+
+<style scoped>
+.monitor-details {
+  grid-template-columns: minmax(0, 1fr);
+}
+.monitor-details > dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container ssh-monitor (min-width: 820px) {
+  .monitor-details {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .monitor-details > dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+</style>
