@@ -425,11 +425,10 @@ export interface ExportSelectionEntry {
   ids: string[]
 }
 
-/** 导出选择（前端提交；含秘密类别需显式确认） */
+/** 导出选择（前端提交；凭证永不进包，无携带开关） */
 export interface ExportSelection {
   entries: ExportSelectionEntry[]
   datasets: string[]
-  includeCredentials: boolean
 }
 
 /** 导出目录（当前空间可导出集合） */
@@ -490,16 +489,44 @@ export interface DuplicateHint {
   importedAt: string
 }
 
-/** 导入后的记录处置结论 */
-export type ImportOutcome = 'added' | 'pending-reference' | 'excluded'
+/** 导入模式：进新空间 / 合并进当前空间 / 覆盖当前空间 */
+export type ImportMode = 'newSpace' | 'merge' | 'overwrite'
+
+/** 冲突处置（合并模式逐条决策） */
+export type ConflictDecision = 'keepLocal' | 'useImported' | 'keepBoth'
+
+/** 导入后的记录处置结论（L3） */
+export type ItemDecision =
+  | 'insert'
+  | 'identical'
+  | 'replace'
+  | 'keepBoth'
+  | 'skip'
+  | 'restorePrompt'
+  | 'pendingReference'
+  | 'excluded'
 
 /** 导入计划条目（预览列表项） */
 export interface ImportPlanItem {
   dataset: string
+  /** 包内（来源）记录 id；整块数据集为空串 */
   id: string
   label: string
-  outcome: ImportOutcome
+  decision: ItemDecision
+  /** 是否为冲突条目（用户可改处置；仅合并模式出现） */
+  conflict: boolean
+  /** 目标 id（写入/命中的本地记录 id） */
+  targetId?: string | null
+  /** 影响面说明 */
+  impact?: string | null
   note?: string | null
+}
+
+/** 单条冲突的用户决策（提交计划时回传） */
+export interface ConflictChoice {
+  dataset: string
+  sourceId: string
+  decision: ConflictDecision
 }
 
 /** 导入选择 */
@@ -535,12 +562,24 @@ export interface ImportInspectResult {
 /** 规划导入的结果 */
 export interface ImportPlanResult {
   planId: string
+  /** 导入模式（合并与覆盖进当前空间） */
+  mode: ImportMode
+  /** 目标空间存储修订号（合并/覆盖：提交时后端复核） */
+  expectedRevision?: string | null
   spaceId: string
   spaceName: string
   preview: ImportPlanItem[]
   pending: string[]
   excluded: string[]
   counts: Record<string, number>
+}
+
+/** 导入前快照条目（设置页「还原到导入前」） */
+export interface BackupSummary {
+  dir: string
+  spaceId: string
+  createdAt: string
+  files: string[]
 }
 
 /** 提交导入的结果 */
@@ -597,6 +636,8 @@ export const frameworkCommands = {
   dataImportInspect: 'data_import_inspect',
   dataImportPlan: 'data_import_plan',
   dataImportCommit: 'data_import_commit',
+  dataBackupList: 'data_backup_list',
+  dataBackupRestore: 'data_backup_restore',
   dataTransferCancel: 'data_transfer_cancel',
 } as const
 
@@ -641,8 +682,12 @@ export type FrameworkPayloads = {
     selection: ImportSelection
     newSpaceName: string
     allowDuplicate?: boolean
+    mode?: ImportMode
+    conflicts?: ConflictChoice[]
   }
   data_import_commit: { planId: string; password: string }
+  data_backup_list: Record<string, never>
+  data_backup_restore: { dir: string }
   data_transfer_cancel: { taskId?: string | null }
 }
 
@@ -684,5 +729,7 @@ export type FrameworkResults = {
   data_import_inspect: ImportInspectResult
   data_import_plan: ImportPlanResult
   data_import_commit: ImportCommitResult
+  data_backup_list: BackupSummary[]
+  data_backup_restore: void
   data_transfer_cancel: CancelResult
 }

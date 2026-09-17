@@ -19,9 +19,13 @@ import {
   type ExportChoice,
 } from '@/features/settings/data/packSelection'
 import type {
+  BackupSummary,
+  ConflictChoice,
+  ConflictDecision,
   ExportCatalog,
   ExportReport,
   ImportInspectResult,
+  ImportMode,
   ImportPlanResult,
   ImportReport,
   SpaceSummary,
@@ -52,6 +56,12 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
   const importDatasets = ref<string[]>([])
   /** 导入确认（「我确认导入到一个新空间」）：与导出的敏感内容确认分开，语义不同 */
   const importAcknowledged = ref(false)
+  /** 导入模式（新空间 / 合并到当前空间 / 覆盖当前空间） */
+  const importMode = ref<ImportMode>('newSpace')
+  /** 冲突处置（合并模式）：用户逐条决策，提交计划时回传 */
+  const conflicts = ref<ConflictChoice[]>([])
+  /** 当前空间的导入前快照（设置页还原入口） */
+  const backups = ref<BackupSummary[]>([])
 
   /** 本机空间列表 */
   const spaces = ref<SpaceSummary[]>([])
@@ -136,7 +146,7 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     }
   }
 
-  /** 规划导入（生成新空间名与目标 id，尚未落盘） */
+  /** 规划导入（生成目标空间与写入清单，尚未落盘；合并/覆盖模式带冲突决策） */
   async function planImport(spaceName: string, allowDuplicate: boolean): Promise<boolean> {
     if (!inspected.value) return failed('plan', new Error('请先校验数据包'))
     busy.value = 'plan'
@@ -145,7 +155,9 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
         inspected.value.inspectId,
         { datasets: importDatasets.value },
         spaceName,
-        allowDuplicate
+        allowDuplicate,
+        importMode.value,
+        importMode.value === 'merge' ? conflicts.value : undefined
       )
       return true
     } catch (error) {
@@ -153,6 +165,14 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     } finally {
       busy.value = ''
     }
+  }
+
+  /** 改一条冲突的处置（改完由调用方重新规划，预览随之刷新） */
+  function setConflict(dataset: string, sourceId: string, decision: ConflictDecision): void {
+    const key = (item: ConflictChoice) => item.dataset === dataset && item.sourceId === sourceId
+    const existing = conflicts.value.find(key)
+    if (existing) existing.decision = decision
+    else conflicts.value.push({ dataset, sourceId, decision })
   }
 
   /** 提交导入（写新空间目录 + 登记索引） */
@@ -213,6 +233,33 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     planned.value = null
     importDatasets.value = []
     importAcknowledged.value = false
+    importMode.value = 'newSpace'
+    conflicts.value = []
+  }
+
+  /** 列出当前空间的导入前快照 */
+  async function loadBackups(): Promise<boolean> {
+    try {
+      backups.value = await ipc.dataBackupList()
+      return true
+    } catch (error) {
+      return failed('backups', error)
+    }
+  }
+
+  /** 还原到某次导入前（后端校验快照归属并广播刷新） */
+  async function restoreBackup(dir: string): Promise<boolean> {
+    busy.value = 'restore'
+    try {
+      await ipc.dataBackupRestore(dir)
+      useUiStore().toast('已还原到导入前')
+      await loadBackups()
+      return true
+    } catch (error) {
+      return failed('restore', error)
+    } finally {
+      busy.value = ''
+    }
   }
 
   return {
@@ -224,6 +271,9 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     importReport,
     importDatasets,
     importAcknowledged,
+    importMode,
+    conflicts,
+    backups,
     spaces,
     taskId,
     busy,
@@ -238,6 +288,9 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     commitImport,
     cancelTransfer,
     switchSpace,
+    setConflict,
+    loadBackups,
+    restoreBackup,
     resetChoice,
     resetImport,
   }

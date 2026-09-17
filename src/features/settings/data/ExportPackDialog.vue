@@ -2,9 +2,10 @@
 /**
  * 导出向导（sync L2）
  *
- * 四步：选数据 → 确认敏感内容 → 保存位置与密码 → 结果。
- * 为什么要分步而不是一屏：密码与「包内含凭证」是两件必须被看见的事，
+ * 四步：选数据 → 注意事项 → 保存位置与密码 → 结果。
+ * 为什么要分步而不是一屏：密码与「凭证不进包」是两件必须被看见的事，
  * 挤在一屏里用户会直接点「确定」；分开后每一步的代价都明确。
+ * 凭证永不进包（与空间绑定，D 裁决）：第二步是纯提示，没有勾选。
  *
  * 口径：
  * - 「下一步」由 useSteps 按条件禁用（空选择、未确认敏感内容、密码不足 8 位都走不过去）；
@@ -19,7 +20,7 @@ import { useSteps } from '@/core/ui/useSteps'
 import { defaultPackFileName, fileDialog } from '@/core/dataTransfer/fileDialog'
 import { useDataTransferStore } from '@/stores/dataTransfer'
 import { useUiStore } from '@/stores/ui'
-import { carriesSecret, closurePreview, dependencyLabelKey, profileEntries } from './packSelection'
+import { closurePreview, dependencyLabelKey, profileEntries } from './packSelection'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (event: 'update:open', value: boolean): void }>()
@@ -38,8 +39,6 @@ const localError = ref('')
 const steps = useSteps(['select', 'secret', 'file', 'report'] as const, {
   canAdvance: (step) => {
     if (step === 'select') return store.canExport
-    if (step === 'secret')
-      return !carriesSecret(store.catalog, store.choice) || store.choice.acknowledgedSecret
     if (step === 'file')
       return password.value.trim().length >= 8 && savePath.value.trim().length > 0
     return false
@@ -48,7 +47,6 @@ const steps = useSteps(['select', 'secret', 'file', 'report'] as const, {
 
 const profiles = computed(() => profileEntries(store.catalog))
 const pulls = computed(() => closurePreview(store.catalog, store.choice))
-const carriesSecretNow = computed(() => carriesSecret(store.catalog, store.choice))
 const busy = computed(() => store.busy === 'export')
 /** 报告里的总条数（各数据集相加；界面只说「多少条」，不替代分项） */
 const totalRecords = computed(() =>
@@ -170,25 +168,9 @@ async function runExport(): Promise<void> {
 
     <!-- ② 确认敏感内容 -->
     <div v-else-if="steps.current.value === 'secret'" class="space-y-3">
-      <UiAlert
-        :tone="carriesSecretNow ? 'warning' : 'info'"
-        :title="
-          carriesSecretNow
-            ? t('settings.dataManagement.secretTitle')
-            : t('settings.dataManagement.noSecret')
-        "
-      >
-        {{ carriesSecretNow ? t('settings.dataManagement.secretBody') : '' }}
+      <UiAlert tone="info" :title="t('settings.dataManagement.credentialsNoteTitle')">
+        {{ t('settings.dataManagement.credentialsNoteBody') }}
       </UiAlert>
-      <UiCheckbox
-        v-model="store.choice.includeCredentials"
-        :label="t('settings.dataManagement.includeCredentials')"
-      />
-      <UiCheckbox
-        v-if="carriesSecretNow"
-        v-model="store.choice.acknowledgedSecret"
-        :label="t('settings.dataManagement.secretAck')"
-      />
       <div v-if="pulls.length" class="rounded-md border border-border px-3 py-2">
         <p class="mb-1 text-body-sm text-text-muted">{{ t('settings.dataManagement.pulls') }}</p>
         <ul class="space-y-1 text-body-sm">

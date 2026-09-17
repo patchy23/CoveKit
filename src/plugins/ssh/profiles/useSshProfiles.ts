@@ -8,7 +8,8 @@
  * 数据来源唯一：列表只来自 `ssh_profile_list`，本地 localStorage 只作为一次性迁移来源，
  * 迁移后清空快照，不做第二份副本。
  */
-import { computed, ref } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
+import { onSpaceDataChanged } from '@/core/ipc/spaceEvents'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '../ipc'
 import { clearLegacySnapshot, readLegacySnapshot } from '../connection/useSsh'
@@ -63,6 +64,15 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
   async function loadGroups() {
     await groupsApi.load()
   }
+
+  // 合并/覆盖导入或快照还原后原地刷新（不重启生效）；作用域销毁即解绑
+  const offSpaceDataChanged = onSpaceDataChanged((datasets) => {
+    if (datasets.includes('*') || datasets.some((dataset) => dataset.startsWith('ssh.'))) {
+      void loadProfiles()
+      void loadGroups()
+    }
+  })
+  onScopeDispose(offSpaceDataChanged)
 
   /** localStorage 存量一次性迁入后端插件库（旧手工凭证由后端迁移进 Vault 并归档） */
   async function importLegacyOnce() {

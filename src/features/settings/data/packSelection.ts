@@ -31,10 +31,6 @@ export interface ExportChoice {
   includeFavorites: boolean
   /** 是否带上最近使用 */
   includeRecentTools: boolean
-  /** 是否把被引用的凭证写进包（false = 只声明条数，导入后重填） */
-  includeCredentials: boolean
-  /** 用户是否已确认「包内含凭证」这条敏感提示 */
-  acknowledgedSecret: boolean
 }
 
 /** 初始勾选态：收藏默认带上、最近使用默认不带（方案 §13.1） */
@@ -44,8 +40,6 @@ export function initialChoice(catalog: ExportCatalog | null): ExportChoice {
     profileIds: [],
     includeFavorites: defaults ? defaults.datasets.includes('core.favorites') : true,
     includeRecentTools: defaults ? defaults.datasets.includes('core.recent_tools') : false,
-    includeCredentials: defaults ? defaults.includeCredentials : true,
-    acknowledgedSecret: false,
   }
 }
 
@@ -84,7 +78,6 @@ export function buildSelection(
   return {
     entries: [...byDataset.entries()].map(([dataset, ids]) => ({ dataset, ids })),
     datasets,
-    includeCredentials: choice.includeCredentials,
   }
 }
 
@@ -99,7 +92,7 @@ export function closurePreview(
   for (const entry of profileEntries(catalog)) {
     if (!chosen.has(entry.id)) continue
     for (const edge of entry.dependencies) {
-      // 凭证以外（分组/隧道/书签）一律随档案带出；凭证是否进包由勾选决定，但引用关系仍展示
+      // 分组/隧道/书签随档案带出；凭证永不进包（与空间绑定），但引用关系仍展示
       const set = perKind.get(edge.kind) ?? new Set<string>()
       set.add(edge.toId)
       perKind.set(edge.kind, set)
@@ -118,14 +111,6 @@ export function chosenNotes(
 ): ExportCatalogEntry[] {
   const chosen = new Set(choice.profileIds)
   return profileEntries(catalog).filter((entry) => chosen.has(entry.id) && entry.note)
-}
-
-/** 本次导出是否会写入敏感内容（凭证记录真的进包） */
-export function carriesSecret(catalog: ExportCatalog | null, choice: ExportChoice): boolean {
-  if (!choice.includeCredentials) return false
-  return closurePreview(catalog, choice).some(
-    (item) => item.kind === 'credential' && item.count > 0
-  )
 }
 
 /** 依赖类别 → i18n 键（界面直接用；不要在各处再拼一次字符串） */

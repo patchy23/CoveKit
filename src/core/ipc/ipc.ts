@@ -5,8 +5,10 @@
  */
 import { invoke } from '@tauri-apps/api/core'
 import type {
+  ConflictChoice,
   CredentialSavePayload,
   ExportSelection,
+  ImportMode,
   FrameworkPayloads,
   FrameworkResults,
   ImportSelection,
@@ -88,10 +90,22 @@ export const ipc = {
     inspectId: string,
     selection: ImportSelection,
     newSpaceName: string,
-    allowDuplicate?: boolean
-  ) => call('data_import_plan', { inspectId, selection, newSpaceName, allowDuplicate }),
+    allowDuplicate?: boolean,
+    mode?: ImportMode,
+    conflicts?: ConflictChoice[]
+  ) =>
+    call('data_import_plan', {
+      inspectId,
+      selection,
+      newSpaceName,
+      allowDuplicate,
+      mode,
+      conflicts,
+    }),
   dataImportCommit: (planId: string, password: string) =>
     call('data_import_commit', { planId, password }),
+  dataBackupList: () => call('data_backup_list', {}),
+  dataBackupRestore: (dir: string) => call('data_backup_restore', { dir }),
   dataTransferCancel: (taskId?: string | null) =>
     call('data_transfer_cancel', { taskId: taskId ?? null }),
 }

@@ -7,6 +7,7 @@
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { onSpaceDataChanged } from '@/core/ipc/spaceEvents'
 import { isStringArray, spaceData } from '@/core/spaceData'
 
 /** 收藏键（与 Rust 白名单一致） */
@@ -21,6 +22,14 @@ export const useFavoritesStore = defineStore('favorites', () => {
     ids.value = (await spaceData.get<string[]>(FAVORITES_KEY, isStringArray)) ?? []
     loaded.value = true
   }
+
+  // 合并/覆盖导入或快照还原后重拉（收藏走空间级偏好文件；store 是单例，订阅跟随应用生命周期）
+  onSpaceDataChanged((datasets) => {
+    if (datasets.includes('*') || datasets.includes('core.favorites')) {
+      loaded.value = false
+      void init()
+    }
+  })
 
   function has(id: string): boolean {
     return ids.value.includes(id)

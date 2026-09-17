@@ -1,14 +1,13 @@
 /**
  * 导出选择与闭包预览用例（sync L2）
  *
- * 关键口径：只有 selectable 数据集能被勾选；勾中的档案把凭证/分组/隧道/书签按引用带出
- * （同一 id 只算一次）；没勾任何东西时「下一步」不可用；「是否含秘密」只看凭证真的进包。
+ * 关键口径：只有 selectable 数据集能被勾选；勾中的档案把分组/隧道/书签按引用带出
+ * （同一 id 只算一次）；没勾任何东西时「下一步」不可用；凭证永不进包（与空间绑定）。
  */
 import { describe, expect, it } from 'vitest'
 import type { ExportCatalog, ExportCatalogEntry } from '@/core/ipc/contracts'
 import {
   buildSelection,
-  carriesSecret,
   chosenNotes,
   closurePreview,
   initialChoice,
@@ -95,7 +94,6 @@ function catalog(): ExportCatalog {
     defaults: {
       entries: [],
       datasets: ['core.favorites'],
-      includeCredentials: true,
     },
     warnings: [],
   }
@@ -106,7 +104,6 @@ describe('packSelection', () => {
     const choice = initialChoice(catalog())
     expect(choice.includeFavorites).toBe(true)
     expect(choice.includeRecentTools).toBe(false)
-    expect(choice.includeCredentials).toBe(true)
     expect(choice.profileIds).toEqual([])
   })
 
@@ -115,12 +112,11 @@ describe('packSelection', () => {
     expect(items.map((item) => item.id)).toEqual(['p1', 'p2'])
   })
 
-  it('选择集按目录口径翻译：条目 id、类别名、是否带凭证', () => {
+  it('选择集按目录口径翻译：条目 id 与类别名（凭证永不进包，无携带开关）', () => {
     const choice = { ...initialChoice(catalog()), profileIds: ['p1'] }
     expect(buildSelection(catalog(), choice)).toEqual({
       entries: [{ dataset: 'ssh.profiles', ids: ['p1'] }],
       datasets: ['core.favorites'],
-      includeCredentials: true,
     })
   })
 
@@ -133,14 +129,6 @@ describe('packSelection', () => {
       { kind: 'group', count: 1 },
       { kind: 'tunnel', count: 1 },
     ])
-  })
-
-  it('是否含秘密：勾凭证但没有任何引用时不算含秘密', () => {
-    const noRefs = { ...initialChoice(catalog()), profileIds: [] }
-    expect(carriesSecret(catalog(), noRefs)).toBe(false)
-    const withRefs = { ...initialChoice(catalog()), profileIds: ['p1'] }
-    expect(carriesSecret(catalog(), withRefs)).toBe(true)
-    expect(carriesSecret(catalog(), { ...withRefs, includeCredentials: false })).toBe(false)
   })
 
   it('已选条目的提示只来自被勾中的条目', () => {
