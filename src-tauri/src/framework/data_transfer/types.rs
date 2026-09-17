@@ -363,6 +363,7 @@ pub(crate) struct ExportSelection {
 
 impl ExportSelection {
     /// 空选择：什么都没勾，但默认带出凭证（用户点开目录时的起点）
+    #[cfg(test)]
     pub(crate) fn empty() -> Self {
         Self {
             entries: Vec::new(),
@@ -406,6 +407,7 @@ impl ResolvedSelection {
     }
 
     /// 该数据集要带出的记录 id（整块数据集为空列表）
+    #[cfg(test)]
     pub(crate) fn ids_of(&self, dataset: &str) -> &[String] {
         self.datasets.get(dataset).map(Vec::as_slice).unwrap_or(&[])
     }
@@ -462,14 +464,6 @@ pub(crate) struct ImportContext {
 }
 
 impl ImportContext {
-    /// 该数据集是否携带了记录
-    pub(crate) fn is_carried(&self, dataset: &str) -> bool {
-        self.carried
-            .get(dataset)
-            .map(|block| block.ids.is_some() || block.record_count > 0)
-            .unwrap_or(false)
-    }
-
     /// 该 id 的记录是否真的在包里
     pub(crate) fn carries_id(&self, dataset: &str, id: &str) -> bool {
         self.carried
@@ -477,17 +471,6 @@ impl ImportContext {
             .and_then(|block| block.ids.as_ref())
             .map(|ids| ids.contains(id))
             .unwrap_or(false)
-    }
-
-    /// 该 id 是否**引用方声明过、但包里没有**（用于「待补全」判定）
-    pub(crate) fn declared_without_id(&self, dataset: &str, id: &str) -> bool {
-        match self.carried.get(dataset) {
-            None => true,
-            Some(block) => match &block.ids {
-                None => false,
-                Some(ids) => !ids.contains(id),
-            },
-        }
     }
 }
 

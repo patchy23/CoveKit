@@ -10,6 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+#[cfg(test)]
 use serde_json::Value;
 use tauri::AppHandle;
 
@@ -301,6 +302,7 @@ pub(crate) fn build_manifest(
 /// 预览用的条数统计：数据集名 → 计划进包条数（含只声明不携带的类别）
 ///
 /// 前端只在提交前用它做确认文案；真正的条数以导出结果为准，两者由同一闭包解析得出。
+#[cfg(test)]
 pub(crate) fn planned_counts(resolved: &ResolvedSelection) -> BTreeMap<String, usize> {
     resolved
         .datasets
@@ -310,6 +312,7 @@ pub(crate) fn planned_counts(resolved: &ResolvedSelection) -> BTreeMap<String, u
 }
 
 /// 从记录体里取出某字段的字符串值（适配器与导入侧共用的小工具）
+#[cfg(test)]
 pub(crate) fn text_field(record: &Value, field: &str) -> Option<String> {
     record
         .get(field)

@@ -54,6 +54,7 @@ impl PluginDb {
     ///
     /// rusqlite 的 `Transaction` 解引用即 `Connection`，插件的 `&Connection` 层函数直接复用；
     /// `IMMEDIATE` 保证事务期间无其他写者（并发用户写入由 busy_timeout 排队到事务后执行）。
+    #[allow(dead_code)] // 合并导入提交接入前没有调用方（接入后删掉本行）
     pub fn with_transaction<T>(
         &self,
         f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
