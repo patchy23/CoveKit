@@ -24,10 +24,6 @@ use crate::framework::context::StorageLocation;
 
 /// 存储根目录配置键（位于 `settings.json` 的 `app` 对象内）
 pub const KEY_STORAGE_ROOT: &str = "storageRoot";
-/// 布局版本键（记录四分区布局迁移是否已完成）
-pub const KEY_LAYOUT_VERSION: &str = "layoutVersion";
-/// 当前布局版本（1 = 四分区布局；2 = 补迁 SSH / 数据库插件的凭证文件）
-pub const LAYOUT_VERSION: i64 = 2;
 
 /// 读取设置项（settings.json → app.<key>；不存在返回 None）
 pub(crate) fn read_setting(app: &AppHandle, key: &str) -> Option<serde_json::Value> {
@@ -51,13 +47,6 @@ pub(crate) fn write_setting(
     }
     store.set("app", current);
     store.save().map_err(|e| e.to_string())
-}
-
-/// 读取已完成的布局版本（0 = 尚未执行四分区迁移）
-pub fn layout_version(app: &AppHandle) -> i64 {
-    read_setting(app, KEY_LAYOUT_VERSION)
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0)
 }
 
 /// 写入存储根目录配置（空字符串 = 恢复默认；重启后生效）
