@@ -9,7 +9,9 @@
  * 注意：面板必须 pointer-events-auto——reka 模态弹窗会把 body 置 pointer-events:none，
  * Teleport 到 body 的菜单若不加会整体点不动（弹窗内右键菜单失效的根因）。
  */
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { FocusScope } from 'reka-ui'
+import UiScrollArea from './UiScrollArea.vue'
 
 export interface ContextMenuItem {
   /** 菜单项文字 */
@@ -20,36 +22,102 @@ export interface ContextMenuItem {
   disabled?: boolean
   /** 分隔线（单独成项，无 label） */
   separator?: boolean
-  /** 点击回调（触发后自动关闭菜单） */
+  /** 点击回调（先关闭菜单并归还焦点，再执行动作） */
   onClick?: () => void
 }
 
 const props = withDefaults(
   defineProps<{
-    /** 菜单位置（视口坐标，父组件需自行收拢在视口内） */
+    /** 菜单位置（视口坐标，组件按实际尺寸收拢在视口内） */
     x: number
     y: number
     /** 菜单项列表 */
     items: ContextMenuItem[]
     /** 尺寸：md 默认 / sm 紧凑（树、列表内嵌场景） */
     size?: 'md' | 'sm'
+    label?: string
   }>(),
-  { size: 'md' }
+  { size: 'md', label: '操作菜单' }
 )
 
 const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
-function close() {
+const panel = ref<HTMLElement | null>(null)
+const position = ref({ left: props.x, top: props.y })
+const previousFocus = typeof document === 'undefined' ? null : document.activeElement
+let observer: ResizeObserver | undefined
+let closed = false
+
+function close(restoreFocus = false) {
+  if (closed) return
+  closed = true
+  if (restoreFocus && previousFocus instanceof HTMLElement && previousFocus.isConnected) {
+    previousFocus.focus()
+  }
   emit('close')
 }
 
-/** 菜单项点击：执行回调后关闭菜单（单语句调用，避免模板多语句表达式） */
 function handleClick(item: ContextMenuItem) {
+  if (item.disabled || item.separator) return
+  close(true)
   item.onClick?.()
-  close()
 }
+
+function enabledItems() {
+  return Array.from(
+    panel.value?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? []
+  )
+}
+
+function focusMenu(event: Event) {
+  event.preventDefault()
+  ;(enabledItems()[0] ?? panel.value)?.focus()
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.key === 'Escape' || event.key === 'Tab') {
+    event.preventDefault()
+    event.stopPropagation()
+    close(true)
+    return
+  }
+  const items = enabledItems()
+  if (!items.length) return
+  const current = items.indexOf(document.activeElement as HTMLButtonElement)
+  let index: number
+  if (event.key === 'ArrowDown') index = (current + 1) % items.length
+  else if (event.key === 'ArrowUp') index = (current - 1 + items.length) % items.length
+  else if (event.key === 'Home') index = 0
+  else if (event.key === 'End') index = items.length - 1
+  else return
+  event.preventDefault()
+  event.stopPropagation()
+  items[index].focus()
+  items[index].scrollIntoView?.({ block: 'nearest' })
+}
+
+function updatePosition() {
+  const rect = panel.value?.getBoundingClientRect()
+  if (!rect) return
+  position.value = {
+    left: Math.max(8, Math.min(props.x, window.innerWidth - rect.width - 8)),
+    top: Math.max(8, Math.min(props.y, window.innerHeight - rect.height - 8)),
+  }
+}
+
+function onOutside(event: MouseEvent) {
+  if (!panel.value?.contains(event.target as Node)) close()
+}
+
+watch(
+  () => [props.x, props.y, props.items],
+  async () => {
+    await nextTick()
+    updatePosition()
+  }
+)
 
 /**
  * 面板尺寸类（最小宽度 / 纵向间距随档位）。
@@ -68,41 +136,72 @@ const itemClass = computed(() =>
 /** 分隔线间距 */
 const separatorClass = computed(() => (props.size === 'sm' ? 'my-[3px]' : 'my-[4px]'))
 
-onMounted(() => document.addEventListener('mousedown', close))
-onUnmounted(() => document.removeEventListener('mousedown', close))
+onMounted(() => {
+  updatePosition()
+  document.addEventListener('mousedown', onOutside)
+  window.addEventListener('resize', updatePosition)
+  if (typeof ResizeObserver !== 'undefined') {
+    observer = new ResizeObserver(updatePosition)
+    if (panel.value) observer.observe(panel.value)
+  }
+})
+onUnmounted(() => {
+  document.removeEventListener('mousedown', onOutside)
+  window.removeEventListener('resize', updatePosition)
+  observer?.disconnect()
+})
 </script>
 
 <template>
   <Teleport to="body">
-    <div
-      class="pointer-events-auto fixed z-[200] overflow-hidden rounded-md border border-border bg-surface shadow-[0_8px_24px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
-      :class="panelClass"
-      :style="{ left: `${x}px`, top: `${y}px` }"
-      @mousedown.stop
-    >
-      <template v-for="(item, i) in items" :key="i">
+    <FocusScope as-child @mount-auto-focus="focusMenu" @unmount-auto-focus.prevent>
+      <UiScrollArea as-child>
         <div
-          v-if="item.separator"
-          class="border-t border-border dark:border-border-dark"
-          :class="separatorClass"
-        />
-        <button
-          v-else
-          class="flex w-full items-center whitespace-nowrap transition-colors"
-          :class="[
-            itemClass,
-            item.disabled
-              ? 'cursor-not-allowed text-text-muted opacity-60 dark:text-text-muted-dark'
-              : item.danger
-                ? 'text-danger-strong hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark'
-                : 'text-primary hover:bg-border dark:text-primary-dark dark:hover:bg-border-dark',
-          ]"
-          :disabled="item.disabled"
-          @click="handleClick(item)"
+          ref="panel"
+          role="menu"
+          :aria-label="label"
+          tabindex="-1"
+          class="pointer-events-auto fixed z-[220] rounded-md border border-border bg-surface shadow-card dark:border-border-dark dark:bg-surface-dark"
+          :class="panelClass"
+          :style="{
+            left: `${position.left}px`,
+            top: `${position.top}px`,
+            maxWidth: `min(${size === 'sm' ? 320 : 340}px, calc(100vw - 16px))`,
+            maxHeight: 'calc(100vh - 16px)',
+          }"
+          @keydown="onKeydown"
+          @pointerdown.stop
+          @mousedown.stop
         >
-          {{ item.label }}
-        </button>
-      </template>
-    </div>
+          <template v-for="(item, i) in items" :key="i">
+            <div
+              v-if="item.separator"
+              role="separator"
+              class="border-t border-border dark:border-border-dark"
+              :class="separatorClass"
+            />
+            <button
+              v-else
+              type="button"
+              role="menuitem"
+              tabindex="-1"
+              class="flex w-full items-center whitespace-nowrap outline-none transition-colors focus-visible:bg-border dark:focus-visible:bg-border-dark"
+              :class="[
+                itemClass,
+                item.disabled
+                  ? 'cursor-not-allowed text-text-muted opacity-60 dark:text-text-muted-dark'
+                  : item.danger
+                    ? 'text-danger-strong hover:bg-danger-soft dark:text-danger-dark dark:hover:bg-danger-soft-dark'
+                    : 'text-primary hover:bg-border dark:text-primary-dark dark:hover:bg-border-dark',
+              ]"
+              :disabled="item.disabled"
+              @click="handleClick(item)"
+            >
+              <span class="truncate">{{ item.label }}</span>
+            </button>
+          </template>
+        </div>
+      </UiScrollArea>
+    </FocusScope>
   </Teleport>
 </template>

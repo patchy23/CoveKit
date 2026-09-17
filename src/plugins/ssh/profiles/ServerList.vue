@@ -70,8 +70,8 @@ function openProfileMenu(event: MouseEvent, profile: ServerProfile) {
   menu.value = {
     kind: 'profile',
     profile,
-    x: Math.min(event.clientX, window.innerWidth - 158),
-    y: Math.min(event.clientY, window.innerHeight - 132),
+    x: event.clientX,
+    y: event.clientY,
   }
 }
 
@@ -81,8 +81,8 @@ function openGroupMenu(event: MouseEvent, group: ServerGroup) {
   menu.value = {
     kind: 'group',
     group,
-    x: Math.min(event.clientX, window.innerWidth - 158),
-    y: Math.min(event.clientY, window.innerHeight - 132),
+    x: event.clientX,
+    y: event.clientY,
   }
 }
 

@@ -57,15 +57,13 @@ export function useTerminalContextMenu(getTerm: () => Terminal | null) {
     return Math.max(0, Math.min(row, term.rows - 1))
   }
 
-  /** 在终端区域打开右键菜单（视口边界 clamp；打开时即算好所在行文本） */
+  /** 在终端区域打开右键菜单（定位交给公共菜单；打开时即算好所在行文本） */
   function openContextMenu(event: MouseEvent) {
     event.preventDefault()
     const term = getTerm()
-    const width = 168
-    const height = 148
     menu.value = {
-      x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)),
+      x: event.clientX,
+      y: event.clientY,
       hasSelection: Boolean(term?.hasSelection()),
       line: term ? lineTextAt(term, viewportRowOf(event, term)) : '',
     }

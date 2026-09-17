@@ -32,8 +32,8 @@ export function useLocalContextMenu(actions: LocalMenuActions) {
     menu.value = {
       target,
       multi,
-      x: Math.max(8, Math.min(event.clientX, window.innerWidth - 170 - 8)),
-      y: Math.max(8, Math.min(event.clientY, window.innerHeight - 10 * 36 - 16)),
+      x: event.clientX,
+      y: event.clientY,
     }
   }
 

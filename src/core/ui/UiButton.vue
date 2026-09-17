@@ -14,6 +14,7 @@ const props = withDefaults(
     variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
     size?: UiSize
     loading?: boolean
+    disabled?: boolean
     block?: boolean
     as?: 'button' | 'a'
     type?: 'button' | 'submit' | 'reset'
@@ -23,6 +24,7 @@ const props = withDefaults(
     variant: 'secondary',
     size: 'md',
     loading: false,
+    disabled: false,
     block: false,
     as: 'button',
     type: 'button',
@@ -51,6 +53,14 @@ const buttonVariants = cva('ui-button', {
 const classes = computed(() =>
   cn(buttonVariants({ variant: props.variant, size: props.size, block: props.block }))
 )
+const unavailable = computed(() => props.disabled || props.loading)
+
+/** 链接没有原生 disabled，拦截激活并移除导航入口。 */
+function guardClick(event: MouseEvent) {
+  if (!unavailable.value) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}
 </script>
 
 <template>
@@ -60,8 +70,13 @@ const classes = computed(() =>
       :ref="forwardRef"
       v-bind="$attrs"
       :type="as === 'button' ? type : undefined"
-      :class="classes"
-      :disabled="as === 'button' ? loading || $attrs.disabled === true : undefined"
+      :class="[classes, { 'cursor-not-allowed opacity-60': as === 'a' && unavailable }]"
+      :disabled="as === 'button' ? unavailable : undefined"
+      :href="as === 'a' && unavailable ? undefined : $attrs.href"
+      :tabindex="as === 'a' && unavailable ? -1 : $attrs.tabindex"
+      :aria-disabled="unavailable || undefined"
+      :aria-busy="loading || undefined"
+      @click.capture="guardClick"
     >
       <span v-if="loading" class="ui-spinner" aria-hidden="true" />
       <slot />

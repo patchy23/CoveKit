@@ -2,13 +2,14 @@
 
 > **何时读**：用到某个公共组件、要确认它的 props / emits / 事件名 / 返回值时。
 > **本文讲什么**：`@/core/ui` 下各组件的真实签名与用法样例（不是设计意图，是实际接口）。
-> **体量**：约 7.7 千字符。**只在需要时查具体那一段**，不要整份通读。
-> **出处**：原 `11-插件UI开发约定.md` 的「组件真实 API 备忘」节，正文一字未改。
+> **维护**：公共组件契约改变时同步对应条目，历史说明不能代替实际接口。
 > 契约红线（哪些组件必须用、禁止原生控件）见 [`11-插件UI开发约定.md`](11-插件UI开发约定.md)。
 
 ---
 
 ## 组件真实 API 备忘
+
+- **Tooltip 触发器引用与关闭**：插槽保持单个触发元素，组件内部隔离 Reka 对缓存 VNode 的修改，提示文字为空再恢复时保留原始元素/ref；关闭直接卸载浮层，避免过渡状态残留。触发元素本身不会随提示开关重建。
 
 - **UiScrollArea 公共滚动区**：从 `@/core/ui` 导入，`axis` 为 `vertical`（默认）、`horizontal` 或 `both`；`theme` 为 `auto`（默认，继承主题）、`light` 或 `dark`。默认生成 div，`as` 可指定元素；已有滚动元素用 `as-child`，如 `<UiScrollArea as-child axis="both"><div ref="viewport" class="h-full">内容</div></UiScrollArea>`，保留原元素、引用与事件。循环 key 和条件分支放到组件上，不再单独写 `overflow-auto` 等滚动类。`managed` 仅提供公共标记与主题，供 xterm、CodeMirror 和原生文本框保留内部 overflow 管理；深色终端设 `theme="dark"`。所有滚动条视觉只在 `scrollbars.css` 定义，使用原生拖动与键盘行为，容器仍需按布局约束宽高。
 
@@ -16,12 +17,15 @@
 
 - **UiTooltip 公共悬停提示**：从 `@/core/ui` 导入，`content` 为纯文字，默认插槽只放一个触发元素；`side` 默认 `bottom`，空间不足时自动翻转；`delayDuration` 默认 400ms，`disabled` 可关闭提示。复用 Reka 的定位、键盘聚焦与 Esc 关闭，自动避让视口，Portal 层级 240，适配浅深色且不增加布局包裹。提示内容允许按最大宽度换行，不放交互控件；全局最多一个，离开立即关闭，鼠标穿透且文字不可选中，需复制的内容另设明确入口。`UiButton` 的 `title`、`UiIconButton` 的 `label/title` 和 `UiSelect` 的 `title` 已自动接入，不再输出原生 `title`。其他元素用 `<UiTooltip content="说明"><span tabindex="0">内容</span></UiTooltip>`，移除触发元素原生 `title`，图标按钮保留 `aria-label`。原生禁用按钮不可键盘聚焦，必要原因应同时显示在表单说明中。
 
-- **ContextMenu 是声明式**：`:x :y :items` + item 内联 `onClick` 回调 + `@close`，父组件 `v-if="menu"` 控制显隐——**不是** `ref.open(mouse)` 命令式；分隔线项 `{ label: '', separator: true }`。**有 `size` 档位（2026-08-15 新增）**：`md`（默认，w-150/text-body/py-7，SSH 文件等）与 `sm`（紧凑，w-124/text-body-sm/py-5，树/列表内嵌场景）；坐标收拢随档位（md `innerWidth-158`、sm `innerWidth-132`）。需要更小菜单时加档位，勿新建组件。**收拢用的固定 N 与面板最小宽度绑定，改宽度时两处一起复核。**
-- **菜单面板宽度取「最小宽度 + 按内容自适应」，不要写死宽度；菜单项一律 `whitespace-nowrap`**（现役值 sm `min-w-[140px] w-max max-w-[320px]`、md `min-w-[168px] w-max max-w-[340px]`）：菜单文案长短差异大，「在资源管理器中显示」这类偏长的项会被写死宽度挤成两行——该行行高比相邻项高出一截（实测 58px vs 36px），整块菜单看起来像坏了。**同规则适用于任何自绘浮层（下拉/气泡/提示条）**：固定宽度 + 缺 `nowrap` 是长文案换行的高发配置。
+- **ContextMenu 是声明式**：按路径导入，`:x :y :items` + item 的 `onClick` 回调 + `@close`，父组件用 `v-if="menu"` 控制显隐；`label` 默认“操作菜单”，分隔项 `{ label: '', separator: true }`，选项支持 `disabled/danger`。`size="md | sm"`，组件按实际尺寸自动避让视口并保留 8px 边距，不再要求调用方估算菜单宽高；过高接入公共滚动区。打开聚焦首个可用项，↑↓/Home/End 导航，Enter/空格执行，Esc/Tab 关闭并归还原焦点；执行动作前也先关闭并归还焦点，外部点击不抢焦点。弹窗内使用 FocusScope 暂停底层焦点约束，菜单内指针事件不触发底层弹窗遮罩关闭。
+- **菜单宽度按内容自适应**：ContextMenu 的 sm 最小 140px、最大 320px，md 最小 168px、最大 340px；同时受视口宽度限制，文字单行截断，禁止业务侧复制定位与滚动逻辑。提示说明允许换行，不能套用动作菜单的单行规则。
 - **UiInput/UiSelect 的 `update:modelValue` 是 `string | number`**：写入 string 型 state 必须 `String(v)` 转换，否则 vue-tsc TS2322/TS2769。
 - **UiTree 树节点交互语义（2026-08-16 用户定稿，取代旧「表点击开数据页签」）**：**单击任何节点仅选中**（同步活动连接，不开页签）；**双击**：连接节点（depth 0）= 离线即连接（`onTreeOpen` 必须显式处理连接节点，只处理叶子会出现「双击不连接、右键才能连」）；可展开节点折叠/展开，不可展开叶子触发 `open` 事件（UiTree 新增 emit：表/视图→结构页签，Redis 键→键详情）；打开数据页签只在右键菜单「查看数据」。右键按层级出菜单。tab id 带连接前缀（`data-<connId>-<table>` / `structure-<connId>-<table>`）防跨连接同名表冲突。
 - **UiIcon 与 AppIcon 是两套独立图标表**：UiIcon（`core/ui`，@lucide/vue 封装）是小工具图标固定集合（search/grid/copy/play/chevrons/x/refresh/eye/eye-off/dots(横向三点，更多/溢出) 等，TS 字面量枚举，用错名字直接 TS2322，新增图标 = 注册表加一行）；AppIcon（`features/ui`）是工具大图标表（lock/db/gear/sliders 等）。用图标前先 grep 对应表确认名字存在，勿跨表引用。**注册新图标前先确认 lucide 真有这个导出**：`ls node_modules/@lucide/vue/dist/esm/icons/ | grep '^<kebab-name>'`（文件名即 kebab 名，`arrow-left-to-line.mjs` → 导出 `ArrowLeftToLine`），确认后再在注册表加一行并补中文用途注释。
-- **UiIconButton 无 disabled prop 但可透传**：UiButton 读 `$attrs.disabled === true`，直接 `:disabled` 即可；尺寸 xs=24/sm=28/md=36 正方形。
+- **UiButton / UiIconButton 禁用与尺寸**：UiButton 显式支持 `disabled?: boolean`（裸 `disabled` 和 `:disabled` 均可）；`loading` 同样禁止激活。`as="a"` 时禁用会移除 href 和键盘入口并阻止点击，恢复后还原属性。UiIconButton 将 disabled 透传到 UiButton；xs=24、sm=28、md=36、lg=42px 正方形，响应运行中的 size 变化。
+- **UiRadioGroup 互斥筛选**：`variant="radio"` 为默认圆形单选；`variant="chips"` 为横向可换行筛选按钮，四档 size、options 与受控 modelValue 共用。组必须提供 name，建议 aria-label；options 为 `{ value, label, description?, disabled? }`，chips 显示 label。支持单项/整组禁用及方向键选择；描述较长的表单继续使用 radio 变体。凭证类型筛选已接入 chips。
+- **UiPanel 折叠**：`collapsible` 启用，`defaultOpen` 只控制初始状态；标题入口支持 Enter/空格，aria-expanded/aria-controls 描述状态和内容关联。内容通过 v-show 保留，折叠不销毁输入与子组件。
+- **UiProgress 进度**：`value` 默认 0、`max` 默认 100，有限 value 钳制在 0..max；无效 value 按 0、非正或无效 max 按 100 展示，百分比与 aria 值一致。`indeterminate` 表示总量未知，不提供 aria-valuenow 或百分比，保留 label，动画遵循减少动画设置。
 - **密码框定稿（2026-08-16 三轮纠偏后）**：一律 `UiInput type="password"`——组件自带输入框内眼睛切换明文，**禁止在 label 行/输入框右上角另加眼睛按钮**（会与自带眼睛重复）；**禁止加 `font-mono`**（掩码圆点要与普通输入框视觉一致，font-mono 只给明文数据如 AKID/私钥全文）；WebView2 原生 reveal 眼睛由 main.css `.field-input::-ms-reveal { display: none }` 全局隐藏（否则与组件眼睛重合）。私钥等多行秘密不脱敏，UiTextarea 明文可编辑。UiIcon 的 eye/eye-off 注册保留给非输入框场景（如「显示密钥」列表切换）。
 - **UiSearchInput 不得加回 `type="search"`**：WebView2 原生清除按钮 × 会与组件自带清空按钮重复（双 X 实测被用户报 bug）；同理新输入类组件不要依赖浏览器原生控件装饰（搜索清除/密码眼睛都走组件自绘）。
 - **Tauri 窗口内 HTML5 拖拽不可用（2026-09-05 SSH 分组拖拽实测）**：`dragDropEnabled` 默认 true 把窗口注册成 OLE 拖放目标（OS 文件拖入走 `getCurrentWebview().onDragDropEvent`，SSH 文件上传靠它），副作用是吞掉应用内 HTML5 DnD——合成 DragEvent 正常、真实鼠标拖拽无效。内部拖拽（如列表行拖到分组）用 **pointer 事件自实现**（`useGroupDrag` 模式：pointerdown + 6px 阈值 + window pointermove/pointerup + elementFromPoint 命中 `[data-group-drop]` + Esc 取消 + 跟随指针的浮动标签）；不能为了内部拖拽关掉 dragDropEnabled（会弄丢 OS 文件拖入的路径）。**pointerup 必须做无中间帧兜底**：down 与 up 之间若丢了全部 pointermove（合成输入、极快甩拖），active 永不置位 → 整次拖拽静默丢弃且无任何报错；onPointerUp 先按 up 相对 down 位移 ≥ 阈值补激活，再走投放判定（2026-09-10 双栏文件拖拽实测，背景注入一次 move 都没有）。**pointer 拖拽激活后必须锁浏览器文本选择**：pointer 自实现拖拽不拦默认行为时，拖过路径上的文字会被选中（用户报「拖拽上传下载时会选中拖动区域的文本内容」）——越过阈值激活那一刻 `document.body.style.userSelect='none'` 并 `getSelection().removeAllRanges()` 清掉已开始的选区，拖拽结束（pointerup/Esc/取消）恢复原值；只锁真拖拽期间，单击/双击选词、行内复制不受影响。

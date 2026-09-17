@@ -4,17 +4,30 @@ import type { UiSize } from './types'
 
 const props = withDefaults(
   defineProps<{
-    value: number
+    value?: number
     max?: number
     size?: UiSize
     tone?: 'accent' | 'success' | 'warning' | 'danger'
     label?: string
     showValue?: boolean
+    indeterminate?: boolean
   }>(),
-  { max: 100, size: 'md', tone: 'accent', label: '', showValue: false }
+  {
+    value: 0,
+    max: 100,
+    size: 'md',
+    tone: 'accent',
+    label: '',
+    showValue: false,
+    indeterminate: false,
+  }
 )
 
-const percent = computed(() => Math.min(100, Math.max(0, (props.value / props.max) * 100)))
+const safeMax = computed(() => (Number.isFinite(props.max) && props.max > 0 ? props.max : 100))
+const safeValue = computed(() =>
+  Number.isFinite(props.value) ? Math.min(safeMax.value, Math.max(0, props.value)) : 0
+)
+const percent = computed(() => (safeValue.value / safeMax.value) * 100)
 const barClass = computed(
   () =>
     ({
@@ -33,7 +46,7 @@ const barClass = computed(
       class="mb-xs flex justify-between text-caption text-secondary dark:text-secondary-dark"
     >
       <span>{{ label }}</span
-      ><span v-if="showValue">{{ Math.round(percent) }}%</span>
+      ><span v-if="showValue && !indeterminate">{{ Math.round(percent) }}%</span>
     </div>
     <div
       class="overflow-hidden rounded-full bg-border dark:bg-border-dark"
@@ -43,12 +56,13 @@ const barClass = computed(
     >
       <div
         class="h-full rounded-full transition-[width] duration-200"
-        :class="barClass"
-        :style="{ width: `${percent}%` }"
+        :class="[barClass, { 'animate-pulse motion-reduce:animate-none': indeterminate }]"
+        :style="{ width: indeterminate ? '100%' : `${percent}%` }"
         role="progressbar"
-        :aria-valuenow="value"
+        :aria-label="label || undefined"
+        :aria-valuenow="indeterminate ? undefined : safeValue"
         :aria-valuemin="0"
-        :aria-valuemax="max"
+        :aria-valuemax="safeMax"
       />
     </div>
   </div>

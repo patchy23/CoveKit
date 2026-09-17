@@ -163,8 +163,8 @@ export function useConnectionsMenu(
   ) {
     event.preventDefault()
     menu.value = {
-      x: Math.min(event.clientX, window.innerWidth - 132),
-      y: Math.min(event.clientY, window.innerHeight - 220),
+      x: event.clientX,
+      y: event.clientY,
       ...payload,
     }
   }

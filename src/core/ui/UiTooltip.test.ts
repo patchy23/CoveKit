@@ -135,10 +135,14 @@ it('提示文字在空值间变化时保留触发元素、焦点与原始 ref', 
   content.value = ''
   await nextTick()
   expect(wrapper.get('button').element).toBe(element)
+  expect(target.value).toBe(element)
   expect(document.activeElement).toBe(element)
   content.value = '新路径'
   await nextTick()
   expect(target.value).toBe(element)
+  wrapper.unmount()
+  wrappers.pop()
+  expect(target.value).toBeNull()
 })
 
 it('按住鼠标的拖拽移动继续到达窗口监听', async () => {

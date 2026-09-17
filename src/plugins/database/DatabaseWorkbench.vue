@@ -74,8 +74,8 @@ const tabMenuItems = computed<ContextMenuItem[]>(() => {
 
 function onTabContext(value: string, mouse: MouseEvent) {
   tabMenu.value = {
-    x: Math.min(mouse.clientX, window.innerWidth - 132),
-    y: Math.min(mouse.clientY, window.innerHeight - 120),
+    x: mouse.clientX,
+    y: mouse.clientY,
     tabId: value,
   }
 }

@@ -103,6 +103,7 @@ const rows = [
         <UiProgress :value="48" size="sm" tone="accent" label="sm" show-value />
         <UiProgress :value="72" size="md" tone="warning" label="md" show-value />
         <UiProgress :value="91" size="lg" tone="success" label="lg" show-value />
+        <UiProgress indeterminate label="正在读取总量" />
       </div>
     </UiPanel>
 

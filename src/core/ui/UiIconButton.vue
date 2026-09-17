@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiButton from './UiButton.vue'
+import { computed } from 'vue'
 import type { UiSize } from './types'
 
 const props = withDefaults(
@@ -17,9 +18,10 @@ const props = withDefaults(
  * 注意：不能用 class 覆盖 UiButton 的 !px-[14px]（特异性 0,2,0 高于单类 0,1,0），
  * 用内联 style 才能确保内容区 = 按钮尺寸，图标不被压缩。
  */
-const sizePx = { xs: 24, sm: 28, md: 36, lg: 42 }[props.size]
-
-const squareStyle = { width: `${sizePx}px`, height: `${sizePx}px`, padding: '0' }
+const squareStyle = computed(() => {
+  const sizePx = { xs: 24, sm: 28, md: 36, lg: 42 }[props.size]
+  return { width: `${sizePx}px`, height: `${sizePx}px`, padding: '0' }
+})
 </script>
 
 <template>

@@ -190,7 +190,9 @@ ToolKit 是一个面向大众用户的桌面工具箱：明净、亲和、低学
 - `button-primary` 每屏至多一个；主按钮白字必须落在 tertiary-strong 上，不能直接使用 tertiary。
 - `card` 是工具列表的默认载体：图标（44px 圆角方块、tertiary-soft 底）+ 标题 + 一行描述 + 标签行。
 - `nav-item` 侧栏导航，选中态用 tertiary-soft 底 + **tertiary-strong 字**（13px 小字在浅橙底上需 ≥4.5:1，tertiary 本身仅 3.1:1）；计数徽标随选中态反色。
-- `chip` 用于最近使用与筛选标签，选中态同 nav-item-active 逻辑。
+- `chip` 用于最近使用与筛选标签。互斥筛选使用 `UiRadioGroup variant="chips"`，支持四档控件高度，圆角全圆、水平内边距 `sm`、项间距 `xs`；未选中使用 secondary 文字与 border 描边，悬停使用 border 背景。选中使用 tertiary-soft 背景及 tertiary-strong 文字/描边，深色对应 tertiary-soft-dark 和 tertiary-dark；选中后悬停保留选中色。
+- 右键菜单使用 `ContextMenu`，浮层级别 220、`shadow-card`、surface 背景；按实际尺寸避让视口，边缘留 8px，过高时接入公共纵向滚动区。键盘聚焦项与悬停项均须清晰可见。
+- 无确定总量的进度使用 `UiProgress indeterminate`，不显示虚假百分比；脉冲反馈遵循系统减少动画设置。
 - `tag` 用于 HOT/完成标签：success-soft 底 + success-strong 字（10.5px 小字需 ≥4.5:1，纯 success 绿仅 2.4:1）。
 - `toast` 固定深色，全主题通用，出现在视口底部居中。
 - `code-editor` 的配色分两类，都是 `--cm-*`，**不进本文件色板**：语法高亮（`--cm-keyword` / `-property` / `-variable` / `-string` / `-number` / `-tag` / `-function` / `-operator` / `-punct` / `-comment`，近 GitHub 调色板）与编辑器装饰（`--cm-gutter-bg` / `-active-line` / `-active-gutter-bg` / `-active-gutter-fg` / `-match-bg` / `-match-border`，取 tertiary 的极淡透明度变体；`-indent-guide` / `-indent-guide-active` / `-fold-marker` / `-fold-marker-hover` 取本文件 border-strong / text-muted / secondary 同名语义值，`-selection` / `-selection-match` 取 VS Code 的选区蓝 #add6ff / #264f78））。两类都由 `src/assets/styles/main.css` 的浅色/深色同名区块维护：同名覆盖即完成主题切换，无需重建编辑器实例；编辑器容器外观（边框、背景、字号、行高）仍走上方语义 token。

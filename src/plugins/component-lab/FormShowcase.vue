@@ -31,6 +31,8 @@ const switches = reactive<Record<UiSize, boolean>>({ xs: true, sm: false, md: tr
 const search = ref('component')
 const textarea = ref('多行输入适合脚本、配置、请求体和备注。')
 const radio = ref('system')
+const filter = ref('sqlite')
+const advancedName = ref('折叠后保留输入')
 
 const options = [
   { value: 'sqlite', label: 'SQLite' },
@@ -108,4 +110,23 @@ const themeOptions = [
       <UiRadioGroup v-model="radio" name="theme-preview" :options="themeOptions" />
     </UiPanel>
   </div>
+
+  <UiPanel title="互斥筛选" description="筛选结果使用单选语义；方向键切换，禁用项跳过。">
+    <div class="flex flex-col gap-md">
+      <UiRadioGroup
+        v-for="size in sizes"
+        :key="size"
+        v-model="filter"
+        :name="`filter-${size}`"
+        variant="chips"
+        :size="size"
+        :options="options"
+        :aria-label="`数据库筛选 ${size}`"
+      />
+    </div>
+  </UiPanel>
+
+  <UiPanel title="更多配置" description="支持 Enter 与空格折叠，内容状态保留。" collapsible>
+    <UiField label="配置名称"><UiInput v-model="advancedName" /></UiField>
+  </UiPanel>
 </template>

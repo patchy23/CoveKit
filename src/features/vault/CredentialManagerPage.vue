@@ -64,8 +64,8 @@ const menu = ref<{ x: number; y: number; item: CredentialSummary } | null>(null)
 function openMenu(event: MouseEvent, item: CredentialSummary) {
   event.preventDefault()
   menu.value = {
-    x: Math.min(event.clientX, window.innerWidth - 150),
-    y: Math.min(event.clientY, window.innerHeight - 150),
+    x: event.clientX,
+    y: event.clientY,
     item,
   }
 }

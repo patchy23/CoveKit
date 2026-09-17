@@ -11,6 +11,7 @@ import {
   UiTabs,
 } from '@/core/ui'
 import type { UiSize } from '@/core/ui'
+import ContextMenu from '@/core/ui/ContextMenu.vue'
 
 const sizes: UiSize[] = ['xs', 'sm', 'md', 'lg']
 const tabs = [
@@ -28,6 +29,23 @@ const page = ref(4)
 const listRowActive = ref('row-1')
 const modalOpen = ref(false)
 const modalSize = ref<'sm' | 'md' | 'lg' | 'xl'>('md')
+const menu = ref<{ x: number; y: number } | null>(null)
+const menuResult = ref('尚未选择操作')
+const menuItems = [
+  { label: '打开', onClick: () => (menuResult.value = '已选择打开') },
+  { label: '不可用操作', disabled: true },
+  { label: '', separator: true },
+  { label: '删除', danger: true, onClick: () => (menuResult.value = '已选择删除') },
+]
+
+function openMenu(event: MouseEvent) {
+  const target = event.currentTarget as HTMLElement
+  const rect = target.getBoundingClientRect()
+  menu.value =
+    event.detail === 0 && event.type === 'click'
+      ? { x: rect.left, y: rect.bottom }
+      : { x: event.clientX, y: event.clientY }
+}
 
 function openModal(size: 'sm' | 'md' | 'lg' | 'xl') {
   modalSize.value = size
@@ -99,6 +117,12 @@ function openModal(size: 'sm' | 'md' | 'lg' | 'xl') {
       </div>
     </UiPanel>
   </div>
+
+  <UiPanel title="右键菜单" description="可点击或右键打开；方向键选择，Enter 执行，Esc 关闭。">
+    <UiButton size="sm" @click="openMenu" @contextmenu.prevent="openMenu">打开操作菜单</UiButton>
+    <p class="mt-sm text-body-sm text-secondary dark:text-secondary-dark">{{ menuResult }}</p>
+  </UiPanel>
+  <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
 
   <UiModal
     :open="modalOpen"

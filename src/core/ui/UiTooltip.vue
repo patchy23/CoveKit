@@ -8,7 +8,7 @@ import {
   TooltipTrigger,
   useForwardExpose,
 } from 'reka-ui'
-import { ref, watch } from 'vue'
+import { Comment, defineComponent, Fragment, ref, watch, type VNode } from 'vue'
 import { useTooltipOwnership } from './useTooltipOwnership'
 
 defineOptions({ inheritAttrs: false })
@@ -24,6 +24,21 @@ const props = withDefaults(
 const open = ref(false)
 const { forwardRef } = useForwardExpose()
 const ownership = useTooltipOwnership()
+function triggerNode(nodes: VNode[]): VNode | undefined {
+  for (const node of nodes) {
+    if (node.type === Comment) continue
+    if (node.type === Fragment) {
+      const child = triggerNode(node.children as VNode[])
+      if (child) return child
+    } else return node
+  }
+}
+/** 隔开 Reka as-child 对插槽 VNode 的改写，保留调用方缓存节点上的原始 ref；不增加 DOM。 */
+const TooltipTarget = defineComponent({
+  setup(_, { slots }) {
+    return () => triggerNode(slots.default?.() ?? [])
+  },
+})
 function close() {
   open.value = false
   ownership.release()
@@ -86,9 +101,9 @@ watch(
         @focus.capture="focus"
         @blur="close"
       >
-        <slot />
+        <TooltipTarget><slot /></TooltipTarget>
       </TooltipTrigger>
-      <TooltipPortal>
+      <TooltipPortal v-if="open && ownership.isOwner.value && !disabled && !!content">
         <TooltipContent
           :aria-label="content"
           :side="side"

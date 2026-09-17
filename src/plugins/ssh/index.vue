@@ -63,8 +63,8 @@ function openConnectionMenu(id: string, event: MouseEvent) {
   event.preventDefault()
   if (!connectionWorkspaces.value.some((item) => item.id === id)) return
   connectionMenu.value = {
-    x: Math.max(0, Math.min(event.clientX, window.innerWidth - 148)),
-    y: Math.max(0, Math.min(event.clientY, window.innerHeight - 44)),
+    x: event.clientX,
+    y: event.clientY,
   }
 }
 /** 已知主机管理弹窗开关 */

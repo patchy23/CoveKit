@@ -3,10 +3,10 @@
  * UiPanel · 通用卡片容器
  *
  * collapsible：标题行变成可点的折叠开关（chevron 指示展开态），内容用 v-show 收起，
- * 内部表单控件的已填值与滚动位置在收起/展开间保持；标题行同时支持 Enter 键切换。
+ * 内部表单控件的已填值与滚动位置在收起/展开间保持；标题行支持 Enter 与空格切换。
  * 非 collapsible 时仍按原样直接渲染默认插槽（不额外包一层 DOM），避免影响既有页面的 flex/grid 布局。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, useId } from 'vue'
 import UiIcon from './UiIcon.vue'
 
 const props = withDefaults(
@@ -25,6 +25,7 @@ const props = withDefaults(
 
 /** 折叠面板的展开态（非折叠面板恒为展开） */
 const open = ref(props.defaultOpen)
+const contentId = useId()
 
 /** 是否处于收起态（收起时标题行不留底部间距） */
 const collapsed = computed(() => props.collapsible && !open.value)
@@ -61,8 +62,11 @@ function toggle() {
         :class="collapsible ? 'cursor-pointer select-none' : ''"
         :role="collapsible ? 'button' : undefined"
         :tabindex="collapsible ? 0 : undefined"
+        :aria-expanded="collapsible ? open : undefined"
+        :aria-controls="collapsible ? contentId : undefined"
         @click="collapsible && toggle()"
         @keydown.enter.prevent="collapsible && toggle()"
+        @keydown.space.prevent="collapsible && toggle()"
       >
         <UiIcon
           v-if="collapsible"
@@ -87,7 +91,7 @@ function toggle() {
       </div>
       <div v-if="$slots.actions" class="shrink-0"><slot name="actions" /></div>
     </header>
-    <div v-if="collapsible" v-show="open"><slot /></div>
+    <div v-if="collapsible" v-show="open" :id="contentId"><slot /></div>
     <slot v-else />
   </section>
 </template>

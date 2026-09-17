@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { UiButton, UiSearchInput } from '@/core/ui'
+import { UiButton, UiRadioGroup, UiSearchInput } from '@/core/ui'
 import type { CredentialKind } from '@/core/ipc/contracts'
 
-defineProps<{
+const props = defineProps<{
   query: string
   kindFilter: CredentialKind | 'all'
   chips: Array<{ value: CredentialKind | 'all'; label: string }>
@@ -14,6 +14,10 @@ const emit = defineEmits<{
   'update:query': [value: string]
   'update:kindFilter': [value: CredentialKind | 'all']
 }>()
+function updateKind(value: string) {
+  const chip = props.chips.find((item) => item.value === value)
+  if (chip) emit('update:kindFilter', chip.value)
+}
 </script>
 
 <template>
@@ -30,22 +34,14 @@ const emit = defineEmits<{
     <UiButton size="sm" variant="secondary" @click="emit('export')">导出</UiButton>
     <UiButton size="sm" variant="primary" @click="emit('create')">+ 新建凭证</UiButton>
   </div>
-  <div class="mb-[8px] flex flex-wrap gap-[6px]">
-    <UiButton
-      v-for="chip in chips"
-      :key="chip.value"
-      size="xs"
-      variant="ghost"
-      class="rounded-full border"
-      :aria-pressed="kindFilter === chip.value"
-      :class="
-        kindFilter === chip.value
-          ? 'border-tertiary-strong bg-tertiary-soft text-tertiary-strong hover:bg-tertiary-soft hover:text-tertiary-strong dark:border-tertiary-dark dark:bg-tertiary-soft-dark dark:text-tertiary-dark dark:hover:bg-tertiary-soft-dark dark:hover:text-tertiary-dark'
-          : 'border-border dark:border-border-dark'
-      "
-      @click="emit('update:kindFilter', chip.value)"
-    >
-      {{ chip.label }}
-    </UiButton>
-  </div>
+  <UiRadioGroup
+    :model-value="kindFilter"
+    :options="chips"
+    name="credential-kind"
+    aria-label="凭证类型筛选"
+    variant="chips"
+    size="xs"
+    class="mb-[8px]"
+    @update:model-value="updateKind"
+  />
 </template>
