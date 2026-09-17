@@ -69,7 +69,9 @@ function formatMsgTime(t: number) {
               <div class="mb-[2px] text-caption opacity-70">
                 {{ m.direction === 'sent' ? '发送' : '接收' }} · {{ formatMsgTime(m.time) }}
               </div>
-              <div class="whitespace-pre-wrap break-all font-mono text-body-sm leading-relaxed">
+              <div
+                class="select-text whitespace-pre-wrap break-all font-mono text-body-sm leading-relaxed"
+              >
                 {{ m.content }}
               </div>
             </div>

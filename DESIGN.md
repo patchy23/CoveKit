@@ -185,6 +185,8 @@ ToolKit 是一个面向大众用户的桌面工具箱：明净、亲和、低学
 
 ## Components
 
+- 文本选择按桌面应用语义划分：界面标题、标签、按钮、页签、导航与 placeholder 默认不可选择；输入值、代码编辑器正文、日志、代码块和表格数据保留选择。按钮嵌在数据区时仍不可选；其它需要手工复制的结果文字显式加 `select-text`，不要按 `font-mono` 字体一概开放。终端继续使用 xterm 自身选区逻辑，不拦截全局鼠标、键盘或复制事件。
+
 - `scroll-area` 横纵厚度统一 9px，滑块透明边框 2px、圆角 full，轨道与交汇角落透明；滑块默认 border-strong、悬停 text-muted、拖动 secondary，暗色使用对应 dark tokens。保持原生滚动、触控惯性和键盘行为，终端等深色画布固定使用暗色配色。
 
 - `button-primary` 每屏至多一个；主按钮白字必须落在 tertiary-strong 上，不能直接使用 tertiary。

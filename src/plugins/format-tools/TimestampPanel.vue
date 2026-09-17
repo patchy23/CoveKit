@@ -56,7 +56,7 @@ function useNow() {
     <div v-if="tsResult" class="grid grid-cols-2 gap-[10px]">
       <UiPanel padding="sm">
         <div class="text-caption font-semibold text-text-muted">标准时间</div>
-        <div class="mt-[4px] font-mono text-body dark:text-primary-dark">
+        <div class="mt-[4px] select-text font-mono text-body dark:text-primary-dark">
           {{ tsResult.local }}
         </div>
         <UiButton
@@ -69,7 +69,9 @@ function useNow() {
       </UiPanel>
       <UiPanel padding="sm">
         <div class="text-caption font-semibold text-text-muted">UTC 时间</div>
-        <div class="mt-[4px] font-mono text-body dark:text-primary-dark">{{ tsResult.utc }}</div>
+        <div class="mt-[4px] select-text font-mono text-body dark:text-primary-dark">
+          {{ tsResult.utc }}
+        </div>
         <UiButton
           class="mt-[6px]"
           variant="ghost"
@@ -80,11 +82,15 @@ function useNow() {
       </UiPanel>
       <UiPanel padding="sm">
         <div class="text-caption font-semibold text-text-muted">毫秒</div>
-        <div class="mt-[4px] font-mono text-body dark:text-primary-dark">{{ tsResult.ms }}</div>
+        <div class="mt-[4px] select-text font-mono text-body dark:text-primary-dark">
+          {{ tsResult.ms }}
+        </div>
       </UiPanel>
       <UiPanel padding="sm">
         <div class="text-caption font-semibold text-text-muted">秒</div>
-        <div class="mt-[4px] font-mono text-body dark:text-primary-dark">{{ tsResult.sec }}</div>
+        <div class="mt-[4px] select-text font-mono text-body dark:text-primary-dark">
+          {{ tsResult.sec }}
+        </div>
       </UiPanel>
     </div>
 
@@ -106,7 +112,7 @@ function useNow() {
       v-if="dateResult !== null"
       class="flex items-center justify-between rounded-md border border-border p-[12px] dark:border-border-dark"
     >
-      <span class="font-mono text-body text-tertiary-strong dark:text-tertiary-dark">{{
+      <span class="select-text font-mono text-body text-tertiary-strong dark:text-tertiary-dark">{{
         dateResult
       }}</span>
       <UiButton variant="ghost" size="sm" @click="copyText(String(dateResult), '已复制')"

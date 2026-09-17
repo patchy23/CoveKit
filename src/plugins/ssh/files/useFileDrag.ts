@@ -3,7 +3,7 @@
  * Tauri dragDropEnabled 会吞掉应用内 HTML5 拖拽（AGENTS.md 已知坑），必须用 pointerdown/move/up 手写。
  * 参照 useGroupDrag 的阈值与监听模式；拖拽起点 = 行 pointerdown，跨栏投放才生效（同栏投放丢弃）。
  */
-import { ref, type Ref } from 'vue'
+import { onScopeDispose, ref, type Ref } from 'vue'
 import type { RemoteFile } from '../contracts'
 
 /** 拖动超过该位移才算拖拽（避免吞掉单击/双击） */
@@ -84,15 +84,24 @@ export function useFileDrag(deps: {
 
   /** 拖拽激活后禁止浏览器文本选择（pointer 拖拽会顺带选中拖动区域文字） */
   let prevUserSelect = ''
+  let hadSelectionLock = false
+  let selectionLocked = false
   function lockTextSelection() {
+    if (selectionLocked) return
+    selectionLocked = true
     const body = document.body
     prevUserSelect = body.style.userSelect
+    hadSelectionLock = body.classList.contains('ui-drag-select-lock')
+    body.classList.add('ui-drag-select-lock')
     body.style.userSelect = 'none'
     const sel = window.getSelection()
     if (sel && !sel.isCollapsed) sel.removeAllRanges()
   }
   function restoreTextSelection() {
+    if (!selectionLocked) return
+    selectionLocked = false
     document.body.style.userSelect = prevUserSelect
+    document.body.classList.toggle('ui-drag-select-lock', hadSelectionLock)
   }
 
   function onPointerMove(event: PointerEvent) {
@@ -121,6 +130,7 @@ export function useFileDrag(deps: {
     dragTarget.value = null
     restoreTextSelection()
     window.removeEventListener('pointermove', onPointerMove)
+    window.removeEventListener('pointerup', onPointerUp)
     window.removeEventListener('keydown', onKeydown)
   }
 
@@ -148,5 +158,6 @@ export function useFileDrag(deps: {
     if (event.key === 'Escape') cleanup()
   }
 
+  onScopeDispose(cleanup)
   return { drag, dragTarget, onRowPointerDown }
 }

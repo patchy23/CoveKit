@@ -113,7 +113,7 @@ watch(
         <div
           v-for="(item, index) in visible"
           :key="`${item.ts}-${index}`"
-          class="flex items-start gap-[8px] whitespace-pre font-mono text-body-sm leading-[1.5]"
+          class="flex select-text items-start gap-[8px] whitespace-pre font-mono text-body-sm leading-[1.5]"
         >
           <span class="shrink-0 text-text-muted dark:text-text-muted-dark">{{
             formatTime(item.ts)

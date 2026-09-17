@@ -1,6 +1,13 @@
 @import 'tailwindcss';
 @import '../../core/ui/scrollbars.css';
 
+/* 拖拽期间覆盖结果区的 select-text，结束后恢复各区域原有选择语义。 */
+body.ui-drag-select-lock,
+body.ui-drag-select-lock * {
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
 /* ============================================================
  * patchyBox · DESIGN.md tokens 单一事实源映射（Tailwind 4 @theme）
  * 修改视觉规范先改 DESIGN.md，再同步此处；勿在此引入规范外色值。
@@ -226,6 +233,29 @@
     font-size: 14px;
     line-height: 1.5;
     font-synthesis: none;
+    /* 桌面操作界面默认不选中文字；可编辑和结果区域在下方显式开放。 */
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'],
+  .cm-content,
+  pre,
+  code,
+  output,
+  td:not([data-content-kind='action']) {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+
+  /* 数据区域内的按钮、菜单等仍是操作入口，不跟随正文进入可选状态。 */
+  :where(button, [role='button'], [role='tab'], [role='menuitem'], [role='option']),
+  :where(button, [role='button'], [role='tab'], [role='menuitem'], [role='option']) *,
+  .cm-placeholder {
+    -webkit-user-select: none;
+    user-select: none;
   }
 
   /* WebView 原生控件不得使用系统默认字体；统一继承应用无衬线字体栈。 */
@@ -243,6 +273,8 @@
   /* placeholder 统一规范：次级字号（12px）+ 弱化色 */
   input::placeholder,
   textarea::placeholder {
+    -webkit-user-select: none;
+    user-select: none;
     color: var(--color-text-muted);
     font-size: var(--text-body-sm);
   }

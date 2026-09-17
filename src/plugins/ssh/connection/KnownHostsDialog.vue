@@ -87,7 +87,7 @@ defineExpose({ load })
           :content="entry.fingerprint"
         >
           <UiListRow size="sm">
-            <div class="flex min-w-0 flex-1 items-center gap-[10px]">
+            <div class="flex min-w-0 flex-1 select-text items-center gap-[10px]">
               <span class="font-mono text-body-sm text-primary dark:text-primary-dark">
                 {{ entry.host }}<span v-if="entry.port !== 22">:{{ entry.port }}</span>
               </span>
