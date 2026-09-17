@@ -146,28 +146,19 @@ function confirmDeleteGroup() {
     :class="{ 'select-none': drag?.active }"
   >
     <div class="shrink-0 px-[12px] py-[10px]">
-      <!-- 搜索 + 添加同一行：搜索框弹性占满，右侧 + 号按钮 -->
-      <div class="flex items-center gap-[6px]">
-        <UiSearchInput
-          :model-value="searchKeyword"
-          size="sm"
-          class="min-w-0 flex-1"
-          placeholder="搜索服务器..."
-          @update:model-value="emit('update:searchKeyword', $event)"
-        />
-        <UiIconButton label="添加服务器" size="sm" title="添加服务器" @click="emit('add')">
-          <UiIcon name="plus" :size="14" />
-        </UiIconButton>
-
-        <UiIconButton
-          label="已知主机"
-          size="sm"
-          title="已知主机（指纹管理）"
-          @click="emit('knownHosts')"
-        >
-          <UiIcon name="eye" :size="14" />
-        </UiIconButton>
-      </div>
+      <UiSearchInput
+        :model-value="searchKeyword"
+        size="sm"
+        class="min-w-0"
+        placeholder="搜索服务器..."
+        @update:model-value="emit('update:searchKeyword', $event)"
+      >
+        <template #actions>
+          <UiIconButton label="添加服务器" size="xs" @click="emit('add')">
+            <UiIcon name="plus" :size="14" />
+          </UiIconButton>
+        </template>
+      </UiSearchInput>
     </div>
 
     <div class="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[8px]">
@@ -209,9 +200,10 @@ function confirmDeleteGroup() {
       </p>
     </div>
 
-    <!-- 底部：新建分组入口 -->
+    <!-- 底部入口常驻，搜索或列表铺满时仍可管理指纹。 -->
     <div class="shrink-0 border-t border-border px-[12px] py-[8px] dark:border-border-dark">
-      <UiButton variant="ghost" size="sm" block @click="openCreate">+ 新建分组</UiButton>
+      <UiButton variant="ghost" size="sm" block @click="openCreate">新建分组</UiButton>
+      <UiButton variant="ghost" size="sm" block @click="emit('knownHosts')">主机指纹管理</UiButton>
     </div>
 
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />

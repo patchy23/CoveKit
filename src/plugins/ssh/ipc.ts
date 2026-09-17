@@ -114,6 +114,7 @@ export const ipc = {
   sshServiceList: (p: Payloads['ssh_service_list']) => cmd(commands.sshServiceList, p),
   sshServiceAction: (p: Payloads['ssh_service_action']) => cmd(commands.sshServiceAction, p),
   sshServiceLogs: (p: Payloads['ssh_service_logs']) => cmd(commands.sshServiceLogs, p),
+  sshServiceConfig: (p: Payloads['ssh_service_config']) => cmd(commands.sshServiceConfig, p),
 
   /* 进程 */
   sshProcessList: (p: Payloads['ssh_process_list']) => cmd(commands.sshProcessList, p),

@@ -19,6 +19,7 @@ import TerminalSearchBar from './TerminalSearchBar.vue'
 import { createTerminalSearch, isSearchShortcut } from './useTerminalSearch'
 import { ipc, onTerminalClosed, onTerminalData } from '../ipc'
 import { createTerminalResizeController } from './useTerminalResize'
+import { bindTerminalViewport } from './terminalViewport'
 import { bannerTime, disconnectBanner, reconnectSeparator } from './useTerminalBanner'
 import { useTerminalLog } from './useTerminalLog'
 import { useI18n } from 'vue-i18n'
@@ -65,6 +66,8 @@ let terminalGeneration = 0
 let handledConnectRequest = 0
 let handledReconnectTick = 0
 let disposed = false
+let disposeViewport: (() => void) | null = null
+let renderListener: { dispose: () => void } | null = null
 
 const terminalResize = createTerminalResizeController({
   getTerminal: () => term,
@@ -217,6 +220,11 @@ onMounted(async () => {
     return true
   })
   term.open(termHost.value)
+  disposeViewport = bindTerminalViewport(term.element!)
+  renderListener = term.onRender(() => terminalResize.scheduleFitAndSync())
+  void document.fonts?.ready.then(() => {
+    if (!disposed) terminalResize.scheduleFitAndSync()
+  })
   terminalResize.scheduleFitAndSync()
 
   // 用户输入 → 后端；无通道时按 Enter = 重新连接（断开提示引导，缓冲保留）
@@ -261,6 +269,8 @@ onMounted(async () => {
   }
 
   // 窗口尺寸同步（xterm → SSH PTY）
+  // 事件订阅期间组件可能已卸载，不能在晚到的 mounted 续体里重新挂监听。
+  if (disposed || !termHost.value) return
   resizeObserver = new ResizeObserver(() => terminalResize.scheduleFitAndSync())
   resizeObserver.observe(termHost.value)
   window.addEventListener('resize', terminalResize.scheduleFitAndSync)
@@ -279,6 +289,8 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   window.removeEventListener('resize', terminalResize.scheduleFitAndSync)
   terminalResize.cancelScheduledFit()
+  disposeViewport?.()
+  renderListener?.dispose()
   unlistenData?.()
   unlistenClosed?.()
   closeTerminal()
@@ -405,11 +417,13 @@ watch(
     />
 
     <!-- xterm 挂载区 -->
-    <div
-      ref="termHost"
-      class="min-h-0 flex-1 overflow-hidden bg-[#0d1117] p-[8px]"
-      @contextmenu="openContextMenu"
-    />
+    <div class="min-h-0 flex-1 overflow-hidden bg-[#0d1117] p-[8px]">
+      <div
+        ref="termHost"
+        class="h-full min-h-0 w-full overflow-hidden"
+        @contextmenu="openContextMenu"
+      />
+    </div>
     <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
   </div>
 </template>

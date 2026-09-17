@@ -101,9 +101,58 @@ pub async fn ssh_service_logs(
     Ok(serde_json::json!({ "ok": true, "logs": out }))
 }
 
+fn service_config_command(name: &str) -> Result<String, String> {
+    if name.len() > 255
+        || !name.ends_with(".service")
+        || name.starts_with('-')
+        || name.len() <= ".service".len()
+        || !name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_.:@-\\".contains(&byte))
+    {
+        return Err("服务名称无效，请从服务列表选择".into());
+    }
+    Ok(format!("systemctl --no-pager cat -- {}", shell_quote(name)))
+}
+
+/// 只读查看 systemd 主 unit 与 drop-in 配置，不提权、不修改文件。
+#[tauri::command(rename_all = "camelCase")]
+pub async fn ssh_service_config(
+    ssh_state: State<'_, SshState>,
+    connection_id: String,
+    service_name: String,
+) -> Result<String, String> {
+    let command = service_config_command(&service_name)?;
+    let session = get_session(&ssh_state, &connection_id)?;
+    tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        exec_collect(&session, &command),
+    )
+    .await
+    .map_err(|_| "读取服务配置超时，请重试".to_string())?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_command_is_read_only_and_rejects_extra_shell_arguments() {
+        assert_eq!(
+            service_config_command("worker@one.service").unwrap(),
+            "systemctl --no-pager cat -- 'worker@one.service'"
+        );
+        for invalid in [
+            "-bad.service",
+            "x;touch /tmp/test.service",
+            "x\n.service",
+            "../x.service",
+            "*.service",
+            ".service",
+        ] {
+            assert!(service_config_command(invalid).is_err());
+        }
+    }
 
     #[test]
     fn parses_service_line() {

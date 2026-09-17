@@ -425,6 +425,7 @@ mod tests {
         ),
         ("ssh", "ssh_reconnect", "重新连接（新会话替换旧会话）"),
         ("ssh", "ssh_service_action", "服务启动/停止/重启"),
+        ("ssh", "ssh_service_config", "查看 systemd 服务配置"),
         ("ssh", "ssh_service_list", "systemd 服务列表"),
         ("ssh", "ssh_service_logs", "服务日志（journalctl）"),
         ("ssh", "ssh_system_info_get", "远程系统信息与磁盘分区明细"),

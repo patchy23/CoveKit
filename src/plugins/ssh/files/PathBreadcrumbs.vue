@@ -6,6 +6,7 @@
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { UiButton, UiInput } from '@/core/ui'
+import { normalizePathInput } from './pathInput'
 
 const props = withDefaults(
   defineProps<{
@@ -72,9 +73,7 @@ function submit() {
   const value = draft.value.trim()
   if (!value) return
   editing.value = false
-  // 远程路径补前导 /；本地路径原样（盘符开头）
-  const normalized =
-    props.separator === '/' && !value.startsWith('/') ? `/${value}` : value.replace(/\//g, '\\')
+  const normalized = normalizePathInput(value, props.separator)
   emit('navigate', normalized)
 }
 

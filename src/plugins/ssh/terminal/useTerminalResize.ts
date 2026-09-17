@@ -10,48 +10,76 @@ interface TerminalResizeOptions {
   onError: (terminalId: string, error: unknown) => void
 }
 
-/** 管理 xterm 布局测量与远端 PTY 尺寸同步，避免隐藏页签期间测量到 0 尺寸。 */
+interface SizeRequest {
+  id: string
+  cols: number
+  rows: number
+}
+
+/** 可见挂载区不含内边距；测量按帧合并，PTY 请求串行且只同步最新尺寸。 */
 export function createTerminalResizeController(options: TerminalResizeOptions) {
   let fitFrame: number | null = null
+  let disposed = false
+  let syncing = false
+  let pending: SizeRequest | null = null
+  let synced: string | null = null
 
-  function fitTerminal(): boolean {
-    const terminal = options.getTerminal()
-    const fitAddon = options.getFitAddon()
-    const host = options.getHost()
-    if (!terminal || !fitAddon || !host || host.clientWidth <= 0 || host.clientHeight <= 0) {
-      return false
+  async function flush() {
+    if (syncing || disposed) return
+    syncing = true
+    try {
+      while (pending && !disposed) {
+        const request: SizeRequest = pending
+        pending = null
+        if (request.id !== options.getTerminalId()) continue
+        const key = JSON.stringify(request)
+        if (key === synced) continue
+        try {
+          await options.resize(request.id, request.cols, request.rows)
+          if (!disposed) synced = key
+        } catch (error) {
+          if (!disposed && request.id === options.getTerminalId())
+            options.onError(request.id, error)
+        }
+      }
+    } finally {
+      syncing = false
     }
-    fitAddon.fit()
-    const screen = terminal.element?.querySelector<HTMLElement>('.xterm-screen')
-    const style = getComputedStyle(host)
-    const availableHeight =
-      host.clientHeight -
-      parseFloat(style.paddingTop || '0') -
-      parseFloat(style.paddingBottom || '0')
-    if (screen && screen.scrollHeight > availableHeight + 1) {
-      terminal.resize(terminal.cols, Math.max(1, terminal.rows - 1))
-    }
-    return terminal.cols > 0 && terminal.rows > 0
   }
 
   function scheduleFitAndSync() {
-    if (fitFrame !== null) return
+    if (disposed || fitFrame !== null) return
     fitFrame = requestAnimationFrame(() => {
       fitFrame = null
       const terminal = options.getTerminal()
-      const terminalId = options.getTerminalId()
-      if (!fitTerminal() || !terminal || !terminalId) return
-      const { cols, rows } = terminal
-      if (cols <= 0 || rows <= 0) return
-      void options.resize(terminalId, cols, rows).catch((error) => {
-        options.onError(terminalId, error)
-      })
+      const addon = options.getFitAddon()
+      const host = options.getHost()
+      if (!terminal || !addon || !host || host.clientWidth <= 0 || host.clientHeight <= 0) return
+      const size = addon.proposeDimensions()
+      if (
+        !size ||
+        !Number.isFinite(size.cols) ||
+        !Number.isFinite(size.rows) ||
+        size.cols < 2 ||
+        size.rows < 1
+      )
+        return
+      if (terminal.cols !== size.cols || terminal.rows !== size.rows)
+        terminal.resize(size.cols, size.rows)
+      const id = options.getTerminalId()
+      if (!id) {
+        synced = null
+        return
+      }
+      pending = { id, cols: size.cols, rows: size.rows }
+      void flush()
     })
   }
 
   function cancelScheduledFit() {
-    if (fitFrame === null) return
-    cancelAnimationFrame(fitFrame)
+    disposed = true
+    pending = null
+    if (fitFrame !== null) cancelAnimationFrame(fitFrame)
     fitFrame = null
   }
 

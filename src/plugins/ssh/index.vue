@@ -180,7 +180,7 @@ watch(
           title="关闭全部会话"
           @click="cleanupAllOpen = true"
         >
-          <UiIcon name="trash" :size="13" />
+          <UiIcon name="x" :size="13" />
         </UiIconButton>
       </div>
 

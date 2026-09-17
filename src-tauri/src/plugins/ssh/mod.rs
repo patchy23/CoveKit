@@ -85,6 +85,7 @@ crate::patchybox_module! {
         service::ssh_service_list => "systemd 服务列表",
         service::ssh_service_action => "服务启动/停止/重启",
         service::ssh_service_logs => "服务日志（journalctl）",
+        service::ssh_service_config => "查看 systemd 服务配置",
         process::ssh_process_list => "进程列表",
         process::ssh_process_kill => "结束进程",
         process::ssh_process_detail => "进程详情（ps -fp）",

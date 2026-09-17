@@ -330,7 +330,7 @@
   /* 搜索图标和清空按钮的固定占位；优先级高于 ui-control-* 的横向 padding。 */
   .field-input.ui-search-control {
     padding-left: 32px !important;
-    padding-right: 30px !important;
+    padding-right: var(--ui-search-trailing-width, 30px) !important;
   }
   /* 隐藏 WebView2 原生密码 reveal 眼睛：UiInput type=password 已自带输入框内眼睛，双开会重合 */
   .field-input::-ms-reveal {

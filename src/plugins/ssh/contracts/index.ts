@@ -108,6 +108,7 @@ export const commands = {
   sshServiceList: 'ssh_service_list',
   sshServiceAction: 'ssh_service_action',
   sshServiceLogs: 'ssh_service_logs',
+  sshServiceConfig: 'ssh_service_config',
   sshProcessList: 'ssh_process_list',
   sshProcessDetail: 'ssh_process_detail',
   sshProcessKill: 'ssh_process_kill',
@@ -228,6 +229,7 @@ export type Payloads = {
     action: 'start' | 'stop' | 'restart'
   }
   ssh_service_logs: { connectionId: string; serviceName: string; lines?: number }
+  ssh_service_config: { connectionId: string; serviceName: string }
 
   /* 进程 */
   ssh_process_list: { connectionId: string; sortBy?: 'cpu' | 'memory' | 'pid'; keyword?: string }
@@ -329,6 +331,7 @@ export type Results = {
   ssh_service_list: SystemdService[]
   ssh_service_action: SshActionResult
   ssh_service_logs: { ok: boolean; logs: string; error?: string }
+  ssh_service_config: string
 
   /* 进程 */
   ssh_process_list: ProcessInfo[]

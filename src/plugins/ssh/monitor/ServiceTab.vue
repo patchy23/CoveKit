@@ -2,12 +2,13 @@
 /**
  * ServiceTab · systemd 服务管理子页签（后端 exec 真实数据）
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, SystemdService } from '../contracts'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiSelect, UiTable, UiTableCell } from '@/core/ui'
+import { UiButton, UiSearchInput, UiSelect, UiTable, UiTableCell } from '@/core/ui'
 import LiveLogDialog from './LiveLogDialog.vue'
+import ServiceConfigDialog from './ServiceConfigDialog.vue'
 import { ipc } from '../ipc'
 
 const props = defineProps<{
@@ -19,41 +20,54 @@ const ui = useUiStore()
 
 const filter = ref<'all' | 'active' | 'inactive' | 'failed'>('all')
 const services = ref<SystemdService[]>([])
+const query = ref('')
+const configTarget = ref<SystemdService | null>(null)
+let refreshSequence = 0
 const loading = ref(false)
 const logTarget = ref<SystemdService | null>(null)
 const pendingAction = ref<{ service: SystemdService; action: 'stop' | 'restart' } | null>(null)
 
 /** 按状态筛选后的服务列表（computed 自动响应 filter 变化） */
 const filtered = computed(() => {
-  if (filter.value === 'all') return services.value
-  return services.value.filter((s) => s.activeState === filter.value)
+  const keyword = query.value.trim().toLocaleLowerCase()
+  return services.value.filter(
+    (service) =>
+      (filter.value === 'all' || service.activeState === filter.value) &&
+      (!keyword || `${service.name} ${service.description}`.toLocaleLowerCase().includes(keyword))
+  )
 })
 
 async function refresh() {
   const connectionId = props.connection?.sessionId
   if (!connectionId) return
+  const sequence = ++refreshSequence
   loading.value = true
   try {
     const result = await ipc.sshServiceList({
       connectionId,
-      filter: filter.value,
+      filter: 'all',
     })
-    if (props.connection?.sessionId === connectionId) services.value = result
+    if (sequence === refreshSequence && props.connection?.sessionId === connectionId)
+      services.value = result
   } catch (e) {
-    if (props.connection?.sessionId === connectionId) ui.toast(`服务列表加载失败：${e}`)
+    if (sequence === refreshSequence && props.connection?.sessionId === connectionId)
+      ui.toast(`服务列表加载失败：${e}`)
   } finally {
-    if (props.connection?.sessionId === connectionId) loading.value = false
+    if (sequence === refreshSequence && props.connection?.sessionId === connectionId)
+      loading.value = false
   }
 }
 
 async function action(svc: SystemdService, act: 'start' | 'stop' | 'restart') {
-  if (!props.connection?.sessionId) return
+  const connectionId = props.connection?.sessionId
+  if (!connectionId) return
   try {
     const r = await ipc.sshServiceAction({
-      connectionId: props.connection.sessionId,
+      connectionId,
       serviceName: svc.name,
       action: act,
     })
+    if (props.connection?.sessionId !== connectionId) return
     if (r.ok) {
       ui.toast(`${act === 'start' ? '启动' : act === 'stop' ? '停止' : '重启'} ${svc.name} 成功`)
       refresh()
@@ -61,7 +75,7 @@ async function action(svc: SystemdService, act: 'start' | 'stop' | 'restart') {
       ui.toast(`${act} ${svc.name} 失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
-    ui.toast(`操作失败：${e}`)
+    if (props.connection?.sessionId === connectionId) ui.toast(`操作失败：${e}`)
   }
 }
 
@@ -95,12 +109,19 @@ function stateText(s: SystemdService): string {
 watch(
   () => props.connection?.sessionId,
   (sessionId) => {
+    refreshSequence += 1
+    configTarget.value = null
+    logTarget.value = null
+    pendingAction.value = null
     services.value = []
     loading.value = false
     if (sessionId) void refresh()
   },
   { immediate: true }
 )
+onBeforeUnmount(() => {
+  refreshSequence += 1
+})
 </script>
 
 <template>
@@ -109,6 +130,12 @@ watch(
       class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
     >
       <span class="text-body-sm text-secondary dark:text-secondary-dark"> 服务管理 </span>
+      <UiSearchInput
+        v-model="query"
+        size="sm"
+        class="min-w-0 flex-1"
+        placeholder="搜索服务名称或描述"
+      />
       <UiSelect
         :model-value="filter"
         size="sm"
@@ -123,7 +150,15 @@ watch(
         @update:model-value="filter = $event as 'all' | 'active' | 'inactive' | 'failed'"
       />
       <div class="ml-auto">
-        <UiButton variant="ghost" size="sm" title="刷新服务列表" @click="refresh"> 刷新 </UiButton>
+        <UiButton
+          variant="ghost"
+          size="sm"
+          title="刷新服务列表"
+          :loading="loading"
+          @click="refresh"
+        >
+          刷新
+        </UiButton>
       </div>
     </div>
 
@@ -136,7 +171,7 @@ watch(
             <UiTableCell as="th" class="px-[12px] py-[8px]">服务名</UiTableCell>
             <UiTableCell as="th" class="px-[12px] py-[8px]">描述</UiTableCell>
             <UiTableCell as="th" class="w-[90px] px-[12px] py-[8px]">状态</UiTableCell>
-            <UiTableCell as="th" class="w-[140px] px-[12px] py-[8px]">操作</UiTableCell>
+            <UiTableCell as="th" class="w-[190px] px-[12px] py-[8px]">操作</UiTableCell>
           </tr>
         </thead>
         <tbody>
@@ -179,6 +214,7 @@ watch(
                   重启
                 </UiButton>
                 <UiButton variant="ghost" size="xs" @click="logs(s)"> 日志 </UiButton>
+                <UiButton variant="ghost" size="xs" @click="configTarget = s">配置</UiButton>
               </div>
             </UiTableCell>
           </tr>
@@ -199,6 +235,12 @@ watch(
       kind="service"
       :target-id="logTarget.name"
       @close="logTarget = null"
+    />
+    <ServiceConfigDialog
+      v-if="configTarget && connection"
+      :connection-id="connection.sessionId"
+      :service-name="configTarget.name"
+      @close="configTarget = null"
     />
     <ConfirmDialog
       :open="pendingAction !== null"

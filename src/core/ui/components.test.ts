@@ -143,6 +143,17 @@ describe('公共 UI 组件', () => {
     const search = mount(UiSearchInput, { props: { modelValue: '' } })
     expect(search.get('input').classes()).toContain('ui-search-control')
   })
+
+  it('带尾部动作时仍可清空搜索，动作保持独立入口', async () => {
+    const search = mount(UiSearchInput, {
+      props: { modelValue: 'server' },
+      slots: { actions: '<button aria-label="添加服务器">+</button>' },
+    })
+    await search.get('[aria-label="清空搜索"]').trigger('click')
+    expect(search.emitted('update:modelValue')).toEqual([['']])
+    expect(search.get('[aria-label="添加服务器"]').exists()).toBe(true)
+    search.unmount()
+  })
 })
 
 /**
