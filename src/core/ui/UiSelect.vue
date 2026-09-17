@@ -70,27 +70,34 @@ function valueColorClass(value: string) {
       :disabled="disabled"
       @update:model-value="emit('update:modelValue', String($event))"
     >
-      <UiTooltip :content="title" :disabled="open">
-        <SelectTrigger
-          class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] outline-none transition-colors hover:border-border-strong focus-visible:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark dark:focus-visible:border-tertiary-dark"
-          :class="[
-            `ui-control-${size}`,
-            hasCustomValueColor
-              ? valueColorClass(modelValue)
-              : 'text-secondary dark:text-secondary-dark',
-          ]"
-        >
-          <SelectValue :placeholder="placeholder" class="truncate">{{ currentLabel }}</SelectValue>
-          <SelectIcon as-child>
-            <UiIcon
-              name="chevron-down"
-              :size="12"
-              class="shrink-0 transition-transform duration-150"
-              :class="{ 'rotate-180': open }"
-            />
-          </SelectIcon>
-        </SelectTrigger>
-      </UiTooltip>
+      <!-- Select 的锚点必须位于 TooltipRoot 外，避免被提示浮层的 PopperRoot 截获。 -->
+      <SelectTrigger as-child>
+        <UiTooltip :content="title" :disabled="open">
+          <button
+            type="button"
+            :disabled="disabled"
+            class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] outline-none transition-colors hover:border-border-strong focus-visible:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark dark:focus-visible:border-tertiary-dark"
+            :class="[
+              `ui-control-${size}`,
+              hasCustomValueColor
+                ? valueColorClass(modelValue)
+                : 'text-secondary dark:text-secondary-dark',
+            ]"
+          >
+            <SelectValue :placeholder="placeholder" class="truncate">{{
+              currentLabel
+            }}</SelectValue>
+            <SelectIcon as-child>
+              <UiIcon
+                name="chevron-down"
+                :size="12"
+                class="shrink-0 transition-transform duration-150"
+                :class="{ 'rotate-180': open }"
+              />
+            </SelectIcon>
+          </button>
+        </UiTooltip>
+      </SelectTrigger>
 
       <SelectPortal>
         <SelectContent
