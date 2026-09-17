@@ -43,8 +43,6 @@ export const ipc = {
   sshProfileList: () => cmd(commands.sshProfileList, {}),
   sshProfileSave: (p: Payloads['ssh_profile_save']) => cmd(commands.sshProfileSave, { payload: p }),
   sshProfileDelete: (profileId: string) => cmd(commands.sshProfileDelete, { profileId }),
-  sshProfileImport: (p: Payloads['ssh_profile_import']) =>
-    cmd(commands.sshProfileImport, { payload: p }),
   sshGroupList: () => cmd(commands.sshGroupList, {}),
   sshGroupSave: (group: Payloads['ssh_group_save']['group']) =>
     cmd(commands.sshGroupSave, { group }),

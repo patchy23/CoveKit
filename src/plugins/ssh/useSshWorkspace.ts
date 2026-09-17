@@ -61,8 +61,6 @@ export function useSshWorkspace() {
   })
 
   onMounted(async () => {
-    // localStorage 存量配置/分组一次性迁入后端插件库（旧手工凭证由后端迁入 Vault）
-    await profilesApi.importLegacyOnce()
     await Promise.all([profilesApi.loadProfiles(), profilesApi.loadGroups()])
     // 不恢复上一次工具实例遗留的后端会话；重新打开 SSH 工具永远从空状态开始。
     try {

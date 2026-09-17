@@ -12,7 +12,6 @@ import { computed, onScopeDispose, ref } from 'vue'
 import { onSpaceDataChanged } from '@/core/ipc/spaceEvents'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '../ipc'
-import { clearLegacySnapshot, readLegacySnapshot } from '../connection/useSsh'
 import { useServerGroups } from './useServerGroups'
 import type { ServerProfile } from '../contracts'
 
@@ -73,39 +72,6 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
     }
   })
   onScopeDispose(offSpaceDataChanged)
-
-  /** localStorage 存量一次性迁入后端插件库（旧手工凭证由后端迁移进 Vault 并归档） */
-  async function importLegacyOnce() {
-    try {
-      const existing = await ipc.sshProfileList()
-      if (existing.length > 0) {
-        // 已迁移过（或用户手动重建过配置）：清掉 localStorage 快照，静默返回
-        clearLegacySnapshot()
-        return
-      }
-      const legacy = readLegacySnapshot()
-      if (legacy.profiles.length === 0 && legacy.groups.length === 0) return
-      const result = await ipc.sshProfileImport(legacy)
-      await loadProfiles()
-      clearLegacySnapshot()
-      if (result.legacyCredentialsFailed) {
-        ui.toast(
-          `已迁移 ${result.importedProfiles} 台服务器；旧凭证未能自动迁移，请编辑服务器重新保存凭证`
-        )
-      } else {
-        ui.toast(
-          `已迁移 ${result.importedProfiles} 台服务器` +
-            (result.migratedCredentials > 0
-              ? `，${result.migratedCredentials} 个凭证已入凭证库`
-              : '')
-        )
-      }
-    } catch (error) {
-      // 迁移失败保留 localStorage 快照，下次打开工具重试；错误必须可见（曾静默导致“数据消失”假象）
-      console.error('[ssh] 存量迁移失败:', error)
-      ui.toast(`存量配置迁移失败：${error}`)
-    }
-  }
 
   /** 新建分组 */
   async function createGroup(name: string) {
@@ -266,7 +232,6 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
     toggleGroup,
     loadProfiles,
     loadGroups,
-    importLegacyOnce,
     createGroup,
     renameGroup,
     deleteGroup,

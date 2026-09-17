@@ -29,7 +29,6 @@ import type {
   SshGroup,
   ServerConnection,
   ServerProfile,
-  SshImportResult,
   SshSystemInfoResult,
   SystemdService,
   TerminalClosed,
@@ -61,7 +60,6 @@ export const commands = {
   sshProfileList: 'ssh_profile_list',
   sshProfileSave: 'ssh_profile_save',
   sshProfileDelete: 'ssh_profile_delete',
-  sshProfileImport: 'ssh_profile_import',
   sshGroupList: 'ssh_group_list',
   sshGroupSave: 'ssh_group_save',
   sshGroupDelete: 'ssh_group_delete',
@@ -151,7 +149,6 @@ export type Payloads = {
     saveCredential: boolean
   }
   ssh_profile_delete: { profileId: string }
-  ssh_profile_import: { profiles: ServerProfile[]; groups: SshGroup[] }
   ssh_group_list: Record<string, never>
   ssh_group_save: { group: SshGroup }
   ssh_group_delete: { groupId: string }
@@ -257,11 +254,10 @@ export type Payloads = {
 /** 前端 invoke 的真实顶层参数；Rust payload 结构体命令在此统一声明包裹层。 */
 export type InvokePayloads = Omit<
   Payloads,
-  'ssh_connect' | 'ssh_profile_save' | 'ssh_profile_import' | 'ssh_docker_exec'
+  'ssh_connect' | 'ssh_profile_save' | 'ssh_docker_exec'
 > & {
   ssh_connect: { payload: Payloads['ssh_connect'] }
   ssh_profile_save: { payload: Payloads['ssh_profile_save'] }
-  ssh_profile_import: { payload: Payloads['ssh_profile_import'] }
   ssh_docker_exec: { payload: Payloads['ssh_docker_exec'] }
 }
 
@@ -281,7 +277,6 @@ export type Results = {
   ssh_profile_list: ServerProfile[]
   ssh_profile_save: ServerProfile
   ssh_profile_delete: void
-  ssh_profile_import: SshImportResult
   ssh_group_list: SshGroup[]
   ssh_group_save: void
   ssh_group_delete: void

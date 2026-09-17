@@ -1,7 +1,7 @@
 //! SSH 数据模型 · 配置载荷（连接 / 保存 / 导入）
 
-use super::common::{ServerProfile, SshGroup};
-use serde::{Deserialize, Serialize};
+use super::common::ServerProfile;
+use serde::Deserialize;
 
 /* ── 连接请求载荷（前端 ssh_connect 入参） ── */
 
@@ -49,28 +49,4 @@ pub struct SshProfileSavePayload {
     /// 是否把本次输入的凭证保存到 Vault（false = 仅更新配置，凭证保持原引用）
     #[serde(default)]
     pub(crate) save_credential: bool,
-}
-
-/// localStorage → 插件库一次性导入载荷（含旧手工凭证的明文迁移原始输入）
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SshProfileImportPayload {
-    /// 服务器配置列表（localStorage 中的存量数据）
-    pub(crate) profiles: Vec<ServerProfile>,
-    /// 分组列表
-    pub(crate) groups: Vec<SshGroup>,
-}
-
-/// 导入结果摘要（不含任何秘密）
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SshImportResult {
-    /// 导入的服务器配置数
-    pub(crate) imported_profiles: usize,
-    /// 导入的分组数
-    pub(crate) imported_groups: usize,
-    /// 迁移进 Vault 的凭证数
-    pub(crate) migrated_credentials: usize,
-    /// 旧凭证文件存在但解密失败（配置已迁入，凭证需用户重新保存）
-    pub(crate) legacy_credentials_failed: bool,
 }

@@ -6,7 +6,6 @@
  * `profiles/useSshProfiles.ts` 与 `workspace/useSshIdleWatch.ts`，已于 P3b/P3c 删除）的行为覆盖活跃实现里的较新修复。
  *
  * 覆盖（对应决策书 §2.2 必需场景）：
- * 1 → 存量迁移与提示（「已有后端配置」「迁移失败」「成功」「旧凭证解密失败」四分支）
  * 2 → 保存表单生命周期、凭证前置校验、profiles/groups 单一状态源
  * 3 → 删除服务器连带关闭工作区、失败不伪装成功
  * 4 → 并发连接归属、占位绑定、取消/卸载后成功结果不重开页签
@@ -34,7 +33,6 @@ import type {
   ServerProfile,
   SshConnectOutcome,
   SshGroup,
-  SshImportResult,
   TerminalClosed,
   TerminalData,
 } from './contracts'
@@ -103,7 +101,6 @@ const env = vi.hoisted(() => {
 
   const commands = {
     sshProfileList: vi.fn(),
-    sshProfileImport: vi.fn(),
     sshProfileSave: vi.fn(),
     sshProfileDelete: vi.fn(),
     sshConnect: vi.fn(),
@@ -178,16 +175,6 @@ function connection(
 
 function connectOk(requestId: string, profileId: string, sessionId: string): SshConnectOutcome {
   return { ok: true, requestId, connection: connection(profileId, sessionId) }
-}
-
-function importResult(over: Partial<SshImportResult> = {}): SshImportResult {
-  return {
-    importedProfiles: 0,
-    importedGroups: 0,
-    migratedCredentials: 0,
-    legacyCredentialsFailed: false,
-    ...over,
-  }
 }
 
 function group(id: string, name: string): SshGroup {
@@ -295,7 +282,6 @@ function resetIpc(): void {
   env.reset()
   const c = env.commands
   c.sshProfileList.mockResolvedValue([])
-  c.sshProfileImport.mockResolvedValue(importResult())
   c.sshProfileSave.mockImplementation(async (arg: { profile: ServerProfile }) => arg.profile)
   c.sshProfileDelete.mockResolvedValue({ ok: true })
   c.sshConnect.mockImplementation(async (arg: { profileId: string }) =>
@@ -319,7 +305,7 @@ beforeEach(() => {
   pinia = createPinia()
   setActivePinia(pinia)
   resetIpc()
-  // 迁移失败分支会打印错误；用例只断言用户可见提示，不污染测试输出
+  // 失败分支会打印错误；用例只断言用户可见提示，不污染测试输出
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
 })
 
@@ -329,56 +315,6 @@ afterEach(() => {
   fakeTimers = false
   vi.restoreAllMocks()
   localStorage.clear()
-})
-
-/* ── 1. 存量迁移与提示 ── */
-
-describe('SSH 工作区 · 存量配置迁移', () => {
-  it('后端已有配置时不导入存量，并清掉本地快照', async () => {
-    localStorage.setItem('ssh.profiles.v1', JSON.stringify([profile('legacy-1', '旧服务器')]))
-    env.commands.sshProfileList.mockResolvedValue([profile('profile-a', '生产服务器')])
-    const { api } = mountWorkspace()
-    await settle()
-
-    expect(env.commands.sshProfileImport).not.toHaveBeenCalled()
-    expect(localStorage.getItem('ssh.profiles.v1')).toBeNull()
-    expect(api.profiles.value.map((item) => item.id)).toEqual(['profile-a'])
-  })
-
-  it('迁移失败：提示可见且快照保留（下次打开重试）', async () => {
-    localStorage.setItem('ssh.profiles.v1', JSON.stringify([profile('legacy-1', '旧服务器')]))
-    env.commands.sshProfileImport.mockRejectedValue(new Error('凭证库不可用'))
-    mountWorkspace()
-    await settle()
-
-    expect(toastText()).toContain('存量配置迁移失败')
-    expect(localStorage.getItem('ssh.profiles.v1')).not.toBeNull()
-  })
-
-  it('迁移成功：提示台数与凭证数，快照清理', async () => {
-    localStorage.setItem('ssh.profiles.v1', JSON.stringify([profile('legacy-1', '旧服务器')]))
-    env.commands.sshProfileImport.mockResolvedValue(
-      importResult({ importedProfiles: 2, importedGroups: 1, migratedCredentials: 1 })
-    )
-    mountWorkspace()
-    await settle()
-
-    expect(toastText()).toContain('已迁移 2 台服务器')
-    expect(toastText()).toContain('1 个凭证已入凭证库')
-    expect(localStorage.getItem('ssh.profiles.v1')).toBeNull()
-  })
-
-  it('旧凭证解密失败：单独提示，不谎报凭证已入凭证库', async () => {
-    localStorage.setItem('ssh.profiles.v1', JSON.stringify([profile('legacy-1', '旧服务器')]))
-    env.commands.sshProfileImport.mockResolvedValue(
-      importResult({ importedProfiles: 2, legacyCredentialsFailed: true })
-    )
-    mountWorkspace()
-    await settle()
-
-    expect(toastText()).toContain('旧凭证未能自动迁移')
-    expect(toastText()).not.toContain('凭证已入凭证库')
-  })
 })
 
 /* ── 2. 服务器配置、凭证前置校验与单一状态源 ── */
@@ -505,8 +441,7 @@ describe('SSH 工作区 · 服务器配置与分组', () => {
     expect(toastText()).toContain('已创建分组')
   })
 
-  it('服务器列表以后端为唯一来源，本地副本被清理，关键词过滤生效', async () => {
-    localStorage.setItem('ssh.profiles.v1', JSON.stringify([profile('legacy-1', '旧服务器')]))
+  it('服务器列表以后端为唯一来源，关键词过滤生效', async () => {
     env.commands.sshProfileList.mockResolvedValue([
       profile('profile-a', '生产服务器'),
       profile('profile-b', '测试环境'),
@@ -516,8 +451,6 @@ describe('SSH 工作区 · 服务器配置与分组', () => {
 
     expect(api.profiles.value.map((item) => item.id)).toEqual(['profile-a', 'profile-b'])
     expect(api.filteredProfiles.value).toHaveLength(2)
-    expect(localStorage.getItem('ssh.profiles.v1')).toBeNull()
-
     api.searchKeyword.value = '测试'
     expect(api.filteredProfiles.value.map((item) => item.id)).toEqual(['profile-b'])
   })

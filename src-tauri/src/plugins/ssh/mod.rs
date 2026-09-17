@@ -4,14 +4,12 @@
 //! - conn.rs：连接会话注册表（russh 客户端 + 分阶段事件 + 主机密钥人工确认）
 //! - host_keys.rs：已知主机解析/删除/替换（私有 known_hosts 文件）
 //! - store.rs：服务器配置与分组持久化（ssh.db，PluginDb 骨架）
-//! - credential.rs：旧版手工凭证读取与归档（已迁移 Vault，仅存档兼容）
 //! - terminal.rs：PTY 终端通道（事件推送）
 //! - log.rs：终端会话日志（ANSI 剥离后旁路落盘）
 //! - file.rs / edit.rs / monitor.rs / system_info.rs / service.rs / process.rs / docker.rs：其余能力
 
 mod close_hooks; // 关闭清理钩子（登记到 framework/lifecycle，退出时由框架协调调用）
 pub(crate) mod conn; // conn/ 目录：会话注册表 + 连接/重连（能力域下沉，引用路径经 mod.rs pub use 保持不变）
-pub(crate) mod credential;
 mod credential_refs;
 pub(crate) mod docker;
 pub(crate) mod edit;
@@ -95,7 +93,6 @@ crate::patchybox_module! {
         docker::ssh_docker_logs => "容器日志",
         docker::ssh_docker_exec => "进入容器终端（PTY）",
         conn::connect::ssh_connect => "建立 SSH 连接（按 profileId 取配置，凭证在 Rust 侧解析）",
-        store::profiles::ssh_profile_import => "导入存量服务器配置与旧手工凭证（同 id upsert，幂等）",
         log::ssh_terminal_log_start => "开始录制终端日志（幂等，已在录制则返回当前文件）",
     },
 }

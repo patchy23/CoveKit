@@ -6,7 +6,6 @@ import type {
   ServerProfile,
   ServerConnection,
   ConnectionStatus,
-  SshGroup,
   TerminalSession,
   RemoteFile,
 } from '../contracts'
@@ -74,53 +73,6 @@ export const mockProfiles: ServerProfile[] = [
     remark: '本地 Kubernetes',
   },
 ]
-
-/* ── localStorage 存量快照（一次性迁移到后端插件库；迁移成功后由调用方清理） ── */
-
-const PROFILES_KEY = 'ssh.profiles.v1'
-const GROUPS_KEY = 'ssh.groups.v1'
-
-export interface LegacySnapshot {
-  profiles: ServerProfile[]
-  groups: SshGroup[]
-}
-
-/** 读取 localStorage 存量快照（secretRef → credentialRef 字段映射；无存量返回空） */
-export function readLegacySnapshot(): LegacySnapshot {
-  let profiles: ServerProfile[] = []
-  let groups: SshGroup[] = []
-  try {
-    const rawProfiles = localStorage.getItem(PROFILES_KEY)
-    if (rawProfiles) {
-      profiles = (JSON.parse(rawProfiles) as (ServerProfile & { secretRef?: string })[]).map(
-        ({ secretRef, ...rest }) => ({
-          ...rest,
-          credentialRef: secretRef,
-        })
-      )
-    }
-  } catch {
-    /* 数据损坏时按空处理 */
-  }
-  try {
-    const rawGroups = localStorage.getItem(GROUPS_KEY)
-    if (rawGroups) {
-      // 旧分组字段 order → sortOrder
-      groups = (JSON.parse(rawGroups) as (SshGroup & { order?: number })[]).map(
-        ({ order, ...rest }) => ({ ...rest, sortOrder: order ?? 0 })
-      )
-    }
-  } catch {
-    /* 数据损坏时按空处理 */
-  }
-  return { profiles, groups }
-}
-
-/** 清理 localStorage 存量快照（迁移成功后调用） */
-export function clearLegacySnapshot(): void {
-  localStorage.removeItem(PROFILES_KEY)
-  localStorage.removeItem(GROUPS_KEY)
-}
 
 export const mockConnections: ServerConnection[] = [
   {

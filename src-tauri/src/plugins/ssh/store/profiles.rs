@@ -1,7 +1,6 @@
 //! SSH 插件 · 服务器配置与分组持久化（ssh.db；profile 只存 credentialRef 引用）
 
 use rusqlite::Connection;
-use std::collections::HashMap;
 use tauri::{AppHandle, State};
 
 use crate::plugins::ssh::models::{AuthMethod, ServerProfile, SshGroup};
@@ -180,9 +179,7 @@ pub(crate) fn auth_method_from_str(value: &str) -> AuthMethod {
 use crate::framework::vault::models::{CredentialFields, CredentialSavePayload};
 
 use super::tunnels::credential_shared_by_others;
-use crate::plugins::ssh::models::{
-    SshImportResult, SshProfileImportPayload, SshProfileSavePayload,
-};
+use crate::plugins::ssh::models::SshProfileSavePayload;
 
 /// 服务器配置列表
 #[tauri::command(rename_all = "camelCase")]
@@ -311,108 +308,4 @@ pub fn ssh_group_delete(
     group_id: String,
 ) -> Result<(), String> {
     with_db(&app, &state, |conn| delete_group(conn, &group_id))
-}
-
-/// localStorage 存量数据一次性导入：profiles/groups 入库，旧手工凭证（AES 文件）迁入 Vault。
-/// 全程幂等（同 id upsert）；迁移成功后归档旧凭证文件（改名保留，不删除）。
-#[tauri::command(rename_all = "camelCase")]
-pub fn ssh_profile_import(
-    app: AppHandle,
-    state: State<'_, ProfileState>,
-    payload: SshProfileImportPayload,
-) -> Result<SshImportResult, String> {
-    // 旧 AES 凭证文件（profileId → {authMethod, password, privateKey, passphrase}）
-    // 解密失败（主密钥丢失等）只跳过凭证迁移，配置照常导入——否则用户视角=服务器列表消失
-    let mut legacy_credentials_failed = false;
-    let legacy = match crate::plugins::ssh::credential::read_all(&app) {
-        Ok(map) => map,
-        Err(e) => {
-            eprintln!("[ssh] 旧凭证读取失败，跳过凭证迁移: {e}");
-            legacy_credentials_failed = true;
-            HashMap::new()
-        }
-    };
-    let now = crate::plugins::ssh::conn::now_ms() as i64;
-    let mut migrated_credentials = 0usize;
-
-    let profiles = payload.profiles.clone();
-    let groups = payload.groups.clone();
-    with_db(&app, &state, |conn| {
-        for group in &groups {
-            upsert_group(conn, group)?;
-        }
-        for profile in &profiles {
-            let mut to_save = profile.clone();
-            // 已有 Vault 引用（新数据）直接保留；否则查旧手工凭证并迁移
-            let has_ref = to_save
-                .credential_ref
-                .as_deref()
-                .map(|s| !s.trim().is_empty())
-                .unwrap_or(false);
-            if !has_ref {
-                to_save.credential_ref = None;
-                if let Some(legacy) = legacy.get(&profile.id) {
-                    let auth_method = auth_method_from_str(
-                        legacy
-                            .get("authMethod")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("password"),
-                    );
-                    let password = legacy
-                        .get("password")
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty());
-                    let private_key = legacy
-                        .get("privateKey")
-                        .and_then(|v| v.as_str())
-                        .filter(|s| !s.is_empty());
-                    if password.is_some() || private_key.is_some() {
-                        let fields = if auth_method == AuthMethod::Password {
-                            CredentialFields::Password {
-                                username: profile.username.clone(),
-                                password: password.unwrap_or_default().to_string(),
-                            }
-                        } else {
-                            CredentialFields::SshKey {
-                                username: profile.username.clone(),
-                                private_key: private_key.unwrap_or_default().to_string(),
-                                passphrase: legacy
-                                    .get("passphrase")
-                                    .and_then(|v| v.as_str())
-                                    .filter(|s| !s.is_empty())
-                                    .map(String::from),
-                            }
-                        };
-                        let summary = crate::framework::vault::vault_save(
-                            app.clone(),
-                            CredentialSavePayload {
-                                id: None,
-                                name: format!("{}（SSH）", profile.name),
-                                kind: fields.kind(),
-                                fields,
-                                note: "由 SSH 手工凭证自动迁移".into(),
-                            },
-                        )?;
-                        to_save.credential_ref = Some(summary.id);
-                        migrated_credentials += 1;
-                    }
-                }
-            }
-            upsert_profile(conn, &to_save, now)?;
-        }
-        Ok(())
-    })?;
-
-    // 迁移成功后归档旧凭证文件（失败不影响导入结果，下次启动可重试归档）
-    if migrated_credentials > 0 {
-        if let Err(e) = crate::plugins::ssh::credential::archive_legacy_file(&app) {
-            eprintln!("[ssh] 旧凭证文件归档失败（不影响迁移结果）: {e}");
-        }
-    }
-    Ok(SshImportResult {
-        imported_profiles: profiles.len(),
-        imported_groups: groups.len(),
-        migrated_credentials,
-        legacy_credentials_failed,
-    })
 }

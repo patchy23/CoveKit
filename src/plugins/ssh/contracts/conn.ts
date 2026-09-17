@@ -89,17 +89,3 @@ export interface SshConnectOutcome {
 
   error?: SshConnectError
 }
-
-/** 一次性导入结果摘要 */
-
-export interface SshImportResult {
-  importedProfiles: number
-
-  importedGroups: number
-
-  migratedCredentials: number
-
-  /** 旧凭证文件存在但解密失败（配置已迁入，凭证需重新保存） */
-
-  legacyCredentialsFailed: boolean
-}
