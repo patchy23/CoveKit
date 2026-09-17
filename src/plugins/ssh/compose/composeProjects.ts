@@ -3,9 +3,17 @@ import type { ComposeProject } from '../contracts'
 /** 项目名是 Docker 侧身份，查询到的快照优先于本地路径记录。 */
 export function mergeComposeProjects(remote: ComposeProject[], remembered: ComposeProject[]) {
   const projects = new Map(
-    remembered.map((project) => [project.name, { ...project, status: '本地记录 · 未查询到容器' }])
+    remembered.map((project) => [project.name, { ...project, status: '未部署' }])
   )
-  for (const project of remote) projects.set(project.name, project)
+  for (const project of remote)
+    projects.set(project.name, {
+      ...project,
+      ...(project.workingDir
+        ? {}
+        : projects.get(project.name)?.workingDir
+          ? { workingDir: projects.get(project.name)!.workingDir }
+          : {}),
+    })
   return [...projects.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 

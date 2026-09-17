@@ -12,6 +12,9 @@ pub struct ComposeProject {
     pub(crate) status: String,
     /// 有序的远程配置文件路径。
     pub(crate) config_files: Vec<String>,
+    /// 已有容器记录的项目目录；旧路径记录允许缺省。
+    #[serde(default)]
+    pub(crate) working_dir: Option<String>,
 }
 
 /// 非交互 Compose 命令的实际退出码与分流输出。

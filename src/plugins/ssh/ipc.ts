@@ -4,6 +4,7 @@
  */
 import { invokeCommand } from '@/core/ipc/ipc'
 import { listen } from '@tauri-apps/api/event'
+import { Channel } from '@tauri-apps/api/core'
 import type {
   ConnectStage,
   FileTransferProgress,
@@ -32,6 +33,20 @@ export const ipc = {
     cmd(commands.sshComposeAction, payload),
   sshComposeCreate: (payload: Payloads['ssh_compose_create']) =>
     cmd(commands.sshComposeCreate, payload),
+  sshComposeHome: (connectionId: string) => cmd(commands.sshComposeHome, { connectionId }),
+  sshComposeStream: (payload: Payloads['ssh_compose_action'], onChunk: (text: string) => void) => {
+    const progress = new Channel<[boolean, number[]]>()
+    const decoders = [new TextDecoder(), new TextDecoder()]
+    progress.onmessage = ([stderr, bytes]) =>
+      onChunk(decoders[stderr ? 1 : 0]!.decode(new Uint8Array(bytes), { stream: true }))
+    return cmd(commands.sshComposeAction, { ...payload, progress }).finally(() => {
+      for (const decoder of decoders) {
+        const tail = decoder.decode()
+        if (tail) onChunk(tail)
+      }
+      progress.onmessage = () => {}
+    })
+  },
   /* 连接（Rust 侧命令以 payload 对象为入参） */
   sshConnect: (p: Payloads['ssh_connect']) => cmd(commands.sshConnect, { payload: p }),
   sshDisconnect: (sessionId: string) => cmd(commands.sshDisconnect, { sessionId }),

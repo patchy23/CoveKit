@@ -1,20 +1,22 @@
 <script setup lang="ts">
-/** Compose 项目列表与 YAML 工作区；隐藏页签保留草稿，远程操作只由显式按钮触发。 */
+/** 文件中心的编排工作区：运行操作、容器与就地 YAML 编辑。 */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import {
   UiButton,
+  UiCheckbox,
   UiCodeEditor,
   UiEmptyState,
-  UiField,
-  UiInput,
+  UiModal,
   UiScrollArea,
   UiSearchInput,
   UiSelect,
-  UiSpinner,
 } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import type { ComposeAction, ServerConnection } from '../contracts'
+import type { ComposeAction, ComposeProject, ServerConnection } from '../contracts'
 import { useCompose } from './useCompose'
+import { composeStatus, composeTemplates, parentDirectory } from './composeTemplates'
+import ComposeCreateDialog from './ComposeCreateDialog.vue'
+import ComposeContainers from './ComposeContainers.vue'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -38,58 +40,60 @@ const {
   listError,
   notice,
   output,
+  liveOutput,
   connected,
   dirty,
   busy,
-  mtime,
   refresh,
   open,
   create,
   save,
   run,
+  discard,
+  defaultDirectory,
+  rememberDirectory,
 } = useCompose(
   () => props.connection,
   () => props.profileId,
   props.workspaceId
 )
 const keyword = ref('')
-const chosenAction = ref<ComposeAction>('ps')
-const pendingDiscard = ref<(() => void) | null>(null)
+const editing = ref(false)
+const expanded = ref(false)
+const showCreate = ref(false)
+const outputOpen = ref(false)
 const confirmDown = ref(false)
+const confirmRebuild = ref(false)
+const buildImage = ref(false)
+const pendingDiscard = ref<(() => void) | null>(null)
+const containers = ref<InstanceType<typeof ComposeContainers>>()
+let previousProject: ComposeProject | null = null
 const filtered = computed(() =>
-  projects.value.filter((project) =>
-    `${project.name} ${project.configFiles.join(' ')}`
-      .toLowerCase()
-      .includes(keyword.value.trim().toLowerCase())
-  )
+  projects.value.filter((p) => p.name.toLowerCase().includes(keyword.value.trim().toLowerCase()))
 )
 const fileOptions = computed(() =>
-  (selected.value?.configFiles ?? []).map((path) => ({ value: path, label: path }))
+  (selected.value?.configFiles ?? []).map((path) => ({
+    value: path,
+    label: path.split('/').pop() || path,
+  }))
 )
-const resultText = computed(() =>
-  output.value
-    ? [output.value.stdout, output.value.stderr].filter(Boolean).join('\n') ||
-      '命令执行完成，无输出。'
-    : ''
-)
-const actionOptions = [
-  { value: 'ps', label: '查看服务状态' },
-  { value: 'logs', label: '查看日志 · 最近 200 行' },
-  { value: 'config', label: '校验配置' },
-  { value: 'start', label: '启动已有容器' },
-  { value: 'stop', label: '停止项目' },
-  { value: 'restart', label: '重启项目' },
-  { value: 'pull', label: '拉取镜像' },
-  { value: 'build', label: '构建镜像' },
-  { value: 'down', label: '拆除项目' },
-]
+const status = computed(() => composeStatus(selected.value?.status ?? ''))
 const cannotRun = computed(
   () =>
     !connected.value ||
     !selected.value?.configFiles.length ||
     busy.value ||
     loading.value ||
-    dirty.value
+    dirty.value ||
+    showCreate.value
+)
+const resultText = computed(
+  () =>
+    liveOutput.value ||
+    (output.value
+      ? [output.value.stdout, output.value.stderr].filter(Boolean).join('\n') ||
+        '命令执行完成，无输出。'
+      : '正在等待远程输出…')
 )
 
 function navigate(callback: () => void) {
@@ -97,36 +101,103 @@ function navigate(callback: () => void) {
   if (dirty.value) pendingDiscard.value = callback
   else callback()
 }
-function discard() {
+function acceptDiscard() {
   const callback = pendingDiscard.value
   pendingDiscard.value = null
   callback?.()
 }
-function execute() {
-  if (chosenAction.value === 'down') confirmDown.value = true
-  else void run(chosenAction.value)
+function selectProject(project: ComposeProject, path?: string) {
+  navigate(() => {
+    editing.value = false
+    expanded.value = false
+    void open(project, path)
+  })
 }
-function down() {
-  confirmDown.value = false
-  void run('down')
+function add() {
+  navigate(() => {
+    previousProject = selected.value
+    create()
+    content.value = composeTemplates.find((t) => t.value === 'nginx')!.content
+    showCreate.value = true
+  })
+}
+function closeCreate() {
+  navigate(() => {
+    discard()
+    showCreate.value = false
+    if (previousProject) void open(previousProject)
+  })
+}
+async function createFile(name: string, path: string, apply: boolean, base: string) {
+  draftName.value = name
+  filePath.value = path
+  const saved = await save()
+  if (!isNew.value) {
+    showCreate.value = false
+    editing.value = false
+  }
+  if (!saved) return
+  if (apply) await execute('up')
+  await rememberDirectory(base)
+}
+function openExisting(name: string, path: string) {
+  navigate(() => {
+    const project = projects.value.find((p) => p.configFiles.includes(path))
+    if (!project && projects.value.some((p) => p.name === name)) {
+      error.value = '此名称已被其他编排使用，请填写不同名称'
+      return
+    }
+    showCreate.value = false
+    editing.value = false
+    void open(
+      project ?? { name, status: '未部署', configFiles: [path], workingDir: parentDirectory(path) }
+    )
+  })
+}
+async function saveFile(apply = false) {
+  if (await save()) {
+    editing.value = false
+    if (apply) await execute('up')
+  }
+}
+async function execute(next: ComposeAction) {
+  outputOpen.value = true
+  await run(next)
+  if (next !== 'config') void containers.value?.refresh()
+}
+function cancelEdit() {
+  navigate(() => {
+    discard()
+    editing.value = false
+  })
 }
 watch([dirty, busy], () => emit('state', { dirty: dirty.value, busy: busy.value }), {
   immediate: true,
   flush: 'sync',
 })
 onUnmounted(() => emit('state', { dirty: false, busy: false }))
+function requestRebuild() {
+  buildImage.value = false
+  confirmRebuild.value = true
+}
+function rebuild() {
+  confirmRebuild.value = false
+  void execute(buildImage.value ? 'rebuild' : 'recreate')
+}
+function down() {
+  confirmDown.value = false
+  void execute('down')
+}
 </script>
 
 <template>
   <div class="flex h-full min-h-0">
-    <aside class="flex w-[220px] shrink-0 flex-col border-r border-border dark:border-border-dark">
-      <div class="flex items-center justify-between gap-[6px] px-[10px] py-[8px]">
-        <span class="text-body-sm font-medium text-primary dark:text-primary-dark"
-          >Compose 项目</span
-        >
-        <UiButton
-          variant="ghost"
+    <aside class="flex w-[200px] shrink-0 flex-col border-r border-border dark:border-border-dark">
+      <div class="flex items-center justify-between px-sm py-sm">
+        <span class="text-body-sm font-medium">容器编排</span
+        ><UiButton
           size="xs"
+          variant="ghost"
           :loading="listing"
           :disabled="!connected"
           @click="refresh"
@@ -135,239 +206,267 @@ onUnmounted(() => emit('state', { dirty: false, busy: false }))
       </div>
       <UiSearchInput
         v-model="keyword"
-        class="mx-[10px] mb-[8px] !w-auto"
+        class="mx-sm mb-sm !w-auto"
         size="sm"
-        placeholder="搜索项目或路径"
+        placeholder="搜索编排名称"
       />
+      <UiButton
+        class="mx-sm mb-sm"
+        size="sm"
+        variant="secondary"
+        :disabled="!connected || busy"
+        @click="add"
+        >添加容器编排</UiButton
+      >
       <UiScrollArea class="min-h-0 flex-1" axis="vertical">
-        <div class="space-y-[4px] p-[6px]">
+        <div class="space-y-xs p-xs">
           <UiButton
             v-for="project in filtered"
             :key="project.name"
+            block
             variant="ghost"
             size="sm"
-            block
-            class="!h-auto !justify-start !whitespace-normal !py-[9px] text-left"
+            class="!h-auto !justify-between gap-sm !py-sm"
             :class="
-              selected?.name === project.name && !isNew
+              selected?.name === project.name && !showCreate
                 ? '!bg-tertiary-soft dark:!bg-tertiary-soft-dark'
                 : ''
             "
             :disabled="busy"
-            @click="
-              navigate(() => {
-                void open(project)
-              })
-            "
+            @click="selectProject(project)"
           >
-            <span class="min-w-0"
-              ><span class="block break-all font-medium">{{ project.name }}</span
-              ><span
-                class="mt-[3px] block break-words text-caption text-text-muted dark:text-text-muted-dark"
-                >{{ project.status }}</span
-              ></span
-            >
+            <span class="truncate">{{ project.name }}</span
+            ><span class="shrink-0 text-caption text-secondary dark:text-secondary-dark">{{
+              composeStatus(project.status)
+            }}</span>
           </UiButton>
           <p
             v-if="!filtered.length"
-            class="p-[8px] text-body-sm text-text-muted dark:text-text-muted-dark"
+            class="p-sm text-body-sm text-text-muted dark:text-text-muted-dark"
           >
-            {{ listing ? '正在查询项目…' : '暂无匹配项目，可新建配置。' }}
+            {{ listing ? '正在查询…' : '暂无编排' }}
           </p>
         </div>
       </UiScrollArea>
-      <div class="border-t border-border p-[10px] dark:border-border-dark">
-        <UiButton
-          size="sm"
-          variant="secondary"
-          block
-          :disabled="!connected || busy"
-          @click="navigate(create)"
-          >新建 Compose 配置</UiButton
-        >
-      </div>
     </aside>
-
     <div class="flex min-w-0 flex-1 flex-col">
       <p
         v-if="!connected"
         role="alert"
-        class="px-[14px] py-[8px] text-body-sm text-warning-strong dark:text-warning-dark"
+        class="px-md py-sm text-body-sm text-warning-strong dark:text-warning-dark"
       >
-        SSH 已断开，草稿保留在本页；恢复连接后请重新读取文件版本。
+        SSH 已断开，编辑草稿保留；恢复连接后请重新读取文件。
       </p>
       <p
         v-if="listError"
         role="alert"
-        class="select-text px-[14px] py-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
+        class="px-md py-sm text-body-sm text-danger-strong dark:text-danger-dark"
       >
-        项目查询失败：{{ listError }}
+        {{ listError }}
       </p>
-      <UiEmptyState
-        v-if="!selected && !isNew"
-        class="m-auto"
-        title="选择一个 Compose 项目"
-        description="从 Docker 查询项目与配置路径，或新建 YAML 配置后部署。"
-      />
-      <template v-else>
-        <header
-          class="flex shrink-0 flex-wrap items-center gap-[8px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
+      <template v-if="selected && !showCreate">
+        <div
+          v-show="!expanded"
+          class="shrink-0 border-b border-border px-md py-sm dark:border-border-dark"
         >
-          <h2 class="mr-auto text-body font-medium text-primary dark:text-primary-dark">
-            {{ isNew ? '新建配置' : selected?.name }}
-          </h2>
-          <template v-if="!isNew">
-            <UiSelect
-              :model-value="chosenAction"
-              :options="actionOptions"
-              size="sm"
-              class="!w-[175px]"
-              :disabled="busy"
-              title="Compose 操作"
-              @update:model-value="chosenAction = $event as ComposeAction"
-            />
+          <p class="select-text break-all font-mono text-body-sm">{{ filePath }}</p>
+          <p class="mt-xs text-caption text-text-muted dark:text-text-muted-dark">
+            工作目录：<span class="select-text">{{
+              selected.workingDir || parentDirectory(selected.configFiles[0] || '/')
+            }}</span
+            ><span v-if="!selected.workingDir"> · 未记录原目录，按首个配置文件目录处理</span>
+          </p>
+          <div class="mt-sm flex flex-wrap items-center gap-xs">
+            <UiButton size="sm" variant="secondary" :disabled="cannotRun" @click="execute('up')"
+              >启动</UiButton
+            >
             <UiButton
               size="sm"
               variant="secondary"
-              :disabled="cannotRun"
-              :loading="action !== null && action !== 'up'"
-              @click="execute"
-              >执行</UiButton
+              :disabled="cannotRun || status === '未部署' || status === '已停止'"
+              @click="execute('stop')"
+              >停止</UiButton
             >
-            <UiButton size="sm" :disabled="cannotRun" :loading="action === 'up'" @click="run('up')"
-              >启动 / 更新</UiButton
-            >
-          </template>
-        </header>
-        <div v-if="isNew" class="grid shrink-0 grid-cols-2 gap-[12px] p-[12px]">
-          <UiField label="项目名称"
-            ><UiInput v-model="draftName" size="sm" placeholder="my-app" :disabled="busy"
-          /></UiField>
-          <UiField label="远程配置路径"
-            ><UiInput
-              v-model="filePath"
+            <UiButton
               size="sm"
-              placeholder="/opt/app/compose.yaml"
+              variant="ghost"
+              :disabled="cannotRun || status === '未部署'"
+              @click="execute('restart')"
+              >重启</UiButton
+            >
+            <UiButton
+              size="sm"
+              variant="ghost"
+              :disabled="cannotRun"
+              title="拉取镜像并应用到容器"
+              @click="execute('update')"
+              >更新镜像</UiButton
+            >
+            <UiButton size="sm" variant="ghost" :disabled="cannotRun" @click="requestRebuild"
+              >重建</UiButton
+            >
+            <UiButton
+              size="sm"
+              variant="ghost"
+              :disabled="cannotRun || status === '未部署'"
+              @click="confirmDown = true"
+              >拆除</UiButton
+            >
+          </div>
+        </div>
+        <ComposeContainers
+          v-show="!expanded"
+          ref="containers"
+          :project="selected"
+          :connection="connection"
+          :busy="busy"
+        />
+        <section class="flex min-h-0 flex-1 flex-col">
+          <div class="flex shrink-0 flex-wrap items-center gap-xs px-md py-sm">
+            <UiSelect
+              v-if="fileOptions.length > 1"
+              :model-value="filePath"
+              :options="fileOptions"
+              size="sm"
+              class="!w-[180px]"
               :disabled="busy"
-          /></UiField>
-          <p class="col-span-2 text-caption text-text-muted dark:text-text-muted-dark">
-            父目录须已存在；保存只创建配置，不会自动启动容器。
-          </p>
-        </div>
-        <div
-          class="flex shrink-0 flex-wrap items-center gap-[8px] border-b border-border px-[12px] py-[7px] dark:border-border-dark"
-        >
-          <UiSelect
-            v-if="fileOptions.length"
-            :model-value="filePath"
-            :options="fileOptions"
-            size="sm"
-            class="min-w-0 flex-1"
-            title="按 Compose 合并顺序排列的配置文件"
-            :disabled="busy"
-            @update:model-value="
-              navigate(() => {
-                if (selected) void open(selected, String($event))
-              })
-            "
-          />
-          <span class="text-caption text-text-muted dark:text-text-muted-dark">{{
-            dirty ? '未保存' : loaded ? '与读取版本一致' : 'YAML 配置'
-          }}</span>
-          <UiButton
-            v-if="selected"
-            variant="ghost"
-            size="sm"
-            :disabled="!connected || busy || loading"
-            @click="
-              navigate(() => {
-                if (selected) void open(selected, filePath)
-              })
-            "
-            >重新读取</UiButton
-          >
-          <UiButton
-            variant="secondary"
-            size="sm"
-            :loading="saving"
-            :disabled="!connected || !loaded || busy || (!isNew && (!dirty || mtime === undefined))"
-            @click="save"
-            >{{ isNew ? '创建配置' : '保存 YAML' }}</UiButton
-          >
-        </div>
-        <p
-          v-if="error"
-          role="alert"
-          class="select-text px-[12px] py-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
-        >
-          {{ error }}
-        </p>
-        <p
-          v-if="notice"
-          role="status"
-          class="px-[12px] py-[6px] text-caption text-secondary dark:text-secondary-dark"
-        >
-          {{ notice }}
-        </p>
-        <div
-          v-if="loading"
-          class="flex min-h-[120px] flex-1 items-center justify-center gap-[8px] text-body-sm text-secondary dark:text-secondary-dark"
-        >
-          <UiSpinner />读取配置…
-        </div>
-        <UiCodeEditor
-          v-else-if="loaded"
-          v-model="content"
-          class="min-h-[150px] flex-1"
-          language="yaml"
-          :filename="filePath || 'compose.yaml'"
-          :readonly="busy || !connected"
-          status-bar
-          @save="save"
-        />
-        <UiEmptyState
-          v-else
-          title="配置尚未读取"
-          description="检查远程文件是否存在及当前用户的读取权限。"
-        />
-        <div
-          v-if="action || output"
-          class="flex h-[190px] shrink-0 flex-col border-t border-border dark:border-border-dark"
-        >
-          <div
-            class="flex items-center gap-[8px] px-[12px] py-[6px] text-caption text-secondary dark:text-secondary-dark"
-          >
-            <UiSpinner v-if="action" />{{
-              action ? '正在执行，完成后显示输出…' : `执行结果 · 退出码 ${output?.exitCode}`
-            }}
+              @update:model-value="selectProject(selected!, String($event))"
+            />
+            <span v-else class="text-body-sm font-medium">{{ filePath.split('/').pop() }}</span>
+            <span v-if="dirty" class="text-caption text-warning-strong dark:text-warning-dark"
+              >未保存</span
+            >
+            <div class="ml-auto flex flex-wrap gap-xs">
+              <template v-if="editing">
+                <UiButton
+                  size="xs"
+                  variant="ghost"
+                  :disabled="busy || !connected"
+                  @click="execute('config')"
+                  >校验</UiButton
+                >
+                <UiButton size="xs" variant="ghost" :disabled="busy" @click="cancelEdit"
+                  >取消</UiButton
+                >
+                <UiButton
+                  size="xs"
+                  variant="secondary"
+                  :loading="saving"
+                  :disabled="busy || !connected || !dirty"
+                  @click="saveFile()"
+                  >保存</UiButton
+                >
+                <UiButton size="xs" :disabled="busy || !connected" @click="saveFile(true)"
+                  >保存并应用</UiButton
+                >
+              </template>
+              <UiButton
+                v-else
+                size="xs"
+                variant="secondary"
+                :disabled="busy || !loaded || !connected"
+                @click="editing = true"
+                >编辑</UiButton
+              >
+              <UiButton
+                size="xs"
+                variant="ghost"
+                :disabled="busy || !connected"
+                @click="selectProject(selected!, filePath)"
+                >重新读取</UiButton
+              >
+              <UiButton size="xs" variant="ghost" @click="expanded = !expanded">{{
+                expanded ? '收起' : '展开'
+              }}</UiButton>
+            </div>
           </div>
           <UiCodeEditor
-            v-if="output"
-            :model-value="resultText"
-            readonly
-            language="text"
+            v-if="loaded"
+            v-model="content"
             class="min-h-0 flex-1"
-            :line-numbers="false"
+            :filename="filePath"
+            language="yaml"
+            :readonly="!editing || busy"
+            @save="editing && !busy && saveFile()"
           />
-        </div>
+          <p v-else class="px-md py-sm text-body-sm text-text-muted dark:text-text-muted-dark">
+            {{ loading ? '正在读取配置…' : '配置未加载，请检查路径和权限后重新读取。' }}
+          </p>
+        </section>
       </template>
+      <UiEmptyState
+        v-else
+        class="flex-1"
+        title="选择容器编排"
+        description="选择已有编排，或添加 Compose 文件。"
+      />
+      <p
+        v-if="error && !showCreate"
+        role="alert"
+        class="shrink-0 select-text px-md py-sm text-body-sm text-danger-strong dark:text-danger-dark"
+      >
+        {{ error }}
+      </p>
+      <p
+        v-if="notice && !showCreate"
+        role="status"
+        class="shrink-0 px-md py-xs text-body-sm text-secondary dark:text-secondary-dark"
+      >
+        {{ notice }}
+      </p>
+      <div
+        v-if="action || output || liveOutput"
+        class="shrink-0 border-t border-border dark:border-border-dark"
+      >
+        <div class="flex items-center justify-between px-md py-xs">
+          <span class="text-body-sm">{{ action ? '正在执行…' : '执行结果' }}</span
+          ><UiButton size="xs" variant="ghost" @click="outputOpen = !outputOpen">{{
+            outputOpen ? '收起输出' : '查看输出'
+          }}</UiButton>
+        </div>
+        <UiScrollArea v-if="outputOpen" class="max-h-[150px]" axis="both">
+          <pre
+            class="select-text whitespace-pre-wrap break-all px-md pb-sm font-mono text-body-sm"
+            >{{ resultText }}</pre>
+        </UiScrollArea>
+      </div>
     </div>
+    <ComposeCreateDialog
+      v-if="showCreate && connection"
+      v-model:content="content"
+      :connection-id="connection.sessionId"
+      :busy="busy"
+      :connected="connected"
+      :error="error"
+      :default-directory="defaultDirectory"
+      @close="closeCreate"
+      @save="createFile"
+      @open-existing="openExisting"
+    />
     <ConfirmDialog
       :open="pendingDiscard !== null"
       title="放弃未保存的修改"
-      message="当前 YAML 尚未保存，继续将丢弃本页修改。"
-      confirm-label="放弃修改并继续"
+      message="当前 YAML 尚未保存，继续将放弃这些修改。"
+      confirm-label="放弃修改"
       @close="pendingDiscard = null"
-      @confirm="discard"
+      @confirm="acceptDiscard"
     />
     <ConfirmDialog
       :open="confirmDown"
-      title="拆除 Compose 项目"
-      :message="`将停止并移除项目「${selected?.name ?? ''}」的容器与项目网络，保留数据卷和 YAML 配置。`"
-      confirm-label="拆除项目"
+      title="拆除编排"
+      message="将停止并移除当前编排的容器与默认网络，保留 YAML 和数据卷。"
+      confirm-label="拆除"
       danger
       @close="confirmDown = false"
       @confirm="down"
     />
+    <UiModal :open="confirmRebuild" title="重建容器" @close="confirmRebuild = false">
+      <p class="mb-md text-body-sm">使用已保存配置重新创建容器，保留数据卷。</p>
+      <UiCheckbox v-model="buildImage" label="同时重新构建镜像（配置中包含 build 时）" />
+      <template #footer
+        ><UiButton variant="ghost" @click="confirmRebuild = false">取消</UiButton
+        ><UiButton @click="rebuild">重建</UiButton></template
+      >
+    </UiModal>
   </div>
 </template>

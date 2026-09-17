@@ -11,6 +11,7 @@ export * from './tunnel'
 /* ── 命令清单 ── */
 
 /** 命令清单（本插件命令的唯一出处） */
+import type { Channel } from '@tauri-apps/api/core'
 import type {
   ComposeAction,
   ComposeOutput,
@@ -54,6 +55,7 @@ export const commands = {
   sshComposeList: 'ssh_compose_list',
   sshComposeAction: 'ssh_compose_action',
   sshComposeCreate: 'ssh_compose_create',
+  sshComposeHome: 'ssh_compose_home',
   /* 连接 */
   sshConnect: 'ssh_connect',
   sshDisconnect: 'ssh_disconnect',
@@ -248,8 +250,16 @@ export type Payloads = {
   /* Docker */
   ssh_docker_list: { connectionId: string }
   ssh_compose_list: { connectionId: string }
-  ssh_compose_action: { connectionId: string; project: ComposeProject; action: ComposeAction }
+  ssh_compose_action: {
+    connectionId: string
+    project: ComposeProject
+    action: ComposeAction
+    progress?: Channel<[boolean, number[]]>
+    draftPath?: string
+    draftContent?: string
+  }
   ssh_compose_create: { connectionId: string; remotePath: string; content: string }
+  ssh_compose_home: { connectionId: string }
   ssh_docker_action: {
     connectionId: string
     containerId: string
@@ -356,6 +366,7 @@ export type Results = {
   ssh_compose_list: ComposeProject[]
   ssh_compose_action: ComposeOutput
   ssh_compose_create: void
+  ssh_compose_home: string
   ssh_docker_action: SshActionResult
   ssh_docker_logs: { ok: boolean; logs: string; error?: string }
   ssh_docker_exec: TerminalSession

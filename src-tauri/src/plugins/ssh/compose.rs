@@ -42,7 +42,13 @@ fn compose_command(project: &ComposeProject, action: &str) -> Result<String, Str
     }
     let first = &project.config_files[0];
     let (directory, _) = first.rsplit_once('/').ok_or("配置路径无效")?;
-    let directory = if directory.is_empty() { "/" } else { directory };
+    let directory = project
+        .working_dir
+        .as_deref()
+        .unwrap_or(if directory.is_empty() { "/" } else { directory });
+    if !directory.starts_with('/') || directory.chars().any(char::is_control) {
+        return Err("项目工作目录必须为远程绝对路径".into());
+    }
     let args = match action {
         "up" => "up -d",
         "start" => "start",
@@ -51,9 +57,12 @@ fn compose_command(project: &ComposeProject, action: &str) -> Result<String, Str
         "down" => "down",
         "pull" => "pull",
         "build" => "build",
-        "ps" => "ps --all",
+        "ps" => "ps --all --format json",
         "logs" => "logs --no-color --tail 200",
         "config" => "config --quiet",
+        "update" => "up -d --pull always",
+        "recreate" => "up -d --force-recreate",
+        "rebuild" => "up -d --build --force-recreate",
         _ => return Err("不支持的 Compose 操作".into()),
     };
     Ok(format!(
@@ -92,6 +101,7 @@ fn parse_projects(raw: &str) -> Result<Vec<ComposeProject>, String> {
                     .filter(|s| !s.is_empty())
                     .map(str::to_owned)
                     .collect(),
+                working_dir: None,
             })
         })
         .collect()
@@ -103,6 +113,8 @@ async fn execute(
     id: &str,
     command: &str,
     seconds: u64,
+    progress: Option<&tauri::ipc::Channel<(bool, Vec<u8>)>>,
+    input: Option<&str>,
 ) -> Result<ComposeOutput, String> {
     let session = get_session(state, id)?;
     let mut channel = tokio::time::timeout(Duration::from_secs(15), session.channel_open_session())
@@ -114,13 +126,34 @@ async fn execute(
             .exec(true, command)
             .await
             .map_err(|e| format!("Compose 执行失败：{e}"))?;
+        // 草稿只通过 SSH stdin 传递，不出现在远程进程命令行中。
+        if let Some(input) = input {
+            channel
+                .data(input.as_bytes())
+                .await
+                .map_err(|e| format!("发送校验草稿失败：{e}"))?;
+            channel
+                .eof()
+                .await
+                .map_err(|e| format!("结束校验输入失败：{e}"))?;
+        }
         let mut stdout = Vec::new();
         let mut stderr = Vec::new();
         let mut exit_code = None;
         while let Some(message) = channel.wait().await {
             match message {
-                ChannelMsg::Data { data } => stdout.extend_from_slice(&data),
-                ChannelMsg::ExtendedData { data, .. } => stderr.extend_from_slice(&data),
+                ChannelMsg::Data { data } => {
+                    stdout.extend_from_slice(&data);
+                    if let Some(progress) = progress {
+                        let _ = progress.send((false, data.to_vec()));
+                    }
+                }
+                ChannelMsg::ExtendedData { data, .. } => {
+                    stderr.extend_from_slice(&data);
+                    if let Some(progress) = progress {
+                        let _ = progress.send((true, data.to_vec()));
+                    }
+                }
                 ChannelMsg::ExitStatus { exit_status } => exit_code = Some(exit_status),
                 ChannelMsg::Close => break,
                 _ => {}
@@ -152,6 +185,8 @@ pub async fn ssh_compose_list(
         &connection_id,
         "docker compose ls --all --format json",
         30,
+        None,
+        None,
     )
     .await?;
     if out.exit_code != 0 {
@@ -160,7 +195,59 @@ pub async fn ssh_compose_list(
             out.exit_code, out.stderr, out.stdout
         ));
     }
-    parse_projects(&out.stdout)
+    let mut projects = parse_projects(&out.stdout)?;
+    if !projects.is_empty() {
+        // 只查询 Docker 元数据，不扫描文件系统。ID 仅来自 Docker，引用标签不参与 shell 执行。
+        let labels = execute(&ssh_state, &connection_id,
+            "ids=$(docker ps -aq --filter label=com.docker.compose.project) || exit; if [ -n \"$ids\" ]; then docker inspect --format '{{json .Config.Labels}}' $ids; fi", 30, None, None).await?;
+        if labels.exit_code != 0 {
+            return Err(format!("读取 Compose 工作目录失败：{}", labels.stderr));
+        }
+        apply_working_dirs(&mut projects, &labels.stdout)?;
+    }
+    Ok(projects)
+}
+
+/// 恢复创建容器时的工作目录，避免接管后相对挂载位置发生变化。
+fn apply_working_dirs(projects: &mut [ComposeProject], raw: &str) -> Result<(), String> {
+    for line in raw.lines().filter(|line| !line.trim().is_empty()) {
+        let labels: serde_json::Value =
+            serde_json::from_str(line).map_err(|e| format!("Compose 标签解析失败：{e}"))?;
+        let name = labels
+            .get("com.docker.compose.project")
+            .and_then(|v| v.as_str());
+        let directory = labels
+            .get("com.docker.compose.project.working_dir")
+            .and_then(|v| v.as_str());
+        if let (Some(name), Some(directory)) = (name, directory) {
+            if let Some(project) = projects.iter_mut().find(|p| p.name == name) {
+                if project
+                    .working_dir
+                    .as_deref()
+                    .is_some_and(|old| old != directory)
+                {
+                    return Err(format!(
+                        "项目 {name} 的容器记录了不同工作目录，请先核对远端配置"
+                    ));
+                }
+                project.working_dir = Some(directory.to_owned());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// SFTP 初始目录作为远程用户默认目录，不使用客户端 HOME。
+#[tauri::command(rename_all = "camelCase")]
+pub async fn ssh_compose_home(
+    ssh_state: State<'_, SshState>,
+    connection_id: String,
+) -> Result<String, String> {
+    get_sftp_session(&ssh_state, &connection_id)
+        .await?
+        .canonicalize(".")
+        .await
+        .map_err(|e| format!("读取远程主目录失败：{e}"))
 }
 
 /// 项目级编排操作；拆除不删除卷，不隐式附加 --remove-orphans。
@@ -170,12 +257,33 @@ pub async fn ssh_compose_action(
     connection_id: String,
     project: ComposeProject,
     action: String,
+    progress: Option<tauri::ipc::Channel<(bool, Vec<u8>)>>,
+    draft_path: Option<String>,
+    draft_content: Option<String>,
 ) -> Result<ComposeOutput, String> {
-    let command = compose_command(&project, &action)?;
-    execute(&ssh_state, &connection_id, &command, 600).await
+    let mut command = compose_command(&project, &action)?;
+    if let (Some(path), Some(content)) = (&draft_path, &draft_content) {
+        if action != "config" || !project.config_files.contains(path) || content.len() > MAX_CONFIG
+        {
+            return Err("仅配置校验可传入当前文件草稿，且不得超过 1 MiB".into());
+        }
+        // stdin 替换有序 -f 中的当前文件，不写盘；项目目录保持显式传入。
+        command = command.replacen(&format!("-f {}", shell_quote(path)), "-f -", 1);
+    } else if draft_path.is_some() || draft_content.is_some() {
+        return Err("校验草稿的路径与内容必须同时提供".into());
+    }
+    execute(
+        &ssh_state,
+        &connection_id,
+        &command,
+        600,
+        progress.as_ref(),
+        draft_content.as_deref(),
+    )
+    .await
 }
 
-/// 创建新的远程 YAML，SFTP 独占创建保证存在时拒绝覆盖；父目录须已存在。
+/// 创建项目目录与新的远程 YAML；独占创建拒绝覆盖，不创建 YAML 中引用的挂载文件。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn ssh_compose_create(
     ssh_state: State<'_, SshState>,
@@ -188,6 +296,20 @@ pub async fn ssh_compose_create(
         return Err("Compose 配置内容不能为空且不得超过 1 MiB".into());
     }
     let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+    let (parent, _) = remote_path.rsplit_once('/').ok_or("配置路径无效")?;
+    let parent = if parent.is_empty() { "/" } else { parent };
+    let created = execute(
+        &ssh_state,
+        &connection_id,
+        &format!("mkdir -p -- {}", shell_quote(parent)),
+        30,
+        None,
+        None,
+    )
+    .await?;
+    if created.exit_code != 0 {
+        return Err(format!("创建项目目录失败：{}", created.stderr));
+    }
     let mut file = sftp
         .open_with_flags_and_attributes(
             &remote_path,
@@ -238,10 +360,12 @@ mod tests {
             name: "app".into(),
             status: String::new(),
             config_files: vec!["/opt/a b/compose.yaml".into(), "/opt/a b/it's.yaml".into()],
+            working_dir: Some("/srv/original".into()),
         };
         let command = compose_command(&project, "up").unwrap();
         assert!(command.contains(r#"-f '/opt/a b/compose.yaml' -f '/opt/a b/it'"'"'s.yaml'"#));
         assert!(command.ends_with("up -d"));
+        assert!(command.contains("--project-directory '/srv/original'"));
         assert!(compose_command(&project, "down; id").is_err());
         assert!(!compose_command(&project, "down")
             .unwrap()
@@ -249,5 +373,27 @@ mod tests {
         project.name = "$(id)".into();
         assert!(compose_command(&project, "up").is_err());
         assert!(validate_path("relative.yaml").is_err());
+    }
+
+    #[test]
+    fn working_directory_labels_survive_adoption_and_conflicts_fail() {
+        let mut projects = parse_projects(
+            r#"[{"Name":"app","Status":"running(1)","ConfigFiles":"/etc/stacks/app.yml"}]"#,
+        )
+        .unwrap();
+        apply_working_dirs(&mut projects, r#"{"com.docker.compose.project":"app","com.docker.compose.project.working_dir":"/srv/app data"}"#).unwrap();
+        assert!(compose_command(&projects[0], "up")
+            .unwrap()
+            .contains("--project-directory '/srv/app data'"));
+        assert!(apply_working_dirs(&mut projects, r#"{"com.docker.compose.project":"app","com.docker.compose.project.working_dir":"/other"}"#).is_err());
+        assert!(apply_working_dirs(&mut projects, "invalid").is_err());
+        // 旧持久化记录仍可反序列化，缺省才回到首文件目录。
+        let old: ComposeProject = serde_json::from_str(
+            r#"{"name":"old","status":"","configFiles":["/opt/old/docker-compose.yml"]}"#,
+        )
+        .unwrap();
+        assert!(compose_command(&old, "up")
+            .unwrap()
+            .contains("--project-directory '/opt/old'"));
     }
 }

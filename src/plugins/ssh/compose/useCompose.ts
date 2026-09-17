@@ -5,6 +5,7 @@ import { useToolLifecycle } from '@/core/lifecycle'
 import type { ComposeAction, ComposeOutput, ComposeProject, ServerConnection } from '../contracts'
 import { ipc } from '../ipc'
 import { COMPOSE_TEMPLATE, mergeComposeProjects, validateComposeDraft } from './composeProjects'
+import { parentDirectory } from './composeTemplates'
 
 export function useCompose(
   connection: () => ServerConnection | undefined,
@@ -35,6 +36,7 @@ export function useCompose(
   const listError = ref('')
   const notice = ref('')
   const output = ref<ComposeOutput | null>(null)
+  const liveOutput = ref('')
   let generation = 0
   let listGeneration = 0
   const connected = computed(() => connection()?.status === 'connected')
@@ -74,6 +76,11 @@ export function useCompose(
       const result = await ipc.sshComposeList(id)
       if (scope.disposed || id !== connection()?.sessionId || version !== listGeneration) return
       remote.value = result
+      if (selected.value) {
+        const latest = result.find((p) => p.name === selected.value?.name)
+        // 刷新状态不替换正在编辑的文件集合与路径上下文。
+        selected.value = { ...selected.value, status: latest?.status ?? '未部署' }
+      }
       listError.value = ''
     } catch (e) {
       if (!scope.disposed && id === connection()?.sessionId && version === listGeneration)
@@ -94,7 +101,8 @@ export function useCompose(
       existing.some(
         (item) =>
           item.name === project.name &&
-          JSON.stringify(item.configFiles) === JSON.stringify(project.configFiles)
+          JSON.stringify(item.configFiles) === JSON.stringify(project.configFiles) &&
+          item.workingDir === project.workingDir
       )
     )
       return
@@ -121,6 +129,7 @@ export function useCompose(
     mtime.value = undefined
     error.value = notice.value = ''
     output.value = null
+    liveOutput.value = ''
     if (!id || !connected.value || !path) {
       error.value = !path
         ? 'Docker 未提供配置文件路径，无法编辑或执行编排操作'
@@ -155,6 +164,7 @@ export function useCompose(
     loading.value = false
     error.value = notice.value = ''
     output.value = null
+    liveOutput.value = ''
   }
 
   async function save() {
@@ -165,7 +175,12 @@ export function useCompose(
     const version = generation
     const wasNew = isNew.value
     const project = wasNew
-      ? { name: draftName.value.trim(), status: '已保存 · 尚未部署', configFiles: [path] }
+      ? {
+          name: draftName.value.trim(),
+          status: '未部署',
+          configFiles: [path],
+          workingDir: parentDirectory(path),
+        }
       : selected.value
     if (!project) return
     error.value = notice.value = ''
@@ -206,6 +221,7 @@ export function useCompose(
       if (!saved.ok || saved.content !== text)
         throw new Error('保存后远端内容发生变化，请重新读取后再编辑')
       mtime.value = saved.modifiedAt
+      return true
     } catch (e) {
       if (current(id, version)) error.value = String(e)
     } finally {
@@ -222,24 +238,68 @@ export function useCompose(
       !project ||
       !project.configFiles.length ||
       busy.value ||
-      dirty.value
+      (dirty.value && next !== 'config')
     )
       return
     const version = generation
     action.value = next
     error.value = notice.value = ''
     output.value = null
+    liveOutput.value = ''
     try {
-      const result = await ipc.sshComposeAction({ connectionId: id, project, action: next })
+      const result = await ipc.sshComposeStream(
+        {
+          connectionId: id,
+          project,
+          action: next,
+          ...(next === 'config' && dirty.value
+            ? { draftPath: filePath.value, draftContent: content.value }
+            : {}),
+        },
+        (text) => {
+          if (current(id, version)) liveOutput.value = (liveOutput.value + text).slice(-1024 * 1024)
+        }
+      )
       if (!current(id, version)) return
       output.value = result
       if (result.exitCode !== 0) error.value = `操作失败，退出码 ${result.exitCode}`
       else notice.value = next === 'config' ? 'Compose 配置校验通过' : '操作完成'
       await refresh()
+      return result.exitCode === 0
     } catch (e) {
       if (current(id, version)) error.value = String(e)
     } finally {
       action.value = null
+    }
+  }
+
+  function discard() {
+    content.value = baseline.value
+    if (isNew.value) {
+      generation += 1
+      isNew.value = loaded.value = false
+    }
+  }
+
+  async function defaultDirectory() {
+    const saved = settings.getToolSetting<Record<string, string>>('ssh', 'composeDirectories', {})[
+      profileId()
+    ]
+    if (saved) return saved
+    const id = connection()?.sessionId
+    if (!id || !connected.value) throw new Error('请先连接服务器')
+    return `${(await ipc.sshComposeHome(id)).replace(/\/+$/, '')}/compose`
+  }
+
+  async function rememberDirectory(directory: string) {
+    const all = settings.getToolSetting<Record<string, string>>('ssh', 'composeDirectories', {})
+    try {
+      await settings.setToolSetting('ssh', 'composeDirectories', {
+        ...all,
+        [profileId()]: directory,
+      })
+    } catch (e) {
+      notice.value = `配置已保存，但默认目录记忆失败：${e}`
     }
   }
 
@@ -273,6 +333,7 @@ export function useCompose(
     listError,
     notice,
     output,
+    liveOutput,
     connected,
     dirty,
     busy,
@@ -282,5 +343,8 @@ export function useCompose(
     create,
     save,
     run,
+    discard,
+    defaultDirectory,
+    rememberDirectory,
   }
 }

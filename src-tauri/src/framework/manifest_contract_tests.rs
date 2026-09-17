@@ -370,6 +370,7 @@ mod tests {
         ("ssh", "ssh_bookmark_list", "目录书签列表"),
         ("ssh", "ssh_compose_action", "执行 Docker Compose 项目操作"),
         ("ssh", "ssh_compose_create", "新建远程 Compose 配置"),
+        ("ssh", "ssh_compose_home", "查询编排默认远程目录"),
         ("ssh", "ssh_compose_list", "查询 Docker Compose 项目"),
         (
             "ssh",

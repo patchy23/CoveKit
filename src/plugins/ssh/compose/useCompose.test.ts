@@ -5,12 +5,15 @@ import type { ComposeProject, ServerConnection } from '../contracts'
 import { useCompose } from './useCompose'
 import { COMPOSE_TEMPLATE, mergeComposeProjects, validateComposeDraft } from './composeProjects'
 import ComposeTab from './ComposeTab.vue'
+import ComposeContainers from './ComposeContainers.vue'
 import { UiButton, UiCodeEditor } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
 const env = vi.hoisted(() => ({
   sshComposeList: vi.fn(),
   sshComposeAction: vi.fn(),
+  sshComposeStream: vi.fn(),
+  sshComposeHome: vi.fn(),
   sshComposeCreate: vi.fn(),
   sshEditOpen: vi.fn(),
   sshEditSave: vi.fn(),
@@ -65,6 +68,8 @@ beforeEach(() => {
   env.setToolSetting.mockResolvedValue(undefined)
   env.sshComposeCreate.mockResolvedValue(undefined)
   env.sshEditSave.mockResolvedValue({ ok: true })
+  env.sshComposeStream.mockImplementation((payload) => env.sshComposeAction(payload))
+  env.sshComposeHome.mockResolvedValue('/home/test')
 })
 
 it('以 Docker 查询为权威合并路径记录，失败保留列表并报错', async () => {
@@ -124,7 +129,12 @@ it('新建只写 YAML 并记住路径，不自动部署，保存后可显式执�
   })
   expect(env.setToolSetting.mock.calls[0][2]).toEqual({
     profile: [
-      { name: 'new-app', status: '已保存 · 尚未部署', configFiles: ['/opt/new/compose.yaml'] },
+      {
+        name: 'new-app',
+        status: '未部署',
+        configFiles: ['/opt/new/compose.yaml'],
+        workingDir: '/opt/new',
+      },
     ],
   })
   expect(api.isNew.value).toBe(false)
@@ -209,13 +219,13 @@ it('编辑后的文件切换须确认，取消保留草稿并向连接页上报�
   await flushPromises()
   const buttons = () => wrapper.findAllComponents(UiButton)
   buttons()
-    .find((button) => button.text().includes('running(1)'))!
+    .find((button) => button.text().includes('运行中'))!
     .vm.$emit('click')
   await flushPromises()
   wrapper.getComponent(UiCodeEditor).vm.$emit('update:modelValue', 'unsaved draft')
   await flushPromises()
   buttons()
-    .find((button) => button.text() === '新建 Compose 配置')!
+    .find((button) => button.text() === '添加容器编排')!
     .vm.$emit('click')
   await flushPromises()
   const confirmation = wrapper
@@ -226,4 +236,127 @@ it('编辑后的文件切换须确认，取消保留草稿并向连接页上报�
   await flushPromises()
   expect(wrapper.getComponent(UiCodeEditor).props('modelValue')).toBe('unsaved draft')
   expect(wrapper.emitted('state')?.at(-1)).toEqual([{ dirty: true, busy: false }])
+})
+
+it('草稿校验传递当前文件与内容，不写盘，运行操作仍拒绝脏草稿', async () => {
+  const { api } = setup()
+  await api.open({ ...project, workingDir: '/srv/data' }, project.configFiles[1])
+  api.content.value = 'services: { web: { image: nginx } }'
+  env.sshComposeAction.mockResolvedValue({ exitCode: 0, stdout: '', stderr: '' })
+  await api.run('config')
+  expect(env.sshComposeStream.mock.calls[0][0]).toMatchObject({
+    project: { workingDir: '/srv/data', configFiles: project.configFiles },
+    draftPath: project.configFiles[1],
+    draftContent: api.content.value,
+  })
+  expect(api.dirty.value).toBe(true)
+  expect(env.sshEditSave).not.toHaveBeenCalled()
+  await api.run('up')
+  expect(env.sshComposeStream).toHaveBeenCalledTimes(1)
+})
+
+it('运行过程中显示输出，重连后的迟到片段与完成结果不污染当前页面', async () => {
+  const { api, connection } = setup()
+  await api.open(project)
+  let finish!: (result: { exitCode: number; stdout: string; stderr: string }) => void
+  let chunk!: (text: string) => void
+  env.sshComposeStream.mockImplementation((_payload, onChunk) => {
+    chunk = onChunk
+    return new Promise((resolve) => {
+      finish = resolve
+    })
+  })
+  const pending = api.run('update')
+  chunk('Pulling image')
+  expect(api.liveOutput.value).toBe('Pulling image')
+  connection.value = { ...connection.value, sessionId: 'two' }
+  await flushPromises()
+  chunk('late')
+  finish({ exitCode: 0, stdout: 'late', stderr: '' })
+  await pending
+  expect(api.liveOutput.value).toBe('Pulling image')
+  expect(api.output.value).toBeNull()
+})
+
+it('刷新不覆盖当前文件集合，拆除后保留路径并显示未部署', async () => {
+  const { api } = setup()
+  await api.open({ ...project, workingDir: '/srv/original' })
+  api.content.value = 'draft'
+  env.sshComposeList.mockResolvedValue([])
+  await api.refresh()
+  expect(api.selected.value).toMatchObject({
+    status: '未部署',
+    workingDir: '/srv/original',
+    configFiles: project.configFiles,
+  })
+  expect(api.content.value).toBe('draft')
+})
+
+it('默认目录使用远程主目录，取消编辑恢复已加载内容', async () => {
+  const { api } = setup()
+  expect(await api.defaultDirectory()).toBe('/home/test/compose')
+  await api.open(project)
+  api.content.value = 'draft'
+  api.discard()
+  expect(api.content.value).toBe('services: {}')
+  expect(api.dirty.value).toBe(false)
+})
+
+it('编辑入口切换只读状态，保存并应用遇到保存冲突时不会启动容器', async () => {
+  const wrapper = shallowMount(ComposeTab, {
+    props: {
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      profileId: 'profile',
+      workspaceId: 'ui-save',
+    },
+    global: { renderStubDefaultSlot: true },
+  })
+  const click = async (text: string) => {
+    wrapper
+      .findAllComponents(UiButton)
+      .find((b) => b.text().includes(text))!
+      .vm.$emit('click')
+    await flushPromises()
+  }
+  await flushPromises()
+  await click('运行中')
+  expect(wrapper.getComponent(UiCodeEditor).props('readonly')).toBe(true)
+  await click('编辑')
+  expect(wrapper.getComponent(UiCodeEditor).props('readonly')).toBe(false)
+  wrapper.getComponent(UiCodeEditor).vm.$emit('update:modelValue', 'new draft')
+  await flushPromises()
+  env.sshEditSave.mockResolvedValueOnce({ ok: false, conflict: true })
+  await click('保存并应用')
+  expect(env.sshComposeStream).not.toHaveBeenCalled()
+  expect(wrapper.getComponent(UiCodeEditor).props('modelValue')).toBe('new draft')
+  expect(wrapper.text()).toContain('本次未覆盖')
+})
+
+it('切换编排后迟到的容器列表不覆盖新项目', async () => {
+  let finish!: (result: { exitCode: number; stdout: string; stderr: string }) => void
+  env.sshComposeAction.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+  )
+  const wrapper = shallowMount(ComposeContainers, {
+    props: {
+      project,
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      busy: false,
+    },
+    global: { renderStubDefaultSlot: true },
+  })
+  env.sshComposeAction.mockResolvedValueOnce({
+    exitCode: 0,
+    stdout: '[{"ID":"new","Name":"new-container"}]',
+    stderr: '',
+  })
+  await wrapper.setProps({ project: { ...project, name: 'new' } })
+  await flushPromises()
+  finish({ exitCode: 0, stdout: '[{"ID":"old","Name":"old-container"}]', stderr: '' })
+  await flushPromises()
+  expect(wrapper.text()).toContain('new-container')
+  expect(wrapper.text()).not.toContain('old-container')
 })

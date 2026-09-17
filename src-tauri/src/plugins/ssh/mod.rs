@@ -41,6 +41,7 @@ crate::patchybox_module! {
         compose::ssh_compose_list => "查询 Docker Compose 项目",
         compose::ssh_compose_action => "执行 Docker Compose 项目操作",
         compose::ssh_compose_create => "新建远程 Compose 配置",
+        compose::ssh_compose_home => "查询编排默认远程目录",
         conn::reconnect::ssh_disconnect => "断开连接并清理会话",
         conn::reconnect::ssh_reconnect => "重新连接（新会话替换旧会话）",
         conn::ssh_connections => "全部会话快照（侧栏轮询）",
