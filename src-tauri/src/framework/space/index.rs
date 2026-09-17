@@ -15,7 +15,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use crate::framework::context::DEFAULT_SPACE_ID;
 use crate::framework::paths;
 
 /// 空间索引配置键（`settings.json` 的 `app` 对象内，设备级）
@@ -50,6 +49,9 @@ pub struct SpaceRecord {
     /// 空间创建（或登记）时间（RFC3339）
     #[serde(default)]
     pub created_at: String,
+    /// 是否默认空间（首启/迁移生成的本机初始空间；同一时刻索引里只有一个）
+    #[serde(default)]
+    pub is_default: bool,
     /// 导入来源留档（本机新建空间为空）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub imported_from: Option<ImportSource>,
@@ -80,6 +82,7 @@ impl SpaceRecord {
         Self {
             name: name.to_string(),
             created_at: created_at.to_string(),
+            is_default: false,
             imported_from: Some(ImportSource {
                 package_id: package_id.to_string(),
                 source_space_id: source_space_id.to_string(),
@@ -114,21 +117,19 @@ pub fn read_index(app: &AppHandle) -> Result<BTreeMap<String, SpaceRecord>, Stri
     Ok(index)
 }
 
-/// 空间展示名（索引缺失或条目缺失时用默认文案 / 空间 id，不编造名字）
+/// 空间展示名（索引缺失或条目缺失时退回空间 id，不编造名字；默认空间未命名时用固定文案）
 pub fn display_name(app: &AppHandle, space_id: &str) -> String {
     match read_index(app) {
         Ok(index) => match index.get(space_id) {
+            Some(record) if record.is_default && record.name.trim().is_empty() => {
+                DEFAULT_SPACE_NAME.to_string()
+            }
             Some(record) => record.display_name(space_id),
-            None if space_id == DEFAULT_SPACE_ID => DEFAULT_SPACE_NAME.to_string(),
             None => space_id.to_string(),
         },
         Err(error) => {
             eprintln!("[space] 空间索引不可读，展示名退回空间 id: {error}");
-            if space_id == DEFAULT_SPACE_ID {
-                DEFAULT_SPACE_NAME.to_string()
-            } else {
-                space_id.to_string()
-            }
+            space_id.to_string()
         }
     }
 }
@@ -148,13 +149,11 @@ pub fn staging_space_root(device_root: &Path, plan_id: &str) -> PathBuf {
     spaces_dir(device_root).join(format!("{STAGING_PREFIX}{plan_id}"))
 }
 
-/// 暂存空间的**内容根**（代际目录）：`<设备根>/spaces/.patchybox-staging-<planId>/generations/<generation>`
+/// 暂存空间的**内容根**：`<设备根>/spaces/.patchybox-staging-<planId>`
 ///
-/// 与 `generation_root` 同形，导入侧因此对「暂存写入」与「写入既有空间」共用相对路径。
-pub fn staging_content_root(device_root: &Path, plan_id: &str, generation: u64) -> PathBuf {
+/// 与正式空间根同形（无代际层），导入侧因此对「暂存写入」与「写入既有空间」共用相对路径。
+pub fn staging_content_root(device_root: &Path, plan_id: &str) -> PathBuf {
     staging_space_root(device_root, plan_id)
-        .join("generations")
-        .join(generation.to_string())
 }
 
 /// 正式空间根：`<设备根>/spaces/<spaceId>`
@@ -162,14 +161,15 @@ pub fn space_root(device_root: &Path, space_id: &str) -> PathBuf {
     spaces_dir(device_root).join(space_id)
 }
 
-/// 空间内容根（代际目录）：`<设备根>/spaces/<spaceId>/generations/<generation>`
-///
-/// 与 `StorageLocation::partitioned(..).root` 同形：适配器只认这一层，
-/// 因此暂存写入与正式空间写入走同一套相对路径。
-pub fn generation_root(device_root: &Path, space_id: &str, generation: u64) -> PathBuf {
-    space_root(device_root, space_id)
-        .join("generations")
-        .join(generation.to_string())
+/// 整体写入空间索引（空间化迁移用；键逐个校验，非法键拒绝整批写入）
+pub fn write_all(app: &AppHandle, index: &BTreeMap<String, SpaceRecord>) -> Result<(), String> {
+    for space_id in index.keys() {
+        if !super::is_valid_space_id(space_id) {
+            return Err(format!("空间索引存在非法空间 id，拒绝整体写入：{space_id}"));
+        }
+    }
+    let value = serde_json::to_value(index).map_err(|e| format!("空间索引序列化失败: {e}"))?;
+    paths::write_setting(app, KEY_SPACES, value)
 }
 
 /// 索引时间戳（RFC3339，本地时区偏移）：空间创建 / 导入留档的唯一时间来源
@@ -242,12 +242,12 @@ mod tests {
         assert_eq!(staging.parent(), space_root(device, "abc").parent());
     }
 
-    /// 代际根与 `StorageLocation::partitioned` 同形（适配器只认这一层）
+    /// 空间内容根与 `StorageLocation::for_space` 同形（无代际层，适配器只认这一层）
     #[test]
-    fn generation_root_matches_partitioned_layout() {
+    fn space_root_matches_location_layout() {
         let device = std::path::Path::new("D:/CoveKit");
-        let location = crate::framework::context::StorageLocation::partitioned(device, "abc", 1);
-        assert_eq!(generation_root(device, "abc", 1), location.root);
+        let location = crate::framework::context::StorageLocation::for_space(device, "abc");
+        assert_eq!(space_root(device, "abc"), location.root);
     }
 
     /// 清理只删本应用命名的暂存目录，空间目录与非本应用目录一律不碰
@@ -280,6 +280,7 @@ mod tests {
         let mut record = SpaceRecord {
             name: "   ".into(),
             created_at: String::new(),
+            is_default: false,
             imported_from: None,
         };
         assert_eq!(record.display_name("sp1"), "sp1");

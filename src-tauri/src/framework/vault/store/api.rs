@@ -14,7 +14,8 @@ pub(crate) fn read_all(app: &AppHandle) -> Result<Vec<Credential>, String> {
     let _guard = vault_lock().lock().map_err(|e| e.to_string())?;
     read_all_at(
         &data_dir_of(app)?,
-        &crate::framework::space::keyring_store(),
+        &crate::framework::space::keyring_store()?,
+        &crate::framework::space::current_id()?,
     )
 }
 

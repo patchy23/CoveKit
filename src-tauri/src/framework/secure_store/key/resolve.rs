@@ -7,7 +7,7 @@ use std::sync::{Mutex, OnceLock};
 use rand::rngs::OsRng;
 use rand::RngCore;
 
-use crate::framework::secure_store::crypto::authenticates;
+use crate::framework::secure_store::crypto::authenticates_with_aad;
 use crate::framework::secure_store::file::{read_optional, replace_file, restrict_to_current_user};
 
 use super::{KeySource, KeySpec, MasterKeyStore, ResolvedKey};
@@ -152,15 +152,17 @@ fn locked_message(
     message
 }
 
-/// 解析主密钥。`evidence` 是该域现有密文字节（主文件与备份；空表表示还没有密文）。
+/// 解析主密钥。`evidence` 是该域现有密文字节（主文件与备份；空表表示还没有密文），
+/// `aad` 是密文的认证绑定（空间 uid；2026-09-16 起密文与 uid 数学绑定）。
 /// 降级密钥通过认证时会被登记进系统密钥库（见 `promote_fallback_key`）。
 pub(crate) fn resolve_master_key(
     key_dir: &Path,
     spec: &KeySpec,
     store: &dyn MasterKeyStore,
     evidence: &[Vec<u8>],
+    aad: &[u8],
 ) -> Result<ResolvedKey, String> {
-    resolve_master_key_inner(key_dir, spec, store, evidence, true)
+    resolve_master_key_inner(key_dir, spec, store, evidence, aad, true)
 }
 
 /// 只读解析主密钥：与 `resolve_master_key` 同判据，但**不写系统密钥库**。
@@ -170,8 +172,9 @@ pub(crate) fn resolve_master_key_readonly(
     spec: &KeySpec,
     store: &dyn MasterKeyStore,
     evidence: &[Vec<u8>],
+    aad: &[u8],
 ) -> Result<ResolvedKey, String> {
-    resolve_master_key_inner(key_dir, spec, store, evidence, false)
+    resolve_master_key_inner(key_dir, spec, store, evidence, aad, false)
 }
 
 /// 解析主密钥的统一实现；`allow_promotion` 决定是否允许把降级密钥登记进系统密钥库。
@@ -180,6 +183,7 @@ fn resolve_master_key_inner(
     spec: &KeySpec,
     store: &dyn MasterKeyStore,
     evidence: &[Vec<u8>],
+    aad: &[u8],
     allow_promotion: bool,
 ) -> Result<ResolvedKey, String> {
     std::fs::create_dir_all(key_dir).map_err(|e| format!("创建数据目录失败: {e}"))?;
@@ -199,7 +203,13 @@ fn resolve_master_key_inner(
 
     if has_ciphertext {
         // 有密文：以能否认证解出既有密文为准，绝不生成新密钥
-        let worth = |key: [u8; 32]| evidence.iter().any(|data| authenticates(&key, data));
+        // 旧格式（未绑定 uid 的密文）在 uid 绑定落地前的过渡期内同时认可：
+        // 读路径会在首次成功读取后把它就地升级为绑定格式（见 secure_store::file::load_with_binding）
+        let worth = |key: [u8; 32]| {
+            evidence.iter().any(|data| {
+                authenticates_with_aad(&key, data, aad) || authenticates_with_aad(&key, data, &[])
+            })
+        };
         if let Some(key) = keyring_key.filter(|key| worth(*key)) {
             return Ok(ResolvedKey {
                 key,

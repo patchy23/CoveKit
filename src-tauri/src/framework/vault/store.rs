@@ -111,7 +111,13 @@ mod tests {
         let dir = temp_dir("vault-bak-recover");
         let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, [0x21u8; 32]);
         let credential = sample_credential("id-bak");
-        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
+        write_all_at(
+            &dir,
+            &store,
+            std::slice::from_ref(&credential),
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23",
+        )
+        .unwrap();
 
         // 模拟崩溃点：旧文件已改名为 .bak，新文件尚未就位
         let path = dir.join(VAULT_FILE);
@@ -119,7 +125,10 @@ mod tests {
         std::fs::rename(&path, path.with_extension("bak")).unwrap();
         assert!(!path.exists());
 
-        assert_eq!(read_all_at(&dir, &store).unwrap(), vec![credential]);
+        assert_eq!(
+            read_all_at(&dir, &store, "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23").unwrap(),
+            vec![credential]
+        );
         assert!(path.exists(), "读取后备份应已转正为主文件");
         assert!(!backup.exists(), "转正后残留备份应清理");
 
@@ -132,13 +141,22 @@ mod tests {
         let dir = temp_dir("vault-stale-bak");
         let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, [0x22u8; 32]);
         let credential = sample_credential("id-stale");
-        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
+        write_all_at(
+            &dir,
+            &store,
+            std::slice::from_ref(&credential),
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23",
+        )
+        .unwrap();
 
         let path = dir.join(VAULT_FILE);
         let backup = path.with_extension("bak");
         std::fs::write(&backup, b"stale").unwrap();
 
-        assert_eq!(read_all_at(&dir, &store).unwrap(), vec![credential]);
+        assert_eq!(
+            read_all_at(&dir, &store, "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23").unwrap(),
+            vec![credential]
+        );
         assert!(!backup.exists(), "主文件可读时应清理过期备份");
 
         std::fs::remove_dir_all(&dir).ok();
@@ -150,7 +168,13 @@ mod tests {
         let dir = temp_dir("vault-corrupt-main");
         let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, [0x23u8; 32]);
         let credential = sample_credential("id-corrupt");
-        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
+        write_all_at(
+            &dir,
+            &store,
+            std::slice::from_ref(&credential),
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23",
+        )
+        .unwrap();
 
         let path = dir.join(VAULT_FILE);
         let backup = path.with_extension("bak");
@@ -158,7 +182,10 @@ mod tests {
         // 主文件被写坏（长度足够但认证不过），备份仍是好的
         std::fs::write(&path, vec![0xABu8; 64]).unwrap();
 
-        assert_eq!(read_all_at(&dir, &store).unwrap(), vec![credential]);
+        assert_eq!(
+            read_all_at(&dir, &store, "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23").unwrap(),
+            vec![credential]
+        );
         let archived = std::fs::read_dir(&dir)
             .unwrap()
             .filter_map(|entry| entry.ok())
@@ -175,12 +202,19 @@ mod tests {
         let dir = temp_dir("vault-locked");
         let store_with_key = MemoryKeyStore::new();
         let credential = sample_credential("id-locked");
-        write_all_at(&dir, &store_with_key, std::slice::from_ref(&credential)).unwrap();
+        write_all_at(
+            &dir,
+            &store_with_key,
+            std::slice::from_ref(&credential),
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23",
+        )
+        .unwrap();
         let blob = std::fs::read(dir.join(VAULT_FILE)).unwrap();
 
         // 新空密钥库（换机 / 重装 / 密钥库被清空）
         let empty_store = MemoryKeyStore::new();
-        let error = read_all_at(&dir, &empty_store).unwrap_err();
+        let error =
+            read_all_at(&dir, &empty_store, "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23").unwrap_err();
         assert!(error.contains("无法解锁"), "错误应指向解锁失败: {error}");
         assert!(
             !dir.join(VAULT_KEY_SPEC.fallback_file).exists(),
@@ -200,12 +234,19 @@ mod tests {
             &dir,
             &store_with_key,
             std::slice::from_ref(&sample_credential("id-1")),
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23",
         )
         .unwrap();
         let blob = std::fs::read(dir.join(VAULT_FILE)).unwrap();
 
         let empty_store = MemoryKeyStore::new();
-        assert!(write_all_at(&dir, &empty_store, &[]).is_err());
+        assert!(write_all_at(
+            &dir,
+            &empty_store,
+            &[],
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23"
+        )
+        .is_err());
         assert_eq!(
             std::fs::read(dir.join(VAULT_FILE)).unwrap(),
             blob,
@@ -220,7 +261,9 @@ mod tests {
     fn protection_status_has_no_side_effects() {
         let dir = temp_dir("vault-status");
         let store = MemoryKeyStore::new();
-        let status = protection_status_at(&dir, &dir, &store).unwrap();
+        let status =
+            protection_status_at(&dir, &dir, &store, "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23")
+                .unwrap();
         let domains: Vec<&str> = status.domains.iter().map(|d| d.domain.as_str()).collect();
         assert_eq!(domains, vec!["vault", "credentials"]);
         assert!(status.domains.iter().all(|d| !d.ciphertext_exists));
@@ -241,10 +284,19 @@ mod tests {
         // 用降级文件里的密钥写入密文，密钥库为空
         seed_fallback_file(&dir, &VAULT_KEY_SPEC, &key).expect("写入降级密钥文件");
         let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, key);
-        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
+        write_all_at(
+            &dir,
+            &store,
+            std::slice::from_ref(&credential),
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23",
+        )
+        .unwrap();
 
         let empty_store = MemoryKeyStore::new();
-        assert_eq!(read_all_at(&dir, &empty_store).unwrap(), vec![credential]);
+        assert_eq!(
+            read_all_at(&dir, &empty_store, "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23").unwrap(),
+            vec![credential]
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -255,12 +307,21 @@ mod tests {
         let dir = temp_dir("read-write");
         let store = MemoryKeyStore::with_key(VAULT_KEY_SPEC.account, [0x25u8; 32]);
         let credential = sample_credential("id-rt");
-        write_all_at(&dir, &store, std::slice::from_ref(&credential)).unwrap();
-        assert_eq!(read_all_at(&dir, &store).unwrap(), vec![credential]);
+        write_all_at(
+            &dir,
+            &store,
+            std::slice::from_ref(&credential),
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23",
+        )
+        .unwrap();
+        assert_eq!(
+            read_all_at(&dir, &store, "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23").unwrap(),
+            vec![credential]
+        );
 
         // 损坏 vault.dat（内容过短）→ 报错不 panic
         std::fs::write(dir.join(VAULT_FILE), b"broken").unwrap();
-        assert!(read_all_at(&dir, &store).is_err());
+        assert!(read_all_at(&dir, &store, "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23").is_err());
 
         std::fs::remove_dir_all(&dir).ok();
     }

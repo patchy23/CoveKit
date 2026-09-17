@@ -18,19 +18,29 @@ pub(crate) fn protection_status_at(
     vault_dir: &Path,
     data_dir: &Path,
     store: &dyn MasterKeyStore,
+    space_id: &str,
 ) -> Result<ProtectionStatus, String> {
     let vault_files = [vault_dir.join(VAULT_FILE)];
     let credential_files = credentials::all_namespace_files(data_dir)?;
+    let aad = space_id.as_bytes();
     Ok(ProtectionStatus {
         native_backend: native_backend_available(),
         domains: vec![
-            inspect_domain("vault", vault_dir, &VAULT_KEY_SPEC, store, &vault_files),
+            inspect_domain(
+                "vault",
+                vault_dir,
+                &VAULT_KEY_SPEC,
+                store,
+                &vault_files,
+                aad,
+            ),
             inspect_domain(
                 "credentials",
                 data_dir,
                 &CREDENTIALS_KEY_SPEC,
                 store,
                 &credential_files,
+                aad,
             ),
         ],
     })
@@ -46,6 +56,7 @@ pub(crate) fn protection_status(app: &AppHandle) -> Result<ProtectionStatus, Str
     protection_status_at(
         &vault_dir,
         &credential_dir,
-        &crate::framework::space::keyring_store(),
+        &crate::framework::space::keyring_store()?,
+        &crate::framework::space::current_id()?,
     )
 }

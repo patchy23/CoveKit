@@ -237,7 +237,6 @@ export default {
       spaces: 'Spaces on this device',
       spacesHint: 'Imported spaces become available after a restart',
       current: 'Current',
-      legacy: 'Default space',
       emptySpaces: 'No imported space yet',
       switch: 'Switch and restart',
       switchTitle: 'Switch active space',

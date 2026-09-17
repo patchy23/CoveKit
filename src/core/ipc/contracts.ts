@@ -272,10 +272,8 @@ export interface StorageInfo {
   fileCount: number
   /** 已完成的布局版本（等于 paths::LAYOUT_VERSION 表示已是四分区布局） */
   layoutVersion: number
-  /** 非秘密空间标识（数据上下文；默认空间在导入导出交付前恒为 default） */
+  /** 非秘密空间标识（全局唯一 uid；恢复状态下为空串） */
   spaceId: string
-  /** 空间代际（导入激活/空间切换后递增） */
-  generationId: number
   /** 待执行的迁移计划（重启后执行；运行期不换根） */
   pendingMigration: StoragePendingMigration | null
   /** 最近一次成功迁移的留档 */
@@ -376,8 +374,6 @@ export interface SpaceSummary {
   name: string
   createdAt: string
   active: boolean
-  /** 兼容承载位默认空间（旧扁平布局） */
-  legacy: boolean
   imported: boolean
   sourceSpaceName?: string | null
   importedAt?: string | null

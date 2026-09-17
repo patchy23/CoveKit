@@ -58,7 +58,7 @@ pub(crate) fn collect_descriptors(app: &AppHandle) -> Result<Vec<DatasetDescript
 /// 构造导出目录：当前空间可导出的数据集、可勾选条目与默认选择
 pub(crate) fn build_catalog(app: &AppHandle) -> Result<ExportCatalog, String> {
     let descriptors = collect_descriptors(app)?;
-    let space_id = space::current_id();
+    let space_id = space::current_id()?;
     let mut entries: Vec<_> = descriptors
         .iter()
         .flat_map(|descriptor| descriptor.entries.iter().cloned())
@@ -241,7 +241,7 @@ pub(crate) fn build_manifest(
         .into_iter()
         .map(|item| (item.owner(), item))
         .collect();
-    let space_id = space::current_id();
+    let space_id = space::current_id()?;
     let mut manifest = PackageManifest::new(&space_id, &space::display_name(app, &space_id));
 
     for (name, ids) in &resolved.datasets {

@@ -106,11 +106,12 @@ pub(crate) fn archive_corrupt(path: &Path) -> Result<PathBuf, String> {
 pub(crate) fn load_verified<T>(
     path: &Path,
     key: &[u8; 32],
+    aad: &[u8],
     decode: &dyn Fn(&[u8]) -> Result<T, String>,
 ) -> Result<Option<T>, String> {
     let backup = backup_path(path);
     let decode_with = |data: &[u8]| -> Result<T, String> {
-        let plain = super::crypto::decrypt_payload(key, data)?;
+        let plain = super::crypto::decrypt_with_aad(key, data, aad)?;
         decode(&plain)
     };
     let Some(main) = read_optional(path)? else {
@@ -160,6 +161,37 @@ pub(crate) fn load_verified<T>(
     }
 }
 
+/// 带空间绑定的读取 + 旧格式就地升级。
+///
+/// 先用 uid 作 AAD 解密（新格式）；失败则按旧格式（空 AAD）再解一次——只在
+/// 「uid 绑定落地前写入的旧文件」上会命中，命中后立即用 uid AAD 重写落盘，
+/// 此后该文件不再走旧格式分支（一次性升级路径，不是长期双读）。
+/// 两种格式都解不开时报**新格式**的错误（对真正的损坏/外来文件这是更准确的描述）。
+pub(crate) fn load_with_binding<T>(
+    path: &Path,
+    key: &[u8; 32],
+    aad: &[u8],
+    decode: &dyn Fn(&[u8]) -> Result<T, String>,
+    encode: &dyn Fn(&T) -> Result<Vec<u8>, String>,
+) -> Result<Option<T>, String> {
+    match load_verified(path, key, aad, decode) {
+        Ok(value) => Ok(value),
+        Err(bound_error) => match load_verified(path, key, &[], decode) {
+            Ok(Some(value)) => {
+                let plain = encode(&value)?;
+                let upgraded = super::crypto::encrypt_with_aad(key, &plain, aad)?;
+                replace_file(path, &upgraded)?;
+                eprintln!(
+                    "[secure-store] 已把旧格式密文升级为 uid 绑定格式：{}",
+                    path.display()
+                );
+                Ok(Some(value))
+            }
+            Ok(None) => Ok(None),
+            Err(_) => Err(bound_error),
+        },
+    }
+}
 /// 收紧文件权限到「仅当前用户」（降级密钥文件用）。
 /// Windows 走 DACL 重建，macOS/Linux 走 0600；其它平台不支持则明确报错（不静默假装已收紧）。
 pub(crate) fn restrict_to_current_user(path: &Path) -> Result<(), String> {
@@ -218,6 +250,38 @@ mod tests {
         Ok(data.to_vec())
     }
 
+    /// uid 绑定：旧格式（空 AAD）密文首次读取时就地升级为绑定格式；
+    /// 升级后绑定读成功、空 AAD 读失败；外来 uid 两种格式都解不开
+    #[test]
+    fn binding_upgrade_rewrites_legacy_ciphertext() {
+        use super::super::crypto::authenticates_with_aad;
+        let dir = temp_dir("binding-upgrade");
+        let key = [0x42u8; 32];
+        let aad = b"3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23".as_slice();
+        let foreign = b"7c9d1a20-6b31-4e58-8f42-2a5c9e3d7b10".as_slice();
+        let path = dir.join("vault.dat");
+        let encode = |value: &Vec<u8>| -> Result<Vec<u8>, String> { Ok(value.clone()) };
+
+        // 旧格式：空 AAD 写入（uid 绑定落地前的形态）
+        std::fs::write(&path, encrypt_payload(&key, b"legacy-content").unwrap()).unwrap();
+        let value = load_with_binding(&path, &key, aad, &identity, &encode)
+            .expect("旧格式应能读出")
+            .expect("文件存在应有值");
+        assert_eq!(value, b"legacy-content");
+
+        // 升级后：绑定格式认证通过、空 AAD 认证失败（绑定生效的判据）
+        let upgraded = std::fs::read(&path).unwrap();
+        assert!(authenticates_with_aad(&key, &upgraded, aad));
+        assert!(!authenticates_with_aad(&key, &upgraded, &[]));
+
+        // 外来 uid（另一空间）：两种格式都解不开
+        assert!(
+            load_with_binding(&path, &key, foreign, &identity, &encode).is_err(),
+            "外来 uid 不得解开本空间密文"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 首次写入不产生备份；二次写入成功后备份被清理；临时文件唯一名不残留
     #[test]
     fn replace_file_keeps_single_complete_version() {
@@ -251,7 +315,7 @@ mod tests {
         replace_file(&path, &encrypt_payload(&key, b"v1").unwrap()).unwrap();
         // 模拟「主文件已转 .bak、新文件尚未转正」的中断现场
         std::fs::rename(&path, backup_path(&path)).unwrap();
-        let value = load_verified(&path, &key, &identity).unwrap();
+        let value = load_verified(&path, &key, &[], &identity).unwrap();
         assert_eq!(value.as_deref(), Some(&b"v1"[..]));
         assert!(path.exists());
         assert!(!backup_path(&path).exists());
@@ -266,7 +330,7 @@ mod tests {
         let key = [3u8; 32];
         std::fs::write(&path, encrypt_payload(&key, b"new").unwrap()).unwrap();
         std::fs::write(backup_path(&path), encrypt_payload(&key, b"old").unwrap()).unwrap();
-        let value = load_verified(&path, &key, &identity).unwrap();
+        let value = load_verified(&path, &key, &[], &identity).unwrap();
         assert_eq!(value.as_deref(), Some(&b"new"[..]));
         assert!(!backup_path(&path).exists());
         std::fs::remove_dir_all(&dir).ok();
@@ -282,7 +346,7 @@ mod tests {
         std::fs::write(&path, b"broken").unwrap();
         let good = encrypt_payload(&key, b"good").unwrap();
         std::fs::write(backup_path(&path), &good).unwrap();
-        let value = load_verified(&path, &key, &identity).unwrap();
+        let value = load_verified(&path, &key, &[], &identity).unwrap();
         assert_eq!(value.as_deref(), Some(&b"good"[..]));
         assert_eq!(std::fs::read(&path).unwrap(), good);
         assert!(!backup_path(&path).exists());
@@ -309,7 +373,7 @@ mod tests {
             encrypt_payload(&right, b"mine").unwrap(),
         )
         .unwrap();
-        let value = load_verified(&path, &right, &identity).unwrap();
+        let value = load_verified(&path, &right, &[], &identity).unwrap();
         assert_eq!(value.as_deref(), Some(&b"mine"[..]));
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -329,7 +393,7 @@ mod tests {
             }
         };
         let key = [3u8; 32];
-        let error = load_verified(&path, &key, &decode).unwrap_err();
+        let error = load_verified(&path, &key, &[], &decode).unwrap_err();
         assert!(
             error.contains("保留原样"),
             "错误文案应说明文件保留: {error}"
@@ -345,7 +409,9 @@ mod tests {
         let dir = temp_dir("empty");
         let path = dir.join("vault.dat");
         let key = [3u8; 32];
-        assert!(load_verified(&path, &key, &identity).unwrap().is_none());
+        assert!(load_verified(&path, &key, &[], &identity)
+            .unwrap()
+            .is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -363,7 +429,7 @@ mod tests {
             }
         };
         let key = [3u8; 32];
-        assert!(load_verified(&path, &key, &decode).is_err());
+        assert!(load_verified(&path, &key, &[], &decode).is_err());
         assert!(backup_path(&path).exists());
         std::fs::remove_dir_all(&dir).ok();
     }

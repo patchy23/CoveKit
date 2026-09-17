@@ -8,19 +8,15 @@
 //! 3. 降级文件里的正确旧密钥会被**登记**进系统密钥库（写后回读校验），但**不删除降级文件**；
 //! 4. 诊断文案只描述「有没有记录 / 长度对不对 / 读了还是写失败」，不打印任何密钥字节。
 
-/// 系统密钥库 service 名（默认空间沿用；修改会导致既有凭证不可访问，未经单独需求禁止改动）
+/// 系统密钥库 service 前缀（历史默认空间的条目就在这个裸 service 下，由空间化迁移搬走）。
 pub(crate) const KEYRING_SERVICE: &str = "com.patchy23.patchybox";
 
-/// 指定空间的系统密钥库 service 名。
+/// 指定空间的系统密钥库 service 名（`<前缀>.<空间 uid>`）。
 ///
-/// 默认空间（兼容承载位）沿用历史 service，保证既有条目零迁移可读；
-/// 其它空间按空间标识分服务，避免「目录分开了但条目仍共用一把密钥」的伪隔离。
+/// 每个空间独立分服务：目录分开了但条目共用一把密钥 = 伪隔离。空间 uid 由迁移与
+/// 校验链路保证合法（小写 UUIDv4），这里不做二次校验。
 pub(crate) fn keyring_service(space_id: &str) -> String {
-    if space_id == crate::framework::context::DEFAULT_SPACE_ID {
-        KEYRING_SERVICE.to_string()
-    } else {
-        format!("{KEYRING_SERVICE}.{space_id}")
-    }
+    format!("{KEYRING_SERVICE}.{space_id}")
 }
 
 /// 一个主密钥域：系统密钥库 account + 兼容用的本地降级密钥文件
@@ -74,8 +70,7 @@ impl ScopedKeyringStore {
         }
     }
 
-    /// 删除条目（测试清理用）。条目不存在不算失败，重复清理不应报错。
-    #[cfg(test)]
+    /// 删除条目（空间化迁移与测试清理用）。条目不存在不算失败，重复清理不应报错。
     pub(crate) fn delete(&self, account: &str) -> Result<(), String> {
         let entry = keyring::Entry::new(&self.service, account)
             .map_err(|e| format!("密钥库初始化失败: {e}"))?;
@@ -219,13 +214,13 @@ mod tests {
     fn creates_key_when_nothing_exists() {
         let dir = temp_dir("create");
         let store = MemoryKeyStore::new();
-        let first = resolve_master_key(&dir, &CREDENTIALS_KEY_SPEC, &store, &[]).unwrap();
+        let first = resolve_master_key(&dir, &CREDENTIALS_KEY_SPEC, &store, &[], &[]).unwrap();
         assert_eq!(first.source, KeySource::CreatedNow);
         assert_eq!(
             store.key_of(CREDENTIALS_KEY_SPEC.account).unwrap(),
             Some(first.key)
         );
-        let second = resolve_master_key(&dir, &CREDENTIALS_KEY_SPEC, &store, &[]).unwrap();
+        let second = resolve_master_key(&dir, &CREDENTIALS_KEY_SPEC, &store, &[], &[]).unwrap();
         assert_eq!(second.source, KeySource::Keyring);
         assert_eq!(second.key, first.key);
         std::fs::remove_dir_all(&dir).ok();
@@ -237,7 +232,7 @@ mod tests {
         let dir = temp_dir("fallback");
         let store = MemoryKeyStore::new();
         store.set_fail_read(true);
-        let resolved = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[]).unwrap();
+        let resolved = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[], &[]).unwrap();
         assert_eq!(resolved.source, KeySource::CreatedNow);
         let path = dir.join(VAULT_KEY_SPEC.fallback_file);
         assert!(path.exists());
@@ -258,9 +253,9 @@ mod tests {
         let dir = temp_dir("silent-loss");
         let store = MemoryKeyStore::new();
         store.set_lose_writes(true);
-        let first = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[]).unwrap();
+        let first = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[], &[]).unwrap();
         assert!(dir.join(VAULT_KEY_SPEC.fallback_file).exists());
-        let second = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[]).unwrap();
+        let second = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[], &[]).unwrap();
         assert_eq!(first.key, second.key);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -279,8 +274,14 @@ mod tests {
         let _serialize = promotion_test_guard();
         reset_promotion_attempts();
 
-        let resolved =
-            resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, std::slice::from_ref(&blob)).unwrap();
+        let resolved = resolve_master_key(
+            &dir,
+            &VAULT_KEY_SPEC,
+            &store,
+            std::slice::from_ref(&blob),
+            &[],
+        )
+        .unwrap();
         assert_eq!(resolved.key, old_key);
         assert_eq!(resolved.source, KeySource::FallbackFile);
         // 正确旧密钥被登记进密钥库（不删本地文件）
@@ -296,7 +297,7 @@ mod tests {
         let key = [0x33u8; 32];
         let blob = encrypt_payload(&key, b"[]").unwrap();
         let store = MemoryKeyStore::new();
-        let error = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[blob]).unwrap_err();
+        let error = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[blob], &[]).unwrap_err();
         assert!(error.contains("无法解锁"), "错误文案应说明锁死: {error}");
         assert!(!dir.join(VAULT_KEY_SPEC.fallback_file).exists());
         assert_eq!(store.key_of(VAULT_KEY_SPEC.account).unwrap(), None);
@@ -311,7 +312,7 @@ mod tests {
         let store = MemoryKeyStore::new();
         store.write(VAULT_KEY_SPEC.account, &[0x55u8; 32]).unwrap();
         write_fallback(&dir, &VAULT_KEY_SPEC, &[0x66u8; 32]);
-        let error = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[blob]).unwrap_err();
+        let error = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[blob], &[]).unwrap_err();
         assert!(
             error.contains("系统密钥库与本地密钥文件"),
             "应说明两处都试过: {error}"
@@ -334,7 +335,7 @@ mod tests {
         let dir = temp_dir("corrupt-fallback");
         std::fs::write(dir.join(VAULT_KEY_SPEC.fallback_file), b"short").unwrap();
         let store = MemoryKeyStore::new();
-        let error = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[]).unwrap_err();
+        let error = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[], &[]).unwrap_err();
         assert!(error.contains("降级主密钥文件损坏"), "{error}");
         assert_eq!(
             std::fs::read(dir.join(VAULT_KEY_SPEC.fallback_file)).unwrap(),
@@ -384,9 +385,9 @@ mod tests {
         store.set_fail_write(true);
         let _serialize = promotion_test_guard();
         reset_promotion_attempts();
-        let first = resolve_master_key(&dir, &PROMOTE_SPEC, &store, &[]).unwrap();
+        let first = resolve_master_key(&dir, &PROMOTE_SPEC, &store, &[], &[]).unwrap();
         assert_eq!(store.write_attempts(), 1);
-        let second = resolve_master_key(&dir, &PROMOTE_SPEC, &store, &[]).unwrap();
+        let second = resolve_master_key(&dir, &PROMOTE_SPEC, &store, &[], &[]).unwrap();
         assert_eq!(store.write_attempts(), 1, "同一进程不应反复重写系统密钥库");
         assert_eq!(first.key, second.key);
         std::fs::remove_dir_all(&dir).ok();
@@ -401,21 +402,19 @@ mod tests {
         );
     }
 
-    /// 密钥库 service 按空间作用域：默认空间沿用历史 service（既有条目零迁移），
-    /// 其它空间按空间标识分服务，两空间不会落到同一组条目上
+    /// 密钥库 service 按空间作用域：所有空间（含默认空间）都是 `<前缀>.<uid>` 形态，
+    /// 两空间不会落到同一组条目上；裸前缀只作历史默认空间条目的迁移来源
     #[test]
     fn keyring_service_is_scoped_per_space() {
-        use crate::framework::context::DEFAULT_SPACE_ID;
         const SPACE_A: &str = "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23";
         const SPACE_B: &str = "7c1d0a94-2b6f-4e83-8f52-1a9de4c7b305";
 
-        assert_eq!(keyring_service(DEFAULT_SPACE_ID), KEYRING_SERVICE);
         assert_eq!(
             keyring_service(SPACE_A),
             format!("{KEYRING_SERVICE}.{SPACE_A}")
         );
         assert_ne!(keyring_service(SPACE_A), keyring_service(SPACE_B));
-        assert_ne!(keyring_service(SPACE_A), keyring_service(DEFAULT_SPACE_ID));
+        assert_ne!(keyring_service(SPACE_A), KEYRING_SERVICE);
         // account 不随空间变：同一空间里两个域的条目名保持稳定
         assert_eq!(VAULT_KEY_SPEC.account, "vault-master-key");
         assert_eq!(CREDENTIALS_KEY_SPEC.account, "credentials-master-key");
@@ -427,7 +426,7 @@ mod tests {
     /// 只分目录不分密钥库 service 时，两空间会共用同一把主密钥，这条用例就会失败。
     #[test]
     fn space_keys_do_not_open_each_others_ciphertext() {
-        use crate::framework::context::DEFAULT_SPACE_ID;
+        const SPACE_A: &str = "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23";
         const SPACE_B: &str = "7c1d0a94-2b6f-4e83-8f52-1a9de4c7b305";
 
         let dir_a = temp_dir("space-a");
@@ -435,7 +434,7 @@ mod tests {
         // 两个空间各自的密钥库（生产环境里由 service 名字隔开）
         let store_a = MemoryKeyStore::new();
         let store_b = MemoryKeyStore::new();
-        let key_a = resolve_master_key(&dir_a, &CREDENTIALS_KEY_SPEC, &store_a, &[])
+        let key_a = resolve_master_key(&dir_a, &CREDENTIALS_KEY_SPEC, &store_a, &[], &[])
             .unwrap()
             .key;
         let blob = encrypt_payload(&key_a, b"{\"database\":\"secret\"}").unwrap();
@@ -446,13 +445,14 @@ mod tests {
             &CREDENTIALS_KEY_SPEC,
             &store_a,
             std::slice::from_ref(&blob),
+            &[],
         )
         .unwrap();
         assert_eq!(reopened.key, key_a, "同一空间应能解开自己的密文");
 
         // B 空间：既没有这条条目，也不该用新密钥「成功」打开 A 的密文
         let error =
-            resolve_master_key(&dir_b, &CREDENTIALS_KEY_SPEC, &store_b, &[blob]).unwrap_err();
+            resolve_master_key(&dir_b, &CREDENTIALS_KEY_SPEC, &store_b, &[blob], &[]).unwrap_err();
         assert!(error.contains("无法解锁"), "跨空间读取应锁死: {error}");
         assert_eq!(
             store_b.key_of(CREDENTIALS_KEY_SPEC.account).unwrap(),
@@ -465,14 +465,14 @@ mod tests {
         );
 
         // 两空间各解析一次 → 拿到的是两把不同的密钥（目录分开 + 条目分开）
-        let key_b = resolve_master_key(&dir_b, &CREDENTIALS_KEY_SPEC, &store_b, &[])
+        let key_b = resolve_master_key(&dir_b, &CREDENTIALS_KEY_SPEC, &store_b, &[], &[])
             .unwrap()
             .key;
         assert_ne!(key_a, key_b, "两个空间必须持有各自的主密钥");
         assert_eq!(
-            keyring_service(DEFAULT_SPACE_ID),
-            KEYRING_SERVICE,
-            "默认空间 service 保持历史值"
+            keyring_service(SPACE_A),
+            format!("{KEYRING_SERVICE}.{SPACE_A}"),
+            "所有空间（含默认空间）的 service 都是 <前缀>.<uid> 形态"
         );
         assert_ne!(keyring_service(SPACE_B), KEYRING_SERVICE);
         std::fs::remove_dir_all(&dir_a).ok();

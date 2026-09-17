@@ -20,6 +20,9 @@ const NONCE_LEN: usize = 12;
 const GCM_TAG_LEN: usize = 16;
 
 /// 使用主密钥解密 `nonce(12B)‖ciphertext`，先校验最小长度避免损坏文件触发 panic。
+///
+/// 生产路径已全部改用 uid 绑定版（`decrypt_with_aad`）；本函数仅测试构造旧格式夹具用。
+#[cfg(test)]
 pub(crate) fn decrypt_payload(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, String> {
     if data.len() < MIN_CIPHERTEXT_LEN {
         return Err("凭证文件损坏（密文长度不足）".into());
@@ -28,6 +31,9 @@ pub(crate) fn decrypt_payload(key: &[u8; 32], data: &[u8]) -> Result<Vec<u8>, St
 }
 
 /// 使用主密钥加密明文，返回 `nonce(12B)‖ciphertext`（每次新 nonce）。
+///
+/// 生产路径已全部改用 uid 绑定版（`encrypt_with_aad`）；本函数仅测试构造旧格式夹具用。
+#[cfg(test)]
 pub(crate) fn encrypt_payload(key: &[u8; 32], plain: &[u8]) -> Result<Vec<u8>, String> {
     encrypt_with_aad(key, plain, &[]).map_err(|_| "凭证加密失败".into())
 }
@@ -100,8 +106,15 @@ pub(crate) fn decrypt_with_aad_nonce(
 
 /// 用候选主密钥尝试解密：能通过 GCM 认证即认为这把密钥属于该密文。
 /// 主密钥候选选择用它做判据（不依赖任何外部状态）。
+/// 生产路径用 `authenticates_with_aad`；本函数仅测试用。
+#[cfg(test)]
 pub(crate) fn authenticates(key: &[u8; 32], data: &[u8]) -> bool {
     decrypt_payload(key, data).is_ok()
+}
+
+/// 带 AAD 的认证校验（空间 uid 绑定版）：密钥与 AAD 同时匹配才为真
+pub(crate) fn authenticates_with_aad(key: &[u8; 32], data: &[u8], aad: &[u8]) -> bool {
+    decrypt_with_aad(key, data, aad).is_ok()
 }
 
 /// Argon2id 口令派生（框架唯一实现）：口令 + 盐 + 成本参数 → 32B 密钥。

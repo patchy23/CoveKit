@@ -80,9 +80,6 @@ async function confirmSwitch(): Promise<void> {
                 <UiBadge v-if="space.active" tone="accent">{{
                   t('settings.dataManagement.current')
                 }}</UiBadge>
-                <UiBadge v-if="space.legacy" tone="neutral">{{
-                  t('settings.dataManagement.legacy')
-                }}</UiBadge>
               </div>
               <p class="truncate text-body-sm text-text-muted dark:text-text-muted-dark">
                 <template v-if="space.sourceSpaceName">

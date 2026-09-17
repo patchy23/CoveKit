@@ -27,9 +27,6 @@ use super::types::{
     ImportSelection, PackageManifest, TransportPolicy,
 };
 
-/// 新空间的第一代（导入只产生一代：包里的数据就是这一代的内容）
-const IMPORT_GENERATION: u64 = 1;
-
 /// 计划 id（导入会话标识，同时用作暂存目录名后缀）
 pub(crate) fn new_plan_id() -> String {
     format!("imp-{}", uuid::Uuid::new_v4())
@@ -190,10 +187,9 @@ pub(crate) fn materialize(
     plan: &ImportPlan,
 ) -> Result<BTreeMap<String, usize>, String> {
     let staging = space_index::staging_space_root(device_root, &plan.plan_id);
-    // 暂存空间的**内容根**（代际目录）：与正式空间 `StorageLocation::partitioned` 同形，
+    // 暂存空间的**内容根**：与正式空间 `StorageLocation::for_space` 同形（无代际层），
     // 适配器因此只需一套相对路径（`root/data`、`root/vault`）
-    let content_root =
-        space_index::staging_content_root(device_root, &plan.plan_id, IMPORT_GENERATION);
+    let content_root = space_index::staging_content_root(device_root, &plan.plan_id);
 
     let space_dir = space_index::space_root(device_root, &plan.space_id);
     if space_dir.exists() {
@@ -684,7 +680,7 @@ mod tests {
         assert_eq!(counts["t.records"], 2);
         assert_eq!(counts["t.other"], 1);
 
-        let data = space_index::generation_root(&device, SPACE_ID, 1).join("data");
+        let data = space_index::space_root(&device, SPACE_ID).join("data");
         assert!(
             data.join("t.records.json").exists(),
             "数据应落在正式空间目录内"

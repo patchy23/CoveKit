@@ -41,8 +41,6 @@ pub struct SpaceSummary {
     pub created_at: String,
     /// 是否是当前活动空间
     pub active: bool,
-    /// 是否是兼容承载位（`default`）
-    pub legacy: bool,
     /// 是否由导入创建
     pub imported: bool,
     /// 来源空间名（不可信，仅展示）
@@ -215,33 +213,27 @@ pub struct CancelResult {
 #[tauri::command]
 pub fn data_spaces_list(app: AppHandle) -> Result<Vec<SpaceSummary>, String> {
     let index = space_index::read_index(&app)?;
-    let active = space_index::read_active_id(&app).unwrap_or_else(space::current_id);
-    let mut list = Vec::with_capacity(index.len() + 1);
+    let active = space_index::read_active_id(&app)
+        .or_else(|| space::current_id().ok())
+        .unwrap_or_default();
+    let mut list = Vec::with_capacity(index.len());
     for (space_id, record) in &index {
         let source = record.imported_from.as_ref();
+        // 默认空间在索引里有条目且未命名时用固定文案（与 space::display_name 同一口径）
+        let name = if record.is_default && record.name.trim().is_empty() {
+            space_index::DEFAULT_SPACE_NAME.to_string()
+        } else {
+            record.display_name(space_id)
+        };
         list.push(SpaceSummary {
             space_id: space_id.clone(),
-            name: record.display_name(space_id),
+            name,
             created_at: record.created_at.clone(),
             active: &active == space_id,
-            legacy: space_id == context_default_space_id(),
             imported: source.is_some(),
             source_space_name: source.map(|item| item.source_space_name.clone()),
             imported_at: source.map(|item| item.imported_at.clone()),
             counts: source.map(|item| item.counts.clone()).unwrap_or_default(),
-        });
-    }
-    if !index.contains_key(context_default_space_id()) {
-        list.push(SpaceSummary {
-            space_id: context_default_space_id().to_string(),
-            name: space_index::DEFAULT_SPACE_NAME.to_string(),
-            created_at: String::new(),
-            active: active == context_default_space_id(),
-            legacy: true,
-            imported: false,
-            source_space_name: None,
-            imported_at: None,
-            counts: BTreeMap::new(),
         });
     }
     // 活动空间排最前，其余按时间倒序（新建/导入的空间更容易被找到）
@@ -265,13 +257,10 @@ pub async fn data_space_switch(
         return Err(format!("空间 id 非法：{space_id}"));
     }
     let index = space_index::read_index(&app)?;
-    let name = match index.get(&space_id) {
-        Some(record) => record.display_name(&space_id),
-        None if space_id == context_default_space_id() => {
-            space_index::DEFAULT_SPACE_NAME.to_string()
-        }
-        None => return Err(format!("空间不存在或尚未登记：{space_id}")),
-    };
+    if !index.contains_key(&space_id) {
+        return Err(format!("空间不存在或尚未登记：{space_id}"));
+    }
+    let name = space_index::display_name(&app, &space_id);
     // 维护互斥：空间切换与导入提交、根迁移互斥（前端禁用按钮不算锁）
     let _guard = maintenance_guard().await;
     let mut patch = serde_json::Map::new();
@@ -300,11 +289,6 @@ pub fn data_transfer_cancel() -> CancelResult {
     CancelResult {
         cancelled: session::cancel_current(),
     }
-}
-
-/// 默认空间 id（兼容承载位）
-fn context_default_space_id() -> &'static str {
-    crate::framework::context::DEFAULT_SPACE_ID
 }
 
 /// 生成数据包（写入用户选定路径）；密码只在本次调用内存在

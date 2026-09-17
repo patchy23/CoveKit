@@ -153,8 +153,6 @@ const PARTITIONS: [&str; 4] = ["data", "vault", "logs", "cache"];
 pub struct StorageInfo {
     /// 当前生效的根目录（设备级根）
     root: String,
-    /// 落盘形态：`legacyFlat`（旧扁平，默认空间保持此形态）或 `partitioned`（按空间分区）
-    layout: String,
     /// 是否使用默认根目录（app_data_dir）
     is_default: bool,
     /// 默认根目录（「恢复默认」按钮的目标值）
@@ -167,10 +165,8 @@ pub struct StorageInfo {
     file_count: u64,
     /// 已完成的布局版本（paths::LAYOUT_VERSION 表示已是四分区布局）
     layout_version: i64,
-    /// 非秘密空间标识（数据上下文；默认空间在导入导出 L0/L1 交付前恒为 default）
+    /// 非秘密空间标识（全局唯一 uid；上下文缺失时为空串——恢复状态下前端只读恢复字段）
     space_id: String,
-    /// 空间代际（导入激活/空间切换后递增；用于判定计划是否过期）
-    generation_id: u64,
     /// 空间回落登记（活动空间标识非法时回落默认空间的原因；None = 正常）
     space_fallback: Option<space::SpaceFallback>,
     /// 待执行的迁移计划（重启后由维护阶段执行）
@@ -288,7 +284,6 @@ pub fn storage_info(app: AppHandle) -> Result<StorageInfo, String> {
 
     Ok(StorageInfo {
         root: root.display().to_string(),
-        layout: location.layout.as_str().to_string(),
         is_default: root == default_root,
         default_root: default_root.display().to_string(),
         partitions,
@@ -297,10 +292,7 @@ pub fn storage_info(app: AppHandle) -> Result<StorageInfo, String> {
         layout_version: paths::layout_version(&app),
         space_id: context::current()
             .map(|ctx| ctx.space_id().to_string())
-            .unwrap_or_else(|| context::DEFAULT_SPACE_ID.to_string()),
-        generation_id: context::current()
-            .map(context::DataContext::generation_id)
-            .unwrap_or(context::DEFAULT_GENERATION_ID),
+            .unwrap_or_default(),
         space_fallback: space::fallback(),
         pending_migration: plan::load_pending(&cfg),
         last_migration: plan::load_last(&cfg),

@@ -25,19 +25,19 @@ pub(crate) mod test_support;
 mod win_acl;
 
 pub(crate) use crypto::{
-    decrypt_with_aad_nonce, derive_key_argon2id, encrypt_payload, encrypt_with_aad_nonce,
+    decrypt_with_aad_nonce, derive_key_argon2id, encrypt_with_aad, encrypt_with_aad_nonce,
 };
-pub(crate) use file::{backup_path, ciphertext_evidence, load_verified, replace_file};
+pub(crate) use file::{backup_path, ciphertext_evidence, load_with_binding, replace_file};
 pub(crate) use key::{
-    keyring_store_for, native_backend_available, resolve_master_key, MasterKeyStore,
-    ScopedKeyringStore, CREDENTIALS_KEY_SPEC, VAULT_KEY_SPEC,
+    keyring_service, keyring_store_for, native_backend_available, resolve_master_key,
+    MasterKeyStore, ScopedKeyringStore, CREDENTIALS_KEY_SPEC, KEYRING_SERVICE, VAULT_KEY_SPEC,
 };
 pub(crate) use status::inspect_domain;
 pub use status::ProtectionStatus;
 
-/// 仅测试构建可见：认证校验（断言「不生成覆盖既有密文的新密钥」）
+/// 仅测试构建可见：旧格式（未绑定 uid）加解密与认证校验（构造旧格式夹具用）
 #[cfg(test)]
-pub(crate) use crypto::authenticates;
+pub(crate) use crypto::{authenticates, encrypt_payload};
 /// 仅测试构建可见：清掉「降级密钥已登记」的进程内记录（断言登记行为的用例用）
 #[cfg(test)]
 pub(crate) use key::reset_promotion_attempts;

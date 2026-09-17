@@ -231,7 +231,6 @@ export default {
       spaces: '本机空间',
       spacesHint: '导入的空间重启后才能使用',
       current: '当前',
-      legacy: '默认空间',
       emptySpaces: '还没有导入过空间',
       switch: '切换并重启',
       switchTitle: '切换活动空间',

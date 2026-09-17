@@ -166,9 +166,9 @@ impl DatasetAdapter for VaultAdapter {
             credentials.push(credential);
         }
         let dir = target.root.join("vault");
-        credentials_write_all_at(&dir, &target.keyring, &credentials)?;
+        credentials_write_all_at(&dir, &target.keyring, &credentials, &target.space_id)?;
         // 自查：写进去的必须能按新空间密钥读回来（读不回来说明密文/密钥不匹配）
-        let back = credentials_read_all_at(&dir, &target.keyring)?;
+        let back = credentials_read_all_at(&dir, &target.keyring, &target.space_id)?;
         if back.len() != credentials.len() {
             return Err(format!(
                 "凭证写入后读回 {} 条，预期 {} 条",
@@ -235,7 +235,8 @@ mod tests {
         assert_eq!(written, 1);
 
         // 读回：同一密钥库能取到同一条凭证
-        let back = credentials_read_all_at(&root.join("vault"), &target.keyring).expect("读回凭证");
+        let back = credentials_read_all_at(&root.join("vault"), &target.keyring, &target.space_id)
+            .expect("读回凭证");
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].id, "cred-1");
 

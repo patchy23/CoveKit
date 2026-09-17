@@ -142,16 +142,14 @@ pub fn storage_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 /// 本次调用使用的存储位置描述符。
 ///
-/// 优先借走固定上下文里的那一份（一次运行只解析一次，是数据位置的唯一来源）；
-/// 上下文尚未初始化时（单元测试或框架极早期）退回即时解析的旧扁平布局，与改动前行为一致。
+/// 只借走固定上下文里的那一份（一次运行只解析一次，是数据位置的唯一来源）；
+/// 上下文尚未初始化（单元测试或框架极早期）**即报错**：空间化之后没有任何
+/// 「不经过上下文也能猜到数据位置」的合法路径，猜了就是往错误的地方写。
 pub(crate) fn current_location(app: &AppHandle) -> Result<Cow<'static, StorageLocation>, String> {
-    if let Some(location) = crate::framework::context::location() {
-        return Ok(Cow::Borrowed(location));
-    }
-    Ok(Cow::Owned(StorageLocation::legacy_for(
-        resolve_root_now(app)?,
-        crate::framework::context::DEFAULT_SPACE_ID,
-    )))
+    let _ = app;
+    crate::framework::context::location()
+        .map(Cow::Borrowed)
+        .ok_or_else(|| "数据上下文未初始化，存储位置不可得".to_string())
 }
 
 /// 即时解析存储根（无上下文时的回落路径）：配置优先，不做可写性探测与降级
@@ -225,21 +223,16 @@ fn scoped_dir(app: &AppHandle, partition: &str, scope: &str) -> Result<PathBuf, 
     Ok(dir)
 }
 
-/// 数据分区下某项的路径（**带旧布局回落**）。
+/// 数据分区下某项的路径（只认本次生效的空间布局，不做旧布局回落）。
 ///
-/// 新位置（`data/<name>`）不存在而设备根下旧位置存在时返回旧位置：布局迁移失败或被跳过的
-/// 极端情况下仍能读到老数据，避免「升级后数据消失」。
+/// 旧布局的读取责任由启动维护窗口的迁移承担：迁移成功则旧位置已清空，迁移失败则启动
+/// 进入恢复状态——两种情况下这里都没有「回设备根找旧文件」的合法场景。
 pub fn data_path(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
     if !valid_scope(name) {
         return Err(format!("文件名非法: {name}"));
     }
     let location = current_location(app)?;
-    let target = location.data.join(name);
-    let legacy = location.device_root.join(name);
-    if !target.exists() && legacy.exists() {
-        return Ok(legacy);
-    }
-    Ok(target)
+    Ok(location.data.join(name))
 }
 
 /// 需要授权给资源协议（asset://）的目录清单
@@ -356,34 +349,39 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// 四分区取值只来自描述符字段：两种形态下都与描述符一致，且不二次拼接
+    /// 四分区取值只来自描述符字段：与描述符一致，且不二次拼接
     #[test]
     fn partition_path_follows_descriptor_fields() {
-        let legacy = StorageLocation::legacy_for(PathBuf::from("D:/pb-root"), "default");
-        assert_eq!(partition_path(&legacy, "data").unwrap(), legacy.data);
-        assert_eq!(partition_path(&legacy, "vault").unwrap(), legacy.vault);
-        assert_eq!(partition_path(&legacy, "logs").unwrap(), legacy.logs);
-        assert_eq!(partition_path(&legacy, "cache").unwrap(), legacy.cache);
-        // 四个分区之外的名字不映射到分区（由调用方决定落位）
-        assert!(partition_path(&legacy, "spaces").is_none());
-
-        let partitioned = StorageLocation::partitioned(PathBuf::from("D:/pb-root"), "9f1c4e2a", 1);
-        assert_eq!(
-            partition_path(&partitioned, "data").unwrap(),
-            partitioned.data
+        let location = StorageLocation::for_space(
+            PathBuf::from("D:/pb-root"),
+            "9f1c4e2a-1111-4111-8111-111111111111",
         );
+        assert_eq!(partition_path(&location, "data").unwrap(), location.data);
+        assert_eq!(partition_path(&location, "vault").unwrap(), location.vault);
+        assert_eq!(partition_path(&location, "logs").unwrap(), location.logs);
+        assert_eq!(partition_path(&location, "cache").unwrap(), location.cache);
+        // 四个分区之外的名字不映射到分区（由调用方决定落位）
+        assert!(partition_path(&location, "spaces").is_none());
         assert_eq!(
-            partition_path(&partitioned, "logs").unwrap(),
-            PathBuf::from("D:/pb-root/logs/9f1c4e2a")
+            partition_path(&location, "logs").unwrap(),
+            PathBuf::from("D:/pb-root/logs/9f1c4e2a-1111-4111-8111-111111111111")
         );
     }
 
     /// 资源协议只授权缓存分区下的可播放目录（不得因为空间变化而放宽到整个数据目录）
     #[test]
     fn asset_scope_stays_inside_cache_partition() {
-        let location = StorageLocation::partitioned(PathBuf::from("D:/pb-root"), "9f1c4e2a", 1);
+        let location = StorageLocation::for_space(
+            PathBuf::from("D:/pb-root"),
+            "9f1c4e2a-1111-4111-8111-111111111111",
+        );
         let dirs = asset_scope_dirs(&location);
-        assert_eq!(dirs, vec![PathBuf::from("D:/pb-root/cache/9f1c4e2a/tts")]);
+        assert_eq!(
+            dirs,
+            vec![PathBuf::from(
+                "D:/pb-root/cache/9f1c4e2a-1111-4111-8111-111111111111/tts"
+            )]
+        );
         for dir in dirs {
             assert!(!dir.starts_with(&location.data), "不得授权数据分区");
             assert!(!dir.starts_with(&location.vault), "不得授权凭证分区");

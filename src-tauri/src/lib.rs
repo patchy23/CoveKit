@@ -74,19 +74,14 @@ pub fn run() {
             let migration = framework::storage::run_pending(app.handle(), &configured_before);
             eprintln!("[storage] {}", migration.summary());
 
-            // ── 框架启动初始化 ──
-            // 数据上下文最先固定：存储位置、空间代际与启动 epoch 由它唯一给出，
-            // 之后 paths / PluginDb / 插件一律取该实例，不再各自现读配置
-            framework::context::init_from_app(app.handle())
-                .map_err(|e| format!("数据上下文初始化失败: {e}"))?;
             // 存储布局迁移必须最先执行：早于任何插件打开数据库、凭证与已知主机文件。
             // 恢复状态（配置盘不可用/迁移失败）下跳过：此时目录不可写，强行迁移只会失败，
             // 而且它属于「必须用户处理的故障」，不该让启动整体失败而看不到恢复提示。
             if framework::storage::recovery::current().is_some() {
                 eprintln!("[storage] 存在未处理的存储故障，跳过布局迁移，等待用户在恢复页处理");
             } else {
-                // 失败不再让启动整体失败：单项失败会保留原位置并由 data_path 回落读取，
-                // 用户需要看到恢复提示而不是一个打不开的应用。
+                // 失败不再让启动整体失败：单项失败会保留原位置，用户需要看到恢复提示而不是
+                // 一个打不开的应用。
                 match framework::storage::layout::migrate_layout(app.handle()) {
                     Ok(report) if report.has_failures() => {
                         framework::storage::recovery::set(
@@ -117,6 +112,46 @@ pub fn run() {
                         );
                     }
                 }
+            }
+
+            // ── 空间化迁移（uid 化 + 旧扁平布局入位 + 代际目录平铺；一次性升级路径）──
+            // 必须在数据上下文固定之前执行：上下文要读到迁移后的空间标识。
+            // fail-fast：失败即登记恢复状态（保留现场，重试 = 重启后重跑，迁移幂等）。
+            if framework::storage::recovery::current().is_some() {
+                eprintln!("[space] 存在未处理的存储故障，跳过空间化迁移");
+            } else {
+                let root = framework::paths::storage_root(app.handle())?;
+                match framework::space::migration::migrate_to_spaces(app.handle(), &root) {
+                    Ok(report) => eprintln!("[space] {}", report.summary()),
+                    Err(error) => {
+                        eprintln!("[space] 空间化迁移失败: {error}");
+                        framework::storage::recovery::set(
+                            framework::storage::recovery::StorageRecovery::migration_failed(
+                                "",
+                                &root.display().to_string(),
+                                None,
+                                format!("空间化迁移失败：{error}"),
+                            ),
+                        );
+                    }
+                }
+            }
+
+            // ── 框架启动初始化 ──
+            // 数据上下文在全部迁移之后固定：存储位置、空间标识与启动 epoch 由它唯一给出，
+            // 之后 paths / PluginDb / 插件一律取该实例，不再各自现读配置。
+            // 初始化失败（空间自举损坏等）不终止启动：登记恢复状态，数据读写会得到
+            // 明确错误，用户能看到恢复页而不是一个打不开的应用。
+            if let Err(error) = framework::context::init_from_app(app.handle()) {
+                eprintln!("[space] 数据上下文初始化失败: {error}");
+                framework::storage::recovery::set(
+                    framework::storage::recovery::StorageRecovery::migration_failed(
+                        "",
+                        &configured_before,
+                        None,
+                        format!("空间初始化失败：{error}"),
+                    ),
+                );
             }
             framework::settings::init(app)?;
 

@@ -153,7 +153,6 @@ describe('dataTransfer store', () => {
         name: '工作机副本',
         createdAt: '2026-09-16T12:00:00+08:00',
         active: false,
-        legacy: false,
         imported: true,
         sourceSpaceName: '默认空间',
         importedAt: '2026-09-16T12:00:00+08:00',

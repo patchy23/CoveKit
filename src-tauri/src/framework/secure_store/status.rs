@@ -84,6 +84,7 @@ pub(crate) fn inspect_domain(
     spec: &KeySpec,
     store: &dyn MasterKeyStore,
     ciphertext: &[PathBuf],
+    aad: &[u8],
 ) -> DomainProtection {
     let native = native_backend_available();
     let keyring_has_key = matches!(store.read(spec.account), Ok(Some(_)));
@@ -118,7 +119,7 @@ pub(crate) fn inspect_domain(
         };
     }
 
-    match resolve_master_key_readonly(key_dir, spec, store, &evidence) {
+    match resolve_master_key_readonly(key_dir, spec, store, &evidence, aad) {
         Ok(resolved) => {
             // 平台没有原生后端时，即使解析成功也必须如实显示为不可用（不能把 mock/文件说成系统密钥库）
             if !native {
@@ -189,7 +190,7 @@ mod tests {
     fn uninitialized_reports_without_creating_keys() {
         let dir = temp_dir("uninitialized");
         let store = MemoryKeyStore::new();
-        let status = inspect_domain("vault", &dir, &VAULT_KEY_SPEC, &store, &[]);
+        let status = inspect_domain("vault", &dir, &VAULT_KEY_SPEC, &store, &[], &[]);
         assert_eq!(status.availability, ProtectionAvailability::Uninitialized);
         assert!(!status.fallback_file_exists);
         assert!(!status.ciphertext_exists);
@@ -214,6 +215,7 @@ mod tests {
             &VAULT_KEY_SPEC,
             &store,
             &[dir.join("vault.dat")],
+            &[],
         );
         if native_backend_available() {
             assert_eq!(status.backend, ProtectionBackend::SystemKeyring);
@@ -242,6 +244,7 @@ mod tests {
             &VAULT_KEY_SPEC,
             &store,
             &[dir.join("vault.dat")],
+            &[],
         );
         assert_eq!(status.availability, ProtectionAvailability::Available);
         assert!(status.fallback_file_exists);
@@ -272,6 +275,7 @@ mod tests {
             &VAULT_KEY_SPEC,
             &store,
             &[dir.join("vault.dat")],
+            &[],
         );
         assert_eq!(status.availability, ProtectionAvailability::Locked);
         assert_eq!(status.backend, ProtectionBackend::Unavailable);
@@ -302,6 +306,7 @@ mod tests {
             &CREDENTIALS_KEY_SPEC,
             &store,
             &[dir.join("database.enc")],
+            &[],
         );
         assert!(status.ciphertext_exists, "备份应计入密文证据");
         assert_eq!(status.availability, ProtectionAvailability::Available);

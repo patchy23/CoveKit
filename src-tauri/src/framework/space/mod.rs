@@ -1,27 +1,26 @@
-//! 框架 · 数据空间（namespace）解析（sync-202609-001 · L1 骨架）
+//! 框架 · 数据空间解析（空间身份 = 全局唯一 uid）
 //!
 //! 语义约定（改动前先读这里）：
 //! - **唯一来源**：本模块是「当前空间」的唯一解析入口。取数据位置、凭证、偏好、密钥都必须
 //!   经 `context`（其空间标识由本模块给出）；模块不得自建空间 id、不得把账号 id 当空间 id。
-//! - **默认空间零迁移（红线）**：`default` 是「尚未建立空间索引的旧布局」的兼容承载位，
-//!   位置形态保持 `LegacyFlat`：路径与密钥条目与升级前逐字符相同，本批不建空间目录。
-//! - **不静默兜底**：标识非法时回落 `default` 保证旧数据仍可读，但必须留下可见登记
-//!   （日志 + `fallback()`），不得静默改写用户配置，也不得新建空环境冒充成功。
-//! - **越界零容忍**：空间 id 只接受小写 UUIDv4 或兼容承载位 `default`，作为目录名与 keyring
-//!   service 片段之前必须校验（禁路径穿越与名称注入）。
-//! - 本批只放置默认空间：不做新建/切换/重命名/删除；空间索引的**读**侧在 `index` 子模块
-//!   （导出预览与来源留档要显示空间名），写入侧随隔离导入一起落地。
+//! - **uid 由迁移与首启生成**（`migration` 子模块）：一次生成、永久不变；本模块只读不写，
+//!   不在解析路径上临时发明身份。
+//! - **不静默兜底**：标识非法时回落到索引里标记的默认空间，但必须留下可见登记
+//!   （日志 + `fallback()`）；索引里连默认条目都没有 = 自举损坏，直接报错（可见恢复），
+//!   不得改写用户配置，也不得新建空环境冒充成功。
+//! - **越界零容忍**：空间 id 只接受小写 UUIDv4，作为目录名与 keyring service 片段之前
+//!   必须校验（禁路径穿越与名称注入）。
 
 use std::path::Path;
 use std::sync::OnceLock;
 
 use tauri::AppHandle;
 
-use super::context::{StorageLocation, DEFAULT_GENERATION_ID, DEFAULT_SPACE_ID};
+use super::context::StorageLocation;
 use super::paths;
 
-#[allow(dead_code)] // 导出预览要用的读侧在 C4 命令层接入前只有测试调用方（接入后删掉本行）
 pub mod index;
+pub mod migration;
 
 pub use index::display_name;
 
@@ -40,40 +39,19 @@ pub struct SpaceFallback {
     pub reason: String,
 }
 
-/// 空间解析结果：本批只有默认空间，但取值路径与后续批次一致（不写死字面量）
+/// 空间解析结果
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpaceResolution {
-    /// 空间标识（校验通过的值；回落时为 `default`）
+    /// 空间标识（校验通过的 uid；回落时为索引里的默认空间 uid）
     pub space_id: String,
-    /// 空间代际（真实代际由空间激活流程给出，本批固定为 1）
-    pub generation_id: u64,
     /// 本次解析是否发生回落（None = 正常）
     pub fallback: Option<SpaceFallback>,
 }
 
-impl SpaceResolution {
-    /// 默认空间（无回落）
-    pub fn default_space() -> Self {
-        Self {
-            space_id: DEFAULT_SPACE_ID.to_string(),
-            generation_id: DEFAULT_GENERATION_ID,
-            fallback: None,
-        }
-    }
-
-    /// 是否为兼容承载位（旧扁平布局：数据根就是设备根）
-    pub fn is_legacy_default(&self) -> bool {
-        self.space_id == DEFAULT_SPACE_ID
-    }
-}
-
-/// 空间 id 校验：兼容承载位 `default` 或小写 UUIDv4（任务书 §13.2 冻结）
+/// 空间 id 校验：只接受小写 UUIDv4（版本位 4、变体位 8/9/a/b，RFC 4122）
 ///
-/// 只做形态校验，不做存在性检查：是否存在由空间索引/激活流程负责（后续批次）。
+/// 只做形态校验，不做存在性检查：是否存在由空间索引/激活流程负责。
 pub fn is_valid_space_id(id: &str) -> bool {
-    if id == DEFAULT_SPACE_ID {
-        return true;
-    }
     let bytes = id.as_bytes();
     if bytes.len() != 36 {
         return false;
@@ -93,79 +71,70 @@ pub fn is_valid_space_id(id: &str) -> bool {
 
 /// 纯解析：把自举配置里的原始值解析为空间身份（无副作用，便于用例覆盖三种情形）
 ///
-/// `raw` 为 `None` 表示键缺失（旧安装），`Some` 为配置值（可能为空串或非法值）。
-pub fn resolve_value(raw: Option<&str>) -> SpaceResolution {
+/// - `raw` 为 `None` 表示键缺失（迁移未跑或自举被清），`Some` 为配置值（可能为空串或非法值）；
+/// - `default_uid` 是索引里标记为默认的空间 uid（回落目标）；连它都没有 = 自举损坏，报错。
+pub fn resolve_value(
+    raw: Option<&str>,
+    default_uid: Option<&str>,
+) -> Result<SpaceResolution, String> {
     let value = raw.map(|text| text.trim().to_string());
     match value {
-        Some(value) if is_valid_space_id(&value) => SpaceResolution {
+        Some(value) if is_valid_space_id(&value) => Ok(SpaceResolution {
             space_id: value,
-            generation_id: DEFAULT_GENERATION_ID,
             fallback: None,
+        }),
+        Some(value) => match default_uid {
+            Some(uid) => Ok(SpaceResolution {
+                space_id: uid.to_string(),
+                fallback: Some(SpaceFallback {
+                    raw: truncate(&value, 64),
+                    reason: "活动空间标识非法（应为小写 UUIDv4），已回落到默认空间；\
+                             请检查自举配置里的 activeSpaceId"
+                        .into(),
+                }),
+            }),
+            None => Err("活动空间标识非法，且空间索引中没有默认空间条目（自举损坏）".into()),
         },
-        Some(value) => {
-            let fallback = SpaceFallback {
-                raw: truncate(&value, 64),
-                reason: "活动空间标识非法（应为小写 UUIDv4 或 default），已回落到默认空间；\
-                         请检查自举配置里的 activeSpaceId"
-                    .into(),
-            };
-            SpaceResolution {
-                space_id: DEFAULT_SPACE_ID.to_string(),
-                generation_id: DEFAULT_GENERATION_ID,
-                fallback: Some(fallback),
-            }
-        }
-        None => SpaceResolution::default_space(),
+        None => match default_uid {
+            Some(uid) => Ok(SpaceResolution {
+                space_id: uid.to_string(),
+                fallback: Some(SpaceFallback {
+                    raw: String::new(),
+                    reason: "自举配置缺少活动空间标识，已回落到默认空间".into(),
+                }),
+            }),
+            None => Err("自举配置缺少活动空间标识，且空间索引中没有默认空间条目".into()),
+        },
     }
 }
 
-/// 解析当前活动空间（读设备级自举配置；缺失时写入默认空间标识）
-///
-/// 三种情形区别对待，不做「什么都当默认空间」的静默处理：
-/// - 键缺失：视作尚未建立空间标识的旧安装，写入 `default` 承载位后按默认空间运行；
-/// - 值非法：**不改写用户配置**，回落默认空间并留下可见登记（数据仍可读，问题可见）；
-/// - 值合法：按值解析。
-pub fn resolve_active(app: &AppHandle) -> SpaceResolution {
-    let raw = paths::read_setting(app, KEY_ACTIVE_SPACE_ID)
-        .and_then(|value| value.as_str().map(|text| text.to_string()));
-    let resolution = resolve_value(raw.as_deref());
+/// 解析当前活动空间（读设备级自举配置；回落目标取索引里的默认空间条目）
+pub fn resolve_active(app: &AppHandle) -> Result<SpaceResolution, String> {
+    let raw = index::read_active_id(app);
+    let default_uid = index::read_index(app)?
+        .into_iter()
+        .find(|(_, record)| record.is_default)
+        .map(|(id, _)| id);
+    let resolution = resolve_value(raw.as_deref(), default_uid.as_deref())?;
     if let Some(fallback) = resolution.fallback.as_ref() {
         record_fallback(fallback);
     }
-    if raw.is_none() {
-        // 自举初始化：写入承载位。写失败不阻断启动（只影响下次解析），但必须可见。
-        if let Err(error) = record_default(app) {
-            eprintln!("[space] 写入默认空间标识失败: {error}");
-        }
-    }
-    resolution
+    Ok(resolution)
 }
 
-/// 首次启动写入默认空间标识（设备级自举配置；已存在时不覆盖）
-pub fn record_default(app: &AppHandle) -> Result<(), String> {
-    if paths::read_setting(app, KEY_ACTIVE_SPACE_ID).is_some() {
-        return Ok(());
+/// 写入活动空间标识（设备级自举配置；由空间迁移与空间切换调用，业务模块不得调用）
+pub fn record_active(app: &AppHandle, space_id: &str) -> Result<(), String> {
+    if !is_valid_space_id(space_id) {
+        return Err(format!("空间 id 非法，拒绝写入自举配置：{space_id}"));
     }
-    paths::write_setting(
-        app,
-        KEY_ACTIVE_SPACE_ID,
-        serde_json::json!(DEFAULT_SPACE_ID),
-    )
+    paths::write_setting(app, KEY_ACTIVE_SPACE_ID, serde_json::json!(space_id))
 }
 
-/// 按解析结果构造本次启动**唯一**的存储位置描述符
+/// 按解析结果构造本次启动**唯一**的存储位置描述符。
 ///
-/// 默认空间保持 `LegacyFlat`（红线：本批不搬动真实数据）；其它空间按任务书 §13.3 的分区
-/// 形态落位。纯计算，不建目录、不触碰文件系统。
+/// 所有空间统一为 `spaces/<uid>/` 布局（无代际层）。纯计算，不建目录、不触碰文件系统。
 pub fn location_for(device_root: &Path, resolution: &SpaceResolution) -> StorageLocation {
-    if resolution.is_legacy_default() {
-        return StorageLocation::legacy_for(device_root.to_path_buf(), &resolution.space_id);
-    }
-    StorageLocation::partitioned(
-        device_root.to_path_buf(),
-        &resolution.space_id,
-        resolution.generation_id,
-    )
+    StorageLocation::for_space(device_root.to_path_buf(), &resolution.space_id)
 }
 
 /// 本次启动是否发生了空间回落（进程内登记；None = 正常）
@@ -176,7 +145,7 @@ pub fn fallback() -> Option<SpaceFallback> {
 /// 记录回落（只登记首因：一次启动里为什么回落到默认空间，首个原因最接近根因）
 fn record_fallback(fallback: &SpaceFallback) {
     eprintln!(
-        "[space] 活动空间标识非法，已回落默认空间：raw={} reason={}",
+        "[space] 活动空间标识不可用，已回落默认空间：raw={} reason={}",
         fallback.raw, fallback.reason
     );
     let _ = FALLBACK.set(Some(fallback.clone()));
@@ -191,19 +160,19 @@ fn truncate(text: &str, max_chars: usize) -> String {
     format!("{head}…")
 }
 
-/// 当前空间标识（上下文未初始化时按默认空间：仅测试或框架极早期会出现）
-pub fn current_id() -> String {
+/// 当前空间标识（数据上下文之外没有第二处来源；未初始化即错误——测试须先 init）
+pub fn current_id() -> Result<String, String> {
     super::context::current()
         .map(|ctx| ctx.space_id().to_string())
-        .unwrap_or_else(|| DEFAULT_SPACE_ID.to_string())
+        .ok_or_else(|| "数据上下文未初始化，当前空间 uid 不可得".to_string())
 }
 
 /// 当前空间的主密钥库访问入口（service 按空间作用域，account 不变）。
 ///
 /// 约定：**不允许**业务模块自建 `ScopedKeyringStore` 传别的 service —— 那等于绕过空间隔离。
 /// 密钥库与本地降级密钥文件必须同时归属同一空间，只做其中一层等于没做隔离。
-pub(crate) fn keyring_store() -> super::secure_store::ScopedKeyringStore {
-    super::secure_store::keyring_store_for(&current_id())
+pub(crate) fn keyring_store() -> Result<super::secure_store::ScopedKeyringStore, String> {
+    Ok(super::secure_store::keyring_store_for(&current_id()?))
 }
 
 /// 进程内回落登记（启动时确定一次）

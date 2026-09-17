@@ -95,7 +95,11 @@ pub fn vault_save(
     validate_payload(&payload)?;
     let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
     let dir = store::data_dir_of(&app)?;
-    let mut all = store::read_all_at(&dir, &crate::framework::space::keyring_store())?;
+    let mut all = store::read_all_at(
+        &dir,
+        &crate::framework::space::keyring_store()?,
+        &crate::framework::space::current_id()?,
+    )?;
     let now = chrono::Utc::now().timestamp();
     let saved = match &payload.id {
         // 更新：保留 id 与 created_at
@@ -126,7 +130,12 @@ pub fn vault_save(
             credential
         }
     };
-    store::write_all_at(&dir, &crate::framework::space::keyring_store(), &all)?;
+    store::write_all_at(
+        &dir,
+        &crate::framework::space::keyring_store()?,
+        &all,
+        &crate::framework::space::current_id()?,
+    )?;
     Ok(store::summary_of(&saved))
 }
 
@@ -166,7 +175,11 @@ pub fn vault_delete(
     }
     let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
     let dir = store::data_dir_of(&app)?;
-    let mut all = store::read_all_at(&dir, &crate::framework::space::keyring_store())?;
+    let mut all = store::read_all_at(
+        &dir,
+        &crate::framework::space::keyring_store()?,
+        &crate::framework::space::current_id()?,
+    )?;
     let before = all.len();
     all.retain(|c| c.id != id);
     if all.len() == before {
@@ -176,7 +189,12 @@ pub fn vault_delete(
             referenced_by,
         });
     }
-    store::write_all_at(&dir, &crate::framework::space::keyring_store(), &all)?;
+    store::write_all_at(
+        &dir,
+        &crate::framework::space::keyring_store()?,
+        &all,
+        &crate::framework::space::current_id()?,
+    )?;
     Ok(VaultDeleteResult {
         ok: true,
         error: None,
@@ -246,7 +264,11 @@ pub async fn vault_import(
     let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
     let dir = store::data_dir_of(&app)?;
     // 2) 现有库读不出 → 原文件改名留档（防误删），按空库继续
-    let existing = match store::read_all_at(&dir, &crate::framework::space::keyring_store()) {
+    let existing = match store::read_all_at(
+        &dir,
+        &crate::framework::space::keyring_store()?,
+        &crate::framework::space::current_id()?,
+    ) {
         Ok(all) => all,
         Err(e) => {
             eprintln!("[vault] 现有凭证库无法读取（{e}），导入前已将原文件改名留档");
@@ -272,7 +294,12 @@ pub async fn vault_import(
         }
         (merged, count, skipped)
     };
-    store::write_all_at(&dir, &crate::framework::space::keyring_store(), &merged)?;
+    store::write_all_at(
+        &dir,
+        &crate::framework::space::keyring_store()?,
+        &merged,
+        &crate::framework::space::current_id()?,
+    )?;
     Ok(VaultImportResult {
         imported: imported_count,
         skipped,
