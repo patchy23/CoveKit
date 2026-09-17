@@ -202,13 +202,12 @@ fn resolve_master_key_inner(
     let has_ciphertext = evidence.iter().any(|data| !data.is_empty());
 
     if has_ciphertext {
-        // 有密文：以能否认证解出既有密文为准，绝不生成新密钥
-        // 旧格式（未绑定 uid 的密文）在 uid 绑定落地前的过渡期内同时认可：
-        // 读路径会在首次成功读取后把它就地升级为绑定格式（见 secure_store::file::load_with_binding）
+        // 有密文：以能否认证解出既有密文为准，绝不生成新密钥。
+        // 只认 uid 绑定格式（2026-09-16 裁决：不做旧格式兼容，旧数据放弃）
         let worth = |key: [u8; 32]| {
-            evidence.iter().any(|data| {
-                authenticates_with_aad(&key, data, aad) || authenticates_with_aad(&key, data, &[])
-            })
+            evidence
+                .iter()
+                .any(|data| authenticates_with_aad(&key, data, aad))
         };
         if let Some(key) = keyring_key.filter(|key| worth(*key)) {
             return Ok(ResolvedKey {

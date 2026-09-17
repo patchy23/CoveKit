@@ -70,7 +70,8 @@ impl ScopedKeyringStore {
         }
     }
 
-    /// 删除条目（空间化迁移与测试清理用）。条目不存在不算失败，重复清理不应报错。
+    /// 删除条目（仅测试探针清理用）。条目不存在不算失败，重复清理不应报错。
+    #[cfg(test)]
     pub(crate) fn delete(&self, account: &str) -> Result<(), String> {
         let entry = keyring::Entry::new(&self.service, account)
             .map_err(|e| format!("密钥库初始化失败: {e}"))?;
@@ -159,7 +160,7 @@ pub(crate) use resolve::{resolve_master_key, resolve_master_key_readonly};
 #[cfg(test)]
 mod tests {
 
-    use super::super::crypto::encrypt_payload;
+    use super::super::crypto::encrypt_with_aad;
     use super::super::test_support::{promotion_test_guard, MemoryKeyStore};
     use super::resolve::*;
     use super::*;
@@ -267,7 +268,7 @@ mod tests {
         let dir = temp_dir("conflict");
         let old_key = [0x11u8; 32];
         let new_key = [0x22u8; 32];
-        let blob = encrypt_payload(&old_key, b"existing").unwrap();
+        let blob = encrypt_with_aad(&old_key, b"existing", &[]).unwrap();
         write_fallback(&dir, &VAULT_KEY_SPEC, &old_key);
         let store = MemoryKeyStore::new();
         store.write(VAULT_KEY_SPEC.account, &new_key).unwrap();
@@ -295,7 +296,7 @@ mod tests {
     fn lost_key_never_regenerates() {
         let dir = temp_dir("lost-key");
         let key = [0x33u8; 32];
-        let blob = encrypt_payload(&key, b"[]").unwrap();
+        let blob = encrypt_with_aad(&key, b"[]", &[]).unwrap();
         let store = MemoryKeyStore::new();
         let error = resolve_master_key(&dir, &VAULT_KEY_SPEC, &store, &[blob], &[]).unwrap_err();
         assert!(error.contains("无法解锁"), "错误文案应说明锁死: {error}");
@@ -308,7 +309,7 @@ mod tests {
     #[test]
     fn mismatched_candidates_lock_without_new_key() {
         let dir = temp_dir("mismatch");
-        let blob = encrypt_payload(&[0x44u8; 32], b"[]").unwrap();
+        let blob = encrypt_with_aad(&[0x44u8; 32], b"[]", &[]).unwrap();
         let store = MemoryKeyStore::new();
         store.write(VAULT_KEY_SPEC.account, &[0x55u8; 32]).unwrap();
         write_fallback(&dir, &VAULT_KEY_SPEC, &[0x66u8; 32]);
@@ -437,7 +438,7 @@ mod tests {
         let key_a = resolve_master_key(&dir_a, &CREDENTIALS_KEY_SPEC, &store_a, &[], &[])
             .unwrap()
             .key;
-        let blob = encrypt_payload(&key_a, b"{\"database\":\"secret\"}").unwrap();
+        let blob = encrypt_with_aad(&key_a, b"{\"database\":\"secret\"}", &[]).unwrap();
 
         // A 空间能解开自己的密文
         let reopened = resolve_master_key(

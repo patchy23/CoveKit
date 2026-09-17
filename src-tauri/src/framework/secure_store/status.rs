@@ -206,7 +206,7 @@ mod tests {
         let store = MemoryKeyStore::new();
         let key = [0x31u8; 32];
         store.write(VAULT_KEY_SPEC.account, &key).unwrap();
-        let enc = super::super::encrypt_payload(&key, b"[]").unwrap();
+        let enc = super::super::encrypt_with_aad(&key, b"[]", &[]).unwrap();
         std::fs::write(dir.join("vault.dat"), &enc).unwrap();
 
         let status = inspect_domain(
@@ -234,7 +234,7 @@ mod tests {
         let dir = temp_dir("fallback");
         let store = MemoryKeyStore::new();
         let key = [0x42u8; 32];
-        let enc = super::super::encrypt_payload(&key, b"[]").unwrap();
+        let enc = super::super::encrypt_with_aad(&key, b"[]", &[]).unwrap();
         std::fs::write(dir.join("vault.dat"), &enc).unwrap();
         seed_fallback_file(&dir, &VAULT_KEY_SPEC, &key).expect("写入降级密钥文件");
 
@@ -266,7 +266,7 @@ mod tests {
         let dir = temp_dir("locked");
         let store = MemoryKeyStore::new();
         store.write(VAULT_KEY_SPEC.account, &[0x51u8; 32]).unwrap();
-        let enc = super::super::encrypt_payload(&[0x99u8; 32], b"[]").unwrap();
+        let enc = super::super::encrypt_with_aad(&[0x99u8; 32], b"[]", &[]).unwrap();
         std::fs::write(dir.join("vault.dat"), &enc).unwrap();
 
         let status = inspect_domain(
@@ -296,7 +296,7 @@ mod tests {
         let store = MemoryKeyStore::new();
         let key = [0x61u8; 32];
         store.write(CREDENTIALS_KEY_SPEC.account, &key).unwrap();
-        let enc = super::super::encrypt_payload(&key, br#"{"k":"v"}"#).unwrap();
+        let enc = super::super::encrypt_with_aad(&key, br#"{"k":"v"}"#, &[]).unwrap();
         let backup = backup_path(&dir.join("database.enc"));
         std::fs::write(&backup, &enc).unwrap();
 

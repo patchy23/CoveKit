@@ -417,11 +417,6 @@ mod tests {
         ("ssh", "ssh_process_kill", "结束进程"),
         ("ssh", "ssh_process_list", "进程列表"),
         ("ssh", "ssh_profile_delete", "删除服务器配置"),
-        (
-            "ssh",
-            "ssh_profile_import",
-            "导入存量服务器配置与旧手工凭证（同 id upsert，幂等）",
-        ),
         ("ssh", "ssh_profile_list", "服务器配置列表"),
         (
             "ssh",

@@ -14,7 +14,7 @@ use std::sync::{Mutex, OnceLock};
 use tauri::AppHandle;
 
 use crate::framework::secure_store::{
-    ciphertext_evidence, encrypt_with_aad, load_with_binding, replace_file, resolve_master_key,
+    ciphertext_evidence, encrypt_with_aad, load_verified, replace_file, resolve_master_key,
     MasterKeyStore, CREDENTIALS_KEY_SPEC,
 };
 
@@ -62,7 +62,7 @@ fn key_for_at(
     Ok(resolve_master_key(dir, &CREDENTIALS_KEY_SPEC, store, &evidence, aad)?.key)
 }
 
-/// 读取命名空间全部凭证（解密；主文件与备份都不存在时返回空表；旧格式就地升级重写）
+/// 读取命名空间全部凭证（解密；主文件与备份都不存在时返回空表；密文与空间 uid 绑定）
 fn read_map_at(
     dir: &Path,
     namespace: &str,
@@ -76,10 +76,7 @@ fn read_map_at(
         serde_json::from_slice::<HashMap<String, serde_json::Value>>(plain)
             .map_err(|e| format!("凭证数据解析失败: {e}"))
     };
-    let encode = |map: &HashMap<String, serde_json::Value>| {
-        serde_json::to_vec(map).map_err(|e| format!("凭证序列化失败: {e}"))
-    };
-    Ok(load_with_binding(&path, &key, aad, &decode, &encode)?.unwrap_or_default())
+    Ok(load_verified(&path, &key, aad, &decode)?.unwrap_or_default())
 }
 
 /// 写回命名空间全部凭证（加密落盘，唯一临时名 + 原子替换；AAD = 空间 uid）
@@ -243,7 +240,7 @@ mod tests {
     use super::*;
     use crate::framework::secure_store::test_support::MemoryKeyStore;
     use crate::framework::secure_store::{
-        authenticates, encrypt_payload, promotion_test_guard, reset_promotion_attempts,
+        authenticates_with_aad, encrypt_with_aad, promotion_test_guard, reset_promotion_attempts,
         seed_fallback_file, CREDENTIALS_KEY_SPEC,
     };
 
@@ -443,7 +440,16 @@ mod tests {
         .unwrap();
         let path = dir.join(CREDENTIALS_DIR).join("database.enc");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        std::fs::write(&path, encrypt_payload(&old_key, &plain).unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            encrypt_with_aad(
+                &old_key,
+                &plain,
+                "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23".as_bytes(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
 
         // 系统密钥库里是另一把（不对应密文）的密钥；断言「旧密钥被登记」要与其它登记用例串行，
         // 并先清掉进程内的一次性记录，否则结果取决于用例执行顺序
@@ -474,7 +480,12 @@ mod tests {
         let dir = temp_dir("locked");
         let path = dir.join(CREDENTIALS_DIR).join("database.enc");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let blob = encrypt_payload(&[0x33u8; 32], b"{\"conn-1\":\"secret\"}").unwrap();
+        let blob = encrypt_with_aad(
+            &[0x33u8; 32],
+            b"{\"conn-1\":\"secret\"}",
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23".as_bytes(),
+        )
+        .unwrap();
         std::fs::write(&path, &blob).unwrap();
 
         let store = MemoryKeyStore::new();
@@ -627,8 +638,17 @@ mod tests {
             .unwrap();
         let path = dir.join(CREDENTIALS_DIR).join("database.enc");
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-        let blob = encrypt_payload(&key, &plain).unwrap();
-        assert!(authenticates(&key, &blob));
+        let blob = encrypt_with_aad(
+            &key,
+            &plain,
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23".as_bytes(),
+        )
+        .unwrap();
+        assert!(authenticates_with_aad(
+            &key,
+            &blob,
+            "3f2b6c1e-5a44-4d7e-9b01-8c2d6f0a1b23".as_bytes()
+        ));
         std::fs::write(backup_path(&path), &blob).unwrap();
 
         let map = read_map_at(

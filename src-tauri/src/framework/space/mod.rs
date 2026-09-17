@@ -3,7 +3,7 @@
 //! 语义约定（改动前先读这里）：
 //! - **唯一来源**：本模块是「当前空间」的唯一解析入口。取数据位置、凭证、偏好、密钥都必须
 //!   经 `context`（其空间标识由本模块给出）；模块不得自建空间 id、不得把账号 id 当空间 id。
-//! - **uid 由迁移与首启生成**（`migration` 子模块）：一次生成、永久不变；本模块只读不写，
+//! - **uid 由首启自举生成**（`bootstrap` 子模块）：一次生成、永久不变；本模块只读不写，
 //!   不在解析路径上临时发明身份。
 //! - **不静默兜底**：标识非法时回落到索引里标记的默认空间，但必须留下可见登记
 //!   （日志 + `fallback()`）；索引里连默认条目都没有 = 自举损坏，直接报错（可见恢复），
@@ -19,8 +19,8 @@ use tauri::AppHandle;
 use super::context::StorageLocation;
 use super::paths;
 
+pub mod bootstrap;
 pub mod index;
-pub mod migration;
 
 pub use index::display_name;
 

@@ -114,23 +114,23 @@ pub fn run() {
                 }
             }
 
-            // ── 空间化迁移（uid 化 + 旧扁平布局入位 + 代际目录平铺；一次性升级路径）──
-            // 必须在数据上下文固定之前执行：上下文要读到迁移后的空间标识。
-            // fail-fast：失败即登记恢复状态（保留现场，重试 = 重启后重跑，迁移幂等）。
+            // ── 空间自举（首装建 uid 空间 + 完整性自检；不读不搬任何旧布局内容）──
+            // 必须在数据上下文固定之前执行：上下文要读到自举确定的空间标识。
+            // fail-fast：失败即登记恢复状态（保留现场，重试 = 重启后重跑，自举幂等）。
             if framework::storage::recovery::current().is_some() {
-                eprintln!("[space] 存在未处理的存储故障，跳过空间化迁移");
+                eprintln!("[space] 存在未处理的存储故障，跳过空间自举");
             } else {
                 let root = framework::paths::storage_root(app.handle())?;
-                match framework::space::migration::migrate_to_spaces(app.handle(), &root) {
+                match framework::space::bootstrap::ensure_space(app.handle(), &root) {
                     Ok(report) => eprintln!("[space] {}", report.summary()),
                     Err(error) => {
-                        eprintln!("[space] 空间化迁移失败: {error}");
+                        eprintln!("[space] 空间自举失败: {error}");
                         framework::storage::recovery::set(
                             framework::storage::recovery::StorageRecovery::migration_failed(
                                 "",
                                 &root.display().to_string(),
                                 None,
-                                format!("空间化迁移失败：{error}"),
+                                format!("空间自举失败：{error}"),
                             ),
                         );
                     }
