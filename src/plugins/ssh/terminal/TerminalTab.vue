@@ -420,7 +420,7 @@ watch(
     <div class="min-h-0 flex-1 overflow-hidden bg-[#0d1117] p-[8px]">
       <div
         ref="termHost"
-        class="h-full min-h-0 w-full overflow-hidden"
+        class="terminal-host h-full min-h-0 w-full overflow-hidden"
         @contextmenu="openContextMenu"
       />
     </div>
@@ -439,3 +439,24 @@ watch(
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 终端始终使用深色画布，滚动条不继承应用亮色主题的浅色滑块和边框。 */
+.terminal-host :deep(.xterm-viewport) {
+  color-scheme: dark;
+}
+
+.terminal-host :deep(.xterm-viewport::-webkit-scrollbar-thumb) {
+  background-color: var(--color-border-strong-dark);
+  background-clip: padding-box;
+  border-color: transparent;
+}
+
+.terminal-host :deep(.xterm-viewport::-webkit-scrollbar-thumb:hover) {
+  background-color: var(--color-text-muted-dark);
+}
+
+.terminal-host :deep(.xterm-viewport::-webkit-scrollbar-thumb:active) {
+  background-color: var(--color-secondary-dark);
+}
+</style>
