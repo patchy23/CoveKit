@@ -92,16 +92,27 @@ it('先显示主机列表，功能页首次进入才加载，返回终端保留�
   const terminalInput = wrapper.get('[data-section="terminal"] input')
   await terminalInput.setValue('保留终端状态')
   const entered = ['terminal']
+  let monitorElement: Element | undefined
   for (const section of ['files', 'tunnels', 'monitor', 'services', 'processes', 'docker']) {
     wrapper.findAllComponents({ name: 'TabsStub' })[1].vm.$emit('update:modelValue', section)
     await flushPromises()
     entered.push(section)
     expect(fixture.loads).toEqual(entered)
     expect(wrapper.find(`[data-section="${section}"]`).exists()).toBe(true)
+    if (section === 'monitor') monitorElement = wrapper.get('[data-section="monitor"]').element
   }
   wrapper.findAllComponents({ name: 'TabsStub' })[1].vm.$emit('update:modelValue', 'terminal')
   await flushPromises()
   expect(wrapper.get('[data-section="terminal"] input').element).toBe(terminalInput.element)
   expect((terminalInput.element as HTMLInputElement).value).toBe('保留终端状态')
   expect(fixture.loads).toEqual(entered)
+  expect(wrapper.get('[data-section="monitor"]').element).toBe(monitorElement)
+  expect((monitorElement as HTMLElement).style.display).toBe('none')
+  remote.activeSection = 'monitor'
+  await flushPromises()
+  expect(wrapper.get('[data-section="monitor"]').element).toBe(monitorElement)
+  expect((monitorElement as HTMLElement).style.display).not.toBe('none')
+  remote.connection.status = 'disconnected'
+  await flushPromises()
+  expect(wrapper.find('[data-section="monitor"]').exists()).toBe(false)
 })

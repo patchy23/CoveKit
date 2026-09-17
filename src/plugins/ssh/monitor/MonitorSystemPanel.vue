@@ -10,7 +10,11 @@ import { formatLoadAvg, textOrDash } from './sshSystemInfo'
 import MonitorDiskTable from './MonitorDiskTable.vue'
 import { UiButton } from '@/core/ui'
 
-const props = defineProps<{ connection?: ServerConnection; metrics?: MonitorData | null }>()
+const props = defineProps<{
+  connection?: ServerConnection
+  metrics?: MonitorData | null
+  active?: boolean
+}>()
 
 /** 自动刷新间隔：系统信息变化慢，30 秒足够，避免与 3 秒指标轮询叠加压力 */
 const REFRESH_MS = 30000
@@ -21,20 +25,21 @@ const paused = ref(false)
 const errorMessage = ref('')
 const updatedAt = ref(0)
 let timer: number | null = null
+let disposed = false
 
 /** 采集一次（并发去重；连接已切换时丢弃迟到响应，避免串台） */
 async function refresh() {
   const connectionId = props.connection?.sessionId
-  if (!connectionId || loading.value) return
+  if (disposed || !connectionId || loading.value) return
   loading.value = true
   try {
     const result = await ipc.sshSystemInfoGet(connectionId)
-    if (props.connection?.sessionId !== connectionId) return
+    if (disposed || props.connection?.sessionId !== connectionId) return
     data.value = result
     updatedAt.value = Date.now()
     errorMessage.value = ''
   } catch (error) {
-    if (props.connection?.sessionId === connectionId) {
+    if (!disposed && props.connection?.sessionId === connectionId) {
       errorMessage.value = `系统信息采集失败：${error}`
     }
   } finally {
@@ -83,8 +88,16 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  disposed = true
   if (timer) clearInterval(timer)
 })
+
+watch(
+  () => props.active,
+  (active) => {
+    if (active && !paused.value) void refresh()
+  }
+)
 
 watch(
   () => props.connection?.sessionId,

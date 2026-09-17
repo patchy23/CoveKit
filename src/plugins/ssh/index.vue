@@ -275,7 +275,12 @@ watch(
               class="h-full"
             />
             <MonitorTab
-              v-if="remote.connection.status === 'connected' && remote.activeSection === 'monitor'"
+              v-if="
+                remote.connection.status === 'connected' &&
+                remote.visitedSections.includes('monitor')
+              "
+              v-show="remote.activeSection === 'monitor'"
+              :active="activeWorkspaceId === remote.id && remote.activeSection === 'monitor'"
               :connection="remote.connection"
               :profile="profiles.find((profile) => profile.id === remote.profileId)"
               class="h-full"

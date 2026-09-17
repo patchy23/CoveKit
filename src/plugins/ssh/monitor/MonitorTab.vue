@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** SSH 资源监控：实时指标与趋势在上，系统信息与存储明细在下。 */
-import { onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, MonitorData } from '../contracts'
 import { throttledInterval, useToolScope } from '@/core/lifecycle'
 import { UiButton, UiEmptyState, UiScrollArea, UiSpinner } from '@/core/ui'
@@ -9,7 +9,10 @@ import MonitorSystemPanel from './MonitorSystemPanel.vue'
 import MonitorTrend from './MonitorTrend.vue'
 import { TREND_WINDOW_MS } from './monitorTrend'
 
-const props = defineProps<{ connection?: ServerConnection; profile?: ServerProfile }>()
+const props = withDefaults(
+  defineProps<{ connection?: ServerConnection; profile?: ServerProfile; active?: boolean }>(),
+  { active: true, connection: undefined, profile: undefined }
+)
 const data = ref<MonitorData | null>(null)
 const history = ref<MonitorData[]>([])
 const errorMessage = ref('')
@@ -17,24 +20,42 @@ const refreshing = ref(false)
 const { scope, visibility, onResume } = useToolScope('ssh', 'ssh.monitor')
 const POLL_VISIBLE_MS = 3000
 const POLL_HIDDEN_MS = 30000
+const engaged = computed(
+  () =>
+    props.active && visibility.value.active && !visibility.value.covered && !visibility.value.hidden
+)
+let pollTimer: ReturnType<typeof setTimeout> | undefined
+
+function cancelPoll() {
+  clearTimeout(pollTimer)
+  pollTimer = undefined
+}
+scope.addDispose(cancelPoll)
 
 function schedulePoll(): void {
-  const engaged = visibility.value.active && !visibility.value.covered && !visibility.value.hidden
-  scope.timeout(
+  cancelPoll()
+  if (scope.disposed) return
+  pollTimer = setTimeout(
     () => {
-      void refresh().finally(schedulePoll)
+      void poll()
     },
-    throttledInterval(POLL_VISIBLE_MS, POLL_HIDDEN_MS, !engaged)
+    throttledInterval(POLL_VISIBLE_MS, POLL_HIDDEN_MS, !engaged.value)
   )
+}
+
+async function poll() {
+  cancelPoll()
+  await refresh()
+  schedulePoll()
 }
 
 async function refresh() {
   const connectionId = props.connection?.sessionId
-  if (!connectionId || refreshing.value) return
+  if (scope.disposed || !connectionId || refreshing.value) return
   refreshing.value = true
   try {
     const sample = await ipc.sshMonitorGet(connectionId)
-    if (props.connection?.sessionId !== connectionId) return
+    if (scope.disposed || props.connection?.sessionId !== connectionId) return
     data.value = sample
     errorMessage.value = ''
     history.value = [
@@ -44,18 +65,24 @@ async function refresh() {
       sample,
     ]
   } catch (error) {
-    if (props.connection?.sessionId === connectionId) errorMessage.value = `采集失败：${error}`
+    if (!scope.disposed && props.connection?.sessionId === connectionId)
+      errorMessage.value = `采集失败：${error}`
   } finally {
     refreshing.value = false
   }
 }
 
 onMounted(() => {
-  void refresh()
-  schedulePoll()
+  void poll()
   onResume(() => {
-    void refresh()
+    if (engaged.value) void poll()
   })
+})
+
+// 功能页、连接页签与工具可见性共同决定频率；返回时立即补样，且始终只有一个待执行计时器。
+watch(engaged, (active) => {
+  if (active) void poll()
+  else schedulePoll()
 })
 
 watch(
@@ -131,7 +158,7 @@ watch(
           title="暂未获取资源数据"
           description="可点击刷新指标重试，系统信息与磁盘仍会独立采集。"
         />
-        <MonitorSystemPanel :connection="connection" :metrics="data" />
+        <MonitorSystemPanel :connection="connection" :metrics="data" :active="engaged" />
       </div>
     </UiScrollArea>
   </div>

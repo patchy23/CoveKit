@@ -1,5 +1,6 @@
 import { enableAutoUnmount, flushPromises, shallowMount } from '@vue/test-utils'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { publishToolVisibility } from '@/core/lifecycle'
 import { UiButton } from '@/core/ui'
 import MonitorTab from './MonitorTab.vue'
 import MonitorSystemPanel from './MonitorSystemPanel.vue'
@@ -8,16 +9,14 @@ import { monitorTrendPath } from './monitorTrend'
 
 const mock = vi.hoisted(() => ({ sshMonitorGet: vi.fn() }))
 vi.mock('../ipc', () => ({ ipc: mock }))
-vi.mock('@/core/lifecycle', () => ({
-  useToolScope: () => ({
-    scope: { timeout: vi.fn() },
-    visibility: { value: { active: true } },
-    onResume: vi.fn(),
-  }),
-  throttledInterval: (visible: number) => visible,
-}))
-enableAutoUnmount(afterEach)
-afterEach(() => vi.resetAllMocks())
+enableAutoUnmount((cleanup) => {
+  afterEach(() => {
+    cleanup()
+    vi.useRealTimers()
+    vi.resetAllMocks()
+  })
+})
+beforeEach(() => publishToolVisibility('ssh', { active: true, hidden: false, covered: false }))
 
 const sample = {
   cpuPercent: 20,
@@ -99,4 +98,49 @@ it('曲线按采样时间落点，不把刚采到的两个点拉伸为三分钟�
       100
     )
   ).toBe('M0.0,100.0 M600.0,0.0')
+})
+
+it('切走后降频并保留历史，返回立即采样，工具隐藏也降频，卸载停止', async () => {
+  vi.useFakeTimers()
+  mock.sshMonitorGet.mockImplementation(async () => ({ ...sample, timestamp: Date.now() }))
+  const wrapper = create()
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(3000)
+  expect(mock.sshMonitorGet).toHaveBeenCalledTimes(2)
+  await wrapper.setProps({ active: false })
+  await vi.advanceTimersByTimeAsync(29999)
+  expect(mock.sshMonitorGet).toHaveBeenCalledTimes(2)
+  await vi.advanceTimersByTimeAsync(1)
+  expect(mock.sshMonitorGet).toHaveBeenCalledTimes(3)
+  await wrapper.setProps({ active: true })
+  await flushPromises()
+  expect(mock.sshMonitorGet).toHaveBeenCalledTimes(4)
+  expect(wrapper.findAllComponents(MonitorTrend)[0].props('history')).toHaveLength(4)
+  publishToolVisibility('ssh', { hidden: true })
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(30000)
+  expect(mock.sshMonitorGet).toHaveBeenCalledTimes(5)
+  publishToolVisibility('ssh', { hidden: false })
+  await flushPromises()
+  expect(mock.sshMonitorGet).toHaveBeenCalledTimes(6)
+  wrapper.unmount()
+  await vi.advanceTimersByTimeAsync(60000)
+  expect(mock.sshMonitorGet).toHaveBeenCalledTimes(6)
+})
+
+it('卸载后晚到的采样不会重新启动轮询', async () => {
+  vi.useFakeTimers()
+  let finish!: (value: typeof sample) => void
+  mock.sshMonitorGet.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+  )
+  const wrapper = create()
+  wrapper.unmount()
+  finish(sample)
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(60000)
+  expect(mock.sshMonitorGet).toHaveBeenCalledTimes(1)
 })
