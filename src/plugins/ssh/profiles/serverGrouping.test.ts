@@ -70,6 +70,10 @@ it.each([null, 'group-1'])('添加表单默认分组为 %s，允许修改和清�
     .findAllComponents(UiSelect)
     .find((item) => item.props('options').some((option) => option.label === '未分组'))!
   expect(select.props('modelValue')).toBe(groupId ?? '__ungrouped__')
+  const auth = wrapper
+    .findAllComponents(UiSelect)
+    .find((item) => item.props('options').some((option) => option.value === 'credential'))!
+  expect(auth.props('modelValue')).toBe('credential')
   for (const [placeholder, value] of [
     ['如：生产服务器', '新增主机'],
     ['192.168.1.1', 'example.test'],
@@ -85,6 +89,10 @@ it.each([null, 'group-1'])('添加表单默认分组为 %s，允许修改和清�
       .findAllComponents(UiButton)
       .find((item) => item.text() === '保存')!
       .vm.$emit('click')
+  save()
+  expect(wrapper.emitted('save')).toBeUndefined()
+  expect(wrapper.emitted('error')?.[0]).toEqual(['请选择凭证（或从下拉末尾新建）'])
+  auth.vm.$emit('update:modelValue', 'password')
   select.vm.$emit('update:modelValue', 'group-1')
   save()
   expect(wrapper.emitted('save')?.[0]?.[0]).toMatchObject({ groupId: 'group-1' })
@@ -93,11 +101,15 @@ it.each([null, 'group-1'])('添加表单默认分组为 %s，允许修改和清�
   expect((wrapper.emitted('save')?.[1]?.[0] as { groupId?: string }).groupId).toBeUndefined()
 })
 
-it('编辑服务器保留已有分组，忽略上次添加的默认分组', () => {
+it('编辑服务器保留已有分组和手工认证方式，忽略添加默认值', () => {
   const wrapper = shallowMount(ServerForm, {
     props: { profile, groups, defaultGroupId: 'another-group' },
     global: { renderStubDefaultSlot: true, stubs: { UiModal: modalStub } },
   })
+  const auth = wrapper
+    .findAllComponents(UiSelect)
+    .find((item) => item.props('options').some((option) => option.value === 'credential'))!
+  expect(auth.props('modelValue')).toBe('password')
   wrapper
     .findAllComponents(UiButton)
     .find((item) => item.text() === '保存')!

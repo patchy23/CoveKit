@@ -66,7 +66,7 @@ const form = reactive({
 
 /** 手工凭证是否保存到凭证库（默认保存；取消勾选则凭证仅本次连接使用，不落任何存储） */
 const saveCredential = ref(true)
-const credentialMode = ref(false)
+const credentialMode = ref(true)
 
 watch(
   () => props.profile,
@@ -95,7 +95,7 @@ watch(
       form.username = ''
       form.authMethod = 'password'
       form.credentialRef = ''
-      credentialMode.value = false
+      credentialMode.value = true
       form.remark = ''
       form.groupId = props.defaultGroupId ?? UNGROUPED
     }
