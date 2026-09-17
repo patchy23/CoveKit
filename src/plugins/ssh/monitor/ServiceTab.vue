@@ -133,7 +133,7 @@ onBeforeUnmount(() => {
       <UiSearchInput
         v-model="query"
         size="sm"
-        class="min-w-0 flex-1"
+        class="!w-[180px]"
         placeholder="搜索服务名称或描述"
       />
       <UiSelect

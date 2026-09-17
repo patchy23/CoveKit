@@ -17,8 +17,9 @@ import {
   type SshConnectionWorkspace,
   type SshWorkspaceSection,
 } from './useSshWorkspace'
-import { UiIcon, UiIconButton, UiTabs, type UiTabItem } from '@/core/ui'
+import { UiTabs, type UiTabItem } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import { useSshToolLifecycle } from './toolLifecycle'
 
 const workspace = useSshWorkspace()
@@ -53,6 +54,19 @@ const closingWorkspaceId = ref<string | null>(null)
 const openingProfileId = ref<string | null>(null)
 /** 「关闭全部会话」确认弹窗开关 */
 const cleanupAllOpen = ref(false)
+const connectionMenu = ref<{ x: number; y: number } | null>(null)
+const connectionMenuItems: ContextMenuItem[] = [
+  { label: '关闭全部', onClick: () => (cleanupAllOpen.value = true) },
+]
+
+function openConnectionMenu(id: string, event: MouseEvent) {
+  event.preventDefault()
+  if (!connectionWorkspaces.value.some((item) => item.id === id)) return
+  connectionMenu.value = {
+    x: Math.max(0, Math.min(event.clientX, window.innerWidth - 148)),
+    y: Math.max(0, Math.min(event.clientY, window.innerHeight - 44)),
+  }
+}
 /** 已知主机管理弹窗开关 */
 const knownHostsOpen = ref(false)
 
@@ -133,6 +147,7 @@ watch(activeWorkspaceId, (id) => {
 watch(
   () => connectionWorkspaces.value.map((item) => item.id),
   (ids) => {
+    connectionMenu.value = null
     if (activeWorkspaceId.value && !ids.includes(activeWorkspaceId.value)) {
       activeWorkspaceId.value = ids[ids.length - 1] ?? null
     }
@@ -171,17 +186,8 @@ watch(
           class="min-w-0 flex-1"
           @update:model-value="activeWorkspaceId = $event"
           @close="requestCloseWorkspace"
+          @contextmenu="openConnectionMenu"
         />
-        <!-- 一键清理：断开并关闭全部会话 -->
-        <UiIconButton
-          label="关闭全部会话"
-          size="xs"
-          class="mx-[6px] shrink-0"
-          title="关闭全部会话"
-          @click="cleanupAllOpen = true"
-        >
-          <UiIcon name="x" :size="13" />
-        </UiIconButton>
       </div>
 
       <div
@@ -279,6 +285,15 @@ watch(
         </div>
       </template>
     </div>
+
+    <ContextMenu
+      v-if="connectionMenu"
+      :x="connectionMenu.x"
+      :y="connectionMenu.y"
+      :items="connectionMenuItems"
+      size="sm"
+      @close="connectionMenu = null"
+    />
 
     <ServerForm
       v-if="formOpen"
