@@ -33,7 +33,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'update:searchKeyword', value: string): void
   (event: 'openConnection', profileId: string): void
-  (event: 'add'): void
+  (event: 'add', groupId?: string): void
   (event: 'knownHosts'): void
   (event: 'edit', profile: ServerProfile): void
   (event: 'deleteRequest', profile: ServerProfile): void
@@ -62,11 +62,23 @@ function profilesOf(groupId: string | null): ServerProfile[] {
 const menu = ref<
   | { kind: 'profile'; profile: ServerProfile; x: number; y: number }
   | { kind: 'group'; group: ServerGroup; x: number; y: number }
+  | { kind: 'blank'; x: number; y: number }
   | null
 >(null)
 
+function openBlankMenu(event: MouseEvent) {
+  if (
+    event.target instanceof Element &&
+    event.target.closest('input, textarea, button, [role="combobox"]')
+  )
+    return
+  event.preventDefault()
+  menu.value = { kind: 'blank', x: event.clientX, y: event.clientY }
+}
+
 function openProfileMenu(event: MouseEvent, profile: ServerProfile) {
   event.preventDefault()
+  event.stopPropagation()
   menu.value = {
     kind: 'profile',
     profile,
@@ -88,6 +100,11 @@ function openGroupMenu(event: MouseEvent, group: ServerGroup) {
 
 const menuItems = computed<ContextMenuItem[]>(() => {
   if (!menu.value) return []
+  if (menu.value.kind === 'blank')
+    return [
+      { label: '添加服务器', onClick: () => emit('add') },
+      { label: '新建分组', onClick: openCreate },
+    ]
   if (menu.value.kind === 'profile') {
     const profile = menu.value.profile
     return [
@@ -99,6 +116,8 @@ const menuItems = computed<ContextMenuItem[]>(() => {
   }
   const group = menu.value.group
   return [
+    { label: '添加服务器', onClick: () => emit('add', group.id) },
+    { label: '', separator: true },
     { label: '重命名分组', onClick: () => openRename(group) },
     { label: '', separator: true },
     { label: '删除分组', danger: true, onClick: () => requestDeleteGroup(group) },
@@ -146,6 +165,7 @@ function confirmDeleteGroup() {
   <div
     class="flex w-[180px] shrink-0 flex-col border-r border-border dark:border-border-dark"
     :class="{ 'select-none': drag?.active }"
+    @contextmenu="openBlankMenu"
   >
     <div class="shrink-0 px-[12px] py-[10px]">
       <UiSearchInput

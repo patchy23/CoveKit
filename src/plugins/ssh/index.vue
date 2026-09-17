@@ -83,6 +83,11 @@ function openConnectionMenu(id: string, event: MouseEvent) {
 }
 /** 已知主机管理弹窗开关 */
 const knownHostsOpen = ref(false)
+const defaultGroupId = ref<string | null>(null)
+function openAddServer(groupId?: string) {
+  defaultGroupId.value = groupId ?? null
+  workspace.openAddForm()
+}
 
 /** 确认清理：断开并关闭全部连接工作区 */
 async function confirmCleanupAll() {
@@ -178,7 +183,7 @@ watch(
       :search-keyword="searchKeyword"
       @update:search-keyword="searchKeyword = $event"
       @open-connection="createConnection"
-      @add="workspace.openAddForm"
+      @add="openAddServer"
       @known-hosts="knownHostsOpen = true"
       @edit="workspace.openEditForm"
       @delete-request="workspace.requestDelete"
@@ -312,6 +317,8 @@ watch(
     <ServerForm
       v-if="formOpen"
       :profile="editingProfile"
+      :groups="groups"
+      :default-group-id="defaultGroupId"
       @save="(p, creds, saveCredential) => workspace.saveProfile(p, creds, saveCredential)"
       @error="workspace.showError"
       @cancel="formOpen = false"

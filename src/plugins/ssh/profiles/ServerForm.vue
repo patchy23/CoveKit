@@ -9,6 +9,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { CredentialForm } from '@/core/vault'
 import type { ServerProfile, AuthMethod } from '../contracts'
 import { useServerCredentialChoice } from './useServerCredentialChoice'
+import type { ServerGroup } from './useServerGroups'
 import {
   UiButton,
   UiCheckbox,
@@ -21,9 +22,19 @@ import {
 } from '@/core/ui'
 import type { SelectOption } from '@/core/ui/UiSelect.vue'
 
-const props = defineProps<{
-  profile: ServerProfile | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    profile: ServerProfile | null
+    groups?: ServerGroup[]
+    defaultGroupId?: string | null
+  }>(),
+  { groups: () => [], defaultGroupId: null }
+)
+const UNGROUPED = '__ungrouped__'
+const groupOptions = computed(() => [
+  { value: UNGROUPED, label: '未分组' },
+  ...props.groups.map((group) => ({ value: group.id, label: group.name })),
+])
 
 const emit = defineEmits<{
   (
@@ -48,6 +59,7 @@ const form = reactive({
   privateKey: '',
   passphrase: '',
   remark: '',
+  groupId: UNGROUPED,
 })
 
 /** 认证方式是否处于「凭证」档（UI 层状态；选了凭证后 credentialRef 才有值；须在 watch 之前声明） */
@@ -74,6 +86,7 @@ watch(
       form.credentialRef = p.credentialRef ?? ''
       credentialMode.value = Boolean(p.credentialRef)
       form.remark = p.remark ?? ''
+      form.groupId = p.groupId ?? UNGROUPED
     } else {
       form.id = ''
       form.name = ''
@@ -84,6 +97,7 @@ watch(
       form.credentialRef = ''
       credentialMode.value = false
       form.remark = ''
+      form.groupId = props.defaultGroupId ?? UNGROUPED
     }
   },
   { immediate: true }
@@ -154,6 +168,7 @@ function submit() {
     credentialRef: form.credentialRef || undefined,
     remark: form.remark.trim() || undefined,
     lastConnectedAt: props.profile?.lastConnectedAt,
+    groupId: form.groupId === UNGROUPED ? undefined : form.groupId,
   }
   emit(
     'save',
@@ -178,6 +193,14 @@ function submit() {
     <div class="space-y-[10px]">
       <UiField label="名称" required>
         <UiInput v-model="form.name" placeholder="如：生产服务器" />
+      </UiField>
+
+      <UiField label="分组">
+        <Select
+          :model-value="form.groupId"
+          :options="groupOptions"
+          @update:model-value="form.groupId = String($event)"
+        />
       </UiField>
 
       <div class="grid grid-cols-2 gap-[10px]">
