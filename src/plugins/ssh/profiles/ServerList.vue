@@ -229,7 +229,6 @@ function confirmDeleteGroup() {
 
     <!-- 底部入口常驻，搜索或列表铺满时仍可管理指纹。 -->
     <div class="shrink-0 border-t border-border px-[12px] py-[8px] dark:border-border-dark">
-      <UiButton variant="ghost" size="sm" block @click="openCreate">新建分组</UiButton>
       <UiButton variant="ghost" size="sm" block @click="emit('knownHosts')">主机指纹管理</UiButton>
     </div>
 
