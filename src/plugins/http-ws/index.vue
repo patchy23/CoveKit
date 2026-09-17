@@ -3,6 +3,7 @@
  * HTTP/WS 调试 · 主容器（接口列表管理中枢）
  * 方法下拉含 WS 同级（HttpPanel 内动态渲染），接口列表 HTTP/WS 共用（SQLite 持久化）。
  */
+import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { onMounted, ref } from 'vue'
 import type { ApiRecord } from './contracts'
 import { ipc } from './ipc'
@@ -30,8 +31,8 @@ const renameMode = ref(false)
 async function loadApis() {
   try {
     apis.value = await ipc.apiList()
-  } catch {
-    apis.value = []
+  } catch (error) {
+    ui.toast(`读取接口列表失败：${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -157,6 +158,7 @@ function draftSummary(): string {
 }
 
 onMounted(loadApis)
+useDataRefresh('http_ws.', loadApis)
 </script>
 
 <template>

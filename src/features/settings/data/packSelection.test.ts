@@ -8,6 +8,7 @@ import { describe, expect, it } from 'vitest'
 import type { ExportCatalog, ExportCatalogEntry } from '@/core/ipc/contracts'
 import {
   buildSelection,
+  entryKey,
   chosenNotes,
   closurePreview,
   initialChoice,
@@ -113,7 +114,7 @@ describe('packSelection', () => {
   })
 
   it('选择集按目录口径翻译：条目 id 与类别名（凭证永不进包，无携带开关）', () => {
-    const choice = { ...initialChoice(catalog()), profileIds: ['p1'] }
+    const choice = { ...initialChoice(catalog()), profileIds: [entryKey(entry('p1', []))] }
     expect(buildSelection(catalog(), choice)).toEqual({
       entries: [{ dataset: 'ssh.profiles', ids: ['p1'] }],
       datasets: ['core.favorites'],
@@ -121,7 +122,10 @@ describe('packSelection', () => {
   })
 
   it('闭包预览：同一凭证只算一次，各类别分别计数（按类别名排序）', () => {
-    const choice = { ...initialChoice(catalog()), profileIds: ['p1', 'p2'] }
+    const choice = {
+      ...initialChoice(catalog()),
+      profileIds: ['p1', 'p2'].map((id) => entryKey(entry(id, []))),
+    }
     const preview = closurePreview(catalog(), choice)
     expect(preview).toEqual([
       { kind: 'bookmark', count: 1 },
@@ -132,8 +136,21 @@ describe('packSelection', () => {
   })
 
   it('已选条目的提示只来自被勾中的条目', () => {
-    const choice = { ...initialChoice(catalog()), profileIds: ['p1'] }
+    const choice = { ...initialChoice(catalog()), profileIds: [entryKey(entry('p1', []))] }
     expect(chosenNotes(catalog(), choice).map((item) => item.id)).toEqual(['p1'])
     expect(chosenNotes(catalog(), choice)[0].note).toBe('未绑定凭证')
   })
+})
+
+it('跨数据集同 ID 的勾选互不影响', () => {
+  const data = catalog()
+  const template = data.datasets[0]
+  if (!template) throw new Error('测试目录缺失')
+  data.datasets.push({ ...template, name: 'frp.contents', owner: 'frp' })
+  data.entries.push({ ...entry('p1', []), dataset: 'frp.contents' })
+  const choice = {
+    ...initialChoice(data),
+    profileIds: [entryKey({ dataset: 'frp.contents', id: 'p1' })],
+  }
+  expect(buildSelection(data, choice).entries).toEqual([{ dataset: 'frp.contents', ids: ['p1'] }])
 })

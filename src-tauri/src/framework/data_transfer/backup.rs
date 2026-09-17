@@ -7,8 +7,8 @@
 //! 口径：
 //! - 只快照**将被修改**的存储（调用方给相对路径清单），不整目录复制；
 //! - 快照目录名带时间戳，最多保留最近 3 份（启动维护清理）；
-//! - 快照内容是字节级复制，还原就是原样写回（含原子替换语义）；
-//! - 快照在提交前拍摄，此时没有任何事务在跑（不存在 `-journal` 半截文件）。
+//! - SQLite 经在线备份包含 WAL 已提交页；普通文件原样复制并原子写回；
+//! - 快照在写冻结后拍摄，等待应用内在途数据库操作退出。
 
 use std::path::{Path, PathBuf};
 
@@ -38,6 +38,12 @@ pub struct SnapshotManifest {
     pub created_at: String,
     /// 相对空间根的文件清单（如 `data/ssh.db`、`preferences.json`）
     pub files: Vec<String>,
+    /// 拍摄时不存在的文件，恢复时移除导入新增内容。
+    #[serde(default)]
+    pub absent: Vec<String>,
+    /// 明确管理的目录；还原时删除快照后新增的文件。
+    #[serde(default)]
+    pub directories: Vec<String>,
 }
 
 /// 提交前快照：把将被修改的存储复制到新的快照目录。
@@ -57,23 +63,37 @@ pub(crate) fn snapshot_stores(
     ));
     std::fs::create_dir_all(&dir).map_err(|e| format!("创建快照目录失败: {e}"))?;
     let mut copied = Vec::new();
+    let mut absent = Vec::new();
+    let mut directories = Vec::new();
     for relative in relative_files {
-        let source = space_root.join(relative);
-        if !source.is_file() {
+        let path = super::storage_files::resolve(&space_root, relative)?;
+        if !path.exists() {
+            absent.push((*relative).to_string());
             continue;
         }
-        let target = dir.join(relative);
-        if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("创建快照子目录失败: {e}"))?;
+        if path.is_dir() {
+            directories.push((*relative).to_string());
         }
-        std::fs::copy(&source, &target)
-            .map_err(|e| format!("快照 {} 失败: {e}", source.display()))?;
-        copied.push((*relative).to_string());
+        for relative in super::storage_files::expand(&space_root, relative)? {
+            let source = super::storage_files::resolve(&space_root, &relative)?;
+            let target = super::storage_files::resolve(&dir, &relative)?;
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| format!("创建快照子目录失败: {e}"))?;
+            }
+            if super::storage_files::is_database(&source)? {
+                super::storage_files::copy_database(&source, &target)?;
+            } else {
+                std::fs::copy(&source, &target).map_err(|e| format!("快照失败: {e}"))?;
+            }
+            copied.push(relative);
+        }
     }
     let manifest = SnapshotManifest {
         space_id: space_id.to_string(),
-        created_at: index::now_iso(),
+        created_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true),
         files: copied,
+        absent,
+        directories,
     };
     let bytes =
         serde_json::to_vec_pretty(&manifest).map_err(|e| format!("快照清单序列化失败: {e}"))?;
@@ -136,6 +156,7 @@ pub(crate) fn restore_snapshot(device_root: &Path, snapshot_dir: &Path) -> Resul
         .map_err(|e| format!("快照清单读取失败: {e}"))?;
     let manifest: SnapshotManifest =
         serde_json::from_slice(&bytes).map_err(|e| format!("快照清单解析失败: {e}"))?;
+    uuid::Uuid::parse_str(&manifest.space_id).map_err(|_| "快照空间身份无效")?;
     let space_root = index::space_root(device_root, &manifest.space_id);
     if !space_root.is_dir() {
         return Err(format!(
@@ -143,19 +164,51 @@ pub(crate) fn restore_snapshot(device_root: &Path, snapshot_dir: &Path) -> Resul
             manifest.space_id
         ));
     }
+    // 先验证整个清单，避免发现后半段缺失时已还原前半段。
     for relative in &manifest.files {
-        let source = snapshot_dir.join(relative);
+        let source = super::storage_files::resolve(snapshot_dir, relative)?;
+        super::storage_files::resolve(&space_root, relative)?;
         if !source.is_file() {
-            return Err(format!("快照内容缺失 {}：快照不完整，拒绝还原", relative));
+            return Err("快照内容缺失，拒绝还原".into());
         }
-        let target = space_root.join(relative);
+    }
+    let mut remove = manifest.absent.clone();
+    for directory in &manifest.directories {
+        for current in super::storage_files::expand(&space_root, directory)? {
+            if !manifest.files.contains(&current) {
+                remove.push(current);
+            }
+        }
+    }
+    for relative in &remove {
+        super::storage_files::resolve(&space_root, relative)?;
+    }
+    for relative in &manifest.files {
+        let source = super::storage_files::resolve(snapshot_dir, relative)?;
+        let target = super::storage_files::resolve(&space_root, relative)?;
         if let Some(parent) = target.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| format!("创建还原目录失败: {e}"))?;
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
-        crate::framework::secure_store::replace_file(
-            &target,
-            &std::fs::read(&source).map_err(|e| format!("读取快照内容失败: {e}"))?,
-        )?;
+        if super::storage_files::is_database(&source)? {
+            super::storage_files::copy_database(&source, &target)?;
+        } else {
+            crate::framework::secure_store::replace_file(
+                &target,
+                &std::fs::read(&source).map_err(|e| e.to_string())?,
+            )?;
+        }
+    }
+    for relative in remove {
+        let target = super::storage_files::resolve(&space_root, &relative)?;
+        if target.is_dir() {
+            // 路径已逐段验证且只能位于目标空间，目录内容不跟随链接。
+            for file in super::storage_files::expand(&space_root, &relative)? {
+                std::fs::remove_file(super::storage_files::resolve(&space_root, &file)?)
+                    .map_err(|e| e.to_string())?;
+            }
+        } else if target.exists() {
+            std::fs::remove_file(target).map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }
@@ -205,6 +258,34 @@ mod tests {
         assert_eq!(std::fs::read(space.join("data/ssh.db")).unwrap(), b"before");
         assert_eq!(std::fs::read(space.join("untouched.txt")).unwrap(), b"keep");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn wal_snapshot_restores_live_connection_and_removes_new_files() {
+        let root = temp_root("wal");
+        let space = index::space_root(&root, SPACE);
+        std::fs::create_dir_all(space.join("data")).unwrap();
+        let db = rusqlite::Connection::open(space.join("data/live.db")).unwrap();
+        db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE value(v TEXT); INSERT INTO value VALUES('before');").unwrap();
+        let snapshot = snapshot_stores(&root, SPACE, &["data/live.db", "new.json"]).unwrap();
+        db.execute("UPDATE value SET v='after'", []).unwrap();
+        std::fs::write(space.join("new.json"), b"new").unwrap();
+        restore_snapshot(&root, &snapshot).unwrap();
+        let value: String = db
+            .query_row("SELECT v FROM value", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(value, "before");
+        assert!(!space.join("new.json").exists());
+        drop(db);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn snapshot_rejects_paths_outside_space() {
+        let root = temp_root("traversal");
+        assert!(snapshot_stores(&root, SPACE, &["../outside"]).is_err());
+        assert!(snapshot_stores(&root, SPACE, &["C:/outside"]).is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     /// 清理只留最近 3 份

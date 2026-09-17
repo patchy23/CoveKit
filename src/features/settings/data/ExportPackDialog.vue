@@ -8,7 +8,7 @@
  * 凭证永不进包（与空间绑定，D 裁决）：第二步是纯提示，没有勾选。
  *
  * 口径：
- * - 「下一步」由 useSteps 按条件禁用（空选择、未确认敏感内容、密码不足 8 位都走不过去）；
+ * - 「下一步」由 useSteps 按条件禁用（空选择、密码不足 8 位都走不过去）；
  * - 密码只在本组件内存在（`ref`），关闭即丢弃，store 不持有；
  * - 失败一律留在当前步并已由 store 提示（返回 false），不出现「点了没反应」。
  */
@@ -20,7 +20,7 @@ import { useSteps } from '@/core/ui/useSteps'
 import { defaultPackFileName, fileDialog } from '@/core/dataTransfer/fileDialog'
 import { useDataTransferStore } from '@/stores/dataTransfer'
 import { useUiStore } from '@/stores/ui'
-import { closurePreview, dependencyLabelKey, profileEntries } from './packSelection'
+import { closurePreview, dependencyLabelKey, profileEntries, entryKey } from './packSelection'
 
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (event: 'update:open', value: boolean): void }>()
@@ -39,6 +39,7 @@ const localError = ref('')
 const steps = useSteps(['select', 'secret', 'file', 'report'] as const, {
   canAdvance: (step) => {
     if (step === 'select') return store.canExport
+    if (step === 'secret') return true
     if (step === 'file')
       return password.value.trim().length >= 8 && savePath.value.trim().length > 0
     return false
@@ -74,7 +75,7 @@ function toggleProfile(id: string, next: boolean): void {
   const set = new Set(store.choice.profileIds)
   if (next) set.add(id)
   else set.delete(id)
-  store.choice.profileIds = profiles.value.filter((item) => set.has(item.id)).map((item) => item.id)
+  store.choice.profileIds = profiles.value.filter((item) => set.has(entryKey(item))).map(entryKey)
 }
 
 async function choosePath(): Promise<void> {
@@ -147,11 +148,11 @@ async function runExport(): Promise<void> {
       <div v-else class="max-h-72 space-y-2 overflow-y-auto pr-1">
         <UiCheckbox
           v-for="item in profiles"
-          :key="item.id"
-          :model-value="store.choice.profileIds.includes(item.id)"
-          :label="item.label"
+          :key="entryKey(item)"
+          :model-value="store.choice.profileIds.includes(entryKey(item))"
+          :label="`${store.catalog?.datasets.find((dataset) => dataset.name === item.dataset)?.label ?? item.dataset} · ${item.label}`"
           :description="item.note ? `${item.detail} · ${item.note}` : item.detail"
-          @update:model-value="toggleProfile(item.id, $event)"
+          @update:model-value="toggleProfile(entryKey(item), $event)"
         />
       </div>
       <div class="space-y-2 border-t border-border pt-3">
@@ -166,7 +167,7 @@ async function runExport(): Promise<void> {
       </div>
     </div>
 
-    <!-- ② 确认敏感内容 -->
+    <!-- ② 说明凭证边界 -->
     <div v-else-if="steps.current.value === 'secret'" class="space-y-3">
       <UiAlert tone="info" :title="t('settings.dataManagement.credentialsNoteTitle')">
         {{ t('settings.dataManagement.credentialsNoteBody') }}

@@ -5,6 +5,7 @@
 //! 本文件不再自建 handler 与 IPC 登记表。
 
 mod models;
+mod transfer;
 
 use std::sync::{Mutex, MutexGuard};
 use tauri::{AppHandle, State};
@@ -34,6 +35,11 @@ const MIGRATIONS: &[&str] = &[
         updated_at TEXT NOT NULL
     );",
     "ALTER TABLE api_list ADD COLUMN type TEXT NOT NULL DEFAULT 'http';",
+    "ALTER TABLE api_list ADD COLUMN uid TEXT NOT NULL DEFAULT '';
+     UPDATE api_list SET uid=lower(hex(randomblob(16))) WHERE uid='';
+     CREATE UNIQUE INDEX api_list_uid ON api_list(uid);
+     CREATE TRIGGER api_list_assign_uid AFTER INSERT ON api_list WHEN NEW.uid=''
+     BEGIN UPDATE api_list SET uid=lower(hex(randomblob(16))) WHERE id=NEW.id; END;",
 ];
 
 /// 取库实例（锁内借用；首次访问时经 PluginDb::open 惰性打开）
@@ -151,6 +157,7 @@ pub fn api_clear(app: AppHandle, state: State<'_, ApiState>) -> Result<(), Strin
 
 /// 装配接口库 State（命令登记与分派 handler 由 http_ws 模块清单统一生成）
 pub fn register_state(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    transfer::register();
     builder.manage(ApiState(std::sync::Mutex::new(None)))
 }
 

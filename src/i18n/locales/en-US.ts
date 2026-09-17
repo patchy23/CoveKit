@@ -259,14 +259,14 @@ export default {
       stepPlan: 'Name and scope',
       stepConfirm: 'Confirm import',
       exportSelectHint:
-        'Pick the server profiles to carry over; groups, tunnels and bookmarks follow their profile.',
+        'Select records to export with their dependencies. FRP file contents can be selected individually.',
       favorites: 'Favorites',
       recentTools: 'Recently used',
       pulls: 'Also carried',
-      noProfiles: 'No server profile can be exported from this space',
-      credentialsNoteTitle: 'Credentials are never written into packages',
+      noProfiles: 'No records can be exported from this space',
+      credentialsNoteTitle: 'Credential-store contents are not exported',
       credentialsNoteBody:
-        'Credentials are bound to the current space; exports declare counts only. After importing anywhere, re-enter credentials in the target space.',
+        'Selected configuration and text are exported as ordinary data. Store secrets as credentials to protect them; credential-store contents must be configured again after import. Only .pbdata is supported: 32 MiB total plaintext, 2 MiB per record, and 50,000 records. Local paths, runtime state, and legacy backup formats are excluded.',
       passwordLabel: 'Package password (at least 8 characters)',
       passwordHint: 'The same password is required to import; it is never stored by the app',
       saveTo: 'Save to',

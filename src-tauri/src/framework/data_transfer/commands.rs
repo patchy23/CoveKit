@@ -482,6 +482,8 @@ pub fn data_import_plan(
                 .into_iter()
                 .map(|choice| ((choice.dataset, choice.source_id), choice.decision))
                 .collect();
+            let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
+            let before = super::merge::storage_revision(device_root, &space_id)?;
             let mut plan = import::build_plan(
                 &manifest,
                 &descriptors,
@@ -496,7 +498,11 @@ pub fn data_import_plan(
                 }),
             )?;
             let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
-            plan.expected_revision = Some(super::merge::storage_revision(device_root, &space_id)?);
+            let after = super::merge::storage_revision(device_root, &space_id)?;
+            if before != after {
+                return Err("生成预览期间本地数据发生变化，请重新预览".into());
+            }
+            plan.expected_revision = Some(after);
             plan
         }
     };
@@ -667,7 +673,7 @@ pub async fn data_backup_restore(app: AppHandle, dir: String) -> Result<(), Stri
         if manifest.space_id != space_id {
             return Err("该快照属于别的空间，拒绝还原到当前空间".into());
         }
-        let _freeze = crate::framework::context::WriteFreezeGuard::begin();
+        let _freeze = crate::framework::context::WriteFreezeGuard::begin()?;
         super::backup::restore_snapshot(device_root, &snapshot_dir)?;
         Ok(())
     })

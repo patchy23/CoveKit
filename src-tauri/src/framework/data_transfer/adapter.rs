@@ -32,6 +32,16 @@ pub(crate) trait DatasetAdapter: Send + Sync {
     /// owner 标识（与 IPC owner 一致；一个 owner 只登记一个适配器）
     fn owner(&self) -> &'static str;
 
+    /// 合并时可能修改的空间相对文件，供快照和变更检测使用。
+    fn storage_files(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// 同一实体的附属数据集共享主数据集的目标身份。
+    fn identity_dataset(&self, dataset: &str) -> String {
+        dataset.to_string()
+    }
+
     /// 声明本 owner 可导出的数据集与当前空间的候选条目（含依赖边）
     fn describe_datasets(&self, app: &AppHandle) -> Result<Vec<DatasetDescriptor>, String>;
 

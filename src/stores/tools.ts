@@ -3,6 +3,7 @@
  * 工具本体只负责注册；展示、过滤、排序全部由本 store 承担。
  */
 import { defineStore } from 'pinia'
+import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { computed, ref, watch } from 'vue'
 import { getCategoryCounts, getTools } from '@/core/registry/toolRegistry'
 import type { ToolManifest } from '@/core/registry/types'
@@ -22,6 +23,7 @@ export const useToolsStore = defineStore('tools', () => {
   const nameHits = ref<Record<string, ReadonlyArray<readonly [number, number]>>>({})
 
   const ui = useUiStore()
+  useDataRefresh('core.recent_tools', initRecent)
   const favorites = useFavoritesStore()
 
   initSearch(tools.value)

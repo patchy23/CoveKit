@@ -2,6 +2,7 @@
  * frp 档案列表与增删改（列表数据 + 工具侧元数据）
  * 运行状态与日志不在此 composable（见 runtime/useFrpRuntime），保持单一职责。
  */
+import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUiStore } from '@/stores/ui'
@@ -12,6 +13,7 @@ import type { FrpOpResult, FrpProfileSummary, FrpTemplateId } from '../contracts
 export function useFrpProfiles() {
   const { t } = useI18n()
   const ui = useUiStore()
+  useDataRefresh('frp.', refresh)
 
   /** 档案摘要列表（服务端顺序） */
   const items = ref<FrpProfileSummary[]>([])

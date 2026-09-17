@@ -1,17 +1,16 @@
 //! 框架 · 合并/覆盖导入提交（L3）：原地物化到当前空间，**不重启**
 //!
 //! 流程（L3 方案 §6.1）：
-//! 1. 快照将被修改的存储到 `backups/import-<时间戳>-<随机>`（保留最近 3 份，用户级后悔药）；
-//! 2. 挂写冻结守卫（提交窗口内用户写入口被拒；窗口亚秒级）；
+//! 1. 冻结数据库访问后快照将被修改的存储到 `backups/import-<时间戳>-<随机>`（保留最近 3 份，用户级后悔药）；
+//! 2. 复核预览修订号，提交窗口内拒绝其他数据库访问；
 //! 3. 分 owner 原子写入：sqlite 型 owner 单事务（崩溃即整体回滚），文件型 owner 原子替换；
 //! 4. 更新导入映射（`import-map.json`）并广播 `space-data-changed`（前端定点重拉）。
 //!
 //! 原子性边界：单 owner 内部要么全成要么全不成；跨 owner（如 ssh 库已提交而偏好写失败）
-//! 不做分布式事务，由快照 + 重导幂等自愈兜底（方案 §6.4）。凭证永不在这条路径上。
+//! 返回错误时自动还原快照；进程中断仍由快照恢复与重导幂等兜底。凭证永不在这条路径上。
 
-use std::collections::hash_map::DefaultHasher;
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::hash::Hasher;
 
 use tauri::AppHandle;
 
@@ -23,7 +22,9 @@ use crate::framework::context::{self, WriteFreezeGuard};
 use crate::framework::space::index as space_index;
 
 /// 将被修改的存储（空间根相对路径）：快照与修订号共用同一份清单
-const TRACKED_STORES: [&str; 3] = ["data/ssh.db", "preferences.json", lineage::IMPORT_MAP_FILE];
+fn tracked_stores() -> Result<Vec<String>, String> {
+    super::storage_files::tracked()
+}
 
 /// 提交合并/覆盖导入：计划（含决策与目标 id）→ 当前空间原地写入
 pub(crate) fn commit(app: &AppHandle, plan: &ImportPlan) -> Result<ImportReport, String> {
@@ -36,15 +37,15 @@ pub(crate) fn commit(app: &AppHandle, plan: &ImportPlan) -> Result<ImportReport,
         return Err(format!("目标空间不存在：{}", plan.space_id));
     }
 
-    // 1. 提交前快照（将被修改的存储），并清理超出保留份数的旧快照
-    let _snapshot = backup::snapshot_stores(device_root, &plan.space_id, &TRACKED_STORES)?;
-    if let Err(error) = backup::prune_snapshots(device_root) {
-        // 清理失败只意味着多留了几份备份，不阻断提交；但要留痕，不静默
-        eprintln!("[data_transfer] 清理旧快照失败（不影响本次提交）: {error}");
+    // 1. 先等在途数据库访问完成，复核计划，再拍摄可恢复快照
+    let freeze = WriteFreezeGuard::begin()?;
+    let current = storage_revision(device_root, &plan.space_id)?;
+    if plan.expected_revision.as_deref() != Some(current.as_str()) {
+        return Err("预览之后本地数据有变化，请重新预览后再提交".into());
     }
-    // 2. 写冻结（离开作用域自动解除；提交失败也一样解除）
-    let _freeze = WriteFreezeGuard::begin();
-
+    let stores = tracked_stores()?;
+    let paths: Vec<&str> = stores.iter().map(String::as_str).collect();
+    let snapshot = backup::snapshot_stores(device_root, &plan.space_id, &paths)?;
     // 决策表与 id 映射：计划阶段已落位，提交不再判定
     let decisions: BTreeMap<(String, String), ItemDecision> = plan
         .items
@@ -96,7 +97,52 @@ pub(crate) fn commit(app: &AppHandle, plan: &ImportPlan) -> Result<ImportReport,
             .into_iter()
             .find(|item| item.owner() == owner)
             .ok_or_else(|| format!("没有 owner 为 {owner} 的数据适配器"))?;
-        let written = owner_adapter.apply_merge(blocks, &target)?;
+        let written = match owner_adapter
+            .apply_merge(blocks, &target)
+            .and_then(|written| {
+                for (dataset, records) in blocks {
+                    let expected = if plan.mode == ImportMode::Overwrite {
+                        records.len()
+                    } else {
+                        plan.items
+                            .iter()
+                            .filter(|item| {
+                                item.dataset == *dataset
+                                    && matches!(
+                                        item.decision,
+                                        ItemDecision::Insert
+                                            | ItemDecision::PendingReference
+                                            | ItemDecision::Replace
+                                            | ItemDecision::KeepBoth
+                                    )
+                            })
+                            .count()
+                    };
+                    if written.get(dataset).copied() != Some(expected) {
+                        return Err(format!("数据集 {dataset} 的实际写入条数与计划不一致"));
+                    }
+                }
+                if written
+                    .keys()
+                    .any(|dataset| !blocks.iter().any(|(name, _)| name == dataset))
+                {
+                    return Err("适配器返回了计划以外的数据集".into());
+                }
+                Ok(written)
+            }) {
+            Ok(written) => written,
+            Err(error) => {
+                let recovery = backup::restore_snapshot(device_root, &snapshot);
+                drop(freeze);
+                super::emit_space_data_changed(app, &["*".into()]);
+                return Err(match recovery {
+                    Ok(()) => format!("导入失败，已还原导入前数据：{error}"),
+                    Err(recovery) => {
+                        format!("导入失败：{error}；自动还原失败：{recovery}。请使用导入前快照恢复")
+                    }
+                });
+            }
+        };
         for (dataset, count) in written {
             counts.insert(dataset.clone(), count);
         }
@@ -132,9 +178,25 @@ pub(crate) fn commit(app: &AppHandle, plan: &ImportPlan) -> Result<ImportReport,
             );
         }
     }
-    lineage::save(&map_path, &map)?;
+    if let Err(error) = lineage::save(&map_path, &map) {
+        let recovery = backup::restore_snapshot(device_root, &snapshot);
+        drop(freeze);
+        super::emit_space_data_changed(app, &["*".into()]);
+        return Err(match recovery {
+            Ok(()) => format!("保存导入映射失败，已还原数据：{error}"),
+            Err(recovery) => {
+                format!("保存导入映射失败：{error}；还原失败：{recovery}，请使用快照恢复")
+            }
+        });
+    }
+
+    if let Err(error) = backup::prune_snapshots(device_root) {
+        // 清理失败只意味着多留了几份备份，不阻断提交；但要留痕，不静默
+        eprintln!("[data_transfer] 清理旧快照失败（不影响本次提交）: {error}");
+    }
 
     // 5. 广播受影响数据集（前端订阅后定点重拉，不重启生效）
+    drop(freeze);
     super::emit_space_data_changed(app, &written_datasets);
 
     Ok(ImportReport {
@@ -160,22 +222,39 @@ pub(crate) fn storage_revision(
     space_id: &str,
 ) -> Result<String, String> {
     let space_root = space_index::space_root(device_root, space_id);
-    let mut hasher = DefaultHasher::new();
-    for relative in TRACKED_STORES {
-        let path = space_root.join(relative);
-        hasher.write(relative.as_bytes());
+    let mut hasher = Sha256::new();
+    let mut files = std::collections::BTreeSet::new();
+    for relative in tracked_stores()? {
+        let expanded = super::storage_files::expand(&space_root, &relative)?;
+        files.insert(relative);
+        files.extend(expanded);
+    }
+    for relative in files {
+        let path = super::storage_files::resolve(&space_root, &relative)?;
+        if path.is_dir() {
+            continue;
+        }
+        hasher.update(relative.as_bytes());
+        if path.extension().is_some_and(|extension| extension == "db") {
+            let wal = std::path::PathBuf::from(format!("{}-wal", path.display()));
+            match std::fs::read(wal) {
+                Ok(bytes) => hasher.update(&bytes),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("读取数据库 WAL 失败: {error}")),
+            }
+        }
         match std::fs::read(&path) {
             Ok(bytes) => {
-                hasher.write(&(bytes.len() as u64).to_le_bytes());
-                hasher.write(&bytes);
+                hasher.update(&(bytes.len() as u64).to_le_bytes());
+                hasher.update(&bytes);
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                hasher.write(b"<absent>");
+                hasher.update(b"<absent>");
             }
             Err(error) => {
                 return Err(format!("读取 {} 失败: {error}", path.display()));
             }
         }
     }
-    Ok(format!("{:016x}", hasher.finish()))
+    Ok(hex::encode(hasher.finalize()))
 }

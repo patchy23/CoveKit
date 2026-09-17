@@ -3,6 +3,7 @@
  * 密钥设置 · 阿里云 AccessKey + DNSPod CAM + Cloudflare API Token
  * 每个平台可选择公共 Vault 凭证，或继续使用原有手工输入。
  */
+import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { onMounted, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
@@ -72,6 +73,7 @@ async function save() {
 }
 
 onMounted(load)
+useDataRefresh('dns.', load)
 </script>
 
 <template>

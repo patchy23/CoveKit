@@ -4,10 +4,12 @@
 //! 装配入口 `register_all` 由 `framework::register` 调用一次（幂等，重复调用无副作用）。
 
 pub(crate) mod preferences;
+mod settings;
 pub(crate) mod vault;
 
 /// 登记框架自有的适配器
 pub(crate) fn register_all() {
     vault::register();
     preferences::register();
+    settings::register();
 }

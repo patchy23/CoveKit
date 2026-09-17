@@ -16,6 +16,7 @@
  * 既有单测与组件的 import 路径不变。
  */
 import { onBeforeUnmount, ref } from 'vue'
+import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { useDatabaseConnections } from './connection/useDatabaseConnections'
 import { useQueryWorkspace } from './workspace/useQueryWorkspace'
 import { useDatabaseCatalog } from './catalog/useDatabaseCatalog'
@@ -56,6 +57,9 @@ export function useDatabase() {
     closeConnectionTabs: (connectionId) => workspace?.closeTabsForConnection(connectionId),
     showError,
   })
+  useDataRefresh('database.', () =>
+    Promise.all([connection.refreshConnections(), library.refreshSaved(), library.refreshHistory()])
+  )
   const ws = useQueryWorkspace({
     connections: connection.connectionList,
     activeConnectionId: connection.activeConnectionIdView,

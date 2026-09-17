@@ -32,7 +32,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 webpki-roots = "0.26"
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 # HTTP/WS（TLS 统一 rustls/ring，禁双栈）
 reqwest = { version = "0.12", default-features = false, features = [
   "json",

@@ -128,7 +128,8 @@ pub fn secret_save(
     password: &str,
 ) -> Result<(), String> {
     secrets(app, state)?;
-    credentials::save_secret(app, NAMESPACE, conn_id, &serde_json::json!(password))
+    credentials::save_secret(app, NAMESPACE, conn_id, &serde_json::json!(password))?;
+    super::transfer::credential_saved(app, conn_id)
 }
 
 /// 读取连接密码（连接/测试连接时调用；无记录返回空串）
@@ -138,6 +139,9 @@ pub fn secret_get(
     conn_id: &str,
 ) -> Result<String, String> {
     secrets(app, state)?;
+    if super::transfer::credential_pending(app, conn_id)? {
+        return Err("导入的连接尚未配置凭证，请编辑连接并重新保存密码".into());
+    }
     Ok(credentials::get_secret(app, NAMESPACE, conn_id)?
         .and_then(|v| v.as_str().map(|s| s.to_string()))
         .unwrap_or_default())

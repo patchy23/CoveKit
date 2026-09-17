@@ -9,6 +9,7 @@
  * - 改动带 revision：其他窗口已改过设置时拒绝本轮保存，重新拉取后由调用方重试。
  * - 工具级设置按 owner/key 粒度提交，不再回传整个 tools 对象。
  */
+import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -35,6 +36,7 @@ const createDefaults = (): AppSettings => ({
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AppSettings>(createDefaults())
   const loaded = ref(false)
+  useDataRefresh('settings.', init)
   /** 最近一次保存失败的原因（界面展示用；成功后清空） */
   const saveError = ref<string | null>(null)
   /** 服务端 revision：保存时回传，防止陈旧覆盖 */

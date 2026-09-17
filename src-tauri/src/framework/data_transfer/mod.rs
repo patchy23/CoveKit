@@ -27,8 +27,11 @@ pub(crate) mod lineage;
 /// 合并/覆盖导入提交：原地物化（L3）
 pub(crate) mod merge;
 pub(crate) mod package;
+/// owner 逻辑记录的公共传输编排。
+pub(crate) mod records;
 /// 会话上下文（inspectId / planId）与取消标志
 mod session;
+mod storage_files;
 pub(crate) mod types;
 
 /// 提交成功后广播受影响数据集（前端订阅后定点重拉，合并/覆盖导入不重启生效的落点）

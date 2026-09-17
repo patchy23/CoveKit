@@ -9,6 +9,7 @@ mod credential_refs;
 mod dnspod;
 mod models;
 mod query;
+mod transfer;
 
 use std::sync::Mutex;
 
@@ -30,6 +31,7 @@ const MIGRATIONS: &[&str] = &[
         key TEXT NOT NULL DEFAULT ''
     );",
     "ALTER TABLE dns_config ADD COLUMN credential_ref TEXT;",
+    "ALTER TABLE dns_config ADD COLUMN credential_pending INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// 获取数据库连接（首次自动打开 + 迁移；锁内同步使用，不跨 await）
@@ -198,14 +200,14 @@ pub fn dns_config_set(
         ] {
             c.execute(
                 "INSERT INTO dns_config (platform, id, key, credential_ref) VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(platform) DO UPDATE SET id = ?2, key = ?3, credential_ref = ?4",
+                 ON CONFLICT(platform) DO UPDATE SET id = ?2, key = ?3, credential_ref = ?4, credential_pending=0",
                 rusqlite::params![platform, provider.id, provider.key, provider.credential_ref],
             )
             .map_err(|e| e.to_string())?;
         }
         c.execute(
             "INSERT INTO dns_config (platform, id, key, credential_ref) VALUES (?1, '', ?2, ?3)
-             ON CONFLICT(platform) DO UPDATE SET id = '', key = ?2, credential_ref = ?3",
+             ON CONFLICT(platform) DO UPDATE SET id = '', key = ?2, credential_ref = ?3, credential_pending=0",
             rusqlite::params![
                 models::PLATFORM_CLOUDFLARE,
                 config.cloudflare.token,
@@ -452,6 +454,7 @@ crate::patchybox_module! {
 /// 插件注册：命令入库 + State
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
+    transfer::register();
     // 关闭清理：本插件只有 `DnsState` 里的 PluginDb 句柄，没有会话或子进程需要回收，
     // 故不登记关闭钩子（AR06 方案 §5；新增常驻资源时必须回来补登记）
     // 凭证引用自报：框架删除凭证前据此判断还有哪些平台配置在用

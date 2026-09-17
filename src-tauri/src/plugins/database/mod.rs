@@ -13,6 +13,7 @@ pub(crate) mod drivers;
 pub(crate) mod models;
 pub(crate) mod secrets;
 pub(crate) mod store;
+mod transfer;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
@@ -32,11 +33,12 @@ pub async fn dbc_connection_save(
     config: ConnConfig,
     password: String,
 ) -> Result<(), String> {
+    let _maintenance = crate::framework::context::maintenance_guard().await;
     let existed = store::list_connections(&app, &store_state)?
         .iter()
         .any(|c| c.id == config.id);
     store::save_connection(&app, &store_state, &config)?;
-    if !password.is_empty() || !existed {
+    if !password.is_empty() || !existed || transfer::credential_pending(&app, &config.id)? {
         secrets::secret_save(&app, &secrets_state, &config.id, &password)?;
     }
     Ok(())
@@ -270,6 +272,7 @@ crate::patchybox_module! {
 /// 插件注册：命令入库 + 全部 State 装配 + 关闭清理登记
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
+    transfer::register();
     // 关闭清理登记（AR06）：查询取消、agent 子进程与连接会话由本模块自己清，
     // 框架只协调、超时与汇总（没有这一步，父进程退出后 agent 会变成孤儿进程）
     crate::framework::lifecycle::register(

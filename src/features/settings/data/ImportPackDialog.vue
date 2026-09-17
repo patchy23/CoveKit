@@ -337,7 +337,11 @@ function toggleDataset(name: string, next: boolean): void {
             <UiRadioGroup
               :model-value="conflictOf(item)"
               :name="`conflict-${item.dataset}-${item.id}`"
-              :options="decisionOptions"
+              :options="
+                item.dataset === 'dns.providers' || item.dataset.startsWith('settings.')
+                  ? decisionOptions.filter((option) => option.value !== 'keepBoth')
+                  : decisionOptions
+              "
               direction="row"
               @update:model-value="changeConflict(item, $event as ConflictDecision)"
             />

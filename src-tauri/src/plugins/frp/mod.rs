@@ -12,6 +12,7 @@ mod clients;
 mod models;
 pub(crate) mod profile;
 pub(crate) mod runtime;
+mod transfer;
 pub(crate) mod verify;
 
 use std::collections::HashMap;
@@ -53,6 +54,12 @@ pub(crate) const MIGRATIONS: &[&str] = &[
         file_name TEXT PRIMARY KEY,
         client_id TEXT NOT NULL
      );",
+    "ALTER TABLE profile_meta ADD COLUMN uid TEXT NOT NULL DEFAULT '';
+     ALTER TABLE profile_meta ADD COLUMN source_name TEXT NOT NULL DEFAULT '';
+     UPDATE profile_meta SET uid=lower(hex(randomblob(16))) WHERE uid='';
+     CREATE UNIQUE INDEX profile_meta_uid ON profile_meta(uid);
+     CREATE TRIGGER profile_meta_assign_uid AFTER INSERT ON profile_meta WHEN NEW.uid=''
+     BEGIN UPDATE profile_meta SET uid=lower(hex(randomblob(16))) WHERE file_name=NEW.file_name; END;",
 ];
 
 /// 当前毫秒时间戳（失败回 0：只影响排序，不影响功能）
@@ -156,7 +163,7 @@ pub async fn frp_profiles_list(
     state: State<'_, FrpState>,
 ) -> Result<FrpProfileList, String> {
     let dir = profile_dir(&app)?;
-    let files = match profile::list_profile_files(&dir).await {
+    let mut files = match profile::list_profile_files(&dir).await {
         Ok(files) => files,
         Err(message) => {
             return Ok(FrpProfileList {
@@ -167,6 +174,14 @@ pub async fn frp_profiles_list(
             });
         }
     };
+    let managed = transfer::managed_dir(&app)?;
+    if managed.is_dir() && managed != dir {
+        let imported = profile::list_profile_files(&managed).await?;
+        for path in imported {
+            files.retain(|existing| existing.file_name() != path.file_name());
+            files.push(path);
+        }
+    }
     let remarks = read_remarks(&app);
     let mut profiles = Vec::with_capacity(files.len());
     for path in files {
@@ -177,6 +192,7 @@ pub async fn frp_profiles_list(
         else {
             continue;
         };
+        let display_name = transfer::remember(&app, &file_name)?;
         // 读文件失败（权限/编码）不阻断列表：按空内容展示，用户仍能看到这一条
         let text = tokio::fs::read_to_string(&path).await.unwrap_or_default();
         let meta = models::parse_meta(&text);
@@ -191,7 +207,7 @@ pub async fn frp_profiles_list(
         let remark = remarks.get(&file_name).cloned().unwrap_or_default();
         profiles.push(FrpProfileSummary {
             file_name: file_name.clone(),
-            display_name: file_name.trim_end_matches(".toml").to_string(),
+            display_name: display_name.trim_end_matches(".toml").to_string(),
             remark,
             server_addr: meta.server_addr,
             server_port: meta.server_port,
@@ -218,7 +234,7 @@ pub async fn frp_profile_read(
     app: AppHandle,
     file_name: String,
 ) -> Result<FrpProfileContent, String> {
-    let dir = profile_dir(&app)?;
+    let dir = transfer::directory_for(&app, &file_name)?;
     let content = profile::read_profile_text(&dir, &file_name).await?;
     let parsed = models::toml_text_to_value(&content)?;
     Ok(FrpProfileContent {
@@ -238,7 +254,8 @@ pub async fn frp_profile_save_text(
     file_name: String,
     content: String,
 ) -> Result<FrpOpResult, String> {
-    let dir = profile_dir(&app)?;
+    let _maintenance = crate::framework::context::maintenance_guard().await;
+    let dir = transfer::directory_for(&app, &file_name)?;
     let path = profile::write_profile_text(&dir, &file_name, &content).await?;
     Ok(op_result(&path))
 }
@@ -250,7 +267,8 @@ pub async fn frp_profile_save_form(
     file_name: String,
     parsed: serde_json::Value,
 ) -> Result<FrpOpResult, String> {
-    let dir = profile_dir(&app)?;
+    let _maintenance = crate::framework::context::maintenance_guard().await;
+    let dir = transfer::directory_for(&app, &file_name)?;
     let text = models::parsed_to_toml_text(&parsed)?;
     let path = profile::write_profile_text(&dir, &file_name, &text).await?;
     Ok(op_result(&path))
@@ -263,6 +281,8 @@ pub async fn frp_profile_create(
     file_name: String,
     template: String,
 ) -> Result<FrpOpResult, String> {
+    let _maintenance = crate::framework::context::maintenance_guard().await;
+    transfer::ensure_name_available(&app, &file_name)?;
     let dir = profile_dir(&app)?;
     let path = profile::create_profile(&dir, &file_name, &template).await?;
     Ok(op_result(&path))
@@ -275,7 +295,9 @@ pub async fn frp_profile_duplicate(
     file_name: String,
     new_name: String,
 ) -> Result<FrpOpResult, String> {
-    let dir = profile_dir(&app)?;
+    let _maintenance = crate::framework::context::maintenance_guard().await;
+    transfer::ensure_name_available(&app, &new_name)?;
+    let dir = transfer::directory_for(&app, &file_name)?;
     let path = profile::duplicate_profile(&dir, &file_name, &new_name).await?;
     Ok(op_result(&path))
 }
@@ -287,8 +309,21 @@ pub async fn frp_profile_rename(
     file_name: String,
     new_name: String,
 ) -> Result<FrpOpResult, String> {
-    let dir = profile_dir(&app)?;
+    let _maintenance = crate::framework::context::maintenance_guard().await;
+    if new_name != file_name {
+        transfer::ensure_name_available(&app, &new_name)?;
+    }
+    let dir = transfer::directory_for(&app, &file_name)?;
+    transfer::remember(&app, &file_name)?;
     let path = profile::rename_profile(&dir, &file_name, &new_name).await?;
+    PluginDb::open(&app, TOOL_ID, MIGRATIONS)?.with_conn(|conn| {
+        conn.execute(
+            "UPDATE profile_meta SET file_name=?1,source_name='' WHERE file_name=?2",
+            rusqlite::params![new_name, file_name],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })?;
     let result = op_result(&path);
     // 备注跟着档案名迁移，避免重命名后备注「丢失」
     if let Some(target) = result.file_name.clone() {
@@ -302,7 +337,8 @@ pub async fn frp_profile_rename(
 /// 删除档案（移入同目录 `.trash/`，不物理抹除）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_profile_delete(app: AppHandle, file_name: String) -> Result<FrpOpResult, String> {
-    let dir = profile_dir(&app)?;
+    let _maintenance = crate::framework::context::maintenance_guard().await;
+    let dir = transfer::directory_for(&app, &file_name)?;
     let path = profile::delete_profile(&dir, &file_name).await?;
     Ok(op_result(&path))
 }
@@ -314,7 +350,8 @@ pub async fn frp_profile_remark(
     file_name: String,
     remark: String,
 ) -> Result<FrpOpResult, String> {
-    let dir = profile_dir(&app)?;
+    let _maintenance = crate::framework::context::maintenance_guard().await;
+    let dir = transfer::directory_for(&app, &file_name)?;
     // 先确认档案存在，避免给不存在的文件留下孤儿备注
     profile::resolve_profile_path(&dir, &file_name).await?;
     write_remark(&app, &file_name, &remark)?;
@@ -328,7 +365,7 @@ pub async fn frp_profile_remark(
 /// 校验档案（`frpc verify -c <path>`，错误行与列按解析结果返回）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_verify(app: AppHandle, file_name: String) -> Result<FrpVerifyResult, String> {
-    let dir = profile_dir(&app)?;
+    let dir = transfer::directory_for(&app, &file_name)?;
     let path = profile::resolve_profile_path(&dir, &file_name).await?;
     // 校验必须用档案实际绑定的客户端：否则会出现「校验通过但启动失败」
     // （不同 frpc 版本对配置字段的支持不同，服务端有版本限制时尤其明显）
@@ -476,6 +513,7 @@ fn on_dispose(
 /// 注册插件命令与状态（入 ipc_registry；命令体挂全局 handler；退出清理登记到统一关闭入口）
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
+    transfer::register();
     crate::framework::lifecycle::register(
         crate::framework::lifecycle::ModuleLifecycle::for_tool(IPC_OWNER, "frp")
             .with_tab_scope()

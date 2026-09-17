@@ -32,6 +32,7 @@ impl PluginDb {
 
     /// 按明确路径打开（插件命令走 `open`；测试与诊断工具用本入口）
     pub fn open_at(path: &Path, migrations: &[&str]) -> Result<Self, String> {
+        let _access = crate::framework::context::database_access()?;
         let mut conn =
             rusqlite::Connection::open(path).map_err(|e| format!("打开数据文件失败: {e}"))?;
         apply_pragmas(&conn)?;
@@ -46,6 +47,7 @@ impl PluginDb {
         &self,
         f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
     ) -> Result<T, String> {
+        let _access = crate::framework::context::database_access()?;
         let guard = self.conn.lock().map_err(|e| e.to_string())?;
         f(&guard)
     }
@@ -59,6 +61,7 @@ impl PluginDb {
         &self,
         f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
     ) -> Result<T, String> {
+        let _access = crate::framework::context::database_access()?;
         let mut guard = self.conn.lock().map_err(|e| e.to_string())?;
         let tx = guard
             .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)

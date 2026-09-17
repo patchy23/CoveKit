@@ -82,7 +82,15 @@ impl ImportPlan {
         let mut notes: Vec<String> = self
             .items
             .iter()
-            .filter(|item| item.decision == ItemDecision::PendingReference)
+            .filter(|item| {
+                matches!(
+                    item.decision,
+                    ItemDecision::Insert
+                        | ItemDecision::PendingReference
+                        | ItemDecision::Replace
+                        | ItemDecision::KeepBoth
+                ) && item.note.is_some()
+            })
             .map(|item| item.note.clone().unwrap_or_else(|| item.label.clone()))
             .collect();
         notes.sort();
@@ -112,6 +120,8 @@ pub(crate) fn build_plan(
     merge: Option<MergeInput<'_>>,
 ) -> Result<ImportPlan, String> {
     let mut context = import_context(manifest);
+    // 未选择的数据不能被适配器当作已携带依赖，否则预览会接受悬空引用。
+    context.carried.retain(|name, _| selection.includes(name));
     // 合并/覆盖模式：挂目标空间视图（映射表读盘，缺失或损坏按空表处理）
     let lineage_storage;
     let source_records_storage;
@@ -138,6 +148,15 @@ pub(crate) fn build_plan(
         declared_counts.insert(block.name.clone(), block.record_count);
         let descriptor = descriptors.iter().find(|item| item.name == block.name);
         let Some(descriptor) = descriptor else {
+            if !selection.includes(&block.name) {
+                excluded.push(block.name.clone());
+                items.push(ImportPlanItem::excluded(
+                    &block.name,
+                    &block.name,
+                    "不支持的数据集已显式排除",
+                ));
+                continue;
+            }
             return Err(format!(
                 "数据包包含本应用不认识的数据集 {}（请升级应用后重试）",
                 block.name
@@ -184,8 +203,13 @@ pub(crate) fn build_plan(
             }
         };
 
+        adapter.validate_records(&block.name, &records)?;
         items.extend(adapter.plan_import(&block.name, &records, &context)?);
-        if !records.is_empty() {
+        if !records.is_empty()
+            || merge
+                .as_ref()
+                .is_some_and(|input| input.mode == ImportMode::Overwrite)
+        {
             blocks.push(PlannedBlock {
                 dataset: block.name.clone(),
                 owner: descriptor.owner.clone(),
@@ -209,6 +233,28 @@ pub(crate) fn build_plan(
             };
             if let (Some(target), None) = (target, &item.target_id) {
                 item.target_id = Some(target);
+            }
+        }
+    }
+
+    if merge.is_some() {
+        let targets: BTreeMap<_, _> = items
+            .iter()
+            .filter_map(|item| {
+                item.target_id
+                    .clone()
+                    .map(|target| ((item.dataset.clone(), item.id.clone()), target))
+            })
+            .collect();
+        for item in &mut items {
+            if let Some(descriptor) = descriptors
+                .iter()
+                .find(|descriptor| descriptor.name == item.dataset)
+            {
+                let identity = find_adapter(descriptor)?.identity_dataset(&item.dataset);
+                if identity != item.dataset {
+                    item.target_id = targets.get(&(identity, item.id.clone())).cloned();
+                }
             }
         }
     }

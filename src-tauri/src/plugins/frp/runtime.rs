@@ -296,7 +296,7 @@ pub(crate) async fn start(
             }
         }
     }
-    let dir = crate::plugins::frp::profile_dir(app)?;
+    let dir = super::transfer::directory_for(app, file_name)?;
     let config = profile::require_profile(&dir, file_name).await?;
     // 按档案绑定解析客户端：档案指定 → 默认客户端 → 兜底自动探测（保证清单为空也能跑）
     let exe = clients::resolve(app, file_name).await?;

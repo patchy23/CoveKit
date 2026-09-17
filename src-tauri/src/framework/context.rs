@@ -194,19 +194,52 @@ pub async fn maintenance_guard() -> tokio::sync::MutexGuard<'static, ()> {
 static WRITE_FROZEN: AtomicBool = AtomicBool::new(false);
 
 /// 写冻结守卫（RAII）：提交开始挂上、离开作用域自动解除
-pub struct WriteFreezeGuard(());
+pub struct WriteFreezeGuard {
+    /// 持有整个提交窗口，等待已进入的数据库操作退出后才拍摄快照。
+    _guard: std::sync::RwLockWriteGuard<'static, ()>,
+    /// 与锁配对的冻结标记；测试可用独立实例验证并发契约。
+    frozen: &'static AtomicBool,
+}
+
+static DATABASE_ACCESS: std::sync::RwLock<()> = std::sync::RwLock::new(());
+thread_local! { static IMPORT_THREAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+
+/// 数据库操作租约；只有持冻结守卫的当前线程可直接写入导入数据。
+pub(crate) fn database_access() -> Result<Option<std::sync::RwLockReadGuard<'static, ()>>, String> {
+    if IMPORT_THREAD.with(|flag| flag.get()) {
+        return Ok(None);
+    }
+    assert_writable()?;
+    DATABASE_ACCESS
+        .try_read()
+        .map(Some)
+        .map_err(|_| "数据正在提交导入，请稍候重试".into())
+}
 
 impl WriteFreezeGuard {
     /// 开启写冻结（同一时间只应有一个提交窗口；由 maintenance_guard 保证互斥）
-    pub fn begin() -> Self {
-        WRITE_FROZEN.store(true, Ordering::SeqCst);
-        Self(())
+    pub fn begin() -> Result<Self, String> {
+        Self::begin_at(&DATABASE_ACCESS, &WRITE_FROZEN)
+    }
+
+    fn begin_at(
+        lock: &'static std::sync::RwLock<()>,
+        frozen: &'static AtomicBool,
+    ) -> Result<Self, String> {
+        let guard = lock.write().map_err(|_| "数据库访问锁异常".to_string())?;
+        frozen.store(true, Ordering::SeqCst);
+        IMPORT_THREAD.with(|flag| flag.set(true));
+        Ok(Self {
+            _guard: guard,
+            frozen,
+        })
     }
 }
 
 impl Drop for WriteFreezeGuard {
     fn drop(&mut self) {
-        WRITE_FROZEN.store(false, Ordering::SeqCst);
+        IMPORT_THREAD.with(|flag| flag.set(false));
+        self.frozen.store(false, Ordering::SeqCst);
     }
 }
 
@@ -291,15 +324,26 @@ mod tests {
     /// 写冻结：窗口内写入口被拒、守卫离开作用域即恢复（RAII 解除，不依赖手工复位）
     #[test]
     fn write_freeze_blocks_and_recovers() {
-        assert!(assert_writable().is_ok());
-        {
-            let _freeze = WriteFreezeGuard::begin();
-            assert!(writes_frozen());
-            let error = assert_writable().expect_err("冻结窗口内写入必须被拒");
-            assert!(error.contains("导入"), "{error}");
-        }
-        assert!(!writes_frozen());
-        assert!(assert_writable().is_ok(), "守卫离开后必须恢复可写");
+        static LOCK: std::sync::RwLock<()> = std::sync::RwLock::new(());
+        static FROZEN: AtomicBool = AtomicBool::new(false);
+        let reader = LOCK.read().unwrap();
+        let (send, receive) = std::sync::mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            let _freeze = WriteFreezeGuard::begin_at(&LOCK, &FROZEN).unwrap();
+            assert!(FROZEN.load(Ordering::SeqCst));
+            assert!(LOCK.try_read().is_err());
+            send.send(()).unwrap();
+        });
+        assert!(receive
+            .recv_timeout(std::time::Duration::from_millis(20))
+            .is_err());
+        drop(reader);
+        receive
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .unwrap();
+        thread.join().unwrap();
+        assert!(!FROZEN.load(Ordering::SeqCst));
+        assert!(LOCK.try_read().is_ok());
     }
 
     /// epoch：当前 epoch 有效、其他 epoch 一律判为晚到；丢弃计数可诊断

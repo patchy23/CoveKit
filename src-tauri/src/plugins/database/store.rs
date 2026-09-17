@@ -8,7 +8,7 @@ use crate::framework::store::PluginDb;
 use crate::plugins::database::models::{ConnConfig, DbType, HistoryEntry, SavedEntry};
 
 /// 本地库迁移（v1：三张表；只允许追加新迁移）
-const MIGRATIONS: &[&str] = &[
+pub(super) const MIGRATIONS: &[&str] = &[
     // v1：连接配置（密码存 stronghold，不在此表）
     "CREATE TABLE IF NOT EXISTS connections (
         id TEXT PRIMARY KEY,
@@ -39,6 +39,17 @@ const MIGRATIONS: &[&str] = &[
         sql TEXT NOT NULL,
         at TEXT NOT NULL DEFAULT ''
     );",
+    "ALTER TABLE connections ADD COLUMN credential_pending INTEGER NOT NULL DEFAULT 0;
+     ALTER TABLE saved_sql ADD COLUMN uid TEXT NOT NULL DEFAULT '';
+     UPDATE saved_sql SET uid=lower(hex(randomblob(16))) WHERE uid='';
+     CREATE UNIQUE INDEX saved_sql_uid ON saved_sql(uid);
+     CREATE TRIGGER saved_sql_assign_uid AFTER INSERT ON saved_sql WHEN NEW.uid=''
+     BEGIN UPDATE saved_sql SET uid=lower(hex(randomblob(16))) WHERE id=NEW.id; END;
+     ALTER TABLE history ADD COLUMN uid TEXT NOT NULL DEFAULT '';
+     UPDATE history SET uid=lower(hex(randomblob(16))) WHERE uid='';
+     CREATE UNIQUE INDEX history_uid ON history(uid);
+     CREATE TRIGGER history_assign_uid AFTER INSERT ON history WHEN NEW.uid=''
+     BEGIN UPDATE history SET uid=lower(hex(randomblob(16))) WHERE id=NEW.id; END;",
 ];
 
 /// 本地库 State（惰性打开；锁内同步访问）

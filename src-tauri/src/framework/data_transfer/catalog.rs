@@ -141,7 +141,9 @@ pub(crate) fn resolve_selection(
                     .unwrap_or_default()
             ));
         }
-        sets.entry(name.clone()).or_default();
+        sets.entry(name.clone())
+            .or_default()
+            .extend(descriptor.entries.iter().map(|entry| entry.id.clone()));
     }
 
     for picked in &selection.entries {
@@ -448,6 +450,21 @@ mod tests {
         assert_eq!(resolved.ids_of("vault.credentials"), ["c1".to_string()]);
         assert!(!resolved.includes("ssh.tunnels"), "未引用隧道不进包");
         assert!(!resolved.includes("core.favorites"), "未勾选收藏不进包");
+    }
+
+    #[test]
+    fn whole_dataset_selection_expands_records_and_dependencies() {
+        let resolved = resolve_selection(
+            &catalog_fixture(),
+            &ExportSelection {
+                entries: vec![],
+                datasets: vec!["ssh.profiles".into()],
+            },
+        )
+        .unwrap();
+        assert_eq!(resolved.ids_of("ssh.profiles").len(), 3);
+        assert_eq!(resolved.ids_of("ssh.groups"), ["g1".to_string()]);
+        assert_eq!(resolved.ids_of("ssh.tunnels"), ["t1".to_string()]);
     }
 
     /// 两个档案引用同一凭证：去重成一条；未绑定凭证的档案不伪造引用

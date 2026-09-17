@@ -105,6 +105,7 @@ pub fn settings_patch(
     if patch.is_empty() {
         return settings_revision(app);
     }
+    let _access = crate::framework::context::database_access()?;
     for (key, value) in &patch {
         validate_field(key, value)?;
     }
@@ -228,6 +229,7 @@ pub fn preferences_get(app: AppHandle, key: String) -> Result<Value, String> {
 /// 写空间级用户数据：白名单 + 字段校验 → 合并进当前空间偏好文件（同目录原子替换）
 #[tauri::command]
 pub fn preferences_set(app: AppHandle, key: String, value: Value) -> Result<(), String> {
+    let _access = crate::framework::context::database_access()?;
     validate_space_data_key(&key)?;
     validate_field(&key, &value)?;
     let _guard = settings_lock().lock().map_err(|e| e.to_string())?;

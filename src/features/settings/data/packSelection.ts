@@ -23,6 +23,11 @@ export const DEPENDENCY_LABEL_KEYS: Record<string, string> = {
   profile: 'profile',
 }
 
+/** 条目身份包含数据集，跨 owner 同 ID 不会串选。 */
+export function entryKey(entry: Pick<ExportCatalogEntry, 'dataset' | 'id'>): string {
+  return JSON.stringify([entry.dataset, entry.id])
+}
+
 /** 勾选态（向导第 1 步的界面状态） */
 export interface ExportChoice {
   /** 勾选的服务器档案 id */
@@ -67,11 +72,11 @@ export function buildSelection(
   const byDataset = new Map<string, string[]>()
   for (const id of choice.profileIds) {
     const entry = (catalog?.entries ?? []).find(
-      (item) => item.id === id && selectable.has(item.dataset)
+      (item) => entryKey(item) === id && selectable.has(item.dataset)
     )
     if (!entry) continue
     const ids = byDataset.get(entry.dataset) ?? []
-    ids.push(id)
+    ids.push(entry.id)
     byDataset.set(entry.dataset, ids)
   }
 
@@ -90,7 +95,7 @@ export function closurePreview(
   const perKind = new Map<string, Set<string>>()
 
   for (const entry of profileEntries(catalog)) {
-    if (!chosen.has(entry.id)) continue
+    if (!chosen.has(entryKey(entry))) continue
     for (const edge of entry.dependencies) {
       // 分组/隧道/书签随档案带出；凭证永不进包（与空间绑定），但引用关系仍展示
       const set = perKind.get(edge.kind) ?? new Set<string>()
@@ -110,7 +115,7 @@ export function chosenNotes(
   choice: ExportChoice
 ): ExportCatalogEntry[] {
   const chosen = new Set(choice.profileIds)
-  return profileEntries(catalog).filter((entry) => chosen.has(entry.id) && entry.note)
+  return profileEntries(catalog).filter((entry) => chosen.has(entryKey(entry)) && entry.note)
 }
 
 /** 依赖类别 → i18n 键（界面直接用；不要在各处再拼一次字符串） */
