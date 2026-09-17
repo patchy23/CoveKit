@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ProfileSidebar · 档案列表栏
  * 搜索 + 列表（状态点 / 名称 / 服务器 / 代理数）+ 新建 + 右键菜单（重命名 / 复制 / 备注 /
@@ -176,15 +177,18 @@ function onRemarkSubmit(remark: string) {
         @click="emit('select', item.fileName)"
         @contextmenu.prevent="openMenu($event, item)"
       >
-        <span
-          class="mt-[6px] h-[8px] w-[8px] shrink-0 rounded-full"
-          :class="statusView(item.state).dotClass"
-          :title="t(statusView(item.state).labelKey)"
-        />
+        <UiTooltip :content="t(statusView(item.state).labelKey)">
+          <span
+            class="mt-[6px] h-[8px] w-[8px] shrink-0 rounded-full"
+            :class="statusView(item.state).dotClass"
+          />
+        </UiTooltip>
         <span class="min-w-0 flex-1">
-          <span class="block truncate text-body-sm dark:text-primary-dark" :title="item.fileName">
-            {{ item.displayName || item.fileName }}
-          </span>
+          <UiTooltip :content="item.fileName">
+            <span class="block truncate text-body-sm dark:text-primary-dark">
+              {{ item.displayName || item.fileName }}
+            </span>
+          </UiTooltip>
           <span
             class="mt-[1px] block truncate text-caption text-text-muted dark:text-text-muted-dark"
           >
@@ -195,20 +199,20 @@ function onRemarkSubmit(remark: string) {
             }}
             · {{ t('frp.proxyCount', { count: item.proxyCount }) }}
           </span>
-          <span
-            v-if="item.remark !== ''"
-            class="mt-[1px] block truncate text-caption text-tertiary-strong dark:text-tertiary-dark"
-            :title="item.remark"
-          >
-            {{ item.remark }}
-          </span>
-          <span
-            v-if="item.lastError"
-            class="mt-[1px] block truncate text-caption text-danger-strong dark:text-danger-dark"
-            :title="item.lastError"
-          >
-            {{ item.lastError }}
-          </span>
+          <UiTooltip v-if="item.remark !== ''" :content="item.remark">
+            <span
+              class="mt-[1px] block truncate text-caption text-tertiary-strong dark:text-tertiary-dark"
+            >
+              {{ item.remark }}
+            </span>
+          </UiTooltip>
+          <UiTooltip v-if="item.lastError" :content="item.lastError">
+            <span
+              class="mt-[1px] block truncate text-caption text-danger-strong dark:text-danger-dark"
+            >
+              {{ item.lastError }}
+            </span>
+          </UiTooltip>
         </span>
       </UiListRow>
     </div>

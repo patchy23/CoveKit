@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ProcessTab · 进程管理子页签（后端 ps 真实数据）
  */
@@ -232,13 +233,11 @@ watch(
             <UiTableCell content="numeric" class="px-[12px] py-[8px]">
               {{ formatBytes(p.memoryBytes) }}
             </UiTableCell>
-            <UiTableCell
-              content="code"
-              class="max-w-[200px] truncate px-[12px] py-[8px]"
-              :title="p.command"
-            >
-              {{ p.command }}
-            </UiTableCell>
+            <UiTooltip :content="p.command">
+              <UiTableCell content="code" class="max-w-[200px] truncate px-[12px] py-[8px]">
+                {{ p.command }}
+              </UiTableCell>
+            </UiTooltip>
             <UiTableCell content="action" class="whitespace-nowrap px-[12px] py-[8px]">
               <div class="flex items-center gap-[4px]">
                 <UiButton variant="ghost" size="xs" @click="openDetail(p.pid)"> 详情 </UiButton>

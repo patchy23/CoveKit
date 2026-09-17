@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiTooltip from '../UiTooltip.vue'
 /**
  * 编辑器状态栏（纯展示，无交互）
  *
@@ -33,12 +34,10 @@ const items = computed(() =>
     <div class="flex min-w-0 items-center gap-3 overflow-hidden">
       <span v-for="item in items" :key="item" class="whitespace-nowrap">{{ item }}</span>
     </div>
-    <span
-      v-if="status.degrade"
-      class="whitespace-nowrap text-tertiary-strong dark:text-tertiary-dark"
-      title="大文件降级提示"
-    >
-      {{ status.degrade }}
-    </span>
+    <UiTooltip v-if="status.degrade" content="大文件降级提示">
+      <span class="whitespace-nowrap text-tertiary-strong dark:text-tertiary-dark">
+        {{ status.degrade }}
+      </span>
+    </UiTooltip>
   </div>
 </template>

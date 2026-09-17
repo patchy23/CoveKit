@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * TitleBar · 内置标题栏（无边框窗口，2026-08-02 用户决策）
  * 背景随主题切换（bg-surface / dark:bg-surface-dark）；拖拽区移动窗口；
@@ -38,50 +39,59 @@ function onDblClick() {
     </div>
     <div class="flex-1" data-tauri-drag-region />
     <div class="flex h-full items-center">
-      <button
-        v-if="!ui.immersive"
-        class="grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        :class="
-          ui.sidebarCollapsed
-            ? 'bg-border text-primary dark:bg-border-dark dark:text-primary-dark'
-            : ''
-        "
-        :title="ui.sidebarCollapsed ? '展开侧栏' : '隐藏侧栏'"
-        @click="ui.sidebarCollapsed = !ui.sidebarCollapsed"
-      >
-        <AppIcon name="panel" :size="15" />
-      </button>
-      <button
-        class="grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        :class="
-          ui.immersive ? 'bg-border text-primary dark:bg-border-dark dark:text-primary-dark' : ''
-        "
-        :title="ui.immersive ? '退出沉浸模式' : '沉浸模式（隐藏工具标题栏与侧栏）'"
-        @click="ui.toggleImmersive()"
-      >
-        <AppIcon name="immersive" :size="14" />
-      </button>
-      <button
-        class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        title="最小化"
-        @click="onWindow('minimize')"
-      >
-        <AppIcon name="minus" :size="14" />
-      </button>
-      <button
-        class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        title="最大化"
-        @click="onWindow('toggleMaximize')"
-      >
-        <AppIcon name="maximize" :size="12" />
-      </button>
-      <button
-        class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-red-500 hover:text-white"
-        title="关闭（最小化到托盘）"
-        @click="onWindow('close')"
-      >
-        <AppIcon name="close" :size="13" />
-      </button>
+      <UiTooltip v-if="!ui.immersive" :content="ui.sidebarCollapsed ? '展开侧栏' : '隐藏侧栏'">
+        <button
+          class="grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+          :class="
+            ui.sidebarCollapsed
+              ? 'bg-border text-primary dark:bg-border-dark dark:text-primary-dark'
+              : ''
+          "
+          :aria-label="ui.sidebarCollapsed ? '展开侧栏' : '隐藏侧栏'"
+          @click="ui.sidebarCollapsed = !ui.sidebarCollapsed"
+        >
+          <AppIcon name="panel" :size="15" />
+        </button>
+      </UiTooltip>
+      <UiTooltip :content="ui.immersive ? '退出沉浸模式' : '沉浸模式（隐藏工具标题栏与侧栏）'">
+        <button
+          class="grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+          :class="
+            ui.immersive ? 'bg-border text-primary dark:bg-border-dark dark:text-primary-dark' : ''
+          "
+          :aria-label="ui.immersive ? '退出沉浸模式' : '沉浸模式（隐藏工具标题栏与侧栏）'"
+          @click="ui.toggleImmersive()"
+        >
+          <AppIcon name="immersive" :size="14" />
+        </button>
+      </UiTooltip>
+      <UiTooltip content="最小化">
+        <button
+          class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+          aria-label="最小化"
+          @click="onWindow('minimize')"
+        >
+          <AppIcon name="minus" :size="14" />
+        </button>
+      </UiTooltip>
+      <UiTooltip content="最大化">
+        <button
+          class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+          aria-label="最大化"
+          @click="onWindow('toggleMaximize')"
+        >
+          <AppIcon name="maximize" :size="12" />
+        </button>
+      </UiTooltip>
+      <UiTooltip content="关闭（最小化到托盘）">
+        <button
+          class="grid h-full w-[44px] place-items-center text-text-muted transition-colors duration-100 hover:bg-red-500 hover:text-white"
+          aria-label="关闭（最小化到托盘）"
+          @click="onWindow('close')"
+        >
+          <AppIcon name="close" :size="13" />
+        </button>
+      </UiTooltip>
     </div>
   </div>
 </template>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 import { ref } from 'vue'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import {
@@ -75,9 +76,11 @@ const rows = [
             {{ row.name }}
           </UiTableCell>
           <UiTableCell content="technical">{{ row.host }}</UiTableCell>
-          <UiTableCell content="code" class="max-w-[220px] truncate" :title="row.command">
-            {{ row.command }}
-          </UiTableCell>
+          <UiTooltip :content="row.command">
+            <UiTableCell content="code" class="max-w-[220px] truncate">
+              {{ row.command }}
+            </UiTableCell>
+          </UiTooltip>
           <UiTableCell content="status">
             <UiBadge :tone="row.status === '在线' ? 'success' : 'danger'" size="xs">{{
               row.status

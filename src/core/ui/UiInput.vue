@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiTooltip from './UiTooltip.vue'
 /**
  * UiInput · 文本输入（field-input 样式，高度基线随 ui-control-* 档位）
  * type="password" 时自带输入框内眼睛切换明文（不依赖 WebView2 原生 reveal，行为确定）。
@@ -56,15 +57,17 @@ function onInput(event: Event) {
       :aria-invalid="invalid || undefined"
       @input="onInput"
     />
-    <button
-      type="button"
-      class="absolute right-[8px] top-1/2 grid h-[20px] w-[20px] -translate-y-1/2 place-items-center rounded-[4px] text-text-muted transition-colors hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark"
-      :title="reveal ? '隐藏' : '显示'"
-      tabindex="-1"
-      @click="reveal = !reveal"
-    >
-      <UiIcon :name="reveal ? 'eye-off' : 'eye'" :size="13" />
-    </button>
+    <UiTooltip :content="reveal ? '隐藏' : '显示'">
+      <button
+        type="button"
+        class="absolute right-[8px] top-1/2 grid h-[20px] w-[20px] -translate-y-1/2 place-items-center rounded-[4px] text-text-muted transition-colors hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark"
+        :aria-label="reveal ? '隐藏' : '显示'"
+        tabindex="-1"
+        @click="reveal = !reveal"
+      >
+        <UiIcon :name="reveal ? 'eye-off' : 'eye'" :size="13" />
+      </button>
+    </UiTooltip>
   </div>
   <input
     v-else

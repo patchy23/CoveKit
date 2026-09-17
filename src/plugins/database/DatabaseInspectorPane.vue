@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 import { UiIcon, UiIconButton } from '@/core/ui'
 import InspectorPanel from './InspectorPanel.vue'
 import type { useDatabase } from './useDatabase'
@@ -11,12 +12,12 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div
-    v-if="open"
-    class="w-[5px] shrink-0 cursor-col-resize bg-surface-muted transition-colors hover:bg-tertiary/40 dark:bg-surface-muted-dark"
-    title="拖拽调整摘要宽度"
-    @mousedown="emit('resize', $event)"
-  />
+  <UiTooltip v-if="open" content="拖拽调整摘要宽度">
+    <div
+      class="w-[5px] shrink-0 cursor-col-resize bg-surface-muted transition-colors hover:bg-tertiary/40 dark:bg-surface-muted-dark"
+      @mousedown="emit('resize', $event)"
+    />
+  </UiTooltip>
   <aside
     v-if="open"
     :style="{ width: `${width}px` }"

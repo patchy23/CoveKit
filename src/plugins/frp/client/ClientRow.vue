@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ClientRow · 客户端清单中的一行
  * 展示版本 / 路径 / 来源与状态标记；动作向上抛出，命令调用与刷新由弹窗统一处理。
@@ -39,12 +40,13 @@ const title = computed(() => clientTitle(props.client))
         </UiBadge>
         <UiBadge tone="neutral">{{ t(sourceLabelKey(props.client)) }}</UiBadge>
       </span>
-      <span
-        class="mt-[2px] block truncate text-caption text-text-muted dark:text-text-muted-dark"
-        :title="props.client.path"
-      >
-        {{ props.client.path }}
-      </span>
+      <UiTooltip :content="props.client.path">
+        <span
+          class="mt-[2px] block truncate text-caption text-text-muted dark:text-text-muted-dark"
+        >
+          {{ props.client.path }}
+        </span>
+      </UiTooltip>
     </span>
     <span class="flex shrink-0 items-center gap-[4px]">
       <UiButton

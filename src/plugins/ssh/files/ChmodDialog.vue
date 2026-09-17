@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ChmodDialog · 远程权限修改弹窗（勾选矩阵 ↔ 八进制输入双向联动 + 递归 + 风险确认 + 二次确认）
  * 仅单选使用；安全策略见 sshPolicy（菜单可见性）与后端 check_chmod_allowed（最终防线）。
@@ -101,9 +102,11 @@ const PERMS = ['读', '写', '执行'] as const
     @close="emit('close')"
   >
     <div class="flex flex-col gap-[12px]">
-      <div class="truncate font-mono text-caption text-text-muted" :title="file?.path">
-        {{ file?.path }}
-      </div>
+      <UiTooltip :content="file?.path">
+        <div class="truncate font-mono text-caption text-text-muted">
+          {{ file?.path }}
+        </div>
+      </UiTooltip>
       <div class="text-caption text-text-muted">当前：{{ file?.permissions }}</div>
 
       <!-- 八进制输入（与矩阵双向同步） -->

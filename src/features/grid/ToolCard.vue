@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ToolCard · 工具卡片（图标块 + 标题[搜索高亮] + 描述 + 标签 + 收藏星）
  * hover 上浮 + 顶部 3px 渐变线（对齐原型 .card 与 DESIGN.md card 规范）。
@@ -49,14 +50,16 @@ async function toggleFav() {
           class="text-tertiary-strong dark:text-tertiary-dark"
         />
       </div>
-      <button
-        class="rounded-[6px] p-1 text-h1 leading-none transition-all duration-150 hover:scale-110"
-        :class="isFav ? 'text-tertiary-strong' : 'text-text-muted hover:text-tertiary-strong'"
-        :title="isFav ? '取消收藏' : '收藏'"
-        @click.stop="toggleFav"
-      >
-        {{ isFav ? '★' : '☆' }}
-      </button>
+      <UiTooltip :content="isFav ? '取消收藏' : '收藏'">
+        <button
+          class="rounded-[6px] p-1 text-h1 leading-none transition-all duration-150 hover:scale-110"
+          :class="isFav ? 'text-tertiary-strong' : 'text-text-muted hover:text-tertiary-strong'"
+          :aria-label="isFav ? '取消收藏' : '收藏'"
+          @click.stop="toggleFav"
+        >
+          {{ isFav ? '★' : '☆' }}
+        </button>
+      </UiTooltip>
     </div>
     <h3 class="mt-md text-card-title font-bold tracking-[-0.01em] dark:text-primary-dark">
       <template v-if="nameChunks">

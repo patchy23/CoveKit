@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ProfileDetail · 档案详情（工具栏 + 配置 / 日志两个页签）
  * 配置页签内再分「表单 / 源码」两种模式；保存与校验由 useProfileEditor 统一处理。
@@ -102,12 +103,11 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
     <div
       class="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-border px-[10px] dark:border-border-dark"
     >
-      <span
-        class="min-w-0 max-w-[240px] truncate text-body font-medium dark:text-primary-dark"
-        :title="props.fileName"
-      >
-        {{ props.fileName }}
-      </span>
+      <UiTooltip :content="props.fileName">
+        <span class="min-w-0 max-w-[240px] truncate text-body font-medium dark:text-primary-dark">
+          {{ props.fileName }}
+        </span>
+      </UiTooltip>
       <UiBadge :tone="view.tone">{{ t(view.labelKey) }}</UiBadge>
       <span
         v-if="editor.dirty.value"

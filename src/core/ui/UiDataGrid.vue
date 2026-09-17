@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiTooltip from './UiTooltip.vue'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { UiContentKind } from './types'
 
@@ -142,26 +143,34 @@ onBeforeUnmount(stop)
           >
             {{ rowIndex + 1 }}
           </td>
-          <td
+          <UiTooltip
             v-for="column in columns"
             :key="column.key"
-            class="max-w-0 truncate border-b border-r border-border px-[7px] font-data text-secondary dark:border-border-dark dark:text-secondary-dark"
-            :class="[
-              column.align === 'right'
-                ? 'text-right tabular-nums'
-                : column.align === 'center'
-                  ? 'text-center'
-                  : 'text-left',
-              row[column.key] === null ? 'italic text-text-muted dark:text-text-muted-dark' : '',
-            ]"
-            :style="{ width: `${widths[column.key]}px`, minWidth: `${widths[column.key]}px` }"
-            :title="display(row[column.key])"
-            @dblclick="emit('cell', { row, column })"
+            :content="display(row[column.key])"
           >
-            <slot :name="`cell-${column.key}`" :row="row" :column="column" :value="row[column.key]">
-              {{ display(row[column.key]) }}
-            </slot>
-          </td>
+            <td
+              class="max-w-0 truncate border-b border-r border-border px-[7px] font-data text-secondary dark:border-border-dark dark:text-secondary-dark"
+              :class="[
+                column.align === 'right'
+                  ? 'text-right tabular-nums'
+                  : column.align === 'center'
+                    ? 'text-center'
+                    : 'text-left',
+                row[column.key] === null ? 'italic text-text-muted dark:text-text-muted-dark' : '',
+              ]"
+              :style="{ width: `${widths[column.key]}px`, minWidth: `${widths[column.key]}px` }"
+              @dblclick="emit('cell', { row, column })"
+            >
+              <slot
+                :name="`cell-${column.key}`"
+                :row="row"
+                :column="column"
+                :value="row[column.key]"
+              >
+                {{ display(row[column.key]) }}
+              </slot>
+            </td>
+          </UiTooltip>
         </tr>
         <tr v-if="!rows.length">
           <td

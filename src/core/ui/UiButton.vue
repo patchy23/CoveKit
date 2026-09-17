@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { cva } from 'class-variance-authority'
 import { computed } from 'vue'
+import { useForwardExpose } from 'reka-ui'
 import type { UiSize } from './types'
 import { cn } from './utils'
 import UiTooltip from './UiTooltip.vue'
 
 defineOptions({ inheritAttrs: false })
+const { forwardRef } = useForwardExpose()
 
 const props = withDefaults(
   defineProps<{
@@ -55,6 +57,7 @@ const classes = computed(() =>
   <UiTooltip :content="title">
     <component
       :is="as"
+      :ref="forwardRef"
       v-bind="$attrs"
       :type="as === 'button' ? type : undefined"
       :class="classes"

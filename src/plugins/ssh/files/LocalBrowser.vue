@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * LocalBrowser · 双栏文件管理的本地侧（目录浏览 + 选中）
  * ssh_local_list 读目录；双击进入目录；选中文件后由中间列按钮发起上传。
@@ -157,10 +158,12 @@ defineExpose({
             @pointerdown="emit('rowPointerDown', $event, file)"
           >
             <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">
-              <span :title="file.path">
-                <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
-                <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
-              </span>
+              <UiTooltip :content="file.path">
+                <span>
+                  <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
+                  <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
+                </span>
+              </UiTooltip>
             </UiTableCell>
             <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
               file.isDir ? '-' : formatBytes(file.size)

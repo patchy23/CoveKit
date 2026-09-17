@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /** FileBrowser · SSH 文件页的路径工具栏、远程文件表格与键盘首字母定位。 */
 import { nextTick, onMounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import type { RemoteFile } from '../contracts'
@@ -150,10 +151,12 @@ watch(
           >
             <UiTableCell content="technical" class="max-w-0 px-[12px] py-[7px]">
               <!-- 长文件名截断不换行：auto 布局下 max-w-0 单元格 + 内层 truncate（不挤掉其他列），完整名走 title -->
-              <span class="block truncate" :title="file.name">
-                <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
-                <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
-              </span>
+              <UiTooltip :content="file.name">
+                <span class="block truncate">
+                  <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
+                  <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
+                </span>
+              </UiTooltip>
             </UiTableCell>
             <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">
               {{ file.isDir ? '-' : formatBytes(file.size) }}

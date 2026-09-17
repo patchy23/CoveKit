@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /** DockerTable · SSH Docker 容器列表与行级操作。 */
 import type { DockerContainer } from '../contracts'
 import { shortContainerId } from '../connection/useSsh'
@@ -51,27 +52,21 @@ function stateClass(status: string): string {
           :key="container.id"
           class="border-b border-border/50 transition-colors dark:border-border-dark/50"
         >
-          <UiTableCell
-            content="technical"
-            class="w-[92px] whitespace-nowrap px-[8px] py-[8px]"
-            :title="container.id"
-          >
-            {{ shortContainerId(container.id) }}
-          </UiTableCell>
-          <UiTableCell
-            content="technical"
-            class="truncate px-[8px] py-[8px]"
-            :title="container.name"
-          >
-            {{ container.name }}
-          </UiTableCell>
-          <UiTableCell
-            content="technical"
-            class="truncate px-[8px] py-[8px]"
-            :title="container.image"
-          >
-            {{ container.image }}
-          </UiTableCell>
+          <UiTooltip :content="container.id">
+            <UiTableCell content="technical" class="w-[92px] whitespace-nowrap px-[8px] py-[8px]">
+              {{ shortContainerId(container.id) }}
+            </UiTableCell>
+          </UiTooltip>
+          <UiTooltip :content="container.name">
+            <UiTableCell content="technical" class="truncate px-[8px] py-[8px]">
+              {{ container.name }}
+            </UiTableCell>
+          </UiTooltip>
+          <UiTooltip :content="container.image">
+            <UiTableCell content="technical" class="truncate px-[8px] py-[8px]">
+              {{ container.image }}
+            </UiTableCell>
+          </UiTooltip>
           <UiTableCell content="status" class="whitespace-nowrap px-[8px] py-[8px]">
             <span
               v-if="busyContainerId === container.id"
@@ -81,20 +76,16 @@ function stateClass(status: string): string {
             </span>
             <span v-else :class="stateClass(container.status)">{{ container.status }}</span>
           </UiTableCell>
-          <UiTableCell
-            content="technical"
-            class="truncate whitespace-nowrap px-[8px] py-[8px]"
-            :title="container.uptime"
-          >
-            {{ container.uptime }}
-          </UiTableCell>
-          <UiTableCell
-            content="technical"
-            class="truncate px-[8px] py-[8px]"
-            :title="container.ports"
-          >
-            {{ container.ports }}
-          </UiTableCell>
+          <UiTooltip :content="container.uptime">
+            <UiTableCell content="technical" class="truncate whitespace-nowrap px-[8px] py-[8px]">
+              {{ container.uptime }}
+            </UiTableCell>
+          </UiTooltip>
+          <UiTooltip :content="container.ports">
+            <UiTableCell content="technical" class="truncate px-[8px] py-[8px]">
+              {{ container.ports }}
+            </UiTableCell>
+          </UiTooltip>
           <UiTableCell content="action" class="whitespace-nowrap px-[8px] py-[8px]">
             <div class="flex items-center justify-end gap-[2px]">
               <UiButton

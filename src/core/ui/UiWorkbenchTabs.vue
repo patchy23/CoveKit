@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiTooltip from './UiTooltip.vue'
 export interface UiWorkbenchTab {
   id: string
   label: string
@@ -44,11 +45,9 @@ function kindGlyph(item: UiWorkbenchTab): string {
         kindGlyph(item)
       }}</span>
       <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
-      <span
-        v-if="item.dirty"
-        class="h-[6px] w-[6px] shrink-0 rounded-full bg-tertiary"
-        title="未保存"
-      />
+      <UiTooltip v-if="item.dirty" content="未保存">
+        <span class="h-[6px] w-[6px] shrink-0 rounded-full bg-tertiary" />
+      </UiTooltip>
       <span
         v-if="item.closable !== false && !item.pinned"
         role="button"

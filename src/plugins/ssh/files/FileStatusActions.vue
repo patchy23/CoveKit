@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * FileStatusActions · 远程栏状态栏右侧双按钮（☆书签下拉 + ⇅传输进度按钮/上拉明细面板）
  * 关闭规则：书签下拉点击外部/选书签后关闭；传输面板只能 ✕ 或再点进度条按钮关闭（禁 Esc/遮罩）。
@@ -134,32 +135,33 @@ const currentTaskLabel = computed(() => {
     <!-- 传输按钮（本体即进度条）+ 上拉面板 -->
     <div class="relative">
       <!-- 传输按钮本体即进度条；用 div[role=button] 规避原生 button（公共组件契约限制自定义布局） -->
-      <div
-        role="button"
-        tabindex="0"
-        class="relative h-[24px] min-w-[64px] cursor-pointer select-none overflow-hidden rounded-md border border-border px-[8px] text-caption transition-colors dark:border-border-dark"
-        :class="
-          runningTransfers.length
-            ? 'text-secondary dark:text-secondary-dark'
-            : 'text-text-muted dark:text-text-muted-dark'
-        "
-        :title="panelOpen ? '关闭传输明细' : '传输明细'"
-        @click="panelOpen = !panelOpen"
-        @keydown.enter="panelOpen = !panelOpen"
-      >
-        <!-- 进度填充动画 -->
-        <span
-          v-if="runningTransfers.length"
-          class="absolute inset-y-0 left-0 bg-tertiary-soft transition-[width] duration-300 dark:bg-tertiary-soft-dark"
-          :style="{ width: `${totalProgress}%` }"
-        ></span>
-        <span class="relative">
-          <template v-if="runningTransfers.length">
-            ⇅ {{ runningTransfers.length }} 项 · {{ currentTaskLabel }}
-          </template>
-          <template v-else>⇅ 传输</template>
-        </span>
-      </div>
+      <UiTooltip :content="panelOpen ? '关闭传输明细' : '传输明细'">
+        <div
+          role="button"
+          tabindex="0"
+          class="relative h-[24px] min-w-[64px] cursor-pointer select-none overflow-hidden rounded-md border border-border px-[8px] text-caption transition-colors dark:border-border-dark"
+          :class="
+            runningTransfers.length
+              ? 'text-secondary dark:text-secondary-dark'
+              : 'text-text-muted dark:text-text-muted-dark'
+          "
+          @click="panelOpen = !panelOpen"
+          @keydown.enter="panelOpen = !panelOpen"
+        >
+          <!-- 进度填充动画 -->
+          <span
+            v-if="runningTransfers.length"
+            class="absolute inset-y-0 left-0 bg-tertiary-soft transition-[width] duration-300 dark:bg-tertiary-soft-dark"
+            :style="{ width: `${totalProgress}%` }"
+          ></span>
+          <span class="relative">
+            <template v-if="runningTransfers.length">
+              ⇅ {{ runningTransfers.length }} 项 · {{ currentTaskLabel }}
+            </template>
+            <template v-else>⇅ 传输</template>
+          </span>
+        </div>
+      </UiTooltip>
 
       <!-- 上拉明细面板（只能 ✕ 或再点进度条按钮关闭；禁 Esc/遮罩） -->
       <div

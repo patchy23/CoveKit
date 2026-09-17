@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * TunnelTab · SSH 端口隧道（-L 本地 / -R 远程 / -D 动态 SOCKS5）
  * 列表 = 该服务器的全部隧道配置 + 运行时状态（事件推送更新）；
@@ -315,25 +316,26 @@ onUnmounted(() => {
           class="flex items-center gap-[12px] border-b border-border bg-surface px-[14px] py-[10px] last:border-b-0 dark:border-border-dark dark:bg-surface-dark"
         >
           <!-- 类型徽标 -->
-          <span
-            class="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] bg-tertiary-soft font-mono text-body-sm font-bold text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
-            :title="TYPE_LABEL[config.tunnelType]"
-          >
-            {{ TYPE_SHORT[config.tunnelType] }}
-          </span>
+          <UiTooltip :content="TYPE_LABEL[config.tunnelType]">
+            <span
+              class="grid h-[30px] w-[30px] shrink-0 place-items-center rounded-[8px] bg-tertiary-soft font-mono text-body-sm font-bold text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark"
+            >
+              {{ TYPE_SHORT[config.tunnelType] }}
+            </span>
+          </UiTooltip>
           <!-- 名称 + 地址 -->
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-[8px]">
               <span class="truncate text-body font-medium text-primary dark:text-primary-dark">
                 {{ config.name }}
               </span>
-              <span
-                v-if="config.autoStart"
-                class="shrink-0 rounded-full bg-neutral px-[7px] py-[1px] text-caption text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
-                title="连接建立后自动启动"
-              >
-                自动
-              </span>
+              <UiTooltip v-if="config.autoStart" content="连接建立后自动启动">
+                <span
+                  class="shrink-0 rounded-full bg-neutral px-[7px] py-[1px] text-caption text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
+                >
+                  自动
+                </span>
+              </UiTooltip>
             </div>
             <div
               class="mt-[2px] truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
@@ -350,13 +352,14 @@ onUnmounted(() => {
             </div>
           </div>
           <!-- 连接数 -->
-          <span
+          <UiTooltip
             v-if="runtimeOf(config)?.connections"
-            class="shrink-0 font-mono text-caption text-text-muted dark:text-text-muted-dark"
-            :title="`活动连接 ${runtimeOf(config)?.connections}`"
+            :content="`活动连接 ${runtimeOf(config)?.connections}`"
           >
-            {{ runtimeOf(config)?.connections }} 连接
-          </span>
+            <span class="shrink-0 font-mono text-caption text-text-muted dark:text-text-muted-dark">
+              {{ runtimeOf(config)?.connections }} 连接
+            </span>
+          </UiTooltip>
           <!-- 状态 -->
           <span
             class="shrink-0 rounded-full px-[9px] py-[3px] text-caption font-medium"

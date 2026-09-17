@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * PathBreadcrumbs · 可编辑面包屑路径条（SSH 文件双栏共用：远程 / 分隔符、本地 \ 分隔符）
  * 默认态：分段面包屑，点段跳转，点空白处进入编辑；超长时右对齐显示尾部 + 左侧 … 提示。
@@ -111,41 +112,41 @@ watch(
     @keyup.enter="submit"
     @keyup.esc="cancelEdit"
   />
-  <div
-    v-else
-    class="flex h-[30px] min-w-0 flex-1 cursor-text items-center overflow-hidden rounded-md border border-border-strong bg-surface-muted pl-[4px] dark:border-border-strong-dark dark:bg-surface-muted-dark"
-    title="点击空白处输入完整路径"
-    @click="beginEdit"
-  >
+  <UiTooltip v-else content="点击空白处输入完整路径">
     <div
-      ref="viewport"
-      class="relative flex min-w-0 flex-1 overflow-hidden"
-      :class="overflowing ? 'justify-end' : 'justify-start'"
+      class="flex h-[30px] min-w-0 flex-1 cursor-text items-center overflow-hidden rounded-md border border-border-strong bg-surface-muted pl-[4px] dark:border-border-strong-dark dark:bg-surface-muted-dark"
+      @click="beginEdit"
     >
-      <span
-        v-if="overflowing"
-        class="absolute inset-y-0 left-0 z-10 flex items-center bg-surface-muted px-[6px] text-body-sm text-text-muted dark:bg-surface-muted-dark dark:text-text-muted-dark"
-        >…</span
+      <div
+        ref="viewport"
+        class="relative flex min-w-0 flex-1 overflow-hidden"
+        :class="overflowing ? 'justify-end' : 'justify-start'"
       >
-      <nav ref="content" class="flex min-w-max shrink-0 items-center" aria-label="路径">
-        <template v-for="(segment, index) in segments" :key="segment.path">
-          <span
-            v-if="index > 0"
-            class="px-[1px] text-caption text-text-muted dark:text-text-muted-dark"
-            >›</span
-          >
-          <UiButton
-            variant="ghost"
-            size="xs"
-            class="font-mono"
-            :title="`进入 ${segment.path}`"
-            @click.stop="emit('navigate', segment.path)"
-          >
-            {{ segment.label }}
-          </UiButton>
-        </template>
-      </nav>
+        <span
+          v-if="overflowing"
+          class="absolute inset-y-0 left-0 z-10 flex items-center bg-surface-muted px-[6px] text-body-sm text-text-muted dark:bg-surface-muted-dark dark:text-text-muted-dark"
+          >…</span
+        >
+        <nav ref="content" class="flex min-w-max shrink-0 items-center" aria-label="路径">
+          <template v-for="(segment, index) in segments" :key="segment.path">
+            <span
+              v-if="index > 0"
+              class="px-[1px] text-caption text-text-muted dark:text-text-muted-dark"
+              >›</span
+            >
+            <UiButton
+              variant="ghost"
+              size="xs"
+              class="font-mono"
+              :title="`进入 ${segment.path}`"
+              @click.stop="emit('navigate', segment.path)"
+            >
+              {{ segment.label }}
+            </UiButton>
+          </template>
+        </nav>
+      </div>
+      <span class="h-full w-[36px] shrink-0" aria-hidden="true" />
     </div>
-    <span class="h-full w-[36px] shrink-0" aria-hidden="true" />
-  </div>
+  </UiTooltip>
 </template>

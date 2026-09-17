@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ClientPicker · 档案详情里的客户端选择器
  * 「跟随默认」是显式选项（空值），避免用户以为必须逐个手选；
@@ -78,16 +79,17 @@ const effectiveText = computed(() => {
       :disabled="props.disabled"
       :options="options"
     />
-    <span
-      class="min-w-0 truncate text-caption"
-      :class="
-        missing
-          ? 'text-danger-strong dark:text-danger-dark'
-          : 'text-text-muted dark:text-text-muted-dark'
-      "
-      :title="effectiveText"
-    >
-      {{ missing ? t('frp.clientBoundMissing') : effectiveText }}
-    </span>
+    <UiTooltip :content="effectiveText">
+      <span
+        class="min-w-0 truncate text-caption"
+        :class="
+          missing
+            ? 'text-danger-strong dark:text-danger-dark'
+            : 'text-text-muted dark:text-text-muted-dark'
+        "
+      >
+        {{ missing ? t('frp.clientBoundMissing') : effectiveText }}
+      </span>
+    </UiTooltip>
   </div>
 </template>

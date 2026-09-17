@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 import { computed, onMounted, ref } from 'vue'
 import { save as dialogSave } from '@tauri-apps/plugin-dialog'
 import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiSelect } from '@/core/ui'
@@ -257,11 +258,12 @@ async function exportCsv() {
     />
   </div>
 
-  <div
-    class="h-[5px] shrink-0 cursor-row-resize border-t border-border bg-surface-muted transition-colors hover:bg-tertiary/40 dark:border-border-dark dark:bg-surface-muted-dark"
-    title="拖拽调整编辑器高度"
-    @mousedown="(e) => editorSplit.onPointerDown(e, editorMax)"
-  />
+  <UiTooltip content="拖拽调整编辑器高度">
+    <div
+      class="h-[5px] shrink-0 cursor-row-resize border-t border-border bg-surface-muted transition-colors hover:bg-tertiary/40 dark:border-border-dark dark:bg-surface-muted-dark"
+      @mousedown="(e) => editorSplit.onPointerDown(e, editorMax)"
+    />
+  </UiTooltip>
 
   <QueryResultPane
     :db="db"

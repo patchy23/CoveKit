@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * StorageRecoveryOverlay · 存储恢复页（框架级，覆盖整个窗口）
  *
@@ -103,21 +104,21 @@ async function restartNow() {
           <span class="w-[112px] shrink-0 text-body-sm text-text-muted dark:text-text-muted-dark">
             {{ t('storageRecovery.configuredRoot') }}
           </span>
-          <code
-            class="min-w-0 flex-1 truncate font-mono text-body-sm dark:text-primary-dark"
-            :title="state.configuredRoot"
-            >{{ state.configuredRoot }}</code
-          >
+          <UiTooltip :content="state.configuredRoot">
+            <code class="min-w-0 flex-1 truncate font-mono text-body-sm dark:text-primary-dark">{{
+              state.configuredRoot
+            }}</code>
+          </UiTooltip>
         </div>
         <div class="flex items-baseline gap-[8px]">
           <span class="w-[112px] shrink-0 text-body-sm text-text-muted dark:text-text-muted-dark">
             {{ t('storageRecovery.activeRoot') }}
           </span>
-          <code
-            class="min-w-0 flex-1 truncate font-mono text-body-sm dark:text-primary-dark"
-            :title="state.activeRoot"
-            >{{ state.activeRoot }}</code
-          >
+          <UiTooltip :content="state.activeRoot">
+            <code class="min-w-0 flex-1 truncate font-mono text-body-sm dark:text-primary-dark">{{
+              state.activeRoot
+            }}</code>
+          </UiTooltip>
         </div>
         <div v-if="state.planId" class="flex items-baseline gap-[8px]">
           <span class="w-[112px] shrink-0 text-body-sm text-text-muted dark:text-text-muted-dark">

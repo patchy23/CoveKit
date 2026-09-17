@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * SSH 服务器列表（分组版）：连接按分组归组，拖拽入组；「未分组」虚拟组固定沉底。
  * 连接状态由右侧连接页签持有，列表不展示连接状态。
@@ -164,18 +165,21 @@ function confirmDeleteGroup() {
     <div class="min-h-0 flex-1 overflow-y-auto px-[6px] pb-[8px]">
       <!-- 搜索态：平铺列表 -->
       <template v-if="searching">
-        <UiListRow
+        <UiTooltip
           v-for="profile in profiles"
           :key="profile.id"
-          size="sm"
-          :title="`${profile.username}@${profile.host}:${profile.port}（双击新建连接）`"
-          @dblclick="emit('openConnection', profile.id)"
-          @contextmenu="openProfileMenu($event, profile)"
+          :content="`${profile.username}@${profile.host}:${profile.port}（双击新建连接）`"
         >
-          <span class="min-w-0 flex-1 truncate font-medium text-primary dark:text-primary-dark">
-            {{ profile.name }}
-          </span>
-        </UiListRow>
+          <UiListRow
+            size="sm"
+            @dblclick="emit('openConnection', profile.id)"
+            @contextmenu="openProfileMenu($event, profile)"
+          >
+            <span class="min-w-0 flex-1 truncate font-medium text-primary dark:text-primary-dark">
+              {{ profile.name }}
+            </span>
+          </UiListRow>
+        </UiTooltip>
       </template>
 
       <!-- 分组态（ServerGroupList 子组件承载分组行/组内行/未分组） -->

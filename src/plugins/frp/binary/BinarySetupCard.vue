@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * BinarySetupCard · frpc 未配置时的引导卡
  * 两条路径：一键下载（列出上游版本 + 进度）与指定已有 frpc（文件选择 + 写工具设置）。
@@ -149,13 +150,13 @@ onMounted(() => {
           <p class="text-body-sm font-medium dark:text-primary-dark">
             {{ t('frp.binaryPickLabel') }}
           </p>
-          <p
-            v-if="props.detected?.path"
-            class="mt-[2px] truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
-            :title="props.detected.path"
-          >
-            {{ props.detected.path }}
-          </p>
+          <UiTooltip v-if="props.detected?.path" :content="props.detected.path">
+            <p
+              class="mt-[2px] truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+            >
+              {{ props.detected.path }}
+            </p>
+          </UiTooltip>
         </div>
         <UiButton size="sm" :disabled="binary.downloading.value" @click="pickExisting">
           {{ t('frp.binaryPickButton') }}

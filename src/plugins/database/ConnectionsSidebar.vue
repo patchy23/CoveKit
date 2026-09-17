@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 import {
   UiButton,
   UiIcon,
@@ -130,25 +131,28 @@ function onTreeContext(event: MouseEvent, item: UiTreeItem) {
                 <UiIcon name="x" :size="10" :stroke-width="2.5" />
               </UiIconButton>
             </template>
-            <span
+            <UiTooltip
               v-else
-              class="h-[6px] w-[6px] shrink-0 rounded-full"
-              :class="
-                db.connectError.value[item.id]
-                  ? 'bg-danger-strong dark:bg-danger-dark'
-                  : db.connections.value.find((connection) => connection.id === item.id)?.status ===
-                      'online'
-                    ? 'bg-success-strong dark:bg-success-dark'
-                    : 'bg-text-muted/40 dark:bg-text-muted-dark/40'
-              "
-              :title="
+              :content="
                 db.connectError.value[item.id] ||
                 (db.connections.value.find((connection) => connection.id === item.id)?.status ===
                 'online'
                   ? '已连接'
                   : '未连接')
               "
-            />
+            >
+              <span
+                class="h-[6px] w-[6px] shrink-0 rounded-full"
+                :class="
+                  db.connectError.value[item.id]
+                    ? 'bg-danger-strong dark:bg-danger-dark'
+                    : db.connections.value.find((connection) => connection.id === item.id)
+                          ?.status === 'online'
+                      ? 'bg-success-strong dark:bg-success-dark'
+                      : 'bg-text-muted/40 dark:bg-text-muted-dark/40'
+                "
+              />
+            </UiTooltip>
           </template>
         </template>
       </UiTree>

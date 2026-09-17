@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * StorageSettingsCard · 设置页「存储位置」卡片（框架级）
  *
@@ -167,11 +168,12 @@ async function restartNow() {
     <div class="mt-sm flex flex-col gap-sm">
       <!-- 当前根目录 -->
       <div class="flex items-center gap-[8px]">
-        <code
-          class="min-w-0 flex-1 truncate rounded-sm bg-neutral px-[10px] py-[7px] font-mono text-body-sm dark:bg-neutral-dark dark:text-primary-dark"
-          :title="info?.root"
-          >{{ info?.root ?? '—' }}</code
-        >
+        <UiTooltip :content="info?.root">
+          <code
+            class="min-w-0 flex-1 truncate rounded-sm bg-neutral px-[10px] py-[7px] font-mono text-body-sm dark:bg-neutral-dark dark:text-primary-dark"
+            >{{ info?.root ?? '—' }}</code
+          >
+        </UiTooltip>
         <span
           v-if="info"
           class="shrink-0 rounded-full px-[8px] py-[2px] text-label-caps"
@@ -197,11 +199,11 @@ async function restartNow() {
           <span class="w-[56px] shrink-0 font-medium dark:text-primary-dark">{{
             t(PARTITION_KEYS[part.name] ?? 'settings.storagePartData')
           }}</span>
-          <span
-            class="min-w-0 flex-1 truncate text-text-muted dark:text-text-muted-dark"
-            :title="part.path"
-            >{{ part.path }}</span
-          >
+          <UiTooltip :content="part.path">
+            <span class="min-w-0 flex-1 truncate text-text-muted dark:text-text-muted-dark">{{
+              part.path
+            }}</span>
+          </UiTooltip>
           <span class="shrink-0 tabular-nums text-secondary dark:text-secondary-dark">{{
             formatBytes(part.bytes)
           }}</span>

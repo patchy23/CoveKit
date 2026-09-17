@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import UiTooltip from './UiTooltip.vue'
 import { TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
 import type { UiSize } from './types'
 
@@ -46,21 +47,24 @@ const emit = defineEmits<{
         :disabled="item.disabled"
         @contextmenu="emit('contextmenu', item.value, $event)"
       >
-        <span
+        <UiTooltip
           v-if="item.status"
-          class="h-[7px] w-[7px] shrink-0 rounded-full"
-          :class="{
-            'bg-success-strong dark:bg-success-dark': item.status === 'success',
-            'bg-danger-strong dark:bg-danger-dark': item.status === 'danger',
-            'bg-text-muted dark:bg-text-muted-dark': item.status === 'neutral',
-            'bg-tertiary animate-pulse dark:bg-tertiary-dark': item.status === 'progress',
-          }"
-          :title="
+          :content="
             item.statusTitle ??
             (item.status === 'success' ? '已连接' : item.status === 'danger' ? '已断开' : '连接中')
           "
-          aria-hidden="true"
-        />
+        >
+          <span
+            class="h-[7px] w-[7px] shrink-0 rounded-full"
+            :class="{
+              'bg-success-strong dark:bg-success-dark': item.status === 'success',
+              'bg-danger-strong dark:bg-danger-dark': item.status === 'danger',
+              'bg-text-muted dark:bg-text-muted-dark': item.status === 'neutral',
+              'bg-tertiary animate-pulse dark:bg-tertiary-dark': item.status === 'progress',
+            }"
+            aria-hidden="true"
+          />
+        </UiTooltip>
         <span class="ui-tab-label">{{ item.label }}</span>
         <span v-if="item.badge !== undefined" class="ui-tab-badge">{{ item.badge }}</span>
         <span

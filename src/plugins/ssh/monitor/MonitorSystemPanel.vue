@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * 远程系统信息面板：30 秒自动采集（可暂停）+ 手动刷新，并承载磁盘分区明细表。
  * 采集失败保留上一次数据并显式报错，不静默；切换服务器先清空再拉新。
@@ -113,12 +114,13 @@ watch(
     <dl class="grid grid-cols-2 gap-x-[16px] gap-y-[10px] md:grid-cols-3">
       <div v-for="field in fields" :key="field.label" class="min-w-0">
         <dt class="text-caption text-text-muted dark:text-text-muted-dark">{{ field.label }}</dt>
-        <dd
-          class="mt-[2px] truncate font-mono text-body-sm text-secondary dark:text-secondary-dark"
-          :title="field.value"
-        >
-          {{ field.value }}
-        </dd>
+        <UiTooltip :content="field.value">
+          <dd
+            class="mt-[2px] truncate font-mono text-body-sm text-secondary dark:text-secondary-dark"
+          >
+            {{ field.value }}
+          </dd>
+        </UiTooltip>
       </div>
     </dl>
 

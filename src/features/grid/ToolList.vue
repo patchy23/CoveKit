@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ToolList · 列表视图（对齐原型 .list/.lrow，含收藏星）
  */
@@ -52,14 +53,18 @@ async function toggleFav(t: ToolManifest) {
           {{ t.description }}
         </div>
       </div>
-      <button
-        class="ml-auto shrink-0 rounded-[6px] p-1 text-h1 leading-none transition-all duration-150 hover:scale-110"
-        :class="isFav(t.id) ? 'text-tertiary-strong' : 'text-text-muted hover:text-tertiary-strong'"
-        :title="isFav(t.id) ? '取消收藏' : '收藏'"
-        @click.stop="toggleFav(t)"
-      >
-        {{ isFav(t.id) ? '★' : '☆' }}
-      </button>
+      <UiTooltip :content="isFav(t.id) ? '取消收藏' : '收藏'">
+        <button
+          class="ml-auto shrink-0 rounded-[6px] p-1 text-h1 leading-none transition-all duration-150 hover:scale-110"
+          :class="
+            isFav(t.id) ? 'text-tertiary-strong' : 'text-text-muted hover:text-tertiary-strong'
+          "
+          :aria-label="isFav(t.id) ? '取消收藏' : '收藏'"
+          @click.stop="toggleFav(t)"
+        >
+          {{ isFav(t.id) ? '★' : '☆' }}
+        </button>
+      </UiTooltip>
       <span
         class="shrink-0 rounded-full bg-neutral px-[9px] py-[3px] text-caption font-medium text-text-muted dark:bg-neutral-dark dark:text-text-muted-dark"
       >

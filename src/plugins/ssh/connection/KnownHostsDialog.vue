@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * KnownHostsDialog · 已知主机管理
  * 列出 patchyBox 私有 known_hosts 的条目（算法 + SHA256 指纹），支持删除单条/整台主机。
@@ -77,34 +78,35 @@ defineExpose({ load })
       v-else
       class="max-h-[380px] overflow-y-auto rounded-md border border-border dark:border-border-dark"
     >
-      <UiListRow
+      <UiTooltip
         v-for="entry in entries"
         :key="`${entry.host}:${entry.port}:${entry.fingerprint}`"
-        size="sm"
-        :title="entry.fingerprint"
+        :content="entry.fingerprint"
       >
-        <div class="flex min-w-0 flex-1 items-center gap-[10px]">
-          <span class="font-mono text-body-sm text-primary dark:text-primary-dark">
-            {{ entry.host }}<span v-if="entry.port !== 22">:{{ entry.port }}</span>
-          </span>
-          <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
-            {{ entry.algorithm }}
-          </span>
-          <span
-            class="min-w-0 flex-1 truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+        <UiListRow size="sm">
+          <div class="flex min-w-0 flex-1 items-center gap-[10px]">
+            <span class="font-mono text-body-sm text-primary dark:text-primary-dark">
+              {{ entry.host }}<span v-if="entry.port !== 22">:{{ entry.port }}</span>
+            </span>
+            <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
+              {{ entry.algorithm }}
+            </span>
+            <span
+              class="min-w-0 flex-1 truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
+            >
+              {{ entry.fingerprint }}
+            </span>
+          </div>
+          <UiButton
+            variant="ghost"
+            size="xs"
+            class="!h-auto !px-[8px] !py-[3px] text-caption text-danger-strong dark:text-danger-dark"
+            @click="remove(entry)"
           >
-            {{ entry.fingerprint }}
-          </span>
-        </div>
-        <UiButton
-          variant="ghost"
-          size="xs"
-          class="!h-auto !px-[8px] !py-[3px] text-caption text-danger-strong dark:text-danger-dark"
-          @click="remove(entry)"
-        >
-          删除
-        </UiButton>
-      </UiListRow>
+            删除
+          </UiButton>
+        </UiListRow>
+      </UiTooltip>
     </div>
 
     <template #footer>

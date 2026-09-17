@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ToolWorkspace · 多页签工作区（用户决策：工具以子页面形式打开，替代弹窗）
  * 页签条 + 内容区：首页（工具库）/ 各工具页签（v-show 保持组件状态，切换不销毁）。
@@ -171,24 +172,26 @@ const hiddenTabItems = computed(() => hiddenItems.value)
       ref="tabBar"
       class="flex shrink-0 items-center gap-[2px] overflow-hidden border-b border-border bg-surface-muted px-sm dark:border-border-dark dark:bg-surface-muted-dark"
     >
-      <button
-        class="relative flex h-[38px] shrink-0 items-center gap-[8px] rounded-t-[8px] px-[14px] text-body font-medium transition-colors"
-        :class="
-          ui.activeTab === null
-            ? 'bg-surface text-primary dark:bg-surface-dark dark:text-primary-dark'
-            : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
-        "
-        title="回到工具库首页"
-        @click="ui.goHome()"
-      >
-        <!-- 选中指示器：纯横线（独立元素，不随圆角弯曲） -->
-        <span
-          v-if="ui.activeTab === null"
-          class="absolute inset-x-0 top-0 h-[2px] bg-tertiary-strong dark:bg-tertiary-dark"
-        />
-        <AppIcon name="all" :size="15" />
-        首页
-      </button>
+      <UiTooltip content="回到工具库首页">
+        <button
+          class="relative flex h-[38px] shrink-0 items-center gap-[8px] rounded-t-[8px] px-[14px] text-body font-medium transition-colors"
+          :class="
+            ui.activeTab === null
+              ? 'bg-surface text-primary dark:bg-surface-dark dark:text-primary-dark'
+              : 'text-secondary hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark'
+          "
+          aria-label="回到工具库首页"
+          @click="ui.goHome()"
+        >
+          <!-- 选中指示器：纯横线（独立元素，不随圆角弯曲） -->
+          <span
+            v-if="ui.activeTab === null"
+            class="absolute inset-x-0 top-0 h-[2px] bg-tertiary-strong dark:bg-tertiary-dark"
+          />
+          <AppIcon name="all" :size="15" />
+          首页
+        </button>
+      </UiTooltip>
       <div
         v-for="id in visibleTabs"
         :key="id"
@@ -212,23 +215,25 @@ const hiddenTabItems = computed(() => hiddenItems.value)
         />
         <span class="max-w-[120px] truncate">{{ tabTitle(id) }}</span>
         <!-- 关闭前会中断的状态标记：运行中（实心点）/ 未保存（空心点），避免用户以为直接关没事 -->
-        <span
-          v-if="tabRunning(id)"
-          class="h-[6px] w-[6px] shrink-0 rounded-full bg-tertiary-strong dark:bg-tertiary-dark"
-          title="任务进行中"
-        />
-        <span
-          v-else-if="tabDirty(id)"
-          class="h-[6px] w-[6px] shrink-0 rounded-full border border-warning-strong dark:border-warning-dark"
-          title="有未保存内容"
-        />
-        <button
-          class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] text-text-muted opacity-0 transition-opacity hover:bg-border hover:text-tertiary-strong group-hover:opacity-100 dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-tertiary-dark"
-          title="关闭页签"
-          @click.stop="ui.requestClose(id)"
-        >
-          <AppIcon name="close" :size="11" />
-        </button>
+        <UiTooltip v-if="tabRunning(id)" content="任务进行中">
+          <span
+            class="h-[6px] w-[6px] shrink-0 rounded-full bg-tertiary-strong dark:bg-tertiary-dark"
+          />
+        </UiTooltip>
+        <UiTooltip v-else-if="tabDirty(id)" content="有未保存内容">
+          <span
+            class="h-[6px] w-[6px] shrink-0 rounded-full border border-warning-strong dark:border-warning-dark"
+          />
+        </UiTooltip>
+        <UiTooltip content="关闭页签">
+          <button
+            class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] text-text-muted opacity-0 transition-opacity hover:bg-border hover:text-tertiary-strong group-hover:opacity-100 dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-tertiary-dark"
+            aria-label="关闭页签"
+            @click.stop="ui.requestClose(id)"
+          >
+            <AppIcon name="close" :size="11" />
+          </button>
+        </UiTooltip>
       </div>
 
       <!-- 溢出收纳：公共组件（··· 触发器 + 下拉） -->
@@ -260,30 +265,34 @@ const hiddenTabItems = computed(() => hiddenItems.value)
           <div
             class="flex items-center gap-[2px] rounded-md border border-border bg-neutral p-[2px] dark:border-border-dark dark:bg-neutral-dark"
           >
-            <button
-              class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
-              :class="
-                !ui.listView
-                  ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
-                  : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
-              "
-              title="卡片模式"
-              @click="ui.listView = false"
-            >
-              <AppIcon name="grid" :size="14" />
-            </button>
-            <button
-              class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
-              :class="
-                ui.listView
-                  ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
-                  : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
-              "
-              title="列表模式"
-              @click="ui.listView = true"
-            >
-              <AppIcon name="list" :size="14" />
-            </button>
+            <UiTooltip content="卡片模式">
+              <button
+                class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
+                :class="
+                  !ui.listView
+                    ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
+                    : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
+                "
+                aria-label="卡片模式"
+                @click="ui.listView = false"
+              >
+                <AppIcon name="grid" :size="14" />
+              </button>
+            </UiTooltip>
+            <UiTooltip content="列表模式">
+              <button
+                class="grid h-[24px] w-[28px] place-items-center rounded-[5px] transition-colors duration-100"
+                :class="
+                  ui.listView
+                    ? 'bg-surface text-tertiary-strong shadow-sm dark:bg-surface-dark dark:text-tertiary-dark'
+                    : 'text-text-muted hover:text-primary dark:text-text-muted-dark dark:hover:text-primary-dark'
+                "
+                aria-label="列表模式"
+                @click="ui.listView = true"
+              >
+                <AppIcon name="list" :size="14" />
+              </button>
+            </UiTooltip>
           </div>
         </div>
         <ToolGrid v-if="tools.filtered.length && !ui.listView" />

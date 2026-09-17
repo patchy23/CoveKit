@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * CredentialForm · 凭证编辑表单弹窗（core/vault/ui 复合组件，经 @/core/vault 使用）
  * 按 kind 动态渲染字段（formFieldsFor），秘密字段用 type=password（明文切换走输入框自带眼睛）；
@@ -180,16 +181,17 @@ async function save() {
             placeholder="值"
             @update:model-value="entry.value = String($event)"
           />
-          <label
-            class="flex shrink-0 cursor-pointer items-center gap-[4px] text-caption text-secondary dark:text-secondary-dark"
-            title="秘密值在列表中掩码"
-          >
-            <UiCheckbox
-              :model-value="entry.secret"
-              @update:model-value="entry.secret = Boolean($event)"
-            />
-            秘密
-          </label>
+          <UiTooltip content="秘密值在列表中掩码">
+            <label
+              class="flex shrink-0 cursor-pointer items-center gap-[4px] text-caption text-secondary dark:text-secondary-dark"
+            >
+              <UiCheckbox
+                :model-value="entry.secret"
+                @update:model-value="entry.secret = Boolean($event)"
+              />
+              秘密
+            </label>
+          </UiTooltip>
           <UiIconButton label="删除字段" size="xs" @click="removeEntry(i)">
             <UiIcon name="trash" :size="13" />
           </UiIconButton>

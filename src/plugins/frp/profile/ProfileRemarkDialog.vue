@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * ProfileRemarkDialog · 档案备注编辑
  * 备注存在 frp.db（工具侧元数据），**不写进用户的 frpc.toml**，避免污染手写配置。
@@ -39,12 +40,11 @@ function onSubmit() {
 <template>
   <UiModal :open="props.open" :title="t('frp.remarkTitle')" size="sm" @close="emit('close')">
     <div class="flex flex-col gap-[8px]">
-      <p
-        class="truncate font-mono text-caption text-text-muted dark:text-text-muted-dark"
-        :title="props.fileName"
-      >
-        {{ props.fileName }}
-      </p>
+      <UiTooltip :content="props.fileName">
+        <p class="truncate font-mono text-caption text-text-muted dark:text-text-muted-dark">
+          {{ props.fileName }}
+        </p>
+      </UiTooltip>
       <UiInput
         v-model="remark"
         :placeholder="t('frp.remarkPlaceholder')"

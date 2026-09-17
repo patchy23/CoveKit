@@ -1,17 +1,19 @@
 <script setup lang="ts">
 import { SwitchRoot, SwitchThumb } from 'reka-ui'
 import { computed } from 'vue'
+import UiTooltip from './UiTooltip.vue'
 import type { UiSize } from './types'
 
 const props = withDefaults(
   defineProps<{
     modelValue: boolean
     label?: string
+    title?: string
     description?: string
     disabled?: boolean
     size?: UiSize
   }>(),
-  { label: '', description: '', disabled: false, size: 'md' }
+  { label: '', title: '', description: '', disabled: false, size: 'md' }
 )
 
 const emit = defineEmits<{ (event: 'update:modelValue', value: boolean): void }>()
@@ -40,23 +42,26 @@ const thumbClass = computed(
     class="inline-flex items-center gap-sm"
     :class="disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'"
   >
-    <SwitchRoot
-      class="shrink-0 rounded-full transition-colors"
-      :class="[
-        trackClass,
-        modelValue
-          ? 'bg-tertiary-strong dark:bg-tertiary-dark'
-          : 'bg-border-strong dark:bg-border-strong-dark',
-      ]"
-      :model-value="modelValue"
-      :disabled="disabled"
-      @update:model-value="emit('update:modelValue', $event)"
-    >
-      <SwitchThumb
-        class="block rounded-full bg-surface shadow-sm transition-transform dark:bg-primary-dark"
-        :class="[thumbClass, { '!translate-x-0': !modelValue }]"
-      />
-    </SwitchRoot>
+    <UiTooltip :content="title">
+      <SwitchRoot
+        :aria-label="label || title || undefined"
+        class="shrink-0 rounded-full transition-colors"
+        :class="[
+          trackClass,
+          modelValue
+            ? 'bg-tertiary-strong dark:bg-tertiary-dark'
+            : 'bg-border-strong dark:bg-border-strong-dark',
+        ]"
+        :model-value="modelValue"
+        :disabled="disabled"
+        @update:model-value="emit('update:modelValue', $event)"
+      >
+        <SwitchThumb
+          class="block rounded-full bg-surface shadow-sm transition-transform dark:bg-primary-dark"
+          :class="[thumbClass, { '!translate-x-0': !modelValue }]"
+        />
+      </SwitchRoot>
+    </UiTooltip>
     <span v-if="label || description">
       <span v-if="label" class="block text-body font-medium text-primary dark:text-primary-dark">{{
         label

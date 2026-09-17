@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { UiTooltip } from '@/core/ui'
 /**
  * SettingsPage · 设置页（框架级整页模式，铺满右侧内容区含页签条区域）
  * 由侧栏「设置」触发 ui.openSettings()，与工作区整体互切（v-show 保留工具页签状态）；
@@ -137,13 +138,15 @@ async function chooseDownloadDirectory() {
             {{ t('settings.subtitle') }}
           </p>
         </div>
-        <button
-          class="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-[9px] bg-neutral text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-          :title="t('common.back')"
-          @click="ui.closeSettings()"
-        >
-          <AppIcon name="close" :size="14" />
-        </button>
+        <UiTooltip :content="t('common.back')">
+          <button
+            class="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-[9px] bg-neutral text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:bg-neutral-dark dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+            :aria-label="t('common.back')"
+            @click="ui.closeSettings()"
+          >
+            <AppIcon name="close" :size="14" />
+          </button>
+        </UiTooltip>
       </div>
 
       <!-- 保存失败提示：任何分区的保存失败都在这里显示，不静默吞错误 -->
