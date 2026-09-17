@@ -36,6 +36,13 @@ pub(crate) fn upsert_group(conn: &Connection, group: &SshGroup) -> Result<(), St
     Ok(())
 }
 
+/// 清空全部分组（覆盖导入用；调用方负责在同一事务内重建）
+pub(crate) fn clear_groups(conn: &Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM ssh_groups", [])
+        .map_err(|e| format!("清空分组失败: {e}"))?;
+    Ok(())
+}
+
 /// 删除分组；组内 profile 移回未分组（配置本身不删）
 pub(crate) fn delete_group(conn: &Connection, group_id: &str) -> Result<(), String> {
     conn.execute(
@@ -123,6 +130,13 @@ pub(crate) fn upsert_profile(
         ],
     )
     .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 清空全部档案（覆盖导入用；调用方负责在同一事务内重建）
+pub(crate) fn clear_profiles(conn: &Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM ssh_profiles", [])
+        .map_err(|e| format!("清空档案失败: {e}"))?;
     Ok(())
 }
 

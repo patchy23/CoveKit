@@ -107,7 +107,6 @@ pub(crate) fn default_selection(descriptors: &[DatasetDescriptor]) -> ExportSele
             .filter(|item| item.selectable && item.default_selected)
             .map(|item| item.name.clone())
             .collect(),
-        include_credentials: true,
     }
 }
 
@@ -225,7 +224,6 @@ pub(crate) fn resolve_selection(
             .into_iter()
             .map(|(name, ids)| (name, ids.into_iter().collect()))
             .collect(),
-        include_credentials: selection.include_credentials,
     })
 }
 
@@ -255,10 +253,8 @@ pub(crate) fn build_manifest(
                 descriptor.owner
             ));
         };
-        // 只声明不携带：设备级事实一律如此；凭证在用户未勾选带出时同样只声明
-        if descriptor.policy == TransportPolicy::DeviceLocal
-            || (descriptor.policy == TransportPolicy::Secret && !resolved.include_credentials)
-        {
+        // 只声明不携带：设备级事实与凭证一律如此（凭证与空间 uid 绑死，永不进包，D 裁决）
+        if descriptor.policy != TransportPolicy::Portable {
             manifest
                 .datasets
                 .push(block_declared(descriptor, ids.len()));
@@ -445,7 +441,6 @@ mod tests {
                 ids: vec!["p1".into()],
             }],
             datasets: vec![],
-            include_credentials: true,
         };
         let resolved = resolve_selection(&descriptors, &selection).expect("解析成功");
         assert_eq!(resolved.ids_of("ssh.profiles"), ["p1".to_string()]);
@@ -465,7 +460,6 @@ mod tests {
                 ids: vec!["p1".into(), "p2".into(), "p3".into()],
             }],
             datasets: vec![],
-            include_credentials: true,
         };
         let resolved = resolve_selection(&descriptors, &selection).expect("解析成功");
         assert_eq!(resolved.ids_of("vault.credentials"), ["c1".to_string()]);
@@ -484,7 +478,6 @@ mod tests {
         let selection = ExportSelection {
             entries: vec![],
             datasets: vec!["vault.credentials".into()],
-            include_credentials: true,
         };
         let error = resolve_selection(&descriptors, &selection).unwrap_err();
         assert!(error.contains("不能单独勾选"), "{error}");
@@ -500,7 +493,6 @@ mod tests {
                 ids: vec!["p9".into()],
             }],
             datasets: vec![],
-            include_credentials: true,
         };
         let error = resolve_selection(&descriptors, &selection).unwrap_err();
         assert!(error.contains("不存在记录 p9"), "{error}");
@@ -521,7 +513,6 @@ mod tests {
         let selection = ExportSelection {
             entries: vec![],
             datasets: vec!["core.favorites".into()],
-            include_credentials: true,
         };
         let resolved = resolve_selection(&descriptors, &selection).expect("解析成功");
         assert!(resolved.includes("core.favorites"));
@@ -541,7 +532,6 @@ mod tests {
         }
         let defaults = default_selection(&descriptors);
         assert_eq!(defaults.datasets, vec!["core.favorites".to_string()]);
-        assert!(defaults.include_credentials);
         assert!(defaults.entries.is_empty());
     }
 

@@ -357,8 +357,6 @@ pub(crate) struct ExportSelection {
     pub entries: Vec<SelectionEntry>,
     /// 整块勾选的数据集（收藏 / 最近使用）
     pub datasets: Vec<String>,
-    /// 是否把被引用凭证写进包（false = 只声明条数，导入后由用户重填）
-    pub include_credentials: bool,
 }
 
 impl ExportSelection {
@@ -368,7 +366,6 @@ impl ExportSelection {
         Self {
             entries: Vec::new(),
             datasets: Vec::new(),
-            include_credentials: true,
         }
     }
 }
@@ -396,8 +393,6 @@ pub(crate) struct ExportCatalog {
 pub(crate) struct ResolvedSelection {
     /// 数据集名 → 记录 id
     pub datasets: BTreeMap<String, Vec<String>>,
-    /// 是否把凭证记录写进包（false = 只声明条数）
-    pub include_credentials: bool,
 }
 
 impl ResolvedSelection {
@@ -454,16 +449,29 @@ pub(crate) struct CarriedBlock {
     pub ids: Option<BTreeSet<String>>,
 }
 
-/// 导入判定上下文：适配器据此判「新增 / 待补全 / 被排除」
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct ImportContext {
+/// 导入判定上下文：适配器据此判「新增 / 待补全 / 被排除」；合并/覆盖模式另带目标空间视图
+#[derive(Clone)]
+pub(crate) struct ImportContext<'a> {
     /// 来源空间 id（不可信，仅展示与留档）
     pub source_space_id: String,
     /// 数据集名 → 携带情况；**键不存在 = 该数据集没进包**
     pub carried: BTreeMap<String, CarriedBlock>,
+    /// 合并/覆盖模式的目标空间只读视图（隔离导入为 None）
+    pub merge: Option<MergePlanView<'a>>,
 }
 
-impl ImportContext {
+/// 导入判定上下文的默认构造（隔离导入）
+impl<'a> Default for ImportContext<'a> {
+    fn default() -> Self {
+        Self {
+            source_space_id: String::new(),
+            carried: BTreeMap::new(),
+            merge: None,
+        }
+    }
+}
+
+impl<'a> ImportContext<'a> {
     /// 该 id 的记录是否真的在包里
     pub(crate) fn carries_id(&self, dataset: &str, id: &str) -> bool {
         self.carried
@@ -474,15 +482,74 @@ impl ImportContext {
     }
 }
 
+/// 导入模式（L3）
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ImportMode {
+    /// 隔离导入：进新空间（L2 语义）
+    NewSpace,
+    /// 合并导入：进当前空间，冲突逐条决策
+    Merge,
+    /// 覆盖导入：包内容整体替换当前空间的对应数据集
+    Overwrite,
+}
+
+/// 冲突处置（合并模式逐条决策；任务书 §5.4）
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ConflictDecision {
+    /// 保留本地（不动）
+    KeepLocal,
+    /// 采用导入（替换本地该记录的字段）
+    UseImported,
+    /// 保留两份（导入的记录分配新 id，依赖链复制）
+    KeepBoth,
+}
+
+/// id 映射：包内（数据集, 来源 id）→ 目标空间记录 id（引用字段按它改写）
+pub(crate) type IdMap = BTreeMap<(String, String), String>;
+
+/// 合并/覆盖判定的纯数据部分（可单测：不含 AppHandle）
+#[derive(Clone, Copy)]
+pub(crate) struct MergeContext<'a> {
+    /// 导入模式（Merge / Overwrite）
+    pub mode: ImportMode,
+    /// 导入映射（同源识别）
+    pub lineage: &'a crate::framework::data_transfer::lineage::ImportMap,
+    /// 用户冲突决策（数据集 + 来源记录 id → 处置）
+    pub decisions: &'a BTreeMap<(String, String), ConflictDecision>,
+    /// 包内全部记录（书签等子记录的业务键判定要跨数据集解析档案名）
+    pub source_records: &'a BTreeMap<String, Vec<Value>>,
+}
+
+/// 合并/覆盖模式下目标空间的只读视图（判定用，不落盘）
+#[derive(Clone, Copy)]
+pub(crate) struct MergePlanView<'a> {
+    /// 判定规则与输入（纯数据）
+    pub core: MergeContext<'a>,
+    /// 当前空间数据访问（owner 经各自 store 读本机现状做冲突判定）
+    pub app: &'a tauri::AppHandle,
+}
+
 /// 导入后的记录处置结论
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub(crate) enum ImportOutcome {
-    /// 会写入新空间
-    Added,
-    /// 会写入，但引用物没进包（如档案的凭证），导入后仍是待补全
+#[serde(rename_all = "camelCase")]
+pub(crate) enum ItemDecision {
+    /// 新增（目标空间没有这条记录）
+    Insert,
+    /// 已识别且相同（跳过；同包重复导入的主路径）
+    Identical,
+    /// 采用导入（替换本地记录字段；冲突决策为 useImported）
+    Replace,
+    /// 保留两份（新 id 写入；冲突决策为 keepBoth）
+    KeepBoth,
+    /// 保留本地（不动；冲突决策为 keepLocal）
+    Skip,
+    /// 本地已删过的已映射记录再次出现：默认不复活，需用户显式选择
+    RestorePrompt,
+    /// 会写入，但引用物没进包（如档案的凭证），导入后仍是待补录
     PendingReference,
-    /// 本次不带入（用户排除、或所属 owner 不支持）
+    /// 本次不带入（用户排除、owner 不支持、只声明未携带）
     Excluded,
 }
 
@@ -492,35 +559,51 @@ pub(crate) enum ImportOutcome {
 pub(crate) struct ImportPlanItem {
     /// 所属数据集
     pub dataset: String,
-    /// 记录 id（整块数据集为空串）
+    /// 记录 id（包内/来源 id；整块数据集为空串）
     pub id: String,
     /// 展示名
     pub label: String,
     /// 处置结论
-    pub outcome: ImportOutcome,
-    /// 结论说明（如「未绑定凭证，导入后需重新绑定」）
+    pub decision: ItemDecision,
+    /// 是否为冲突条目（用户可改处置；仅合并模式会出现）
+    #[serde(default)]
+    pub conflict: bool,
+    /// 目标 id（Insert 用来源 id、Replace 用本地既有 id、KeepBoth 用新分配 UID；由框架在计划汇总后回填）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_id: Option<String>,
+    /// 影响面说明（如「本地还有 3 个档案引用该凭证」）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub impact: Option<String>,
+    /// 结论说明（如「未绑定凭证，导入后需重新补录」）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
 
 impl ImportPlanItem {
-    /// 会写入新空间
+    /// 会写入（隔离导入的新增 / 合并导入的插入）
     pub(crate) fn added(dataset: &str, id: &str, label: &str) -> Self {
         Self {
             dataset: dataset.to_string(),
             id: id.to_string(),
             label: label.to_string(),
-            outcome: ImportOutcome::Added,
+            decision: ItemDecision::Insert,
+            conflict: false,
+            target_id: None,
+            impact: None,
             note: None,
         }
     }
 
-    /// 会写入，但引用的东西没随包带来（导入后仍需用户补全）
+    /// 会写入，但引用的东西没随包带来（导入后仍需用户补录）
     pub(crate) fn pending_reference(dataset: &str, id: &str, label: &str, note: &str) -> Self {
         Self {
             dataset: dataset.to_string(),
             id: id.to_string(),
             label: label.to_string(),
-            outcome: ImportOutcome::PendingReference,
+            decision: ItemDecision::PendingReference,
+            conflict: false,
+            target_id: None,
+            impact: None,
             note: Some(note.to_string()),
         }
     }
@@ -531,7 +614,10 @@ impl ImportPlanItem {
             dataset: dataset.to_string(),
             id: String::new(),
             label: label.to_string(),
-            outcome: ImportOutcome::Excluded,
+            decision: ItemDecision::Excluded,
+            conflict: false,
+            target_id: None,
+            impact: None,
             note: Some(note.to_string()),
         }
     }

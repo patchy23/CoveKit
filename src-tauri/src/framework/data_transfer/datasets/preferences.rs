@@ -10,9 +10,10 @@
 use serde_json::Value;
 use tauri::AppHandle;
 
-use super::super::adapter::{self, DatasetAdapter, StagingTarget};
+use super::super::adapter::{self, DatasetAdapter, MergeTarget, StagingTarget};
 use super::super::types::{
-    DatasetDescriptor, DependencyEdge, ImportContext, ImportPlanItem, TransportPolicy,
+    DatasetDescriptor, DependencyEdge, ImportContext, ImportMode, ImportPlanItem, ItemDecision,
+    MergePlanView, TransportPolicy,
 };
 use crate::framework::preferences;
 
@@ -113,12 +114,13 @@ impl DatasetAdapter for PreferencesAdapter {
         Ok(Vec::new())
     }
 
-    /// 导入判定：整块带入，逐条回显工具 id（界面能看到「带进来哪些」）
+    /// 导入判定：整块带入，逐条回显工具 id（界面能看到「带进来哪些」）；
+    /// 合并模式按并集（D4：收藏/最近使用与本地并集），覆盖模式整块替换
     fn plan_import(
         &self,
         dataset: &str,
         records: &[Value],
-        _context: &ImportContext,
+        context: &ImportContext<'_>,
     ) -> Result<Vec<ImportPlanItem>, String> {
         key_of(dataset)?;
         if records.is_empty() {
@@ -127,6 +129,9 @@ impl DatasetAdapter for PreferencesAdapter {
                 dataset,
                 "包内这一类是空列表",
             )]);
+        }
+        if let Some(view) = &context.merge {
+            return plan_live(dataset, records, view);
         }
         Ok(records
             .iter()
@@ -158,10 +163,83 @@ impl DatasetAdapter for PreferencesAdapter {
         }
         Ok(records.len())
     }
+
+    /// 合并/覆盖写入当前空间：读改写 + 原子替换（整块数据集共享同一个原子边界）
+    fn apply_merge(
+        &self,
+        dataset_blocks: &[(String, Vec<Value>)],
+        target: &MergeTarget<'_>,
+    ) -> Result<std::collections::BTreeMap<String, usize>, String> {
+        let path = target.space_root.join(PREFERENCES_FILE);
+        let mut map = read_preferences_at(&path)?;
+        let mut counts = std::collections::BTreeMap::new();
+        for (dataset, records) in dataset_blocks {
+            let key = key_of(dataset)?;
+            if target.mode == ImportMode::Overwrite {
+                // 覆盖：整块替换
+                map.insert(key.to_string(), Value::Array(records.to_vec()));
+                counts.insert(dataset.clone(), records.len());
+                continue;
+            }
+            // 合并：并集（本地在前保序，新工具按包内顺序追加在后）
+            let mut merged = ids_of(&map, key)?;
+            let mut written = 0usize;
+            for record in records {
+                let Some(tool) = record.as_str() else {
+                    continue;
+                };
+                if !merged.iter().any(|item| item == tool) {
+                    merged.push(tool.to_string());
+                    written += 1;
+                }
+            }
+            map.insert(
+                key.to_string(),
+                Value::Array(merged.into_iter().map(Value::String).collect()),
+            );
+            counts.insert(dataset.clone(), written);
+        }
+        write_preferences_at(&path, &map)?;
+        Ok(counts)
+    }
 }
 
 /// 空间偏好文件名（四分区布局的固定落位）
 const PREFERENCES_FILE: &str = "preferences.json";
+
+/// 合并/覆盖模式的导入判定：
+/// - 覆盖：整块替换（提交时直接覆盖，不做逐条判定）
+/// - 合并：并集语义——已在本地 → 已识别跳过；新工具 → 插入（D4）
+fn plan_live(
+    dataset: &str,
+    records: &[Value],
+    view: &MergePlanView<'_>,
+) -> Result<Vec<ImportPlanItem>, String> {
+    let key = key_of(dataset)?;
+    if view.core.mode == ImportMode::Overwrite {
+        return Ok(records
+            .iter()
+            .filter_map(|record| record.as_str())
+            .map(|tool| ImportPlanItem::added(dataset, tool, tool))
+            .collect());
+    }
+    let map = preferences::read_current(view.app)?;
+    let local: std::collections::BTreeSet<String> = ids_of(&map, key)?.into_iter().collect();
+    let mut items = Vec::with_capacity(records.len());
+    for record in records {
+        let Some(tool) = record.as_str() else {
+            continue;
+        };
+        let mut item = ImportPlanItem::added(dataset, tool, tool);
+        if local.contains(tool) {
+            item.decision = ItemDecision::Identical;
+        } else {
+            item.target_id = Some(tool.to_string());
+        }
+        items.push(item);
+    }
+    Ok(items)
+}
 
 /// 读取指定目录下的偏好文件：文件不存在 = 空表（新空间就是这样）
 fn read_preferences_at(path: &std::path::Path) -> Result<serde_json::Map<String, Value>, String> {

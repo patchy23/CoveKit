@@ -271,12 +271,22 @@ mod tests {
         (
             "framework",
             "data_import_plan",
-            "规划导入：确定新空间与要写入的记录（不写业务数据）",
+            "规划导入：确定目标空间与要写入的记录（不写业务数据）",
         ),
         (
             "framework",
             "data_import_commit",
-            "提交导入：建新空间并落数据（失败回滚暂存目录）",
+            "提交导入：建新空间落数据或合并/覆盖进当前空间（失败回滚）",
+        ),
+        (
+            "framework",
+            "data_backup_list",
+            "列出当前空间的导入前快照（设置页还原入口）",
+        ),
+        (
+            "framework",
+            "data_backup_restore",
+            "还原到导入前：快照写回当前空间并广播刷新",
         ),
         (
             "framework",

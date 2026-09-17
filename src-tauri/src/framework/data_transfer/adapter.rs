@@ -22,7 +22,10 @@ use std::sync::{Mutex, OnceLock};
 use serde_json::Value;
 use tauri::AppHandle;
 
-use super::types::{DatasetDescriptor, DependencyEdge, ImportContext, ImportPlanItem};
+use super::types::{
+    DatasetDescriptor, DependencyEdge, IdMap, ImportContext, ImportMode, ImportPlanItem,
+    ItemDecision,
+};
 
 /// 一个 owner 的本地导入导出能力
 pub(crate) trait DatasetAdapter: Send + Sync {
@@ -59,7 +62,7 @@ pub(crate) trait DatasetAdapter: Send + Sync {
         &self,
         dataset: &str,
         records: &[Value],
-        context: &ImportContext,
+        context: &ImportContext<'_>,
     ) -> Result<Vec<ImportPlanItem>, String>;
 
     /// 把记录写入新空间的暂存目录（隔离导入的写入侧）
@@ -74,6 +77,34 @@ pub(crate) trait DatasetAdapter: Send + Sync {
         records: &[Value],
         target: &StagingTarget,
     ) -> Result<usize, String>;
+
+    /// 合并/覆盖写入：把记录按决策写进**当前空间**（L3）
+    ///
+    /// 契约：
+    /// - 该 owner 的全部数据集在**一次调用**内写完，实现方负责让自己的写入落在同一个
+    ///   原子边界里（sqlite 型 owner 用单事务，文件型 owner 用「读改写 + 原子替换」）；
+    /// - 逐条处置以 `target.decisions` 为准（Insert/Replace/KeepBoth 才写，其余跳过）；
+    /// - 引用字段（profileId/groupId 等）按 `target.id_map` 改写；凭证引用一律置空；
+    /// - 返回各数据集实际写入条数，提交方据此与计划核对，不一致即整体失败。
+    fn apply_merge(
+        &self,
+        dataset_blocks: &[(String, Vec<Value>)],
+        target: &MergeTarget<'_>,
+    ) -> Result<std::collections::BTreeMap<String, usize>, String>;
+}
+
+/// 合并/覆盖写入的目标上下文（当前空间；写入在 owner 自己的事务/锁内完成）
+pub(crate) struct MergeTarget<'a> {
+    /// 当前空间根（文件型 owner 写 preferences.json 用）
+    pub space_root: &'a std::path::Path,
+    /// 当前空间数据访问（sqlite 型 owner 经它打开自己的插件库）
+    pub app: &'a AppHandle,
+    /// 导入模式（Merge / Overwrite）
+    pub mode: ImportMode,
+    /// 包内（数据集, 来源 id）→ 目标 id（引用字段按它改写）
+    pub id_map: &'a IdMap,
+    /// 每条（数据集, 来源 id）的最终处置（计划阶段已落位）
+    pub decisions: &'a std::collections::BTreeMap<(String, String), ItemDecision>,
 }
 
 /// 隔离导入的写入目标：新空间的暂存目录 + 新空间身份
@@ -168,7 +199,7 @@ mod tests {
             &self,
             dataset: &str,
             records: &[Value],
-            _context: &ImportContext,
+            _context: &ImportContext<'_>,
         ) -> Result<Vec<ImportPlanItem>, String> {
             Ok(records
                 .iter()
@@ -186,6 +217,14 @@ mod tests {
             _target: &StagingTarget,
         ) -> Result<usize, String> {
             Ok(records.len())
+        }
+
+        fn apply_merge(
+            &self,
+            _dataset_blocks: &[(String, Vec<Value>)],
+            _target: &MergeTarget<'_>,
+        ) -> Result<std::collections::BTreeMap<String, usize>, String> {
+            Ok(std::collections::BTreeMap::new())
         }
     }
 

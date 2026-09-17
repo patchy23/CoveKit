@@ -87,8 +87,10 @@ crate::patchybox_module! {
         data_transfer::commands::data_export_catalog => "当前空间可导出集合摘要与依赖关系",
         data_transfer::commands::data_export_start => "生成数据包 .pbdata（密码加密，写入用户选定路径）",
         data_transfer::commands::data_import_inspect => "校验数据包并返回预览（新增/待补全/被排除/重复包）",
-        data_transfer::commands::data_import_plan => "规划导入：确定新空间与要写入的记录（不写业务数据）",
-        data_transfer::commands::data_import_commit => "提交导入：建新空间并落数据（失败回滚暂存目录）",
+        data_transfer::commands::data_import_plan => "规划导入：确定目标空间与要写入的记录（不写业务数据）",
+        data_transfer::commands::data_import_commit => "提交导入：建新空间落数据或合并/覆盖进当前空间（失败回滚）",
+        data_transfer::commands::data_backup_list => "列出当前空间的导入前快照（设置页还原入口）",
+        data_transfer::commands::data_backup_restore => "还原到导入前：快照写回当前空间并广播刷新",
         data_transfer::commands::data_transfer_cancel => "取消正在进行的导出/导入（清理半成品）",
     },
 }

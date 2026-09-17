@@ -102,6 +102,13 @@ pub(crate) fn upsert_tunnel(
     Ok(())
 }
 
+/// 清空全部隧道（覆盖导入用；调用方负责在同一事务内重建）
+pub(crate) fn clear_tunnels(conn: &Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM ssh_tunnels", [])
+        .map_err(|e| format!("清空隧道失败: {e}"))?;
+    Ok(())
+}
+
 /// 删除隧道配置
 pub(crate) fn delete_tunnel(conn: &Connection, id: &str) -> Result<(), String> {
     conn.execute("DELETE FROM ssh_tunnels WHERE id = ?1", [id])

@@ -194,12 +194,10 @@ pub async fn maintenance_guard() -> tokio::sync::MutexGuard<'static, ()> {
 static WRITE_FROZEN: AtomicBool = AtomicBool::new(false);
 
 /// 写冻结守卫（RAII）：提交开始挂上、离开作用域自动解除
-#[allow(dead_code)] // 合并导入提交（C4）接入前只有测试调用方（接入后删掉本行）
 pub struct WriteFreezeGuard(());
 
 impl WriteFreezeGuard {
     /// 开启写冻结（同一时间只应有一个提交窗口；由 maintenance_guard 保证互斥）
-    #[allow(dead_code)] // 同上
     pub fn begin() -> Self {
         WRITE_FROZEN.store(true, Ordering::SeqCst);
         Self(())

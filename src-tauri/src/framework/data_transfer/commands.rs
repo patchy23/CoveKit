@@ -171,12 +171,29 @@ pub struct ImportInspectResult {
     pub duplicate: Option<DuplicateHint>,
 }
 
+/// 单条冲突的用户决策（合并导入）
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ConflictChoice {
+    /// 数据集名
+    pub dataset: String,
+    /// 包内（来源）记录 id
+    pub source_id: String,
+    /// 处置（保留本地 / 采用导入 / 保留两份）
+    pub decision: ConflictDecision,
+}
+
 /// plan 结果
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportPlanResult {
     /// 计划 id（提交时回传）
     pub plan_id: String,
+    /// 导入模式（newSpace / merge / overwrite；合并与覆盖导入进当前空间）
+    pub mode: String,
+    /// 目标空间存储修订号（合并/覆盖：提交时回传复核，D7）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_revision: Option<String>,
     /// 新空间 id（已定，提交后即成为空间目录名）
     pub space_id: String,
     /// 新空间展示名
@@ -389,6 +406,7 @@ pub async fn data_import_inspect(
                 &uuid::Uuid::new_v4().to_string(),
                 "预览",
                 &import::new_plan_id(),
+                None,
             )?;
             let duplicate = find_duplicate(&inspect_app, &manifest.package_id)?;
             let inspect_id = session::put_inspect(target.clone(), digest, manifest)?;
@@ -411,7 +429,10 @@ pub async fn data_import_inspect(
     work
 }
 
-/// 规划导入：确定新空间与要写入的记录（不写任何业务数据）
+/// 规划导入：确定目标空间与要写入的记录（不写任何业务数据）
+///
+/// 模式（L3）：`newSpace`（默认）进新空间；`merge` / `overwrite` 进**当前空间**——
+/// 后者按映射表 + 当前空间现状做逐条判定，并记下存储修订号供提交时复核（D7）。
 #[tauri::command]
 pub fn data_import_plan(
     app: AppHandle,
@@ -419,32 +440,70 @@ pub fn data_import_plan(
     selection: ImportSelection,
     new_space_name: String,
     allow_duplicate: Option<bool>,
+    mode: Option<String>,
+    conflicts: Option<Vec<ConflictChoice>>,
 ) -> Result<ImportPlanResult, String> {
-    let name = new_space_name.trim();
-    if name.is_empty() {
-        return Err("请为新空间命名".into());
-    }
+    let mode = parse_import_mode(mode.as_deref())?;
     let (file_path, file_digest, manifest) = session::inspect(&inspect_id)?;
-    if !allow_duplicate.unwrap_or(false) {
-        if let Some(hint) = find_duplicate(&app, &manifest.package_id)? {
-            return Err(format!(
-                "该数据包已于 {} 导入到空间「{}」；确认要再导入一份时请显式选择",
-                hint.imported_at, hint.space_name
-            ));
-        }
-    }
     let descriptors = catalog::collect_descriptors(&app)?;
-    let space_id = uuid::Uuid::new_v4().to_string();
-    let plan = import::build_plan(
-        &manifest,
-        &descriptors,
-        &selection,
-        &space_id,
-        name,
-        &import::new_plan_id(),
-    )?;
+
+    let plan = match mode {
+        ImportMode::NewSpace => {
+            let name = new_space_name.trim();
+            if name.is_empty() {
+                return Err("请为新空间命名".into());
+            }
+            if !allow_duplicate.unwrap_or(false) {
+                if let Some(hint) = find_duplicate(&app, &manifest.package_id)? {
+                    return Err(format!(
+                        "该数据包已于 {} 导入到空间「{}」；确认要再导入一份时请显式选择",
+                        hint.imported_at, hint.space_name
+                    ));
+                }
+            }
+            let space_id = uuid::Uuid::new_v4().to_string();
+            import::build_plan(
+                &manifest,
+                &descriptors,
+                &selection,
+                &space_id,
+                name,
+                &import::new_plan_id(),
+                None,
+            )?
+        }
+        ImportMode::Merge | ImportMode::Overwrite => {
+            // 合并/覆盖：目标是当前空间；重复导入由映射表幂等承接，不做「同包拦截」
+            let ctx = crate::framework::context::current().ok_or("数据上下文未初始化")?;
+            let space_id = ctx.space_id().to_string();
+            let space_name = space_index::display_name(&app, &space_id);
+            let decisions: BTreeMap<(String, String), ConflictDecision> = conflicts
+                .unwrap_or_default()
+                .into_iter()
+                .map(|choice| ((choice.dataset, choice.source_id), choice.decision))
+                .collect();
+            let mut plan = import::build_plan(
+                &manifest,
+                &descriptors,
+                &selection,
+                &space_id,
+                &space_name,
+                &import::new_plan_id(),
+                Some(import::MergeInput {
+                    mode,
+                    decisions: &decisions,
+                    app: &app,
+                }),
+            )?;
+            let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
+            plan.expected_revision = Some(super::merge::storage_revision(device_root, &space_id)?);
+            plan
+        }
+    };
     let result = ImportPlanResult {
         plan_id: plan.plan_id.clone(),
+        mode: plan_mode_name(plan.mode).to_string(),
+        expected_revision: plan.expected_revision.clone(),
         space_id: plan.space_id.clone(),
         space_name: plan.space_name.clone(),
         preview: plan.items.clone(),
@@ -454,6 +513,25 @@ pub fn data_import_plan(
     };
     session::put_plan(plan, file_path, file_digest)?;
     Ok(result)
+}
+
+/// 解析导入模式参数（缺省 = 隔离导入；不认识的值直接拒绝，不猜）
+fn parse_import_mode(raw: Option<&str>) -> Result<ImportMode, String> {
+    match raw {
+        None | Some("newSpace") => Ok(ImportMode::NewSpace),
+        Some("merge") => Ok(ImportMode::Merge),
+        Some("overwrite") => Ok(ImportMode::Overwrite),
+        Some(other) => Err(format!("不认识的导入模式 {other}")),
+    }
+}
+
+/// 导入模式的前端契约名
+fn plan_mode_name(mode: ImportMode) -> &'static str {
+    match mode {
+        ImportMode::NewSpace => "newSpace",
+        ImportMode::Merge => "merge",
+        ImportMode::Overwrite => "overwrite",
+    }
 }
 
 /// 提交导入：复核文件与密码 → 写暂存目录 → 搬移成新空间 → 写索引
@@ -491,8 +569,22 @@ pub async fn data_import_commit(
             if manifest.package_id != plan.package_id {
                 return Err("数据包与预览的不是同一份，请重新预览后再提交".into());
             }
-            let device_root = crate::framework::paths::storage_root(&commit_app)?;
-            import::commit(&commit_app, &device_root, &plan)
+            match plan.mode {
+                ImportMode::NewSpace => {
+                    let device_root = crate::framework::paths::storage_root(&commit_app)?;
+                    import::commit(&commit_app, &device_root, &plan)
+                }
+                ImportMode::Merge | ImportMode::Overwrite => {
+                    // 修订号复核（D7）：预览之后本地数据有变化 → 拒绝，回到预览重新确认
+                    let device_root =
+                        crate::framework::context::root().ok_or("数据上下文未初始化")?;
+                    let current = super::merge::storage_revision(device_root, &plan.space_id)?;
+                    if plan.expected_revision.as_deref() != Some(current.as_str()) {
+                        return Err("预览之后本地数据有变化，请重新预览后再提交".into());
+                    }
+                    super::merge::commit(&commit_app, &plan)
+                }
+            }
         })
         .await
         .map_err(|e| format!("导入任务失败: {e}"))?
@@ -512,6 +604,78 @@ pub async fn data_import_commit(
             Err(error)
         }
     }
+}
+
+/// 快照条目（设置页「还原到导入前」列表用；只含非秘密信息）
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupSummary {
+    /// 快照目录名（还原时回传）
+    pub dir: String,
+    /// 快照所属空间 uid
+    pub space_id: String,
+    /// 拍摄时间（RFC3339）
+    pub created_at: String,
+    /// 覆盖的存储文件（空间根相对路径）
+    pub files: Vec<String>,
+}
+
+/// 列出当前空间的导入前快照（新的在前）
+#[tauri::command]
+pub fn data_backup_list(_app: AppHandle) -> Result<Vec<BackupSummary>, String> {
+    let ctx = crate::framework::context::current().ok_or("数据上下文未初始化")?;
+    let space_id = ctx.space_id().to_string();
+    let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
+    let snapshots = super::backup::list_snapshots(device_root)?;
+    Ok(snapshots
+        .into_iter()
+        .filter(|(_, manifest)| manifest.space_id == space_id)
+        .map(|(dir, manifest)| BackupSummary {
+            dir: dir
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            space_id: manifest.space_id,
+            created_at: manifest.created_at,
+            files: manifest.files,
+        })
+        .collect())
+}
+
+/// 还原到导入前：把快照里的存储写回当前空间（覆盖现状），完成后广播刷新
+///
+/// 与导入提交同款互斥与写冻结；还原对象必须是当前空间的快照（别的空间的快照拒绝）。
+#[tauri::command]
+pub async fn data_backup_restore(app: AppHandle, dir: String) -> Result<(), String> {
+    let ctx = crate::framework::context::current().ok_or("数据上下文未初始化")?;
+    let space_id = ctx.space_id().to_string();
+    let _guard = maintenance_guard().await;
+    let app_clone = app.clone();
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
+        let snapshot_dir = super::backup::backups_dir(device_root).join(&dir);
+        // 防目录穿越：目录名不允许含路径分隔符
+        if dir.contains(['/', '\\']) || dir.is_empty() {
+            return Err("快照目录名非法".into());
+        }
+        let snapshots = super::backup::list_snapshots(device_root)?;
+        let Some((_, manifest)) = snapshots.iter().find(|(path, _)| {
+            path.file_name().map(|n| n.to_string_lossy().to_string()) == Some(dir.clone())
+        }) else {
+            return Err("快照不存在（可能已被清理）".into());
+        };
+        if manifest.space_id != space_id {
+            return Err("该快照属于别的空间，拒绝还原到当前空间".into());
+        }
+        let _freeze = crate::framework::context::WriteFreezeGuard::begin();
+        super::backup::restore_snapshot(device_root, &snapshot_dir)?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("还原任务失败: {e}"))??;
+    // 还原成功后广播全量刷新（涉及的数据集无法从快照精确反推，发全量）
+    super::emit_space_data_changed(&app_clone, &["*".to_string()]);
+    Ok(())
 }
 
 /// 包摘要视图：把清单翻译成界面能显示的结构（不含记录体）

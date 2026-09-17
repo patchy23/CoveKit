@@ -65,6 +65,13 @@ pub fn add_bookmark(
     Ok(bookmark)
 }
 
+/// 清空全部书签（覆盖导入用；调用方负责在同一事务内重建）
+pub(crate) fn clear_bookmarks(conn: &Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM profile_bookmarks", [])
+        .map_err(|e| format!("清空书签失败: {e}"))?;
+    Ok(())
+}
+
 /// 删除书签
 pub fn delete_bookmark(conn: &Connection, id: &str) -> Result<(), String> {
     conn.execute("DELETE FROM profile_bookmarks WHERE id = ?1", [id])

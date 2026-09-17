@@ -22,9 +22,11 @@ use crate::framework::secure_store::keyring_store_for;
 use crate::framework::space::index as space_index;
 
 use super::adapter::{self, StagingTarget};
+use super::lineage;
 use super::types::{
-    CarriedBlock, DatasetDescriptor, ImportContext, ImportOutcome, ImportPlanItem, ImportReport,
-    ImportSelection, PackageManifest, TransportPolicy,
+    CarriedBlock, ConflictDecision, DatasetDescriptor, ImportContext, ImportMode, ImportPlanItem,
+    ImportReport, ImportSelection, ItemDecision, MergeContext, MergePlanView, PackageManifest,
+    TransportPolicy,
 };
 
 /// 计划 id（导入会话标识，同时用作暂存目录名后缀）
@@ -50,6 +52,8 @@ pub(crate) struct PlannedBlock {
 pub(crate) struct ImportPlan {
     /// 计划 id（暂存目录名后缀）
     pub plan_id: String,
+    /// 导入模式（隔离进新空间 / 合并进当前空间 / 覆盖当前空间）
+    pub mode: ImportMode,
     /// 新空间 id（UUIDv4，已定）
     pub space_id: String,
     /// 新空间展示名
@@ -68,6 +72,8 @@ pub(crate) struct ImportPlan {
     pub items: Vec<ImportPlanItem>,
     /// 未导入的数据集（含原因）
     pub excluded: Vec<String>,
+    /// 目标空间存储修订号（合并/覆盖：计划时记下，提交时重算比对，不一致即拒绝，D7）
+    pub expected_revision: Option<String>,
 }
 
 impl ImportPlan {
@@ -76,7 +82,7 @@ impl ImportPlan {
         let mut notes: Vec<String> = self
             .items
             .iter()
-            .filter(|item| item.outcome == ImportOutcome::PendingReference)
+            .filter(|item| item.decision == ItemDecision::PendingReference)
             .map(|item| item.note.clone().unwrap_or_else(|| item.label.clone()))
             .collect();
         notes.sort();
@@ -85,7 +91,17 @@ impl ImportPlan {
     }
 }
 
-/// 由包清单与用户选择构造导入计划（不碰磁盘，便于用例覆盖）
+/// 合并/覆盖导入的额外输入（隔离导入为 None）
+pub(crate) struct MergeInput<'a> {
+    /// 导入模式（Merge / Overwrite）
+    pub mode: ImportMode,
+    /// 用户冲突决策（数据集 + 来源记录 id → 处置）
+    pub decisions: &'a BTreeMap<(String, String), ConflictDecision>,
+    /// 当前空间数据访问（owner 读本机现状做冲突判定）
+    pub app: &'a tauri::AppHandle,
+}
+
+/// 由包清单与用户选择构造导入计划；合并/覆盖模式会读当前空间现状与映射表
 pub(crate) fn build_plan(
     manifest: &PackageManifest,
     descriptors: &[DatasetDescriptor],
@@ -93,8 +109,26 @@ pub(crate) fn build_plan(
     space_id: &str,
     space_name: &str,
     plan_id: &str,
+    merge: Option<MergeInput<'_>>,
 ) -> Result<ImportPlan, String> {
-    let context = import_context(manifest);
+    let mut context = import_context(manifest);
+    // 合并/覆盖模式：挂目标空间视图（映射表读盘，缺失或损坏按空表处理）
+    let lineage_storage;
+    let source_records_storage;
+    if let Some(input) = &merge {
+        let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
+        lineage_storage = lineage::load(&lineage::map_path(&device_root, space_id));
+        source_records_storage = manifest_source_records(manifest);
+        context.merge = Some(MergePlanView {
+            core: MergeContext {
+                mode: input.mode,
+                lineage: &lineage_storage,
+                decisions: input.decisions,
+                source_records: &source_records_storage,
+            },
+            app: input.app,
+        });
+    }
     let mut blocks = Vec::new();
     let mut items = Vec::new();
     let mut excluded = Vec::new();
@@ -164,8 +198,27 @@ pub(crate) fn build_plan(
         return Err("本次选择没有可导入的数据".into());
     }
 
+    // 目标 id 落位（合并/覆盖）：插入沿用来源 id（主键未被占才会走到插入），
+    // 保留两份分配新 id；隔离导入不使用 targetId，不落位
+    if merge.is_some() {
+        for item in &mut items {
+            let target = match item.decision {
+                ItemDecision::Insert | ItemDecision::PendingReference => Some(item.id.clone()),
+                ItemDecision::KeepBoth => Some(uuid::Uuid::new_v4().to_string()),
+                _ => None,
+            };
+            if let (Some(target), None) = (target, &item.target_id) {
+                item.target_id = Some(target);
+            }
+        }
+    }
+
     Ok(ImportPlan {
         plan_id: plan_id.to_string(),
+        mode: merge
+            .as_ref()
+            .map(|input| input.mode)
+            .unwrap_or(ImportMode::NewSpace),
         space_id: space_id.to_string(),
         space_name: space_name.to_string(),
         package_id: manifest.package_id.clone(),
@@ -175,6 +228,7 @@ pub(crate) fn build_plan(
         blocks,
         items,
         excluded,
+        expected_revision: None,
     })
 }
 
@@ -304,8 +358,20 @@ pub(crate) fn commit(
     })
 }
 
+/// 包内全部记录按数据集归拢（合并判定的跨数据集引用解析用；缺记录体的数据集不出现在表里）
+fn manifest_source_records(manifest: &PackageManifest) -> BTreeMap<String, Vec<Value>> {
+    manifest
+        .datasets
+        .iter()
+        .filter_map(|block| match &block.records {
+            Some(Value::Array(records)) => Some((block.name.clone(), records.clone())),
+            _ => None,
+        })
+        .collect()
+}
+
 /// 导入上下文：适配器据此判断「引用的东西到底有没有随包来」
-fn import_context(manifest: &PackageManifest) -> ImportContext {
+fn import_context(manifest: &PackageManifest) -> ImportContext<'static> {
     let mut carried = BTreeMap::new();
     for block in &manifest.datasets {
         let entry = match &block.records {
@@ -335,6 +401,7 @@ fn import_context(manifest: &PackageManifest) -> ImportContext {
     ImportContext {
         source_space_id: manifest.source_space_id.clone(),
         carried,
+        merge: None,
     }
 }
 
@@ -397,7 +464,7 @@ mod tests {
             &self,
             dataset: &str,
             records: &[Value],
-            _context: &ImportContext,
+            _context: &ImportContext<'_>,
         ) -> Result<Vec<ImportPlanItem>, String> {
             Ok(records
                 .iter()
@@ -425,6 +492,14 @@ mod tests {
             } else {
                 records.len()
             })
+        }
+
+        fn apply_merge(
+            &self,
+            _dataset_blocks: &[(String, Vec<Value>)],
+            _target: &super::super::adapter::MergeTarget<'_>,
+        ) -> Result<std::collections::BTreeMap<String, usize>, String> {
+            Ok(std::collections::BTreeMap::new())
         }
     }
 
@@ -506,6 +581,7 @@ mod tests {
             "11111111-1111-4111-8111-111111111111",
             "导入空间",
             "imp-test",
+            None,
         )
         .expect("计划生成成功");
 
@@ -516,7 +592,7 @@ mod tests {
         assert!(plan
             .items
             .iter()
-            .any(|item| item.outcome == ImportOutcome::Excluded));
+            .any(|item| item.decision == ItemDecision::Excluded));
         assert!(plan.pending_notes().is_empty());
     }
 
@@ -540,6 +616,7 @@ mod tests {
             "11111111-1111-4111-8111-111111111111",
             "导入空间",
             "imp-test",
+            None,
         )
         .expect_err("空选择必须报错");
         assert!(error.contains("没有可导入的数据"), "错误文案: {error}");
@@ -576,6 +653,7 @@ mod tests {
             "11111111-1111-4111-8111-111111111111",
             "导入空间",
             "imp-test",
+            None,
         )
         .expect_err("未知数据集必须报错");
         assert!(error.contains("不认识的数据集"), "错误文案: {error}");
@@ -594,6 +672,7 @@ mod tests {
             "11111111-1111-4111-8111-111111111111",
             "导入空间",
             "imp-test",
+            None,
         )
         .expect_err("更高 schema 必须报错");
         assert!(error.contains("schema 版本"), "错误文案: {error}");
@@ -615,6 +694,7 @@ mod tests {
             "11111111-1111-4111-8111-111111111111",
             "导入空间",
             "imp-test",
+            None,
         )
         .expect_err("device-local 必须报错");
         assert!(error.contains("本机事实"), "错误文案: {error}");
@@ -649,6 +729,7 @@ mod tests {
             SPACE_ID,
             "导入空间",
             plan_id,
+            None,
         )
         .expect("计划生成成功")
     }

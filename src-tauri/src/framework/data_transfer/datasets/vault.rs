@@ -9,7 +9,7 @@
 use serde_json::Value;
 use tauri::AppHandle;
 
-use super::super::adapter::{self, DatasetAdapter, StagingTarget};
+use super::super::adapter::{self, DatasetAdapter, MergeTarget, StagingTarget};
 use super::super::types::{
     CatalogEntry, DatasetDescriptor, DependencyEdge, ImportContext, ImportPlanItem, TransportPolicy,
 };
@@ -122,15 +122,34 @@ impl DatasetAdapter for VaultAdapter {
         Ok(Vec::new())
     }
 
-    /// 导入判定：凭证能进包就说明「会写入新空间」，逐条回显名称便于对账
+    /// 导入判定：凭证能进包就说明「会写入新空间」，逐条回显名称便于对账；
+    /// 合并/覆盖模式下凭证**永不导入**（凭证与空间 uid 绑死，跨空间无法解密）
     fn plan_import(
         &self,
         dataset: &str,
         records: &[Value],
-        _context: &ImportContext,
+        context: &ImportContext<'_>,
     ) -> Result<Vec<ImportPlanItem>, String> {
         if dataset != DATASET {
             return Err(format!("凭证适配器不支持数据集 {dataset}"));
+        }
+        // 合并/覆盖模式：凭证不落目标空间，逐条标「未导入」让报告给出明确计数
+        if context.merge.is_some() {
+            return Ok(records
+                .iter()
+                .map(|record| {
+                    let credential = decode_credential(record);
+                    let name = credential
+                        .as_ref()
+                        .map(|item| item.name.clone())
+                        .unwrap_or_else(|_| "（无法识别的凭证记录）".to_string());
+                    ImportPlanItem::excluded(
+                        DATASET,
+                        &name,
+                        "凭证与空间绑定、不随包导入；目标空间需重新补录",
+                    )
+                })
+                .collect());
         }
         let mut items = Vec::with_capacity(records.len());
         for record in records {
@@ -177,6 +196,16 @@ impl DatasetAdapter for VaultAdapter {
             ));
         }
         Ok(records.len())
+    }
+
+    /// 合并/覆盖写入：凭证与空间 uid 绑死、永不跨空间导入；
+    /// 计划阶段已把凭证全部标「未导入」，走到这里说明编排层漏了过滤——宁可报错也不写
+    fn apply_merge(
+        &self,
+        _dataset_blocks: &[(String, Vec<Value>)],
+        _target: &MergeTarget<'_>,
+    ) -> Result<std::collections::BTreeMap<String, usize>, String> {
+        Err("凭证与空间绑定、不随包导入（合并/覆盖模式不落凭证）".into())
     }
 }
 
