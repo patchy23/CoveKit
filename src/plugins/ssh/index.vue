@@ -1,26 +1,40 @@
 <script setup lang="ts">
 /** SSH 工具主容器：服务器配置列表 + 多连接页签；每条连接拥有完整运维功能区。 */
-import { computed, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, h, ref, watch, type Component } from 'vue'
 import ServerList from './profiles/ServerList.vue'
 import ServerForm from './profiles/ServerForm.vue'
-import TerminalTab from './terminal/TerminalTab.vue'
-import TunnelTab from './tunnels/TunnelTab.vue'
 import HostKeyDialog from './connection/HostKeyDialog.vue'
 import KnownHostsDialog from './connection/KnownHostsDialog.vue'
-import FileManagerTab from './files/FileManagerTab.vue'
-import MonitorTab from './monitor/MonitorTab.vue'
-import ServiceTab from './monitor/ServiceTab.vue'
-import ProcessTab from './monitor/ProcessTab.vue'
-import DockerTab from './docker/DockerTab.vue'
 import {
   useSshWorkspace,
   type SshConnectionWorkspace,
   type SshWorkspaceSection,
 } from './useSshWorkspace'
-import { UiTabs, type UiTabItem } from '@/core/ui'
+import { UiSpinner, UiTabs, type UiTabItem } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import { useSshToolLifecycle } from './toolLifecycle'
+
+/** 功能页首次进入才加载；加载异常继续交给 ToolHost 的错误面板和重试入口。 */
+function lazySection<T extends Component>(loader: () => Promise<{ default: T }>) {
+  return defineAsyncComponent({
+    loader,
+    delay: 120,
+    timeout: 30000,
+    loadingComponent: () =>
+      h('div', { class: 'grid h-full place-items-center' }, [
+        h(UiSpinner, { label: '正在加载功能页' }),
+      ]),
+  })
+}
+
+const TerminalTab = lazySection(() => import('./terminal/TerminalTab.vue'))
+const FileManagerTab = lazySection(() => import('./files/FileManagerTab.vue'))
+const TunnelTab = lazySection(() => import('./tunnels/TunnelTab.vue'))
+const MonitorTab = lazySection(() => import('./monitor/MonitorTab.vue'))
+const ServiceTab = lazySection(() => import('./monitor/ServiceTab.vue'))
+const ProcessTab = lazySection(() => import('./monitor/ProcessTab.vue'))
+const DockerTab = lazySection(() => import('./docker/DockerTab.vue'))
 
 const workspace = useSshWorkspace()
 // 工具资源生命周期：关闭页签/退出时断开会话与隧道（T10-4）
