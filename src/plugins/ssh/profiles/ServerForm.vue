@@ -12,7 +12,6 @@ import { useServerCredentialChoice } from './useServerCredentialChoice'
 import type { ServerGroup } from './useServerGroups'
 import {
   UiButton,
-  UiCheckbox,
   UiCombobox,
   UiField,
   UiInput,
@@ -41,7 +40,8 @@ const emit = defineEmits<{
     e: 'save',
     p: ServerProfile,
     creds: { password?: string; privateKey?: string; passphrase?: string },
-    saveCredential: boolean
+    saveCredential: boolean,
+    saveLocal: boolean
   ): void
   (e: 'cancel'): void
   (e: 'error', msg: string): void
@@ -62,10 +62,13 @@ const form = reactive({
   groupId: UNGROUPED,
 })
 
-/** 认证方式是否处于「凭证」档（UI 层状态；选了凭证后 credentialRef 才有值；须在 watch 之前声明） */
-
-/** 取消保存时只在当前工具实例内存中用于连接和重连。 */
-const saveCredential = ref(true)
+/** 手工认证的存储选择；不保存时仅保留当前工具实例的内存副本。 */
+const saveMode = ref<'local' | 'vault' | 'session'>('local')
+const saveOptions = [
+  { value: 'local', label: '本地保存' },
+  { value: 'session', label: '不保存' },
+  { value: 'vault', label: '保存到凭证库' },
+]
 const credentialMode = ref(true)
 
 watch(
@@ -75,7 +78,7 @@ watch(
     form.password = ''
     form.privateKey = ''
     form.passphrase = ''
-    saveCredential.value = true
+    saveMode.value = props.profile ? (props.profile.hasLocalAuth ? 'local' : 'session') : 'local'
     if (p) {
       form.id = p.id
       form.name = p.name
@@ -121,6 +124,7 @@ function onAuthChange(value: string | number) {
   }
   // 切回手工输入：清空凭证引用
   credentialMode.value = false
+  if (form.credentialRef) saveMode.value = 'local'
   form.credentialRef = ''
   form.authMethod = v as AuthMethod
 }
@@ -166,6 +170,7 @@ function submit() {
     username: form.username.trim(),
     authMethod: form.authMethod,
     credentialRef: form.credentialRef || undefined,
+    hasLocalAuth: props.profile?.hasLocalAuth,
     remark: form.remark.trim() || undefined,
     lastConnectedAt: props.profile?.lastConnectedAt,
     groupId: form.groupId === UNGROUPED ? undefined : form.groupId,
@@ -178,7 +183,8 @@ function submit() {
       privateKey: form.privateKey.trim() || undefined,
       passphrase: form.passphrase || undefined,
     },
-    saveCredential.value
+    !credentialMode.value && saveMode.value === 'vault',
+    !credentialMode.value && saveMode.value === 'local'
   )
 }
 </script>
@@ -250,21 +256,40 @@ function submit() {
       </p>
 
       <UiField v-if="!credentialMode && form.authMethod === 'password'" label="密码">
-        <UiInput v-model="form.password" type="password" />
+        <UiInput
+          v-model="form.password"
+          type="password"
+          :placeholder="props.profile?.hasLocalAuth ? '已本地保存，留空不修改' : '请输入密码'"
+        />
       </UiField>
-      <!-- 未保存的手工认证只保留在当前工具实例内存中 -->
-      <UiCheckbox
-        v-if="!credentialMode && (form.password || form.privateKey)"
-        v-model="saveCredential"
-        label="保存凭证到凭证库（取消勾选则关闭 SSH 工具后忘记）"
-      />
+      <UiField
+        v-if="!credentialMode"
+        label="保存方式"
+        :description="
+          saveMode === 'local'
+            ? '直接保存在本机 SSH 数据库，不使用凭证库保护。'
+            : saveMode === 'session'
+              ? '关闭 SSH 工具后忘记。'
+              : '加密保存为凭证库条目。'
+        "
+      >
+        <Select
+          :model-value="saveMode"
+          :options="saveOptions"
+          @update:model-value="saveMode = $event as typeof saveMode"
+        />
+      </UiField>
 
       <UiField v-if="!credentialMode && form.authMethod !== 'password'" label="私钥内容">
         <UiTextarea
           v-model="form.privateKey"
           class="font-mono text-body-sm"
           rows="4"
-          placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+          :placeholder="
+            props.profile?.hasLocalAuth
+              ? '已本地保存，全部留空不修改；修改时请填写完整认证信息'
+              : '-----BEGIN OPENSSH PRIVATE KEY-----'
+          "
         />
       </UiField>
 

@@ -393,6 +393,58 @@ describe('SSH 工作区 · 服务器配置与分组', () => {
     expect(await pending).toBeUndefined()
   })
 
+  it('本地保存后连接不弹输入框，认证失败可重输并用于重连', async () => {
+    const manual = {
+      ...profile('local', '本地服务器'),
+      credentialRef: undefined,
+      hasLocalAuth: true,
+    }
+    env.commands.sshProfileList.mockResolvedValue([manual])
+    env.commands.sshConnect.mockResolvedValueOnce({
+      ok: false,
+      requestId: 'failed',
+      error: { code: 'AUTH_FAILED', message: '认证失败' },
+    })
+    const { api } = mountWorkspace()
+    await settle()
+    await api.openConnection(manual.id)
+    expect(api.credentialRequestProfile.value).toBeNull()
+    expect(env.commands.sshConnect).toHaveBeenCalledWith({
+      profileId: manual.id,
+      overrides: undefined,
+    })
+    const second = api.openConnection(manual.id)
+    expect(api.credentialRequestProfile.value?.id).toBe(manual.id)
+    api.respondCredentials({ password: 'corrected-fixture' })
+    const connected = await second
+    connected!.connection.status = 'disconnected'
+    await api.reconnectWorkspace(connected!.id)
+    expect(env.commands.sshReconnect).toHaveBeenCalledWith('conn-local', {
+      password: 'corrected-fixture',
+    })
+  })
+
+  it('本地保存将选项传给后端，编辑时留空保留已有认证', async () => {
+    const manual = {
+      ...profile('local', '本地服务器'),
+      credentialRef: undefined,
+      hasLocalAuth: true,
+    }
+    env.commands.sshProfileList.mockResolvedValue([manual])
+    const { api } = mountWorkspace()
+    await settle()
+    await api.saveProfile(manual, {}, false, true)
+    expect(env.commands.sshProfileSave).toHaveBeenCalledWith({
+      profile: manual,
+      saveCredential: false,
+      saveLocal: true,
+    })
+    await api.openConnection(manual.id)
+    expect(api.credentialRequestProfile.value).toBeNull()
+    await api.saveProfile(manual, {}, true, false)
+    expect(env.commands.sshProfileSave).toHaveBeenCalledTimes(1)
+  })
+
   it('手工认证失败后再次连接允许重新输入', async () => {
     const manual = { ...profile('manual', '手工服务器'), credentialRef: undefined }
     env.commands.sshProfileList.mockResolvedValue([manual])

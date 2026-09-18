@@ -1,4 +1,4 @@
-//! SSH 插件 · 服务器配置与分组持久化（ssh.db；profile 只存 credentialRef 引用）
+//! SSH 插件 · 服务器配置与分组持久化（ssh.db；本地认证在独立表中）。
 
 use rusqlite::Connection;
 use tauri::{AppHandle, State};
@@ -66,6 +66,7 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerProfile> {
         username: row.get("username")?,
         auth_method: auth_method_from_str(&row.get::<_, String>("auth_method")?),
         credential_ref: row.get("credential_ref")?,
+        has_local_auth: false,
         group_id: row.get("group_id")?,
         remark: row.get("remark")?,
         last_connected_at: row.get("last_connected_at")?,
@@ -132,11 +133,27 @@ pub(crate) fn upsert_profile(
         ],
     )
     .map_err(|e| e.to_string())?;
+    // 参数或认证来源变化后清掉旧认证，防止随后改回原参数时复活旧秘密。
+    conn.execute(
+        "DELETE FROM ssh_local_auth WHERE profile_id=?1 AND
+         (host<>?2 OR port<>?3 OR username<>?4 OR auth_method<>?5 OR ?6 IS NOT NULL)",
+        rusqlite::params![
+            profile.id,
+            profile.host,
+            profile.port,
+            profile.username,
+            auth_method_to_str(profile.auth_method),
+            profile.credential_ref
+        ],
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 /// 清空全部档案（覆盖导入用；调用方负责在同一事务内重建）
 pub(crate) fn clear_profiles(conn: &Connection) -> Result<(), String> {
+    conn.execute("DELETE FROM ssh_local_auth", [])
+        .map_err(|e| e.to_string())?;
     conn.execute("DELETE FROM ssh_profiles", [])
         .map_err(|e| format!("清空档案失败: {e}"))?;
     Ok(())
@@ -146,8 +163,10 @@ pub(crate) fn clear_profiles(conn: &Connection) -> Result<(), String> {
 /// Vault 凭证由用户在凭证库自行管理，不在此删。
 pub(crate) fn delete_profile(conn: &Connection, id: &str) -> Result<(), String> {
     // unchecked_transaction：rusqlite 事务 API 要 &mut Connection，本层统一 &Connection，
-    // 用其拿事务句柄保证三删原子（PluginDb 串行化连接访问，无并发嵌套事务）
+    // 用事务保证关联数据一起删除（PluginDb 串行化连接访问，无并发嵌套事务）
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM ssh_local_auth WHERE profile_id = ?1", [id])
+        .map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM profile_bookmarks WHERE profile_id = ?1", [id])
         .map_err(|e| e.to_string())?;
     tx.execute("DELETE FROM ssh_tunnels WHERE profile_id = ?1", [id])
@@ -199,7 +218,13 @@ pub fn ssh_profile_list(
     app: AppHandle,
     state: State<'_, ProfileState>,
 ) -> Result<Vec<ServerProfile>, String> {
-    with_db(&app, &state, list_profiles)
+    with_db(&app, &state, |conn| {
+        let mut profiles = list_profiles(conn)?;
+        for profile in &mut profiles {
+            super::local_auth::annotate(conn, profile)?;
+        }
+        Ok(profiles)
+    })
 }
 
 /// 新增/更新服务器配置；勾选保存凭证时写入 Vault 并回填 credentialRef（同 id upsert，避免重复条目）
@@ -209,6 +234,9 @@ pub fn ssh_profile_save(
     state: State<'_, ProfileState>,
     payload: SshProfileSavePayload,
 ) -> Result<ServerProfile, String> {
+    if payload.save_local && (payload.save_credential || payload.profile.credential_ref.is_some()) {
+        return Err("本地保存与凭证库认证不能同时启用".into());
+    }
     let mut profile = payload.profile;
     if payload.save_credential {
         // 共享保护：该 credentialRef 还被其他服务器引用时，强制新建而非改名/覆盖原凭证
@@ -276,9 +304,28 @@ pub fn ssh_profile_save(
             profile.credential_ref = Some(summary.id);
         }
     }
-    let saved = profile.clone();
     with_db(&app, &state, |conn| {
-        upsert_profile(conn, &saved, crate::plugins::ssh::conn::now_ms() as i64)
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        upsert_profile(&tx, &profile, crate::plugins::ssh::conn::now_ms() as i64)?;
+        if payload.save_local {
+            super::local_auth::save(
+                &tx,
+                &profile,
+                &crate::plugins::ssh::models::CredentialOverride {
+                    password: payload.password.clone(),
+                    private_key: payload.private_key.clone(),
+                    passphrase: payload.passphrase.clone(),
+                },
+            )?;
+        } else {
+            tx.execute(
+                "DELETE FROM ssh_local_auth WHERE profile_id=?1",
+                [&profile.id],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        super::local_auth::annotate(&tx, &mut profile)?;
+        tx.commit().map_err(|e| e.to_string())
     })?;
     Ok(profile)
 }

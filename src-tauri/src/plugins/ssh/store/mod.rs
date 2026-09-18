@@ -1,5 +1,5 @@
 //! SSH 插件 · 服务器配置与分组持久化（插件私有 ssh.db，PluginDb 骨架）
-//! profile 只存 credentialRef 引用；秘密本体在公共 Vault，永不落本库。
+//! 档案保存 Vault 引用或使用本库独立的本地认证表；本地明文保存为用户显式选择。
 //! SQL 与行映射写在 &Connection 层（便于内存库单测），PluginDb 仅承担打开/迁移/锁。
 
 use std::sync::{Arc, Mutex};
@@ -51,6 +51,13 @@ pub(crate) const MIGRATIONS: &[&str] = &[
        path TEXT NOT NULL,
        sort INTEGER NOT NULL DEFAULT 0
      );",
+    // v4：用户选择的本地明文认证，独立于 Vault，不进入逻辑配置导出。
+    "CREATE TABLE ssh_local_auth (
+       profile_id TEXT PRIMARY KEY,
+       host TEXT NOT NULL, port INTEGER NOT NULL, username TEXT NOT NULL,
+       auth_method TEXT NOT NULL,
+       password TEXT, private_key TEXT, passphrase TEXT
+     );",
 ];
 
 /// profile/分组库的惰性句柄（首次访问时打开并迁移）
@@ -86,6 +93,7 @@ pub(crate) fn open_memory() -> Connection {
 /* ── 分组 ── */
 
 pub(crate) mod bookmarks;
+pub(crate) mod local_auth;
 pub(crate) mod profiles;
 pub(crate) mod tunnels;
 
@@ -107,6 +115,7 @@ mod tests {
             username: "root".into(),
             auth_method: AuthMethod::Password,
             credential_ref: Some("cred-1".into()),
+            has_local_auth: false,
             group_id: group_id.map(Into::into),
             remark: None,
             last_connected_at: None,

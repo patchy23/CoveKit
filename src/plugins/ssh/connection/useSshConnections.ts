@@ -55,6 +55,7 @@ export interface SshConnectionPorts {
   requestCredentials: (profile: ServerProfile) => Promise<CredentialOverride | undefined>
   getCredentials: (profileId: string) => CredentialOverride | undefined
   forgetCredentials: (profileId: string) => void
+  needsCredentials: (profile: ServerProfile) => boolean
 }
 
 /** 连接页签 id 序号（同一毫秒内连开多个页签也不重复） */
@@ -126,11 +127,14 @@ export function useSshConnections(ports: SshConnectionPorts) {
   async function openConnection(profileId: string): Promise<SshConnectionWorkspace | undefined> {
     const profile = ports.findProfile(profileId)
     if (!profile) return undefined
-    const overrides = profile.credentialRef ? undefined : await ports.requestCredentials(profile)
+    const needsInput = ports.needsCredentials(profile)
+    const overrides = needsInput
+      ? await ports.requestCredentials(profile)
+      : ports.getCredentials(profileId)
     if (
       ports.isDisposed() ||
       ports.findProfile(profileId) !== profile ||
-      (!profile.credentialRef && !overrides)
+      (needsInput && !overrides)
     )
       return undefined
     activeProfileId.value = profileId

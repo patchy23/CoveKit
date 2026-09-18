@@ -1162,6 +1162,7 @@ mod tests {
             username: "root".into(),
             auth_method: AuthMethod::Password,
             credential_ref: None,
+            has_local_auth: false,
             group_id: None,
             remark: None,
             last_connected_at: None,

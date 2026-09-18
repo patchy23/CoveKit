@@ -15,7 +15,7 @@ import { ipc } from '../ipc'
 import { useServerGroups } from './useServerGroups'
 import type { ServerProfile } from '../contracts'
 
-/** 手工输入的凭证（与表单字段一致；saveCredential 勾选时由后端写入 Vault） */
+/** 手工输入的认证；后端按保存方式写入本地库、Vault，或仅用于内存连接。 */
 export interface SshProfileCredentials {
   password?: string
   privateKey?: string
@@ -141,14 +141,15 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
   }
 
   /**
-   * 保存服务器：配置写插件库；勾选保存凭证时后端把手工凭证写入 Vault 并回填 credentialRef
+   * 保存服务器：配置写插件库；认证按选择保存在本地库或 Vault，也可不保存。
    * （同 profile upsert 同一条 Vault 条目，不产生重复）。
    * 新增或切换认证方式必须带齐凭证：缺凭证时拒绝提交且不发 IPC。
    */
   async function saveProfile(
     profile: ServerProfile,
     credentials: SshProfileCredentials,
-    saveCredential: boolean
+    saveCredential: boolean,
+    saveLocal = false
   ) {
     const index = profiles.value.findIndex((item) => item.id === profile.id)
     const authChanged = index < 0 || profiles.value[index].authMethod !== profile.authMethod
@@ -160,6 +161,10 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
         : Boolean(credentials.privateKey) &&
           (profile.authMethod !== 'privateKeyWithPassphrase' || Boolean(credentials.passphrase))
     const credentialReady = Boolean(profile.credentialRef) || manualCredentialReady
+    if (saveCredential && !manualCredentialReady) {
+      ui.toast('保存到凭证库需要重新填写完整的密码或私钥')
+      return
+    }
     if ((index < 0 || authChanged || switchedFromVault) && !credentialReady) {
       ui.toast('新增服务器或切换认证方式时必须填写完整凭证')
       return
@@ -169,6 +174,7 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
         profile,
         ...credentials,
         saveCredential: saveCredential && manualCredentialReady,
+        saveLocal,
       })
       const existing = profiles.value.findIndex((item) => item.id === saved.id)
       ports.onSaved?.(saved, credentials)
@@ -176,7 +182,11 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
       else profiles.value.push(saved)
       ui.toast(
         `${existing >= 0 ? '已更新' : '已添加'}服务器「${saved.name}」` +
-          (saveCredential && manualCredentialReady ? '（凭证已入凭证库）' : '')
+          (saveLocal
+            ? '（认证信息已本地保存）'
+            : saveCredential && manualCredentialReady
+              ? '（凭证已入凭证库）'
+              : '')
       )
       formOpen.value = false
     } catch (error) {
@@ -201,7 +211,9 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
     }
     profiles.value = profiles.value.filter((item) => item.id !== id)
     ports.forgetActiveProfile(id)
-    ui.toast(`已删除服务器「${profile.name}」（凭证保留在凭证库）`)
+    ui.toast(
+      `已删除服务器「${profile.name}」${profile.credentialRef ? '（凭证保留在凭证库）' : ''}`
+    )
   }
 
   function requestDelete(profile: ServerProfile) {

@@ -352,7 +352,10 @@ watch(
       :profile="editingProfile"
       :groups="groups"
       :default-group-id="defaultGroupId"
-      @save="(p, creds, saveCredential) => workspace.saveProfile(p, creds, saveCredential)"
+      @save="
+        (p, creds, saveCredential, saveLocal) =>
+          workspace.saveProfile(p, creds, saveCredential, saveLocal)
+      "
       @error="workspace.showError"
       @cancel="formOpen = false"
     />

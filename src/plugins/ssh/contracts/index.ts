@@ -158,6 +158,7 @@ export type Payloads = {
     privateKey?: string
     passphrase?: string
     saveCredential: boolean
+    saveLocal?: boolean
   }
   ssh_profile_delete: { profileId: string }
   ssh_group_list: Record<string, never>

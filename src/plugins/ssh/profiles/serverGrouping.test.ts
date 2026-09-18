@@ -96,6 +96,7 @@ it.each([null, 'group-1'])('添加表单默认分组为 %s，允许修改和清�
   select.vm.$emit('update:modelValue', 'group-1')
   save()
   expect(wrapper.emitted('save')?.[0]?.[0]).toMatchObject({ groupId: 'group-1' })
+  expect(wrapper.emitted('save')?.[0]?.slice(2)).toEqual([false, true])
   select.vm.$emit('update:modelValue', '__ungrouped__')
   save()
   expect((wrapper.emitted('save')?.[1]?.[0] as { groupId?: string }).groupId).toBeUndefined()

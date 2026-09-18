@@ -27,7 +27,7 @@ pub enum AuthMethod {
     PrivateKeyWithPassphrase,
 }
 
-/// 服务器连接配置（凭证只存公共 Vault 的 credentialRef 引用，秘密永不入库/不落 profile）
+/// 服务器连接元数据；秘密不落 profile，本地认证另表保存或引用公共 Vault。
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ServerProfile {
@@ -43,9 +43,12 @@ pub struct ServerProfile {
     pub(crate) username: String,
     /// 认证方式
     pub(crate) auth_method: AuthMethod,
-    /// 公共 Vault 凭证引用；为空表示尚未保存凭证（连接时需要一次性凭证）
+    /// 公共 Vault 凭证引用；为空时使用本地认证或一次性输入。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) credential_ref: Option<String>,
+    /// 本机存在匹配当前连接参数的本地认证；仅回传状态，不能由前端伪造。
+    #[serde(default, skip_deserializing, skip_serializing_if = "is_false")]
+    pub(crate) has_local_auth: bool,
     /// 所属分组 id（为空 = 未分组；分组实体在 ssh_groups 表）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) group_id: Option<String>,
@@ -55,6 +58,10 @@ pub struct ServerProfile {
     /// 最后连接时间（毫秒时间戳）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) last_connected_at: Option<u64>,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 /// 服务器分组

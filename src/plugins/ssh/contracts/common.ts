@@ -10,7 +10,7 @@ export interface SshActionResult {
 
 export type AuthMethod = 'password' | 'privateKey' | 'privateKeyWithPassphrase'
 
-/** 服务器连接配置（凭证只存公共 Vault 的 credentialRef 引用，秘密永不入库/不落 profile） */
+/** 服务器连接元数据；秘密不落 profile，本地认证另表保存或引用公共 Vault。 */
 
 export interface ServerProfile {
   /** 唯一 id（profile-<毫秒时间戳>） */
@@ -37,9 +37,11 @@ export interface ServerProfile {
 
   authMethod: AuthMethod
 
-  /** 公共 Vault 凭证 id；未设置表示尚未保存凭证（连接时需一次性凭证） */
+  /** 公共 Vault 凭证 id；为空时使用本地认证或一次性输入。 */
 
   credentialRef?: string
+  /** 本机已保存手工认证，只表示状态，不包含密码或私钥。 */
+  hasLocalAuth?: boolean
 
   /** 所属分组 id（未设置 = 未分组，固定沉底的虚拟组） */
 

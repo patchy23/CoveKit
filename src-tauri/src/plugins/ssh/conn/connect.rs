@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::framework::vault::{self, Credential, CredentialFields};
 use crate::plugins::ssh::conn::handler::HostKeyVerifySlot;
@@ -77,8 +77,7 @@ pub(crate) fn apply_vault_credential(
     Ok(resolved)
 }
 
-/// 解析连接凭证：一次性覆盖优先，其次 Vault 引用；都没有则报 MISSING_CREDENTIAL。
-/// （旧版手工凭证已在首次导入时迁移进 Vault，SSH 插件不再保存明文副本。）
+/// 解析连接凭证：一次性覆盖优先；随后按配置读取 Vault 或本地认证，无认证则报错。
 pub(crate) fn resolve_credentials(
     app: &AppHandle,
     profile: &ServerProfile,
@@ -95,6 +94,21 @@ pub(crate) fn resolve_credentials(
             passphrase: ov.passphrase,
             verify: Arc::new(HostKeyVerifySlot::default()),
         });
+    }
+    if profile.credential_ref.is_none() {
+        let local = store::with_db(app, &app.state::<ProfileState>(), |conn| {
+            store::local_auth::get(conn, profile)
+        })
+        .map_err(|e| connect_error("LOCAL_AUTH_UNAVAILABLE", e, None))?;
+        if let Some(local) = local {
+            return Ok(ResolvedConnectPayload {
+                profile: profile.clone(),
+                password: local.password,
+                private_key: local.private_key,
+                passphrase: local.passphrase,
+                verify: Arc::new(HostKeyVerifySlot::default()),
+            });
+        }
     }
     let credential_ref = profile
         .credential_ref
@@ -151,7 +165,7 @@ pub async fn ssh_connect(
             })
         }
     };
-    // 解析凭证（一次性覆盖 > Vault 引用）
+    // 解析一次性覆盖、Vault 引用或本地认证。
     let resolved = match resolve_credentials(&app, &profile, payload.overrides) {
         Ok(r) => r,
         Err(e) => {

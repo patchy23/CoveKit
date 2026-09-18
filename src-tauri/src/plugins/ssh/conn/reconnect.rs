@@ -241,6 +241,7 @@ mod tests {
             username: "manual-user".into(),
             auth_method,
             credential_ref: Some("vault-1".into()),
+            has_local_auth: false,
             group_id: None,
             remark: None,
             last_connected_at: None,

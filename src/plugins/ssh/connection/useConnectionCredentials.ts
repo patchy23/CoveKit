@@ -8,6 +8,7 @@ export function useConnectionCredentials() {
   const requestProfile = shallowRef<ServerProfile | null>(null)
   let pending: ((value: CredentialOverride | undefined) => void) | undefined
   let disposed = false
+  const retry = new Set<string>()
   const binding = (p: ServerProfile) => JSON.stringify([p.host, p.port, p.username, p.authMethod])
 
   function get(profile: ServerProfile): CredentialOverride | undefined {
@@ -19,14 +20,19 @@ export function useConnectionCredentials() {
 
   function remember(profile: ServerProfile, value: CredentialOverride) {
     if (disposed) return
-    if (profile.credentialRef) cache.delete(profile.id)
+    retry.delete(profile.id)
+    if (profile.credentialRef || profile.hasLocalAuth) cache.delete(profile.id)
     else if (profile.authMethod === 'password' ? value.password : value.privateKey) {
       cache.set(profile.id, { binding: binding(profile), value: { ...value } })
     } else if (!get(profile)) cache.delete(profile.id)
   }
 
   function respond(value?: CredentialOverride) {
-    if (value && requestProfile.value) remember(requestProfile.value, value)
+    if (value && requestProfile.value && !disposed) {
+      const profile = requestProfile.value
+      cache.set(profile.id, { binding: binding(profile), value: { ...value } })
+      retry.delete(profile.id)
+    }
     const resolve = pending
     pending = undefined
     requestProfile.value = null
@@ -46,6 +52,7 @@ export function useConnectionCredentials() {
 
   function clear() {
     cache.clear()
+    retry.clear()
     respond()
   }
   const unlisten = onSpaceDataChanged(clear)
@@ -56,7 +63,15 @@ export function useConnectionCredentials() {
   })
   function forget(id: string) {
     cache.delete(id)
+    retry.delete(id)
     if (requestProfile.value?.id === id) respond()
   }
-  return { requestProfile, request, respond, get, remember, forget }
+  function reject(id: string) {
+    forget(id)
+    retry.add(id)
+  }
+  function needsInput(profile: ServerProfile) {
+    return !profile.credentialRef && (!profile.hasLocalAuth || retry.has(profile.id))
+  }
+  return { requestProfile, request, respond, get, remember, forget, reject, needsInput }
 }

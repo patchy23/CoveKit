@@ -19,7 +19,7 @@
 - 框架公共能力在 `src/core/`、`src-tauri/src/framework/`；稳定兼容对象是用户数据与行为。删除功能须核对调用图、动态入口及启动/恢复职责。
 - IPC经 `covekit_module!` 与 `covekit_routes!` 装配并入库；禁止手写第二套命令表。启动冲突fail-fast与调用契约测试缺一不可。
 - 数据路径走 `framework::paths` 与唯一DataContext；PluginDb迁移只追加、事务执行，禁止将duplicate column整段视为成功。历史存储名允许显式映射。关闭/维护使用已有协调入口，单tab与应用退出清理范围不同。
-- 凭据用系统keyring主密钥与AES-256-GCM文件，提供引用和手工输入双路径。失败不得生成新密钥冒充恢复成功；不在日志/文档/提交中记录秘密。
+- 凭证库用系统keyring与AES-256-GCM；SSH手工认证另支持用户选择本地明文保存或不保存，见产品裁决。密钥失败不得生成新密钥冒充恢复成功；不在日志/文档/提交中记录秘密。
 - 禁 `tauri-plugin-shell`。平台专用适配可用原生依赖和有SAFETY依据的unsafe；产品能力两端保持明确契约，unsupported可见。
 - 详见[架构](docs/standards/02-架构.md)、[模块规则](docs/standards/03-模块开发规则.md)、[Rust规范](docs/standards/05-Rust代码规范.md)。现行说明与未完成任务有差异时核对活动方案和源码。
 

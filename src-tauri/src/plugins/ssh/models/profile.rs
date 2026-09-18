@@ -20,7 +20,7 @@ pub struct CredentialOverride {
     pub(crate) passphrase: Option<String>,
 }
 
-/// SSH 连接请求载荷：只传 profile id（后端自行读取配置并解析 Vault 凭证）
+/// SSH 连接请求载荷：后端按 profile id 读取配置和认证。
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshConnectPayload {
@@ -31,22 +31,25 @@ pub struct SshConnectPayload {
     pub(crate) overrides: Option<CredentialOverride>,
 }
 
-/// 服务器保存载荷：配置 + 可选手工凭证（勾选保存时写入 Vault，返回带 credentialRef 的记录）
+/// 服务器保存载荷：配置及可选认证，按用户选择写入本地数据库或 Vault。
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SshProfileSavePayload {
     /// 服务器配置
     pub(crate) profile: ServerProfile,
-    /// 保存到 Vault 的密码（手工密码认证时）
+    /// 手工密码
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) password: Option<String>,
-    /// 保存到 Vault 的私钥内容
+    /// 手工私钥内容
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) private_key: Option<String>,
     /// 私钥 passphrase
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) passphrase: Option<String>,
-    /// 是否把本次输入的凭证保存到 Vault（false = 仅更新配置，凭证保持原引用）
+    /// 是否把本次输入的凭证保存到 Vault。
     #[serde(default)]
     pub(crate) save_credential: bool,
+    /// 用户显式选择本地明文保存；与 save_credential 互斥。
+    #[serde(default)]
+    pub(crate) save_local: bool,
 }

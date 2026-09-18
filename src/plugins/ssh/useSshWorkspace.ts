@@ -48,7 +48,8 @@ export function useSshWorkspace() {
     /** 卸载标记由生命周期域持有 */
     isDisposed: () => lifecycle.isDisposed(),
     requestCredentials: credentials.request,
-    forgetCredentials: credentials.forget,
+    forgetCredentials: credentials.reject,
+    needsCredentials: credentials.needsInput,
     getCredentials: (profileId) => {
       const profile = profilesApi.profiles.value.find((item) => item.id === profileId)
       return profile ? credentials.get(profile) : undefined
