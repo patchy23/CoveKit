@@ -11,6 +11,7 @@ import { UiButton, UiSearchInput, UiSelect, UiTable, UiTableCell } from '@/core/
 import LiveLogDialog from './LiveLogDialog.vue'
 import ServiceConfigDialog from './ServiceConfigDialog.vue'
 import { ipc } from '../ipc'
+import RuntimeStatus from '../RuntimeStatus.vue'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -95,18 +96,6 @@ function logs(service: SystemdService) {
   logTarget.value = service
 }
 
-function stateClass(s: SystemdService): string {
-  if (s.activeState === 'active') return 'text-success-strong dark:text-success-dark'
-  if (s.activeState === 'failed') return 'text-danger-strong dark:text-danger-dark'
-  return 'text-text-muted dark:text-text-muted-dark'
-}
-
-function stateText(s: SystemdService): string {
-  if (s.activeState === 'active') return '运行中'
-  if (s.activeState === 'failed') return '失败'
-  return '已停止'
-}
-
 watch(
   () => props.connection?.sessionId,
   (sessionId) => {
@@ -187,7 +176,7 @@ onBeforeUnmount(() => {
                 s.description
               }}</UiTableCell>
               <UiTableCell content="status" class="px-[12px] py-[8px]">
-                <span :class="stateClass(s)">{{ stateText(s) }}</span>
+                <RuntimeStatus :status="s.activeState" />
               </UiTableCell>
               <UiTableCell content="action" class="px-[12px] py-[8px]">
                 <div class="flex gap-[4px]">

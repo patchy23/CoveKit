@@ -39,8 +39,10 @@ export function parentDirectory(path: string) {
 export function composeStatus(status: string) {
   if (/^running\(\d+\)$/.test(status)) return '运行中'
   if (status.includes('running')) return '部分运行'
-  if (/exited|stopped|created/.test(status)) return '已停止'
+  if (/dead|failed/.test(status)) return '异常'
+  if (/restarting/.test(status)) return '重启中'
   if (/paused/.test(status)) return '已暂停'
+  if (/exited|stopped|created/.test(status)) return '已停止'
   return status.includes('未') ? '未部署' : status
 }
 

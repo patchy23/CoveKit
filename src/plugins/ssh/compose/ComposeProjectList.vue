@@ -12,6 +12,7 @@ import {
 } from '@/core/ui'
 import type { ComposeAction, ComposeProject } from '../contracts'
 import { composeStatus, composeContainerCount } from './composeTemplates'
+import RuntimeStatus from '../RuntimeStatus.vue'
 const props = defineProps<{
   projects: ComposeProject[]
   loading: boolean
@@ -83,7 +84,7 @@ watch(filtered, (projects) => {
         <thead>
           <tr>
             <UiTableCell as="th">编排名称</UiTableCell
-            ><UiTableCell as="th">运行状态</UiTableCell
+            ><UiTableCell as="th">状态</UiTableCell
             ><UiTableCell as="th" align="right">容器数量</UiTableCell>
             <UiTableCell as="th" align="right">操作</UiTableCell>
           </tr>
@@ -99,13 +100,12 @@ watch(filtered, (projects) => {
             @update:expanded="expandedName = $event ? project.name : ''"
           >
             <template #default="{ toggle, expanded, detailsId }">
-              <UiTableCell
-                ><span
-                  v-if="busyProjectName === project.name"
-                  class="animate-pulse text-tertiary-strong dark:text-tertiary-dark"
-                  >执行中</span
-                ><span v-else>{{ composeStatus(project.status) }}</span></UiTableCell
-              >
+              <UiTableCell content="status">
+                <RuntimeStatus
+                  :status="composeStatus(project.status)"
+                  :busy="busyProjectName === project.name"
+                />
+              </UiTableCell>
               <UiTableCell content="numeric" align="right">{{
                 composeContainerCount(project.status) ?? '—'
               }}</UiTableCell>

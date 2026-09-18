@@ -61,7 +61,7 @@ const sectionTabs: UiTabItem[] = [
   { value: 'monitor', label: '监控' },
   { value: 'services', label: '服务' },
   { value: 'processes', label: '进程' },
-  { value: 'docker', label: 'Docker' },
+  { value: 'docker', label: '容器' },
   { value: 'compose', label: '编排' },
 ]
 
@@ -231,7 +231,7 @@ watch(
           <p class="text-body-sm">
             {{
               activeProfile
-                ? '每个连接页签都包含终端、文件、监控、服务、进程与 Docker。'
+                ? '每个连接页签都包含终端、文件、监控、服务、进程、容器与编排。'
                 : '从左侧选择服务器配置。'
             }}
           </p>

@@ -5,6 +5,7 @@ import { UiTooltip } from '@/core/ui'
 import type { DockerContainer } from '../contracts'
 import { shortContainerId } from '../connection/useSsh'
 import { UiButton, UiTable, UiTableCell } from '@/core/ui'
+import RuntimeStatus from '../RuntimeStatus.vue'
 
 withDefaults(
   defineProps<{
@@ -25,11 +26,6 @@ const emit = defineEmits<{
   (event: 'logs', container: DockerContainer): void
   (event: 'terminal', container: DockerContainer): void
 }>()
-
-function stateClass(status: string): string {
-  if (status === 'running') return 'text-success-strong dark:text-success-dark'
-  return 'text-text-muted dark:text-text-muted-dark'
-}
 </script>
 
 <template>
@@ -87,13 +83,7 @@ function stateClass(status: string): string {
               </UiTableCell>
             </UiTooltip>
             <UiTableCell content="status" class="whitespace-nowrap px-[8px] py-[8px]">
-              <span
-                v-if="busyContainerId === container.id"
-                class="animate-pulse font-sans text-tertiary-strong dark:text-tertiary-dark"
-              >
-                更新中
-              </span>
-              <span v-else :class="stateClass(container.status)">{{ container.status }}</span>
+              <RuntimeStatus :status="container.status" :busy="busyContainerId === container.id" />
             </UiTableCell>
             <UiTooltip :content="container.uptime">
               <UiTableCell content="technical" class="truncate whitespace-nowrap px-[8px] py-[8px]">
