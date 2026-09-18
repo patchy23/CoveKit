@@ -54,9 +54,13 @@ function toggle() {
         :id="detailsId"
         role="region"
         :aria-label="label"
-        class="border-l-2 border-border-strong bg-surface-muted px-md py-sm dark:border-border-strong-dark dark:bg-surface-muted-dark"
+        class="bg-neutral py-sm pr-sm pl-[36px] dark:bg-neutral-dark"
       >
-        <slot name="details" />
+        <div
+          class="min-w-0 overflow-hidden rounded-sm border border-border bg-surface dark:border-border-dark dark:bg-surface-dark"
+        >
+          <slot name="details" />
+        </div>
       </div>
     </UiTableCell>
   </tr>

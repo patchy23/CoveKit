@@ -61,9 +61,9 @@ defineExpose({ refresh })
 
 <template>
   <div class="shrink-0">
-    <section class="shrink-0 border-b border-border dark:border-border-dark">
+    <section class="shrink-0">
       <div
-        class="flex items-center justify-between px-md py-xs text-body-sm text-secondary dark:text-secondary-dark"
+        class="flex items-center justify-between border-b border-border px-sm py-xs text-caption text-secondary dark:border-border-dark dark:text-secondary-dark"
       >
         <span>{{
           loading
@@ -101,6 +101,7 @@ defineExpose({ refresh })
           :containers="rows"
           class="max-h-[320px]"
           inspect-only
+          compact
           :disabled="busy || connection?.status !== 'connected'"
           @logs="logs = $event"
           @terminal="terminal = $event"

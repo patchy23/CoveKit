@@ -108,19 +108,19 @@ function changeSingle(value: boolean) {
             <p
               v-if="state === 'loading'"
               role="status"
-              class="py-md text-body-sm text-secondary dark:text-secondary-dark"
+              class="px-sm py-md text-body-sm text-secondary dark:text-secondary-dark"
             >
               正在读取数据…
             </p>
             <div
               v-else-if="state === 'error'"
               role="alert"
-              class="flex items-center gap-sm py-md text-body-sm text-danger-strong dark:text-danger-dark"
+              class="flex items-center gap-sm px-sm py-md text-body-sm text-danger-strong dark:text-danger-dark"
             >
               读取失败，请重试。<UiButton size="xs" @click="state = 'ready'">重试</UiButton>
             </div>
             <UiEmptyState v-else-if="state === 'empty'" title="暂无子项" />
-            <UiTable v-else-if="row.id === 'orders'" density="comfortable" :framed="false">
+            <UiTable v-else-if="row.id === 'orders'" density="compact" :framed="false">
               <thead>
                 <tr>
                   <UiTableCell as="th">实例</UiTableCell
@@ -136,7 +136,7 @@ function changeSingle(value: boolean) {
                 </tr>
               </tbody>
             </UiTable>
-            <div v-else class="flex max-w-[420px] flex-col gap-sm">
+            <div v-else class="flex max-w-[420px] flex-col gap-sm p-sm">
               <DemoNote />
               <p class="text-caption text-text-muted dark:text-text-muted-dark">
                 表单内部状态随内容卸载而清空，选择保留后收起不卸载。

@@ -12,8 +12,9 @@ withDefaults(
     busyContainerId?: string | null
     inspectOnly?: boolean
     disabled?: boolean
+    compact?: boolean
   }>(),
-  { inspectOnly: false, disabled: false, busyContainerId: null }
+  { inspectOnly: false, disabled: false, compact: false, busyContainerId: null }
 )
 const emit = defineEmits<{
   (
@@ -34,7 +35,12 @@ function stateClass(status: string): string {
 <template>
   <UiScrollArea as-child axis="vertical">
     <div class="min-h-0 flex-1">
-      <UiTable :framed="false" :styled="false" table-class="table-fixed text-body-sm">
+      <UiTable
+        :framed="false"
+        :styled="compact"
+        density="compact"
+        table-class="table-fixed text-body-sm"
+      >
         <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"

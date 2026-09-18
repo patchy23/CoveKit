@@ -9,6 +9,8 @@
 
 ## 组件真实 API 备忘
 
+- **展开行的视觉层级**：`UiTableExpandableRow` 使用缩进的 neutral 底衬与 surface 内容区、细边框和小圆角，避免详情与相邻主行斑马纹混在一起；不叠加阴影。子表推荐 `UiTable density="compact"`，不要使用 comfortable 放大次级信息；表单和反馈内容自行添加内部间距，表格可直接铺满内容区。
+
 - **UiTableExpandableRow 表格行展开**：从 `@/core/ui` 导入，放在 `UiTable` 的 `tbody` 内；组件生成主行和跨列详情行，不增加表格外包装。必填 `label`、`columns`（总列数，包含组件生成的首列）和受控 `v-model:expanded`；`disabled` 禁止切换。`#label` 自定义首列名称，默认插槽放其余 `UiTableCell`，并提供 `{ toggle, expanded, detailsId }` 供操作列复用；`#details` 放子表格、表单或状态提示。展开按钮支持原生键盘操作并带展开状态及详情区域关联。默认首次展开挂载、收起卸载；`keepMounted` 启用后首次展开才挂载，收起保留输入和实例，隐藏期间的轮询等副作用由业务管理。单行或多行展开由父层决定，加载、错误、空状态也由业务负责。组件是多根行片段，不依赖根节点 class 透传；父子 `UiTable` 的密度、条纹和悬停样式各自独立。组件实验室的“表格行展开”展示上述行为。
 
 - **右键菜单更新不先卸载**：公共 ContextMenu 不在右键按下时关闭；业务 contextmenu 已处理时保留当前实例更新内容，新公共菜单挂载才接管并关闭旧实例。未处理的外部右键、普通外部左键仍关闭；捕获监听兼容业务 stopPropagation，窗口内公共菜单保持唯一。焦点恢复使用 preventScroll，避免带动页面滚动。
