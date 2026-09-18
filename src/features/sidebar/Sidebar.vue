@@ -98,6 +98,7 @@ function selectCategory(item: { id: string }) {
         <input
           ref="searchInput"
           v-model="ui.searchQuery"
+          autocomplete="off"
           class="min-w-0 flex-1 bg-transparent text-body text-primary outline-none placeholder:text-text-muted dark:text-primary-dark dark:placeholder:text-text-muted-dark"
           type="text"
           :placeholder="t('topbar.search')"

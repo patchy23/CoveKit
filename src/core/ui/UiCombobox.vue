@@ -110,6 +110,7 @@ function onOpenChange(v: boolean) {
     <ComboboxAnchor class="relative">
       <UiTooltip :content="title" :disabled="open">
         <ComboboxInput
+          autocomplete="off"
           :value="open ? query : selected ? optionLabel(selected) : ''"
           :placeholder="open ? searchPlaceholder : placeholder"
           class="w-full rounded-md border border-border bg-surface px-[10px] pr-[28px] outline-none transition-colors placeholder:text-text-muted hover:border-border-strong focus:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:placeholder:text-text-muted-dark dark:hover:border-border-strong-dark dark:focus:border-tertiary-dark"

@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import UiButton from './UiButton.vue'
 import UiInput from './UiInput.vue'
+import UiTextarea from './UiTextarea.vue'
 import UiTabs from './UiTabs.vue'
 import UiCheckbox from './UiCheckbox.vue'
 import UiPagination from './UiPagination.vue'
@@ -25,6 +26,17 @@ const pluginVueSources = import.meta.glob('../../plugins/**/*.vue', {
 }) as Record<string, string>
 
 describe('公共 UI 组件', () => {
+  it('文本、密码、多行和组合框统一关闭浏览器表单自动填充', () => {
+    for (const type of ['text', 'number', 'password']) {
+      const wrapper = mount(UiInput, { props: { type }, attrs: { autocomplete: 'on' } })
+      expect(wrapper.get('input').attributes('autocomplete')).toBe('off')
+    }
+    const textarea = mount(UiTextarea, { attrs: { autocomplete: 'on' } })
+    expect(textarea.get('textarea').attributes('autocomplete')).toBe('off')
+    const combobox = mount(UiCombobox, { props: { modelValue: '', options: [] } })
+    expect(combobox.get('input').attributes('autocomplete')).toBe('off')
+  })
+
   it('按钮在加载中自动禁用并显示加载状态', () => {
     const wrapper = mount(UiButton, { props: { loading: true }, slots: { default: '保存' } })
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
