@@ -1,29 +1,13 @@
 //! SSH 插件 · systemd 服务管理
-//! 列表经 systemctl list-units 输出解析；解析函数为纯函数（可单测）。
+//! 列表与分类信息通过一次 systemctl show 获取；解析函数为纯函数（可单测）。
 
 use tauri::State;
 
 use crate::plugins::ssh::conn::{exec_collect, get_session, shell_quote, SshState};
 use crate::plugins::ssh::models::{SshActionResult, SystemdService};
 
-/// 解析 systemctl 输出行（纯函数）：`unit  load  active  sub  desc` → SystemdService
-fn parse_service_line(line: &str) -> Option<SystemdService> {
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    // systemd 单位名带扩展名（.service），表头行（UNIT ...）与空行由此过滤
-    if parts.len() < 5 || !parts[0].contains('.') {
-        return None;
-    }
-    Some(SystemdService {
-        fragment_path: None,
-        has_overrides: false,
-        name: parts[0].to_string(),
-        description: parts.get(4..).map(|s| s.join(" ")).unwrap_or_default(),
-        load_state: parts[1].to_string(),
-        active_state: parts[2].to_string(),
-        sub_state: parts[3].to_string(),
-        enabled: false,
-    })
-}
+/// 限定属性减少传输量；glob 由 systemctl 展开，覆盖已加载的运行和停止服务。
+const SERVICE_LIST_COMMAND: &str = "systemctl show '*.service' --all --no-pager --property=Id,Description,LoadState,ActiveState,SubState,UnitFileState,FragmentPath,DropInPaths";
 
 /// 服务列表
 #[tauri::command(rename_all = "camelCase")]
@@ -33,14 +17,9 @@ pub async fn ssh_service_list(
     filter: Option<String>,
 ) -> Result<Vec<SystemdService>, String> {
     let session = get_session(&ssh_state, &connection_id)?;
-    let out = exec_collect(
-        &session,
-        "systemctl list-units --type=service --all --no-pager --plain",
-    )
-    .await?;
-    let mut services: Vec<SystemdService> = out
-        .lines()
-        .filter_map(parse_service_line)
+    let out = exec_collect(&session, SERVICE_LIST_COMMAND).await?;
+    let mut services: Vec<SystemdService> = parse_service_properties(&out)?
+        .into_iter()
         .filter(|s| match filter.as_deref() {
             Some("active") => s.active_state == "active",
             Some("inactive") => s.active_state == "inactive",
@@ -48,59 +27,57 @@ pub async fn ssh_service_list(
             _ => true,
         })
         .collect();
-    // 开机自启状态：list-units 输出不含此列，单独查 list-unit-files 按名字归并；
-    // 查询失败直接报错，不再静默显示全「否」
-    let states = exec_collect(
-        &session,
-        "systemctl list-unit-files --type=service --no-pager --plain",
-    )
-    .await
-    .map_err(|e| format!("读取服务启用状态失败: {e}"))?;
-    let enabled_names: std::collections::HashSet<&str> = states
-        .lines()
-        .filter_map(|line| {
-            // 行格式：`name.service enabled`（表头 UNIT FILE ... 不含 .service 被过滤）
-            let mut parts = line.split_whitespace();
-            match (parts.next(), parts.next()) {
-                (Some(name), Some("enabled")) if name.contains('.') => Some(name),
-                _ => None,
-            }
-        })
-        .collect();
-    for service in &mut services {
-        service.enabled = enabled_names.contains(service.name.as_str());
-    }
-    let metadata = exec_collect(
-        &session,
-        "systemctl show '*.service' --all --no-pager --property=Id,FragmentPath,DropInPaths",
-    )
-    .await
-    .map_err(|e| format!("读取服务来源失败: {e}"))?;
-    apply_service_sources(&mut services, &metadata);
     services.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(services)
 }
 
-/// 属性输出以空行分块，属性顺序不固定；缺失来源保持未知，不猜测。
-fn apply_service_sources(services: &mut [SystemdService], output: &str) {
-    for block in output.split("\n\n") {
+/// 属性输出以空行分块，顺序不固定；必需状态缺失时报错，不伪装为空列表。
+fn parse_service_properties(output: &str) -> Result<Vec<SystemdService>, String> {
+    let normalized = output.replace("\r\n", "\n");
+    let mut services = Vec::new();
+    for block in normalized
+        .split("\n\n")
+        .filter(|block| !block.trim().is_empty())
+    {
         let fields: std::collections::HashMap<_, _> = block
             .lines()
             .filter_map(|line| line.trim().split_once('='))
             .collect();
-        let Some(id) = fields.get("Id") else {
-            continue;
+        let required = |key: &str| -> Result<&str, String> {
+            fields
+                .get(key)
+                .copied()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| format!("服务列表缺少 {key} 属性，请检查远端 systemctl 输出"))
         };
-        if let Some(service) = services.iter_mut().find(|service| service.name == *id) {
-            service.fragment_path = fields
+        let name = required("Id")?;
+        if !name.ends_with(".service") {
+            continue;
+        }
+        services.push(SystemdService {
+            name: name.to_string(),
+            description: fields
+                .get("Description")
+                .copied()
+                .unwrap_or_default()
+                .to_string(),
+            load_state: required("LoadState")?.to_string(),
+            active_state: required("ActiveState")?.to_string(),
+            sub_state: required("SubState")?.to_string(),
+            // 保留既有 DTO，不再为此字段单独遍历全部 unit 文件。
+            enabled: fields
+                .get("UnitFileState")
+                .is_some_and(|state| *state == "enabled"),
+            fragment_path: fields
                 .get("FragmentPath")
                 .filter(|path| !path.is_empty())
-                .map(|path| (*path).to_string());
-            service.has_overrides = fields
+                .map(|path| (*path).to_string()),
+            has_overrides: fields
                 .get("DropInPaths")
-                .is_some_and(|paths| !paths.is_empty());
-        }
+                .is_some_and(|paths| !paths.is_empty()),
+        });
     }
+    Ok(services)
 }
 
 /// 服务操作（启动/停止/重启）
@@ -212,32 +189,40 @@ mod tests {
     }
 
     #[test]
-    fn parses_service_line() {
-        let s = parse_service_line("nginx.service loaded active running Nginx web server").unwrap();
+    fn parses_service_properties_in_any_order() {
+        let services = parse_service_properties("Description=Nginx web server a=b\nSubState=running\nId=nginx.service\nActiveState=active\nLoadState=loaded\nUnitFileState=enabled\nFragmentPath=/usr/lib/systemd/system/nginx.service\nDropInPaths=\n").unwrap();
+        let s = &services[0];
         assert_eq!(s.name, "nginx.service");
         assert_eq!(s.active_state, "active");
         assert_eq!(s.sub_state, "running");
-        assert_eq!(s.description, "Nginx web server");
+        assert_eq!(s.description, "Nginx web server a=b");
+        assert!(s.enabled);
+        assert!(!s.has_overrides);
+        assert_eq!(
+            s.fragment_path.as_deref(),
+            Some("/usr/lib/systemd/system/nginx.service")
+        );
     }
 
     #[test]
-    fn service_sources_match_ids_and_preserve_unknowns() {
-        let mut services = vec![
-            parse_service_line("cron.service loaded active running Cron").unwrap(),
-            parse_service_line("worker.service loaded active running Worker").unwrap(),
-        ];
-        apply_service_sources(&mut services, "FragmentPath=/lib/systemd/system/cron.service\nDropInPaths=/etc/systemd/system/cron.service.d/custom.conf\nId=cron.service\n\nId=other.service\nFragmentPath=/etc/systemd/system/other.service\n");
+    fn multiple_services_preserve_inactive_failed_and_unknown_sources() {
+        let services = parse_service_properties("Id=cron.service\r\nLoadState=loaded\r\nActiveState=inactive\r\nSubState=dead\r\nFragmentPath=/lib/systemd/system/cron.service\r\nDropInPaths=/etc/systemd/system/cron.service.d/custom.conf\r\n\r\nId=worker.service\r\nLoadState=not-found\r\nActiveState=failed\r\nSubState=failed\r\nFragmentPath=\r\nUnitFileState=disabled\r\n").unwrap();
+        assert_eq!(services.len(), 2);
         assert_eq!(
             services[0].fragment_path.as_deref(),
             Some("/lib/systemd/system/cron.service")
         );
         assert!(services[0].has_overrides);
+        assert_eq!(services[0].active_state, "inactive");
         assert!(services[1].fragment_path.is_none());
+        assert_eq!(services[1].active_state, "failed");
+        assert!(!services[1].enabled);
     }
 
     #[test]
-    fn ignores_header_and_empty_lines() {
-        assert!(parse_service_line("UNIT LOAD ACTIVE SUB DESCRIPTION").is_none());
-        assert!(parse_service_line("").is_none());
+    fn empty_list_is_valid_but_malformed_properties_fail() {
+        assert!(parse_service_properties("\n\n").unwrap().is_empty());
+        assert!(parse_service_properties("Id=broken.service\nDescription=Incomplete").is_err());
+        assert!(parse_service_properties("unexpected output").is_err());
     }
 }
