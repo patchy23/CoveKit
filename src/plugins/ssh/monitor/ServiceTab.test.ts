@@ -1,7 +1,7 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { UiCodeEditor, UiSearchInput, UiSelect } from '@/core/ui'
+import { UiCodeEditor, UiSearchInput, UiSelect, UiSwitch } from '@/core/ui'
 import type { ServerConnection, SystemdService } from '../contracts'
 import ServiceTab from './ServiceTab.vue'
 import ServiceConfigDialog from './ServiceConfigDialog.vue'
@@ -58,6 +58,27 @@ it('服务名称和描述搜索与状态组合，状态恢复不会缺失其他�
   expect(wrapper.findAll('tbody tr')).toHaveLength(2)
   expect(mock.sshServiceList).toHaveBeenCalledWith({ connectionId: 'one', filter: 'all' })
   wrapper.unmount()
+})
+
+it('默认隐藏系统服务，关闭后恢复全部并记住选择', async () => {
+  mock.sshServiceList.mockResolvedValue([
+    ...services,
+    { ...services[0], name: 'cron.service', fragmentPath: '/lib/systemd/system/cron.service' },
+  ])
+  const global = { ...globalOptions, plugins: [createPinia()], stubs: { UiToolbar: false } }
+  const wrapper = shallowMount(ServiceTab, { props: { connection: connection('one') }, global })
+  await flushPromises()
+  expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+  expect(wrapper.text()).toContain('已隐藏 1 个系统项')
+  wrapper.getComponent(UiSwitch).vm.$emit('update:modelValue', false)
+  await flushPromises()
+  expect(wrapper.findAll('tbody tr')).toHaveLength(3)
+  wrapper.unmount()
+  const reopened = shallowMount(ServiceTab, { props: { connection: connection('one') }, global })
+  await flushPromises()
+  expect(reopened.getComponent(UiSwitch).props('modelValue')).toBe(false)
+  expect(reopened.findAll('tbody tr')).toHaveLength(3)
+  reopened.unmount()
 })
 
 it('配置查看拒绝旧服务晚到结果，连接切换后错误可见且不保留旧内容', async () => {

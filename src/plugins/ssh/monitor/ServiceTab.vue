@@ -11,6 +11,7 @@ import {
   UiButton,
   UiSearchInput,
   UiSelect,
+  UiSwitch,
   UiStatusBar,
   UiTable,
   UiTableCell,
@@ -20,6 +21,8 @@ import LiveLogDialog from './LiveLogDialog.vue'
 import ServiceConfigDialog from './ServiceConfigDialog.vue'
 import { ipc } from '../ipc'
 import RuntimeStatus from '../RuntimeStatus.vue'
+import { isSystemService } from './systemItems'
+import { useSystemFilter } from './useSystemFilter'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -27,6 +30,7 @@ const props = defineProps<{
 }>()
 
 const ui = useUiStore()
+const hideSystem = useSystemFilter('services')
 
 const filter = ref<'all' | 'active' | 'inactive' | 'failed'>('all')
 const services = ref<SystemdService[]>([])
@@ -36,12 +40,14 @@ let refreshSequence = 0
 const loading = ref(false)
 const logTarget = ref<SystemdService | null>(null)
 const pendingAction = ref<{ service: SystemdService; action: 'stop' | 'restart' } | null>(null)
+const systemCount = computed(() => services.value.filter(isSystemService).length)
 
 /** 按状态筛选后的服务列表（computed 自动响应 filter 变化） */
 const filtered = computed(() => {
   const keyword = query.value.trim().toLocaleLowerCase()
   return services.value.filter(
     (service) =>
+      (!hideSystem.value || !isSystemService(service)) &&
       (filter.value === 'all' || service.activeState === filter.value) &&
       (!keyword || `${service.name} ${service.description}`.toLocaleLowerCase().includes(keyword))
   )
@@ -145,6 +151,7 @@ onBeforeUnmount(() => {
         @update:model-value="filter = $event as 'all' | 'active' | 'inactive' | 'failed'"
       />
       <template #trailing>
+        <UiSwitch v-model="hideSystem" size="sm" label="隐藏系统项" />
         <UiButton
           variant="ghost"
           size="sm"
@@ -221,6 +228,7 @@ onBeforeUnmount(() => {
 
     <UiStatusBar>
       <span>共 {{ filtered.length }} 个服务</span>
+      <span v-if="hideSystem">已隐藏 {{ systemCount }} 个系统项</span>
       <template #trailing>
         <span>{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
       </template>

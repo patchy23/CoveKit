@@ -13,6 +13,7 @@ import {
   UiButton,
   UiModal,
   UiSearchInput,
+  UiSwitch,
   UiSelect as Select,
   UiStatusBar,
   UiTable,
@@ -20,6 +21,8 @@ import {
   UiToolbar,
 } from '@/core/ui'
 import { ipc } from '../ipc'
+import { isSystemProcess } from './systemItems'
+import { useSystemFilter } from './useSystemFilter'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -27,10 +30,12 @@ const props = defineProps<{
 }>()
 
 const ui = useUiStore()
+const hideSystem = useSystemFilter('processes')
 
 const keyword = ref('')
 const sortBy = ref<'cpu' | 'memory' | 'pid'>('cpu')
 const processes = ref<ProcessInfo[]>([])
+const systemCount = computed(() => processes.value.filter(isSystemProcess).length)
 const pendingKill = ref<{ pid: number; force: boolean } | null>(null)
 /** 详情弹窗：null 表示关闭；detailPid 先于数据置位，用于并发打开时的结果归属 */
 const detailPid = ref<number | null>(null)
@@ -38,7 +43,7 @@ const detail = ref<ProcessDetail | null>(null)
 const detailLoading = ref(false)
 
 const filtered = computed(() => {
-  let list = [...processes.value]
+  let list = processes.value.filter((process) => !hideSystem.value || !isSystemProcess(process))
   const kw = keyword.value.trim().toLowerCase()
   if (kw) {
     list = list.filter(
@@ -63,7 +68,6 @@ async function refresh() {
     const result = await ipc.sshProcessList({
       connectionId,
       sortBy: sortBy.value,
-      keyword: keyword.value.trim() || undefined,
     })
     if (props.connection?.sessionId === connectionId) processes.value = result
   } catch (e) {
@@ -185,6 +189,7 @@ watch(
         @update:model-value="sortBy = $event as 'cpu' | 'memory' | 'pid'"
       />
       <template #trailing>
+        <UiSwitch v-model="hideSystem" size="sm" label="隐藏系统项" />
         <UiButton variant="ghost" size="sm" title="刷新进程列表" @click="refresh"> 刷新 </UiButton>
       </template>
     </UiToolbar>
@@ -261,6 +266,7 @@ watch(
 
     <UiStatusBar>
       <span>共 {{ filtered.length }} 个进程</span>
+      <span v-if="hideSystem">已隐藏 {{ systemCount }} 个系统项</span>
       <template #trailing>
         <span>{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
       </template>

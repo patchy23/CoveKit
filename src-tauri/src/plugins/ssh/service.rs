@@ -14,6 +14,8 @@ fn parse_service_line(line: &str) -> Option<SystemdService> {
         return None;
     }
     Some(SystemdService {
+        fragment_path: None,
+        has_overrides: false,
         name: parts[0].to_string(),
         description: parts.get(4..).map(|s| s.join(" ")).unwrap_or_default(),
         load_state: parts[1].to_string(),
@@ -68,8 +70,37 @@ pub async fn ssh_service_list(
     for service in &mut services {
         service.enabled = enabled_names.contains(service.name.as_str());
     }
+    let metadata = exec_collect(
+        &session,
+        "systemctl show '*.service' --all --no-pager --property=Id,FragmentPath,DropInPaths",
+    )
+    .await
+    .map_err(|e| format!("读取服务来源失败: {e}"))?;
+    apply_service_sources(&mut services, &metadata);
     services.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(services)
+}
+
+/// 属性输出以空行分块，属性顺序不固定；缺失来源保持未知，不猜测。
+fn apply_service_sources(services: &mut [SystemdService], output: &str) {
+    for block in output.split("\n\n") {
+        let fields: std::collections::HashMap<_, _> = block
+            .lines()
+            .filter_map(|line| line.trim().split_once('='))
+            .collect();
+        let Some(id) = fields.get("Id") else {
+            continue;
+        };
+        if let Some(service) = services.iter_mut().find(|service| service.name == *id) {
+            service.fragment_path = fields
+                .get("FragmentPath")
+                .filter(|path| !path.is_empty())
+                .map(|path| (*path).to_string());
+            service.has_overrides = fields
+                .get("DropInPaths")
+                .is_some_and(|paths| !paths.is_empty());
+        }
+    }
 }
 
 /// 服务操作（启动/停止/重启）
@@ -187,6 +218,21 @@ mod tests {
         assert_eq!(s.active_state, "active");
         assert_eq!(s.sub_state, "running");
         assert_eq!(s.description, "Nginx web server");
+    }
+
+    #[test]
+    fn service_sources_match_ids_and_preserve_unknowns() {
+        let mut services = vec![
+            parse_service_line("cron.service loaded active running Cron").unwrap(),
+            parse_service_line("worker.service loaded active running Worker").unwrap(),
+        ];
+        apply_service_sources(&mut services, "FragmentPath=/lib/systemd/system/cron.service\nDropInPaths=/etc/systemd/system/cron.service.d/custom.conf\nId=cron.service\n\nId=other.service\nFragmentPath=/etc/systemd/system/other.service\n");
+        assert_eq!(
+            services[0].fragment_path.as_deref(),
+            Some("/lib/systemd/system/cron.service")
+        );
+        assert!(services[0].has_overrides);
+        assert!(services[1].fragment_path.is_none());
     }
 
     #[test]

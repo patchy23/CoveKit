@@ -15,6 +15,7 @@ import { i18n } from '@/i18n'
 import { useUiStore } from '@/stores/ui'
 import type { ProcessDetail, ServerConnection } from '../contracts'
 import ProcessTab from './ProcessTab.vue'
+import { UiSwitch, UiSearchInput, UiButton } from '@/core/ui'
 
 /* ── 本插件 IPC 门面假实现（返回值由各用例设定） ── */
 
@@ -135,6 +136,30 @@ describe('ProcessTab 进程详情', () => {
     expect(bodyText()).toContain('完整命令行')
     expect(bodyText()).toContain('/usr/bin/nginx -g daemon off')
     expect(bodyText()).toContain('ps 原始输出')
+  })
+
+  it('默认隐藏内核线程，切换恢复且带关键词刷新不截断完整列表', async () => {
+    ipcMock.sshProcessList.mockResolvedValue([
+      processRow(100),
+      { ...processRow(2), command: '[kthreadd]', memoryBytes: 0 },
+    ])
+    const wrapper = await mountTab()
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.text()).toContain('已隐藏 1 个系统项')
+    wrapper.getComponent(UiSwitch).vm.$emit('update:modelValue', false)
+    await settle()
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+    wrapper.getComponent(UiSearchInput).vm.$emit('update:modelValue', '100')
+    await settle()
+    wrapper
+      .findAllComponents(UiButton)
+      .find((button) => button.props('title') === '刷新进程列表')!
+      .vm.$emit('click')
+    await settle()
+    expect(ipcMock.sshProcessList).toHaveBeenLastCalledWith({ connectionId: 's1', sortBy: 'cpu' })
+    wrapper.getComponent(UiSearchInput).vm.$emit('update:modelValue', '')
+    await settle()
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
   })
 
   it('远端已无该进程时提示已退出且不允许再结束', async () => {

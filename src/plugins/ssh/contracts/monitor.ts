@@ -125,6 +125,10 @@ export interface SshSystemInfoResult {
 /** systemd 服务条目 */
 
 export interface SystemdService {
+  /** unit 主文件来源，未知时不隐藏。 */
+  fragmentPath?: string | null
+  /** 存在用户定制的 drop-in 时不隐藏。 */
+  hasOverrides?: boolean
   /** 服务名（如 nginx.service） */
 
   name: string
