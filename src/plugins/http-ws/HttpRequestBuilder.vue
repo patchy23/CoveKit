@@ -1,19 +1,11 @@
 <script setup lang="ts">
 /**
  * HttpRequestBuilder · 请求构建区（Postman 式 Params / Headers / Body 分页签）
+ * Params/Headers 键值表走 UiKvEditor（原两处复制实现已收编为公共组件）。
  */
 import { ref } from 'vue'
 import type { KvRow } from './useHttp'
-import { newKvId } from './useHttp'
-import {
-  UiButton,
-  UiCodeEditor,
-  UiIcon,
-  UiIconButton,
-  UiInput,
-  UiSelect as Select,
-  UiTabs,
-} from '@/core/ui'
+import { UiCodeEditor, UiKvEditor, UiSelect as Select, UiTabs } from '@/core/ui'
 
 const props = defineProps<{
   params: KvRow[]
@@ -34,30 +26,6 @@ const emit = defineEmits<{
 const tab = ref<'params' | 'headers' | 'body'>('params')
 
 const JSON_PLACEHOLDER = '{\n  "key": "value"\n}'
-
-function addRow(rows: KvRow[], kind: 'params' | 'headers') {
-  const next = [...rows, { id: newKvId(), key: '', value: '' }]
-  if (kind === 'params') emit('update:params', next)
-  else emit('update:headers', next)
-}
-
-function removeRow(rows: KvRow[], id: string, kind: 'params' | 'headers') {
-  const next = rows.filter((r) => r.id !== id)
-  if (kind === 'params') emit('update:params', next)
-  else emit('update:headers', next)
-}
-
-function setRow(
-  rows: KvRow[],
-  id: string,
-  field: 'key' | 'value',
-  v: string,
-  kind: 'params' | 'headers'
-) {
-  const next = rows.map((r) => (r.id === id ? { ...r, [field]: v } : r))
-  if (kind === 'params') emit('update:params', next)
-  else emit('update:headers', next)
-}
 </script>
 
 <template>
@@ -76,86 +44,26 @@ function setRow(
     />
 
     <!-- Params：键值表格，自动拼接到 URL query -->
-    <div v-if="!props.headersOnly && tab === 'params'">
-      <div
-        class="mb-[6px] grid grid-cols-[1fr_1fr_36px] gap-[8px] px-[2px] text-caption font-medium text-text-muted dark:text-text-muted-dark"
-      >
-        <span>参数名</span>
-        <span>值</span>
-        <span />
-      </div>
-      <div
-        v-for="r in props.params"
-        :key="r.id"
-        class="mb-[6px] grid grid-cols-[1fr_1fr_36px] gap-[8px]"
-      >
-        <UiInput
-          :value="r.key"
-          size="sm"
-          class="font-mono"
-          placeholder="key"
-          spellcheck="false"
-          @update:model-value="setRow(props.params, r.id, 'key', String($event), 'params')"
-        />
-        <UiInput
-          :value="r.value"
-          size="sm"
-          class="font-mono"
-          placeholder="value"
-          spellcheck="false"
-          @update:model-value="setRow(props.params, r.id, 'value', String($event), 'params')"
-        />
-        <UiIconButton label="删除参数" size="sm" @click="removeRow(props.params, r.id, 'params')">
-          <UiIcon name="trash" :size="13" />
-        </UiIconButton>
-      </div>
-      <UiButton variant="ghost" size="sm" @click="addRow(props.params, 'params')">
-        + 添加参数
-      </UiButton>
-    </div>
+    <UiKvEditor
+      v-if="!props.headersOnly && tab === 'params'"
+      :rows="props.params"
+      key-label="参数名"
+      add-label="添加参数"
+      remove-label="删除参数"
+      @update:rows="emit('update:params', $event)"
+    />
 
     <!-- Headers：键值表格（HTTP 与 WS 共用） -->
-    <div v-if="tab === 'headers' || props.headersOnly">
-      <div
-        class="mb-[6px] grid grid-cols-[1fr_1fr_36px] gap-[8px] px-[2px] text-caption font-medium text-text-muted dark:text-text-muted-dark"
-      >
-        <span>Header 名</span>
-        <span>值</span>
-        <span />
-      </div>
-      <div
-        v-for="r in props.headers"
-        :key="r.id"
-        class="mb-[6px] grid grid-cols-[1fr_1fr_36px] gap-[8px]"
-      >
-        <UiInput
-          :value="r.key"
-          size="sm"
-          class="font-mono"
-          placeholder="Accept"
-          spellcheck="false"
-          @update:model-value="setRow(props.headers, r.id, 'key', String($event), 'headers')"
-        />
-        <UiInput
-          :value="r.value"
-          size="sm"
-          class="font-mono"
-          placeholder="application/json"
-          spellcheck="false"
-          @update:model-value="setRow(props.headers, r.id, 'value', String($event), 'headers')"
-        />
-        <UiIconButton
-          label="删除 Header"
-          size="sm"
-          @click="removeRow(props.headers, r.id, 'headers')"
-        >
-          <UiIcon name="trash" :size="13" />
-        </UiIconButton>
-      </div>
-      <UiButton variant="ghost" size="sm" @click="addRow(props.headers, 'headers')">
-        + 添加 Header
-      </UiButton>
-    </div>
+    <UiKvEditor
+      v-if="tab === 'headers' || props.headersOnly"
+      :rows="props.headers"
+      key-label="Header 名"
+      key-placeholder="Accept"
+      value-placeholder="application/json"
+      add-label="添加 Header"
+      remove-label="删除 Header"
+      @update:rows="emit('update:headers', $event)"
+    />
 
     <!-- Body：模式选择 + 内容 -->
     <div v-if="!props.headersOnly && tab === 'body'" class="flex flex-col gap-[8px]">

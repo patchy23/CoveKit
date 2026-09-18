@@ -186,19 +186,39 @@ it('表格提示不改变单元格父节点或双击载荷，循环更新保持�
   expect(wrapper.get('tbody td').text()).toBe('在线')
 })
 
-it('页签溢出按钮仍通过原始元素引用定位菜单', async () => {
+it('页签溢出菜单选中与行内关闭走对应 emit', async () => {
+  const wrapper = mount(UiTabsOverflow, {
+    attachTo: document.body,
+    props: {
+      items: [
+        { value: 'a', label: '连接 A' },
+        { value: 'b', label: '连接 B' },
+      ],
+    },
+  })
+  wrappers.push(wrapper)
+  // 触发器打开下拉（reka DropdownMenu 承载定位与焦点管理）
+  await wrapper.get('button').trigger('click')
+  await nextTick()
+  const items = document.body.querySelectorAll<HTMLElement>('[role="menuitem"]')
+  expect(items.length).toBe(2)
+  items[1].click()
+  await nextTick()
+  expect(wrapper.emitted('select')?.[0]).toEqual(['b'])
+})
+
+it('页签溢出菜单的行内关闭按钮不触发选中', async () => {
   const wrapper = mount(UiTabsOverflow, {
     attachTo: document.body,
     props: { items: [{ value: 'a', label: '连接 A' }] },
   })
   wrappers.push(wrapper)
-  const button = wrapper.get('button')
-  vi.spyOn(button.element, 'getBoundingClientRect').mockReturnValue({
-    bottom: 64,
-    right: 300,
-  } as DOMRect)
-  await button.trigger('click')
-  const panel = document.body.querySelector<HTMLElement>('.fixed.z-\\[220\\]')
-  expect(panel?.style.top).toBe('68px')
-  expect(panel?.style.left).toBe('80px')
+  await wrapper.get('button').trigger('click')
+  await nextTick()
+  const closeButton = document.body.querySelector<HTMLElement>('[aria-label="关闭 连接 A"]')
+  expect(closeButton).toBeTruthy()
+  closeButton!.click()
+  await nextTick()
+  expect(wrapper.emitted('close')?.[0]).toEqual(['a'])
+  expect(wrapper.emitted('select')).toBeUndefined()
 })

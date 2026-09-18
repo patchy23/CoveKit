@@ -2,15 +2,12 @@
 import { UiScrollArea } from '@/core/ui'
 /**
  * HttpResponse · 响应查看区（Postman 式：元信息 + Pretty/Raw + 响应头分页签）
+ * Pretty 走 UiCodeEditor 只读查看器（统一高亮体系，不用 highlight.js 平行方案）。
  */
 import { computed, ref } from 'vue'
-import hljs from 'highlight.js/lib/core'
-import json from 'highlight.js/lib/languages/json'
 import type { HttpResponseResult } from './contracts'
 import { formatBytes, formatHeaders, looksLikeJson } from './useHttp'
-import { UiBadge, UiTabs } from '@/core/ui'
-
-hljs.registerLanguage('json', json)
+import { UiBadge, UiCodeEditor, UiTabs } from '@/core/ui'
 
 const props = defineProps<{
   response: HttpResponseResult
@@ -28,14 +25,10 @@ const statusClass = computed(() => {
   return 'bg-warning-soft text-warning-strong dark:bg-warning-soft-dark dark:text-warning-dark'
 })
 
-const highlighted = computed(() => {
+/** Pretty 视图仅对 JSON 体启用语法高亮 */
+const prettyJson = computed(() => {
   const body = props.response.body ?? ''
-  if (!looksLikeJson(body)) return ''
-  try {
-    return hljs.highlight(body, { language: 'json', ignoreIllegals: true }).value
-  } catch {
-    return ''
-  }
+  return looksLikeJson(body) ? body : ''
 })
 </script>
 
@@ -74,16 +67,23 @@ const highlighted = computed(() => {
       ]"
     />
 
-    <!-- 响应体：Pretty（JSON 高亮）/ Raw（原样） -->
-    <UiScrollArea v-if="viewTab !== 'headers'" as-child axis="both">
+    <!-- 响应体：Pretty（JSON 高亮查看器）/ Raw（原样） -->
+    <UiCodeEditor
+      v-if="viewTab === 'pretty' && prettyJson"
+      :model-value="prettyJson"
+      language="json"
+      readonly
+      :line-numbers="false"
+      :fold-gutter="false"
+      :lint="false"
+      :completion="false"
+      class="min-h-0 flex-1"
+    />
+    <UiScrollArea v-else-if="viewTab !== 'headers'" as-child axis="both">
       <div
         class="min-h-0 flex-1 rounded-md border border-border bg-surface-muted font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
       >
-        <pre
-          v-if="viewTab === 'pretty' && highlighted"
-          class="p-[13px]"
-        ><code class="hljs" v-html="highlighted" /></pre>
-        <pre v-else class="whitespace-pre-wrap p-[13px] text-primary dark:text-primary-dark">{{
+        <pre class="whitespace-pre-wrap p-[13px] text-primary dark:text-primary-dark">{{
           response.body || '(空响应体)'
         }}</pre>
       </div>
