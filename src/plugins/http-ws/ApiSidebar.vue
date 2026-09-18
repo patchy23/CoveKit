@@ -23,6 +23,7 @@ const emit = defineEmits<{
   newGroup: [parent: string]
   retry: []
   move: [id: number, group: string]
+  moveGroup: [path: string, parent: string]
 }>()
 const search = ref(''),
   collapsed = ref(new Set<string>())
@@ -31,12 +32,20 @@ const {
   drag,
   target: dropTarget,
   start: startDrag,
+  startGroup,
   captureClick,
   cancel: cancelDrag,
-} = useApiDrag(root, (id, group) => {
-  collapsed.value.delete(group)
-  emit('move', id, group)
-})
+} = useApiDrag(
+  root,
+  (id, group) => {
+    collapsed.value.delete(group)
+    emit('move', id, group)
+  },
+  (path, parent) => {
+    collapsed.value.delete(parent)
+    emit('moveGroup', path, parent)
+  }
+)
 const menu = ref<{ x: number; y: number; parent: string; api?: ApiRecord; group: boolean } | null>(
   null
 )
@@ -131,6 +140,19 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     </div>
     <UiScrollArea as-child axis="vertical"
       ><div class="min-h-0 flex-1 px-[6px] pb-[8px]">
+        <UiButton
+          v-if="drag?.active && drag.kind === 'group'"
+          data-api-root-drop
+          size="sm"
+          variant="ghost"
+          block
+          :class="
+            dropTarget === ''
+              ? '!bg-tertiary-soft ring-1 ring-tertiary-strong dark:!bg-tertiary-soft-dark dark:ring-tertiary-dark'
+              : ''
+          "
+          >移至根目录</UiButton
+        >
         <div
           v-for="row in rows"
           :key="row.kind === 'group' ? `group:${row.path}` : `api:${row.api.id}`"
@@ -152,6 +174,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
             :title="row.path || '未分组'"
             :aria-expanded="!collapsed.has(row.path)"
             @click="toggle(row.path)"
+            @pointerdown="startGroup($event, row.path)"
             @contextmenu="openMenu($event, row.path, true)"
           >
             <UiIcon
@@ -233,7 +256,11 @@ const menuItems = computed<ContextMenuItem[]>(() => {
         :style="{ left: `${drag.x + 12}px`, top: `${drag.y + 12}px` }"
       >
         {{ drag.name }} ·
-        {{ dropTarget === null ? '拖到分组以移动' : `移至 ${dropTarget || '未分组'}` }}
+        {{
+          dropTarget === null
+            ? '拖到分组以移动'
+            : `移至 ${dropTarget || (drag.kind === 'group' ? '根目录' : '未分组')}`
+        }}
       </div></Teleport
     >
   </aside>

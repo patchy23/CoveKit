@@ -45,6 +45,7 @@ watchEffect(() => {
   lifecycle.dirty.value = tabs.some((t) => workspace.dirty(t))
   lifecycle.running.value =
     workspace.moving.value.size > 0 ||
+    workspace.groupMoving.value ||
     tabs.some((t) => t.saving || t.session.state.busy || t.session.state.connected)
 })
 const naming = ref<{
@@ -175,6 +176,7 @@ onUnmounted(() => {
       @new="create"
       @new-group="newGroup"
       @move="(id, groupName) => perform(() => workspace.move(id, groupName))"
+      @move-group="(path, parent) => perform(() => workspace.moveGroup(path, parent))"
       @retry="workspace.load()"
     />
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">

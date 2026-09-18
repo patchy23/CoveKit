@@ -4,10 +4,12 @@ import type { ApiRecord } from './contracts'
 
 export function useApiDrag(
   root: Ref<HTMLElement | null>,
-  move: (id: number, group: string) => void
+  move: (id: number, group: string) => void,
+  moveGroup: (path: string, parent: string) => void
 ) {
   const drag = ref<{
     id: number
+    kind: 'api' | 'group'
     name: string
     group: string
     pointerId: number
@@ -21,10 +23,25 @@ export function useApiDrag(
   let suppressClick = false
   let clickTimer: ReturnType<typeof setTimeout> | undefined
   function hit(x: number, y: number) {
-    const element = document.elementFromPoint(x, y)?.closest<HTMLElement>('[data-api-group-drop]')
+    const element = document
+      .elementFromPoint(x, y)
+      ?.closest<HTMLElement>('[data-api-group-drop], [data-api-root-drop]')
     if (!element || !root.value?.contains(element)) return null
+    const current = drag.value
+    if (!current) return null
+    if (element.hasAttribute('data-api-root-drop'))
+      return current.kind === 'group' && current.group.includes('/') ? '' : null
     const path = element.dataset.apiGroupDrop ?? null
-    return path === drag.value?.group ? null : path
+    if (current.kind === 'group') {
+      const parent = current.group.split('/').slice(0, -1).join('/')
+      return !path ||
+        path === parent ||
+        path === current.group ||
+        path.startsWith(`${current.group}/`)
+        ? null
+        : path
+    }
+    return path === current.group ? null : path
   }
   function blockClick() {
     suppressClick = true
@@ -72,15 +89,26 @@ export function useApiDrag(
     const path = current.active ? hit(event.clientX, event.clientY) : null
     if (current.active) blockClick()
     cleanup()
-    if (path !== null) move(current.id, path)
+    if (path !== null) {
+      if (current.kind === 'group') moveGroup(current.group, path)
+      else move(current.id, path)
+    }
   }
   function start(event: PointerEvent, api: ApiRecord) {
+    begin(event, { id: api.id, name: api.name, group: api.groupName, kind: 'api' })
+  }
+  function startGroup(event: PointerEvent, path: string) {
+    if (!path) return
+    begin(event, { id: 0, name: path.split('/').at(-1) || path, group: path, kind: 'group' })
+  }
+  function begin(
+    event: PointerEvent,
+    source: { id: number; name: string; group: string; kind: 'api' | 'group' }
+  ) {
     if (event.button !== 0) return
     cleanup()
     drag.value = {
-      id: api.id,
-      name: api.name,
-      group: api.groupName,
+      ...source,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
@@ -104,5 +132,5 @@ export function useApiDrag(
     cleanup()
     clearTimeout(clickTimer)
   })
-  return { drag, target, start, captureClick, cancel }
+  return { drag, target, start, startGroup, captureClick, cancel }
 }

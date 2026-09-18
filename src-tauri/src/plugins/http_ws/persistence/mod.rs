@@ -4,6 +4,7 @@
 //! 命令（api_save/api_list/api_delete/api_clear）与分派 handler 由 http_ws 的静态模块清单声明，
 //! 本文件不再自建 handler 与 IPC 登记表。
 
+mod group_move;
 mod models;
 mod transfer;
 
@@ -83,6 +84,21 @@ pub fn api_group_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<
             .map_err(|e| e.to_string())?;
         Ok(paths)
     })
+}
+
+/// 在同一事务中移动整棵分组树及接口归属，保留接口身份与请求内容。
+#[tauri::command]
+pub fn api_group_move(
+    app: AppHandle,
+    state: State<'_, ApiState>,
+    path: String,
+    parent: String,
+) -> Result<String, String> {
+    let guard = db(&app, &state)?;
+    guard
+        .as_ref()
+        .ok_or("本地库未初始化")?
+        .with_transaction(|conn| group_move::move_tree(conn, &path, &parent))
 }
 
 /// 显式创建根分组或子分组；同级重名失败，不静默合并目录。

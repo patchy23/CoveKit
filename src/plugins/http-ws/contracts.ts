@@ -93,6 +93,7 @@ export interface ApiSavePayload {
   options: string
 }
 export const commands = {
+  apiGroupMove: 'api_group_move',
   apiMoveGroup: 'api_move_group',
   apiGroupList: 'api_group_list',
   apiGroupCreate: 'api_group_create',
@@ -109,6 +110,7 @@ export const commands = {
   sseStop: 'sse_stop',
 } as const
 export type Payloads = {
+  api_group_move: { path: string; parent: string }
   api_move_group: { id: number; groupName: string }
   api_group_list: Record<string, never>
   api_group_create: { name: string; parent: string }
@@ -129,6 +131,7 @@ export type Payloads = {
   sse_stop: { id: string }
 }
 export type Results = {
+  api_group_move: string
   api_move_group: void
   api_group_list: string[]
   api_group_create: string

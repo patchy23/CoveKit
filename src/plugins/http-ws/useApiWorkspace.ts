@@ -19,6 +19,17 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
   const apis = ref<ApiRecord[]>([])
   const groups = ref<string[]>([])
   const moving = ref(new Set<number>())
+  const groupMoving = ref(false)
+  let pendingWrites = 0
+  async function libraryWrite<T>(action: () => Promise<T>) {
+    if (groupMoving.value) throw new Error('分组正在移动，请稍后重试')
+    pendingWrites++
+    try {
+      return await action()
+    } finally {
+      pendingWrites--
+    }
+  }
   const tabs = shallowReactive<ApiTab[]>([])
   const activeKey = ref('')
   const loading = ref(false)
@@ -85,6 +96,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     return add(fromRecord(record), record)
   }
   async function save(tab: ApiTab, name: string, groupName: string, asCopy = false) {
+    if (groupMoving.value) throw new Error('分组正在移动，请稍后保存')
     if (tab.recordId !== null && moving.value.has(tab.recordId))
       throw new Error('接口正在移动，请稍后保存')
     if (tab.saving) return false
@@ -155,6 +167,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     if (activeKey.value === tab.key) activeKey.value = (tabs[index] || tabs[index - 1])?.key || ''
   }
   async function move(id: number, groupName: string) {
+    if (groupMoving.value) throw new Error('分组正在移动，请稍后重试')
     const record = apis.value.find((api) => api.id === id)
     if (!record || record.groupName === groupName) return
     if (moving.value.has(id) || tabs.some((tab) => tab.recordId === id && tab.saving))
@@ -179,10 +192,35 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
     if (failures.length) throw new Error(failures.map((r) => String(r.reason)).join('；'))
   }
+  async function moveGroup(path: string, parent: string) {
+    if (groupMoving.value || pendingWrites || moving.value.size || tabs.some((tab) => tab.saving))
+      throw new Error('接口库正在保存或移动，请稍后重试')
+    if (!path || parent === path || parent.startsWith(`${path}/`))
+      throw new Error('不能将分组移入自身或子分组')
+    groupMoving.value = true
+    try {
+      const destination = await ipc.apiGroupMove(path, parent)
+      const movedPath = (value: string) =>
+        value === path || value.startsWith(`${path}/`)
+          ? destination + value.slice(path.length)
+          : value
+      if (!disposed) {
+        for (const api of apis.value) api.groupName = movedPath(api.groupName)
+        // 包括尚未保存的新接口；移动不改变草稿快照或连接对象。
+        for (const tab of tabs) tab.groupName = movedPath(tab.groupName)
+        groups.value = groups.value.map(movedPath)
+      }
+      await load()
+      report(`分组已移至 ${parent || '根目录'}`)
+    } finally {
+      groupMoving.value = false
+    }
+  }
   return {
     apis,
     groups,
     moving,
+    groupMoving,
     tabs,
     activeKey,
     current,
@@ -191,12 +229,14 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     dirty,
     load,
     create,
-    createGroup,
+    createGroup: (name: string, parent: string) => libraryWrite(() => createGroup(name, parent)),
     open,
     save,
-    rename,
-    remove,
+    rename: (record: ApiRecord, name: string, groupName: string) =>
+      libraryWrite(() => rename(record, name, groupName)),
+    remove: (record: ApiRecord) => libraryWrite(() => remove(record)),
     move,
+    moveGroup,
     close,
     dispose,
   }

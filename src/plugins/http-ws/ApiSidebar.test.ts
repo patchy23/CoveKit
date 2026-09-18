@@ -63,6 +63,52 @@ it('层级缩进在按钮外层，不受公共按钮内边距影响', () => {
   expect(wrapper.find('[data-api-group-drop=""]').exists()).toBe(true)
 })
 
+it('分组拖动拒绝自身、后代及原上级，可移到其他分组或根目录', async () => {
+  const wrapper = mount(Sidebar, {
+    attachTo: document.body,
+    props: {
+      apis: [api],
+      groups: ['开发/用户/子组', '目标'],
+      activeId: 1,
+      loading: false,
+      error: '',
+    },
+  })
+  const source = wrapper.get('[data-api-group-drop="开发/用户"]')
+  const hit = vi.spyOn(document, 'elementFromPoint')
+  const pointer = (type: string) =>
+    window.dispatchEvent(
+      new PointerEvent(type, {
+        pointerId: 1,
+        button: 0,
+        clientX: 40,
+        clientY: 20,
+        cancelable: true,
+      })
+    )
+  for (const path of ['开发/用户', '开发/用户/子组', '开发', '', '目标']) {
+    hit.mockReturnValue(wrapper.get(`[data-api-group-drop="${path}"]`).element)
+    await source.trigger('pointerdown', { pointerId: 1, button: 0, clientX: 10, clientY: 20 })
+    pointer('pointermove')
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get(`[data-api-group-drop="${path}"]`).classes().includes('ring-1')).toBe(
+      path === '目标'
+    )
+    pointer('pointerup')
+  }
+  expect(wrapper.emitted('moveGroup')).toEqual([['开发/用户', '目标']])
+  await source.trigger('pointerdown', { pointerId: 1, button: 0, clientX: 10, clientY: 20 })
+  pointer('pointermove')
+  await wrapper.vm.$nextTick()
+  hit.mockReturnValue(wrapper.get('[data-api-root-drop]').element)
+  pointer('pointermove')
+  pointer('pointerup')
+  await source.trigger('click')
+  expect(source.attributes('aria-expanded')).toBe('true')
+  expect(wrapper.emitted('moveGroup')?.at(-1)).toEqual(['开发/用户', ''])
+  expect(wrapper.emitted('move')).toBeUndefined()
+})
+
 it('拖入分组显示目标并只发出移动；小幅点击、Esc、卸载均不产生移动', async () => {
   const wrapper = mount(Sidebar, {
     attachTo: document.body,

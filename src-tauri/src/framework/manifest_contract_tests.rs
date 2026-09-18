@@ -365,6 +365,7 @@ mod tests {
         ("http_ws", "api_clear", "清空全部接口"),
         ("http_ws", "api_delete", "删除接口"),
         ("http_ws", "api_group_create", "创建接口分组"),
+        ("http_ws", "api_group_move", "移动接口分组树"),
         ("http_ws", "api_group_list", "接口分组列表"),
         ("http_ws", "api_list", "接口列表"),
         ("http_ws", "api_move_group", "移动接口分组"),
