@@ -57,13 +57,20 @@ function credential(over: Partial<Credential> = {}): Credential {
  * 两个组件各自一个助手，保持 props 的类型检查（联合类型会退化成 object）。
  */
 function mountPicker(props: { modelValue: string; kind?: CredentialKind }): VueWrapper {
-  return mount(CredentialPicker, { props, attachTo: document.body })
+  const wrapper = mount(CredentialPicker, { props, attachTo: document.body })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
 
 /** 挂载凭证表单（弹窗） */
 function mountForm(props: { open: boolean; credential?: Credential }): VueWrapper {
-  return mount(CredentialForm, { props, attachTo: document.body })
+  const wrapper = mount(CredentialForm, { props, attachTo: document.body })
+  mountedWrappers.push(wrapper)
+  return wrapper
 }
+
+/** 已挂载包装器：用例结束先卸载再清空 body，否则传送门节点失去锚点会报 nextSibling */
+const mountedWrappers: VueWrapper[] = []
 
 /* ── 传送门内的表单：按原生事件驱动，与真实输入一致 ── */
 
@@ -99,6 +106,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  while (mountedWrappers.length) mountedWrappers.pop()?.unmount()
   document.body.innerHTML = ''
 })
 
