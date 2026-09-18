@@ -119,7 +119,7 @@ function changeSingle(value: boolean) {
             >
               读取失败，请重试。<UiButton size="xs" @click="state = 'ready'">重试</UiButton>
             </div>
-            <UiEmptyState v-else-if="state === 'empty'" title="暂无子项" />
+            <UiEmptyState v-else-if="state === 'empty'" compact title="暂无子项" />
             <UiTable v-else-if="row.id === 'orders'" density="compact" :framed="false">
               <thead>
                 <tr>

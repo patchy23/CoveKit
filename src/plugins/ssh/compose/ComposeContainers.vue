@@ -108,6 +108,7 @@ defineExpose({ refresh })
         />
         <UiEmptyState
           v-else
+          compact
           :title="loading ? '正在读取容器…' : '该编排下没有容器'"
           :description="loading ? '' : '未部署或容器已被移除，可启动编排后刷新。'"
         />

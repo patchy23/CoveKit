@@ -9,6 +9,8 @@
 
 ## 组件真实 API 备忘
 
+- **UiEmptyState 紧凑空状态**：子表、展开详情等局部区域传 `compact`，使用正文小字号、常规字重与 64px 最小高度；默认仍为页面空状态的标题字号和 160px 最小高度。组件固定使用界面字体，避免继承表格的数据字体。
+
 - **展开行的视觉层级**：`UiTableExpandableRow` 使用缩进的 neutral 底衬与 surface 内容区、细边框和小圆角，避免详情与相邻主行斑马纹混在一起；不叠加阴影。子表推荐 `UiTable density="compact"`，不要使用 comfortable 放大次级信息；表单和反馈内容自行添加内部间距，表格可直接铺满内容区。
 
 - **UiTableExpandableRow 表格行展开**：从 `@/core/ui` 导入，放在 `UiTable` 的 `tbody` 内；组件生成主行和跨列详情行，不增加表格外包装。必填 `label`、`columns`（总列数，包含组件生成的首列）和受控 `v-model:expanded`；`disabled` 禁止切换。`#label` 自定义首列名称，默认插槽放其余 `UiTableCell`，并提供 `{ toggle, expanded, detailsId }` 供操作列复用；`#details` 放子表格、表单或状态提示。展开按钮支持原生键盘操作并带展开状态及详情区域关联。默认首次展开挂载、收起卸载；`keepMounted` 启用后首次展开才挂载，收起保留输入和实例，隐藏期间的轮询等副作用由业务管理。单行或多行展开由父层决定，加载、错误、空状态也由业务负责。组件是多根行片段，不依赖根节点 class 透传；父子 `UiTable` 的密度、条纹和悬停样式各自独立。组件实验室的“表格行展开”展示上述行为。
