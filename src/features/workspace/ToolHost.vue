@@ -9,6 +9,7 @@
  * 首次打开要读一次分包，没有加载态就是一段无从判断的白屏。
  */
 import { computed, defineAsyncComponent, h, onErrorCaptured, ref, type Component } from 'vue'
+import UiSpinner from '@/core/ui/UiSpinner.vue'
 
 const props = defineProps<{
   /** 工具 id（错误归属与日志前缀） */
@@ -19,7 +20,7 @@ const props = defineProps<{
   loader: () => Promise<{ default: Component }>
 }>()
 
-/** 加载态（首次打开：分包读取期间显示，避免白屏） */
+/** 加载态（首次打开：分包读取期间显示，避免白屏）；转圈统一走 UiSpinner */
 const LoadingView: Component = () =>
   h(
     'div',
@@ -27,13 +28,7 @@ const LoadingView: Component = () =>
       class:
         'flex h-full items-center justify-center gap-[8px] text-body-sm text-text-muted dark:text-text-muted-dark',
     },
-    [
-      h('span', {
-        class:
-          'h-[14px] w-[14px] animate-spin rounded-full border-2 border-border border-t-tertiary-strong dark:border-border-dark dark:border-t-tertiary-dark',
-      }),
-      h('span', null, '正在加载…'),
-    ]
+    [h(UiSpinner, { size: 'md', label: '正在加载' }), h('span', null, '正在加载…')]
   )
 
 /** 实例代数：自增即强制重建组件（重试路径） */
