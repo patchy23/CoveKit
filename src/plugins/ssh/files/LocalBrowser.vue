@@ -10,7 +10,7 @@ import type { RemoteFile } from '../contracts'
 import { ipc } from '../ipc'
 import { formatBytes, formatTime } from '../connection/useSsh'
 import PathBreadcrumbs from './PathBreadcrumbs.vue'
-import { UiIcon, UiIconButton, UiTable, UiTableCell } from '@/core/ui'
+import { UiIcon, UiIconButton, UiStatusBar, UiTable, UiTableCell, UiToolbar } from '@/core/ui'
 
 const props = defineProps<{
   /** 初始目录（默认取设置里的默认下载目录） */
@@ -96,9 +96,7 @@ defineExpose({
 <template>
   <div class="flex min-h-0 flex-col border-l border-border dark:border-border-dark">
     <!-- 工具栏：上级 + 面包屑路径（与远程侧同款）+ 刷新 -->
-    <div
-      class="flex shrink-0 items-center gap-[4px] border-b border-border px-[8px] py-[6px] dark:border-border-dark"
-    >
+    <UiToolbar bordered>
       <!-- 盘符根的上级是 ''（驱动器视图），禁用判定必须用 null 比较（'' 是假值会误禁用） -->
       <UiIconButton
         label="上级"
@@ -124,7 +122,7 @@ defineExpose({
       <UiIconButton label="刷新" size="sm" title="刷新" @click="navigate(currentPath)">
         <UiIcon name="refresh" :size="14" />
       </UiIconButton>
-    </div>
+    </UiToolbar>
 
     <!-- 列表（与远程侧同款 UiTable 布局：名称/大小/修改时间；内容超宽时横向滚动） -->
     <UiScrollArea as-child axis="both">
@@ -180,11 +178,11 @@ defineExpose({
     </UiScrollArea>
 
     <!-- 状态栏 -->
-    <div
-      class="flex h-[36px] shrink-0 items-center gap-[8px] border-t border-border px-[10px] text-caption text-text-muted dark:border-border-dark"
-    >
+    <UiStatusBar size="md">
       <span class="min-w-0 flex-1 truncate font-mono">{{ atDrives ? '此电脑' : currentPath }}</span>
-      <span>{{ files.length }} 项</span>
-    </div>
+      <template #trailing>
+        <span>{{ files.length }} 项</span>
+      </template>
+    </UiStatusBar>
   </div>
 </template>

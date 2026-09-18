@@ -7,7 +7,14 @@ import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, DockerContainer } from '../contracts'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiSearchInput, UiSelect as Select } from '@/core/ui'
+import {
+  UiButton,
+  UiModal,
+  UiSearchInput,
+  UiSelect as Select,
+  UiStatusBar,
+  UiToolbar,
+} from '@/core/ui'
 import TerminalTab from '../terminal/TerminalTab.vue'
 import LiveLogDialog from '../monitor/LiveLogDialog.vue'
 import DockerTable from './DockerTable.vue'
@@ -133,10 +140,7 @@ watch(
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div
-      class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
-    >
-      <span class="text-body-sm text-secondary dark:text-secondary-dark"> Docker 容器 </span>
+    <UiToolbar bordered title="Docker 容器">
       <UiSearchInput
         v-model="keyword"
         size="sm"
@@ -155,10 +159,10 @@ watch(
         ]"
         @update:model-value="statusFilter = $event as 'all' | 'running' | 'exited'"
       />
-      <div class="ml-auto">
+      <template #trailing>
         <UiButton variant="ghost" size="sm" title="刷新容器列表" @click="refresh"> 刷新 </UiButton>
-      </div>
-    </div>
+      </template>
+    </UiToolbar>
 
     <DockerTable
       :containers="filtered"
@@ -168,34 +172,30 @@ watch(
       @terminal="exec"
     />
 
-    <div
-      class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-    >
+    <UiStatusBar>
       <span>共 {{ filtered.length }} 个容器</span>
-      <span class="ml-auto">{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
-    </div>
+      <template #trailing>
+        <span>{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
+      </template>
+    </UiStatusBar>
 
-    <Teleport to="body">
-      <div
+    <!-- 容器内终端：工作台型弹窗（UiModal full 档，自带 Esc/右上角出口） -->
+    <UiModal
+      :open="terminalContainer !== null"
+      size="full"
+      width="900px"
+      :title="terminalContainer ? `终端 · ${terminalContainer.name}` : ''"
+      @close="terminalContainer = null"
+    >
+      <TerminalTab
         v-if="terminalContainer"
-        class="fixed inset-0 z-[150] grid place-items-center bg-black/30 p-[40px]"
-      >
-        <div
-          class="flex h-full w-full max-w-[900px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
-        >
-          <div class="flex justify-end border-b border-border p-[6px] dark:border-border-dark">
-            <UiButton variant="ghost" size="sm" @click="terminalContainer = null">关闭</UiButton>
-          </div>
-          <TerminalTab
-            :key="terminalContainer.id"
-            :connection="connection"
-            :profile="profile"
-            :docker-container-id="terminalContainer.id"
-            :connect-request="1"
-          />
-        </div>
-      </div>
-    </Teleport>
+        :key="terminalContainer.id"
+        :connection="connection"
+        :profile="profile"
+        :docker-container-id="terminalContainer.id"
+        :connect-request="1"
+      />
+    </UiModal>
     <LiveLogDialog
       v-if="logTarget && connection"
       :title="`${logTarget.name} · 实时日志`"

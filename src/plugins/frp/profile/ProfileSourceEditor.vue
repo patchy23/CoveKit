@@ -7,7 +7,7 @@ import { UiScrollArea } from '@/core/ui'
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { UiCodeEditor } from '@/core/ui'
+import { UiCodeEditor, UiStatusBar } from '@/core/ui'
 import type { FrpVerifyError } from '../contracts'
 
 const props = defineProps<{
@@ -71,18 +71,12 @@ function errorLabel(item: FrpVerifyError): string {
         </p>
       </div>
     </UiScrollArea>
-    <p
-      v-else-if="props.verified"
-      class="shrink-0 border-t border-border px-[10px] py-[5px] text-caption text-success-strong dark:border-border-dark dark:text-success-dark"
-    >
-      {{ t('frp.verifyPassed') }}
-    </p>
+    <UiStatusBar v-else-if="props.verified">
+      <span class="text-success-strong dark:text-success-dark">{{ t('frp.verifyPassed') }}</span>
+    </UiStatusBar>
 
-    <p
-      v-if="hasComments"
-      class="shrink-0 border-t border-border px-[10px] py-[5px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-    >
+    <UiStatusBar v-if="hasComments">
       {{ t('frp.sourceCommentHint') }}
-    </p>
+    </UiStatusBar>
   </div>
 </template>

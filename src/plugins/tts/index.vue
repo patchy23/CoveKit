@@ -7,7 +7,15 @@
 import { computed, onMounted, ref } from 'vue'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { useUiStore } from '@/stores/ui'
-import { UiButton, UiEmptyState, UiField, UiRange, UiSelect as Select, UiTextarea } from '@/core/ui'
+import {
+  UiButton,
+  UiEmptyState,
+  UiField,
+  UiRange,
+  UiSelect as Select,
+  UiTextarea,
+  UiToolbar,
+} from '@/core/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import { ipc } from './ipc'
 import type { TtsVoice } from './contracts'
@@ -89,14 +97,11 @@ onMounted(async () => {
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- 顶栏 -->
-    <div
-      class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
-    >
-      <span class="text-body-sm text-secondary dark:text-secondary-dark">文字转语音</span>
+    <UiToolbar bordered title="文字转语音">
       <span class="font-mono text-caption text-text-muted dark:text-text-muted-dark">
         微软 Edge TTS · 免费中文语音
       </span>
-    </div>
+    </UiToolbar>
 
     <div class="grid min-h-0 flex-1 grid-cols-2 gap-[14px] p-[14px]">
       <!-- 左：输入与参数 -->

@@ -5,7 +5,7 @@ import { save as dialogSave } from '@tauri-apps/plugin-dialog'
 import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiSelect } from '@/core/ui'
 import SqlEditor from './SqlEditor.vue'
 import QueryResultPane from './QueryResultPane.vue'
-import { useSplitPane } from './useSplitPane'
+import { useSplitPane } from '@/core/ui/useSplitPane'
 import type { useDatabase } from './useDatabase'
 
 const props = defineProps<{

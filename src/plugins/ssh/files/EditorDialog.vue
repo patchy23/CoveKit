@@ -8,7 +8,7 @@
  */
 import { computed, ref, watch } from 'vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiCodeDiff, UiCodeEditor } from '@/core/ui'
+import { UiBadge, UiButton, UiCodeDiff, UiCodeEditor, UiModal } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 
 const props = defineProps<{
@@ -89,108 +89,78 @@ watch(
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="fixed inset-0 z-[150] grid place-items-center bg-black/30 p-[40px]">
+  <!-- 工作台型弹窗（UiModal full 档）：Esc/遮罩/焦点管理统一由 UiModal 承载；close 走 cancel() 保留未保存二次确认 -->
+  <UiModal :open="true" size="full" width="820px" @close="cancel">
+    <template #header>
       <div
-        class="flex h-full w-full max-w-[820px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
+        class="flex items-center gap-[10px] border-b border-border px-[16px] py-[10px] pr-[44px] dark:border-border-dark"
       >
-        <!-- 标题栏：路径 + dirty / 冲突标记 + 操作 -->
-        <div
-          class="flex shrink-0 items-center gap-[10px] border-b border-border px-[16px] py-[10px] dark:border-border-dark"
-        >
-          <span class="font-mono text-body font-medium text-primary dark:text-primary-dark">
-            {{ path }}
-          </span>
-          <span
-            v-if="dirty"
-            class="rounded-[4px] bg-warning-soft px-[6px] py-[1px] text-caption font-medium text-warning-strong dark:bg-warning-soft-dark dark:text-warning-dark"
-          >
-            已修改
-          </span>
-          <span
+        <span class="font-mono text-body font-medium text-primary dark:text-primary-dark">
+          {{ path }}
+        </span>
+        <UiBadge v-if="dirty" tone="warning">已修改</UiBadge>
+        <UiBadge v-if="conflict" tone="danger">远端已变化</UiBadge>
+        <div class="ml-auto flex items-center gap-[8px]">
+          <UiButton variant="ghost" size="sm" :disabled="saving" @click="cancel"> 取消 </UiButton>
+          <UiButton
             v-if="conflict"
-            class="rounded-[4px] bg-danger-soft px-[6px] py-[1px] text-caption font-medium text-danger-strong dark:bg-danger-soft-dark dark:text-danger-dark"
+            variant="ghost"
+            size="sm"
+            title="对比远端当前内容与当前编辑内容"
+            @click="openDiff"
           >
-            远端已变化
-          </span>
-          <div class="ml-auto flex items-center gap-[8px]">
-            <UiButton variant="ghost" size="sm" :disabled="saving" @click="cancel"> 取消 </UiButton>
-            <UiButton
-              v-if="conflict"
-              variant="ghost"
-              size="sm"
-              title="对比远端当前内容与当前编辑内容"
-              @click="openDiff"
-            >
-              查看差异
-            </UiButton>
-            <UiButton
-              v-if="conflict"
-              variant="danger"
-              size="sm"
-              :loading="saving"
-              title="忽略远端修改，以当前编辑内容覆盖"
-              @click="save(true)"
-            >
-              强制覆盖
-            </UiButton>
-            <UiButton variant="primary" size="sm" :loading="saving" @click="save(false)">
-              {{ conflict ? '重新检查并保存' : saving ? '保存中…' : '保存' }}
-            </UiButton>
-          </div>
-        </div>
-
-        <!-- 编辑区：core 编辑器（语法高亮 / 行号 / 状态栏 / 查找替换 / Ctrl+S） -->
-        <div class="min-h-0 flex-1 overflow-hidden">
-          <UiCodeEditor
-            ref="editor"
-            :model-value="content"
-            :filename="filename"
-            status-bar
-            class="!rounded-none !border-0"
-            @change="dirty = true"
-            @save="save(false)"
-            @error="ui.toast($event)"
-          />
+            查看差异
+          </UiButton>
+          <UiButton
+            v-if="conflict"
+            variant="danger"
+            size="sm"
+            :loading="saving"
+            title="忽略远端修改，以当前编辑内容覆盖"
+            @click="save(true)"
+          >
+            强制覆盖
+          </UiButton>
+          <UiButton variant="primary" size="sm" :loading="saving" @click="save(false)">
+            {{ conflict ? '重新检查并保存' : saving ? '保存中…' : '保存' }}
+          </UiButton>
         </div>
       </div>
-    </div>
-    <!-- 冲突差异对比：左＝远端当前内容，右＝当前编辑内容 -->
-    <div v-if="diffOpen" class="fixed inset-0 z-[160] grid place-items-center bg-black/30 p-[40px]">
-      <div
-        class="flex h-full w-full max-w-[1100px] flex-col overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_48px_rgba(16,24,40,0.25)] dark:border-border-dark dark:bg-surface-dark"
-      >
-        <div
-          class="flex shrink-0 items-center gap-[10px] border-b border-border px-[16px] py-[10px] dark:border-border-dark"
-        >
-          <span class="text-body font-medium text-primary dark:text-primary-dark">冲突差异</span>
-          <span class="text-caption text-text-muted dark:text-text-muted-dark">
-            左：远端当前内容 · 右：当前编辑内容
-          </span>
-          <div class="ml-auto">
-            <UiButton variant="ghost" size="sm" @click="diffOpen = false">关闭</UiButton>
-          </div>
-        </div>
-        <div class="min-h-0 flex-1 p-[12px]">
-          <UiCodeDiff
-            :original="remoteContent ?? ''"
-            :modified="diffSnapshot"
-            :filename="filename"
-            mode="split"
-            height="100%"
-          />
-        </div>
-      </div>
-    </div>
+    </template>
 
-    <ConfirmDialog
-      :open="discardOpen"
-      title="放弃未保存的修改"
-      message="文件尚未保存，确定放弃修改吗？"
-      confirm-label="放弃修改"
-      danger
-      @close="discardOpen = false"
-      @confirm="confirmDiscard"
+    <!-- 编辑区：core 编辑器（语法高亮 / 行号 / 状态栏 / 查找替换 / Ctrl+S） -->
+    <UiCodeEditor
+      ref="editor"
+      :model-value="content"
+      :filename="filename"
+      status-bar
+      class="min-h-0 flex-1 !rounded-none !border-0"
+      @change="dirty = true"
+      @save="save(false)"
+      @error="ui.toast($event)"
     />
-  </Teleport>
+  </UiModal>
+
+  <!-- 冲突差异对比：左＝远端当前内容，右＝当前编辑内容 -->
+  <UiModal :open="diffOpen" size="full" width="1100px" title="冲突差异" @close="diffOpen = false">
+    <div class="min-h-0 flex-1 p-[12px]">
+      <UiCodeDiff
+        :original="remoteContent ?? ''"
+        :modified="diffSnapshot"
+        :filename="filename"
+        mode="split"
+        height="100%"
+      />
+    </div>
+  </UiModal>
+
+  <ConfirmDialog
+    :open="discardOpen"
+    title="放弃未保存的修改"
+    message="文件尚未保存，确定放弃修改吗？"
+    confirm-label="放弃修改"
+    danger
+    @close="discardOpen = false"
+    @confirm="confirmDiscard"
+  />
 </template>

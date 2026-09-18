@@ -3,7 +3,7 @@
  * RemotePathToolbar · 远程文件工具栏（后退/上级导航图标按钮 + 面包屑路径）
  * 上传/下载/重命名/删除不在工具栏放按钮：统一走列表右键菜单 + 双栏拖拽 + 中缝传输按钮。
  */
-import { UiIcon, UiIconButton } from '@/core/ui'
+import { UiIcon, UiIconButton, UiToolbar } from '@/core/ui'
 import PathBreadcrumbs from './PathBreadcrumbs.vue'
 
 defineProps<{ currentPath: string; canGoBack?: boolean }>()
@@ -15,9 +15,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div
-    class="flex shrink-0 items-center gap-[4px] border-b border-border px-[8px] py-[6px] dark:border-border-dark"
-  >
+  <UiToolbar bordered>
     <UiIconButton
       label="后退"
       size="sm"
@@ -37,5 +35,5 @@ const emit = defineEmits<{
       separator="/"
       @navigate="emit('navigate', $event)"
     />
-  </div>
+  </UiToolbar>
 </template>

@@ -4,7 +4,7 @@ import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiTabs, UiTabsOverflo
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import { useDatabase } from './useDatabase'
-import { useSplitPane } from './useSplitPane'
+import { useSplitPane } from '@/core/ui/useSplitPane'
 import ConnectionsSidebar from './ConnectionsSidebar.vue'
 import QueryTab from './QueryTab.vue'
 import DataTab from './DataTab.vue'

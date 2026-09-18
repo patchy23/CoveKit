@@ -5,7 +5,7 @@ import { UiTooltip } from '@/core/ui'
 import { nextTick, onMounted, ref, watch, type ComponentPublicInstance } from 'vue'
 import type { RemoteFile } from '../contracts'
 import { formatBytes, formatTime } from '../connection/useSsh'
-import { UiButton, UiTable, UiTableCell } from '@/core/ui'
+import { UiButton, UiStatusBar, UiTable, UiTableCell } from '@/core/ui'
 import RemotePathToolbar from './RemotePathToolbar.vue'
 
 const props = defineProps<{
@@ -178,9 +178,7 @@ watch(
       </div>
     </UiScrollArea>
 
-    <div
-      class="flex h-[36px] shrink-0 items-center gap-[12px] border-t border-border px-[12px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-    >
+    <UiStatusBar size="md">
       <span>{{ currentPath }}</span>
       <span>{{ files.length }} 个项目</span>
       <span v-if="transferStatus" class="text-tertiary-strong dark:text-tertiary-dark">
@@ -190,8 +188,9 @@ watch(
         已选 {{ selectedCount }} 项
       </span>
       <!-- 书签/传输双按钮（由上层经 slot 注入） -->
-      <span class="flex-1"></span>
-      <slot name="status-actions" />
-    </div>
+      <template #trailing>
+        <slot name="status-actions" />
+      </template>
+    </UiStatusBar>
   </div>
 </template>

@@ -7,7 +7,15 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, SystemdService } from '../contracts'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import { UiButton, UiSearchInput, UiSelect, UiTable, UiTableCell } from '@/core/ui'
+import {
+  UiButton,
+  UiSearchInput,
+  UiSelect,
+  UiStatusBar,
+  UiTable,
+  UiTableCell,
+  UiToolbar,
+} from '@/core/ui'
 import LiveLogDialog from './LiveLogDialog.vue'
 import ServiceConfigDialog from './ServiceConfigDialog.vue'
 import { ipc } from '../ipc'
@@ -116,10 +124,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div
-      class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
-    >
-      <span class="text-body-sm text-secondary dark:text-secondary-dark"> 服务管理 </span>
+    <UiToolbar bordered title="服务管理">
       <UiSearchInput
         v-model="query"
         size="sm"
@@ -139,7 +144,7 @@ onBeforeUnmount(() => {
         ]"
         @update:model-value="filter = $event as 'all' | 'active' | 'inactive' | 'failed'"
       />
-      <div class="ml-auto">
+      <template #trailing>
         <UiButton
           variant="ghost"
           size="sm"
@@ -149,8 +154,8 @@ onBeforeUnmount(() => {
         >
           刷新
         </UiButton>
-      </div>
-    </div>
+      </template>
+    </UiToolbar>
 
     <UiScrollArea as-child axis="vertical">
       <div class="min-h-0 flex-1">
@@ -214,12 +219,12 @@ onBeforeUnmount(() => {
       </div>
     </UiScrollArea>
 
-    <div
-      class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-    >
+    <UiStatusBar>
       <span>共 {{ filtered.length }} 个服务</span>
-      <span class="ml-auto">{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
-    </div>
+      <template #trailing>
+        <span>{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
+      </template>
+    </UiStatusBar>
     <LiveLogDialog
       v-if="logTarget && connection"
       :title="`${logTarget.name} · 实时日志`"

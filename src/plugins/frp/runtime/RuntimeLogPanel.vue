@@ -7,7 +7,7 @@ import { UiScrollArea } from '@/core/ui'
  */
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { UiButton, UiIcon, UiIconButton, UiInput } from '@/core/ui'
+import { UiButton, UiIcon, UiIconButton, UiInput, UiToolbar } from '@/core/ui'
 import { logLevelClass, type FrpLogLine } from './frpStatus'
 
 const props = defineProps<{
@@ -72,9 +72,7 @@ watch(
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- 工具条：过滤 + 自动滚动 + 清空 -->
-    <div
-      class="flex shrink-0 items-center gap-[8px] border-b border-border px-[10px] py-[6px] dark:border-border-dark"
-    >
+    <UiToolbar bordered>
       <UiInput
         v-model="keyword"
         size="sm"
@@ -94,7 +92,7 @@ watch(
       <UiIconButton :label="t('frp.logClear')" size="xs" @click="emit('clear')">
         <UiIcon name="trash" :size="14" />
       </UiIconButton>
-    </div>
+    </UiToolbar>
 
     <!-- 日志区 -->
     <UiScrollArea as-child axis="both">

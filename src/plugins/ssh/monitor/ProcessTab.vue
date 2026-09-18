@@ -14,8 +14,10 @@ import {
   UiModal,
   UiSearchInput,
   UiSelect as Select,
+  UiStatusBar,
   UiTable,
   UiTableCell,
+  UiToolbar,
 } from '@/core/ui'
 import { ipc } from '../ipc'
 
@@ -163,10 +165,7 @@ watch(
 
 <template>
   <div class="flex h-full min-h-0 flex-col">
-    <div
-      class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
-    >
-      <span class="text-body-sm text-secondary dark:text-secondary-dark"> 进程管理 </span>
+    <UiToolbar bordered title="进程管理">
       <UiSearchInput
         v-model="keyword"
         size="sm"
@@ -185,10 +184,10 @@ watch(
         ]"
         @update:model-value="sortBy = $event as 'cpu' | 'memory' | 'pid'"
       />
-      <div class="ml-auto">
+      <template #trailing>
         <UiButton variant="ghost" size="sm" title="刷新进程列表" @click="refresh"> 刷新 </UiButton>
-      </div>
-    </div>
+      </template>
+    </UiToolbar>
 
     <UiScrollArea as-child axis="vertical">
       <div class="min-h-0 flex-1">
@@ -260,12 +259,12 @@ watch(
       </div>
     </UiScrollArea>
 
-    <div
-      class="flex shrink-0 items-center gap-[12px] border-t border-border px-[12px] py-[6px] text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
-    >
+    <UiStatusBar>
       <span>共 {{ filtered.length }} 个进程</span>
-      <span class="ml-auto">{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
-    </div>
+      <template #trailing>
+        <span>{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
+      </template>
+    </UiStatusBar>
     <ConfirmDialog
       :open="pendingKill !== null"
       :title="pendingKill?.force ? '强制结束进程' : '结束进程'"

@@ -25,6 +25,8 @@ import {
   UiInput,
   UiModal,
   UiSelect as Select,
+  UiEmptyState,
+  UiToolbar,
 } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
@@ -264,14 +266,11 @@ onUnmounted(() => {
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- 工具栏 -->
-    <div
-      class="flex shrink-0 items-center gap-[10px] border-b border-border px-[12px] py-[8px] dark:border-border-dark"
-    >
-      <span class="text-body-sm text-secondary dark:text-secondary-dark">隧道</span>
+    <UiToolbar bordered title="隧道">
       <span class="font-mono text-caption text-text-muted dark:text-text-muted-dark">
         {{ connection.host ?? '' }}
       </span>
-      <div class="ml-auto">
+      <template #trailing>
         <UiButton
           variant="ghost"
           size="xs"
@@ -280,8 +279,8 @@ onUnmounted(() => {
         >
           <UiIcon name="plus" :size="12" class="mr-[3px]" />新建隧道
         </UiButton>
-      </div>
-    </div>
+      </template>
+    </UiToolbar>
 
     <!-- 列表 -->
     <UiScrollArea as-child axis="vertical">
@@ -292,28 +291,16 @@ onUnmounted(() => {
         >
           隧道配置加载失败，请重试。
         </div>
-        <div
+        <UiEmptyState
           v-else-if="loaded && rows.length === 0"
-          class="flex flex-col items-center justify-center py-[64px] text-center"
+          title="还没有隧道"
+          description="端口转发可以把远程服务映射到本机（-L）、把本机服务暴露给服务器（-R），或建立 SOCKS5 代理（-D）。"
         >
-          <div
-            class="grid h-11 w-11 place-items-center rounded-[12px] bg-tertiary-soft dark:bg-tertiary-soft-dark"
-          >
-            <UiIcon
-              name="play-all"
-              :size="20"
-              class="text-tertiary-strong dark:text-tertiary-dark"
-            />
-          </div>
-          <p class="mt-md text-body font-medium dark:text-primary-dark">还没有隧道</p>
-          <p class="mt-[4px] max-w-[360px] text-body-sm text-text-muted dark:text-text-muted-dark">
-            端口转发可以把远程服务映射到本机（-L）、把本机服务暴露给服务器（-R），或建立 SOCKS5
-            代理（-D）。
-          </p>
-          <UiButton variant="ghost" size="sm" class="mt-[12px]" @click="openCreate"
-            >新建第一条隧道</UiButton
-          >
-        </div>
+          <template #icon>
+            <UiIcon name="play-all" :size="20" />
+          </template>
+          <UiButton variant="ghost" size="sm" @click="openCreate">新建第一条隧道</UiButton>
+        </UiEmptyState>
 
         <div v-else class="overflow-hidden rounded-lg border border-border dark:border-border-dark">
           <div
