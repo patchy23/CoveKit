@@ -4,7 +4,7 @@
 
 ## 沿真实链路核对
 
-`UI 消费方 → owner ipc.ts → invokeCommand 的 wire args → patchybox_module! 清单 → patchybox_routes! 路由 → Rust command → 结果或事件 → UI 反馈`
+`UI 消费方 → owner ipc.ts → invokeCommand 的 wire args → covekit_module! 清单 → covekit_routes! 路由 → Rust command → 结果或事件 → UI 反馈`
 
 以源码中的实际命令和字段为准，不把方案清单当实现。模块宏生成命令登记和 handler，不另造第二份注册表；应用只安装一个总 handler。装配机制有变化时再读宏和上游实现，不为每个命令重复审计整个框架。
 

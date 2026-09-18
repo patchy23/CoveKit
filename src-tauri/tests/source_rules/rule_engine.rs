@@ -311,7 +311,7 @@ impl ScanReport {
     /// 打印报告：规则数、源范围、计数、例外、未覆盖边界。禁止「语义全覆盖」式结论。
     pub fn print(&self) {
         println!(
-            "== patchyBox 规范检查（{}）：{} 条规则，源范围 {} -> {} 个文件 / {} 字节 ==",
+            "== CoveKit 规范检查（{}）：{} 条规则，源范围 {} -> {} 个文件 / {} 字节 ==",
             self.mode.as_str(),
             RULES.len(),
             self.root.display(),
@@ -380,10 +380,10 @@ pub fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-/// 扫描根：默认 `src-tauri/src`；文档模式可用 `PATCHYBOX_DOCS_ROOT` 覆盖（wrapper 传规范化绝对路径）。
+/// 扫描根：默认 `src-tauri/src`；文档模式可用 `COVEKIT_DOCS_ROOT` 覆盖（wrapper 传规范化绝对路径）。
 pub fn scan_root(mode: Mode) -> PathBuf {
     if mode.wants_docs() {
-        if let Ok(custom) = std::env::var("PATCHYBOX_DOCS_ROOT") {
+        if let Ok(custom) = std::env::var("COVEKIT_DOCS_ROOT") {
             return PathBuf::from(custom);
         }
     }

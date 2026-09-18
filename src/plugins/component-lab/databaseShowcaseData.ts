@@ -12,8 +12,8 @@ export const createDocuments = (): UiWorkbenchTab[] => [
 ]
 export const createTreeItems = (): UiTreeItem[] => [
   {
-    id: 'db-patchybox',
-    label: 'patchybox',
+    id: 'db-covekit',
+    label: 'covekit',
     depth: 0,
     kind: 'database',
     expandable: true,
@@ -55,11 +55,11 @@ export const rows = Array.from({ length: 48 }, (_, index) => ({
   id: String(index + 1),
   username: `user_${String(index + 1).padStart(3, '0')}`,
   display_name: ['林晓', '陈嘉禾', '王明远', '周宁'][index % 4],
-  email: `user${index + 1}@patchybox.dev`,
+  email: `user${index + 1}@covekit.dev`,
   status: index % 7 === 0 ? 'locked' : 'active',
   created_at: `2026-08-${String((index % 12) + 1).padStart(2, '0')} 10:${String(index).padStart(2, '0')}:26`,
 }))
-export const databaseOptions = ['patchybox', 'information_schema'].map((value) => ({
+export const databaseOptions = ['covekit', 'information_schema'].map((value) => ({
   value,
   label: value,
 }))

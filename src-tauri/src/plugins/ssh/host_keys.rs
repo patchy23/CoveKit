@@ -1,4 +1,4 @@
-//! SSH 插件 · 已知主机管理（patchyBox 私有 known_hosts 文件）
+//! SSH 插件 · 已知主机管理（CoveKit 私有 known_hosts 文件）
 //! 存储沿用 russh 的 OpenSSH 行格式（[host]:port algorithm base64），零迁移成本；
 //! 本模块在其上提供：条目解析（含 SHA256 指纹）、按指纹删除、按新密钥替换。
 //! 文件为本应用私有（非用户 ~/.ssh/known_hosts），可放心整行增删。

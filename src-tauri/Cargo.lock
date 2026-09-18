@@ -991,6 +991,55 @@ dependencies = [
 ]
 
 [[package]]
+name = "covekit"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm 0.10.3",
+ "aliyun-openapi-core-rust-sdk",
+ "argon2 0.5.3",
+ "chrono",
+ "deadpool-postgres",
+ "futures-util",
+ "hex",
+ "hickory-resolver",
+ "hmac 0.12.1",
+ "keyring",
+ "mysql_async",
+ "proc-macro2",
+ "rand 0.8.7",
+ "redis",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "russh",
+ "russh-sftp",
+ "rustls",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "syn 2.0.119",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-single-instance",
+ "tauri-plugin-store",
+ "tauri-plugin-updater",
+ "tauri-plugin-window-state",
+ "time",
+ "tokio",
+ "tokio-postgres",
+ "tokio-postgres-rustls",
+ "tokio-tungstenite",
+ "toml 1.1.6+spec-1.1.0",
+ "uuid",
+ "webpki-roots 0.26.11",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "cpubits"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4270,55 +4319,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aab41826031698d6ffcd9cff78ef56ef998e39dc7e5067cdfebe373842d4723b"
 dependencies = [
  "phc",
-]
-
-[[package]]
-name = "patchybox"
-version = "0.1.0"
-dependencies = [
- "aes-gcm 0.10.3",
- "aliyun-openapi-core-rust-sdk",
- "argon2 0.5.3",
- "chrono",
- "deadpool-postgres",
- "futures-util",
- "hex",
- "hickory-resolver",
- "hmac 0.12.1",
- "keyring",
- "mysql_async",
- "proc-macro2",
- "rand 0.8.7",
- "redis",
- "reqwest 0.12.28",
- "rusqlite",
- "russh",
- "russh-sftp",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "syn 2.0.119",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-single-instance",
- "tauri-plugin-store",
- "tauri-plugin-updater",
- "tauri-plugin-window-state",
- "time",
- "tokio",
- "tokio-postgres",
- "tokio-postgres-rustls",
- "tokio-tungstenite",
- "toml 1.1.6+spec-1.1.0",
- "uuid",
- "webpki-roots 0.26.11",
- "windows-sys 0.59.0",
 ]
 
 [[package]]

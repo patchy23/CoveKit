@@ -436,7 +436,7 @@ pub async fn dns_delete_record(
 }
 
 // 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）
-crate::patchybox_module! {
+crate::covekit_module! {
     owner: "dns",
     feature: "dns",
     commands: {

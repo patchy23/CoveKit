@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn broken_history_reference_rolls_back_the_owner_transaction() {
         let path = std::env::temp_dir().join(format!(
-            "patchybox-database-transfer-{}.db",
+            "covekit-database-transfer-{}.db",
             uuid::Uuid::new_v4()
         ));
         let db = crate::framework::store::PluginDb::open_at(&path, super::super::store::MIGRATIONS)

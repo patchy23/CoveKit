@@ -123,7 +123,7 @@ mod tests {
     /// 建立本用例专用临时目录（避免并行用例互相干扰）
     fn temp_root(tag: &str) -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "patchybox-space-bootstrap-test-{tag}-{}",
+            "covekit-space-bootstrap-test-{tag}-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);

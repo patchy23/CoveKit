@@ -427,7 +427,7 @@ mod tests {
             return;
         }
         // 子进程只跑本测试（--exact）且不捕获输出（--nocapture），避免测试输出噪音与缓冲。
-        // 注意：lib 目标重命名后 module_path!() 带 crate 名前缀（patchybox_lib::…），
+        // 注意：lib 目标重命名后 module_path!() 带 crate 名前缀（covekit_lib::…），
         // 而 libtest 的测试名不含该前缀，需剥掉第一段才能 --exact 匹配。
         let exe = std::env::current_exe().unwrap();
         let dir = std::env::temp_dir();

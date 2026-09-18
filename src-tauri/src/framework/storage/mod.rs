@@ -40,7 +40,7 @@ mod test_support {
     /// 建立本测试专用临时目录（先清空，保证夹具干净）
     pub fn temp_dir(tag: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "patchybox-storage-{tag}-{}-{}",
+            "covekit-storage-{tag}-{}-{}",
             std::process::id(),
             super::plan::now_ms()
         ));

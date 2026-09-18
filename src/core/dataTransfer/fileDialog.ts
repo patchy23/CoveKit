@@ -52,7 +52,7 @@ export function ensurePackExtension(path: string): string {
 }
 
 /**
- * 默认保存文件名：`patchybox-<空间名>-<YYYYMMDD>.pbdata`。
+ * 默认保存文件名：`covekit-<空间名>-<YYYYMMDD>.pbdata`。
  *
  * 为什么不用固定名：多份数据包放进同一目录会互相覆盖，用户还得自己改名；空间名与导出日期
  * 是他在文件管理器里唯一认得出的线索。空间名先剔除文件系统禁用字符与控制字符（按码点判断，
@@ -66,7 +66,7 @@ export function defaultPackFileName(spaceName: string, at: Date): string {
     .replace(/\s+/g, '-')
   const pad = (value: number): string => String(value).padStart(2, '0')
   const stamp = `${at.getFullYear()}${pad(at.getMonth() + 1)}${pad(at.getDate())}`
-  return `patchybox-${cleaned || 'data'}-${stamp}.${PB_DATA_EXTENSION}`
+  return `covekit-${cleaned || 'data'}-${stamp}.${PB_DATA_EXTENSION}`
 }
 
 /** 默认失败提示：全局 toast（动态导入避免 core → stores 的初始化顺序耦合） */

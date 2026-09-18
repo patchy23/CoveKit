@@ -94,7 +94,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: v__VERSION__
-          releaseName: patchyBox v__VERSION__
+          releaseName: CoveKit v__VERSION__
           releaseBody: See CHANGELOG.md for release details.
           releaseDraft: true
           prerelease: false

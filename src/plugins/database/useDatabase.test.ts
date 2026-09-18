@@ -19,7 +19,7 @@ function node(
 describe('filterTreeItems', () => {
   const tree: UiTreeItem[] = [
     node('conn1', '生产 · 订单库', 0, true, true),
-    node('conn1::db', 'patchybox', 1, true, true),
+    node('conn1::db', 'covekit', 1, true, true),
     node('conn1::tables', '表', 2, true, true),
     node('conn1::table:users', 'users', 3),
     node('conn1::table:orders', 'orders', 3),
@@ -98,7 +98,7 @@ describe('isSystemSchema', () => {
   })
 
   it('业务库不命中；无清单类型一律不命中', () => {
-    expect(isSystemSchema('mysql', 'patchybox')).toBe(false)
+    expect(isSystemSchema('mysql', 'covekit')).toBe(false)
     expect(isSystemSchema('postgresql', 'public')).toBe(false)
     expect(isSystemSchema('sqlite', 'main')).toBe(false)
     expect(isSystemSchema('redis', 'db0')).toBe(false)

@@ -218,7 +218,7 @@ async function onSave() {
             <UiInput
               v-model="form.database"
               size="sm"
-              :placeholder="form.dbType === 'redis' ? 'db0' : 'patchybox'"
+              :placeholder="form.dbType === 'redis' ? 'db0' : 'covekit'"
             />
           </div>
           <div class="flex items-end gap-[16px] pb-[6px]">

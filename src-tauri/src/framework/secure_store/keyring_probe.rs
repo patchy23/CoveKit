@@ -5,7 +5,7 @@
 //! 只有真正落到系统密钥库才读得到。
 //!
 //! 约定（避免污染用户真实条目）：
-//! - 写 / 读 / 删**全程只用测试专用 service**（`com.patchy23.patchybox.tests`）+ 固定 account，用完即删；
+//! - 写 / 读 / 删**全程只用测试专用 service**（`com.patchyx.covekit.tests`）+ 固定 account，用完即删；
 //! - 用例开始先删一次、结束再删一次，上一次中断留下的条目不会累积；
 //! - 非 Windows/macOS 编译目标没有原生后端，用例显式跳过并打印原因（不冒充通过）；
 //! - 子进程通过重入当前测试可执行文件的同名用例完成读取。
@@ -13,13 +13,13 @@
 //! 用例整体包在 `#[cfg(test)] mod tests` 里：规范检查器按字面属性排除测试子树，不替它做 cfg 求值。
 
 /// 测试专用 service 名（与生产 service 完全隔离）
-const PROBE_SERVICE: &str = "com.patchy23.patchybox.tests";
+const PROBE_SERVICE: &str = "com.patchyx.covekit.tests";
 /// 测试用固定 account（固定名才能被下次运行清理掉）
 const PROBE_ACCOUNT: &str = "cross-process-probe";
 /// 父进程传给子进程的 account 环境变量
-const ENV_ACCOUNT: &str = "PATCHYBOX_KEYRING_PROBE_ACCOUNT";
+const ENV_ACCOUNT: &str = "COVEKIT_KEYRING_PROBE_ACCOUNT";
 /// 父进程传给子进程的期望密钥（十六进制）环境变量
-const ENV_EXPECTED: &str = "PATCHYBOX_KEYRING_PROBE_EXPECTED_HEX";
+const ENV_EXPECTED: &str = "COVEKIT_KEYRING_PROBE_EXPECTED_HEX";
 /// 子进程用例名（父进程用它重入自身可执行文件）
 const CHILD_TEST: &str = "child_reads_key_written_by_parent";
 

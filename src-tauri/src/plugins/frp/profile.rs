@@ -284,7 +284,7 @@ mod tests {
 
     /// 测试用临时目录（标签 + 进程号命名，避免并行用例互相干扰）
     fn temp_dir(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("patchybox-frp-{tag}-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("covekit-frp-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir

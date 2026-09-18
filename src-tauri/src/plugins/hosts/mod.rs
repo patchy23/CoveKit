@@ -84,8 +84,8 @@ fn save_hosts_blocking(content: &str) -> Result<HostsResult, String> {
 #[cfg(target_os = "windows")]
 fn save_windows(content: &str) -> Result<HostsResult, String> {
     let tmp_dir = std::env::temp_dir();
-    let tmp_hosts = tmp_dir.join("patchybox-hosts.tmp");
-    let tmp_ps1 = tmp_dir.join("patchybox-hosts.ps1");
+    let tmp_hosts = tmp_dir.join("covekit-hosts.tmp");
+    let tmp_ps1 = tmp_dir.join("covekit-hosts.ps1");
     let backup = format!("{}.bak-{}", hosts_path(), timestamp());
 
     fs::write(&tmp_hosts, content).map_err(|e| format!("写临时文件失败: {e}"))?;
@@ -123,7 +123,7 @@ fn save_windows(content: &str) -> Result<HostsResult, String> {
 /// macOS：osascript 管理员授权「备份→覆盖→清理」（弹系统授权框）
 #[cfg(target_os = "macos")]
 fn save_macos(content: &str) -> Result<HostsResult, String> {
-    let tmp_hosts = std::env::temp_dir().join("patchybox-hosts.tmp");
+    let tmp_hosts = std::env::temp_dir().join("covekit-hosts.tmp");
     let backup = format!("{}.bak-{}", hosts_path(), timestamp());
 
     fs::write(&tmp_hosts, content).map_err(|e| format!("写临时文件失败: {e}"))?;
@@ -181,7 +181,7 @@ fn finish_save() -> Result<HostsResult, String> {
 }
 
 // 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）
-crate::patchybox_module! {
+crate::covekit_module! {
     owner: "hosts",
     feature: "hosts",
     commands: {

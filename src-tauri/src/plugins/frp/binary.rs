@@ -324,7 +324,7 @@ pub(crate) async fn versions(limit: u32) -> Result<Vec<FrpReleaseInfo>, String> 
         .map_err(|e| format!("初始化网络客户端失败：{e}"))?;
     let response = client
         .get(&url)
-        .header("User-Agent", "patchyBox")
+        .header("User-Agent", "CoveKit")
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -571,7 +571,7 @@ async fn verify_checksum(
         );
         let Ok(response) = client
             .get(&url)
-            .header("User-Agent", "patchyBox")
+            .header("User-Agent", "CoveKit")
             .send()
             .await
         else {
@@ -623,7 +623,7 @@ async fn fetch_archive(
         .map_err(|e| format!("初始化网络客户端失败：{e}"))?;
     let mut response = client
         .get(url)
-        .header("User-Agent", "patchyBox")
+        .header("User-Agent", "CoveKit")
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -843,7 +843,7 @@ mod tests {
     #[cfg(windows)]
     #[tokio::test]
     async fn extract_unpacks_real_zip() {
-        let dir = std::env::temp_dir().join("patchybox-frp-extract-ok");
+        let dir = std::env::temp_dir().join("covekit-frp-extract-ok");
         let _ = tokio::fs::remove_dir_all(&dir).await;
         tokio::fs::create_dir_all(&dir).await.expect("建临时目录");
         let source = dir.join("payload");
@@ -877,7 +877,7 @@ mod tests {
     #[cfg(windows)]
     #[tokio::test]
     async fn extract_rejects_broken_archive() {
-        let dir = std::env::temp_dir().join("patchybox-frp-extract-broken");
+        let dir = std::env::temp_dir().join("covekit-frp-extract-broken");
         let _ = tokio::fs::remove_dir_all(&dir).await;
         tokio::fs::create_dir_all(&dir).await.expect("建临时目录");
         let archive = dir.join("broken.zip");

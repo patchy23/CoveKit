@@ -116,7 +116,7 @@ describe('设置保存行为', () => {
     await store.init()
     await store.set('theme', 'dark')
     expect(ipcMock.settingsPatch).not.toHaveBeenCalled()
-    expect(localStorage.getItem('patchybox.json:settings')).toContain('dark')
+    expect(localStorage.getItem('covekit.json:settings')).toContain('dark')
   })
 })
 

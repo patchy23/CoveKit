@@ -91,7 +91,7 @@ pub async fn ssh_file_upload(
                 } else {
                     None
                 };
-                let temp_path = format!("{target_path}.patchybox-upload-{}", resource_id("file"));
+                let temp_path = format!("{target_path}.covekit-upload-{}", resource_id("file"));
                 let mut remote = sftp
                     .create(&temp_path)
                     .await
@@ -220,7 +220,7 @@ pub async fn ssh_file_download(
                 .map_err(|e| format!("读取元数据失败: {e}"))?;
             let total = meta.size.unwrap_or(0) as u64;
             let mut remote = sftp.open(&rpath).await.map_err(|e| e.to_string())?;
-            let temp_path = format!("{lpath}.patchybox-download-{}", resource_id("file"));
+            let temp_path = format!("{lpath}.covekit-download-{}", resource_id("file"));
             let mut local = tokio::fs::File::create(&temp_path)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -356,7 +356,7 @@ pub async fn ssh_file_download_recursive(
                     .await
                     .map_err(|e| e.to_string())?;
                 let temp_path = format!(
-                    "{}.patchybox-download-{}",
+                    "{}.covekit-download-{}",
                     entry.local_path.display(),
                     resource_id("file")
                 );

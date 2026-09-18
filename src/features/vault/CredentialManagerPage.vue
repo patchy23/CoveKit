@@ -197,7 +197,7 @@ const importOverwrite = ref('merge')
 async function startExport() {
   const path = await dialogSave({
     title: '导出凭证备份',
-    defaultPath: 'patchybox-vault.pbvault',
+    defaultPath: 'covekit-vault.pbvault',
     filters: [{ name: 'CoveKit 凭证备份', extensions: ['pbvault'] }],
   })
   if (!path) return

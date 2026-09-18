@@ -732,11 +732,11 @@ mod tests {
     #[test]
     fn ipc_name_alias_is_explicit() {
         assert_eq!(
-            crate::patchybox_ipc_name!(crate::plugins::tts::tts_voices),
+            crate::covekit_ipc_name!(crate::plugins::tts::tts_voices),
             "tts_voices"
         );
         assert_eq!(
-            crate::patchybox_ipc_name!(crate::plugins::tts::tts_voices, "voices_legacy"),
+            crate::covekit_ipc_name!(crate::plugins::tts::tts_voices, "voices_legacy"),
             "voices_legacy"
         );
     }
@@ -773,8 +773,8 @@ mod tests {
         assert_eq!(crate::plugins::http_ws::MODULE.storage_key, Some("api"));
     }
 
-    /// AR07 ②：新增模块的改动面就是两处——模块门面写一份 `patchybox_module!`，
-    /// 再在 plugins/mod.rs 的 `patchybox_routes!` 加一行。这里从源码直接锁定两份声明
+    /// AR07 ②：新增模块的改动面就是两处——模块门面写一份 `covekit_module!`，
+    /// 再在 plugins/mod.rs 的 `covekit_routes!` 加一行。这里从源码直接锁定两份声明
     /// 一一对应：只写了模块自己、忘加清单行的模块**不会被装配**，而运行期登记表本身
     /// 由清单生成（模块数 == 清单长度恒真），抓不住这种漏写，只能靠源码比对。
     #[test]
@@ -813,7 +813,7 @@ mod tests {
         }
     }
 
-    /// 扫描目录下所有 Rust 文件里的 `patchybox_module!` 声明，收集 owner
+    /// 扫描目录下所有 Rust 文件里的 `covekit_module!` 声明，收集 owner
     fn collect_module_declarations(dir: &Path, out: &mut Vec<String>) {
         let Ok(entries) = std::fs::read_dir(dir) else {
             return;
@@ -834,7 +834,7 @@ mod tests {
         }
     }
 
-    /// 递归（含内联模块）找 `patchybox_module!` 调用并取 owner 字面量
+    /// 递归（含内联模块）找 `covekit_module!` 调用并取 owner 字面量
     fn collect_module_macro_owners(items: &[syn::Item], out: &mut Vec<String>) {
         for item in items {
             match item {
@@ -843,7 +843,7 @@ mod tests {
                         .path
                         .segments
                         .last()
-                        .is_some_and(|seg| seg.ident == "patchybox_module")
+                        .is_some_and(|seg| seg.ident == "covekit_module")
                     {
                         if let Some(owner) = owner_literal(&m.mac.tokens.to_string()) {
                             out.push(owner);
@@ -868,7 +868,7 @@ mod tests {
         Some(value.to_string())
     }
 
-    /// 取 `plugins/mod.rs` 里 `patchybox_routes!` 清单的全部 owner 字面量（排序后）
+    /// 取 `plugins/mod.rs` 里 `covekit_routes!` 清单的全部 owner 字面量（排序后）
     fn route_manifest_owners(path: &Path) -> Vec<String> {
         let Ok(text) = std::fs::read_to_string(path) else {
             return Vec::new();
@@ -883,7 +883,7 @@ mod tests {
                     .path
                     .segments
                     .last()
-                    .is_some_and(|seg| seg.ident == "patchybox_routes")
+                    .is_some_and(|seg| seg.ident == "covekit_routes")
                 {
                     let tokens = m.mac.tokens.to_string();
                     out.extend(tokens.split('"').skip(1).step_by(2).map(str::to_string));

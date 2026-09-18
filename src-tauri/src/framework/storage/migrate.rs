@@ -193,7 +193,7 @@ pub fn execute_pending(
             );
         }
         // 写入探针用 create_new：绝不覆盖用户已有的同名文件
-        let probe = staging.join(format!(".patchybox-write-probe-{}", pending.id));
+        let probe = staging.join(format!(".covekit-write-probe-{}", pending.id));
         if let Err(e) = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)

@@ -111,7 +111,7 @@ async fn live_pty_channel_echo() {
 
     // 写入命令并等待回显（echo 标记便于断言）
     channel
-        .data_bytes(b"echo PATCHYBOX_LIVE_TEST_2026\nexit\n".to_vec())
+        .data_bytes(b"echo COVEKIT_LIVE_TEST_2026\nexit\n".to_vec())
         .await
         .expect("写入失败");
 
@@ -124,7 +124,7 @@ async fn live_pty_channel_echo() {
         {
             Some(ChannelMsg::Data { data }) => {
                 out.push_str(&String::from_utf8_lossy(&data));
-                if out.contains("PATCHYBOX_LIVE_TEST_2026") {
+                if out.contains("COVEKIT_LIVE_TEST_2026") {
                     break;
                 }
             }
@@ -133,7 +133,7 @@ async fn live_pty_channel_echo() {
         }
     }
     assert!(
-        out.contains("PATCHYBOX_LIVE_TEST_2026"),
+        out.contains("COVEKIT_LIVE_TEST_2026"),
         "PTY 回显未收到，输出: {}",
         out.chars().take(300).collect::<String>()
     );

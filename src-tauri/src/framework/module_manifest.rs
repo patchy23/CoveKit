@@ -7,7 +7,7 @@
 //! 模块内声明（放在模块门面文件里，例如 plugins/http_ws/mod.rs）：
 //!
 //! ```ignore
-//! crate::patchybox_module! {
+//! crate::covekit_module! {
 //!     owner: "http_ws",
 //!     feature: "http-ws",
 //!     storage: "api",                                  // 可选：数据文件 <root>/data/api.db
@@ -19,7 +19,7 @@
 //! ```
 //!
 //! 生成物：`IPC_OWNER` / `FEATURE_ID` / `IPC_ENTRIES` / `MODULE` / `register_ipc()` / `invoke_handler()`。
-//! 路由与装配清单由 `plugins/mod.rs` 的 `patchybox_routes!` 声明，两份清单共用同一批 owner 字面量，
+//! 路由与装配清单由 `plugins/mod.rs` 的 `covekit_routes!` 声明，两份清单共用同一批 owner 字面量，
 //! 启动校验据此判定「登记了命令但没有路由分支」的死命令。
 
 use std::sync::Mutex;
@@ -139,12 +139,12 @@ pub fn modules() -> Vec<&'static ModuleSpec> {
 
 /// 命令路径取最后一段作为 IPC 名（编译期展开，避免手写字符串与实现脱节）
 #[macro_export]
-macro_rules! patchybox_last_segment {
+macro_rules! covekit_last_segment {
     ($single:ident) => {
         stringify!($single)
     };
     ($head:ident :: $($rest:tt)+) => {
-        $crate::patchybox_last_segment!($($rest)+)
+        $crate::covekit_last_segment!($($rest)+)
     };
 }
 
@@ -153,18 +153,18 @@ macro_rules! patchybox_last_segment {
 /// 别名是唯一允许「注册名 ≠ 实现名」的入口，且必须在清单里写明（禁止靠字符串替换猜测），
 /// 契约测试按已发布命令表比对，别名写错即失败。
 #[macro_export]
-macro_rules! patchybox_ipc_name {
+macro_rules! covekit_ipc_name {
     ($($segment:ident)::+, $alias:literal) => {
         $alias
     };
     ($($segment:ident)::+) => {
-        $crate::patchybox_last_segment!($($segment)::+)
+        $crate::covekit_last_segment!($($segment)::+)
     };
 }
 
 /// 可选字面量 → `Option<&str>`（供模块清单的 storage 字段使用）
 #[macro_export]
-macro_rules! patchybox_optional_str {
+macro_rules! covekit_optional_str {
     () => {
         ::core::option::Option::None
     };
@@ -175,7 +175,7 @@ macro_rules! patchybox_optional_str {
 
 /// 模块静态清单宏：生成 IPC 入库元数据 + 命令 handler + 模块描述
 #[macro_export]
-macro_rules! patchybox_module {
+macro_rules! covekit_module {
     (
         owner: $owner:literal,
         feature: $feature:literal,
@@ -192,7 +192,7 @@ macro_rules! patchybox_module {
         /// 命令清单：(IPC 名称, 中文说明)。名称与 handler 取自同一函数路径标识符，
         /// 兼容别名用 `impl::path as "别名"` 显式声明。
         pub(crate) const IPC_ENTRIES: &[(&str, &str)] = &[
-            $( ($crate::patchybox_ipc_name!($($segment)::+ $(, $alias)?), $doc), )*
+            $( ($crate::covekit_ipc_name!($($segment)::+ $(, $alias)?), $doc), )*
         ];
 
         /// 本模块静态描述（启动校验与契约测试读取）
@@ -201,7 +201,7 @@ macro_rules! patchybox_module {
                 owner: IPC_OWNER,
                 feature_id: FEATURE_ID,
                 module_path: module_path!(),
-                storage_key: $crate::patchybox_optional_str!($($storage)?),
+                storage_key: $crate::covekit_optional_str!($($storage)?),
                 commands: IPC_ENTRIES,
             };
 
@@ -230,7 +230,7 @@ macro_rules! patchybox_module {
 
 /// 路由与装配清单宏：一条 `owner => 模块` 生成路由分支、装配顺序与启动校验
 #[macro_export]
-macro_rules! patchybox_routes {
+macro_rules! covekit_routes {
     ( $( $owner:literal => $module:ident ),* $(,)? ) => {
         /// 有路由分支的 owner 清单（路由、装配与启动校验的唯一数据源）
         pub(crate) const ROUTABLE_OWNERS: &[&str] = &[ $( $owner ),* ];
@@ -351,9 +351,9 @@ mod tests {
     /// 路径末段提取：单段路径与多段路径都应取到函数名
     #[test]
     fn last_segment_extracts_function_name() {
-        assert_eq!(patchybox_last_segment!(foo), "foo");
+        assert_eq!(covekit_last_segment!(foo), "foo");
         assert_eq!(
-            patchybox_last_segment!(crate::plugins::http_ws::http::http_request),
+            covekit_last_segment!(crate::plugins::http_ws::http::http_request),
             "http_request"
         );
     }
@@ -361,8 +361,8 @@ mod tests {
     /// 可选存储键：缺省与显式两条路径
     #[test]
     fn optional_storage_key() {
-        let missing: Option<&str> = patchybox_optional_str!();
+        let missing: Option<&str> = covekit_optional_str!();
         assert_eq!(missing, None);
-        assert_eq!(patchybox_optional_str!("api"), Some("api"));
+        assert_eq!(covekit_optional_str!("api"), Some("api"));
     }
 }

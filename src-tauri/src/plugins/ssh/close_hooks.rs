@@ -21,7 +21,7 @@ use super::sftp::TransferState;
 use super::terminal::TerminalState;
 use super::tunnel::TunnelState;
 
-/// 本插件在统一关闭入口里的 owner 名（与 `patchybox_module!{ owner: ... }` 一致）与失败前缀
+/// 本插件在统一关闭入口里的 owner 名（与 `covekit_module!{ owner: ... }` 一致）与失败前缀
 const OWNER: &str = "ssh";
 
 /// 退出清理：取消传输 → 停终端 → 停隧道 → 断会话 → 放掉主机密钥等待

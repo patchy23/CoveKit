@@ -38,7 +38,7 @@ const activeConnection = ref('mysql-prod')
 const activeDocument = ref('query-1')
 const activeResult = ref('data')
 const selectedRow = ref('1')
-const database = ref('patchybox')
+const database = ref('covekit')
 const schema = ref('public')
 const rowLimit = ref('1000')
 const sql = ref(`SELECT id, username, display_name, email, status, created_at
@@ -216,7 +216,7 @@ function toggleTree(item: UiTreeItem) {
                     <div
                       class="mt-0.5 font-mono text-caption text-text-muted dark:text-text-muted-dark"
                     >
-                      patchybox.public
+                      covekit.public
                     </div>
                   </div>
                   <div class="space-y-4 p-3 text-body-sm">

@@ -119,7 +119,7 @@ pub(crate) async fn replace_remote_file(
             .map_err(|e| format!("提交远程文件失败: {e}"));
     }
 
-    let backup_path = format!("{target_path}.patchybox-backup-{}", resource_id("file"));
+    let backup_path = format!("{target_path}.covekit-backup-{}", resource_id("file"));
     fs.rename(target_path, &backup_path)
         .await
         .map_err(|e| format!("备份远程原文件失败: {e}"))?;
@@ -145,7 +145,7 @@ pub(crate) fn replace_local_file(temp_path: &str, target_path: &str) -> Result<(
         return std::fs::rename(temp_path, target_path)
             .map_err(|e| format!("提交下载文件失败: {e}"));
     }
-    let backup_path = format!("{target_path}.patchybox-backup-{}", resource_id("file"));
+    let backup_path = format!("{target_path}.covekit-backup-{}", resource_id("file"));
     std::fs::rename(target_path, &backup_path).map_err(|e| format!("备份本地原文件失败: {e}"))?;
     if let Err(error) = std::fs::rename(temp_path, target_path) {
         let restore_error = std::fs::rename(&backup_path, target_path).err();

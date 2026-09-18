@@ -39,7 +39,7 @@ pub struct SshHandler {
     pub(crate) host: String,
     /// 目标 SSH 端口。
     pub(crate) port: u16,
-    /// patchyBox 私有 known_hosts 文件。
+    /// CoveKit 私有 known_hosts 文件。
     pub(crate) known_hosts_path: PathBuf,
     /// 事件推送句柄（host-key-verify / connect-stage）。
     pub(crate) app: AppHandle,

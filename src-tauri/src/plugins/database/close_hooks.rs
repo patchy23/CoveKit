@@ -19,7 +19,7 @@ use crate::plugins::database::agent::AgentClient;
 
 use super::drivers::{AgentRuntimeState, DbCancelState, DbState};
 
-/// 本插件在统一关闭入口里的 owner 名（与 `patchybox_module!{ owner: ... }` 一致，前端按它展示）
+/// 本插件在统一关闭入口里的 owner 名（与 `covekit_module!{ owner: ... }` 一致，前端按它展示）
 const OWNER: &str = "database";
 
 /// 退出清理：取消查询 → 结束 agent 进程 → 清会话注册表

@@ -7,7 +7,7 @@ import { decodeBase64, encodeBase64 } from './useBase64'
 describe('encodeBase64', () => {
   it('ASCII 与中文（UTF-8）编码', () => {
     expect(encodeBase64('hello').output).toBe('aGVsbG8=')
-    expect(encodeBase64('你好，patchyBox').ok).toBe(true)
+    expect(encodeBase64('你好，CoveKit').ok).toBe(true)
   })
   it('空输入报错', () => {
     expect(encodeBase64('').ok).toBe(false)
@@ -20,7 +20,7 @@ describe('encodeBase64', () => {
 
 describe('decodeBase64', () => {
   it('编码解码往返（含中文）', () => {
-    const text = '你好，patchyBox ✓ 123'
+    const text = '你好，CoveKit ✓ 123'
     const encoded = encodeBase64(text)
     expect(encoded.ok).toBe(true)
     const decoded = decodeBase64(encoded.output)

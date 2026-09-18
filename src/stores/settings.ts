@@ -18,7 +18,7 @@ import type { AppSettings } from '@/core/ipc/contracts'
 import { storage } from '@/core/storage'
 import { setLocale } from '@/i18n'
 
-const STORE_FILE = 'patchybox.json'
+const STORE_FILE = 'covekit.json'
 const SETTINGS_KEY = 'settings'
 
 /** 环境探测：只有 WebView 内才允许走 IPC（浏览器预览没有 Tauri 注入） */

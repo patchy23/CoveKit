@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn imported_files_stay_managed_and_metadata_does_not_replace_content() {
         let root =
-            std::env::temp_dir().join(format!("patchybox-frp-transfer-{}", uuid::Uuid::new_v4()));
+            std::env::temp_dir().join(format!("covekit-frp-transfer-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join("data/frp/profiles")).unwrap();
         let original = root.join("data/frp/profiles/example.toml");
         std::fs::write(&original, "original").unwrap();

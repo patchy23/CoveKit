@@ -170,7 +170,7 @@ mod tests {
     /// 建立本测试专用临时目录（用例之间互不干扰，重复运行时先清掉上次残留）
     fn temp_dir(tag: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("patchybox-api-legacy-{tag}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("covekit-api-legacy-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("建临时目录");
         dir

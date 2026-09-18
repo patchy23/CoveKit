@@ -34,7 +34,7 @@ const languageOptions = [
 ]
 
 const fullSample = ref(`{
-  "tool": "patchyBox",
+  "tool": "CoveKit",
   "version": "0.9.0",
   "features": ["format", "http", "database", "ssh"],
   "limits": { "maxFileSize": 5242880, "highlight": 524288 },
@@ -59,7 +59,7 @@ const searchSample = ref(`SELECT s.id,
 
 /** 校验演示：缺逗号 + 多逗号 + 未闭合括号，用于观察波浪线与中文提示 */
 const brokenJson = ref(`{
-  "tool": "patchyBox"
+  "tool": "CoveKit"
   "limits": { "maxFileSize": 5242880, }
   "features": ["format", "http"],
 }`)
@@ -69,14 +69,14 @@ const largeSample = ref(buildLargeSample())
 
 /** 差异对比样例：远端当前内容 vs 本地编辑内容 */
 const diffOriginal = `{
-  "tool": "patchyBox",
+  "tool": "CoveKit",
   "version": "1.0.0",
   "editor": "legacy-textarea",
   "limits": { "maxFileSize": 1048576 }
 }`
 
 const diffModified = `{
-  "tool": "patchyBox",
+  "tool": "CoveKit",
   "version": "1.0.0",
   "editor": "codemirror-6",
   "limits": { "maxFileSize": 5242880 },
@@ -148,9 +148,7 @@ resources:
 function buildLargeSample(): string {
   const lines: string[] = []
   for (let i = 1; i <= 8000; i += 1) {
-    lines.push(
-      `{"seq": ${i}, "tool": "patchyBox", "event": "sync", "size": ${i * 37}, "ok": true},`
-    )
+    lines.push(`{"seq": ${i}, "tool": "CoveKit", "event": "sync", "size": ${i * 37}, "ok": true},`)
   }
   return lines.join('\n')
 }

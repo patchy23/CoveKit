@@ -9,7 +9,7 @@ body.ui-drag-select-lock * {
 }
 
 /* ============================================================
- * patchyBox · DESIGN.md tokens 单一事实源映射（Tailwind 4 @theme）
+ * CoveKit · DESIGN.md tokens 单一事实源映射（Tailwind 4 @theme）
  * 修改视觉规范先改 DESIGN.md，再同步此处；勿在此引入规范外色值。
  * ============================================================ */
 
@@ -18,7 +18,7 @@ body.ui-drag-select-lock * {
  * 必须在同一个 family 内通过 unicode-range 分流，避免 Windows FontLink 把中文链接到宋体。
  */
 @font-face {
-  font-family: 'patchyBox Sans';
+  font-family: 'CoveKit Sans';
   src: url('../fonts/InterVariable.woff2') format('woff2');
   font-weight: 100 900;
   font-style: normal;
@@ -28,7 +28,7 @@ body.ui-drag-select-lock * {
 }
 
 @font-face {
-  font-family: 'patchyBox Sans';
+  font-family: 'CoveKit Sans';
   src:
     local('PingFang SC Light'), local('Microsoft YaHei UI Light'), local('Microsoft YaHei Light'),
     local('Noto Sans SC');
@@ -41,7 +41,7 @@ body.ui-drag-select-lock * {
 }
 
 @font-face {
-  font-family: 'patchyBox Sans';
+  font-family: 'CoveKit Sans';
   src:
     local('PingFang SC'), local('Microsoft YaHei UI'), local('Microsoft YaHei'),
     local('Noto Sans SC');
@@ -54,7 +54,7 @@ body.ui-drag-select-lock * {
 }
 
 @font-face {
-  font-family: 'patchyBox Sans';
+  font-family: 'CoveKit Sans';
   src:
     local('PingFang SC Semibold'), local('PingFang SC Bold'), local('Microsoft YaHei UI Bold'),
     local('Microsoft YaHei Bold'), local('Noto Sans SC');
@@ -71,7 +71,7 @@ body.ui-drag-select-lock * {
  * 仅把微软雅黑追加到 Consolas 后面无法阻止 Windows FontLink 把中文链接到宋体。
  */
 @font-face {
-  font-family: 'patchyBox Mono';
+  font-family: 'CoveKit Mono';
   src:
     local('Cascadia Code'), local('Cascadia Mono'), local('Consolas'), local('SF Mono'),
     local('Menlo');
@@ -83,7 +83,7 @@ body.ui-drag-select-lock * {
 }
 
 @font-face {
-  font-family: 'patchyBox Mono';
+  font-family: 'CoveKit Mono';
   src: local('PingFang SC'), local('Microsoft YaHei UI'), local('Microsoft YaHei');
   font-style: normal;
   font-weight: 100 900;
@@ -171,17 +171,17 @@ body.ui-drag-select-lock * {
   --radius-full: 9999px;
 
   /* ── Typography（DESIGN.md typography：组合字体按字符集分流）──
-   * 西文/数字：patchyBox Sans 内的本地 Inter Variable
-   * 中文：patchyBox Sans 内的 PingFang SC / 微软雅黑 UI / Noto Sans CJK SC，禁止 Windows FontLink
+   * 西文/数字：CoveKit Sans 内的本地 Inter Variable
+   * 中文：CoveKit Sans 内的 PingFang SC / 微软雅黑 UI / Noto Sans CJK SC，禁止 Windows FontLink
    * 等宽：拉丁字符走 Cascadia Code / Consolas；中文必须显式回退无衬线雅黑/PingFang，禁止落到宋体
    *
    * ── 字号规范（单一事实源）──
    * 新增字号先在此加 token，组件一律用语义类（text-h1 / text-body / …），
    * 禁止散落 arbitrary 值（text-[13px]）。字重用 font-*，字距用 tracking-*。 */
-  --font-sans: 'patchyBox Sans', sans-serif;
-  --font-mono: 'patchyBox Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', monospace;
+  --font-sans: 'CoveKit Sans', sans-serif;
+  --font-mono: 'CoveKit Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', monospace;
   /* 数据表正文专用：字形与技术区一致，但和终端/代码的语义 token 解耦。 */
-  --font-data: 'patchyBox Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', monospace;
+  --font-data: 'CoveKit Mono', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', monospace;
 
   /* 页面主标题（顶栏） */
   --text-h1: 17px;

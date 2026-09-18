@@ -21,4 +21,4 @@
 - hosts 修改采用按需 UAC 最小提权，应用本体不常驻管理员权限。
 - Tauri 命令与插件能力经最小权限白名单暴露。
 
-[0.1.0]: https://github.com/patchy23/patchyBox/releases/tag/v0.1.0
+[0.1.0]: https://github.com/patchy23/CoveKit/releases/tag/v0.1.0

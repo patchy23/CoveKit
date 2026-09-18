@@ -2,7 +2,7 @@
 
 /* ── SSH 契约 · 连接（主机密钥/分阶段/结构化结果/导入） ── */
 
-/** 已知主机条目（patchyBox 私有 known_hosts） */
+/** 已知主机条目（CoveKit 私有 known_hosts） */
 
 import type { ServerConnection } from './common'
 

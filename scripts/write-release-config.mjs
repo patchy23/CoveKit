@@ -12,7 +12,7 @@ const config = {
   plugins: {
     updater: {
       pubkey: publicKey,
-      endpoints: ['https://github.com/patchy23/patchyBox/releases/latest/download/latest.json'],
+      endpoints: ['https://github.com/patchy23/CoveKit/releases/latest/download/latest.json'],
       windows: { installMode: 'passive' },
     },
   },

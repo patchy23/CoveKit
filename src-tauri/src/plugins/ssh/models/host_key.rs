@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /* ── 主机密钥校验（首连确认 / 变更阻断） ── */
 
-/// 已知主机条目（来自 patchyBox 私有 known_hosts 文件）
+/// 已知主机条目（来自 CoveKit 私有 known_hosts 文件）
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KnownHostEntry {

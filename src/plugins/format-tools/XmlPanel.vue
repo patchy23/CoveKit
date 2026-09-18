@@ -10,7 +10,7 @@ import { UiAlert, UiButton, UiCodeEditor, UiToolbar } from '@/core/ui'
 const { copyText } = useCopy()
 
 const input = ref(
-  '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <app name="patchyBox">\n    <version>0.1.0</version>\n  </app>\n</config>'
+  '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <app name="CoveKit">\n    <version>0.1.0</version>\n  </app>\n</config>'
 )
 const output = ref('')
 const error = ref('')

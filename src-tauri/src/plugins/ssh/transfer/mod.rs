@@ -1241,7 +1241,7 @@ mod tests {
             root: root.clone(),
             space_id: "11111111-1111-4111-8111-111111111111".into(),
             keyring: crate::framework::secure_store::ScopedKeyringStore::new(
-                "com.patchy23.patchybox.tests",
+                "com.patchyx.covekit.tests",
             ),
         };
 

@@ -139,7 +139,7 @@ mod tests {
     /// 申请一个独占的临时库文件路径（按 tag + 进程号区分，测试之间不共用文件）
     fn temp_db_path(tag: &str) -> PathBuf {
         let mut path = std::env::temp_dir();
-        path.push(format!("patchybox-db-test-{tag}-{}.db", std::process::id()));
+        path.push(format!("covekit-db-test-{tag}-{}.db", std::process::id()));
         let _ = std::fs::remove_file(&path);
         path
     }

@@ -59,7 +59,7 @@ fn scan_rust_rules() {
     );
 }
 
-/// 入口 2：文档级规则全仓扫描 + 棘轮判定（目录可由 PATCHYBOX_DOCS_ROOT 覆盖）。
+/// 入口 2：文档级规则全仓扫描 + 棘轮判定（目录可由 COVEKIT_DOCS_ROOT 覆盖）。
 #[test]
 fn scan_docs() {
     let baseline = load_baseline();

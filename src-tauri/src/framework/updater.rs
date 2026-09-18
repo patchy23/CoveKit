@@ -96,7 +96,7 @@ mod tests {
     fn placeholder_pubkey_is_unavailable() {
         let status = classify(
             Some(PLACEHOLDER_PUBKEY),
-            &["https://github.com/patchy23/patchyBox/releases/latest/download/latest.json".into()],
+            &["https://github.com/patchy23/CoveKit/releases/latest/download/latest.json".into()],
         );
         assert!(!status.available);
         assert!(status.reason.contains("占位更新公钥"), "{}", status.reason);

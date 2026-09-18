@@ -3,7 +3,7 @@ import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /**
  * KnownHostsDialog · 已知主机管理
- * 列出 patchyBox 私有 known_hosts 的条目（算法 + SHA256 指纹），支持删除单条/整台主机。
+ * 列出 CoveKit 私有 known_hosts 的条目（算法 + SHA256 指纹），支持删除单条/整台主机。
  * 服务器重装等合法变更也可在此删除旧指纹后重连。
  */
 import { ref, watch } from 'vue'

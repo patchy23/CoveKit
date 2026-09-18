@@ -127,12 +127,12 @@ mod tests {
         assert!(current().is_none());
 
         set(StorageRecovery::configured_unavailable(
-            "E:/patchybox",
-            "E:/patchybox",
+            "E:/covekit",
+            "E:/covekit",
         ));
         let state = current().expect("恢复状态应可读回");
         assert_eq!(state.reason, RecoveryReason::ConfiguredRootUnavailable);
-        assert_eq!(state.configured_root, "E:/patchybox");
+        assert_eq!(state.configured_root, "E:/covekit");
         assert!(state.can_retry && state.can_use_default);
         assert!(state.plan_id.is_none());
 

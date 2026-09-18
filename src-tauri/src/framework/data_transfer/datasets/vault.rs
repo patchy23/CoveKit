@@ -27,7 +27,7 @@ pub(crate) const SCHEMA_VERSION: u32 = 1;
 struct VaultAdapter;
 
 impl DatasetAdapter for VaultAdapter {
-    /// 归属 owner（与 `patchybox_module!` 的模块标识一致）
+    /// 归属 owner（与 `covekit_module!` 的模块标识一致）
     fn owner(&self) -> &'static str {
         "vault"
     }
@@ -242,7 +242,7 @@ mod tests {
             root: root.clone(),
             space_id: "11111111-1111-4111-8111-111111111111".into(),
             // 测试专用 service：不碰用户真实凭据管理器里的条目
-            keyring: ScopedKeyringStore::new("com.patchy23.patchybox.tests"),
+            keyring: ScopedKeyringStore::new("com.patchyx.covekit.tests"),
         };
         let credential = Credential {
             id: "cred-1".into(),

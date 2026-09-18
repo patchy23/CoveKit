@@ -47,7 +47,7 @@ function catalogFixture() {
 
 function reportFixture() {
   return {
-    path: 'D:/导出/patchybox-data.pbdata',
+    path: 'D:/导出/covekit-data.pbdata',
     bytes: 1024,
     packageId: 'pkg-1',
     sourceSpaceName: '默认空间',
@@ -89,9 +89,7 @@ describe('dataTransfer store', () => {
     ipcMock.dataExportStart.mockResolvedValue({ taskId: 'task-1', report: reportFixture() })
     const store = useDataTransferStore()
     await store.loadCatalog()
-    await expect(store.exportPack('s3cret-pass', 'D:/导出/patchybox-data.pbdata')).resolves.toBe(
-      true
-    )
+    await expect(store.exportPack('s3cret-pass', 'D:/导出/covekit-data.pbdata')).resolves.toBe(true)
     expect(store.exportReport?.packageId).toBe('pkg-1')
     expect(store.taskId).toBe('task-1')
     expect(JSON.stringify(store.$state)).not.toContain('s3cret-pass')

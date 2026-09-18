@@ -8,7 +8,7 @@
 //! - **设备级与空间级分清**：`storage_root` 是**设备级**根（日志缓存分层基、根迁移源，
 //!   跨空间共享）；空间内的数据与凭证取描述符的 `data` / `vault` 字段。
 //! - **配置位置**：`settings.json` 的 `app.storageRoot`（空串 = 默认 `app_data_dir`）。
-//!   配置类根下文件（`settings.json` / `patchybox.json` / `.window-state.json`）永不搬移，
+//!   配置类根下文件（`settings.json` / `covekit.json` / `.window-state.json`）永不搬移，
 //!   因此配置的读取位置是常量，与数据根目录指向哪个盘无关（自举安全，见任务书 §3.1）。
 //! - **老布局迁移**：根下的 `*.db`、`vault.dat`、`credentials/`、`ssh-known-hosts`、`tts/`、
 //!   `agents/` 在启动早期一次性搬入四分区（同卷 rename 优先，跨卷退化为复制 + 校验 + 删源），
@@ -73,7 +73,7 @@ pub fn is_writable_dir(dir: &Path) -> bool {
     if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
-    let probe = dir.join(".patchybox-write-probe");
+    let probe = dir.join(".covekit-write-probe");
     match std::fs::write(&probe, b"ok") {
         Ok(()) => {
             let _ = std::fs::remove_file(&probe);
@@ -285,7 +285,7 @@ mod tests {
     /// 建立本测试专用临时目录（避免并行用例互相干扰）
     fn temp_dir(tag: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("patchybox-paths-test-{tag}-{}", std::process::id()));
+            std::env::temp_dir().join(format!("covekit-paths-test-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -323,7 +323,7 @@ mod tests {
         let dir = temp_dir("writable");
         assert!(is_writable_dir(&dir.join("nested")));
         // 探针文件不残留
-        assert!(!dir.join("nested").join(".patchybox-write-probe").exists());
+        assert!(!dir.join("nested").join(".covekit-write-probe").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

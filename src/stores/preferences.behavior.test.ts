@@ -2,7 +2,7 @@
  * 空间级用户数据（收藏、最近使用）路由行为网
  *
  * 用途：固定 AR06 W4「空间字段经设置服务按 schema 路由」的可观测行为：
- * 1 → 桌面环境读写经 Rust 设置服务（preferences_get / preferences_set），不再直写 patchybox.json；
+ * 1 → 桌面环境读写经 Rust 设置服务（preferences_get / preferences_set），不再直写 covekit.json；
  * 2 → 浏览器预览环境才降级 storage 适配层（localStorage）；
  * 3 → 收藏写盘失败回滚到改动前的集合并暴露错误（界面不得显示成已收藏）；
  * 4 → 最近使用使用与 Rust 白名单一致的键名 recentTools，结构不符按空值处理。
@@ -50,7 +50,7 @@ describe('空间级用户数据通道', () => {
 
     await spaceData.set('recentTools', ['dns'])
     expect(ipcMock.preferencesSet).toHaveBeenCalledWith('recentTools', ['dns'])
-    expect(localStorage.getItem('patchybox.json:recentTools')).toBeNull()
+    expect(localStorage.getItem('covekit.json:recentTools')).toBeNull()
   })
 
   it('结构不符按空值处理，不把坏数据当收藏', async () => {
@@ -63,7 +63,7 @@ describe('空间级用户数据通道', () => {
   it('浏览器预览环境降级 storage 适配层', async () => {
     leaveDesktop()
     await spaceData.set('favorites', ['ssh'])
-    expect(localStorage.getItem('patchybox.json:favorites')).toBe('["ssh"]')
+    expect(localStorage.getItem('covekit.json:favorites')).toBe('["ssh"]')
     expect(ipcMock.preferencesSet).not.toHaveBeenCalled()
     await expect(spaceData.get<string[]>('favorites', isStringArray)).resolves.toEqual(['ssh'])
   })

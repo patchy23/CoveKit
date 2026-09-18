@@ -34,4 +34,4 @@ if __name__ == "__main__":
         print(f"✗ 目录不存在：{raw}（解析为 {target}）", file=sys.stderr)
         sys.exit(runner.EXIT_USAGE)
     note = f"扫描目录：{target}"
-    sys.exit(runner.run_entry("scan_docs", {"PATCHYBOX_DOCS_ROOT": str(target)}, note))
+    sys.exit(runner.run_entry("scan_docs", {"COVEKIT_DOCS_ROOT": str(target)}, note))

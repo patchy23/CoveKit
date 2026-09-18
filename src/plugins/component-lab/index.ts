@@ -12,7 +12,7 @@ if (import.meta.env.DEV) {
     name: '组件实验室',
     category: 'dev',
     icon: 'grid',
-    description: '临时查看与交互测试 patchyBox 公共前端组件的状态和组合效果。',
+    description: '临时查看与交互测试 CoveKit 公共前端组件的状态和组合效果。',
     keywords: ['ui', '组件', '设计系统', 'component', 'design system', '测试'],
     component: () => import('./index.vue'),
     tags: ['开发'],

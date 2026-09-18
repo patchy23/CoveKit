@@ -97,7 +97,7 @@ impl PackageHeader {
             return Err(format!("数据包损坏（头部不足 {HEADER_LEN} 字节）"));
         }
         if bytes[..8] != MAGIC[..] {
-            return Err("这不是 patchyBox 数据包（魔数不匹配）".into());
+            return Err("这不是 CoveKit 数据包（魔数不匹配）".into());
         }
         let version = u16::from_le_bytes([bytes[8], bytes[9]]);
         if version != CONTAINER_VERSION {

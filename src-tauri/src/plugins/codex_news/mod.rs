@@ -51,7 +51,7 @@ pub async fn codex_news_fetch() -> Result<NewsFeeds, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::none())
-        .user_agent("patchyBox Codex news")
+        .user_agent("CoveKit Codex news")
         .build()
         .map_err(|e| e.to_string())?;
     let (status, timeline) = tokio::try_join!(
@@ -90,7 +90,7 @@ pub fn codex_news_save(app: AppHandle, value: Value) -> Result<(), String> {
     })
 }
 
-crate::patchybox_module! {
+crate::covekit_module! {
     owner: "codex_news",
     feature: "codex-news",
     storage: "codex_news",

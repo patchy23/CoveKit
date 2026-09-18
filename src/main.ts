@@ -12,14 +12,14 @@ import { collectAllToolBlockers, requestAppExit, scopeStats } from '@/core/lifec
 /**
  * 开发构建专用取数钩子（不进正式版：`import.meta.env.DEV` 生产构建静态替换为 false）。
  *
- * - `__pbScopeStats`：页签快速开关后读回活体作用域/订阅/定时器计数（可靠性 T10）；
- * - `__pbExit`：托盘菜单退出在走查环境里点不到（图标落在溢出区），
+ * - `__covekitScopeStats`：页签快速开关后读回活体作用域/订阅/定时器计数（可靠性 T10）；
+ * - `__covekitExit`：托盘菜单退出在走查环境里点不到（图标落在溢出区），
  *   用它复现同一条退出协商链路（同 `requestAppExit`，含页面 owner 阻断者收集）。
  */
 if (import.meta.env.DEV) {
   const hooks = {
-    __pbScopeStats: scopeStats,
-    __pbExit: { collectAllToolBlockers, requestAppExit },
+    __covekitScopeStats: scopeStats,
+    __covekitExit: { collectAllToolBlockers, requestAppExit },
   }
   Object.assign(window as unknown as Record<string, unknown>, hooks)
 }

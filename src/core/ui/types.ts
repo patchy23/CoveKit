@@ -6,6 +6,6 @@ export type UiTone = 'neutral' | 'accent' | 'success' | 'warning' | 'danger' | '
 
 /**
  * 内容字体语义。组件负责字号与字重，业务只声明内容是什么。
- * 中英文具体字形由 patchyBox Sans / Mono 的 unicode-range 自动选择。
+ * 中英文具体字形由 CoveKit Sans / Mono 的 unicode-range 自动选择。
  */
 export type UiContentKind = 'text' | 'technical' | 'numeric' | 'status' | 'action' | 'code'

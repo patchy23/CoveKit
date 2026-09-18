@@ -17,7 +17,7 @@ use tauri::Manager;
 
 // 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）
 // `feature: "http-ws"` 为前端稳定 feature id；`storage: "api"` 记录接口库历史存储键。
-crate::patchybox_module! {
+crate::covekit_module! {
     owner: "http_ws",
     feature: "http-ws",
     storage: "api",

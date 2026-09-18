@@ -1,6 +1,6 @@
 ---
 version: alpha
-name: ToolKit
+name: CoveKit
 description: 明净浅色的桌面工具箱——暖橙强调、卡片化浏览、办公友好。
 colors:
   primary: "#191D23"
@@ -33,30 +33,30 @@ colors:
   success-soft-dark: "#0F2E22"
 typography:
   h1:
-    fontFamily: "patchyBox Sans"
+    fontFamily: "CoveKit Sans"
     fontSize: 17px
     fontWeight: 700
     letterSpacing: "-0.02em"
   h2:
-    fontFamily: "patchyBox Sans"
+    fontFamily: "CoveKit Sans"
     fontSize: 14px
     fontWeight: 700
     letterSpacing: "-0.01em"
   card-title:
-    fontFamily: "patchyBox Sans"
+    fontFamily: "CoveKit Sans"
     fontSize: 14.5px
     fontWeight: 700
     letterSpacing: "-0.01em"
   body-md:
-    fontFamily: "patchyBox Sans"
+    fontFamily: "CoveKit Sans"
     fontSize: 13px
     lineHeight: 1.5
   body-sm:
-    fontFamily: "patchyBox Sans"
+    fontFamily: "CoveKit Sans"
     fontSize: 12px
     lineHeight: 1.55
   label-caps:
-    fontFamily: "patchyBox Sans"
+    fontFamily: "CoveKit Sans"
     fontSize: 10.5px
     fontWeight: 600
     letterSpacing: "0.1em"
@@ -167,7 +167,7 @@ ToolKit 是一个面向大众用户的桌面工具箱：明净、亲和、低学
 
 ## Typography
 
-`patchyBox Sans` 全站统一：拉丁字符通过 unicode-range 使用本地 Inter Variable，CJK 字符通过独立 unicode-range 使用 PingFang SC / Microsoft YaHei UI / Noto Sans SC，并按 Light、Regular、Bold 真实字面映射字重；禁止依赖 Windows FontLink 或浏览器合成粗体渲染中文。层级靠字重与字号，不换字体族。卡片标题 14.5px/700 与正文 12px 形成明确的主次；`label-caps` 用于侧栏分类小标与页面小标题，强调间距不强调字号。技术字段使用 `patchyBox Mono` 组合字体：拉丁字符通过 unicode-range 使用 Cascadia Code / Consolas，CJK 字符通过独立 unicode-range 使用 PingFang SC / Microsoft YaHei；禁止依赖 Windows FontLink 或 generic monospace 渲染中文，任何位置都不得出现宋体类字形。
+`CoveKit Sans` 全站统一：拉丁字符通过 unicode-range 使用本地 Inter Variable，CJK 字符通过独立 unicode-range 使用 PingFang SC / Microsoft YaHei UI / Noto Sans SC，并按 Light、Regular、Bold 真实字面映射字重；禁止依赖 Windows FontLink 或浏览器合成粗体渲染中文。层级靠字重与字号，不换字体族。卡片标题 14.5px/700 与正文 12px 形成明确的主次；`label-caps` 用于侧栏分类小标与页面小标题，强调间距不强调字号。技术字段使用 `CoveKit Mono` 组合字体：拉丁字符通过 unicode-range 使用 Cascadia Code / Consolas，CJK 字符通过独立 unicode-range 使用 PingFang SC / Microsoft YaHei；禁止依赖 Windows FontLink 或 generic monospace 渲染中文，任何位置都不得出现宋体类字形。
 
 ## Layout
 

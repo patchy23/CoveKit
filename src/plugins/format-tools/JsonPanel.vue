@@ -10,7 +10,7 @@ import { UiAlert, UiButton, UiCodeEditor, UiToolbar } from '@/core/ui'
 
 const { copyText } = useCopy()
 
-const input = ref('{\n  "name": "patchyBox",\n  "tools": 8\n}')
+const input = ref('{\n  "name": "CoveKit",\n  "tools": 8\n}')
 const output = ref('')
 const errorMsg = ref('')
 

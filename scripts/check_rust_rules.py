@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""patchyBox Rust 代码规范检查（薄 wrapper）。
+"""CoveKit Rust 代码规范检查（薄 wrapper）。
 
 检查项（实现见 src-tauri/tests/source_rules.rs，入口 `scan_rust_rules`）：
 1. panic 候选：非测试代码里的 unwrap / expect / panic! / unreachable! / todo! / assert! 系列；

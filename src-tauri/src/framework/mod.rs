@@ -13,6 +13,7 @@
 //! Vault 凭证管理（vault）：统一凭证库（keyring 主密钥 + AES-256-GCM + Argon2id 备份）
 //! 框架能力不属于业务插件（插件 = 工具，框架 = 基建）。
 
+pub(crate) mod brand_compat;
 pub mod context;
 pub mod credential_refs;
 pub mod credentials;
@@ -49,7 +50,7 @@ pub(crate) fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<ta
     crate::framework::settings::register(builder)
 }
 
-crate::patchybox_module! {
+crate::covekit_module! {
     owner: "framework",
     feature: "core",
     commands: {

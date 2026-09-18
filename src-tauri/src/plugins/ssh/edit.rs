@@ -88,7 +88,7 @@ pub async fn ssh_edit_save(
             });
         }
     }
-    let temp_path = format!("{target_path}.patchybox-edit-{}", resource_id("file"));
+    let temp_path = format!("{target_path}.covekit-edit-{}", resource_id("file"));
     let mut file = sftp
         .create(&temp_path)
         .await

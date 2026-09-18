@@ -6,10 +6,10 @@
  * 会导致随后一次设置保存被误判为陈旧而拒绝重试）。
  *
  * 桌面环境：经 Rust 设置服务（`preferences_get` / `preferences_set`）落当前空间偏好文件，
- * 前端不再直接写 `patchybox.json` —— 见 ADR 与 AR06 §9.1「所有桌面持久写入经 Rust 应用入口」。
+ * 前端不再直接写 `covekit.json` —— 见 ADR 与 AR06 §9.1「所有桌面持久写入经 Rust 应用入口」。
  * 浏览器预览：降级到 storage 适配层（localStorage），保持无容器环境可独立开发。
  *
- * 隔离语义：读取不做设备层回落。旧 `patchybox.json` 里的收藏与最近使用只属于默认空间，
+ * 隔离语义：读取不做设备层回落。旧 `covekit.json` 里的收藏与最近使用只属于默认空间，
  * 若回落，非默认空间会读到别处的数据。
  */
 import { ipc } from '@/core/ipc/ipc'
@@ -17,7 +17,7 @@ import type { SpaceDataKey } from '@/core/ipc/contracts'
 import { storage } from '@/core/storage'
 
 /** 浏览器预览下使用的降级文件（桌面环境不写这个文件） */
-const PREVIEW_FILE = 'patchybox.json'
+const PREVIEW_FILE = 'covekit.json'
 
 /** 是否为 Tauri 容器（WebView）环境 */
 const isTauri = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window

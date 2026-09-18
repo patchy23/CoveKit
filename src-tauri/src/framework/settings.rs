@@ -216,7 +216,7 @@ pub(crate) fn validate_space_data_key(key: &str) -> Result<(), String> {
 /// 读空间级用户数据（收藏、最近使用）
 ///
 /// 只读当前空间的偏好文件，**不做设备层回落**：这两项在设备层没有历史值，
-/// 回落会让非默认空间读到别处的数据（旧 `patchybox.json` 里的收藏只属于默认空间）。
+/// 回落会让非默认空间读到别处的数据（旧 `covekit.json` 里的收藏只属于默认空间）。
 #[tauri::command]
 pub fn preferences_get(app: AppHandle, key: String) -> Result<Value, String> {
     validate_space_data_key(&key)?;
@@ -380,7 +380,7 @@ fn merge_tools(target: &mut Map<String, Value>, incoming: &Value) -> Result<(), 
     }
     Ok(())
 }
-/// 框架装配（`patchybox_module!` 按模块调用本入口）：设置模块已无自有 State，
+/// 框架装配（`covekit_module!` 按模块调用本入口）：设置模块已无自有 State，
 /// 命令入库与分派 handler 由 framework/mod.rs 的静态清单生成，故原样返回。
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     builder

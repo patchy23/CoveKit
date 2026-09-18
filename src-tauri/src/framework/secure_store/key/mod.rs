@@ -8,8 +8,8 @@
 //! 3. 降级文件里的正确旧密钥会被**登记**进系统密钥库（写后回读校验），但**不删除降级文件**；
 //! 4. 诊断文案只描述「有没有记录 / 长度对不对 / 读了还是写失败」，不打印任何密钥字节。
 
-/// 系统密钥库 service 前缀（历史默认空间的条目就在这个裸 service 下，由空间化迁移搬走）。
-pub(crate) const KEYRING_SERVICE: &str = "com.patchy23.patchybox";
+/// 新安装使用的系统密钥库 service 前缀；旧品牌只在同空间读缺省时回落。
+pub(crate) const KEYRING_SERVICE: &str = "com.patchyx.covekit";
 
 /// 指定空间的系统密钥库 service 名（`<前缀>.<空间 uid>`）。
 ///
@@ -55,11 +55,13 @@ pub(crate) trait MasterKeyStore {
 /// 指定 service 的系统密钥库实现。
 ///
 /// 生产按空间作用域构造（`keyring_store_for`）；测试用专用 service
-/// （如 `com.patchy23.patchybox.tests`），避免测试条目混进用户真实凭据管理器。
+/// （如 `com.patchyx.covekit.tests`），避免测试条目混进用户真实凭据管理器。
 /// target 名由 keyring 拼成 `{account}.{service}`。
 pub(crate) struct ScopedKeyringStore {
     /// 系统密钥库中的 service 名（按空间作用域，构造后不变）
     service: String,
+    /// 旧品牌的同一空间 service，只读回落；写入始终使用新 service。
+    legacy_service: Option<String>,
 }
 
 impl ScopedKeyringStore {
@@ -67,6 +69,7 @@ impl ScopedKeyringStore {
     pub(crate) fn new(service: impl Into<String>) -> Self {
         Self {
             service: service.into(),
+            legacy_service: None,
         }
     }
 
@@ -86,7 +89,7 @@ impl MasterKeyStore for ScopedKeyringStore {
     fn read(&self, account: &str) -> Result<Option<[u8; 32]>, String> {
         let entry = keyring::Entry::new(&self.service, account)
             .map_err(|e| format!("密钥库初始化失败: {e}"))?;
-        match entry.get_secret() {
+        let current = match entry.get_secret() {
             Ok(bytes) => {
                 let key: [u8; 32] = bytes
                     .try_into()
@@ -95,7 +98,11 @@ impl MasterKeyStore for ScopedKeyringStore {
             }
             Err(keyring::Error::NoEntry) => Ok(None),
             Err(e) => Err(format!("密钥库读取失败: {e}")),
-        }
+        };
+        read_legacy_only_if_missing(current, || match &self.legacy_service {
+            Some(service) => ScopedKeyringStore::new(service).read(account),
+            None => Ok(None),
+        })
     }
 
     fn write(&self, account: &str, key: &[u8; 32]) -> Result<(), String> {
@@ -107,9 +114,25 @@ impl MasterKeyStore for ScopedKeyringStore {
     }
 }
 
-/// 生产用系统密钥库访问（按空间作用域；默认空间沿用历史 service）
+// 当前域拒绝访问或损坏不能伪装成缺省；旧域只补充明确不存在的条目，不写入任何密钥。
+fn read_legacy_only_if_missing(
+    current: Result<Option<[u8; 32]>, String>,
+    legacy: impl FnOnce() -> Result<Option<[u8; 32]>, String>,
+) -> Result<Option<[u8; 32]>, String> {
+    match current {
+        Ok(None) => legacy(),
+        other => other,
+    }
+}
+
+/// 生产密钥库访问：新命名空间优先；只有新条目不存在才读取旧品牌同空间条目。
 pub(crate) fn keyring_store_for(space_id: &str) -> ScopedKeyringStore {
-    ScopedKeyringStore::new(keyring_service(space_id))
+    let mut store = ScopedKeyringStore::new(keyring_service(space_id));
+    store.legacy_service = Some(format!(
+        "{}.{space_id}",
+        crate::framework::brand_compat::LEGACY_APP_ID
+    ));
+    store
 }
 
 /// 本平台是否编译进了系统密钥库原生后端。
@@ -419,6 +442,30 @@ mod tests {
         // account 不随空间变：同一空间里两个域的条目名保持稳定
         assert_eq!(VAULT_KEY_SPEC.account, "vault-master-key");
         assert_eq!(CREDENTIALS_KEY_SPEC.account, "credentials-master-key");
+        let store = keyring_store_for(SPACE_A);
+        assert_eq!(store.service, format!("com.patchyx.covekit.{SPACE_A}"));
+        assert_eq!(
+            store.legacy_service,
+            Some(format!("com.patchy23.patchybox.{SPACE_A}"))
+        );
+    }
+
+    #[test]
+    fn old_brand_keys_are_only_read_when_the_current_entry_is_missing() {
+        assert_eq!(
+            read_legacy_only_if_missing(Ok(None), || Ok(Some([7; 32]))).unwrap(),
+            Some([7; 32])
+        );
+        assert_eq!(
+            read_legacy_only_if_missing(Ok(Some([8; 32])), || panic!("不得访问旧域")).unwrap(),
+            Some([8; 32])
+        );
+        assert_eq!(
+            read_legacy_only_if_missing(Err("locked".into()), || panic!("读取失败不能回落"))
+                .unwrap_err(),
+            "locked"
+        );
+        assert!(read_legacy_only_if_missing(Ok(None), || Err("old locked".into())).is_err());
     }
 
     /// 空间密钥隔离（夹具构造第二空间）：A 空间密文用 B 空间密钥解不开，
