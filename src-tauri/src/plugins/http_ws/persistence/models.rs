@@ -3,17 +3,21 @@
 
 use serde::Serialize;
 
-/// 接口列表记录（一条 = 一个可保存/切换的 HTTP 或 WS 接口）
+/// 接口列表记录，一个已保存的 HTTP、SSE 或 WebSocket 配置。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ApiRecord {
     /// 主键 id（0 = 尚未持久化的新记录）
     pub(crate) id: i64,
-    /// 接口类型：http / ws（决定前端加载到哪个面板视图）
+    /// 接口类型：http / sse / ws，绑定到接口页签。
     #[serde(rename = "type")]
     pub(crate) kind: String,
     /// 接口名称（用户命名，列表展示用）
     pub(crate) name: String,
+    /// 单层分组名称，空字符串为未分组。
+    pub(crate) group_name: String,
+    /// 超时与认证引用 JSON，不含临时认证秘密。
+    pub(crate) options: String,
     /// HTTP 方法或 WEBSOCKET（前端方法下拉的原值）
     pub(crate) method: String,
     /// 请求地址（http/https/ws/wss）
@@ -22,7 +26,7 @@ pub struct ApiRecord {
     pub(crate) params: String,
     /// Headers 键值行的 JSON 字符串（前端 KvRow[] 序列化）
     pub(crate) headers: String,
-    /// 请求体模式：none / json / text
+    /// 请求体模式：none / json / text / form，旧 raw 原文仍可读取。
     pub(crate) body_mode: String,
     /// 请求体内容
     pub(crate) body: String,

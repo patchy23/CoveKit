@@ -1,20 +1,22 @@
-/**
- * HTTP/WS 调试插件 · IPC 契约（本插件私有，独立于框架与其它插件）
- * 与 src-tauri/modules/http_ws.rs、modules/api.rs 的 serde 结构同步。
- */
-
+/** 接口调试的权威传输契约，与 Rust http_ws/models 及 persistence/models 同步。 */
+export type ApiKind = 'http' | 'sse' | 'ws'
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' | 'HEAD' | 'OPTIONS'
-
-/** HTTP 请求载荷 */
+export type BodyMode = 'none' | 'json' | 'text' | 'form'
+export interface RequestAuth {
+  mode: 'none' | 'basic' | 'bearer'
+  credentialId: string
+  /** 临时值仅参与当前请求，保存接口时移除。 */
+  username?: string
+  secret?: string
+}
 export interface HttpRequestPayload {
   method: HttpMethod
   url: string
   headers: [string, string][]
   body?: string
   timeoutMs?: number
+  auth?: RequestAuth
 }
-
-/** HTTP 响应结果 */
 export interface HttpResponseResult {
   ok: boolean
   status: number
@@ -25,39 +27,46 @@ export interface HttpResponseResult {
   durationMs: number
   error?: string
 }
-
-/** WebSocket 连接请求 */
 export interface WsConnectPayload {
   url: string
+  timeoutMs?: number
   headers?: [string, string][]
+  auth?: RequestAuth
 }
-
-/** WS 消息（方向 + 内容 + 时间） */
 export interface WsMessage {
+  seq: number
   direction: 'sent' | 'received'
   content: string
   time: number
 }
-
-/** WS 会话快照 */
 export interface WsSession {
   id: string
   url: string
   connectedAt: number
   open: boolean
   messages: WsMessage[]
+  dropped: number
+  error?: string | null
 }
-
-/** WS 会话操作结果 */
 export interface WsActionResult {
   ok: boolean
   message?: string
 }
-
-/** 接口列表记录（Params/Headers 为 KvRow 的 JSON 字符串） */
+export interface SseEvent {
+  event: string
+  id: string
+  data: string
+  retry?: number | null
+}
+/** SSE 状态由有界解析器通过专属 Tauri Channel 推送，不保存响应历史。 */
+export type SseUpdate =
+  | { type: 'connected'; status: number; headers: [string, string][] }
+  | { type: 'event'; event: SseEvent }
+  | { type: 'closed' }
+  | { type: 'error'; message: string }
 export interface ApiRecord {
   id: number
-  type: 'http' | 'ws'
+  type: ApiKind
   name: string
   method: string
   url: string
@@ -65,10 +74,24 @@ export interface ApiRecord {
   headers: string
   bodyMode: string
   body: string
+  groupName: string
+  /** 仅包含模式与凭证引用，不包含临时秘密。 */
+  options: string
   updatedAt: string
 }
-
-/** 命令清单（本插件命令的唯一出处） */
+export interface ApiSavePayload {
+  id?: number
+  kind: ApiKind
+  name: string
+  method: string
+  url: string
+  params: string
+  headers: string
+  bodyMode: string
+  body: string
+  groupName: string
+  options: string
+}
 export const commands = {
   httpRequest: 'http_request',
   apiSave: 'api_save',
@@ -79,22 +102,12 @@ export const commands = {
   wsRecv: 'ws_recv',
   wsClose: 'ws_close',
   wsSessions: 'ws_sessions',
+  sseStart: 'sse_start',
+  sseStop: 'sse_stop',
 } as const
-
-/** 命令入参 */
 export type Payloads = {
   http_request: { payload: HttpRequestPayload }
-  api_save: {
-    id?: number
-    kind: 'http' | 'ws'
-    name: string
-    method: string
-    url: string
-    params: string
-    headers: string
-    bodyMode: string
-    body: string
-  }
+  api_save: ApiSavePayload
   api_list: Record<string, never>
   api_delete: { id: number }
   ws_connect: WsConnectPayload
@@ -102,9 +115,13 @@ export type Payloads = {
   ws_recv: { id: string }
   ws_close: { id: string }
   ws_sessions: Record<string, never>
+  sse_start: {
+    id: string
+    payload: HttpRequestPayload
+    onEvent: import('@tauri-apps/api/core').Channel<SseUpdate>
+  }
+  sse_stop: { id: string }
 }
-
-/** 命令返回 */
 export type Results = {
   http_request: HttpResponseResult
   api_save: number
@@ -115,4 +132,6 @@ export type Results = {
   ws_recv: WsSession
   ws_close: WsActionResult
   ws_sessions: WsSession[]
+  sse_start: void
+  sse_stop: void
 }

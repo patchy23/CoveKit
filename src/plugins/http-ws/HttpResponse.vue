@@ -1,98 +1,75 @@
 <script setup lang="ts">
-import { UiScrollArea } from '@/core/ui'
-/**
- * HttpResponse · 响应查看区（Postman 式：元信息 + Pretty/Raw + 响应头分页签）
- * Pretty 走 UiCodeEditor 只读查看器（统一高亮体系，不用 highlight.js 平行方案）。
- */
+/** 响应查看：状态码与失败上下文常显，格式化不改变原文。 */
 import { computed, ref } from 'vue'
+import { UiButton, UiCodeEditor, UiTabs } from '@/core/ui'
+import { writeClipboardText } from '@/core/platform/clipboard'
+import { useUiStore } from '@/stores/ui'
 import type { HttpResponseResult } from './contracts'
-import { formatBytes, formatHeaders, looksLikeJson } from './useHttp'
-import { UiBadge, UiCodeEditor, UiTabs } from '@/core/ui'
-
-const props = defineProps<{
-  response: HttpResponseResult
-  respondedAt: string
-}>()
-
-const viewTab = ref<'pretty' | 'raw' | 'headers'>('pretty')
-
-const statusClass = computed(() => {
-  const s = props.response.status
-  if (s >= 200 && s < 300)
-    return 'bg-success-soft text-success-strong dark:bg-success-soft-dark dark:text-success-dark'
-  if (s >= 400)
-    return 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-  return 'bg-warning-soft text-warning-strong dark:bg-warning-soft-dark dark:text-warning-dark'
+import { formatBytes, formatHeaders } from './useHttp'
+const props = defineProps<{ response: HttpResponseResult; respondedAt: string }>()
+defineEmits<{ save: [] }>()
+const tab = ref('pretty')
+const ui = useUiStore()
+const pretty = computed(() => {
+  try {
+    return JSON.stringify(JSON.parse(props.response.body), null, 2)
+  } catch {
+    return props.response.body
+  }
 })
-
-/** Pretty 视图仅对 JSON 体启用语法高亮 */
-const prettyJson = computed(() => {
-  const body = props.response.body ?? ''
-  return looksLikeJson(body) ? body : ''
-})
+const content = computed(() =>
+  tab.value === 'headers'
+    ? formatHeaders(props.response.headers)
+    : tab.value === 'pretty'
+      ? pretty.value
+      : props.response.body
+)
+async function copy() {
+  const result = await writeClipboardText(content.value)
+  ui.toast(result.ok ? '已复制响应' : result.reason === 'empty' ? '响应内容为空' : '复制失败')
+}
 </script>
-
 <template>
-  <div class="flex min-h-0 flex-1 flex-col gap-[10px]">
-    <!-- 元信息 -->
-    <div class="flex flex-wrap items-center gap-[10px]">
-      <UiBadge size="sm" :class="statusClass">
-        {{ response.ok ? `HTTP ${response.status}` : response.statusText || '请求失败' }}
-      </UiBadge>
-      <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-        {{ response.durationMs }} ms
-      </span>
-      <span class="text-body-sm text-text-muted dark:text-text-muted-dark">
-        {{ formatBytes(response.bodySize) }}
-      </span>
-      <span v-if="respondedAt" class="text-body-sm text-text-muted dark:text-text-muted-dark">
-        {{ respondedAt }}
-      </span>
-      <span
-        v-if="response.error"
-        class="text-body-sm text-tertiary-strong dark:text-tertiary-dark"
-        >{{ response.error }}</span
-      >
+  <section class="flex min-h-0 flex-1 flex-col">
+    <div
+      class="flex shrink-0 flex-wrap items-center gap-[10px] border-b border-border px-[10px] py-[6px] text-body-sm dark:border-border-dark"
+    >
+      <span class="font-medium">响应</span
+      ><span
+        class="font-mono"
+        :class="
+          response.ok
+            ? 'text-success-strong dark:text-success-dark'
+            : 'text-tertiary-strong dark:text-tertiary-dark'
+        "
+        >{{ response.status ? `${response.status} ${response.statusText}` : '请求失败' }}</span
+      ><span class="text-secondary dark:text-secondary-dark">{{ response.durationMs }} ms</span
+      ><span class="text-secondary dark:text-secondary-dark">{{
+        formatBytes(response.bodySize)
+      }}</span
+      ><span class="text-caption text-text-muted">{{ respondedAt }}</span
+      ><UiButton size="xs" variant="ghost" class="ml-auto" @click="copy">复制</UiButton>
     </div>
-
-    <!-- 响应查看分页签 -->
     <UiTabs
-      v-model="viewTab"
+      v-model="tab"
+      class="shrink-0 px-[8px]"
       variant="line"
       size="sm"
       :items="[
-        { value: 'pretty', label: 'Pretty' },
-        { value: 'raw', label: 'Raw' },
-        { value: 'headers', label: `响应头（${response.headers.length}）` },
+        { value: 'pretty', label: '格式化' },
+        { value: 'raw', label: '原文' },
+        { value: 'headers', label: '响应头', badge: response.headers.length },
       ]"
     />
-
-    <!-- 响应体：Pretty（JSON 高亮查看器）/ Raw（原样） -->
     <UiCodeEditor
-      v-if="viewTab === 'pretty' && prettyJson"
-      :model-value="prettyJson"
-      language="json"
+      :model-value="content"
+      :language="tab === 'pretty' && pretty !== response.body ? 'json' : 'text'"
       readonly
-      :line-numbers="false"
-      :fold-gutter="false"
       :lint="false"
       :completion="false"
       class="min-h-0 flex-1"
+      :line-wrapping="true"
+      @save="$emit('save')"
     />
-    <UiScrollArea v-else-if="viewTab !== 'headers'" as-child axis="both">
-      <div
-        class="min-h-0 flex-1 rounded-md border border-border bg-surface-muted font-mono text-body leading-relaxed dark:border-border-dark dark:bg-surface-muted-dark"
-      >
-        <pre class="whitespace-pre-wrap p-[13px] text-primary dark:text-primary-dark">{{
-          response.body || '(空响应体)'
-        }}</pre>
-      </div>
-    </UiScrollArea>
-    <!-- 响应头 -->
-    <UiScrollArea v-else as-child axis="both">
-      <pre
-        class="min-h-0 flex-1 rounded-md border border-border bg-surface-muted p-[13px] font-mono text-body leading-relaxed text-secondary dark:border-border-dark dark:bg-surface-muted-dark dark:text-secondary-dark"
-        >{{ formatHeaders(response.headers) }}</pre>
-    </UiScrollArea>
-  </div>
+  </section>
 </template>

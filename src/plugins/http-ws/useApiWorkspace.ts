@@ -1,0 +1,167 @@
+/** 接口库与多页签草稿；保存捕获目标和快照，异步完成不覆盖后续编辑。 */
+import { computed, reactive, ref, shallowReactive } from 'vue'
+import { ipc } from './ipc'
+import { fingerprint, fromRecord, newDraft, toRecord, type RequestDraft } from './requestDraft'
+import { useRequestSession, type RequestSession } from './useRequestSession'
+import type { ApiKind, ApiRecord } from './contracts'
+
+export interface ApiTab {
+  key: string
+  recordId: number | null
+  name: string
+  groupName: string
+  draft: RequestDraft
+  saved: string
+  saving: boolean
+  session: RequestSession
+}
+export function useApiWorkspace(report: (message: string) => void, visible: () => boolean) {
+  const apis = ref<ApiRecord[]>([])
+  const tabs = shallowReactive<ApiTab[]>([])
+  const activeKey = ref('')
+  const loading = ref(false)
+  const loadError = ref('')
+  const current = computed(() => tabs.find((t) => t.key === activeKey.value))
+  let loadEpoch = 0
+  let disposed = false
+  function dirty(tab: ApiTab) {
+    return fingerprint(tab.draft) !== tab.saved
+  }
+  async function load() {
+    const token = ++loadEpoch
+    loading.value = true
+    try {
+      const list = await ipc.apiList()
+      if (token === loadEpoch && !disposed) {
+        apis.value = list
+        loadError.value = ''
+      }
+    } catch (error) {
+      if (token === loadEpoch) loadError.value = `读取接口失败：${String(error)}`
+    } finally {
+      if (token === loadEpoch) loading.value = false
+    }
+  }
+  function add(draft: RequestDraft, record?: ApiRecord) {
+    const key = crypto.randomUUID()
+    const tab = reactive({
+      key,
+      recordId: record?.id ?? null,
+      name: record?.name || `未命名 ${draft.type.toUpperCase()}`,
+      groupName: record?.groupName || '',
+      draft,
+      saved: fingerprint(draft),
+      saving: false,
+    })
+    const session = useRequestSession(
+      () => tab.draft,
+      report,
+      () => visible() && activeKey.value === key
+    )
+    const result: ApiTab = Object.assign(tab, { session })
+    tabs.push(result)
+    activeKey.value = key
+    return result
+  }
+  function create(kind: ApiKind) {
+    return add(newDraft(kind))
+  }
+  function open(record: ApiRecord) {
+    const existing = tabs.find((t) => t.recordId === record.id)
+    if (existing) {
+      activeKey.value = existing.key
+      return existing
+    }
+    return add(fromRecord(record), record)
+  }
+  async function save(tab: ApiTab, name: string, groupName: string, asCopy = false) {
+    if (tab.saving) return false
+    if (!name.trim()) throw new Error('请输入接口名称')
+    const snapshot = fingerprint(tab.draft)
+    const payload = toRecord(tab.draft, name, groupName, asCopy ? 0 : (tab.recordId ?? 0))
+    tab.saving = true
+    try {
+      const id = await ipc.apiSave(payload)
+      if (tabs.includes(tab)) {
+        tab.recordId = id
+        tab.name = payload.name
+        tab.groupName = payload.groupName
+        tab.saved = snapshot
+      }
+      await load()
+      report(
+        '接口已保存' +
+          (tab.draft.auth.secret && !tab.draft.auth.credentialId
+            ? '；临时认证仅保留在当前页签'
+            : '')
+      )
+      return true
+    } finally {
+      tab.saving = false
+    }
+  }
+  /** 重命名/移动只取库中记录，不借用当前编辑面板。 */
+  async function rename(record: ApiRecord, name: string, groupName: string) {
+    if (!name.trim()) throw new Error('请输入接口名称')
+    await ipc.apiSave({
+      id: record.id,
+      kind: record.type,
+      name: name.trim(),
+      groupName: groupName.trim(),
+      method: record.method,
+      url: record.url,
+      params: record.params,
+      headers: record.headers,
+      bodyMode: record.bodyMode,
+      body: record.body,
+      options: record.options || '{}',
+    })
+    const tab = tabs.find((t) => t.recordId === record.id)
+    if (tab) {
+      tab.name = name.trim()
+      tab.groupName = groupName.trim()
+    }
+    await load()
+  }
+  async function remove(record: ApiRecord) {
+    await ipc.apiDelete(record.id)
+    for (const tab of tabs.filter((t) => t.recordId === record.id)) {
+      tab.recordId = null
+      tab.saved = ''
+    }
+    await load()
+  }
+  async function close(tab: ApiTab) {
+    if (tab.saving) throw new Error('接口正在保存，请稍后关闭')
+    await tab.session.stop()
+    await tab.session.dispose()
+    const index = tabs.indexOf(tab)
+    if (index < 0) return
+    tabs.splice(index, 1)
+    if (activeKey.value === tab.key) activeKey.value = (tabs[index] || tabs[index - 1])?.key || ''
+  }
+  async function dispose() {
+    disposed = true
+    loadEpoch++
+    const results = await Promise.allSettled(tabs.map((t) => t.session.dispose()))
+    const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (failures.length) throw new Error(failures.map((r) => String(r.reason)).join('；'))
+  }
+  return {
+    apis,
+    tabs,
+    activeKey,
+    current,
+    loading,
+    loadError,
+    dirty,
+    load,
+    create,
+    open,
+    save,
+    rename,
+    remove,
+    close,
+    dispose,
+  }
+}

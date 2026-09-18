@@ -1,218 +1,272 @@
 <script setup lang="ts">
-/**
- * HTTP/WS 调试 · 主容器（接口列表管理中枢）
- * 方法下拉含 WS 同级（HttpPanel 内动态渲染），接口列表 HTTP/WS 共用（SQLite 持久化）。
- */
+/** 接口调试：左侧接口库，右侧独立草稿页签；整个工具关闭才清理全部会话。 */
+import { computed, onMounted, onUnmounted, ref, watchEffect } from 'vue'
 import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
-import { onMounted, ref } from 'vue'
-import type { ApiRecord } from './contracts'
-import { ipc } from './ipc'
-import HttpPanel from './HttpPanel.vue'
-import ApiSidebar from './ApiSidebar.vue'
-import type { ApiDraft } from './useHttp'
-import { useHttpWsToolLifecycle } from './toolLifecycle'
-import { useUiStore } from '@/stores/ui'
-import { UiButton, UiInput, UiModal } from '@/core/ui'
+import { useToolLifecycle } from '@/core/lifecycle'
+import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiTabs, UiTabsOverflow } from '@/core/ui'
+import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-
+import { useUiStore } from '@/stores/ui'
+import { useApiWorkspace, type ApiTab } from './useApiWorkspace'
+import type { ApiKind, ApiRecord } from './contracts'
+import ApiSidebar from './ApiSidebar.vue'
+import HttpPanel from './HttpPanel.vue'
+import NewRequestMenu from './NewRequestMenu.vue'
 const ui = useUiStore()
-// 工具资源生命周期：关闭页签/退出时关闭全部 WebSocket 会话（T10-4）
-useHttpWsToolLifecycle()
-
-const panel = ref<InstanceType<typeof HttpPanel> | null>(null)
-
-/* 接口列表 */
-const apis = ref<ApiRecord[]>([])
-const activeApiId = ref<number | null>(null)
-const saveNameOpen = ref(false)
-const saveName = ref('')
-const renameMode = ref(false)
-
-async function loadApis() {
+const lifecycle = useToolLifecycle('http-ws', {
+  owner: 'http-ws.workspace',
+  dispose: () => workspace.dispose(),
+})
+const workspace = useApiWorkspace(
+  (message) => ui.toast(message),
+  () =>
+    lifecycle.visibility.value.active &&
+    !lifecycle.visibility.value.hidden &&
+    !lifecycle.visibility.value.covered
+)
+const { apis, tabs, activeKey, current, loading, loadError } = workspace
+const sidebar = ref(true)
+const tabBar = ref<HTMLElement | null>(null)
+const items = computed(() =>
+  tabs.map((t) => ({
+    value: t.key,
+    label: `${t.draft.type === 'http' ? t.draft.method : t.draft.type.toUpperCase()} ${t.name}${workspace.dirty(t) ? ' ·' : ''}`,
+    closable: !t.saving,
+    status: t.session.state.busy
+      ? ('progress' as const)
+      : t.session.state.connected
+        ? ('success' as const)
+        : undefined,
+    statusTitle: t.session.state.busy ? '请求进行中' : '已连接',
+  }))
+)
+const { visibleItems, hiddenItems } = useTabsOverflow(tabBar, items, activeKey, 130)
+watchEffect(() => {
+  lifecycle.dirty.value = tabs.some((t) => workspace.dirty(t))
+  lifecycle.running.value = tabs.some(
+    (t) => t.saving || t.session.state.busy || t.session.state.connected
+  )
+})
+const naming = ref<{
+  tab?: ApiTab
+  record?: ApiRecord
+  copy?: boolean
+  closeAfter?: boolean
+} | null>(null)
+const name = ref(''),
+  group = ref(''),
+  saving = ref(false),
+  dialogError = ref('')
+const closing = ref<ApiTab | null>(null),
+  deleting = ref<ApiRecord | null>(null)
+async function perform(action: () => unknown) {
   try {
-    apis.value = await ipc.apiList()
+    await action()
   } catch (error) {
-    ui.toast(`读取接口列表失败：${error instanceof Error ? error.message : String(error)}`)
+    ui.toast(String(error))
   }
 }
-
-/** 待删除的接口（两段式确认，与全站删除交互一致） */
-const deleteTarget = ref<ApiRecord | null>(null)
-
-function requestDeleteApi(id: number) {
-  deleteTarget.value = apis.value.find((a) => a.id === id) ?? null
+function create(kind: ApiKind) {
+  workspace.create(kind)
 }
-
-async function confirmDeleteApi() {
-  const target = deleteTarget.value
-  deleteTarget.value = null
-  if (!target) return
+function saveDialog(tab: ApiTab, copy = false, closeAfter = false) {
+  naming.value = { tab, copy, closeAfter }
+  name.value = tab.recordId && !copy ? tab.name : copy ? `${tab.name} 副本` : ''
+  group.value = tab.groupName
+  dialogError.value = ''
+}
+function requestSave(tab: ApiTab, copy = false) {
+  if (tab.recordId && !copy) void perform(() => workspace.save(tab, tab.name, tab.groupName))
+  else saveDialog(tab, copy)
+}
+function rename(record: ApiRecord) {
+  naming.value = { record }
+  name.value = record.name
+  group.value = record.groupName || ''
+  dialogError.value = ''
+}
+async function confirmSave() {
+  const target = naming.value
+  if (!target || saving.value) return
+  saving.value = true
+  dialogError.value = ''
   try {
-    await ipc.apiDelete(target.id)
-    if (activeApiId.value === target.id) activeApiId.value = null
-    await loadApis()
-    ui.toast(`已删除接口「${target.name || target.url}」`)
+    if (target.record) await workspace.rename(target.record, name.value, group.value)
+    else if (target.tab) {
+      await workspace.save(target.tab, name.value, group.value, target.copy)
+      if (target.closeAfter) await workspace.close(target.tab)
+    }
+    naming.value = null
   } catch (error) {
-    ui.toast(`删除接口失败：${error}`)
+    dialogError.value = String(error)
+  } finally {
+    saving.value = false
   }
 }
-
-/** 当前面板草稿 */
-function currentDraft(): ApiDraft | null {
-  return panel.value?.getDraft() ?? null
+function requestClose(key: string) {
+  const tab = tabs.find((t) => t.key === key)
+  if (!tab) return
+  if (workspace.dirty(tab) || tab.session.state.connected || tab.session.state.busy)
+    closing.value = tab
+  else void perform(() => workspace.close(tab))
 }
-
-/** 新建接口：清空表单 */
-function newApi() {
-  activeApiId.value = null
-  saveNameOpen.value = false
-  saveName.value = ''
-  const empty: ApiDraft = {
-    type: 'http',
-    method: '',
-    url: '',
-    params: [],
-    headers: [],
-    bodyMode: 'none',
-    body: '',
-  }
-  panel.value?.applyDraft(empty)
+async function discardClose() {
+  const tab = closing.value
+  if (!tab) return
+  await perform(async () => {
+    await workspace.close(tab)
+    closing.value = null
+  })
 }
-
-/** 点击接口：加载到表单（面板内自动切换方法/WS 视图） */
-function applyApi(a: ApiRecord) {
-  const draft: ApiDraft = {
-    type: a.type,
-    method: a.method,
-    url: a.url,
-    params: safeParse(a.params),
-    headers: safeParse(a.headers),
-    bodyMode: (a.bodyMode as 'none' | 'json' | 'text') || 'none',
-    body: a.body || '',
-  }
-  panel.value?.applyDraft(draft)
-  activeApiId.value = a.id
-  saveName.value = a.name
-  saveNameOpen.value = false
-  renameMode.value = false
+function saveClose() {
+  const tab = closing.value
+  if (!tab) return
+  closing.value = null
+  saveDialog(tab, false, true)
 }
-
-/** 重命名接口：打开命名对话框（预填当前名） */
-function renameApi(a: ApiRecord) {
-  activeApiId.value = a.id
-  saveName.value = a.name
-  renameMode.value = true
-  saveNameOpen.value = true
+async function confirmDelete() {
+  const record = deleting.value
+  if (!record) return
+  await perform(async () => {
+    await workspace.remove(record)
+    deleting.value = null
+  })
 }
-
-function safeParse(json: string): never[] | { id: string; key: string; value: string }[] {
-  try {
-    const v = JSON.parse(json || '[]')
-    return Array.isArray(v) ? v : []
-  } catch {
-    return []
-  }
-}
-
-/** 保存当前请求为接口（保存按钮在面板请求行，命名走对话框） */
-async function saveApi() {
-  const draft = currentDraft()
-  if (!draft) {
-    ui.toast('当前面板暂无可保存的内容')
-    return
-  }
-  const name =
-    saveName.value.trim() ||
-    (activeApiId.value ? apis.value.find((a) => a.id === activeApiId.value)?.name || '' : '')
-  if (!name) {
-    saveNameOpen.value = true
-    return
-  }
-  try {
-    const id = await ipc.apiSave({
-      id: activeApiId.value ?? 0,
-      kind: draft.type,
-      name,
-      method: draft.method,
-      url: draft.url.trim(),
-      params: JSON.stringify(draft.params),
-      headers: JSON.stringify(draft.headers),
-      bodyMode: draft.bodyMode,
-      body: draft.body,
-    })
-    activeApiId.value = id
-    saveNameOpen.value = false
-    renameMode.value = false
-    await loadApis()
-    ui.toast(activeApiId.value ? `已更新接口「${name}」` : `已保存接口「${name}」`)
-  } catch (e) {
-    ui.toast('保存失败：' + (e instanceof Error ? e.message : String(e)))
-  }
-}
-
-/** 保存摘要（对话框内显示） */
-function draftSummary(): string {
-  const d = currentDraft()
-  if (!d) return ''
-  return d.type === 'ws' ? `WS  ${d.url}` : `${d.method}  ${d.url}`
-}
-
-onMounted(loadApis)
-useDataRefresh('http_ws.', loadApis)
+onMounted(workspace.load)
+useDataRefresh('http_ws.', workspace.load)
+onUnmounted(() => {
+  void workspace.dispose().catch((error) => ui.toast(`接口连接清理失败：${String(error)}`))
+})
 </script>
-
 <template>
-  <div class="flex h-full min-h-0 w-full flex-col gap-[10px]">
-    <!-- 左侧接口列表 + 右侧面板 -->
-    <div class="flex min-h-0 flex-1 gap-[12px]">
-      <ApiSidebar
-        :apis="apis"
-        :active-id="activeApiId"
-        @select="applyApi"
-        @rename="renameApi"
-        @delete="requestDeleteApi"
-        @new="newApi"
+  <div class="flex h-full min-h-0 min-w-0 text-primary dark:text-primary-dark">
+    <ApiSidebar
+      v-if="sidebar"
+      :apis="apis"
+      :active-id="current?.recordId ?? null"
+      :loading="loading"
+      :error="loadError"
+      @select="perform(() => workspace.open($event))"
+      @rename="rename"
+      @delete="deleting = $event"
+      @new="create"
+      @retry="workspace.load()"
+    />
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        ref="tabBar"
+        class="flex min-h-[36px] shrink-0 items-center gap-[3px] border-b border-border px-[4px] dark:border-border-dark"
+      >
+        <UiIconButton
+          size="xs"
+          :label="sidebar ? '收起接口库' : '展开接口库'"
+          @click="sidebar = !sidebar"
+          ><UiIcon :name="sidebar ? 'chevrons-left' : 'chevrons-right'" :size="14" /></UiIconButton
+        ><UiTabs
+          v-model="activeKey"
+          class="min-w-0 flex-1"
+          variant="line"
+          size="sm"
+          :items="visibleItems"
+          @close="requestClose"
+        /><UiTabsOverflow
+          v-if="hiddenItems.length"
+          :items="hiddenItems"
+          :model-value="activeKey"
+          @select="activeKey = $event"
+          @close="requestClose"
+        /><NewRequestMenu @create="create" />
+      </div>
+      <HttpPanel
+        v-for="tab in tabs"
+        v-show="activeKey === tab.key"
+        :key="tab.key"
+        v-model="tab.draft"
+        class="min-h-0 flex-1"
+        :session="tab.session"
+        :saving="tab.saving"
+        :active="activeKey === tab.key"
+        @save="requestSave(tab)"
+        @save-as="requestSave(tab, true)"
       />
-
-      <div class="min-h-0 flex-1">
-        <HttpPanel ref="panel" class="h-full" @save="saveApi" />
+      <div
+        v-if="!tabs.length"
+        class="flex flex-1 flex-col items-center justify-center gap-[6px] text-body-sm text-secondary dark:text-secondary-dark"
+      >
+        <p>从左侧选择接口开始调试</p>
+        <p class="text-caption text-text-muted dark:text-text-muted-dark">
+          点击 + 新建 HTTP、SSE 或 WebSocket 接口
+        </p>
       </div>
     </div>
-
-    <!-- 命名对话框（保存新接口 / 更新接口） -->
     <UiModal
-      :open="saveNameOpen"
+      :open="!!naming"
       size="sm"
-      :title="renameMode ? '重命名接口' : activeApiId ? '更新接口' : '保存为接口'"
-      @close="saveNameOpen = false"
+      :title="naming?.record ? '重命名 / 移动分组' : naming?.copy ? '另存接口' : '保存接口'"
+      @close="!saving && (naming = null)"
+      ><div class="space-y-[10px]">
+        <UiInput
+          v-model="name"
+          size="sm"
+          aria-label="接口名称"
+          placeholder="接口名称"
+          :disabled="saving"
+          @keyup.enter="confirmSave"
+        /><UiInput
+          v-model="group"
+          size="sm"
+          aria-label="分组名称"
+          placeholder="分组名称，留空为未分组"
+          :disabled="saving"
+        />
+        <p
+          v-if="dialogError"
+          role="alert"
+          class="text-body-sm text-tertiary-strong dark:text-tertiary-dark"
+        >
+          {{ dialogError }}
+        </p>
+      </div>
+      <template #footer
+        ><UiButton size="sm" variant="ghost" :disabled="saving" @click="naming = null"
+          >取消</UiButton
+        ><UiButton size="sm" variant="primary" :loading="saving" @click="confirmSave"
+          >保存</UiButton
+        ></template
+      ></UiModal
     >
-      <p
-        class="mb-[12px] truncate font-mono text-body-sm text-text-muted dark:text-text-muted-dark"
-      >
-        {{ draftSummary() }}
+    <UiModal :open="!!closing" size="sm" title="关闭接口页签" @close="closing = null"
+      ><p class="text-body-sm">
+        关闭「{{ closing?.name }}」？{{
+          closing && workspace.dirty(closing) ? '有未保存的修改。' : ''
+        }}{{
+          closing?.session.state.connected || closing?.session.state.busy
+            ? '当前请求或连接将停止在此页签显示，长连接会断开。'
+            : ''
+        }}
       </p>
-      <UiInput
-        v-model="saveName"
-        placeholder="接口名称，如：获取用户列表"
-        spellcheck="false"
-        autofocus
-        @keyup.enter="saveApi"
-      />
-      <template #footer>
-        <UiButton variant="ghost" @click="saveNameOpen = false">取消</UiButton>
-        <UiButton variant="primary" @click="saveApi">保存</UiButton>
-      </template>
-    </UiModal>
-
-    <!-- 删除接口确认（两段式，与全站删除交互一致） -->
+      <template #footer
+        ><UiButton size="sm" variant="ghost" @click="closing = null">取消</UiButton
+        ><UiButton size="sm" @click="discardClose">{{
+          closing && workspace.dirty(closing) ? '不保存并关闭' : '关闭'
+        }}</UiButton
+        ><UiButton
+          v-if="closing && workspace.dirty(closing)"
+          size="sm"
+          variant="primary"
+          @click="saveClose"
+          >保存并关闭</UiButton
+        ></template
+      ></UiModal
+    >
     <ConfirmDialog
-      :open="deleteTarget !== null"
+      :open="!!deleting"
       title="删除接口"
-      :message="`确定删除接口「${deleteTarget?.name || deleteTarget?.url}」？该操作不可恢复。`"
+      :message="`删除「${deleting?.name}」？已打开的内容保留为未保存草稿。`"
       confirm-label="删除"
       danger
-      @confirm="confirmDeleteApi"
-      @close="deleteTarget = null"
+      @confirm="confirmDelete"
+      @close="deleting = null"
     />
   </div>
 </template>

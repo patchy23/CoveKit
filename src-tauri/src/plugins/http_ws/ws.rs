@@ -1,37 +1,39 @@
-//! HTTP/WS 调试插件 · WebSocket 会话（tokio-tungstenite）
-//! 会话注册表：id → 后台读写任务（tokio::select）+ 消息队列（上限 500 条）
-//! 建立连接支持自定义请求头（握手注入 Upgrade）；send 走 mpsc channel。
-
+//! WebSocket 会话独立持有任务与有界消息；发送成功以实际写入 socket 为准。
+use super::models::{RequestAuth, WsActionResult, WsMessage, WsSession};
+use futures_util::{SinkExt, StreamExt};
 use std::{
     collections::{HashMap, VecDeque},
     sync::Mutex,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
-
-use futures_util::{SinkExt, StreamExt};
 use tauri::{AppHandle, Manager, State};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
+use tokio_tungstenite::tungstenite::{client::IntoClientRequest, Message};
 
-use crate::plugins::http_ws::models::{WsActionResult, WsMessage, WsSession};
-
-/// WS 会话句柄：消息队列（上限 500）+ 发送 channel（None = 已断开）
-pub(crate) struct WsSessionHandle {
-    /// 连接地址（快照展示用）
-    url: String,
-    /// 建立连接的毫秒时间戳
-    connected_at: u64,
-    /// 是否仍处于连接状态
-    open: bool,
-    /// 消息队列（后台任务写入，快照时拷贝；上限 500 条）
-    queue: Mutex<VecDeque<WsMessage>>,
-    /// 发送 channel（drop 后后台 select 收到 None → 断开连接）
-    tx: Option<mpsc::UnboundedSender<String>>,
+/// 发送命令附带完成通知，入队成功不冒充网络发送成功。
+struct Outgoing {
+    text: String,
+    done: oneshot::Sender<Result<(), String>>,
 }
 
-/// WS 会话注册表（State 注入）
-pub struct WsState(pub(crate) Mutex<HashMap<String, WsSessionHandle>>);
+/// 会话元数据与队列均由同一把短锁保护，锁不跨 await。
+struct WsSessionHandle {
+    url: String,
+    connected_at: u64,
+    open: bool,
+    queue: VecDeque<WsMessage>,
+    queue_bytes: usize,
+    seq: u64,
+    dropped: u64,
+    error: Option<String>,
+    tx: mpsc::Sender<Outgoing>,
+    task: tauri::async_runtime::JoinHandle<()>,
+}
 
-/// 当前毫秒时间戳
+/// 页签关闭时移除对应项；工具关闭时清空全部。
+#[derive(Default)]
+pub struct WsState(Mutex<HashMap<String, WsSessionHandle>>);
+
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -39,179 +41,222 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 会话注册表 → 对外快照（消息队列拷贝，不持锁跨 await）
-fn snapshot(map: &HashMap<String, WsSessionHandle>, id: &str) -> Option<WsSession> {
-    let h = map.get(id)?;
-    let messages = h.queue.lock().ok()?.iter().cloned().collect();
-    Some(WsSession {
-        id: id.to_string(),
-        url: h.url.clone(),
-        connected_at: h.connected_at,
-        open: h.open,
-        messages,
-    })
+impl WsSessionHandle {
+    fn push(&mut self, direction: &'static str, content: String) {
+        self.seq += 1;
+        self.queue_bytes += content.len();
+        self.queue.push_back(WsMessage {
+            seq: self.seq,
+            direction,
+            content,
+            time: now_ms(),
+        });
+        while self.queue.len() > 500 || self.queue_bytes > 8 * 1024 * 1024 {
+            if let Some(message) = self.queue.pop_front() {
+                self.queue_bytes -= message.content.len();
+            }
+            self.dropped += 1;
+        }
+    }
+    fn snapshot(&self, id: &str) -> WsSession {
+        WsSession {
+            id: id.into(),
+            url: self.url.clone(),
+            connected_at: self.connected_at,
+            open: self.open,
+            messages: self.queue.iter().cloned().collect(),
+            dropped: self.dropped,
+            error: self.error.clone(),
+        }
+    }
 }
 
-/// 建立 WS 连接并启动后台读写任务（消息进队列，send 走 channel）
+/// 握手支持自定义请求头、统一认证与超时；UUID 避免同毫秒建连覆盖。
 #[tauri::command]
 pub async fn ws_connect(
     app: AppHandle,
     state: State<'_, WsState>,
     url: String,
     headers: Option<Vec<(String, String)>>,
+    auth: Option<RequestAuth>,
+    timeout_ms: Option<u64>,
 ) -> Result<WsSession, String> {
-    let mut req =
-        tokio_tungstenite::tungstenite::client::IntoClientRequest::into_client_request(url.clone())
-            .map_err(|e| e.to_string())?;
-    if let Some(hs) = headers {
-        for (k, v) in hs {
-            if !k.trim().is_empty() {
-                let name = k
-                    .parse::<tokio_tungstenite::tungstenite::http::HeaderName>()
-                    .map_err(|e| e.to_string())?;
-                let value = v
-                    .parse::<tokio_tungstenite::tungstenite::http::HeaderValue>()
-                    .map_err(|e| e.to_string())?;
-                req.headers_mut().insert(name, value);
-            }
+    let parsed = reqwest::Url::parse(&url).map_err(|_| "WebSocket 地址无效".to_string())?;
+    if !matches!(parsed.scheme(), "ws" | "wss") {
+        return Err("WebSocket 地址必须使用 WS 或 WSS".into());
+    }
+    let mut request = url
+        .clone()
+        .into_client_request()
+        .map_err(|_| "WebSocket 地址无效".to_string())?;
+    for (key, value) in headers.unwrap_or_default() {
+        if key.trim().is_empty() {
+            continue;
         }
+        let key = key
+            .parse::<tokio_tungstenite::tungstenite::http::HeaderName>()
+            .map_err(|_| "请求头名称无效".to_string())?;
+        let value = value
+            .parse::<tokio_tungstenite::tungstenite::http::HeaderValue>()
+            .map_err(|_| "请求头值无效".to_string())?;
+        request.headers_mut().insert(key, value);
     }
-
-    let (ws, _) = tokio_tungstenite::connect_async(req)
-        .await
-        .map_err(|e| e.to_string())?;
-    let (mut write, mut read) = ws.split();
-    let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-    let id = format!("ws-{}", now_ms());
-    let connected_at = now_ms();
-
-    {
-        let mut map = state.0.lock().map_err(|e| e.to_string())?;
-        map.insert(
-            id.clone(),
-            WsSessionHandle {
-                url: url.clone(),
-                connected_at,
-                open: true,
-                queue: Mutex::new(VecDeque::new()),
-                tx: Some(tx),
-            },
-        );
+    if let Some(value) = super::auth::authorization(&app, auth.as_ref())? {
+        request.headers_mut().insert("authorization", value);
     }
-
-    let app2 = app.clone();
+    let timeout = Duration::from_millis(timeout_ms.unwrap_or(15_000).clamp(1_000, 300_000));
+    let config = tokio_tungstenite::tungstenite::protocol::WebSocketConfig {
+        max_message_size: Some(1024 * 1024),
+        max_frame_size: Some(1024 * 1024),
+        ..Default::default()
+    };
+    let (socket, _) = tokio::time::timeout(
+        timeout,
+        tokio_tungstenite::connect_async_with_config(request, Some(config), false),
+    )
+    .await
+    .map_err(|_| "WebSocket 连接超时".to_string())?
+    .map_err(|e| e.to_string())?;
+    let (mut write, mut read) = socket.split();
+    let (tx, mut rx) = mpsc::channel::<Outgoing>(16);
+    let id = uuid::Uuid::new_v4().to_string();
     let task_id = id.clone();
-    tauri::async_runtime::spawn(async move {
-        loop {
+    let mut map = state.0.lock().map_err(|e| e.to_string())?;
+    let task = tauri::async_runtime::spawn(async move {
+        let error = loop {
             tokio::select! {
-                // 前端发送
                 out = rx.recv() => {
-                    match out {
-                        Some(text) => {
-                            if write.send(tokio_tungstenite::tungstenite::Message::Text(text)).await.is_err() {
-                                break;
-                            }
-                        }
-                        None => break,
+                    let Some(out) = out else { break None; };
+                    let content = out.text;
+                    let result = tokio::time::timeout(Duration::from_secs(15), write.send(Message::Text(content.clone()))).await
+                        .map_err(|_| "WebSocket 发送超时".to_string()).and_then(|result| result.map_err(|e| e.to_string()));
+                    let error = result.as_ref().err().cloned();
+                    if result.is_ok() {
+                        match app.state::<WsState>().0.lock() {
+                            Ok(mut map) => if let Some(handle) = map.get_mut(&task_id) { handle.push("sent", content); },
+                            Err(error) => log::error!("WebSocket 消息记录失败: {error}"),
+                        };
                     }
+                    // 页签关闭后接收端可以消失，此时仍由任务清理 socket。
+                    let _receiver_closed = out.done.send(result);
+                    if error.is_some() { break error; }
                 }
-                // 服务端推送
                 frame = read.next() => {
-                    match frame {
-                        Some(Ok(tokio_tungstenite::tungstenite::Message::Text(t))) => {
-                            if let Ok(m) = app2.state::<WsState>().0.lock() {
-                                if let Some(h) = m.get(&task_id) {
-                                    if let Ok(mut q) = h.queue.lock() {
-                                        q.push_back(WsMessage { direction: "received", content: t, time: now_ms() });
-                                        if q.len() > 500 {
-                                            q.pop_front();
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) | None => break,
-                        _ => {}
-                    }
+                    let content = match frame {
+                        Some(Ok(Message::Text(text))) => text,
+                        Some(Ok(Message::Binary(bytes))) => format!("[二进制消息，{} 字节]\n{}", bytes.len(), bytes.iter().take(256).map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")),
+                        Some(Ok(Message::Close(_))) | None => break None,
+                        Some(Err(error)) => break Some(error.to_string()),
+                        Some(Ok(Message::Ping(_))) => { if let Err(error) = write.flush().await { break Some(error.to_string()); } continue; }
+                        _ => continue,
+                    };
+                    match app.state::<WsState>().0.lock() {
+                        Ok(mut map) => if let Some(handle) = map.get_mut(&task_id) { handle.push("received", content); },
+                        Err(error) => break Some(format!("WebSocket 消息记录失败: {error}")),
+                    };
                 }
             }
-        }
-        // 连接关闭：标记 open=false 并丢弃发送端
-        if let Ok(mut m) = app2.state::<WsState>().0.lock() {
-            if let Some(h) = m.get_mut(&task_id) {
-                h.open = false;
-                h.tx = None;
+        };
+        match app.state::<WsState>().0.lock() {
+            Ok(mut map) => {
+                if let Some(handle) = map.get_mut(&task_id) {
+                    handle.open = false;
+                    handle.error = error;
+                }
             }
-        }
+            Err(error) => log::error!("WebSocket 会话清理失败: {error}"),
+        };
     });
-
-    let map = state.0.lock().map_err(|e| e.to_string())?;
-    Ok(snapshot(&map, &id).ok_or("会话创建失败")?)
+    let handle = WsSessionHandle {
+        url,
+        connected_at: now_ms(),
+        open: true,
+        queue: VecDeque::new(),
+        queue_bytes: 0,
+        seq: 0,
+        dropped: 0,
+        error: None,
+        tx,
+        task,
+    };
+    let snapshot = handle.snapshot(&id);
+    map.insert(id, handle);
+    Ok(snapshot)
 }
 
-/// 发送文本消息（写入后台 channel；发送记录由前端本地追加，服务端回显会再次收到）
+/// 有界发送并等待后台写入完成，关闭会话会使等待明确失败。
 #[tauri::command]
 pub async fn ws_send(
     state: State<'_, WsState>,
     id: String,
     message: String,
 ) -> Result<WsActionResult, String> {
-    let map = state.0.lock().map_err(|e| e.to_string())?;
-    match map.get(&id).and_then(|h| h.tx.as_ref()) {
-        Some(tx) => {
-            tx.send(message).map_err(|e| e.to_string())?;
-            Ok(WsActionResult {
-                ok: true,
-                message: None,
-            })
-        }
-        None => Ok(WsActionResult {
-            ok: false,
-            message: Some("会话不存在或已断开".into()),
-        }),
+    if message.len() > 1024 * 1024 {
+        return Err("单条消息不能超过 1 MiB".into());
     }
-}
-
-/// 拉取会话快照（前端轮询展示消息）
-#[tauri::command]
-pub async fn ws_recv(state: State<'_, WsState>, id: String) -> Result<WsSession, String> {
-    let map = state.0.lock().map_err(|e| e.to_string())?;
-    snapshot(&map, &id).ok_or_else(|| "会话不存在".into())
-}
-
-/// 关闭会话（断开连接并清理）
-#[tauri::command]
-pub async fn ws_close(state: State<'_, WsState>, id: String) -> Result<WsActionResult, String> {
-    let mut map = state.0.lock().map_err(|e| e.to_string())?;
-    if let Some(h) = map.get_mut(&id) {
-        h.open = false;
-        h.tx = None; // drop 发送端 → 后台 select 收到 None → 断开
-    }
-    map.remove(&id);
+    let tx = {
+        let map = state.0.lock().map_err(|e| e.to_string())?;
+        map.get(&id)
+            .filter(|h| h.open)
+            .ok_or("会话不存在或已断开")?
+            .tx
+            .clone()
+    };
+    let (done, received) = oneshot::channel();
+    tx.try_send(Outgoing {
+        text: message,
+        done,
+    })
+    .map_err(|_| "发送队列已满或连接已关闭".to_string())?;
+    received
+        .await
+        .map_err(|_| "发送未完成，连接已关闭".to_string())??;
     Ok(WsActionResult {
         ok: true,
         message: None,
     })
 }
 
-/// 关闭全部会话（应用退出清理用；幂等，返回被关闭的会话数）
-pub(crate) fn close_all_sessions(state: &WsState) -> usize {
-    let Ok(mut map) = state.0.lock() else {
-        // 锁中毒说明此前有会话线程 panic：注册表已不可信，按「全部需要重建」处理
-        return 0;
-    };
-    let closed = map.len();
-    for handle in map.values_mut() {
-        handle.open = false;
-        handle.tx = None; // drop 发送端 → 后台 select 收到 None → 断开
-    }
-    map.clear();
-    closed
+/// 快照读取不跨 await 持锁。
+#[tauri::command]
+pub async fn ws_recv(state: State<'_, WsState>, id: String) -> Result<WsSession, String> {
+    state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(&id)
+        .map(|h| h.snapshot(&id))
+        .ok_or_else(|| "会话不存在".into())
 }
 
-/// 全部会话快照（含历史消息）
+/// 幂等关闭；直接取消任务使阻塞读写同时释放。
+#[tauri::command]
+pub async fn ws_close(state: State<'_, WsState>, id: String) -> Result<WsActionResult, String> {
+    if let Some(handle) = state.0.lock().map_err(|e| e.to_string())?.remove(&id) {
+        handle.task.abort();
+    }
+    Ok(WsActionResult {
+        ok: true,
+        message: None,
+    })
+}
+
+/// 生命周期入口，不把锁故障当作清理成功。
+pub(crate) fn close_all_sessions(state: &WsState) -> Result<(), String> {
+    for (_, handle) in state.0.lock().map_err(|e| e.to_string())?.drain() {
+        handle.task.abort();
+    }
+    Ok(())
+}
+
+/// 全部会话快照，仅返回本 owner 的运行状态。
 #[tauri::command]
 pub async fn ws_sessions(state: State<'_, WsState>) -> Result<Vec<WsSession>, String> {
-    let map = state.0.lock().map_err(|e| e.to_string())?;
-    Ok(map.keys().filter_map(|k| snapshot(&map, k)).collect())
+    Ok(state
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .iter()
+        .map(|(id, h)| h.snapshot(id))
+        .collect())
 }

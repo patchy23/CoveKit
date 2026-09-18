@@ -1,37 +1,31 @@
-/**
- * HTTP/WS 调试插件 · IPC 封装（本插件命令，独立于框架）
- */
+/** 接口调试命令封装；Channel 随页签生命周期停止消费。 */
+import { Channel } from '@tauri-apps/api/core'
 import { invokeCommand } from '@/core/ipc/ipc'
 import type {
-  ApiRecord,
+  ApiSavePayload,
   HttpRequestPayload,
-  HttpResponseResult,
-  WsActionResult,
+  Payloads,
+  Results,
+  SseUpdate,
   WsConnectPayload,
-  WsSession,
 } from './contracts'
-
+function call<K extends keyof Payloads & keyof Results>(command: K, payload: Payloads[K]) {
+  return invokeCommand<Payloads[K], Results[K]>(command, payload)
+}
 export const ipc = {
-  httpRequest: (payload: HttpRequestPayload): Promise<HttpResponseResult> =>
-    invokeCommand('http_request', { payload }),
-  apiSave: (r: {
-    id?: number
-    kind: 'http' | 'ws'
-    name: string
-    method: string
-    url: string
-    params: string
-    headers: string
-    bodyMode: string
-    body: string
-  }): Promise<number> => invokeCommand('api_save', r),
-  apiList: (): Promise<ApiRecord[]> => invokeCommand('api_list', {}),
-  apiDelete: (id: number): Promise<void> => invokeCommand('api_delete', { id }),
-  wsConnect: (payload: WsConnectPayload): Promise<WsSession> =>
-    invokeCommand('ws_connect', payload),
-  wsSend: (id: string, message: string): Promise<WsActionResult> =>
-    invokeCommand('ws_send', { id, message }),
-  wsRecv: (id: string): Promise<WsSession> => invokeCommand('ws_recv', { id }),
-  wsClose: (id: string): Promise<WsActionResult> => invokeCommand('ws_close', { id }),
-  wsSessions: (): Promise<WsSession[]> => invokeCommand('ws_sessions', {}),
+  httpRequest: (payload: HttpRequestPayload) => call('http_request', { payload }),
+  apiSave: (payload: ApiSavePayload) => call('api_save', payload),
+  apiList: () => call('api_list', {}),
+  apiDelete: (id: number) => call('api_delete', { id }),
+  wsConnect: (payload: WsConnectPayload) => call('ws_connect', payload),
+  wsSend: (id: string, message: string) => call('ws_send', { id, message }),
+  wsRecv: (id: string) => call('ws_recv', { id }),
+  wsClose: (id: string) => call('ws_close', { id }),
+  wsSessions: () => call('ws_sessions', {}),
+  sseStart: (id: string, payload: HttpRequestPayload, receive: (update: SseUpdate) => void) => {
+    const onEvent = new Channel<SseUpdate>()
+    onEvent.onmessage = receive
+    return call('sse_start', { id, payload, onEvent })
+  },
+  sseStop: (id: string) => call('sse_stop', { id }),
 }

@@ -1,106 +1,129 @@
 <script setup lang="ts">
-import { UiScrollArea } from '@/core/ui'
-import { UiTooltip } from '@/core/ui'
-/**
- * ApiSidebar · 接口列表侧栏（Postman Collections 式：保存的接口随时切换）
- */
-import type { ApiRecord } from './contracts'
-import { formatRelativeTime, methodBadgeClass } from './useHttp'
-import { UiBadge, UiButton, UiIcon, UiIconButton, UiListRow } from '@/core/ui'
-
-defineProps<{
+/** 沿用 SSH 侧栏：搜索栏内新建、紧凑分组、搜索时平铺结果。 */
+import { computed, ref } from 'vue'
+import { UiButton, UiDropdownMenu, UiIcon, UiListRow, UiScrollArea, UiSearchInput } from '@/core/ui'
+import type { ApiKind, ApiRecord } from './contracts'
+import NewRequestMenu from './NewRequestMenu.vue'
+const props = defineProps<{
   apis: ApiRecord[]
   activeId: number | null
+  loading: boolean
+  error: string
 }>()
-
 const emit = defineEmits<{
-  (e: 'select', r: ApiRecord): void
-  (e: 'rename', r: ApiRecord): void
-  (e: 'delete', id: number): void
-  (e: 'new'): void
+  select: [record: ApiRecord]
+  rename: [record: ApiRecord]
+  delete: [record: ApiRecord]
+  new: [kind: ApiKind]
+  retry: []
 }>()
+const search = ref('')
+const collapsed = ref(new Set<string>())
+const groups = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  const list = props.apis.filter((a) =>
+    `${a.name} ${a.url} ${a.groupName} ${a.type} ${a.method}`.toLowerCase().includes(query)
+  )
+  if (query) return [{ name: '', items: list }]
+  const result = new Map<string, ApiRecord[]>()
+  for (const a of list) {
+    const group = a.groupName || ''
+    result.set(group, [...(result.get(group) || []), a])
+  }
+  return [...result]
+    .sort(([a], [b]) => (!a ? 1 : !b ? -1 : a.localeCompare(b, 'zh-CN')))
+    .map(([name, items]) => ({ name, items }))
+})
+function toggle(name: string) {
+  const next = new Set(collapsed.value)
+  if (next.has(name)) next.delete(name)
+  else next.add(name)
+  collapsed.value = next
+}
 </script>
-
 <template>
-  <div class="flex w-[240px] shrink-0 flex-col border-r border-border dark:border-border-dark">
-    <div class="flex shrink-0 items-center justify-between px-[12px] py-[10px]">
-      <span class="text-caption font-medium text-text-muted dark:text-text-muted-dark">
-        接口列表（{{ apis.length }}）
-      </span>
-      <div class="flex items-center gap-[4px]">
-        <UiButton
-          variant="secondary"
-          size="xs"
-          title="新建接口（清空当前表单）"
-          @click="emit('new')"
-        >
-          + 新建
-        </UiButton>
-      </div>
+  <aside class="flex w-[180px] shrink-0 flex-col border-r border-border dark:border-border-dark">
+    <div class="shrink-0 px-[12px] py-[10px]">
+      <UiSearchInput
+        v-model="search"
+        size="sm"
+        placeholder="搜索接口…"
+        aria-label="搜索接口名称、地址或协议"
+      >
+        <template #actions><NewRequestMenu compact @create="emit('new', $event)" /></template>
+      </UiSearchInput>
     </div>
-
+    <div
+      v-if="error"
+      role="alert"
+      class="px-[12px] text-body-sm text-tertiary-strong dark:text-tertiary-dark"
+    >
+      {{ error }}<UiButton size="xs" variant="ghost" @click="emit('retry')">重试</UiButton>
+    </div>
     <UiScrollArea as-child axis="vertical">
       <div class="min-h-0 flex-1 px-[6px] pb-[8px]">
-        <UiTooltip v-for="a in apis" :key="a.id" :content="`${a.method} ${a.url}\n${a.updatedAt}`">
-          <UiListRow
-            class="group"
-            cursor="pointer"
-            :active="a.id === activeId"
-            @click="emit('select', a)"
+        <div v-for="group in groups" :key="group.name">
+          <UiButton
+            v-if="!search.trim()"
+            size="sm"
+            variant="ghost"
+            block
+            class="!justify-start !gap-[4px] !px-[6px]"
+            :aria-expanded="!collapsed.has(group.name)"
+            @click="toggle(group.name)"
           >
-            <div class="flex min-w-0 flex-1 flex-col gap-[3px]">
-              <div class="flex items-center gap-[8px]">
-                <UiBadge
-                  size="xs"
-                  class="w-[46px] shrink-0 rounded-[4px] px-[4px] py-[1px] text-center font-mono text-caption font-medium"
-                  :class="methodBadgeClass(a.method, a.type)"
-                  >{{ a.type === 'ws' ? 'WS' : a.method }}</UiBadge
-                >
-                <span
-                  class="min-w-0 flex-1 truncate text-body font-medium text-primary dark:text-primary-dark"
-                >
-                  {{ a.name || '(未命名)' }}
-                </span>
-                <UiIconButton
-                  label="重命名接口"
-                  size="xs"
-                  class="hidden shrink-0 text-text-muted hover:text-info-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-info-dark"
-                  @click.stop="emit('rename', a)"
-                >
-                  <UiIcon name="pencil" :size="12" />
-                </UiIconButton>
-                <UiIconButton
-                  label="删除接口"
-                  size="xs"
-                  class="hidden shrink-0 text-text-muted hover:text-tertiary-strong group-hover:inline-flex dark:text-text-muted-dark dark:hover:text-tertiary-dark"
-                  @click.stop="emit('delete', a.id)"
-                >
-                  <UiIcon name="trash" :size="12" />
-                </UiIconButton>
-              </div>
-              <div class="flex items-center gap-[6px]">
-                <span
-                  class="truncate font-mono text-body-sm text-secondary dark:text-secondary-dark"
-                >
-                  {{ a.url }}
-                </span>
-                <span
-                  class="ml-auto shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
-                >
-                  {{ formatRelativeTime(a.updatedAt) }}
-                </span>
-              </div>
-            </div>
-          </UiListRow>
-        </UiTooltip>
-
+            <UiIcon
+              name="chevron-right"
+              :size="12"
+              class="shrink-0 transition-transform"
+              :class="{ 'rotate-90': !collapsed.has(group.name) }"
+            />
+            <span class="min-w-0 flex-1 truncate text-left font-semibold">{{
+              group.name || '未分组'
+            }}</span
+            ><span class="text-caption text-text-muted dark:text-text-muted-dark">{{
+              group.items.length
+            }}</span>
+          </UiButton>
+          <div v-show="search.trim() || !collapsed.has(group.name)">
+            <UiListRow
+              v-for="api in group.items"
+              :key="api.id"
+              size="sm"
+              :active="api.id === activeId"
+              :indent="search.trim() ? 0 : 6"
+              class="group !py-0 !pr-0"
+            >
+              <UiButton
+                variant="ghost"
+                size="sm"
+                class="min-w-0 flex-1 !justify-start !gap-[5px] !px-0"
+                :title="`${api.name} · ${api.url}`"
+                @click="emit('select', api)"
+                ><span
+                  class="shrink-0 font-mono text-caption text-secondary dark:text-secondary-dark"
+                  >{{ api.type === 'http' ? api.method : api.type.toUpperCase() }}</span
+                ><span class="truncate font-medium">{{ api.name }}</span></UiButton
+              >
+              <UiDropdownMenu
+                size="xs"
+                :trigger-label="`管理 ${api.name}`"
+                :items="[
+                  { value: 'rename', label: '重命名 / 移动分组' },
+                  { value: 'delete', label: '删除接口', danger: true },
+                ]"
+                @select="$event === 'rename' ? emit('rename', api) : emit('delete', api)"
+              />
+            </UiListRow>
+          </div>
+        </div>
         <p
-          v-if="!apis.length"
+          v-if="!groups.some((g) => g.items.length)"
           class="px-[8px] py-[16px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
         >
-          暂无接口<br />填写请求后点「保存」加入列表
+          {{ loading ? '正在读取…' : search.trim() ? '没有匹配的接口' : '暂无接口，点击 + 新建。' }}
         </p>
       </div>
     </UiScrollArea>
-  </div>
+  </aside>
 </template>

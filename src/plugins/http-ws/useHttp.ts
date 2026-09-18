@@ -52,6 +52,7 @@ export interface KvRow {
   id: string
   key: string
   value: string
+  enabled?: boolean
 }
 
 let kvSeq = 0
@@ -82,8 +83,11 @@ export function kvToQuery(rows: KvRow[]): string {
 /** 合并 query 到 URL（已有 query 追加 &） */
 export function mergeQuery(url: string, query: string): string {
   if (!query) return url
-  const sep = url.includes('?') ? '&' : '?'
-  return `${url}${sep}${query}`
+  const hash = url.indexOf('#')
+  const base = hash < 0 ? url : url.slice(0, hash)
+  const fragment = hash < 0 ? '' : url.slice(hash)
+  const sep = base.includes('?') ? (base.endsWith('?') || base.endsWith('&') ? '' : '&') : '?'
+  return `${base}${sep}${query}${fragment}`
 }
 
 /** 相对时间（历史列表用） */

@@ -40,7 +40,52 @@ const MIGRATIONS: &[&str] = &[
      CREATE UNIQUE INDEX api_list_uid ON api_list(uid);
      CREATE TRIGGER api_list_assign_uid AFTER INSERT ON api_list WHEN NEW.uid=''
      BEGIN UPDATE api_list SET uid=lower(hex(randomblob(16))) WHERE id=NEW.id; END;",
+    "ALTER TABLE api_list ADD COLUMN group_name TEXT NOT NULL DEFAULT '';
+     ALTER TABLE api_list ADD COLUMN options TEXT NOT NULL DEFAULT '{}';",
 ];
+
+/// 持久化仅允许超时与凭证引用，拒绝意外传入的临时秘密。
+pub(super) fn validate_options(raw: &str) -> Result<String, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|_| "接口设置不是有效 JSON".to_string())?;
+    let object = value.as_object().ok_or("接口设置必须为对象")?;
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "timeoutMs" | "auth"))
+    {
+        return Err("接口设置包含不支持的字段".into());
+    }
+    if let Some(timeout) = object.get("timeoutMs") {
+        if !timeout
+            .as_u64()
+            .is_some_and(|value| (1_000..=300_000).contains(&value))
+        {
+            return Err("超时应为 1 到 300 秒".into());
+        }
+    }
+    if let Some(auth) = object.get("auth") {
+        let auth = auth.as_object().ok_or("认证设置必须为对象")?;
+        if auth
+            .keys()
+            .any(|key| !matches!(key.as_str(), "mode" | "credentialId"))
+        {
+            return Err("保存的认证设置只允许凭证库引用".into());
+        }
+        if !matches!(
+            auth.get("mode").and_then(|value| value.as_str()),
+            Some("none" | "basic" | "bearer")
+        ) {
+            return Err("认证方式不支持".into());
+        }
+        if !auth
+            .get("credentialId")
+            .is_some_and(|value| value.is_string())
+        {
+            return Err("凭证引用必须为字符串".into());
+        }
+    }
+    Ok(value.to_string())
+}
 
 /// 取库实例（锁内借用；首次访问时经 PluginDb::open 惰性打开）
 fn db<'a>(
@@ -69,7 +114,17 @@ pub fn api_save(
     headers: String,
     body_mode: String,
     body: String,
+    group_name: Option<String>,
+    options: Option<String>,
 ) -> Result<i64, String> {
+    if !matches!(kind.as_str(), "http" | "sse" | "ws") {
+        return Err("接口类型不支持".into());
+    }
+    if name.trim().is_empty() {
+        return Err("接口名称不能为空".into());
+    }
+    let group_name = group_name.unwrap_or_default();
+    let options = validate_options(options.as_deref().unwrap_or("{}"))?;
     let guard = db(&app, &state)?;
     let d = guard.as_ref().ok_or("本地库未初始化")?;
     d.with_conn(|c| {
@@ -77,23 +132,24 @@ pub fn api_save(
             // 新增：INSERT 后取自增主键
             Some(0) | None => {
                 c.execute(
-                    "INSERT INTO api_list (type, name, method, url, params, headers, body_mode, body, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, datetime('now', 'localtime'))",
-                    rusqlite::params![kind, name, method, url, params, headers, body_mode, body],
+                    "INSERT INTO api_list (type, name, method, url, params, headers, body_mode, body, group_name, options, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now', 'localtime'))",
+                    rusqlite::params![kind, name, method, url, params, headers, body_mode, body, group_name, options],
                 )
                 .map_err(|e| e.to_string())?;
                 c.last_insert_rowid()
             }
             // 更新：按 id 全字段覆盖
             Some(existing) => {
-                c.execute(
+                let changed = c.execute(
                     "UPDATE api_list SET type=?1, name=?2, method=?3, url=?4, params=?5, headers=?6,
-                     body_mode=?7, body=?8, updated_at=datetime('now', 'localtime') WHERE id=?9",
+                     body_mode=?7, body=?8, group_name=?10, options=?11, updated_at=datetime('now', 'localtime') WHERE id=?9",
                     rusqlite::params![
-                        kind, name, method, url, params, headers, body_mode, body, existing
+                        kind, name, method, url, params, headers, body_mode, body, existing, group_name, options
                     ],
                 )
                 .map_err(|e| e.to_string())?;
+                if changed == 0 { return Err("接口已被删除，请另存为新接口".into()); }
                 existing
             }
         };
@@ -109,7 +165,7 @@ pub fn api_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<ApiRec
     d.with_conn(|c| {
         let mut stmt = c
             .prepare(
-                "SELECT id, type, name, method, url, params, headers, body_mode, body, updated_at
+                "SELECT id, type, name, method, url, params, headers, body_mode, body, updated_at, group_name, options
                  FROM api_list ORDER BY updated_at DESC, id DESC",
             )
             .map_err(|e| e.to_string())?;
@@ -126,6 +182,8 @@ pub fn api_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<ApiRec
                     body_mode: row.get(7)?,
                     body: row.get(8)?,
                     updated_at: row.get(9)?,
+                    group_name: row.get(10)?,
+                    options: row.get(11)?,
                 })
             })
             .map_err(|e| e.to_string())?

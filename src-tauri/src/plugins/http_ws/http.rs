@@ -1,78 +1,99 @@
-//! HTTP/WS 调试插件 · HTTP 请求实现（reqwest）
-//! 发送 HTTP 请求（失败返回 ok=false + error，不抛错——便于前端展示）
-
+//! HTTP 请求与 SSE 共用请求构建，限制响应内存并完整报告读取失败。
+use super::models::{HttpRequestPayload, HttpResponseResult};
 use std::time::{Duration, Instant};
+use tauri::AppHandle;
 
-use crate::plugins::http_ws::models::{HttpRequestPayload, HttpResponseResult};
-
-/// 方法字符串 → reqwest 方法枚举（未知值回退 GET）
-fn parse_method(m: &str) -> reqwest::Method {
-    match m.to_uppercase().as_str() {
-        "POST" => reqwest::Method::POST,
-        "PUT" => reqwest::Method::PUT,
-        "PATCH" => reqwest::Method::PATCH,
-        "DELETE" => reqwest::Method::DELETE,
-        "HEAD" => reqwest::Method::HEAD,
-        "OPTIONS" => reqwest::Method::OPTIONS,
-        _ => reqwest::Method::GET,
+/// 流式请求只限制建连；普通 HTTP 同时限制整次请求。
+pub(super) fn request(
+    app: &AppHandle,
+    payload: HttpRequestPayload,
+    stream: bool,
+) -> Result<reqwest::RequestBuilder, String> {
+    let url = reqwest::Url::parse(&payload.url).map_err(|_| "请求地址无效".to_string())?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("请求地址必须使用 HTTP 或 HTTPS".into());
     }
+    let timeout = Duration::from_millis(payload.timeout_ms.unwrap_or(15_000).clamp(1_000, 300_000));
+    let mut builder = reqwest::Client::builder().connect_timeout(timeout);
+    if !stream {
+        builder = builder.timeout(timeout);
+    }
+    let client = builder.build().map_err(|e| e.without_url().to_string())?;
+    let method = reqwest::Method::from_bytes(payload.method.as_bytes())
+        .map_err(|_| "HTTP 方法无效".to_string())?;
+    let mut headers = reqwest::header::HeaderMap::new();
+    for (key, value) in payload.headers {
+        if key.trim().is_empty() {
+            continue;
+        }
+        let key = reqwest::header::HeaderName::from_bytes(key.as_bytes())
+            .map_err(|_| "请求头名称无效".to_string())?;
+        let value = reqwest::header::HeaderValue::from_str(&value)
+            .map_err(|_| "请求头值无效".to_string())?;
+        headers.append(key, value);
+    }
+    if let Some(auth) = super::auth::authorization(app, payload.auth.as_ref())? {
+        headers.insert(reqwest::header::AUTHORIZATION, auth);
+    }
+    let mut request = client.request(method, url).headers(headers);
+    if let Some(body) = payload.body {
+        request = request.body(body);
+    }
+    Ok(request)
 }
 
-/// 发送 HTTP 请求（失败返回 ok=false + error，不抛错——便于前端展示）
+/// 保留重复响应头，非 ASCII 内容按可显示文本转换。
+pub(super) fn response_headers(response: &reqwest::Response) -> Vec<(String, String)> {
+    response
+        .headers()
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.to_string(),
+                String::from_utf8_lossy(v.as_bytes()).into_owned(),
+            )
+        })
+        .collect()
+}
+
+/// 返回完整状态与响应原文；传输中断和过大响应均可感知。
 #[tauri::command]
-pub async fn http_request(payload: HttpRequestPayload) -> Result<HttpResponseResult, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(payload.timeout_ms.unwrap_or(15_000)))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let mut req = client.request(parse_method(&payload.method), &payload.url);
-    for (k, v) in &payload.headers {
-        if !k.trim().is_empty() {
-            req = req.header(k.as_str(), v.as_str());
-        }
-    }
-    if let Some(body) = &payload.body {
-        if !body.is_empty() {
-            req = req.body(body.clone());
-        }
-    }
-
+pub async fn http_request(
+    app: AppHandle,
+    payload: HttpRequestPayload,
+) -> Result<HttpResponseResult, String> {
+    let request = request(&app, payload, false)?;
     let start = Instant::now();
-    let resp = req.send().await;
-    let duration_ms = start.elapsed().as_millis() as u64;
-
-    match resp {
-        Ok(r) => {
-            let status = r.status().as_u16();
-            let status_text = r.status().canonical_reason().unwrap_or("").to_string();
-            let headers = r
-                .headers()
-                .iter()
-                .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
-                .collect::<Vec<_>>();
-            let body = r.text().await.unwrap_or_default();
-            let body_size = body.len();
-            Ok(HttpResponseResult {
-                ok: status < 400,
-                status,
-                status_text,
-                headers,
-                body,
-                body_size,
-                duration_ms,
-                error: None,
-            })
+    let mut response = request
+        .send()
+        .await
+        .map_err(|e| e.without_url().to_string())?;
+    let status = response.status().as_u16();
+    let status_text = response
+        .status()
+        .canonical_reason()
+        .unwrap_or("")
+        .to_string();
+    let headers = response_headers(&response);
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|e| e.without_url().to_string())?
+    {
+        if bytes.len() + chunk.len() > 20 * 1024 * 1024 {
+            return Err("响应超过 20 MiB，请缩小请求范围".into());
         }
-        Err(e) => Ok(HttpResponseResult {
-            ok: false,
-            status: 0,
-            status_text: String::new(),
-            headers: Vec::new(),
-            body: String::new(),
-            body_size: 0,
-            duration_ms,
-            error: Some(e.to_string()),
-        }),
+        bytes.extend_from_slice(&chunk);
     }
+    Ok(HttpResponseResult {
+        ok: status < 400,
+        status,
+        status_text,
+        headers,
+        body_size: bytes.len(),
+        body: String::from_utf8_lossy(&bytes).into_owned(),
+        duration_ms: start.elapsed().as_millis() as u64,
+        error: None,
+    })
 }
