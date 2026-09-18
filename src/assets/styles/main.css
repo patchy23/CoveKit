@@ -484,8 +484,11 @@ body.ui-drag-select-lock * {
     @apply text-tertiary-strong after:absolute after:inset-x-0 after:bottom-0 after:h-[2px] after:bg-tertiary-strong dark:text-tertiary-dark dark:after:bg-tertiary-dark;
   }
   .ui-tab-badge {
-    /* 计数徽标保持中性色：不随选中态继承 tertiary 橙，橙数字压灰底观感突兀 */
-    @apply rounded-full bg-border px-[6px] text-caption text-text-muted dark:bg-border-dark dark:text-text-muted-dark;
+    /* 计数徽标：与主页工具库列表同一语义——未选中灰底灰字，选中反色实心强调 */
+    @apply rounded-full bg-border px-[6px] text-caption font-semibold text-text-muted dark:bg-border-dark dark:text-text-muted-dark;
+  }
+  .ui-tab-active .ui-tab-badge {
+    @apply bg-tertiary-strong text-on-tertiary dark:bg-tertiary-dark dark:text-on-tertiary-dark;
   }
   .ui-modal-panel {
     @apply max-h-[85vh] rounded-xl border border-border bg-surface p-xl shadow-[0_12px_40px_rgba(16,24,40,0.14)] dark:border-border-dark dark:bg-surface-dark;
