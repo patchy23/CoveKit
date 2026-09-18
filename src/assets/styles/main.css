@@ -492,7 +492,8 @@ body.ui-drag-select-lock * {
     @apply bg-transparent text-tertiary-strong dark:bg-transparent dark:text-tertiary-dark;
   }
   .ui-modal-panel {
-    @apply max-h-[85vh] rounded-xl border border-border bg-surface p-xl shadow-[0_12px_40px_rgba(16,24,40,0.14)] dark:border-border-dark dark:bg-surface-dark;
+    /* 内边距由 UiModal 分区施加（header/内容/footer 各自 padding，面板本身不滚） */
+    @apply max-h-[85vh] rounded-xl border border-border bg-surface shadow-[0_12px_40px_rgba(16,24,40,0.14)] dark:border-border-dark dark:bg-surface-dark;
   }
 }
 

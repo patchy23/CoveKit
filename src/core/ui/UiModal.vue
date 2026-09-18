@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import UiScrollArea from './UiScrollArea.vue'
 import UiTooltip from './UiTooltip.vue'
-import { computed } from 'vue'
+import { computed, useSlots } from 'vue'
 import {
   DialogContent,
   DialogDescription,
@@ -44,6 +44,11 @@ const isFull = computed(() => props.size === 'full')
 
 const emit = defineEmits<{ close: [] }>()
 
+const slots = useSlots()
+
+/** 是否有头部（决定内容区是否需要补上 padding） */
+const hasHeader = computed(() => !!(props.title || props.description || slots.header))
+
 function onOpenChange(value: boolean) {
   if (!value) emit('close')
 }
@@ -63,48 +68,59 @@ function onPointerDownOutside(event: Event) {
         class="pointer-events-none fixed inset-0 z-[180] grid place-items-center"
         :class="isFull ? 'p-[40px]' : 'p-md'"
       >
-        <!-- full 档内容自控滚动（内部编辑器/终端有自己的滚动域），不包 UiScrollArea -->
-        <UiScrollArea v-if="!isFull" as-child axis="vertical">
-          <DialogContent
-            class="ui-modal-panel pointer-events-auto relative"
-            :style="{ width: width || sizeWidth[size as 'sm' | 'md' | 'lg' | 'xl'] }"
-            @pointer-down-outside="onPointerDownOutside"
-          >
-            <!-- 右上角关闭（遮罩点击默认已禁用，所有弹窗必须有可见出口） -->
-            <UiTooltip content="关闭">
-              <button
-                type="button"
-                class="absolute right-[14px] top-[14px] grid h-[26px] w-[26px] place-items-center rounded-[6px] text-text-muted transition-colors hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-                aria-label="关闭"
-                @click="emit('close')"
+        <!--
+          非 full 档：面板本身永不滚动——header/footer 固定，只有内容区滚动。
+          （面板整体滚动会把标题与操作按钮一起滚走，且滚动条贴着面板外缘像「外部滚动条」。）
+        -->
+        <DialogContent
+          v-if="!isFull"
+          class="ui-modal-panel pointer-events-auto relative flex flex-col !overflow-hidden !p-0"
+          :style="{ width: width || sizeWidth[size as 'sm' | 'md' | 'lg' | 'xl'] }"
+          @pointer-down-outside="onPointerDownOutside"
+        >
+          <!-- 右上角关闭（遮罩点击默认已禁用，所有弹窗必须有可见出口） -->
+          <UiTooltip content="关闭">
+            <button
+              type="button"
+              class="absolute right-[14px] top-[14px] z-10 grid h-[26px] w-[26px] place-items-center rounded-[6px] text-text-muted transition-colors hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+              aria-label="关闭"
+              @click="emit('close')"
+            >
+              <UiIcon name="x" :size="12" />
+            </button>
+          </UiTooltip>
+          <header v-if="hasHeader" class="mb-[18px] shrink-0 px-xl pt-xl pr-[44px]">
+            <slot name="header">
+              <DialogTitle
+                class="text-card-title font-semibold text-primary dark:text-primary-dark"
               >
-                <UiIcon name="x" :size="12" />
-              </button>
-            </UiTooltip>
-            <header v-if="title || description || $slots.header" class="mb-[18px] pr-[30px]">
-              <slot name="header">
-                <DialogTitle
-                  class="text-card-title font-semibold text-primary dark:text-primary-dark"
-                >
-                  {{ title }}
-                </DialogTitle>
-                <DialogDescription
-                  v-if="description"
-                  class="mt-xs text-body-sm text-secondary dark:text-secondary-dark"
-                >
-                  {{ description }}
-                </DialogDescription>
-              </slot>
-            </header>
+                {{ title }}
+              </DialogTitle>
+              <DialogDescription
+                v-if="description"
+                class="mt-xs text-body-sm text-secondary dark:text-secondary-dark"
+              >
+                {{ description }}
+              </DialogDescription>
+            </slot>
+          </header>
+          <UiScrollArea
+            class="min-h-0 flex-1 px-xl"
+            :class="{ 'pt-xl': !hasHeader, 'pb-xl': !$slots.footer }"
+            axis="vertical"
+          >
             <slot />
-            <footer v-if="$slots.footer" class="mt-[20px] flex justify-end gap-sm">
-              <slot name="footer" />
-            </footer>
-          </DialogContent>
-        </UiScrollArea>
+          </UiScrollArea>
+          <footer
+            v-if="$slots.footer"
+            class="mt-[20px] flex shrink-0 justify-end gap-sm px-xl pb-xl"
+          >
+            <slot name="footer" />
+          </footer>
+        </DialogContent>
         <DialogContent
           v-else
-          class="ui-modal-panel pointer-events-auto relative flex !max-h-none w-full flex-col !overflow-hidden !rounded-lg !p-0"
+          class="ui-modal-panel pointer-events-auto relative flex h-full !max-h-none w-full flex-col !overflow-hidden !rounded-lg !p-0"
           :style="{ maxWidth: width || 'min(920px, 94vw)' }"
           @pointer-down-outside="onPointerDownOutside"
         >

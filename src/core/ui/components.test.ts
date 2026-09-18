@@ -95,6 +95,28 @@ describe('公共 UI 组件', () => {
     wrapper.unmount()
   })
 
+  it('UiModal 非 full 档：header/footer 固定在滚动区外（面板本身不滚）', async () => {
+    const wrapper = mount(UiModal, {
+      attachTo: document.body,
+      props: { open: true, title: '设置', size: 'md' },
+      slots: { default: '<p>很长很长的内容</p>', footer: '<button>确定</button>' },
+    })
+    await nextTick()
+    const panel = document.body.querySelector<HTMLElement>('.ui-modal-panel')
+    expect(panel).toBeTruthy()
+    const scrollArea = panel!.querySelector('[data-scroll-axis="vertical"]')
+    expect(scrollArea).toBeTruthy()
+    // header 与 footer 是面板的直接子级，不在滚动容器内（滚动只发生在内容区）
+    const header = panel!.querySelector('header')
+    const footer = panel!.querySelector('footer')
+    expect(header).toBeTruthy()
+    expect(footer).toBeTruthy()
+    expect(scrollArea!.contains(header)).toBe(false)
+    expect(scrollArea!.contains(footer)).toBe(false)
+    expect(scrollArea!.textContent).toContain('很长很长的内容')
+    wrapper.unmount()
+  })
+
   it('基础控件输出统一尺寸类', () => {
     expect(
       mount(UiButton, { props: { size: 'xs' } })
