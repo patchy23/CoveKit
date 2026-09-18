@@ -214,7 +214,7 @@ function submit() {
           <UiInput v-model="form.host" class="font-mono" placeholder="192.168.1.1" />
         </UiField>
         <UiField label="端口" required>
-          <UiInput v-model.number="form.port" type="number" />
+          <UiInput v-model.number="form.port" inputmode="numeric" />
         </UiField>
       </div>
 
