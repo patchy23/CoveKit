@@ -74,9 +74,9 @@ function changeSingle(value: boolean) {
     <UiTable density="compact" striped>
       <thead>
         <tr>
-          <UiTableCell as="th">项目</UiTableCell
-          ><UiTableCell as="th">内容类型</UiTableCell
-          ><UiTableCell as="th" align="right">操作</UiTableCell>
+          <UiTableCell as="th" resizable>项目</UiTableCell
+          ><UiTableCell as="th" resizable>内容类型</UiTableCell
+          ><UiTableCell as="th" resizable align="right">操作</UiTableCell>
         </tr>
       </thead>
       <tbody>
@@ -123,9 +123,9 @@ function changeSingle(value: boolean) {
             <UiTable v-else-if="row.id === 'orders'" density="compact" :framed="false">
               <thead>
                 <tr>
-                  <UiTableCell as="th">实例</UiTableCell
-                  ><UiTableCell as="th">状态</UiTableCell
-                  ><UiTableCell as="th">运行时间</UiTableCell>
+                  <UiTableCell as="th" resizable>实例</UiTableCell
+                  ><UiTableCell as="th" resizable>状态</UiTableCell
+                  ><UiTableCell as="th" resizable>运行时间</UiTableCell>
                 </tr>
               </thead>
               <tbody>

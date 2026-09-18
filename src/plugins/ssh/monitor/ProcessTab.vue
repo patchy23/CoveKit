@@ -196,23 +196,23 @@ watch(
             <tr
               class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
             >
-              <UiTableCell as="th" class="w-[70px] whitespace-nowrap px-[12px] py-[8px]"
+              <UiTableCell as="th" resizable class="w-[70px] whitespace-nowrap px-[12px] py-[8px]"
                 >PID</UiTableCell
               >
-              <UiTableCell as="th" class="w-[90px] whitespace-nowrap px-[12px] py-[8px]"
+              <UiTableCell as="th" resizable class="w-[90px] whitespace-nowrap px-[12px] py-[8px]"
                 >用户</UiTableCell
               >
-              <UiTableCell as="th" class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
+              <UiTableCell as="th" resizable class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
                 >CPU%</UiTableCell
               >
-              <UiTableCell as="th" class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
+              <UiTableCell as="th" resizable class="w-[80px] whitespace-nowrap px-[12px] py-[8px]"
                 >MEM%</UiTableCell
               >
-              <UiTableCell as="th" class="w-[100px] whitespace-nowrap px-[12px] py-[8px]"
+              <UiTableCell as="th" resizable class="w-[100px] whitespace-nowrap px-[12px] py-[8px]"
                 >内存</UiTableCell
               >
-              <UiTableCell as="th" class="px-[12px] py-[8px]">命令</UiTableCell>
-              <UiTableCell as="th" class="w-[110px] whitespace-nowrap px-[12px] py-[8px]"
+              <UiTableCell as="th" resizable class="px-[12px] py-[8px]">命令</UiTableCell>
+              <UiTableCell as="th" resizable class="w-[110px] whitespace-nowrap px-[12px] py-[8px]"
                 >操作</UiTableCell
               >
             </tr>

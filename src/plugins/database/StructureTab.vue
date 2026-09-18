@@ -79,12 +79,12 @@ function genQuery() {
         <UiTable v-if="columns.length" density="compact" :hoverable="true" :striped="true">
           <thead>
             <tr>
-              <UiTableCell as="th">字段</UiTableCell>
-              <UiTableCell as="th">类型</UiTableCell>
-              <UiTableCell as="th">可空</UiTableCell>
-              <UiTableCell as="th">默认值</UiTableCell>
-              <UiTableCell as="th">键</UiTableCell>
-              <UiTableCell as="th">注释</UiTableCell>
+              <UiTableCell as="th" resizable>字段</UiTableCell>
+              <UiTableCell as="th" resizable>类型</UiTableCell>
+              <UiTableCell as="th" resizable>可空</UiTableCell>
+              <UiTableCell as="th" resizable>默认值</UiTableCell>
+              <UiTableCell as="th" resizable>键</UiTableCell>
+              <UiTableCell as="th" resizable>注释</UiTableCell>
             </tr>
           </thead>
           <tbody>
@@ -118,10 +118,10 @@ function genQuery() {
         <UiTable v-if="indexes.length" density="compact" :hoverable="true" :striped="true">
           <thead>
             <tr>
-              <UiTableCell as="th">索引名</UiTableCell>
-              <UiTableCell as="th">列</UiTableCell>
-              <UiTableCell as="th">唯一</UiTableCell>
-              <UiTableCell as="th">类型/定义</UiTableCell>
+              <UiTableCell as="th" resizable>索引名</UiTableCell>
+              <UiTableCell as="th" resizable>列</UiTableCell>
+              <UiTableCell as="th" resizable>唯一</UiTableCell>
+              <UiTableCell as="th" resizable>类型/定义</UiTableCell>
             </tr>
           </thead>
           <tbody>

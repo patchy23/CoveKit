@@ -41,18 +41,18 @@ const emit = defineEmits<{
           <tr
             class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
           >
-            <UiTableCell as="th" class="w-[92px] whitespace-nowrap px-[8px] py-[8px]"
+            <UiTableCell as="th" resizable class="w-[92px] whitespace-nowrap px-[8px] py-[8px]"
               >容器 ID</UiTableCell
             >
-            <UiTableCell as="th" class="w-[110px] px-[8px] py-[8px]">名称</UiTableCell>
-            <UiTableCell as="th" class="w-[110px] px-[8px] py-[8px]">镜像</UiTableCell>
-            <UiTableCell as="th" class="w-[70px] whitespace-nowrap px-[8px] py-[8px]"
+            <UiTableCell as="th" resizable class="w-[110px] px-[8px] py-[8px]">名称</UiTableCell>
+            <UiTableCell as="th" resizable class="w-[110px] px-[8px] py-[8px]">镜像</UiTableCell>
+            <UiTableCell as="th" resizable class="w-[70px] whitespace-nowrap px-[8px] py-[8px]"
               >状态</UiTableCell
             >
-            <UiTableCell as="th" class="w-[96px] whitespace-nowrap px-[8px] py-[8px]"
+            <UiTableCell as="th" resizable class="w-[96px] whitespace-nowrap px-[8px] py-[8px]"
               >运行时间</UiTableCell
             >
-            <UiTableCell as="th" class="w-[110px] px-[8px] py-[8px]">端口</UiTableCell>
+            <UiTableCell as="th" resizable class="w-[110px] px-[8px] py-[8px]">端口</UiTableCell>
             <UiTableCell
               as="th"
               :class="inspectOnly ? 'w-[100px]' : 'w-[210px]'"

@@ -63,12 +63,12 @@ const rows = [
     <UiTable :density="density" striped>
       <thead>
         <tr>
-          <UiTableCell as="th">服务器</UiTableCell>
-          <UiTableCell as="th">地址</UiTableCell>
-          <UiTableCell as="th">命令</UiTableCell>
-          <UiTableCell as="th">状态</UiTableCell>
-          <UiTableCell as="th">延迟</UiTableCell>
-          <UiTableCell as="th">操作</UiTableCell>
+          <UiTableCell as="th" resizable>服务器</UiTableCell>
+          <UiTableCell as="th" resizable>地址</UiTableCell>
+          <UiTableCell as="th" resizable>命令</UiTableCell>
+          <UiTableCell as="th" resizable>状态</UiTableCell>
+          <UiTableCell as="th" resizable>延迟</UiTableCell>
+          <UiTableCell as="th" resizable>操作</UiTableCell>
         </tr>
       </thead>
       <tbody>
