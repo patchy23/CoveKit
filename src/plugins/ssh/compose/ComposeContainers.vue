@@ -61,16 +61,12 @@ defineExpose({ refresh })
 
 <template>
   <div class="shrink-0">
-    <section class="shrink-0">
+    <section class="shrink-0" :aria-busy="loading">
       <div
         class="flex items-center justify-between border-b border-border px-sm py-xs text-caption text-secondary dark:border-border-dark dark:text-secondary-dark"
       >
         <span>{{
-          loading
-            ? '正在读取容器…'
-            : error || connection?.status !== 'connected'
-              ? '容器'
-              : `容器 · ${rows.length}`
+          loading || error || connection?.status !== 'connected' ? '容器' : `容器 · ${rows.length}`
         }}</span>
         <UiButton
           size="xs"
@@ -97,7 +93,7 @@ defineExpose({ refresh })
       </p>
       <div v-else class="flex min-h-0 flex-col">
         <DockerTable
-          v-if="rows.length"
+          v-if="rows.length || loading"
           :containers="rows"
           class="max-h-[320px]"
           inspect-only
@@ -109,8 +105,8 @@ defineExpose({ refresh })
         <UiEmptyState
           v-else
           compact
-          :title="loading ? '正在读取容器…' : '该编排下没有容器'"
-          :description="loading ? '' : '未部署或容器已被移除，可启动编排后刷新。'"
+          title="该编排下没有容器"
+          description="未部署或容器已被移除，可启动编排后刷新。"
         />
       </div>
     </section>

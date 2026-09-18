@@ -501,7 +501,10 @@ it('容器直接按项目查询，缺少 YAML 路径仍可查看，失败不显�
       busy: false,
     },
   })
-  expect(wrapper.text()).toContain('正在读取容器')
+  expect(wrapper.text()).not.toContain('正在读取容器')
+  expect(wrapper.text()).not.toContain('该编排下没有容器')
+  expect(wrapper.findComponent(DockerTable).exists()).toBe(true)
+  expect(wrapper.get('section').attributes('aria-busy')).toBe('true')
   expect(wrapper.text()).not.toContain('容器 · 0')
   await flushPromises()
   expect(env.sshDockerList).toHaveBeenCalledWith('one', 'app')
