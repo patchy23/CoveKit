@@ -151,8 +151,10 @@ onBeforeUnmount(stop)
               :content="display(row[column.key])"
             >
               <td
-                class="max-w-0 truncate border-b border-r border-border px-[7px] font-data text-secondary dark:border-border-dark dark:text-secondary-dark"
+                class="max-w-0 truncate border-b border-r border-border px-[7px] text-secondary dark:border-border-dark dark:text-secondary-dark"
                 :class="[
+                  column.content === 'action' ? 'font-sans' : 'font-data',
+                  column.content === 'numeric' ? 'tabular-nums' : '',
                   column.align === 'right'
                     ? 'text-right tabular-nums'
                     : column.align === 'center'

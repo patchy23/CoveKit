@@ -61,6 +61,8 @@ const modeLabel = computed(() => (props.mode === 'unified' ? '内联对比' : '�
 
 let mergeView: MergeView | null = null
 let unifiedView: EditorView | null = null
+/** 创建请求序号：快速切换 props 时只接受最后一次 create 的结果，防止异步交错叠出双视图 */
+let createRequest = 0
 
 /** 卸载视图 */
 function destroy(): void {
@@ -72,12 +74,15 @@ function destroy(): void {
 
 /** 建立视图（语言扩展异步加载完成后再创建，避免闪烁） */
 async function create(): Promise<void> {
+  const request = ++createRequest
   const parent = host.value
   if (!parent) return
   destroy()
 
   const info = detectLanguage(props.filename ?? '', props.language)
   const loaded = await loadLanguage(info, props.filename ?? '')
+  // 等待期间又来了新请求或组件已卸载：丢弃本次结果，视图归属最新一次请求
+  if (request !== createRequest || !host.value) return
   const languageExtensions: Extension[] = Array.isArray(loaded) ? loaded : [loaded]
   const shared: Extension[] = [
     codeEditorTheme,
@@ -86,7 +91,7 @@ async function create(): Promise<void> {
     ...languageExtensions,
   ]
   // 视图可能在建好之前就被卸载（快速切换 props）
-  if (!host.value) return
+  if (request !== createRequest || !host.value) return
 
   if (props.mode === 'unified') {
     unifiedView = new EditorView({

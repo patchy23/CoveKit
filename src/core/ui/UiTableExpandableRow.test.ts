@@ -21,6 +21,8 @@ it('展开由消费方控制，按钮关联跨列区域，禁用时不触发', a
   expect(wrapper.get('[role="region"]').attributes('id')).toBe(button.attributes('aria-controls'))
   expect(wrapper.get('[colspan]').attributes('colspan')).toBe('4')
   await wrapper.setProps({ disabled: true })
+  // 禁用必须落到原生属性上（UiIconButton 的 disabled 显式声明为 prop 后才会真正传给 UiButton）
+  expect(button.attributes('disabled')).toBeDefined()
   await button.trigger('click')
   expect(wrapper.emitted('update:expanded')).toHaveLength(1)
 })

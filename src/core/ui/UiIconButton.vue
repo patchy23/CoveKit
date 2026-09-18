@@ -9,8 +9,10 @@ const props = withDefaults(
     size?: UiSize
     variant?: 'primary' | 'secondary' | 'ghost' | 'danger'
     loading?: boolean
+    /** 禁用态（显式声明为 prop：attrs 透传会被 UiButton 的显式 :disabled 绑定覆盖） */
+    disabled?: boolean
   }>(),
-  { size: 'md', variant: 'ghost', loading: false }
+  { size: 'md', variant: 'ghost', loading: false, disabled: false }
 )
 
 /**
@@ -29,6 +31,7 @@ const squareStyle = computed(() => {
     :variant="variant"
     :size="size"
     :loading="loading"
+    :disabled="disabled"
     :style="squareStyle"
     :title="label"
     :aria-label="label"
