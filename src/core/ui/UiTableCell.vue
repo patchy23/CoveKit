@@ -14,6 +14,8 @@ const props = withDefaults(
 
 const classes = computed(() =>
   cn('leading-normal', props.as === 'th' ? 'font-sans font-medium' : 'font-normal', {
+    // 表头文字不换行：换行会撑破行高、整表错位；宽度不足时由外层横向滚动兜底
+    'whitespace-nowrap': props.as === 'th',
     'font-data': props.as === 'td' && props.content !== 'action',
     'font-sans': props.as === 'td' && props.content === 'action',
     'tabular-nums': props.content === 'numeric',
