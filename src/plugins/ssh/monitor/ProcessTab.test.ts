@@ -10,7 +10,7 @@
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { nextTick } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { i18n } from '@/i18n'
 import { useUiStore } from '@/stores/ui'
 import type { ProcessDetail, ServerConnection } from '../contracts'
@@ -81,6 +81,21 @@ function bodyText() {
   return document.body.textContent ?? ''
 }
 
+/**
+ * 已挂载的包装器：用例结束必须先 unmount 再清空 body。
+ *
+ * 为什么不能只在 beforeEach 里清空 body：弹窗经 DialogPortal 把节点挂在 body 上，
+ * 直接清空会让仍存活的组件实例失去 DOM 锚点，Vue 后续 patch 找不到 nextSibling，
+ * 更新静默失效——表现为「组件状态已变（可探查到 detail/loading 都正确）但界面仍停在旧内容」。
+ */
+const mountedWrappers: ReturnType<typeof mount>[] = []
+
+afterEach(() => {
+  while (mountedWrappers.length) mountedWrappers.pop()?.unmount()
+  // unmount 完成后再清空残留节点（顺序颠倒会复现上面描述的锚点失效）
+  document.body.innerHTML = ''
+})
+
 /** 挂载进程页签（真实 pinia / i18n，IPC 走假实现） */
 async function mountTab(pinia: Pinia = createPinia(), sessionId = 's1') {
   setActivePinia(pinia)
@@ -89,6 +104,7 @@ async function mountTab(pinia: Pinia = createPinia(), sessionId = 's1') {
     global: { plugins: [pinia, i18n] },
   })
   await settle()
+  mountedWrappers.push(wrapper)
   return wrapper
 }
 
@@ -101,7 +117,6 @@ async function clickDetail(wrapper: ReturnType<typeof mount>, index: number) {
 
 describe('ProcessTab 进程详情', () => {
   beforeEach(() => {
-    document.body.innerHTML = ''
     localStorage.clear()
     ipcMock.sshProcessList.mockReset().mockResolvedValue([processRow(100), processRow(200)])
     ipcMock.sshProcessDetail.mockReset()
