@@ -1,23 +1,43 @@
 <script setup lang="ts">
 /**
  * XML 面板 · 格式化/压缩/校验（格式转换工具子页签；与 JSON 面板同款分栏布局）
+ * 免按钮交互（2026-09-18）：输入停顿 300ms 自动转换，模式切换立即重算。
  */
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { formatXml, minifyXml } from './useXml'
+import { useAutoConvert } from './useAutoConvert'
 import { useCopy } from '@/core/feedback/useCopy'
-import { UiAlert, UiButton, UiCodeEditor, UiToolbar } from '@/core/ui'
+import { UiAlert, UiButton, UiCodeEditor, UiRadioGroup, UiToolbar } from '@/core/ui'
 
 const { copyText } = useCopy()
+
+type XmlMode = 'format' | 'minify'
 
 const input = ref(
   '<?xml version="1.0" encoding="UTF-8"?>\n<config>\n  <app name="CoveKit">\n    <version>0.1.0</version>\n  </app>\n</config>'
 )
 const output = ref('')
 const error = ref('')
+const mode = ref<XmlMode>('format')
 
-function format() {
+const modeOptions = [
+  { value: 'format', label: '格式化' },
+  { value: 'minify', label: '压缩' },
+]
+
+/** 按当前模式执行转换；空输入清空结果，不报错 */
+function run() {
   error.value = ''
-  const r = formatXml(input.value)
+  const text = input.value
+  if (!text.trim()) {
+    output.value = ''
+    return
+  }
+  if (mode.value === 'minify') {
+    output.value = minifyXml(text.trim())
+    return
+  }
+  const r = formatXml(text)
   if (r.ok) {
     output.value = r.output ?? ''
     if (r.loose) {
@@ -29,19 +49,25 @@ function format() {
   }
 }
 
-function minify() {
-  error.value = ''
-  const t = input.value.trim()
-  if (!t) return
-  output.value = minifyXml(t)
-}
+const { watchInput, runNow } = useAutoConvert(run)
+watchInput(input)
+// 模式切换立即重算，不等防抖
+watch(mode, runNow)
+// 挂载即有示例输入，立即出结果
+runNow()
 </script>
 
 <template>
   <div class="flex h-full min-h-0 flex-col gap-[10px]">
     <UiToolbar class="shrink-0">
-      <UiButton variant="primary" @click="format">格式化</UiButton>
-      <UiButton @click="minify">压缩</UiButton>
+      <UiRadioGroup
+        v-model="mode"
+        :options="modeOptions"
+        name="xml-mode"
+        variant="chips"
+        size="sm"
+        aria-label="XML 转换模式"
+      />
       <UiButton
         class="ml-auto"
         variant="ghost"

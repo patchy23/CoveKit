@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
  * 时间戳面板 · 秒/毫秒自动识别，时间戳 ⇄ 日期双向互转（格式转换工具子页签）
+ * 免按钮交互（2026-09-18）：输入停顿 300ms 自动转换；「填入当前时间」立即重算。
  */
 import { ref } from 'vue'
 import { dateToTimestamp, nowSeconds, timestampToResult } from './useConverter'
+import { useAutoConvert } from './useAutoConvert'
 import { useCopy } from '@/core/feedback/useCopy'
 import { UiAlert, UiButton, UiField, UiInput, UiPanel } from '@/core/ui'
 
@@ -17,21 +19,44 @@ const dateInput = ref('')
 const dateResult = ref<number | null>(null)
 const dateError = ref('')
 
+/** 时间戳 → 日期；空输入清空结果，不报错 */
 function convertTs() {
-  const r = timestampToResult(tsInput.value)
+  const text = tsInput.value.trim()
+  if (!text) {
+    tsResult.value = null
+    tsError.value = ''
+    return
+  }
+  const r = timestampToResult(text)
   tsError.value = r ? '' : '请输入有效的时间戳数字'
   tsResult.value = r
 }
 
+/** 日期 → 时间戳（毫秒）；空输入清空结果，不报错 */
 function convertDate() {
-  const ms = dateToTimestamp(dateInput.value)
+  const text = dateInput.value.trim()
+  if (!text) {
+    dateResult.value = null
+    dateError.value = ''
+    return
+  }
+  const ms = dateToTimestamp(text)
   dateError.value = ms === null ? '无法解析该日期（示例：2023-11-14 22:13:20）' : ''
   dateResult.value = ms
 }
 
+// 两个输入框各自独立的防抖调度
+const tsAuto = useAutoConvert(convertTs)
+tsAuto.watchInput(tsInput)
+const dateAuto = useAutoConvert(convertDate)
+dateAuto.watchInput(dateInput)
+// 挂载默认填入当前时间戳，立即出结果
+tsAuto.runNow()
+
 function useNow() {
   tsInput.value = String(nowSeconds())
-  convertTs()
+  // 按钮点击属明确动作，立即重算不等防抖
+  tsAuto.runNow()
 }
 </script>
 
@@ -49,9 +74,6 @@ function useNow() {
         placeholder="1700000000 或 1700000000000"
       />
     </UiField>
-    <div class="flex items-center gap-[8px]">
-      <UiButton variant="primary" @click="convertTs">转换为日期</UiButton>
-    </div>
     <UiAlert v-if="tsError" tone="danger">{{ tsError }}</UiAlert>
     <div v-if="tsResult" class="grid grid-cols-2 gap-[10px]">
       <UiPanel padding="sm">
@@ -104,9 +126,6 @@ function useNow() {
         placeholder="2023-11-14 22:13:20 或 ISO 字符串"
       />
     </UiField>
-    <div class="flex items-center gap-[8px]">
-      <UiButton @click="convertDate">转换为时间戳</UiButton>
-    </div>
     <UiAlert v-if="dateError" tone="danger">{{ dateError }}</UiAlert>
     <div
       v-if="dateResult !== null"
