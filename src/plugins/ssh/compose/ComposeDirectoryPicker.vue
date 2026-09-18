@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 仅浏览用户指定目录，不用于发现 Compose 项目。 */
 import { onMounted, onUnmounted, ref } from 'vue'
-import { UiButton, UiInput, UiModal, UiScrollArea } from '@/core/ui'
+import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiScrollArea } from '@/core/ui'
 import type { FileListResult } from '../contracts'
 import { ipc } from '../ipc'
 const props = defineProps<{ connectionId: string; initialPath: string }>()
@@ -41,16 +41,26 @@ onMounted(() => {
 <template>
   <UiModal open title="选择远程项目目录" @close="emit('close')">
     <div class="mb-sm flex gap-sm">
-      <UiInput v-model="path" placeholder="远程绝对路径" @keydown.enter="browse(path)" />
-      <UiButton variant="secondary" :loading="loading" @click="browse(path)">前往</UiButton>
+      <UiIconButton
+        label="上级"
+        title="上级目录"
+        size="sm"
+        :disabled="loading || !listing?.parentPath"
+        @click="listing?.parentPath && browse(listing.parentPath)"
+      >
+        <UiIcon name="arrow-up" :size="14" />
+      </UiIconButton>
+      <UiInput
+        v-model="path"
+        class="min-w-0 flex-1"
+        placeholder="远程绝对路径，回车前往"
+        @keydown.enter="browse(path)"
+      />
     </div>
     <p v-if="error" role="alert" class="text-body-sm text-danger-strong dark:text-danger-dark">
       {{ error }}
     </p>
     <UiScrollArea class="h-[260px]" axis="vertical">
-      <UiButton v-if="listing?.parentPath" variant="ghost" block @click="browse(listing.parentPath)"
-        >上一级</UiButton
-      >
       <UiButton
         v-for="entry in listing?.files.filter((f) => f.isDir && f.name !== '.' && f.name !== '..')"
         :key="entry.path"

@@ -18,8 +18,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   'update:content': [value: string]
-  save: [name: string, path: string, apply: boolean, base: string]
-  openExisting: [name: string, path: string]
+  save: [name: string, path: string, base: string]
 }>()
 const name = ref('')
 const directory = ref('')
@@ -31,6 +30,25 @@ const pendingTemplate = ref('')
 const choosingDirectory = ref(false)
 const localError = ref('')
 const initializing = ref(true)
+const confirmClose = ref(false)
+const initialContent = props.content
+const changed = computed(
+  () =>
+    !!name.value.trim() ||
+    customDirectory.value ||
+    filename.value !== 'docker-compose.yml' ||
+    template.value !== 'nginx' ||
+    props.content !== initialContent
+)
+function requestClose() {
+  if (props.busy) {
+    localError.value = '正在保存，请等待保存完成后关闭'
+    return
+  }
+  if (choosingDirectory.value || pendingTemplate.value || confirmClose.value) return
+  if (changed.value) confirmClose.value = true
+  else emit('close')
+}
 let alive = true
 onUnmounted(() => {
   alive = false
@@ -68,13 +86,12 @@ function validate() {
       : validateComposeDraft(name.value.trim(), finalPath.value)
   return !localError.value
 }
-function save(apply: boolean) {
+function save() {
   if (validate())
     emit(
       'save',
       name.value.trim(),
       finalPath.value,
-      apply,
       parentDirectory(directory.value.replace(/\/+$/, ''))
     )
 }
@@ -89,7 +106,7 @@ function chooseDirectory(value: string) {
 </script>
 
 <template>
-  <UiModal open title="添加容器编排" size="xl" @close="!busy && emit('close')">
+  <UiModal open title="添加容器编排" size="xl" @close="requestClose">
     <div class="grid grid-cols-2 gap-sm">
       <UiField label="编排名称" required
         ><UiInput v-model="name" :disabled="busy" placeholder="例如 blog"
@@ -143,38 +160,31 @@ function chooseDirectory(value: string) {
       {{ localError || error }}
     </p>
     <template #footer>
-      <UiButton
-        variant="ghost"
-        :disabled="busy || !connected"
-        @click="validate() && emit('openExisting', name.trim(), finalPath)"
-        >打开已有文件</UiButton
-      >
-      <UiButton variant="ghost" :disabled="busy" @click="emit('close')">取消</UiButton>
-      <UiButton
-        variant="secondary"
-        :loading="busy"
-        :disabled="!connected || initializing"
-        @click="save(false)"
-        >保存</UiButton
-      >
-      <UiButton :disabled="busy || !connected || initializing" @click="save(true)"
-        >保存并启动</UiButton
-      >
+      <UiButton variant="ghost" :disabled="busy" @click="requestClose">取消</UiButton>
+      <UiButton :loading="busy" :disabled="!connected || initializing" @click="save">保存</UiButton>
     </template>
+    <ComposeDirectoryPicker
+      v-if="choosingDirectory"
+      :connection-id="connectionId"
+      :initial-path="base ? parentDirectory(base) : '/'"
+      @close="choosingDirectory = false"
+      @select="chooseDirectory"
+    />
+    <ConfirmDialog
+      :open="!!pendingTemplate"
+      title="替换 YAML 内容"
+      message="切换模板将替换当前已修改的 YAML。是否继续？"
+      confirm-label="替换"
+      @close="pendingTemplate = ''"
+      @confirm="applyTemplate(pendingTemplate)"
+    />
+    <ConfirmDialog
+      :open="confirmClose"
+      title="放弃新增编排"
+      message="关闭后将放弃尚未保存的编排内容。"
+      confirm-label="放弃并关闭"
+      @close="confirmClose = false"
+      @confirm="emit('close')"
+    />
   </UiModal>
-  <ComposeDirectoryPicker
-    v-if="choosingDirectory"
-    :connection-id="connectionId"
-    :initial-path="base ? parentDirectory(base) : '/'"
-    @close="choosingDirectory = false"
-    @select="chooseDirectory"
-  />
-  <ConfirmDialog
-    :open="!!pendingTemplate"
-    title="替换 YAML 内容"
-    message="切换模板将替换当前已修改的 YAML。是否继续？"
-    confirm-label="替换"
-    @close="pendingTemplate = ''"
-    @confirm="applyTemplate(pendingTemplate)"
-  />
 </template>

@@ -1,6 +1,6 @@
 import { enableAutoUnmount, flushPromises, shallowMount } from '@vue/test-utils'
 import { afterEach, expect, it } from 'vitest'
-import { UiButton, UiInput, UiSelect } from '@/core/ui'
+import { UiButton, UiInput, UiSelect, UiModal } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import ComposeCreateDialog from './ComposeCreateDialog.vue'
 import { composeTemplates, composeContainerCount } from './composeTemplates'
@@ -42,14 +42,33 @@ it('新建预览 POSIX 路径，显式修改项目目录后改名称不覆盖目
   await flushPromises()
   wrapper
     .findAllComponents(UiButton)
-    .find((b) => b.text() === '保存并启动')!
+    .find((b) => b.text() === '保存')!
     .vm.$emit('click')
   expect(wrapper.emitted('save')?.[0]).toEqual([
     'blog-two',
     '/srv/my apps/blog/docker-compose.yml',
-    true,
     '/srv/my apps',
   ])
+})
+
+it('默认模板未修改时关闭直接生效，填写后确认放弃才关闭', async () => {
+  const wrapper = dialog()
+  await flushPromises()
+  wrapper.getComponent(UiModal).vm.$emit('close')
+  expect(wrapper.emitted('close')).toHaveLength(1)
+  wrapper.findAllComponents(UiInput)[0]!.vm.$emit('update:modelValue', 'new-app')
+  await flushPromises()
+  wrapper.getComponent(UiModal).vm.$emit('close')
+  await flushPromises()
+  const confirmation = wrapper
+    .findAllComponents(ConfirmDialog)
+    .find((c) => c.props('title') === '放弃新增编排')!
+  expect(confirmation.props('open')).toBe(true)
+  expect(wrapper.emitted('close')).toHaveLength(1)
+  confirmation.vm.$emit('confirm')
+  expect(wrapper.emitted('close')).toHaveLength(2)
+  expect(wrapper.text()).not.toContain('保存并启动')
+  expect(wrapper.text()).not.toContain('打开已有文件')
 })
 
 it('远程主目录迟到响应不覆盖用户手填的目录，空目录不能保存到根目录', async () => {

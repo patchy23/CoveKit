@@ -6,7 +6,10 @@ import { useCompose } from './useCompose'
 import { COMPOSE_TEMPLATE, mergeComposeProjects, validateComposeDraft } from './composeProjects'
 import ComposeTab from './ComposeTab.vue'
 import ComposeContainers from './ComposeContainers.vue'
-import { UiButton, UiCodeEditor, UiCombobox, UiSearchInput } from '@/core/ui'
+import ComposeCreateDialog from './ComposeCreateDialog.vue'
+import ComposeDirectoryPicker from './ComposeDirectoryPicker.vue'
+import ComposeProjectList from './ComposeProjectList.vue'
+import { UiButton, UiCodeEditor, UiCombobox, UiSearchInput, UiIconButton, UiInput } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
 const env = vi.hoisted(() => ({
@@ -17,6 +20,7 @@ const env = vi.hoisted(() => ({
   sshComposeCreate: vi.fn(),
   sshEditOpen: vi.fn(),
   sshEditSave: vi.fn(),
+  sshFileList: vi.fn(),
   setToolSetting: vi.fn(),
 }))
 vi.mock('../ipc', () => ({ ipc: env }))
@@ -302,7 +306,7 @@ it('默认目录使用远程主目录，取消编辑恢复已加载内容', asyn
   expect(api.dirty.value).toBe(false)
 })
 
-it('编辑入口切换只读状态，保存并应用遇到保存冲突时不会启动容器', async () => {
+it('编辑入口切换只读状态，保存遇到冲突时保留草稿且不会启动容器', async () => {
   const wrapper = shallowMount(ComposeTab, {
     props: {
       connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
@@ -321,12 +325,17 @@ it('编辑入口切换只读状态，保存并应用遇到保存冲突时不会�
   await flushPromises()
   await click('app')
   expect(wrapper.getComponent(UiCodeEditor).props('readonly')).toBe(true)
-  await click('编辑')
+  wrapper
+    .findAllComponents(UiButton)
+    .filter((b) => b.text() === '编辑')
+    .at(-1)!
+    .vm.$emit('click')
+  await flushPromises()
   expect(wrapper.getComponent(UiCodeEditor).props('readonly')).toBe(false)
   wrapper.getComponent(UiCodeEditor).vm.$emit('update:modelValue', 'new draft')
   await flushPromises()
   env.sshEditSave.mockResolvedValueOnce({ ok: false, conflict: true })
-  await click('保存并应用')
+  await click('保存')
   expect(env.sshComposeStream).not.toHaveBeenCalled()
   expect(wrapper.getComponent(UiCodeEditor).props('modelValue')).toBe('new draft')
   expect(wrapper.text()).toContain('本次未覆盖')
@@ -447,4 +456,95 @@ it('详情选择其他编排时保护草稿，确认放弃后才读取新文件'
   await flushPromises()
   expect(env.sshEditOpen).toHaveBeenLastCalledWith('one', other.configFiles[0])
   expect(wrapper.getComponent(UiCombobox).props('modelValue')).toBe('other')
+})
+
+it('新增窗口右上角关闭能退出真实模态层，修改后放弃确认也能退出', async () => {
+  const wrapper = mount(ComposeTab, {
+    attachTo: document.body,
+    props: {
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      profileId: 'profile',
+      workspaceId: 'modal-close',
+    },
+    global: { stubs: { ComposeContainers: true, UiCodeEditor: true } },
+  })
+  const add = async () => {
+    wrapper
+      .findAllComponents(UiButton)
+      .find((b) => b.text() === '添加容器编排')!
+      .vm.$emit('click')
+    await flushPromises()
+  }
+  await flushPromises()
+  await add()
+  ;(
+    document.querySelector('[role="dialog"] button[aria-label="关闭"]') as HTMLButtonElement
+  ).click()
+  await flushPromises()
+  expect(wrapper.findComponent(ComposeCreateDialog).exists()).toBe(false)
+  await add()
+  wrapper
+    .getComponent(ComposeCreateDialog)
+    .findAllComponents(UiInput)[0]!
+    .vm.$emit('update:modelValue', 'my-app')
+  await flushPromises()
+  ;(
+    document.querySelector('[role="dialog"] button[aria-label="关闭"]') as HTMLButtonElement
+  ).click()
+  await flushPromises()
+  const discard = [...document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')].find(
+    (b) => b.textContent?.trim() === '放弃并关闭'
+  )!
+  expect(discard).toBeTruthy()
+  discard.click()
+  await flushPromises()
+  expect(wrapper.findComponent(ComposeCreateDialog).exists()).toBe(false)
+  expect(wrapper.emitted('state')?.at(-1)).toEqual([{ dirty: false, busy: false }])
+})
+
+it('目录选择通过上级图标和路径回车导航，根目录禁用上级', async () => {
+  env.sshFileList.mockResolvedValueOnce({ ok: true, path: '/srv', parentPath: '/', files: [] })
+  const wrapper = shallowMount(ComposeDirectoryPicker, {
+    props: { connectionId: 'one', initialPath: '/srv' },
+    global: { renderStubDefaultSlot: true, stubs: { UiIconButton: false } },
+  })
+  await flushPromises()
+  expect(wrapper.getComponent(UiIconButton).getComponent(UiButton).props('disabled')).toBe(false)
+  env.sshFileList.mockResolvedValueOnce({ ok: true, path: '/', files: [] })
+  wrapper.getComponent(UiIconButton).vm.$emit('click')
+  await flushPromises()
+  expect(env.sshFileList).toHaveBeenLastCalledWith('one', '/')
+  expect(wrapper.getComponent(UiIconButton).getComponent(UiButton).props('disabled')).toBe(true)
+  env.sshFileList.mockResolvedValueOnce({ ok: true, path: '/tmp', parentPath: '/', files: [] })
+  wrapper.getComponent(UiInput).vm.$emit('update:modelValue', '/tmp')
+  await flushPromises()
+  wrapper.getComponent(UiInput).vm.$emit('keydown', { key: 'Enter' })
+  await flushPromises()
+  expect(env.sshFileList).toHaveBeenLastCalledWith('one', '/tmp')
+  expect(wrapper.findAllComponents(UiButton).some((b) => b.text() === '前往')).toBe(false)
+})
+
+it('列表行操作直接作用于该行项目，展示结果且不打开 YAML', async () => {
+  const other = { ...project, name: 'other', configFiles: ['/srv/other.yml'], workingDir: '/srv' }
+  env.sshComposeList.mockResolvedValue([project, other])
+  env.sshComposeAction.mockResolvedValue({ exitCode: 0, stdout: 'stopped', stderr: '' })
+  const wrapper = shallowMount(ComposeTab, {
+    props: {
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      profileId: 'profile',
+      workspaceId: 'row-action',
+    },
+    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
+  })
+  await flushPromises()
+  wrapper
+    .getComponent(ComposeProjectList)
+    .findAllComponents(UiButton)
+    .filter((b) => b.text() === '停止')[1]!
+    .vm.$emit('click')
+  await flushPromises()
+  expect(env.sshComposeStream.mock.calls[0][0]).toMatchObject({ project: other, action: 'stop' })
+  expect(env.sshEditOpen).not.toHaveBeenCalled()
+  expect(wrapper.findComponent(UiCombobox).exists()).toBe(false)
+  expect(wrapper.text()).toContain('stopped')
 })

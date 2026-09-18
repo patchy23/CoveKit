@@ -9,7 +9,7 @@ import {
   UiTable,
   UiTableCell,
 } from '@/core/ui'
-import type { ComposeProject } from '../contracts'
+import type { ComposeAction, ComposeProject } from '../contracts'
 import { composeStatus, composeContainerCount } from './composeTemplates'
 const props = defineProps<{
   projects: ComposeProject[]
@@ -17,8 +17,15 @@ const props = defineProps<{
   disabled: boolean
   error: string
   connected: boolean
+  busyProjectName?: string
 }>()
-defineEmits<{ select: [project: ComposeProject]; add: []; refresh: [] }>()
+defineEmits<{
+  select: [project: ComposeProject]
+  edit: [project: ComposeProject]
+  add: []
+  refresh: []
+  action: [project: ComposeProject, action: ComposeAction]
+}>()
 const keyword = ref('')
 const filtered = computed(() =>
   props.projects.filter((p) => p.name.toLowerCase().includes(keyword.value.trim().toLowerCase()))
@@ -74,6 +81,7 @@ const filtered = computed(() =>
             <UiTableCell as="th">编排名称</UiTableCell
             ><UiTableCell as="th">运行状态</UiTableCell
             ><UiTableCell as="th" align="right">容器数量</UiTableCell>
+            <UiTableCell as="th" align="right">操作</UiTableCell>
           </tr>
         </thead>
         <tbody>
@@ -87,10 +95,73 @@ const filtered = computed(() =>
                 >{{ project.name }}</UiButton
               ></UiTableCell
             >
-            <UiTableCell>{{ composeStatus(project.status) }}</UiTableCell>
+            <UiTableCell
+              ><span
+                v-if="busyProjectName === project.name"
+                class="animate-pulse text-tertiary-strong dark:text-tertiary-dark"
+                >执行中</span
+              ><span v-else>{{ composeStatus(project.status) }}</span></UiTableCell
+            >
             <UiTableCell content="numeric" align="right">{{
               composeContainerCount(project.status) ?? '—'
             }}</UiTableCell>
+            <UiTableCell content="action" align="right" class="whitespace-nowrap">
+              <div class="flex items-center justify-end gap-[2px]">
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  :disabled="disabled || !connected"
+                  @click="$emit('edit', project)"
+                  >编辑</UiButton
+                >
+                <UiButton
+                  v-if="composeStatus(project.status) !== '运行中'"
+                  variant="ghost"
+                  size="xs"
+                  :disabled="disabled || !connected || !project.configFiles.length"
+                  @click="$emit('action', project, 'up')"
+                  >启动</UiButton
+                >
+                <UiButton
+                  v-if="project.status.includes('running') || project.status.includes('paused')"
+                  variant="ghost"
+                  size="xs"
+                  :disabled="disabled || !connected"
+                  @click="$emit('action', project, 'stop')"
+                  >停止</UiButton
+                >
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  :disabled="disabled || !connected || composeStatus(project.status) === '未部署'"
+                  @click="$emit('action', project, 'restart')"
+                  >重启</UiButton
+                >
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  :disabled="disabled || !connected || !project.configFiles.length"
+                  title="拉取镜像并应用到容器"
+                  @click="$emit('action', project, 'update')"
+                  >更新镜像</UiButton
+                >
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  :disabled="disabled || !connected || !project.configFiles.length"
+                  @click="$emit('action', project, 'recreate')"
+                  >重建</UiButton
+                >
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  class="text-danger-strong dark:text-danger-dark"
+                  :disabled="disabled || !connected || composeStatus(project.status) === '未部署'"
+                  @click="$emit('action', project, 'down')"
+                  >拆除</UiButton
+                >
+              </div>
+            </UiTableCell>
           </tr>
         </tbody>
       </UiTable>

@@ -229,9 +229,8 @@ export function useCompose(
     }
   }
 
-  async function run(next: ComposeAction) {
+  async function run(next: ComposeAction, project = selected.value) {
     const id = connection()?.sessionId
-    const project = selected.value
     if (
       !id ||
       !connected.value ||
