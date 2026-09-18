@@ -134,23 +134,9 @@ const menuItems = computed<ContextMenuItem[]>(() => {
         <div
           v-for="row in rows"
           :key="row.kind === 'group' ? `group:${row.path}` : `api:${row.api.id}`"
-          class="relative"
           :data-depth="row.depth"
           :style="{ paddingLeft: `${row.depth * 18}px` }"
         >
-          <span
-            v-for="level in row.depth"
-            :key="level"
-            aria-hidden="true"
-            class="pointer-events-none absolute inset-y-0 border-l border-border-strong dark:border-border-strong-dark"
-            :style="{ left: `${(level - 1) * 18 + 11}px` }"
-          />
-          <span
-            v-if="row.depth"
-            aria-hidden="true"
-            class="pointer-events-none absolute top-1/2 w-[7px] border-t border-border-strong dark:border-border-strong-dark"
-            :style="{ left: `${row.depth * 18 - 7}px` }"
-          />
           <UiButton
             v-if="row.kind === 'group'"
             size="sm"

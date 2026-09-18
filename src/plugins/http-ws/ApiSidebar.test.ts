@@ -51,7 +51,7 @@ it('选中接口的按钮保持透明背景，方法标记显示颜色，点击�
   expect(wrapper.emitted('select')?.[0]).toEqual([api])
 })
 
-it('层级缩进在按钮外层，并提供层级线，不受公共按钮内边距影响', () => {
+it('层级缩进在按钮外层，不受公共按钮内边距影响', () => {
   const wrapper = mount(Sidebar, {
     props: { apis: [api], groups: ['开发/用户'], activeId: 1, loading: false, error: '' },
   })
@@ -60,7 +60,6 @@ it('层级缩进在按钮外层，并提供层级线，不受公共按钮内边�
     .element.closest('[data-depth]') as HTMLElement
   expect(child.dataset.depth).toBe('1')
   expect(child.style.paddingLeft).toBe('18px')
-  expect(child.querySelector('[aria-hidden="true"].border-l')).not.toBeNull()
   expect(wrapper.find('[data-api-group-drop=""]').exists()).toBe(true)
 })
 
