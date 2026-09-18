@@ -5,10 +5,10 @@ import {
   UiButton,
   UiCheckbox,
   UiCodeEditor,
+  UiCombobox,
   UiEmptyState,
   UiModal,
   UiScrollArea,
-  UiSearchInput,
   UiSelect,
 } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
@@ -17,6 +17,7 @@ import { useCompose } from './useCompose'
 import { composeStatus, composeTemplates, parentDirectory } from './composeTemplates'
 import ComposeCreateDialog from './ComposeCreateDialog.vue'
 import ComposeContainers from './ComposeContainers.vue'
+import ComposeProjectList from './ComposeProjectList.vue'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -57,7 +58,7 @@ const {
   () => props.profileId,
   props.workspaceId
 )
-const keyword = ref('')
+const showList = ref(true)
 const editing = ref(false)
 const expanded = ref(false)
 const showCreate = ref(false)
@@ -68,9 +69,7 @@ const buildImage = ref(false)
 const pendingDiscard = ref<(() => void) | null>(null)
 const containers = ref<InstanceType<typeof ComposeContainers>>()
 let previousProject: ComposeProject | null = null
-const filtered = computed(() =>
-  projects.value.filter((p) => p.name.toLowerCase().includes(keyword.value.trim().toLowerCase()))
-)
+const projectOptions = computed(() => projects.value.map((p) => ({ value: p.name, label: p.name })))
 const fileOptions = computed(() =>
   (selected.value?.configFiles ?? []).map((path) => ({
     value: path,
@@ -108,6 +107,7 @@ function acceptDiscard() {
 }
 function selectProject(project: ComposeProject, path?: string) {
   navigate(() => {
+    showList.value = false
     editing.value = false
     expanded.value = false
     void open(project, path)
@@ -115,7 +115,7 @@ function selectProject(project: ComposeProject, path?: string) {
 }
 function add() {
   navigate(() => {
-    previousProject = selected.value
+    previousProject = showList.value ? null : selected.value
     create()
     content.value = composeTemplates.find((t) => t.value === 'nginx')!.content
     showCreate.value = true
@@ -133,6 +133,7 @@ async function createFile(name: string, path: string, apply: boolean, base: stri
   filePath.value = path
   const saved = await save()
   if (!isNew.value) {
+    showList.value = false
     showCreate.value = false
     editing.value = false
   }
@@ -149,6 +150,7 @@ function openExisting(name: string, path: string) {
     }
     showCreate.value = false
     editing.value = false
+    showList.value = false
     void open(
       project ?? { name, status: '未部署', configFiles: [path], workingDir: parentDirectory(path) }
     )
@@ -188,68 +190,34 @@ function down() {
   confirmDown.value = false
   void execute('down')
 }
+function backToList() {
+  navigate(() => {
+    discard()
+    editing.value = expanded.value = false
+    showList.value = true
+  })
+}
+function switchProject(name: string) {
+  if (name === selected.value?.name) return
+  const project = projects.value.find((p) => p.name === name)
+  if (project) selectProject(project)
+}
 </script>
 
 <template>
-  <div class="flex h-full min-h-0">
-    <aside class="flex w-[200px] shrink-0 flex-col border-r border-border dark:border-border-dark">
-      <div class="flex items-center justify-between px-sm py-sm">
-        <span class="text-body-sm font-medium">容器编排</span
-        ><UiButton
-          size="xs"
-          variant="ghost"
-          :loading="listing"
-          :disabled="!connected"
-          @click="refresh"
-          >刷新</UiButton
-        >
-      </div>
-      <UiSearchInput
-        v-model="keyword"
-        class="mx-sm mb-sm !w-auto"
-        size="sm"
-        placeholder="搜索编排名称"
-      />
-      <UiButton
-        class="mx-sm mb-sm"
-        size="sm"
-        variant="secondary"
-        :disabled="!connected || busy"
-        @click="add"
-        >添加容器编排</UiButton
-      >
-      <UiScrollArea class="min-h-0 flex-1" axis="vertical">
-        <div class="space-y-xs p-xs">
-          <UiButton
-            v-for="project in filtered"
-            :key="project.name"
-            block
-            variant="ghost"
-            size="sm"
-            class="!h-auto !justify-between gap-sm !py-sm"
-            :class="
-              selected?.name === project.name && !showCreate
-                ? '!bg-tertiary-soft dark:!bg-tertiary-soft-dark'
-                : ''
-            "
-            :disabled="busy"
-            @click="selectProject(project)"
-          >
-            <span class="truncate">{{ project.name }}</span
-            ><span class="shrink-0 text-caption text-secondary dark:text-secondary-dark">{{
-              composeStatus(project.status)
-            }}</span>
-          </UiButton>
-          <p
-            v-if="!filtered.length"
-            class="p-sm text-body-sm text-text-muted dark:text-text-muted-dark"
-          >
-            {{ listing ? '正在查询…' : '暂无编排' }}
-          </p>
-        </div>
-      </UiScrollArea>
-    </aside>
-    <UiScrollArea class="flex min-h-0 min-w-0 flex-1 flex-col" axis="vertical">
+  <div class="flex h-full min-h-0 flex-col">
+    <ComposeProjectList
+      v-show="showList"
+      :projects="projects"
+      :loading="listing"
+      :disabled="busy"
+      :connected="connected"
+      :error="listError"
+      @select="selectProject"
+      @add="add"
+      @refresh="refresh"
+    />
+    <UiScrollArea v-show="!showList" class="flex min-h-0 min-w-0 flex-1 flex-col" axis="vertical">
       <p
         v-if="!connected"
         role="alert"
@@ -264,7 +232,24 @@ function down() {
       >
         {{ listError }}
       </p>
-      <template v-if="selected && !showCreate">
+      <div
+        v-if="selected && !showList"
+        class="flex shrink-0 flex-wrap items-center gap-sm border-b border-border px-md py-sm dark:border-border-dark"
+      >
+        <UiButton size="sm" variant="ghost" :disabled="busy" @click="backToList">返回列表</UiButton>
+        <UiCombobox
+          :model-value="selected.name"
+          :options="projectOptions"
+          class="w-[240px] max-w-full"
+          size="sm"
+          :disabled="busy"
+          placeholder="切换编排"
+          search-placeholder="搜索编排名称"
+          @update:model-value="switchProject"
+        />
+        <span class="text-body-sm text-secondary dark:text-secondary-dark">{{ status }}</span>
+      </div>
+      <template v-if="selected && !showCreate && !showList">
         <div
           v-show="!expanded"
           class="shrink-0 border-b border-border px-md py-sm dark:border-border-dark"

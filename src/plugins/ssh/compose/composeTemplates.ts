@@ -43,3 +43,11 @@ export function composeStatus(status: string) {
   if (/paused/.test(status)) return '已暂停'
   return status.includes('未') ? '未部署' : status
 }
+
+/** 复用 Compose 项目状态中的计数，不为列表逐个查询容器。 */
+export function composeContainerCount(status: string): number | null {
+  if (status.includes('未部署') || status.includes('未查询到容器') || status.includes('尚未部署'))
+    return 0
+  const counts = [...status.matchAll(/\((\d+)\)/g)]
+  return counts.length ? counts.reduce((sum, match) => sum + Number(match[1]), 0) : null
+}

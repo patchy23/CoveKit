@@ -6,7 +6,7 @@ import { useCompose } from './useCompose'
 import { COMPOSE_TEMPLATE, mergeComposeProjects, validateComposeDraft } from './composeProjects'
 import ComposeTab from './ComposeTab.vue'
 import ComposeContainers from './ComposeContainers.vue'
-import { UiButton, UiCodeEditor } from '@/core/ui'
+import { UiButton, UiCodeEditor, UiCombobox, UiSearchInput } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
 const env = vi.hoisted(() => ({
@@ -207,25 +207,25 @@ it('新建保存后关闭页面，不在路径记忆完成后继续访问旧连�
   expect(env.sshEditOpen).not.toHaveBeenCalled()
 })
 
-it('编辑后的文件切换须确认，取消保留草稿并向连接页上报未保存状态', async () => {
+it('编辑后返回列表须确认，取消保留草稿并向连接页上报未保存状态', async () => {
   const wrapper = shallowMount(ComposeTab, {
     props: {
       connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
       profileId: 'profile',
       workspaceId: 'ui',
     },
-    global: { renderStubDefaultSlot: true },
+    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
   })
   await flushPromises()
   const buttons = () => wrapper.findAllComponents(UiButton)
   buttons()
-    .find((button) => button.text().includes('运行中'))!
+    .find((button) => button.text() === 'app')!
     .vm.$emit('click')
   await flushPromises()
   wrapper.getComponent(UiCodeEditor).vm.$emit('update:modelValue', 'unsaved draft')
   await flushPromises()
   buttons()
-    .find((button) => button.text() === '添加容器编排')!
+    .find((button) => button.text() === '返回列表')!
     .vm.$emit('click')
   await flushPromises()
   const confirmation = wrapper
@@ -309,7 +309,7 @@ it('编辑入口切换只读状态，保存并应用遇到保存冲突时不会�
       profileId: 'profile',
       workspaceId: 'ui-save',
     },
-    global: { renderStubDefaultSlot: true },
+    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
   })
   const click = async (text: string) => {
     wrapper
@@ -319,7 +319,7 @@ it('编辑入口切换只读状态，保存并应用遇到保存冲突时不会�
     await flushPromises()
   }
   await flushPromises()
-  await click('运行中')
+  await click('app')
   expect(wrapper.getComponent(UiCodeEditor).props('readonly')).toBe(true)
   await click('编辑')
   expect(wrapper.getComponent(UiCodeEditor).props('readonly')).toBe(false)
@@ -346,7 +346,7 @@ it('切换编排后迟到的容器列表不覆盖新项目', async () => {
       connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
       busy: false,
     },
-    global: { renderStubDefaultSlot: true },
+    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
   })
   env.sshComposeAction.mockResolvedValueOnce({
     exitCode: 0,
@@ -374,9 +374,77 @@ it('打开编排后真实编辑器渲染读取的 YAML 内容', async () => {
   await flushPromises()
   wrapper
     .findAllComponents(UiButton)
-    .find((button) => button.text().includes('运行中'))!
+    .find((button) => button.text() === 'app')!
     .vm.$emit('click')
   await flushPromises()
   expect(wrapper.getComponent(UiCodeEditor).props('modelValue')).toContain('nginx:stable')
   expect(wrapper.find('.cm-content').text()).toContain('nginx:stable')
+})
+
+it('列表进入全宽详情，返回时保留搜索词与滚动位置', async () => {
+  const wrapper = mount(ComposeTab, {
+    attachTo: document.body,
+    props: {
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      profileId: 'profile',
+      workspaceId: 'navigation',
+    },
+    global: {
+      stubs: { ComposeContainers: true, UiCodeEditor: true, ConfirmDialog: true, UiModal: true },
+    },
+  })
+  await flushPromises()
+  wrapper.getComponent(UiSearchInput).vm.$emit('update:modelValue', 'app')
+  await flushPromises()
+  const scroll = wrapper.get('[data-testid="compose-list-scroll"]').element
+  scroll.scrollTop = 120
+  wrapper
+    .findAllComponents(UiButton)
+    .find((b) => b.text() === 'app')!
+    .vm.$emit('click')
+  await flushPromises()
+  expect(wrapper.getComponent(UiSearchInput).isVisible()).toBe(false)
+  expect(wrapper.getComponent(UiCodeEditor).isVisible()).toBe(true)
+  wrapper
+    .findAllComponents(UiButton)
+    .find((b) => b.text() === '返回列表')!
+    .vm.$emit('click')
+  await flushPromises()
+  expect(wrapper.getComponent(UiSearchInput).isVisible()).toBe(true)
+  expect(wrapper.getComponent(UiSearchInput).props('modelValue')).toBe('app')
+  expect(scroll.scrollTop).toBe(120)
+  expect(wrapper.findComponent(UiCodeEditor).exists()).toBe(false)
+})
+
+it('详情选择其他编排时保护草稿，确认放弃后才读取新文件', async () => {
+  const other = { ...project, name: 'other', configFiles: ['/srv/other/compose.yml'] }
+  env.sshComposeList.mockResolvedValue([project, other])
+  const wrapper = shallowMount(ComposeTab, {
+    props: {
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      profileId: 'profile',
+      workspaceId: 'switch-project',
+    },
+    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
+  })
+  await flushPromises()
+  wrapper
+    .findAllComponents(UiButton)
+    .find((b) => b.text() === 'app')!
+    .vm.$emit('click')
+  await flushPromises()
+  wrapper.getComponent(UiCodeEditor).vm.$emit('update:modelValue', 'unsaved')
+  await flushPromises()
+  wrapper.getComponent(UiCombobox).vm.$emit('update:modelValue', 'other')
+  await flushPromises()
+  const confirm = wrapper
+    .findAllComponents(ConfirmDialog)
+    .find((c) => c.props('title') === '放弃未保存的修改')!
+  expect(confirm.props('open')).toBe(true)
+  expect(wrapper.getComponent(UiCombobox).props('modelValue')).toBe('app')
+  expect(env.sshEditOpen).toHaveBeenCalledTimes(1)
+  confirm.vm.$emit('confirm')
+  await flushPromises()
+  expect(env.sshEditOpen).toHaveBeenLastCalledWith('one', other.configFiles[0])
+  expect(wrapper.getComponent(UiCombobox).props('modelValue')).toBe('other')
 })

@@ -3,9 +3,15 @@ import { afterEach, expect, it } from 'vitest'
 import { UiButton, UiInput, UiSelect } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import ComposeCreateDialog from './ComposeCreateDialog.vue'
-import { composeTemplates } from './composeTemplates'
+import { composeTemplates, composeContainerCount } from './composeTemplates'
 import { parseComposeContainers } from './composeContainers'
 enableAutoUnmount(afterEach)
+
+it('列表合计运行与停止容器数，未知状态不伪装成零', () => {
+  expect(composeContainerCount('running(2), exited(1)')).toBe(3)
+  expect(composeContainerCount('未部署')).toBe(0)
+  expect(composeContainerCount('unknown')).toBeNull()
+})
 
 function dialog(defaultDirectory = async () => '/home/user/compose') {
   return shallowMount(ComposeCreateDialog, {
