@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 编排列表负责运行操作；容器查看与文件编辑分别在独立弹窗中按需加载。 */
+/** 编排列表负责运行操作；容器按行展开加载，文件编辑使用独立弹窗。 */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { UiButton, UiCheckbox, UiCodeEditor, UiModal, UiScrollArea, UiSelect } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
@@ -50,7 +50,6 @@ const {
   props.workspaceId
 )
 const showEditor = ref(false)
-const viewingProject = ref<ComposeProject | null>(null)
 const showCreate = ref(false)
 const outputOpen = ref(false)
 const confirmDown = ref(false)
@@ -163,19 +162,13 @@ function down() {
       :busy-project-name="action ? operationProjectName : undefined"
       @action="requestAction"
       @edit="editProject"
-      @view="viewingProject = $event"
       @add="add"
       @refresh="refresh"
-    />
-    <UiModal
-      v-if="viewingProject"
-      open
-      size="xl"
-      :title="`${viewingProject.name} · 容器`"
-      @close="viewingProject = null"
     >
-      <ComposeContainers :project="viewingProject" :connection="connection" :busy="busy" />
-    </UiModal>
+      <template #details="{ project }">
+        <ComposeContainers :project="project" :connection="connection" :busy="busy" />
+      </template>
+    </ComposeProjectList>
     <UiModal
       v-if="showEditor"
       open

@@ -56,25 +56,48 @@ fn extract_uptime(status: &str) -> String {
         .to_string()
 }
 
-/// 容器列表
+/// 按 Compose 标签可选过滤，查询不依赖 YAML 是否存在或当前工作目录。
+fn container_list_command(compose_project: Option<&str>) -> Result<String, String> {
+    let filter = match compose_project {
+        Some(name) if name.is_empty() || name.chars().any(char::is_control) => {
+            return Err("Compose 项目名不能为空或包含控制字符".into());
+        }
+        Some(name) => format!(
+            " --filter {}",
+            shell_quote(&format!("label=com.docker.compose.project={name}"))
+        ),
+        None => String::new(),
+    };
+    Ok(format!("docker ps -a --no-trunc{filter} --format '{{{{.ID}}}}\x09{{{{.Names}}}}\x09{{{{.Image}}}}\x09{{{{.Status}}}}\x09{{{{.Ports}}}}' 2>&1"))
+}
+
+/// 非空但无法解析的响应必须报错，不能把权限或 CLI 错误伪装成没有容器。
+fn parse_container_list(out: &str) -> Result<Vec<DockerContainer>, String> {
+    let mut containers = out
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            parse_container_line(line).ok_or_else(|| format!("Docker 容器列表格式异常：{line}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    containers.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(containers)
+}
+
+/// 容器列表，省略 compose_project 时保持 Docker 页的全量查询行为。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn ssh_docker_list(
     ssh_state: State<'_, SshState>,
     connection_id: String,
+    compose_project: Option<String>,
 ) -> Result<Vec<DockerContainer>, String> {
     let session = get_session(&ssh_state, &connection_id)?;
-    let out = exec_collect(
-        &session,
-        "docker ps -a --no-trunc --format '{{.ID}}\x09{{.Names}}\x09{{.Image}}\x09{{.Status}}\x09{{.Ports}}' 2>&1",
-    )
-    .await?;
+    let command = container_list_command(compose_project.as_deref())?;
+    let out = exec_collect(&session, &command).await?;
     if out.contains("Cannot connect to the Docker daemon") {
         return Err("Docker 未运行或当前用户无权限".into());
     }
-    let mut containers: Vec<DockerContainer> =
-        out.lines().filter_map(parse_container_line).collect();
-    containers.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(containers)
+    parse_container_list(&out)
 }
 
 /// 容器操作（start/stop/restart/remove）
@@ -211,6 +234,32 @@ pub async fn ssh_docker_exec(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn project_filter_is_quoted_and_default_keeps_all_containers() {
+        assert!(!container_list_command(None).unwrap().contains("--filter"));
+        let name = "project'; touch /tmp/invalid; '";
+        let command = container_list_command(Some(name)).unwrap();
+        assert!(command.contains(&format!(
+            "--filter {}",
+            shell_quote(&format!("label=com.docker.compose.project={name}"))
+        )));
+        assert!(command.contains("--no-trunc"));
+        assert!(container_list_command(Some("")).is_err());
+        assert!(container_list_command(Some("bad\nname")).is_err());
+    }
+
+    #[test]
+    fn invalid_output_is_not_an_empty_container_list() {
+        assert!(parse_container_list("permission denied").is_err());
+        assert!(parse_container_list("").unwrap().is_empty());
+        assert_eq!(
+            parse_container_list("abc\tweb\tnginx\tUp 2 hours\t80/tcp\n")
+                .unwrap()
+                .len(),
+            1
+        );
+    }
 
     #[test]
     fn parses_container_line() {

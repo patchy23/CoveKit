@@ -4,7 +4,6 @@ import { UiButton, UiInput, UiSelect, UiModal } from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import ComposeCreateDialog from './ComposeCreateDialog.vue'
 import { composeTemplates, composeContainerCount } from './composeTemplates'
-import { parseComposeContainers } from './composeContainers'
 enableAutoUnmount(afterEach)
 
 it('列表合计运行与停止容器数，未知状态不伪装成零', () => {
@@ -106,20 +105,4 @@ it('有 YAML 草稿时切换模板需要确认，取消不替换内容', async (
   wrapper.getComponent(ConfirmDialog).vm.$emit('close')
   await flushPromises()
   expect(wrapper.emitted('update:content')).toBeUndefined()
-})
-
-it('容器列表兼容数组和逐行 JSON，解析失败不伪装成空容器列表', () => {
-  const row = {
-    ID: 'abc',
-    Name: 'blog-web-1',
-    Service: 'web',
-    State: 'running',
-    Image: 'nginx',
-    Publishers: [{ URL: '0.0.0.0', PublishedPort: 8080, TargetPort: 80, Protocol: 'tcp' }],
-  }
-  const result = parseComposeContainers(JSON.stringify([row]))
-  expect(parseComposeContainers(`${JSON.stringify(row)}\n`)).toEqual(result)
-  expect(result[0]).toMatchObject({ service: 'web', ports: '0.0.0.0:8080 → 80/tcp' })
-  expect(() => parseComposeContainers('permission denied')).toThrow()
-  expect(() => parseComposeContainers('[{}]')).toThrow()
 })

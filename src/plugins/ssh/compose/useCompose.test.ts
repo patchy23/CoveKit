@@ -1,7 +1,7 @@
 import { enableAutoUnmount, flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { ComposeProject, ServerConnection } from '../contracts'
+import type { ComposeProject, DockerContainer, ServerConnection } from '../contracts'
 import { useCompose } from './useCompose'
 import { COMPOSE_TEMPLATE, mergeComposeProjects, validateComposeDraft } from './composeProjects'
 import ComposeTab from './ComposeTab.vue'
@@ -15,6 +15,7 @@ import ComposeProjectList from './ComposeProjectList.vue'
 import {
   UiButton,
   UiCodeEditor,
+  UiTableExpandableRow,
   UiModal,
   UiSelect,
   UiSearchInput,
@@ -241,7 +242,10 @@ it('编辑弹窗关闭须确认，取消保留草稿并向连接页上报未保�
       profileId: 'profile',
       workspaceId: 'ui',
     },
-    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
+    global: {
+      renderStubDefaultSlot: true,
+      stubs: { ComposeProjectList: false, UiTableExpandableRow: false },
+    },
   })
   await flushPromises()
   const buttons = () => wrapper.findAllComponents(UiButton)
@@ -337,7 +341,10 @@ it('编辑弹窗直接编辑，保存遇到冲突时保留草稿且不会启动�
       profileId: 'profile',
       workspaceId: 'ui-save',
     },
-    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
+    global: {
+      renderStubDefaultSlot: true,
+      stubs: { ComposeProjectList: false, UiTableExpandableRow: false },
+    },
   })
   const click = async (text: string) => {
     wrapper
@@ -360,8 +367,8 @@ it('编辑弹窗直接编辑，保存遇到冲突时保留草稿且不会启动�
 })
 
 it('切换编排后迟到的容器列表不覆盖新项目', async () => {
-  let finish!: (result: { exitCode: number; stdout: string; stderr: string }) => void
-  env.sshComposeAction.mockImplementationOnce(
+  let finish!: (result: DockerContainer[]) => void
+  env.sshDockerList.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
         finish = resolve
@@ -375,14 +382,19 @@ it('切换编排后迟到的容器列表不覆盖新项目', async () => {
     },
     global: { renderStubDefaultSlot: true, stubs: { DockerTable: false } },
   })
-  env.sshComposeAction.mockResolvedValueOnce({
-    exitCode: 0,
-    stdout: '[{"ID":"new","Name":"new-container"}]',
-    stderr: '',
-  })
   await wrapper.setProps({ project: { ...project, name: 'new' } })
   await flushPromises()
-  finish({ exitCode: 0, stdout: '[{"ID":"old","Name":"old-container"}]', stderr: '' })
+  finish([
+    {
+      id: 'old',
+      name: 'old-container',
+      image: 'old',
+      status: 'running',
+      uptime: '',
+      ports: '',
+      createdAt: 0,
+    },
+  ])
   await flushPromises()
   expect(wrapper.text()).toContain('new-container')
   expect(wrapper.text()).not.toContain('old-container')
@@ -455,27 +467,54 @@ it('切换 YAML 文件保护草稿，确认放弃后才读取新文件', async (
   expect(env.sshEditOpen).toHaveBeenLastCalledWith('one', project.configFiles[1])
 })
 
-it('查看容器打开独立弹窗，不读取 YAML，关闭后销毁容器面板', async () => {
-  const wrapper = shallowMount(ComposeTab, {
+it('查看容器行内展开，单行切换与收起卸载面板，不读取 YAML', async () => {
+  const other = { ...project, name: 'other' }
+  env.sshComposeList.mockResolvedValue([project, other])
+  const wrapper = mount(ComposeTab, {
     props: {
       connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
       profileId: 'profile',
       workspaceId: 'view-containers',
     },
-    global: { renderStubDefaultSlot: true },
+    global: { stubs: { ComposeContainers: true } },
   })
   await flushPromises()
-  wrapper.getComponent(ComposeProjectList).vm.$emit('view', project)
-  await flushPromises()
+  const rows = wrapper.findAllComponents(UiTableExpandableRow)
+  expect(wrapper.findComponent(ComposeContainers).exists()).toBe(false)
+  await rows[0]!.get('button').trigger('click')
   expect(wrapper.getComponent(ComposeContainers).props('project')).toEqual(project)
   expect(wrapper.findComponent(UiCodeEditor).exists()).toBe(false)
   expect(env.sshEditOpen).not.toHaveBeenCalled()
-  wrapper
-    .findAllComponents(UiModal)
-    .find((m) => m.props('title') === 'app · 容器')!
-    .vm.$emit('close')
-  await flushPromises()
+  await rows[1]!.get('button').trigger('click')
+  expect(wrapper.findAllComponents(ComposeContainers)).toHaveLength(1)
+  expect(wrapper.getComponent(ComposeContainers).props('project').name).toBe('other')
+  await rows[1]!.get('button').trigger('click')
   expect(wrapper.findComponent(ComposeContainers).exists()).toBe(false)
+})
+
+it('容器直接按项目查询，缺少 YAML 路径仍可查看，失败不显示零容器', async () => {
+  env.sshDockerList.mockRejectedValueOnce(new Error('permission denied'))
+  const wrapper = mount(ComposeContainers, {
+    props: {
+      project: { ...project, configFiles: [] },
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      busy: false,
+    },
+  })
+  expect(wrapper.text()).toContain('正在读取容器')
+  expect(wrapper.text()).not.toContain('容器 · 0')
+  await flushPromises()
+  expect(env.sshDockerList).toHaveBeenCalledWith('one', 'app')
+  expect(env.sshComposeAction).not.toHaveBeenCalled()
+  expect(wrapper.text()).toContain('permission denied')
+  expect(wrapper.text()).not.toContain('该编排下没有容器')
+  env.sshDockerList.mockResolvedValueOnce([])
+  wrapper
+    .findAllComponents(UiButton)
+    .find((b) => b.text() === '刷新')!
+    .vm.$emit('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('该编排下没有容器')
 })
 
 it('关闭读取中的编辑弹窗后，迟到的 YAML 不再回填', async () => {
@@ -572,7 +611,10 @@ it('列表行操作直接作用于该行项目，展示结果且不打开 YAML',
       profileId: 'profile',
       workspaceId: 'row-action',
     },
-    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
+    global: {
+      renderStubDefaultSlot: true,
+      stubs: { ComposeProjectList: false, UiTableExpandableRow: false },
+    },
   })
   await flushPromises()
   wrapper

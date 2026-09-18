@@ -51,41 +51,41 @@ withDefaults(
 </template>
 
 <style scoped>
-.ui-data-table :deep(th) {
+.ui-data-table > :deep(thead > tr > th) {
   background: var(--color-surface-muted);
   color: var(--color-text-muted);
   font-weight: 500;
 }
-.ui-data-table :deep(th),
-.ui-data-table :deep(td) {
+.ui-data-table > :deep(thead > tr > th),
+.ui-data-table > :deep(tbody > tr > td) {
   border-bottom: 1px solid var(--color-border);
 }
-.ui-data-table :deep(tbody tr:last-child td) {
+.ui-data-table > :deep(tbody > tr:last-child > td) {
   border-bottom: 0;
 }
-.ui-data-table-compact :deep(th),
-.ui-data-table-compact :deep(td) {
+.ui-data-table-compact > :deep(thead > tr > th),
+.ui-data-table-compact > :deep(tbody > tr > td) {
   padding: 5px 8px;
   font-size: var(--text-caption);
 }
-.ui-data-table-default :deep(th),
-.ui-data-table-default :deep(td) {
+.ui-data-table-default > :deep(thead > tr > th),
+.ui-data-table-default > :deep(tbody > tr > td) {
   padding: 8px 10px;
   font-size: var(--text-body-sm);
 }
-.ui-data-table-comfortable :deep(th),
-.ui-data-table-comfortable :deep(td) {
+.ui-data-table-comfortable > :deep(thead > tr > th),
+.ui-data-table-comfortable > :deep(tbody > tr > td) {
   padding: 12px 14px;
   font-size: var(--text-body);
 }
-.ui-data-table-striped :deep(tbody tr:nth-child(even)) {
+.ui-data-table-striped > :deep(tbody > tr:nth-child(even of :not([data-table-detail]))) {
   background: var(--color-surface-muted);
 }
-.ui-data-table-hoverable :deep(tbody tr:hover) {
+.ui-data-table-hoverable > :deep(tbody > tr:not([data-table-detail]):hover) {
   background: var(--ui-table-row-hover);
 }
-.ui-data-table-hoverable :deep(tbody tr[data-selected='true']),
-.ui-data-table-hoverable :deep(tbody tr[data-selected='true']:hover) {
+.ui-data-table-hoverable > :deep(tbody > tr[data-selected='true']),
+.ui-data-table-hoverable > :deep(tbody > tr[data-selected='true']:hover) {
   background: var(--ui-table-row-selected);
 }
 </style>

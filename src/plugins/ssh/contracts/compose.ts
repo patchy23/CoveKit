@@ -27,14 +27,3 @@ export interface ComposeOutput {
   stdout: string
   stderr: string
 }
-
-/** Compose ps JSON 在前端展示前归一化，兼容数组和逐行 JSON。 */
-export interface ComposeContainer {
-  id: string
-  service: string
-  name: string
-  image: string
-  state: string
-  health: string
-  ports: string
-}

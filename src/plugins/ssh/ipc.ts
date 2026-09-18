@@ -145,7 +145,11 @@ export const ipc = {
     cmd(commands.sshProcessKill, { connectionId, pid, force }),
 
   /* Docker */
-  sshDockerList: (connectionId: string) => cmd(commands.sshDockerList, { connectionId }),
+  sshDockerList: (connectionId: string, composeProject?: string) =>
+    cmd(commands.sshDockerList, {
+      connectionId,
+      ...(composeProject === undefined ? {} : { composeProject }),
+    }),
   sshDockerAction: (p: Payloads['ssh_docker_action']) => cmd(commands.sshDockerAction, p),
   sshDockerLogs: (p: Payloads['ssh_docker_logs']) => cmd(commands.sshDockerLogs, p),
   sshDockerExec: (p: Payloads['ssh_docker_exec']) => cmd(commands.sshDockerExec, { payload: p }),

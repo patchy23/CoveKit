@@ -248,7 +248,7 @@ export type Payloads = {
   ssh_process_kill: { connectionId: string; pid: number; force?: boolean }
 
   /* Docker */
-  ssh_docker_list: { connectionId: string }
+  ssh_docker_list: { connectionId: string; composeProject?: string }
   ssh_compose_list: { connectionId: string }
   ssh_compose_action: {
     connectionId: string
