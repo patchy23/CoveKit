@@ -17,7 +17,6 @@ CoveKit 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，集�
 | [docs/standards/01-技术选型.md](docs/standards/01-技术选型.md)                   | 技术选型分析                                      |
 | [docs/standards/02-架构.md](docs/standards/02-架构.md)               | 详细设计（架构 / IPC 契约 / 数据模型 / 路线图）   |
 | [docs/standards/06-发布与更新.md](docs/standards/06-发布与更新.md)                         | 发布、自动更新与代码签名配置                 |
-| [sketches/002-clean-light/](sketches/002-clean-light/index.html) | 已采纳 UI 方向的交互原型（浏览器直接打开）        |
 
 ## 当前进度
 

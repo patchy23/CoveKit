@@ -45,3 +45,13 @@ branding/
 /docs/待人工验证清单.md
 /docs/plugins/vault/落地笔记.md
 /docs/plugins/ssh/设计.md
+
+# 早期设计草稿、一次性调研和本机图标试作，仅本地保留
+/IDEA.md
+/sketches/
+/docs/plugins/ssh/竞品分析.md
+/scripts/make_icon.py
+
+# 当前只构建 Windows/macOS，移动端生成图标不入库
+/src-tauri/icons/android/
+/src-tauri/icons/ios/
