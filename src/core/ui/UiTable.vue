@@ -53,6 +53,10 @@ const classes = computed(() => [
   background: var(--color-surface-muted);
   color: var(--color-text-muted);
   font-weight: 500;
+  /* 标题文字宁可省略也不换行：行高被撑破会破坏整表对齐 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ui-data-table > :deep(thead > tr > th),
 .ui-data-table > :deep(tbody > tr > td) {
