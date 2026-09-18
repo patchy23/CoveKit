@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { UiScrollArea } from '@/core/ui'
 /** 服务与容器日志查看器：定时拉取尾部日志，并在跟随模式下自动滚动到底部。 */
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { UiButton, UiModal, UiSwitch } from '@/core/ui'
+import { UiButton, UiModal, UiScrollArea, UiSwitch, UiToolbar } from '@/core/ui'
 import { ipc } from '../ipc'
 
 const props = defineProps<{
@@ -61,21 +60,26 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <UiModal :open="true" :title="title" size="xl" @close="$emit('close')">
-    <div class="mb-[8px] flex items-center gap-[8px] text-body-sm">
-      <UiSwitch v-model="following" size="sm" label="自动跟随" />
-      <span class="text-text-muted dark:text-text-muted-dark">每 2 秒更新最近 300 行</span>
-      <span v-if="errorMessage" class="ml-auto text-danger-strong dark:text-danger-dark">
-        {{ errorMessage }}
-      </span>
+  <UiModal :open="true" :title="title" size="full" width="1040px" @close="$emit('close')">
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-sm overflow-hidden p-md">
+      <UiToolbar class="text-body-sm">
+        <UiSwitch v-model="following" size="sm" label="自动跟随" />
+        <span class="text-text-muted dark:text-text-muted-dark">每 2 秒更新最近 300 行</span>
+        <span
+          v-if="errorMessage"
+          class="min-w-0 break-all text-danger-strong dark:text-danger-dark"
+        >
+          {{ errorMessage }}
+        </span>
+      </UiToolbar>
+      <UiScrollArea as-child axis="both" theme="dark">
+        <pre
+          ref="output"
+          class="min-h-0 min-w-0 flex-1 whitespace-pre-wrap rounded-md bg-[#0d1117] p-[14px] font-mono text-body-sm text-[#e6edf3]"
+          @wheel="following = false"
+          >{{ content || (loading ? '正在读取日志…' : '（没有输出）') }}</pre>
+      </UiScrollArea>
     </div>
-    <UiScrollArea as-child axis="both" theme="dark">
-      <pre
-        ref="output"
-        class="max-h-[65vh] min-h-[420px] whitespace-pre-wrap rounded-md bg-[#0d1117] p-[14px] font-mono text-body-sm text-[#e6edf3]"
-        @wheel="following = false"
-        >{{ content || (loading ? '正在读取日志…' : '（没有输出）') }}</pre>
-    </UiScrollArea>
     <template #footer>
       <UiButton variant="ghost" :loading="loading" @click="refresh">立即刷新</UiButton>
       <UiButton variant="secondary" @click="$emit('close')">关闭</UiButton>
