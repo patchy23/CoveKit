@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 服务与容器日志查看器：定时拉取尾部日志，并在跟随模式下自动滚动到底部。 */
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
-import { UiButton, UiModal, UiScrollArea, UiSwitch, UiToolbar } from '@/core/ui'
+import { UiButton, UiModal, UiScrollArea, UiSelect, UiSwitch, UiToolbar } from '@/core/ui'
 import { ipc } from '../ipc'
 
 const props = defineProps<{
@@ -16,11 +16,34 @@ const content = ref('')
 const errorMessage = ref('')
 const loading = ref(false)
 const following = ref(true)
+/** 固定档位与后端 2000 行上限一致，不开放无限量拉取。 */
+const lineOptions = [100, 300, 500, 1000, 2000].map((lines) => ({
+  value: String(lines),
+  label: `最近 ${lines} 行`,
+}))
+const lineLimit = ref('300')
 const output = ref<HTMLElement | null>(null)
 let timer: number | null = null
+let disposed = false
+
+function changeLineLimit(value: string) {
+  if (!lineOptions.some((option) => option.value === value) || value === lineLimit.value) return
+  lineLimit.value = value
+  content.value = tailLines(content.value, Number(value))
+  void refresh()
+}
+
+function tailLines(logs: string, limit: number) {
+  return logs
+    .replace(/\r?\n$/, '')
+    .split('\n')
+    .slice(-limit)
+    .join('\n')
+}
 
 async function refresh() {
-  if (loading.value) return
+  if (loading.value || disposed) return
+  const lines = Number(lineLimit.value)
   loading.value = true
   try {
     const result =
@@ -28,24 +51,27 @@ async function refresh() {
         ? await ipc.sshServiceLogs({
             connectionId: props.connectionId,
             serviceName: props.targetId,
-            lines: 300,
+            lines,
           })
         : await ipc.sshDockerLogs({
             connectionId: props.connectionId,
             containerId: props.targetId,
-            lines: 300,
+            lines,
           })
+    if (disposed || lines !== Number(lineLimit.value)) return
     if (!result.ok) throw new Error(result.error ?? '日志读取失败')
-    content.value = result.logs
+    content.value = tailLines(result.logs, lines)
     errorMessage.value = ''
     if (following.value) {
       await nextTick()
       output.value?.scrollTo({ top: output.value.scrollHeight })
     }
   } catch (error) {
-    errorMessage.value = String(error)
+    if (!disposed && lines === Number(lineLimit.value)) errorMessage.value = String(error)
   } finally {
     loading.value = false
+    // 请求过程中切换档位：忽略旧结果，串行补拉最新档位，避免并发覆盖。
+    if (!disposed && lines !== Number(lineLimit.value)) void refresh()
   }
 }
 
@@ -55,6 +81,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  disposed = true
   if (timer) clearInterval(timer)
 })
 </script>
@@ -64,7 +91,14 @@ onUnmounted(() => {
     <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-sm overflow-hidden p-md">
       <UiToolbar class="text-body-sm">
         <UiSwitch v-model="following" size="sm" label="自动跟随" />
-        <span class="text-text-muted dark:text-text-muted-dark">每 2 秒更新最近 300 行</span>
+        <UiSelect
+          :model-value="lineLimit"
+          :options="lineOptions"
+          size="sm"
+          title="最多显示行数"
+          @update:model-value="changeLineLimit"
+        />
+        <span class="text-text-muted dark:text-text-muted-dark">每 2 秒更新</span>
         <span
           v-if="errorMessage"
           class="min-w-0 break-all text-danger-strong dark:text-danger-dark"
