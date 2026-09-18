@@ -74,7 +74,7 @@ function choose(item: UiDropdownMenuItem): void {
           :disabled="item.disabled"
           class="group flex w-full cursor-default select-none items-center gap-[8px] px-[10px] font-medium outline-none transition-colors data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-surface-muted dark:data-[highlighted]:bg-surface-muted-dark"
           :class="[
-            uiOptionSizeClass[size],
+            uiOptionSizeClass(size),
             item.danger
               ? 'text-danger-strong dark:text-danger-dark'
               : 'text-secondary dark:text-secondary-dark',

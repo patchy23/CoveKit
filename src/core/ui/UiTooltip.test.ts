@@ -102,7 +102,7 @@ it('键盘聚焦显示提示并建立描述关联，Esc 关闭', async () => {
   await button.trigger('focus')
   const description = button.attributes('aria-describedby')
   expect(description).toBeTruthy()
-  expect(document.getElementById(description)?.textContent).toContain('保存修改')
+  expect(document.getElementById(description ?? '')?.textContent).toContain('保存修改')
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await nextTick()
   expect(document.querySelector('.ui-tooltip')).toBeNull()

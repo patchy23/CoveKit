@@ -95,7 +95,7 @@ it('互斥筛选使用受控值，禁用选项不提交，方向键跳过禁用�
   expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['ssh'])
   await wrapper.setProps({ modelValue: 'ssh' })
   expect(items[2].attributes('aria-checked')).toBe('true')
-  items[0].element.focus()
+  ;(items[0].element as HTMLElement).focus()
   await items[0].trigger('keydown', { key: 'ArrowRight' })
   await nextTick()
   expect(document.activeElement).toBe(items[2].element)

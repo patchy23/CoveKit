@@ -63,6 +63,38 @@ describe('公共 UI 组件', () => {
     expect(wrapper.emitted('close')?.[0]).toEqual(['terminal-1'])
   })
 
+  it('页签触发器渲染为 div（关闭按钮须是独立 button，禁止 button 嵌套）', () => {
+    const wrapper = mount(UiTabs, {
+      props: {
+        modelValue: 'a',
+        items: [{ value: 'a', label: '页签 A', closable: true }],
+      },
+    })
+    const trigger = wrapper.get('[role="tab"]')
+    expect(trigger.element.tagName).toBe('DIV')
+    const close = trigger.get('[aria-label="关闭页签 A"]')
+    expect(close.element.tagName).toBe('BUTTON')
+  })
+
+  it('UiModal full 档：header 固定、内容弹性、Esc 触发 close', async () => {
+    const wrapper = mount(UiModal, {
+      attachTo: document.body,
+      props: { open: true, size: 'full', width: '800px', title: '编辑器' },
+      slots: { default: '<div class="content">主体</div>' },
+    })
+    // DialogPortal 挂到 body，等一拍让 portal 完成渲染
+    await nextTick()
+    const panel = document.body.querySelector<HTMLElement>('.ui-modal-panel')
+    expect(panel).toBeTruthy()
+    // full 档：最大宽度生效、高度不受 85vh 限制（!max-h-none）
+    expect(panel!.style.maxWidth).toBe('800px')
+    expect(panel!.className).toContain('flex-col')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    expect(wrapper.emitted('close')).toBeTruthy()
+    wrapper.unmount()
+  })
+
   it('基础控件输出统一尺寸类', () => {
     expect(
       mount(UiButton, { props: { size: 'xs' } })
@@ -144,7 +176,7 @@ describe('公共 UI 组件', () => {
     })
     await search.get('[aria-label="清空搜索"]').trigger('click')
     expect(search.emitted('update:modelValue')).toEqual([['']])
-    expect(search.get('[aria-label="添加服务器"]').exists()).toBe(true)
+    expect(search.find('[aria-label="添加服务器"]').exists()).toBe(true)
     search.unmount()
   })
 })
@@ -196,6 +228,45 @@ describe('基础 UI 无应用服务可独立挂载', () => {
     await tree.get('[role="treeitem"]').trigger('click')
     expect(tree.emitted('update:modelValue')?.[0]).toEqual(['t1'])
     tree.unmount()
+
+    // 树：roving tabindex + 方向键导航（↓ 移焦点，→ 展开可展开项）
+    const treeKb = mount(UiTree, {
+      attachTo: document.body,
+      props: {
+        modelValue: '',
+        items: [
+          { id: 'p1', label: '父一', depth: 0, expandable: true, expanded: false },
+          { id: 'p2', label: '父二', depth: 0, expandable: false },
+        ],
+      },
+    })
+    const treeItems = treeKb.findAll('[role="treeitem"]')
+    ;(treeItems[0].element as HTMLElement).focus()
+    await treeItems[0].trigger('keydown', { key: 'ArrowDown' })
+    expect(document.activeElement).toBe(treeItems[1].element)
+    await treeItems[1].trigger('keydown', { key: 'ArrowUp' })
+    expect(document.activeElement).toBe(treeItems[0].element)
+    await treeItems[0].trigger('keydown', { key: 'ArrowRight' })
+    expect(treeKb.emitted('toggle')?.[0]?.[0]).toMatchObject({ id: 'p1' })
+    treeKb.unmount()
+
+    // 数据表：content 语义落地（action 列 sans、numeric 列等宽数字、默认数据字体）
+    const gridContent = mount(UiDataGrid, {
+      props: {
+        rowNumbers: false,
+        columns: [
+          { key: 'name', label: '名称', content: 'technical' },
+          { key: 'count', label: '数量', content: 'numeric' },
+          { key: 'ops', label: '操作', content: 'action' },
+        ],
+        rows: [{ name: '甲', count: 3, ops: 'x' }],
+      },
+    })
+    const tds = gridContent.findAll('tbody td')
+    expect(tds[0].classes()).toContain('font-data')
+    expect(tds[1].classes()).toContain('tabular-nums')
+    expect(tds[2].classes()).toContain('font-sans')
+    gridContent.unmount()
 
     // 数据表：单元格按列渲染
     const grid = mount(UiDataGrid, {
