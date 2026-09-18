@@ -4,7 +4,7 @@ import { computed } from 'vue'
 import { UiButton, UiInput, UiSelect } from '@/core/ui'
 import type { RequestDraft } from './requestDraft'
 import type { RequestSession } from './useRequestSession'
-import { METHODS } from './useHttp'
+import { METHODS, methodTextClass } from './useHttp'
 import HttpRequestBuilder from './HttpRequestBuilder.vue'
 import HttpResponse from './HttpResponse.vue'
 import StreamMessages from './StreamMessages.vue'
@@ -49,6 +49,7 @@ function shortcut(event: KeyboardEvent) {
         class="w-[88px] shrink-0"
         title="请求方法"
         :options="METHODS.map((m) => ({ value: m, label: m }))"
+        :option-class="methodTextClass"
         :disabled="state.busy || state.connected"
       />
       <UiInput

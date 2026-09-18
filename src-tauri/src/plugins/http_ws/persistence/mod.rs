@@ -42,7 +42,79 @@ const MIGRATIONS: &[&str] = &[
      BEGIN UPDATE api_list SET uid=lower(hex(randomblob(16))) WHERE id=NEW.id; END;",
     "ALTER TABLE api_list ADD COLUMN group_name TEXT NOT NULL DEFAULT '';
      ALTER TABLE api_list ADD COLUMN options TEXT NOT NULL DEFAULT '{}';",
+    "CREATE TABLE api_groups (path TEXT PRIMARY KEY NOT NULL);
+     INSERT INTO api_groups(path) SELECT DISTINCT group_name FROM api_list WHERE group_name <> '';",
 ];
+
+/// 分组使用 / 分隔层级，接口继续保存原有 group_name 路径，避免改写请求身份。
+pub(super) fn ensure_group_paths(conn: &rusqlite::Connection, path: &str) -> Result<(), String> {
+    if path.is_empty() {
+        return Ok(());
+    }
+    let mut prefix = String::new();
+    for (index, segment) in path.split('/').enumerate() {
+        if index > 0 {
+            prefix.push('/');
+        }
+        prefix.push_str(segment);
+        if !prefix.is_empty() {
+            conn.execute(
+                "INSERT OR IGNORE INTO api_groups(path) VALUES (?1)",
+                [&prefix],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// 包括空分组；旧请求附带的分组在迁移时同步到目录。
+#[tauri::command]
+pub fn api_group_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<String>, String> {
+    let guard = db(&app, &state)?;
+    guard.as_ref().ok_or("本地库未初始化")?.with_conn(|conn| {
+        let mut statement = conn
+            .prepare("SELECT path FROM api_groups ORDER BY path")
+            .map_err(|e| e.to_string())?;
+        let paths = statement
+            .query_map([], |row| row.get(0))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<String>, _>>()
+            .map_err(|e| e.to_string())?;
+        Ok(paths)
+    })
+}
+
+/// 显式创建根分组或子分组；同级重名失败，不静默合并目录。
+#[tauri::command]
+pub fn api_group_create(
+    app: AppHandle,
+    state: State<'_, ApiState>,
+    name: String,
+    parent: Option<String>,
+) -> Result<String, String> {
+    let name = name.trim();
+    if name.is_empty() || name.contains('/') {
+        return Err("分组名称不能为空或包含 /".into());
+    }
+    let parent = parent.unwrap_or_default();
+    let path = if parent.is_empty() {
+        name.to_string()
+    } else {
+        format!("{parent}/{name}")
+    };
+    let guard = db(&app, &state)?;
+    guard.as_ref().ok_or("本地库未初始化")?.with_transaction(|conn| {
+        if !parent.is_empty() {
+            let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM api_groups WHERE path=?1 OR substr(path,1,length(?1)+1)=?1||'/')", [&parent], |row| row.get(0)).map_err(|e| e.to_string())?;
+            if !exists { return Err("上级分组不存在，请刷新后重试".into()); }
+        }
+        let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM api_groups WHERE path=?1 OR substr(path,1,length(?1)+1)=?1||'/')", [&path], |row| row.get(0)).map_err(|e| e.to_string())?;
+        if exists { return Err("该分组已存在".into()); }
+        ensure_group_paths(conn, &path)?;
+        Ok(path.clone())
+    })
+}
 
 /// 持久化仅允许超时与凭证引用，拒绝意外传入的临时秘密。
 pub(super) fn validate_options(raw: &str) -> Result<String, String> {
@@ -127,7 +199,8 @@ pub fn api_save(
     let options = validate_options(options.as_deref().unwrap_or("{}"))?;
     let guard = db(&app, &state)?;
     let d = guard.as_ref().ok_or("本地库未初始化")?;
-    d.with_conn(|c| {
+    d.with_transaction(|c| {
+        ensure_group_paths(c, &group_name)?;
         let id = match id {
             // 新增：INSERT 后取自增主键
             Some(0) | None => {
@@ -224,6 +297,32 @@ mod tests {
     use super::*;
     use crate::framework::store::migrate;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn group_migration_preserves_saved_paths_and_empty_nested_groups() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrate(&mut conn, &MIGRATIONS[..4]).unwrap();
+        conn.execute("INSERT INTO api_list(name,method,url,group_name,updated_at) VALUES ('旧接口','GET','','开发/用户','')", []).unwrap();
+        migrate(&mut conn, MIGRATIONS).unwrap();
+        let path: String = conn
+            .query_row("SELECT path FROM api_groups", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(path, "开发/用户");
+        ensure_group_paths(&conn, "空分组/子分组").unwrap();
+        ensure_group_paths(&conn, "空分组/子分组").unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM api_groups WHERE path IN ('空分组','空分组/子分组')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 2);
+        let name: String = conn
+            .query_row("SELECT group_name FROM api_list", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(name, "开发/用户");
+    }
 
     /// 建立本测试专用临时目录（用例之间互不干扰，重复运行时先清掉上次残留）
     fn temp_dir(tag: &str) -> PathBuf {

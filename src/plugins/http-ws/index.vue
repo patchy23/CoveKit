@@ -24,13 +24,13 @@ const workspace = useApiWorkspace(
     !lifecycle.visibility.value.hidden &&
     !lifecycle.visibility.value.covered
 )
-const { apis, tabs, activeKey, current, loading, loadError } = workspace
+const { apis, groups, tabs, activeKey, current, loading, loadError } = workspace
 const sidebar = ref(true)
 const tabBar = ref<HTMLElement | null>(null)
 const items = computed(() =>
   tabs.map((t) => ({
     value: t.key,
-    label: `${t.draft.type === 'http' ? t.draft.method : t.draft.type.toUpperCase()} ${t.name}${workspace.dirty(t) ? ' ·' : ''}`,
+    label: `${workspace.dirty(t) ? '* ' : ''}${t.draft.type === 'http' ? t.draft.method : t.draft.type.toUpperCase()} ${t.name}`,
     closable: !t.saving,
     status: t.session.state.busy
       ? ('progress' as const)
@@ -66,8 +66,30 @@ async function perform(action: () => unknown) {
     ui.toast(String(error))
   }
 }
-function create(kind: ApiKind) {
-  workspace.create(kind)
+function create(kind: ApiKind, groupName = '') {
+  workspace.create(kind, groupName)
+}
+const groupParent = ref<string | null>(null),
+  newGroupName = ref(''),
+  groupSaving = ref(false),
+  groupError = ref('')
+function newGroup(parent: string) {
+  groupParent.value = parent
+  newGroupName.value = ''
+  groupError.value = ''
+}
+async function confirmGroup() {
+  if (groupParent.value === null || groupSaving.value) return
+  groupSaving.value = true
+  groupError.value = ''
+  try {
+    await workspace.createGroup(newGroupName.value, groupParent.value)
+    groupParent.value = null
+  } catch (error) {
+    groupError.value = String(error)
+  } finally {
+    groupSaving.value = false
+  }
 }
 function saveDialog(tab: ApiTab, copy = false, closeAfter = false) {
   naming.value = { tab, copy, closeAfter }
@@ -143,6 +165,7 @@ onUnmounted(() => {
     <ApiSidebar
       v-if="sidebar"
       :apis="apis"
+      :groups="groups"
       :active-id="current?.recordId ?? null"
       :loading="loading"
       :error="loadError"
@@ -150,6 +173,7 @@ onUnmounted(() => {
       @rename="rename"
       @delete="deleting = $event"
       @new="create"
+      @new-group="newGroup"
       @retry="workspace.load()"
     />
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -216,7 +240,7 @@ onUnmounted(() => {
           v-model="group"
           size="sm"
           aria-label="分组名称"
-          placeholder="分组名称，留空为未分组"
+          placeholder="分组路径，如 开发/用户；留空为未分组"
           :disabled="saving"
         />
         <p
@@ -268,5 +292,45 @@ onUnmounted(() => {
       @confirm="confirmDelete"
       @close="deleting = null"
     />
+    <UiModal
+      :open="groupParent !== null"
+      :title="groupParent ? '创建子分组' : '添加分组'"
+      size="sm"
+      @close="!groupSaving && (groupParent = null)"
+    >
+      <p
+        v-if="groupParent"
+        class="mb-[8px] break-all text-body-sm text-secondary dark:text-secondary-dark"
+      >
+        上级分组：{{ groupParent }}
+      </p>
+      <UiInput
+        v-model="newGroupName"
+        size="sm"
+        aria-label="新分组名称"
+        placeholder="分组名称"
+        :disabled="groupSaving"
+        @keyup.enter="confirmGroup"
+      />
+      <p
+        v-if="groupError"
+        role="alert"
+        class="mt-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
+      >
+        {{ groupError }}
+      </p>
+      <template #footer
+        ><UiButton size="sm" variant="ghost" :disabled="groupSaving" @click="groupParent = null"
+          >取消</UiButton
+        ><UiButton
+          size="sm"
+          variant="primary"
+          :loading="groupSaving"
+          :disabled="!newGroupName.trim()"
+          @click="confirmGroup"
+          >创建</UiButton
+        ></template
+      >
+    </UiModal>
   </div>
 </template>

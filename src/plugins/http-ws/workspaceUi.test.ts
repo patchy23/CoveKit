@@ -10,6 +10,7 @@ import NewRequestMenu from './NewRequestMenu.vue'
 import type { ApiRecord } from './contracts'
 const mock = vi.hoisted(() => ({
   apiList: vi.fn(),
+  apiGroupList: vi.fn(),
   httpRequest: vi.fn(),
   sseStop: vi.fn(),
   wsClose: vi.fn(),
@@ -41,6 +42,7 @@ it('真实页面打开与切换接口保留组件、配置和结果，协议入�
     updatedAt: '',
   }
   mock.apiList.mockResolvedValue([record])
+  mock.apiGroupList.mockResolvedValue(['测试'])
   mock.httpRequest.mockResolvedValue({
     ok: true,
     status: 200,
@@ -74,9 +76,11 @@ it('真实页面打开与切换接口保留组件、配置和结果，协议入�
   await flushPromises()
   expect(first.text()).toContain('200 OK')
   expect(first.text()).toContain('response')
+  expect(wrapper.text()).toContain('* GET HTTP 示例')
   wrapper.findAllComponents(NewRequestMenu).at(-1)!.vm.$emit('create', 'sse')
   await flushPromises()
   expect(wrapper.findAllComponents(HttpPanel)).toHaveLength(2)
+  expect(wrapper.text()).toContain('* SSE 未命名 SSE')
   expect(first.isVisible()).toBe(false)
   expect(wrapper.findAllComponents(HttpRequestBuilder)).toHaveLength(2)
   wrapper.getComponent(ApiSidebar).vm.$emit('select', record)

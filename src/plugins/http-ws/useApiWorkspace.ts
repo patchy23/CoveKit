@@ -17,6 +17,7 @@ export interface ApiTab {
 }
 export function useApiWorkspace(report: (message: string) => void, visible: () => boolean) {
   const apis = ref<ApiRecord[]>([])
+  const groups = ref<string[]>([])
   const tabs = shallowReactive<ApiTab[]>([])
   const activeKey = ref('')
   const loading = ref(false)
@@ -25,15 +26,16 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
   let loadEpoch = 0
   let disposed = false
   function dirty(tab: ApiTab) {
-    return fingerprint(tab.draft) !== tab.saved
+    return tab.recordId === null || fingerprint(tab.draft) !== tab.saved
   }
   async function load() {
     const token = ++loadEpoch
     loading.value = true
     try {
-      const list = await ipc.apiList()
+      const [list, paths] = await Promise.all([ipc.apiList(), ipc.apiGroupList()])
       if (token === loadEpoch && !disposed) {
         apis.value = list
+        groups.value = paths
         loadError.value = ''
       }
     } catch (error) {
@@ -63,8 +65,15 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     activeKey.value = key
     return result
   }
-  function create(kind: ApiKind) {
-    return add(newDraft(kind))
+  function create(kind: ApiKind, groupName = '') {
+    const tab = add(newDraft(kind))
+    tab.groupName = groupName
+    return tab
+  }
+  async function createGroup(name: string, parent: string) {
+    const path = await ipc.apiGroupCreate(name, parent)
+    await load()
+    return path
   }
   function open(record: ApiRecord) {
     const existing = tabs.find((t) => t.recordId === record.id)
@@ -149,6 +158,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
   }
   return {
     apis,
+    groups,
     tabs,
     activeKey,
     current,
@@ -157,6 +167,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     dirty,
     load,
     create,
+    createGroup,
     open,
     save,
     rename,

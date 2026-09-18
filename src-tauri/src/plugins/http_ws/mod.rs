@@ -36,6 +36,8 @@ crate::covekit_module! {
         ws::ws_sessions => "全部 WS 会话",
         persistence::api_save => "保存/更新接口（id=0 新增）",
         persistence::api_list => "接口列表",
+        persistence::api_group_list => "接口分组列表",
+        persistence::api_group_create => "创建接口分组",
         persistence::api_delete => "删除接口",
         persistence::api_clear => "清空全部接口",
     },

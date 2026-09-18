@@ -70,6 +70,13 @@ impl RecordStore for Requests {
         Ok(())
     }
     fn write(&self, conn: &Connection, _: &str, record: &Value) -> Result<(), String> {
+        super::ensure_group_paths(
+            conn,
+            record
+                .get("groupName")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        )?;
         let mut record = record.clone();
         record["options"] = Value::String(portable_options(&record)?);
         conn.execute("INSERT INTO api_list(uid,name,type,method,url,params,headers,body_mode,body,group_name,options,updated_at) VALUES(json_extract(?1,'$.id'),json_extract(?1,'$.name'),json_extract(?1,'$.kind'),json_extract(?1,'$.method'),json_extract(?1,'$.url'),json_extract(?1,'$.params'),json_extract(?1,'$.headers'),json_extract(?1,'$.bodyMode'),json_extract(?1,'$.body'),coalesce(json_extract(?1,'$.groupName'),''),json_extract(?1,'$.options'),datetime('now')) ON CONFLICT(uid) DO UPDATE SET name=excluded.name,type=excluded.type,method=excluded.method,url=excluded.url,params=excluded.params,headers=excluded.headers,body_mode=excluded.body_mode,body=excluded.body,group_name=excluded.group_name,options=excluded.options,updated_at=excluded.updated_at", [record.to_string()]).map_err(|e| e.to_string())?;

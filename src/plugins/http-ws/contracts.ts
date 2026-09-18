@@ -93,6 +93,8 @@ export interface ApiSavePayload {
   options: string
 }
 export const commands = {
+  apiGroupList: 'api_group_list',
+  apiGroupCreate: 'api_group_create',
   httpRequest: 'http_request',
   apiSave: 'api_save',
   apiList: 'api_list',
@@ -106,6 +108,8 @@ export const commands = {
   sseStop: 'sse_stop',
 } as const
 export type Payloads = {
+  api_group_list: Record<string, never>
+  api_group_create: { name: string; parent: string }
   http_request: { payload: HttpRequestPayload }
   api_save: ApiSavePayload
   api_list: Record<string, never>
@@ -123,6 +127,8 @@ export type Payloads = {
   sse_stop: { id: string }
 }
 export type Results = {
+  api_group_list: string[]
+  api_group_create: string
   http_request: HttpResponseResult
   api_save: number
   api_list: ApiRecord[]

@@ -364,6 +364,8 @@ mod tests {
         ("hosts", "hosts_save", "备份并写入 hosts（平台提权）"),
         ("http_ws", "api_clear", "清空全部接口"),
         ("http_ws", "api_delete", "删除接口"),
+        ("http_ws", "api_group_create", "创建接口分组"),
+        ("http_ws", "api_group_list", "接口分组列表"),
         ("http_ws", "api_list", "接口列表"),
         ("http_ws", "api_save", "保存/更新接口（id=0 新增）"),
         ("http_ws", "http_request", "发送 HTTP 请求"),

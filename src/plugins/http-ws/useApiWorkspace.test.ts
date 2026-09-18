@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApiRecord } from './contracts'
 const mock = vi.hoisted(() => ({
   apiList: vi.fn(),
+  apiGroupList: vi.fn(),
+  apiGroupCreate: vi.fn(),
   apiSave: vi.fn(),
   apiDelete: vi.fn(),
   wsClose: vi.fn(),
@@ -30,8 +32,31 @@ describe('接口库与多页签', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mock.apiList.mockResolvedValue([record(1), record(2)])
+    mock.apiGroupList.mockResolvedValue(['测试'])
     mock.apiSave.mockResolvedValue(1)
     mock.apiDelete.mockResolvedValue(undefined)
+  })
+  it('新建立即标记未保存，保存后清除，后续编辑重新标记', async () => {
+    const workspace = useApiWorkspace(vi.fn(), () => true)
+    const tab = workspace.create('http', '开发/用户')
+    expect(tab.groupName).toBe('开发/用户')
+    expect(workspace.dirty(tab)).toBe(true)
+    await workspace.save(tab, '请求', tab.groupName)
+    expect(mock.apiSave).toHaveBeenCalledWith(expect.objectContaining({ groupName: '开发/用户' }))
+    expect(workspace.dirty(tab)).toBe(false)
+    tab.draft.url = 'https://example.invalid/changed'
+    expect(workspace.dirty(tab)).toBe(true)
+    await workspace.dispose()
+  })
+  it('空分组可读取，创建子分组携带上级路径且失败不冒充成功', async () => {
+    const workspace = useApiWorkspace(vi.fn(), () => true)
+    mock.apiGroupList.mockResolvedValue(['空分组', '开发/用户'])
+    mock.apiGroupCreate.mockResolvedValue('开发/用户')
+    await workspace.createGroup('用户', '开发')
+    expect(mock.apiGroupCreate).toHaveBeenCalledWith('用户', '开发')
+    expect(workspace.groups.value).toContain('空分组')
+    mock.apiGroupCreate.mockRejectedValue(new Error('该分组已存在'))
+    await expect(workspace.createGroup('用户', '开发')).rejects.toThrow('该分组已存在')
   })
   it('重复打开仅激活，切换和重命名另一个接口不覆盖草稿', async () => {
     const workspace = useApiWorkspace(vi.fn(), () => true)

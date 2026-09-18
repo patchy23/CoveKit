@@ -151,6 +151,7 @@ export function methodBadgeClass(method: string, type?: string): string {
 /** 方法纯文字色（select 值区用：仅文字变色，保持默认背景） */
 export function methodTextClass(method: string, type?: string): string {
   if (type === 'ws') return 'text-cyan-strong dark:text-cyan-dark'
+  if (type === 'sse') return 'text-info-strong dark:text-info-dark'
   switch (method) {
     case 'GET':
       return 'text-success-strong dark:text-success-dark'
