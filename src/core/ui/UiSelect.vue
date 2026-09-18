@@ -88,17 +88,15 @@ function valueColorClass(value: string) {
           <button
             type="button"
             :disabled="disabled"
-            class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] outline-none transition-colors hover:border-border-strong focus-visible:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:hover:border-border-strong-dark dark:focus-visible:border-tertiary-dark"
-            :class="[
-              `ui-control-${size}`,
-              hasCustomValueColor
-                ? valueColorClass(modelValue)
-                : 'text-secondary dark:text-secondary-dark',
-            ]"
+            class="flex w-full items-center justify-between gap-[6px] rounded-md border border-border bg-surface px-[10px] text-secondary outline-none transition-colors hover:border-border-strong focus-visible:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:text-secondary-dark dark:hover:border-border-strong-dark dark:focus-visible:border-tertiary-dark"
+            :class="`ui-control-${size}`"
           >
-            <SelectValue :placeholder="placeholder" class="truncate">{{
-              currentLabel
-            }}</SelectValue>
+            <SelectValue
+              :placeholder="placeholder"
+              class="truncate"
+              :class="hasCustomValueColor ? valueColorClass(modelValue) : undefined"
+              >{{ currentLabel }}</SelectValue
+            >
             <SelectIcon as-child>
               <UiIcon
                 name="chevron-down"
