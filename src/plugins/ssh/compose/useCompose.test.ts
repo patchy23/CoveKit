@@ -506,16 +506,14 @@ it('容器直接按项目查询，缺少 YAML 路径仍可查看，失败不显�
   expect(wrapper.findComponent(DockerTable).exists()).toBe(true)
   expect(wrapper.get('section').attributes('aria-busy')).toBe('true')
   expect(wrapper.text()).not.toContain('容器 · 0')
+  expect(wrapper.findAllComponents(UiButton).some((button) => button.text() === '刷新')).toBe(false)
   await flushPromises()
   expect(env.sshDockerList).toHaveBeenCalledWith('one', 'app')
   expect(env.sshComposeAction).not.toHaveBeenCalled()
   expect(wrapper.text()).toContain('permission denied')
   expect(wrapper.text()).not.toContain('该编排下没有容器')
   env.sshDockerList.mockResolvedValueOnce([])
-  wrapper
-    .findAllComponents(UiButton)
-    .find((b) => b.text() === '刷新')!
-    .vm.$emit('click')
+  await wrapper.setProps({ project: { ...project, configFiles: [] } })
   await flushPromises()
   expect(wrapper.text()).toContain('该编排下没有容器')
 })

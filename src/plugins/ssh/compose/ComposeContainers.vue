@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 当前编排的容器快照；请求代次隔离，日志与终端沿用 SSH 现有能力。 */
 import { onUnmounted, ref, watch } from 'vue'
-import { UiButton, UiModal, UiEmptyState } from '@/core/ui'
+import { UiModal, UiEmptyState } from '@/core/ui'
 import type { DockerContainer, ComposeProject, ServerConnection } from '../contracts'
 import { ipc } from '../ipc'
 import LiveLogDialog from '../monitor/LiveLogDialog.vue'
@@ -56,27 +56,11 @@ watch(
     logs.value = terminal.value = undefined
   }
 )
-defineExpose({ refresh })
 </script>
 
 <template>
   <div class="shrink-0">
     <section class="shrink-0" :aria-busy="loading">
-      <div
-        class="flex items-center justify-between border-b border-border px-sm py-xs text-caption text-secondary dark:border-border-dark dark:text-secondary-dark"
-      >
-        <span>{{
-          loading || error || connection?.status !== 'connected' ? '容器' : `容器 · ${rows.length}`
-        }}</span>
-        <UiButton
-          size="xs"
-          variant="ghost"
-          :loading="loading"
-          :disabled="busy || connection?.status !== 'connected'"
-          @click="refresh"
-          >刷新</UiButton
-        >
-      </div>
       <p
         v-if="connection?.status !== 'connected'"
         role="status"
@@ -87,7 +71,7 @@ defineExpose({ refresh })
       <p
         v-else-if="error"
         role="alert"
-        class="px-md pb-sm text-body-sm text-danger-strong dark:text-danger-dark"
+        class="px-md py-sm text-body-sm text-danger-strong dark:text-danger-dark"
       >
         {{ error }}
       </p>
