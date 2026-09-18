@@ -490,3 +490,118 @@ body.ui-drag-select-lock * {
     @apply max-h-[85vh] rounded-xl border border-border bg-surface p-xl shadow-[0_12px_40px_rgba(16,24,40,0.14)] dark:border-border-dark dark:bg-surface-dark;
   }
 }
+
+/* UiTable 暗色覆盖：必须写在 unlayered 全局区（@layer 内会输给组件内 scoped 样式）；
+   html 前缀提升优先级，压过 UiTable.vue 内 scoped 的浅色规则。
+   注意：组件内 :global()+:deep() 混写选择器会被 SFC 编译静默丢弃，勿写回组件里。 */
+html[data-theme='dark'] .ui-data-table > thead > tr > th,
+html[data-theme='dark']
+  .ui-data-table-striped
+  > tbody
+  > tr:nth-child(even of :not([data-table-detail])) {
+  background: var(--color-surface-muted-dark);
+}
+html[data-theme='dark'] .ui-data-table > thead > tr > th {
+  color: var(--color-text-muted-dark);
+}
+html[data-theme='dark'] .ui-data-table > thead > tr > th,
+html[data-theme='dark'] .ui-data-table > tbody > tr > td {
+  border-color: var(--color-border-dark);
+}
+
+/* CodeMirror 6 配色：语法高亮 + 编辑器装饰，全部走 --cm-*，浅色/深色同名覆盖。
+   同名覆盖即完成主题切换，不需要重建编辑器实例，也不需要额外的暗色规则块。
+   装饰色是 tertiary（#f0562c）/ tertiary-dark（#ff7a4d）的极淡透明度变体，不新造色相。 */
+:root {
+  /* 语法高亮：标点用中灰让关键字/字符串/数字前进一档；变量名用蓝、运算符与函数名用紫 */
+  --cm-keyword: #cf222e;
+  --cm-property: #005cc5;
+  --cm-variable: #0550ae;
+  --cm-string: #0a7a3f;
+  --cm-number: #d73a49;
+  --cm-tag: #8250df;
+  --cm-function: #8250df;
+  --cm-operator: #8250df;
+  --cm-punct: #57606a;
+  --cm-comment: #6e7781;
+  /* 编辑器装饰 */
+  --cm-gutter-bg: #fafbfc;
+  --cm-active-line: rgba(240, 86, 44, 0.05);
+  --cm-active-gutter-bg: rgba(240, 86, 44, 0.08);
+  --cm-active-gutter-fg: #c2410c;
+  --cm-match-bg: rgba(240, 86, 44, 0.08);
+  --cm-match-border: rgba(240, 86, 44, 0.4);
+  /* 缩进参考线与折叠箭头（色值取自 DESIGN.md 的 border-strong / text-muted / secondary） */
+  --cm-indent-guide: #d3d8de;
+  --cm-indent-guide-active: #98a2ad;
+  --cm-fold-marker: #5c6672;
+  --cm-fold-marker-hover: #191d23;
+  /* 选区：与暗色档位对齐（浅色要 ~2:1 才看得出，暗色实测 2.04:1 即已足够）。
+     #fdeee7（UI 的 tertiary-soft）只有 1.13:1、#add6ff 1.52:1 都偏淡，
+     改用 GitHub 的选区蓝 #79b8ff（2.08:1），选中词标记取同色更淡一档。 */
+  --cm-selection: #79b8ff;
+  --cm-selection-match: rgba(121, 184, 255, 0.5);
+}
+[data-theme='dark'] {
+  --cm-keyword: #ff7b72;
+  --cm-property: #79c0ff;
+  --cm-variable: #79c0ff;
+  --cm-string: #7ee787;
+  --cm-number: #ffa657;
+  --cm-tag: #d2a8ff;
+  --cm-function: #d2a8ff;
+  --cm-operator: #d2a8ff;
+  --cm-punct: #8b949e;
+  --cm-comment: #7d8590;
+  --cm-gutter-bg: #1b2129;
+  --cm-active-line: rgba(255, 122, 77, 0.08);
+  --cm-active-gutter-bg: rgba(255, 122, 77, 0.12);
+  --cm-active-gutter-fg: #ff7a4d;
+  --cm-match-bg: rgba(255, 122, 77, 0.12);
+  --cm-match-border: rgba(255, 122, 77, 0.45);
+  --cm-indent-guide: #303946;
+  --cm-indent-guide-active: #66727f;
+  --cm-fold-marker: #9aa7b5;
+  --cm-fold-marker-hover: #e8edf2;
+  --cm-selection: #264f78;
+  --cm-selection-match: rgba(38, 79, 120, 0.6);
+}
+
+/* UiCodeEditor 暗色覆盖：语法高亮色走 --cm-*（同名覆盖，无需重建实例），而容器 / gutter /
+   选区 / 折叠占位等用 --color-* 的地方必须在此覆盖；html 前缀提升优先级，压过 CodeMirror
+   运行时注入的样式（同 UiTable 的理由）。 */
+html[data-theme='dark'] .cm-editor {
+  color: var(--color-primary-dark);
+}
+html[data-theme='dark'] .cm-gutters {
+  border-right-color: var(--color-border-dark);
+  color: var(--color-text-muted-dark);
+}
+html[data-theme='dark'] .cm-activeLineGutter {
+  color: var(--color-primary-dark);
+}
+html[data-theme='dark'] .cm-cursor,
+html[data-theme='dark'] .cm-dropCursor {
+  border-left-color: var(--color-primary-dark);
+}
+/* 选区、括号匹配与搜索匹配的底色均走 --cm-* 变量（浅/暗同名覆盖），无需在此覆盖 */
+html[data-theme='dark'] .cm-searchMatch.cm-searchMatch-selected {
+  background-color: var(--color-tertiary-dark);
+  color: var(--color-surface-dark);
+}
+html[data-theme='dark'] .cm-foldPlaceholder {
+  background-color: var(--color-tertiary-soft-dark);
+  color: var(--color-tertiary);
+}
+html[data-theme='dark'] .cm-tooltip {
+  border-color: var(--color-border-dark);
+  background-color: var(--color-surface-dark);
+  color: var(--color-primary-dark);
+}
+html[data-theme='dark'] .cm-placeholder {
+  color: var(--color-text-muted-dark);
+}
+
+/* 缩进参考线改为按行绘制：indentGuides.ts 把多层 1px 渐变写进 --cm-indent-bg，
+   伪元素样式在 theme.ts 定义；线只画到本行实际缩进深度，颜色走 --cm-indent-guide /
+   --cm-indent-guide-active（不再用整行宽度的 repeating-gradient 铺满）。 */

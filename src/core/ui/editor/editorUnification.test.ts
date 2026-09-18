@@ -13,6 +13,8 @@
  * 而不是「import @codemirror 的任何东西」。
  */
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 /** 仓库内全部前端源码原文（?raw）；以项目根 `src/` 起算，key 形如 `/src/core/ui/...` */
 const sources = import.meta.glob('/src/**/*.{ts,vue}', {
@@ -60,5 +62,17 @@ describe('编辑器统一契约', () => {
   it('工具层不得直接引用编辑器内部实现（只能从 @/core/ui 取公共组件）', () => {
     const internalImport = /from\s+['"][^'"]*core\/ui\/editor\//
     expect(offenders(internalImport, toolSources)).toEqual([])
+  })
+
+  it('编辑器主题变量必须存在：main.css 须保留 --cm-* 配色与暗色覆盖', () => {
+    // 回归守护：theme.ts 的高亮/装饰全部引用 --cm-* 变量，main.css 一旦误删整块
+    // （历史上删除 hljs 块时曾连带误删），高亮静默全灭、暗色下文字不可见且无任何报错。
+    // 注意：import.meta.glob('?raw') 对 css 在 vitest 下返回空串，必须走 fs 直读；
+    // vitest 的 import.meta.url 非 file: scheme，路径从进程 cwd（项目根）拼。
+    const css = readFileSync(join(process.cwd(), 'src/assets/styles/main.css'), 'utf-8')
+    expect(css).toContain('--cm-keyword')
+    expect(css).toContain('--cm-selection')
+    expect(css).toContain('--cm-string')
+    expect(css).toContain("html[data-theme='dark'] .cm-editor")
   })
 })
