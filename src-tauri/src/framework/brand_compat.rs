@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 use std::path::Path;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 /// 已发布版本的应用标识，仅用于旧安装兼容，不用于新安装身份。
 pub(crate) const LEGACY_APP_ID: &str = "com.patchy23.patchybox";
@@ -12,7 +12,7 @@ pub(crate) const LEGACY_STAGING_PREFIX: &str = ".patchybox-staging-";
 
 /// 在任何 settings.json store 读取前执行；已有新配置永不被旧安装覆盖。
 pub(crate) fn prepare(app: &AppHandle) -> Result<(), String> {
-    let current = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let current = super::paths::default_root(app)?;
     let parent = current.parent().ok_or("应用目录没有父目录")?;
     let legacy = parent.join(LEGACY_APP_ID);
     adopt_settings(&legacy, &current).map(|_| ())
