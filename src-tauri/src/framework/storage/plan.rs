@@ -264,7 +264,31 @@ fn normalize_text(text: &str) -> String {
 
 /// 本次任务的暂存目录名（带随机计划 id：只清理自己创建的目录，不碰用户既有文件）
 pub fn staging_dir_name(plan_id: &str) -> String {
-    format!(".patchybox-staging-{plan_id}")
+    format!("{}{plan_id}", crate::framework::paths::STAGING_PREFIX)
+}
+
+/// 恢复升级前中断的迁移时沿用其旧暂存目录；新计划始终使用当前前缀。
+pub(crate) fn resume_staging_dir_name(target: &Path, plan_id: &str) -> Result<String, String> {
+    let current = staging_dir_name(plan_id);
+    let legacy = format!(
+        "{}{plan_id}",
+        crate::framework::brand_compat::LEGACY_STAGING_PREFIX
+    );
+    let legacy_exists = target
+        .join(&legacy)
+        .try_exists()
+        .map_err(|e| format!("检查旧暂存目录失败: {e}"))?;
+    if legacy_exists {
+        if target
+            .join(&current)
+            .try_exists()
+            .map_err(|e| format!("检查暂存目录失败: {e}"))?
+        {
+            return Err("同一迁移计划同时存在新旧暂存目录，已保留现场，拒绝自动选择".into());
+        }
+        return Ok(legacy);
+    }
+    Ok(current)
 }
 
 /// 当前时间（Unix 毫秒）；取不到时钟时返回 0（仅用于展示与排序，不参与判定）
@@ -284,6 +308,26 @@ fn new_plan_id() -> String {
 mod tests {
     use super::super::test_support::{temp_dir, FileConfig};
     use super::*;
+
+    /// 新计划使用当前名；旧中断计划沿用旧名，冲突不猜测也不删除。
+    #[test]
+    fn resume_staging_preserves_legacy_and_refuses_ambiguous_directories() {
+        let dir = temp_dir("staging-brand");
+        let current = staging_dir_name("plan-a");
+        let legacy = format!(
+            "{}plan-a",
+            crate::framework::brand_compat::LEGACY_STAGING_PREFIX
+        );
+        assert_eq!(current, ".covekit-staging-plan-a");
+        assert_eq!(resume_staging_dir_name(&dir, "plan-a").unwrap(), current);
+        std::fs::create_dir_all(dir.join(&legacy)).unwrap();
+        assert_eq!(resume_staging_dir_name(&dir, "plan-a").unwrap(), legacy);
+        std::fs::create_dir_all(dir.join(&current)).unwrap();
+        assert!(resume_staging_dir_name(&dir, "plan-a").is_err());
+        assert!(dir.join(&legacy).is_dir());
+        assert!(dir.join(&current).is_dir());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn plan_roundtrip_keeps_phase_and_error() {

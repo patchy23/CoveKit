@@ -134,22 +134,22 @@ pub fn display_name(app: &AppHandle, space_id: &str) -> String {
     }
 }
 
-/// 暂存目录名前缀（崩溃恢复只清理带此前缀的目录；其余目录一律不碰）
-pub const STAGING_PREFIX: &str = ".patchybox-staging-";
+/// 新建暂存目录前缀；崩溃恢复同时识别旧版前缀，其余目录不碰。
+pub const STAGING_PREFIX: &str = paths::STAGING_PREFIX;
 
 /// 空间目录集：`<设备根>/spaces`
 pub fn spaces_dir(device_root: &Path) -> PathBuf {
     device_root.join("spaces")
 }
 
-/// 暂存空间根：`<设备根>/spaces/.patchybox-staging-<planId>`
+/// 暂存空间根：`<设备根>/spaces/.covekit-staging-<planId>`
 ///
 /// 与正式空间根**同级**，rename 才是一次原子搬移（跨目录树搬移会退化成复制+删除）。
 pub fn staging_space_root(device_root: &Path, plan_id: &str) -> PathBuf {
     spaces_dir(device_root).join(format!("{STAGING_PREFIX}{plan_id}"))
 }
 
-/// 暂存空间的**内容根**：`<设备根>/spaces/.patchybox-staging-<planId>`
+/// 暂存空间的**内容根**：`<设备根>/spaces/.covekit-staging-<planId>`
 ///
 /// 与正式空间根同形（无代际层），导入侧因此对「暂存写入」与「写入既有空间」共用相对路径。
 pub fn staging_content_root(device_root: &Path, plan_id: &str) -> PathBuf {
@@ -210,7 +210,13 @@ pub fn cleanup_staging(device_root: &Path) -> Result<Vec<String>, String> {
     for entry in entries {
         let entry = entry.map_err(|e| format!("读取空间目录项失败: {e}"))?;
         let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with(STAGING_PREFIX) || name.len() == STAGING_PREFIX.len() {
+        if ![
+            STAGING_PREFIX,
+            crate::framework::brand_compat::LEGACY_STAGING_PREFIX,
+        ]
+        .iter()
+        .any(|prefix| name.starts_with(*prefix) && name.len() > prefix.len())
+        {
             continue;
         }
         let path = entry.path();
@@ -235,7 +241,7 @@ mod tests {
         let staging = staging_space_root(device, "imp-7f3");
         assert_eq!(
             staging,
-            device.join("spaces").join(".patchybox-staging-imp-7f3")
+            device.join("spaces").join(".covekit-staging-imp-7f3")
         );
         assert_eq!(space_root(device, "abc"), device.join("spaces").join("abc"));
         // 暂存目录的父目录必须是空间目录的父目录：rename 才是一次原子搬移
@@ -255,14 +261,29 @@ mod tests {
     fn cleanup_removes_only_staging_dirs() {
         let dir = std::env::temp_dir().join(format!("pb-staging-clean-{}", std::process::id()));
         let spaces = spaces_dir(&dir);
-        std::fs::create_dir_all(spaces.join(".patchybox-staging-old")).expect("建暂存目录");
+        std::fs::create_dir_all(spaces.join(".covekit-staging-old")).expect("建暂存目录");
+        let legacy = format!(
+            "{}old",
+            crate::framework::brand_compat::LEGACY_STAGING_PREFIX
+        );
+        std::fs::create_dir_all(spaces.join(&legacy)).expect("建旧版暂存目录");
+        std::fs::create_dir_all(spaces.join(STAGING_PREFIX)).expect("建无计划标识目录");
+        std::fs::create_dir_all(spaces.join(crate::framework::brand_compat::LEGACY_STAGING_PREFIX))
+            .expect("建旧版无计划标识目录");
         std::fs::create_dir_all(spaces.join("11111111-1111-4111-8111-111111111111"))
             .expect("建空间目录");
         std::fs::create_dir_all(spaces.join("用户自建目录")).expect("建无关目录");
 
         let removed = cleanup_staging(&dir).expect("清理成功");
-        assert_eq!(removed, vec![".patchybox-staging-old".to_string()]);
-        assert!(!spaces.join(".patchybox-staging-old").exists());
+        let mut expected = vec![".covekit-staging-old".to_string(), legacy.clone()];
+        expected.sort();
+        assert_eq!(removed, expected);
+        assert!(!spaces.join(".covekit-staging-old").exists());
+        assert!(!spaces.join(legacy).exists());
+        assert!(spaces.join(STAGING_PREFIX).exists());
+        assert!(spaces
+            .join(crate::framework::brand_compat::LEGACY_STAGING_PREFIX)
+            .exists());
         assert!(spaces.join("11111111-1111-4111-8111-111111111111").exists());
         assert!(spaces.join("用户自建目录").exists());
 

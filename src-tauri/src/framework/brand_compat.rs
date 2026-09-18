@@ -7,6 +7,9 @@ use tauri::{AppHandle, Manager};
 /// 已发布版本的应用标识，仅用于旧安装兼容，不用于新安装身份。
 pub(crate) const LEGACY_APP_ID: &str = "com.patchy23.patchybox";
 
+/// 旧版暂存前缀，只用于读取或清理升级前已存在的暂存目录。
+pub(crate) const LEGACY_STAGING_PREFIX: &str = ".patchybox-staging-";
+
 /// 在任何 settings.json store 读取前执行；已有新配置永不被旧安装覆盖。
 pub(crate) fn prepare(app: &AppHandle) -> Result<(), String> {
     let current = app.path().app_data_dir().map_err(|e| e.to_string())?;

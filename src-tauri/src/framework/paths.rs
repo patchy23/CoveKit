@@ -25,6 +25,9 @@ use crate::framework::context::StorageLocation;
 /// 存储根目录配置键（位于 `settings.json` 的 `app` 对象内）
 pub const KEY_STORAGE_ROOT: &str = "storageRoot";
 
+/// 新建导入、存储迁移暂存目录共用的应用前缀。
+pub const STAGING_PREFIX: &str = ".covekit-staging-";
+
 /// 读取设置项（settings.json → app.<key>；不存在返回 None）
 pub(crate) fn read_setting(app: &AppHandle, key: &str) -> Option<serde_json::Value> {
     let store = app.store("settings.json").ok()?;

@@ -235,10 +235,10 @@ mod tests {
     fn only_own_staging_detects_foreign_entries() {
         let root = temp_dir("verify-own");
         std::fs::write(root.join("other.txt"), b"x").unwrap();
-        assert!(!only_own_staging(&root, ".patchybox-staging-p1").unwrap());
+        assert!(!only_own_staging(&root, ".covekit-staging-p1").unwrap());
         std::fs::remove_file(root.join("other.txt")).unwrap();
-        std::fs::create_dir_all(root.join(".patchybox-staging-p1")).unwrap();
-        assert!(only_own_staging(&root, ".patchybox-staging-p1").unwrap());
+        std::fs::create_dir_all(root.join(".covekit-staging-p1")).unwrap();
+        assert!(only_own_staging(&root, ".covekit-staging-p1").unwrap());
         let _ = std::fs::remove_dir_all(&root);
     }
 }

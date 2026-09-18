@@ -122,7 +122,10 @@ pub fn execute_pending(
 
     let source = pending.source_path();
     let target = pending.target_path();
-    let staging_name = plan::staging_dir_name(&pending.id);
+    let staging_name = match plan::resume_staging_dir_name(&target, &pending.id) {
+        Ok(name) => name,
+        Err(error) => return fail(cfg, pending, "precheck", error),
+    };
     let staging = target.join(&staging_name);
     let mut throttle = Throttle::new(progress);
 
@@ -439,6 +442,35 @@ mod tests {
         assert!(matches!(outcome, MigrationOutcome::NoPlan));
         assert!(cfg.read(paths::KEY_STORAGE_ROOT).is_none());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 改名之前的半截暂存目录可以重试，源数据保留，完成后不再留下旧目录。
+    #[test]
+    fn legacy_staging_can_resume_after_brand_rename() {
+        let dir = temp_dir("migrate-legacy-staging");
+        let source = dir.join("source");
+        let target = dir.join("target");
+        make_source(&source);
+        let cfg = FileConfig::new(&dir.join("settings.json"));
+        let pending = schedule(&cfg, &source, &target);
+        let staging = target.join(format!(
+            "{}{}",
+            crate::framework::brand_compat::LEGACY_STAGING_PREFIX,
+            pending.id
+        ));
+        std::fs::create_dir_all(&staging).unwrap();
+        std::fs::write(staging.join("incomplete"), b"partial").unwrap();
+        assert!(matches!(
+            execute_pending(&cfg, &|_, _, _, _| {}).unwrap(),
+            MigrationOutcome::Committed { .. }
+        ));
+        assert_eq!(
+            std::fs::read(target.join("data/ssh.db")).unwrap(),
+            std::fs::read(source.join("data/ssh.db")).unwrap()
+        );
+        assert!(!staging.exists());
+        assert!(plan::load_pending(&cfg).is_none());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// 成功路径：复制 + 校验 + 提交新根 + 清计划 + 留档；源目录保留

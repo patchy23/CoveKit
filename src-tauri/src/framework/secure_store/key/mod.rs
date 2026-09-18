@@ -446,7 +446,10 @@ mod tests {
         assert_eq!(store.service, format!("com.patchyx.covekit.{SPACE_A}"));
         assert_eq!(
             store.legacy_service,
-            Some(format!("com.patchy23.patchybox.{SPACE_A}"))
+            Some(format!(
+                "{}.{SPACE_A}",
+                crate::framework::brand_compat::LEGACY_APP_ID
+            ))
         );
     }
 

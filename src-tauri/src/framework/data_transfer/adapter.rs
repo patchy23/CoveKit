@@ -122,7 +122,7 @@ pub(crate) struct MergeTarget<'a> {
 /// 为什么带 `space_id` 与密钥库：凭证要按**新空间**的主密钥重新加密（跨空间不可解），
 /// 而不是沿用来源空间的密文。
 pub(crate) struct StagingTarget {
-    /// 暂存空间的**内容根**（`<设备根>/spaces/.patchybox-staging-<planId>`）
+    /// 暂存空间的**内容根**（`<设备根>/spaces/.covekit-staging-<planId>`）
     ///
     /// 与正式空间 `StorageLocation::for_space(..).root` 同形（无代际层）：适配器用
     /// `root/data`、`root/vault` 这类相对路径，暂存与「写进既有空间」共用同一条代码路径。
