@@ -134,7 +134,7 @@ pub async fn ws_connect(
                     if result.is_ok() {
                         match app.state::<WsState>().0.lock() {
                             Ok(mut map) => if let Some(handle) = map.get_mut(&task_id) { handle.push("sent", content); },
-                            Err(error) => log::error!("WebSocket 消息记录失败: {error}"),
+                            Err(error) => eprintln!("[http-ws] WebSocket 消息记录失败: {error}"),
                         };
                     }
                     // 页签关闭后接收端可以消失，此时仍由任务清理 socket。
@@ -164,7 +164,7 @@ pub async fn ws_connect(
                     handle.error = error;
                 }
             }
-            Err(error) => log::error!("WebSocket 会话清理失败: {error}"),
+            Err(error) => eprintln!("[http-ws] WebSocket 会话清理失败: {error}"),
         };
     });
     let handle = WsSessionHandle {

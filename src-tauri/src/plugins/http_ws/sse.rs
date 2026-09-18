@@ -174,14 +174,14 @@ pub fn sse_start(
         if let Err(message) = receive(&app, payload, &on_event).await {
             // 接收端关闭时任务也结束；报告失败不能再启动另一条连接。
             if let Err(error) = on_event.send(SseUpdate::Error { message }) {
-                log::debug!("SSE 状态通道已关闭: {error}");
+                eprintln!("[http-ws] SSE 状态通道已关闭: {error}");
             }
         }
         match app.state::<SseState>().0.lock() {
             Ok(mut tasks) => {
                 tasks.remove(&task_id);
             }
-            Err(error) => log::error!("SSE 会话清理失败: {error}"),
+            Err(error) => eprintln!("[http-ws] SSE 会话清理失败: {error}"),
         };
     });
     tasks.insert(id, task);
