@@ -6,6 +6,28 @@ import { mount } from '@vue/test-utils'
 import UiTableCell from './UiTableCell.vue'
 
 describe('UiTableCell 表头行为', () => {
+  for (const reason of ['pointercancel', 'blur', 'unmount', 'disabled']) {
+    it(`拖拽在 ${reason} 后释放全局锁并停止修改列宽`, async () => {
+      const wrapper = mount(UiTableCell, { props: { as: 'th' }, attachTo: document.body })
+      const cell = wrapper.element as HTMLElement
+      try {
+        await wrapper.find('[aria-hidden="true"]').trigger('pointerdown', { clientX: 100 })
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: 180 }))
+        const width = cell.style.width
+        expect(document.body.classList.contains('ui-drag-select-lock')).toBe(true)
+        if (reason === 'unmount') wrapper.unmount()
+        else if (reason === 'disabled') await wrapper.setProps({ resizable: false })
+        else window.dispatchEvent(new Event(reason))
+        expect(document.body.classList.contains('ui-drag-select-lock')).toBe(false)
+        window.dispatchEvent(new PointerEvent('pointermove', { clientX: 250 }))
+        expect(cell.style.width).toBe(width)
+      } finally {
+        window.dispatchEvent(new PointerEvent('pointerup'))
+        wrapper.unmount()
+      }
+    })
+  }
+
   it('th 默认不换行', () => {
     const wrapper = mount(UiTableCell, {
       props: { as: 'th' },

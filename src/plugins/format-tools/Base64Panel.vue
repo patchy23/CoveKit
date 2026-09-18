@@ -28,7 +28,7 @@ const directionOptions = [
 /** 按当前方向执行转换；空输入清空结果，不报错 */
 function run() {
   const text = input.value
-  if (!text.trim()) {
+  if (!text) {
     output.value = ''
     error.value = ''
     return

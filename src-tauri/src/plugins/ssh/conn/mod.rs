@@ -10,6 +10,7 @@
 //! reconnect = 重连/断开/快照命令；本文件保留会话注册表、共享工具与主机密钥管理命令。
 
 pub(crate) mod connect;
+mod exec_output;
 pub(crate) mod handler;
 pub(crate) mod reconnect;
 pub(crate) mod session;
@@ -22,7 +23,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use russh::{client, ChannelMsg};
+use russh::client;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::oneshot;
 
@@ -174,13 +175,21 @@ pub(crate) fn get_session(
         .ok_or_else(|| "连接不存在或已断开".to_string())
 }
 
-/// 标记会话已断开（被动断线检测）。
-/// russh 0.62 的 Handler 没有断链回调，NAT 掐线/服务端宕机只能在操作失败路径发现：
-/// 通道打开失败的调用方调用本函数翻转 open，侧栏轮询 ssh_connections 随即拿到 Disconnected。
-/// SFTP 长驻会话随传输层一并死亡，同时失效槽位，防后续操作撞上僵死会话。
-pub(crate) fn mark_session_closed(state: &SshState, connection_id: &str) {
+/// 仅在传输层确已关闭时标记断线；通道配额或策略拒绝不影响仍存活的连接。
+/// 同时比对句柄身份，避免旧请求迟到后把重连成功的新会话标成断开。
+pub(crate) fn mark_session_closed(
+    state: &SshState,
+    connection_id: &str,
+    session: &Arc<client::Handle<SshHandler>>,
+) {
+    if !session.is_closed() {
+        return;
+    }
     if let Ok(mut map) = state.0.lock() {
         if let Some(h) = map.get_mut(connection_id) {
+            if !Arc::ptr_eq(&h.session, session) {
+                return;
+            }
             h.open = false;
             if let Ok(mut slot) = h.sftp.lock() {
                 *slot = None;
@@ -212,8 +221,7 @@ pub(crate) async fn get_sftp_session(
     let channel = match session.channel_open_session().await {
         Ok(channel) => channel,
         Err(e) => {
-            // 通道打不开说明传输层已死（被动断线检测点）
-            mark_session_closed(state.inner(), connection_id);
+            mark_session_closed(state.inner(), connection_id, &session);
             return Err(format!("打开通道失败: {e}"));
         }
     };
@@ -250,7 +258,7 @@ pub(crate) fn invalidate_sftp_session(state: &tauri::State<'_, SshState>, connec
 }
 
 /// 执行远程命令并收集全部输出（监控/服务/进程/Docker 共用）
-/// 非交互 exec：开通道 → exec → 循环 wait() 收 Data 直到 Eof/Close
+/// 非交互 exec：开通道 → exec → 循环 wait() 收输出和退出状态直到 Close
 pub(crate) async fn exec_collect(
     session: &client::Handle<SshHandler>,
     command: &str,
@@ -267,7 +275,6 @@ async fn exec_collect_inner(
     session: &client::Handle<SshHandler>,
     command: &str,
 ) -> Result<String, String> {
-    const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
     let mut channel = session
         .channel_open_session()
         .await
@@ -276,46 +283,13 @@ async fn exec_collect_inner(
         .exec(false, command)
         .await
         .map_err(|e| format!("执行失败: {e}"))?;
-    let mut out = String::new();
-    let mut exit_status = None;
-    // 通道是否由服务端正常关闭（区别于传输层中断导致的 wait() 返回 None）
-    let mut channel_closed = false;
-    while let Some(msg) = channel.wait().await {
-        match msg {
-            ChannelMsg::Data { data } => {
-                if out.len().saturating_add(data.len()) > MAX_OUTPUT_BYTES {
-                    return Err("远程命令输出超过 16 MiB 安全上限".into());
-                }
-                out.push_str(&String::from_utf8_lossy(&data));
-            }
-            ChannelMsg::ExtendedData { data, .. } => {
-                if out.len().saturating_add(data.len()) > MAX_OUTPUT_BYTES {
-                    return Err("远程命令输出超过 16 MiB 安全上限".into());
-                }
-                out.push_str(&String::from_utf8_lossy(&data));
-            }
-            ChannelMsg::ExitStatus {
-                exit_status: status,
-            } => exit_status = Some(status),
-            ChannelMsg::Eof | ChannelMsg::Close => {
-                channel_closed = true;
-                break;
-            }
-            _ => {}
+    let mut output = exec_output::ExecOutput::default();
+    while let Some(message) = channel.wait().await {
+        if output.receive(message)? {
+            break;
         }
     }
-    match exit_status {
-        Some(0) => Ok(out),
-        // 少数服务端不发 exit-status 但正常关闭通道：兼容放行
-        None if channel_closed => Ok(out),
-        // 传输层中断：输出不完整，不能伪装成功（监控/Docker 会拿半截数据当完整结果解析）
-        None => Err("连接中断，命令未完整执行，请检查连接后重试".into()),
-        Some(status) => Err(if out.trim().is_empty() {
-            format!("远程命令失败（退出码 {status}）")
-        } else {
-            format!("远程命令失败（退出码 {status}）：{}", out.trim())
-        }),
-    }
+    output.finish()
 }
 
 /// 构造对外快照（纯函数，供命令与事件共用）

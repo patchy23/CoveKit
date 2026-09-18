@@ -181,8 +181,11 @@ pub async fn ssh_docker_exec(
     let channel = match session.channel_open_session().await {
         Ok(channel) => channel,
         Err(e) => {
-            // 通道打不开说明传输层已死（被动断线检测点）
-            crate::plugins::ssh::conn::mark_session_closed(ssh_state.inner(), &connection_id);
+            crate::plugins::ssh::conn::mark_session_closed(
+                ssh_state.inner(),
+                &connection_id,
+                &session,
+            );
             return Err(format!("打开通道失败: {e}"));
         }
     };

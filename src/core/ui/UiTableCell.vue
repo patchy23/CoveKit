@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { UiContentKind } from './types'
 import { cn } from './utils'
 
@@ -37,14 +37,23 @@ let dragStartWidth = 0
 
 /** 列宽下限（再小会被内容 min-content 自然顶住，这里只是兜住 0/负值） */
 const MIN_COLUMN_WIDTH = 40
+let stopResize: (() => void) | undefined
+
+onBeforeUnmount(() => stopResize?.())
+watch(
+  () => [props.as, props.resizable],
+  () => stopResize?.()
+)
 
 function startResize(event: PointerEvent): void {
   const cell = cellRef.value
-  if (!cell) return
+  if (!cell || event.button !== 0) return
+  stopResize?.()
   event.preventDefault()
   dragStartX = event.clientX
   dragStartWidth = cell.getBoundingClientRect().width
   // 拖拽期间禁止选中文字（松手恢复）
+  const alreadyLocked = document.body.classList.contains('ui-drag-select-lock')
   document.body.classList.add('ui-drag-select-lock')
   const onMove = (move: PointerEvent) => {
     const next = Math.max(MIN_COLUMN_WIDTH, Math.round(dragStartWidth + move.clientX - dragStartX))
@@ -53,12 +62,18 @@ function startResize(event: PointerEvent): void {
     cell.style.minWidth = `${next}px`
   }
   const onUp = () => {
-    document.body.classList.remove('ui-drag-select-lock')
+    if (!alreadyLocked) document.body.classList.remove('ui-drag-select-lock')
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
+    window.removeEventListener('pointercancel', onUp)
+    window.removeEventListener('blur', onUp)
+    stopResize = undefined
   }
+  stopResize = onUp
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
+  window.addEventListener('pointercancel', onUp)
+  window.addEventListener('blur', onUp)
 }
 
 /** 双击手柄复位：清掉行内宽度，回到自动布局 */
