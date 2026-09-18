@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import UiButton from './UiButton.vue'
 import type { UiSize } from './types'
 
@@ -8,6 +8,15 @@ const props = withDefaults(
   { size: 'sm', siblingCount: 1 }
 )
 const emit = defineEmits<{ (event: 'update:modelValue', value: number): void }>()
+
+// totalPages 缩小（如筛选后结果变少）时把越界的当前页钳回最后一页，不让组件停在空白页
+watch(
+  () => props.totalPages,
+  (total) => {
+    if (total >= 1 && props.modelValue > total) emit('update:modelValue', total)
+  }
+)
+
 const pages = computed(() => {
   const start = Math.max(1, props.modelValue - props.siblingCount)
   const end = Math.min(props.totalPages, props.modelValue + props.siblingCount)
@@ -34,6 +43,7 @@ const pages = computed(() => {
       :variant="page === modelValue ? 'primary' : 'ghost'"
       :size="size"
       class="min-w-[28px]"
+      :aria-current="page === modelValue ? 'page' : undefined"
       @click="emit('update:modelValue', page)"
       >{{ page }}</UiButton
     >

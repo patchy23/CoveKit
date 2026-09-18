@@ -5,7 +5,7 @@ import UiScrollArea from './UiScrollArea.vue'
  * 触发框可直接输入过滤选项；键盘 ↑↓ 高亮、Enter 选中、Esc 收起。
  * 样式与 UiSelect 对齐（ui-control-* 档位 + z-[220] 浮层）；选项过滤大小写不敏感。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watchEffect } from 'vue'
 import {
   ComboboxAnchor,
   ComboboxContent,
@@ -17,11 +17,16 @@ import {
   ComboboxViewport,
 } from 'reka-ui'
 import UiIcon from './UiIcon.vue'
+import UiTooltip from './UiTooltip.vue'
 import type { UiSize } from './types'
+import { UI_FLOATING_PANEL_CLASS, uiOptionSizeClass } from './utils'
 
 export interface ComboboxOption {
   value: string
-  label: string
+  /** 展示文案（缺省回退 value） */
+  label?: string
+  /** 禁用该项（渲染为不可选） */
+  disabled?: boolean
   /** 搜索时额外匹配的关键词（如掩码摘要、备注） */
   keywords?: string
 }
@@ -30,6 +35,8 @@ const props = withDefaults(
   defineProps<{
     modelValue: string
     options: ComboboxOption[]
+    /** 触发器 tooltip */
+    title?: string
     placeholder?: string
     searchPlaceholder?: string
     emptyText?: string
@@ -37,6 +44,7 @@ const props = withDefaults(
     size?: UiSize
   }>(),
   {
+    title: '',
     placeholder: '请选择',
     searchPlaceholder: '输入以筛选…',
     emptyText: '无匹配项',
@@ -53,14 +61,30 @@ const open = ref(false)
 
 const selected = computed(() => props.options.find((o) => o.value === props.modelValue))
 
+/** 选项展示文案（label 缺省回退 value） */
+function optionLabel(option: ComboboxOption): string {
+  return option.label ?? option.value
+}
+
 /** 过滤后的选项（匹配 label 与 keywords，大小写不敏感） */
 const filtered = computed(() => {
   const q = query.value.trim().toLowerCase()
   if (!q) return props.options
   return props.options.filter(
-    (o) => o.label.toLowerCase().includes(q) || (o.keywords ?? '').toLowerCase().includes(q)
+    (o) => optionLabel(o).toLowerCase().includes(q) || (o.keywords ?? '').toLowerCase().includes(q)
   )
 })
+
+// 空串 value 会让 reka 弹层渲染即崩（11 号文红线）；dev 下给出显式告警而不是静默炸
+if (import.meta.env.DEV) {
+  watchEffect(() => {
+    if (props.options.some((o) => o.value === '')) {
+      console.warn(
+        '[UiCombobox] 选项 value 不能为空串：「不选/跟随默认」请用非空哨兵值并在选中回调里反映射'
+      )
+    }
+  })
+}
 
 function onSelect(value: string) {
   emit('update:modelValue', value)
@@ -84,14 +108,16 @@ function onOpenChange(v: boolean) {
     @update:model-value="onSelect(String($event))"
   >
     <ComboboxAnchor class="relative">
-      <ComboboxInput
-        :value="open ? query : (selected?.label ?? '')"
-        :placeholder="open ? searchPlaceholder : placeholder"
-        class="w-full rounded-md border border-border bg-surface px-[10px] pr-[28px] outline-none transition-colors placeholder:text-text-muted hover:border-border-strong focus:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:placeholder:text-text-muted-dark dark:hover:border-border-strong-dark dark:focus:border-tertiary-dark"
-        :class="[`ui-control-${size}`, 'text-secondary dark:text-secondary-dark']"
-        @input="query = ($event.target as HTMLInputElement).value"
-        @focus="onOpenChange(true)"
-      />
+      <UiTooltip :content="title" :disabled="open">
+        <ComboboxInput
+          :value="open ? query : selected ? optionLabel(selected) : ''"
+          :placeholder="open ? searchPlaceholder : placeholder"
+          class="w-full rounded-md border border-border bg-surface px-[10px] pr-[28px] outline-none transition-colors placeholder:text-text-muted hover:border-border-strong focus:border-tertiary disabled:cursor-not-allowed disabled:opacity-60 dark:border-border-dark dark:bg-surface-dark dark:placeholder:text-text-muted-dark dark:hover:border-border-strong-dark dark:focus:border-tertiary-dark"
+          :class="[`ui-control-${size}`, 'text-secondary dark:text-secondary-dark']"
+          @input="query = ($event.target as HTMLInputElement).value"
+          @focus="onOpenChange(true)"
+        />
+      </UiTooltip>
       <UiIcon
         name="chevron-down"
         :size="12"
@@ -105,7 +131,7 @@ function onOpenChange(v: boolean) {
         position="popper"
         align="start"
         :side-offset="4"
-        class="z-[220] w-[var(--reka-combobox-trigger-width)] overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+        :class="[UI_FLOATING_PANEL_CLASS, 'w-[var(--reka-combobox-trigger-width)]']"
       >
         <UiScrollArea as-child axis="vertical">
           <ComboboxViewport
@@ -120,18 +146,11 @@ function onOpenChange(v: boolean) {
               v-for="option in filtered"
               :key="option.value"
               :value="option.value"
-              class="flex w-full cursor-default select-none items-center px-[10px] text-left font-medium text-secondary outline-none transition-colors data-[highlighted]:bg-border data-[state=checked]:bg-tertiary-soft data-[state=checked]:text-tertiary-strong dark:text-secondary-dark dark:data-[highlighted]:bg-border-dark dark:data-[state=checked]:bg-tertiary-soft-dark dark:data-[state=checked]:text-tertiary-dark"
-              :class="[
-                size === 'xs'
-                  ? 'py-xs text-caption'
-                  : size === 'sm'
-                    ? 'py-[6px] text-body-sm'
-                    : size === 'lg'
-                      ? 'py-[9px] text-body'
-                      : 'py-[7px] text-body',
-              ]"
+              :disabled="option.disabled"
+              class="flex w-full cursor-default select-none items-center px-[10px] text-left font-medium text-secondary outline-none transition-colors data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-border data-[state=checked]:bg-tertiary-soft data-[state=checked]:text-tertiary-strong dark:text-secondary-dark dark:data-[highlighted]:bg-border-dark dark:data-[state=checked]:bg-tertiary-soft-dark dark:data-[state=checked]:text-tertiary-dark"
+              :class="uiOptionSizeClass(size)"
             >
-              {{ option.label }}
+              {{ optionLabel(option) }}
             </ComboboxItem>
           </ComboboxViewport>
         </UiScrollArea>

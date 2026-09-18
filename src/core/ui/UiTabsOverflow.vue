@@ -9,7 +9,9 @@ import UiTooltip from './UiTooltip.vue'
  */
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import UiIcon from './UiIcon.vue'
+import UiTabStatusDot from './UiTabStatusDot.vue'
 import type { UiTabItem } from './UiTabs.vue'
+import { UI_FLOATING_PANEL_CLASS } from './utils'
 
 withDefaults(
   defineProps<{
@@ -142,7 +144,7 @@ onUnmounted(() => {
           ref="panelRef"
           role="menu"
           :aria-label="title"
-          class="fixed z-[220] max-h-[320px] rounded-lg border border-border bg-surface py-[4px] shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+          :class="[UI_FLOATING_PANEL_CLASS, 'fixed max-h-[320px] py-[4px]']"
           :style="{
             top: `${panelPos.top}px`,
             left: `${panelPos.left}px`,
@@ -167,16 +169,7 @@ onUnmounted(() => {
             @keydown.enter.self="select(item.value)"
             @keydown.space.self.prevent="select(item.value)"
           >
-            <UiTooltip v-if="item.status" :content="item.statusTitle">
-              <span
-                class="h-[7px] w-[7px] shrink-0 rounded-full"
-                :class="{
-                  'bg-success-strong dark:bg-success-dark': item.status === 'success',
-                  'bg-danger-strong dark:bg-danger-dark': item.status === 'danger',
-                  'bg-text-muted dark:bg-text-muted-dark': item.status === 'neutral',
-                }"
-              />
-            </UiTooltip>
+            <UiTabStatusDot v-if="item.status" :status="item.status" :title="item.statusTitle" />
             <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
             <span
               v-if="item.badge !== undefined"
@@ -186,11 +179,11 @@ onUnmounted(() => {
             <UiTooltip v-if="item.closable" :content="`关闭${item.label}`">
               <button
                 type="button"
-                class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[3px] text-caption text-text-muted opacity-0 transition-opacity hover:bg-border hover:text-tertiary-strong focus-visible:opacity-100 group-hover:opacity-100 dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-tertiary-dark"
+                class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[3px] text-text-muted opacity-0 transition-opacity hover:bg-border hover:text-tertiary-strong focus-visible:opacity-100 group-hover:opacity-100 dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-tertiary-dark"
                 :aria-label="`关闭${item.label}`"
                 @click.stop="emit('close', item.value)"
               >
-                ×
+                <UiIcon name="x" :size="10" />
               </button>
             </UiTooltip>
           </div>

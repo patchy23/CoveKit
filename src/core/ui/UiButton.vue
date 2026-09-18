@@ -4,6 +4,7 @@ import { computed } from 'vue'
 import { useForwardExpose } from 'reka-ui'
 import type { UiSize } from './types'
 import { cn } from './utils'
+import UiSpinner from './UiSpinner.vue'
 import UiTooltip from './UiTooltip.vue'
 
 defineOptions({ inheritAttrs: false })
@@ -78,7 +79,10 @@ function guardClick(event: MouseEvent) {
       :aria-busy="loading || undefined"
       @click.capture="guardClick"
     >
-      <span v-if="loading" class="ui-spinner" aria-hidden="true" />
+      <!-- loading 转圈统一走 UiSpinner（单一实现源；按钮内为纯装饰，aria-hidden 由 UiSpinner 的图形层自带语义、此处整体隐藏避免重复播报） -->
+      <span v-if="loading" aria-hidden="true" class="inline-flex">
+        <UiSpinner :size="size === 'xs' ? 'xs' : size === 'lg' ? 'md' : 'sm'" label="" />
+      </span>
       <slot />
     </component>
   </UiTooltip>

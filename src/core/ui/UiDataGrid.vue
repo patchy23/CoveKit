@@ -71,6 +71,7 @@ function stop() {
   resizeKey = ''
   window.removeEventListener('pointermove', move)
   window.removeEventListener('pointerup', stop)
+  window.removeEventListener('blur', stop)
 }
 
 function startResize(event: PointerEvent, column: UiDataGridColumn) {
@@ -81,12 +82,26 @@ function startResize(event: PointerEvent, column: UiDataGridColumn) {
   resizeStartWidth = widths.value[column.key]
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', stop)
+  // 拖拽中窗口失焦也要收尾，否则监听器残留
+  window.addEventListener('blur', stop)
 }
 
 function display(value: unknown) {
   if (value === null) return 'NULL'
   if (value === '') return '(空字符串)'
   return String(value ?? '')
+}
+
+/** 行主键（无 rowKey 字段时回退行序号） */
+function rowKeyOf(row: Record<string, unknown>, rowIndex: number): string {
+  return String(row[props.rowKey] ?? rowIndex)
+}
+
+/** 行键盘选中（Enter/空格），与点击同语义 */
+function onRowKeydown(event: KeyboardEvent, row: Record<string, unknown>, rowIndex: number) {
+  if (event.key !== 'Enter' && event.key !== ' ') return
+  event.preventDefault()
+  emit('update:modelValue', rowKeyOf(row, rowIndex))
 }
 
 onBeforeUnmount(stop)
@@ -129,15 +144,17 @@ onBeforeUnmount(stop)
         <tbody>
           <tr
             v-for="(row, rowIndex) in rows"
-            :key="String(row[rowKey] ?? rowIndex)"
-            class="h-[25px] hover:bg-surface-muted dark:hover:bg-surface-muted-dark"
+            :key="rowKeyOf(row, rowIndex)"
+            class="h-[25px] outline-none hover:bg-surface-muted focus-visible:bg-surface-muted dark:hover:bg-surface-muted-dark dark:focus-visible:bg-surface-muted-dark"
             :class="
-              modelValue === String(row[rowKey] ?? rowIndex)
+              modelValue === rowKeyOf(row, rowIndex)
                 ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
                 : ''
             "
-            :aria-selected="modelValue === String(row[rowKey] ?? rowIndex)"
-            @click="emit('update:modelValue', String(row[rowKey] ?? rowIndex))"
+            :aria-selected="modelValue === rowKeyOf(row, rowIndex)"
+            tabindex="0"
+            @click="emit('update:modelValue', rowKeyOf(row, rowIndex))"
+            @keydown="onRowKeydown($event, row, rowIndex)"
           >
             <td
               v-if="rowNumbers"

@@ -34,19 +34,34 @@ function move(event: PointerEvent) {
   emit('update:modelValue', clampPrimary(Math.round(raw)))
 }
 
+/** 拖拽开始时的分栏值（Esc 取消复原用） */
+let dragStartValue = 0
+
 function stop() {
   dragging.value = false
   window.removeEventListener('pointermove', move)
   window.removeEventListener('pointerup', stop)
   window.removeEventListener('blur', stop)
+  window.removeEventListener('keydown', onDragKeydown, true)
+}
+
+/** 拖拽中按 Esc：复原到拖拽前的尺寸并结束拖拽 */
+function onDragKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  event.preventDefault()
+  event.stopPropagation()
+  emit('update:modelValue', dragStartValue)
+  stop()
 }
 
 function start(event: PointerEvent) {
   event.preventDefault()
   dragging.value = true
+  dragStartValue = primarySize.value
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', stop)
   window.addEventListener('blur', stop)
+  window.addEventListener('keydown', onDragKeydown, true)
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -84,7 +99,7 @@ onBeforeUnmount(() => {
     <div class="min-h-0 min-w-0 overflow-hidden"><slot name="primary" /></div>
     <div
       role="separator"
-      :aria-orientation="direction"
+      :aria-orientation="direction === 'horizontal' ? 'vertical' : 'horizontal'"
       :aria-label="label"
       :aria-valuemin="Math.min(min, max)"
       :aria-valuemax="Math.max(min, max)"

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import UiScrollArea from './UiScrollArea.vue'
-withDefaults(
+import { computed } from 'vue'
+
+const props = withDefaults(
   defineProps<{
+    /**
+     * 密度档位；custom 是逃生舱：不带任何内置 padding/字号（类名 ui-data-table-custom 无对应样式），
+     * 配 styled=false 或自行在 tableClass 里全权定义单元格排版时使用。
+     */
     density?: 'compact' | 'default' | 'comfortable' | 'custom'
     striped?: boolean
     hoverable?: boolean
@@ -18,34 +24,26 @@ withDefaults(
     styled: true,
   }
 )
+
+/** framed / unframed 两形态共用同一份表格类列表 */
+const classes = computed(() => [
+  'w-full border-collapse text-left text-secondary dark:text-secondary-dark',
+  props.tableClass,
+  { 'ui-data-table': props.styled },
+  props.styled ? `ui-data-table-${props.density}` : '',
+  { 'ui-data-table-striped': props.striped, 'ui-data-table-hoverable': props.hoverable },
+])
 </script>
 
 <template>
   <UiScrollArea v-if="framed" as-child axis="horizontal">
     <div class="rounded-lg border border-border dark:border-border-dark">
-      <table
-        class="w-full border-collapse text-left text-secondary dark:text-secondary-dark"
-        :class="[
-          tableClass,
-          { 'ui-data-table': styled },
-          styled ? `ui-data-table-${density}` : '',
-          { 'ui-data-table-striped': striped, 'ui-data-table-hoverable': hoverable },
-        ]"
-      >
+      <table :class="classes">
         <slot />
       </table>
     </div>
   </UiScrollArea>
-  <table
-    v-else
-    class="w-full border-collapse text-left text-secondary dark:text-secondary-dark"
-    :class="[
-      tableClass,
-      { 'ui-data-table': styled },
-      styled ? `ui-data-table-${density}` : '',
-      { 'ui-data-table-striped': striped, 'ui-data-table-hoverable': hoverable },
-    ]"
-  >
+  <table v-else :class="classes">
     <slot />
   </table>
 </template>

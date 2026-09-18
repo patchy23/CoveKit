@@ -11,10 +11,11 @@ import {
   SelectValue,
   SelectViewport,
 } from 'reka-ui'
-import { computed } from 'vue'
+import { computed, watchEffect } from 'vue'
 import UiIcon from './UiIcon.vue'
 import UiTooltip from './UiTooltip.vue'
 import type { UiSize } from './types'
+import { UI_FLOATING_PANEL_CLASS, uiOptionSizeClass } from './utils'
 
 export interface SelectOption {
   value: string
@@ -52,6 +53,17 @@ const currentLabel = computed(
     props.placeholder
 )
 const hasCustomValueColor = computed(() => Boolean(props.valueClass || props.optionClass))
+
+// 空串 value 会让 reka 弹层渲染即崩（11 号文红线）；dev 下给出显式告警而不是静默炸
+if (import.meta.env.DEV) {
+  watchEffect(() => {
+    if (props.options.some((o) => o.value === '')) {
+      console.warn(
+        '[UiSelect] 选项 value 不能为空串：「不选/跟随默认」请用非空哨兵值并在选中回调里反映射'
+      )
+    }
+  })
+}
 
 function optionColorClass(value: string) {
   return props.optionClass?.(value) ?? 'text-primary dark:text-primary-dark'
@@ -104,7 +116,7 @@ function valueColorClass(value: string) {
           position="popper"
           align="start"
           :side-offset="4"
-          class="z-[220] min-w-[var(--reka-select-trigger-width)] overflow-hidden rounded-lg border border-border bg-surface shadow-[0_16px_40px_rgba(16,24,40,0.18)] dark:border-border-dark dark:bg-surface-dark"
+          :class="[UI_FLOATING_PANEL_CLASS, 'min-w-[var(--reka-select-trigger-width)]']"
         >
           <UiScrollArea as-child axis="vertical">
             <SelectViewport
@@ -116,16 +128,7 @@ function valueColorClass(value: string) {
                 :value="option.value"
                 :disabled="option.disabled"
                 class="flex w-full cursor-default select-none items-center px-[10px] text-left font-medium outline-none transition-colors data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[highlighted]:bg-border data-[state=checked]:bg-tertiary-soft dark:data-[highlighted]:bg-border-dark dark:data-[state=checked]:bg-tertiary-soft-dark"
-                :class="[
-                  size === 'xs'
-                    ? 'py-xs text-caption'
-                    : size === 'sm'
-                      ? 'py-[6px] text-body-sm'
-                      : size === 'lg'
-                        ? 'py-[9px] text-body'
-                        : 'py-[7px] text-body',
-                  optionColorClass(option.value),
-                ]"
+                :class="[uiOptionSizeClass(size), optionColorClass(option.value)]"
               >
                 <SelectItemText>{{ option.label ?? option.value }}</SelectItemText>
               </SelectItem>

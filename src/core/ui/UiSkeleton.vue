@@ -25,7 +25,17 @@ withDefaults(
       "
       :style="{
         width: line === lines && lines > 1 ? '72%' : width,
-        height: height || (variant === 'circle' ? width : variant === 'rect' ? '72px' : undefined),
+        // circle 的高度只在显式给了 height 时采用，否则跟随 width；width 为百分比时高度不能照抄（会得到椭圆），回退为正方形边长语义交给 aspect-ratio
+        height:
+          height ||
+          (variant === 'circle'
+            ? width.endsWith('px')
+              ? width
+              : undefined
+            : variant === 'rect'
+              ? '72px'
+              : undefined),
+        aspectRatio: variant === 'circle' && !height ? '1' : undefined,
       }"
     />
   </div>

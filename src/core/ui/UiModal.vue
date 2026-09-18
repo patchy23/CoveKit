@@ -16,6 +16,7 @@ const props = withDefaults(
     open: boolean
     title?: string
     description?: string
+    /** 自由宽度（如 'min(460px, 92vw)'），优先于 size；仅响应式宽度档位给不了时使用，常规弹窗一律走 size 档位 */
     width?: string
     size?: 'sm' | 'md' | 'lg' | 'xl'
     closeOnBackdrop?: boolean

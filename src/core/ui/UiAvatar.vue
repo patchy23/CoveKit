@@ -12,7 +12,9 @@ const initials = computed(() => props.name.trim().slice(0, 2).toUpperCase())
 
 <template>
   <UiTooltip :content="name">
+    <!-- 头像不可交互但挂了 tooltip，补 tabindex 让键盘用户也能看到名称提示 -->
     <span
+      tabindex="0"
       class="inline-grid shrink-0 place-items-center overflow-hidden font-semibold"
       :class="[
         square ? 'rounded-md' : 'rounded-full',

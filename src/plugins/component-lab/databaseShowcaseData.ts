@@ -1,14 +1,14 @@
-import type { UiDataGridColumn, UiTreeItem, UiWorkbenchTab } from '@/core/ui'
+import type { UiDataGridColumn, UiTabItem, UiTreeItem } from '@/core/ui'
 
 export const connectionTabs = [
   { value: 'mysql-prod', label: 'MySQL · 生产库', status: 'success' as const, closable: true },
   { value: 'kingbase-dev', label: 'Kingbase · 开发库', status: 'success' as const, closable: true },
   { value: 'oracle-test', label: 'Oracle · 测试库', status: 'danger' as const, closable: true },
 ]
-export const createDocuments = (): UiWorkbenchTab[] => [
-  { id: 'query-1', label: '查询 1', kind: 'query', dirty: true },
-  { id: 'users-data', label: 'users · 数据', kind: 'data' },
-  { id: 'users-structure', label: 'users · 结构', kind: 'structure' },
+export const createDocuments = (): UiTabItem[] => [
+  { value: 'query-1', label: '查询 1', closable: true, badge: '●' },
+  { value: 'users-data', label: 'users · 数据', closable: true },
+  { value: 'users-structure', label: 'users · 结构', closable: true },
 ]
 export const createTreeItems = (): UiTreeItem[] => [
   {

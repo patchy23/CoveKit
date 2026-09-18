@@ -40,10 +40,7 @@ function submit() {
 </script>
 
 <template>
-  <UiModal :open="open" width="min(420px, 92vw)" @close="emit('close')">
-    <h3 class="mb-[14px] text-card-title font-medium text-primary dark:text-primary-dark">
-      {{ title }}
-    </h3>
+  <UiModal :open="open" size="sm" :title="title" @close="emit('close')">
     <label class="field-label" for="action-dialog-input">{{ label }}</label>
     <UiInput
       id="action-dialog-input"

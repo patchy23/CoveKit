@@ -69,7 +69,7 @@ function onTreeOpen(item: UiTreeItem) {
     void db.selectResource(item.id)
   }
 }
-function onTreeContext(event: MouseEvent, item: UiTreeItem) {
+function onTreeContext(item: UiTreeItem, event: MouseEvent) {
   if (item.depth === 0) {
     const connection = db.connections.value.find((entry) => entry.id === item.id)
     if (connection) openMenu(event, { connection })
@@ -99,7 +99,7 @@ function onTreeContext(event: MouseEvent, item: UiTreeItem) {
           @update:model-value="onTreeSelect"
           @toggle="db.toggleTree"
           @open="onTreeOpen"
-          @context="onTreeContext"
+          @contextmenu="onTreeContext"
         >
           <template #icon="{ item }">
             <img

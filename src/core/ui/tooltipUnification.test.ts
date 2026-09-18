@@ -16,6 +16,7 @@ const titleComponents = new Set([
   'UiCheckbox',
   'UiSwitch',
   'UiTabsOverflow',
+  'UiTabStatusDot',
   'UiModal',
   'UiPanel',
   'UiAlert',

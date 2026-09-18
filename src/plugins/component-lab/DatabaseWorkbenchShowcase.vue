@@ -12,11 +12,12 @@ import {
   UiSplitPane,
   UiStatusBar,
   UiTabs,
+  UiTabsOverflow,
   UiToolbar,
   UiTree,
-  UiWorkbenchTabs,
 } from '@/core/ui'
-import type { UiTreeItem, UiWorkbenchTab } from '@/core/ui'
+import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
+import type { UiTabItem, UiTreeItem } from '@/core/ui'
 import {
   columns,
   connectionTabs,
@@ -47,7 +48,13 @@ WHERE status = 'active'
 ORDER BY created_at DESC
 LIMIT 1000;`)
 
-const documents = ref<UiWorkbenchTab[]>(createDocuments())
+const documents = ref<UiTabItem[]>(createDocuments())
+const docTabsBarRef = ref<HTMLElement | null>(null)
+const { visibleItems: visibleDocuments, hiddenItems: hiddenDocuments } = useTabsOverflow(
+  docTabsBarRef,
+  documents,
+  activeDocument
+)
 const treeItems = ref<UiTreeItem[]>(createTreeItems())
 const visibleTreeItems = computed(() => {
   const value = keyword.value.trim().toLocaleLowerCase()
@@ -77,8 +84,8 @@ const visibleTreeItems = computed(() => {
   return visible
 })
 function closeDocument(id: string) {
-  documents.value = documents.value.filter((item) => item.id !== id)
-  if (activeDocument.value === id) activeDocument.value = documents.value[0]?.id ?? ''
+  documents.value = documents.value.filter((item) => item.value !== id)
+  if (activeDocument.value === id) activeDocument.value = documents.value[0]?.value ?? ''
 }
 function toggleTree(item: UiTreeItem) {
   item.expanded = !item.expanded
@@ -129,11 +136,25 @@ function toggleTree(item: UiTreeItem) {
           <UiSplitPane v-model="mainWidth" class="h-full" :min="480" :max="900">
             <template #primary>
               <main class="flex h-full min-w-0 flex-col">
-                <UiWorkbenchTabs
-                  v-model="activeDocument"
-                  :items="documents"
-                  @close="closeDocument"
-                />
+                <div
+                  ref="docTabsBarRef"
+                  class="flex items-center overflow-hidden border-b border-border dark:border-border-dark"
+                >
+                  <UiTabs
+                    v-model="activeDocument"
+                    :items="visibleDocuments"
+                    variant="line"
+                    size="xs"
+                    @close="closeDocument"
+                  />
+                  <UiTabsOverflow
+                    v-if="hiddenDocuments.length"
+                    :items="hiddenDocuments"
+                    :model-value="activeDocument"
+                    @select="activeDocument = $event"
+                    @close="closeDocument"
+                  />
+                </div>
                 <UiSplitPane
                   v-model="editorHeight"
                   class="min-h-0 flex-1"

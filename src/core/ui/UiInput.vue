@@ -6,11 +6,15 @@ import UiTooltip from './UiTooltip.vue'
  * 约定：密码框一律用本组件且不加 font-mono（掩码圆点与普通输入框视觉一致）；
  * font-mono 只用于明文数据/代码内容（域名、AKID、私钥全文等）。
  */
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import UiIcon from './UiIcon.vue'
 import type { UiSize } from './types'
+import { uiFieldContextKey } from './fieldContext'
 
 defineOptions({ inheritAttrs: false })
+
+/** UiField 提供的 label/描述关联（未包在 UiField 里时为 undefined） */
+const field = inject(uiFieldContextKey, undefined)
 
 const props = withDefaults(
   defineProps<{
@@ -48,13 +52,17 @@ function onInput(event: Event) {
   <!-- 密码：带眼睛的包裹结构（外部传入的 class/placeholder 等透传到 input 本体） -->
   <div v-if="type === 'password'" class="relative w-full">
     <input
-      ref="input"
       v-bind="$attrs"
+      :id="($attrs.id as string | undefined) ?? field?.controlId"
+      ref="input"
       :type="realType"
       class="field-input pr-[30px]"
       :class="[`ui-control-${size}`, { 'ui-field-invalid': invalid }]"
       :value="modelValue"
       :aria-invalid="invalid || undefined"
+      :aria-describedby="
+        ($attrs['aria-describedby'] as string | undefined) ?? field?.describedById.value
+      "
       @input="onInput"
     />
     <UiTooltip :content="reveal ? '隐藏' : '显示'">
@@ -71,13 +79,17 @@ function onInput(event: Event) {
   </div>
   <input
     v-else
-    ref="input"
     v-bind="$attrs"
+    :id="($attrs.id as string | undefined) ?? field?.controlId"
+    ref="input"
     :type="realType"
     class="field-input"
     :class="[`ui-control-${size}`, { 'ui-field-invalid': invalid }]"
     :value="modelValue"
     :aria-invalid="invalid || undefined"
+    :aria-describedby="
+      ($attrs['aria-describedby'] as string | undefined) ?? field?.describedById.value
+    "
     @input="onInput"
   />
 </template>

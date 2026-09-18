@@ -28,7 +28,7 @@ describe('公共 UI 组件', () => {
   it('按钮在加载中自动禁用并显示加载状态', () => {
     const wrapper = mount(UiButton, { props: { loading: true }, slots: { default: '保存' } })
     expect(wrapper.get('button').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('.ui-spinner').exists()).toBe(true)
+    expect(wrapper.find('.animate-spin').exists()).toBe(true)
   })
 
   it('输入框支持 trim 和 number 修饰符', async () => {

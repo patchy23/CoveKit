@@ -1,16 +1,21 @@
 <script setup lang="ts">
-/** ConfirmDialog · 基于 BaseModal 的项目统一确认弹窗。 */
+/** ConfirmDialog · 项目统一确认弹窗（标题走 UiModal title，保证 Dialog 有可访问名称）。 */
 import UiButton from './UiButton.vue'
 import UiModal from './UiModal.vue'
 
-defineProps<{
-  open: boolean
-  title: string
-  message: string
-  confirmLabel?: string
-  danger?: boolean
-  error?: string
-}>()
+withDefaults(
+  defineProps<{
+    open: boolean
+    title: string
+    message: string
+    confirmLabel?: string
+    danger?: boolean
+    error?: string
+    /** 异步确认进行中：确认钮转圈并禁用，防止重复点击 */
+    loading?: boolean
+  }>(),
+  { confirmLabel: undefined, error: '', loading: false }
+)
 
 const emit = defineEmits<{
   (event: 'confirm'): void
@@ -19,10 +24,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <UiModal :open="open" width="min(420px, 92vw)" @close="emit('close')">
-    <h3 class="mb-[8px] text-card-title font-medium text-primary dark:text-primary-dark">
-      {{ title }}
-    </h3>
+  <UiModal :open="open" size="sm" :title="title" @close="emit('close')">
     <p class="mb-[20px] text-body leading-relaxed text-secondary dark:text-secondary-dark">
       {{ message }}
     </p>
@@ -31,7 +33,11 @@ const emit = defineEmits<{
     </p>
     <div class="flex justify-end gap-[8px]">
       <UiButton variant="ghost" @click="emit('close')">取消</UiButton>
-      <UiButton :variant="danger ? 'danger' : 'primary'" @click="emit('confirm')">
+      <UiButton
+        :variant="danger ? 'danger' : 'primary'"
+        :loading="loading"
+        @click="emit('confirm')"
+      >
         {{ confirmLabel ?? '确定' }}
       </UiButton>
     </div>

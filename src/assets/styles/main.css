@@ -327,9 +327,6 @@ body.ui-drag-select-lock * {
   .ui-button.ui-control-lg {
     @apply !px-[16px];
   }
-  .ui-spinner {
-    @apply h-[13px] w-[13px] animate-spin rounded-full border-2 border-current border-r-transparent;
-  }
 
   /* 输入框标题（字段 label） */
   .field-label {

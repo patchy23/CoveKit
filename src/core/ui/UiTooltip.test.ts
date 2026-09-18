@@ -113,7 +113,7 @@ it('空提示保持单一按钮且不渲染浮层', () => {
   wrappers.push(wrapper)
   expect(wrapper.findAll('button')).toHaveLength(1)
   expect(wrapper.get('button').attributes('disabled')).toBeDefined()
-  expect(wrapper.find('.ui-spinner').exists()).toBe(true)
+  expect(wrapper.find('.animate-spin').exists()).toBe(true)
   expect(wrapper.find('.ui-tooltip').exists()).toBe(false)
 })
 
