@@ -4,17 +4,25 @@
 mod common;
 mod compose;
 mod connect;
-mod file;
+mod containers;
+mod files;
 mod host_key;
+mod monitor;
+mod process;
 mod profile;
+mod service;
 mod system_info;
 mod terminal;
 
 pub use common::*;
 pub use compose::*;
 pub use connect::*;
-pub use file::*;
+pub use containers::*;
+pub use files::*;
 pub use host_key::*;
+pub use monitor::*;
+pub use process::*;
 pub use profile::*;
+pub use service::*;
 pub use system_info::*;
 pub use terminal::*;

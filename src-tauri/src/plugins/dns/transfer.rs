@@ -16,7 +16,7 @@ impl RecordStore for Providers {
         "dns"
     }
     fn migrations(&self) -> &'static [&'static str] {
-        super::MIGRATIONS
+        super::config::MIGRATIONS
     }
     fn datasets(&self) -> &'static [(&'static str, &'static str)] {
         &[("dns.providers", "DNS 平台配置")]
@@ -79,7 +79,7 @@ mod tests {
     #[test]
     fn vault_reference_excludes_fallback_secret_but_manual_configuration_roundtrips() {
         let mut conn = Connection::open_in_memory().unwrap();
-        crate::framework::store::migrate(&mut conn, super::super::MIGRATIONS).unwrap();
+        crate::framework::store::migrate(&mut conn, super::super::config::MIGRATIONS).unwrap();
         conn.execute("INSERT INTO dns_config(platform,id,key,credential_ref) VALUES('aliyun','synthetic-id','synthetic-key','vault-id')", []).unwrap();
         let record = Providers.read(&conn, "dns.providers").unwrap().remove(0);
         assert_eq!(record["key"], "");

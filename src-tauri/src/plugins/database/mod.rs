@@ -1,7 +1,7 @@
 //! 数据库工作台插件 · 门面（命令薄层 + 插件装配）
 //! 命令前缀 `dbc_`（与既有 sqlite 插件的 `db_` 前缀区分；注册表全局唯一）。
 //! 结构：models.rs（契约）/ dialect/（方言纯函数）/ drivers/（会话注册表 + 驱动执行）/
-//! catalog.rs（查询与元数据命令）/ store.rs（本地库）/ secrets.rs（AES（插件私有） 凭据）/ agent/（侧车驱动）。
+//! catalog/（查询执行、元数据、分页与 Redis 命令）/ store.rs（本地库）/ secrets.rs（AES（插件私有） 凭据）/ agent/（侧车驱动）。
 //! close_hooks.rs（退出清理：取消查询 → 结束 agent 子进程 → 清会话注册表）。
 
 pub(crate) mod admin;
@@ -248,16 +248,16 @@ crate::covekit_module! {
         dbc_saved_update => "更新收藏 SQL（编辑器二次保存）",
         dbc_saved_delete => "删除收藏 SQL",
         dbc_driver_status => "agent 驱动就绪状态（含目录指引）",
-        catalog::dbc_execute => "执行 SQL（多语句拆分，查询返回表格）",
-        catalog::dbc_cancel => "取消进行中的查询",
-        catalog::dbc_databases => "数据库列表",
-        catalog::dbc_schemas => "schema 列表",
-        catalog::dbc_objects => "对象列表（表/视图等）",
-        catalog::dbc_columns => "表结构列信息",
-        catalog::dbc_table_data => "表数据分页浏览",
-        catalog::dbc_export_csv => "导出 CSV 文件（结果集导出）",
-        catalog::dbc_redis_keys => "Redis 键列表（SCAN）",
-        catalog::dbc_redis_key_info => "Redis 键信息（TYPE/TTL/预览）",
+        catalog::query::dbc_execute => "执行 SQL（多语句拆分，查询返回表格）",
+        catalog::query::dbc_cancel => "取消进行中的查询",
+        catalog::metadata::dbc_databases => "数据库列表",
+        catalog::metadata::dbc_schemas => "schema 列表",
+        catalog::metadata::dbc_objects => "对象列表（表/视图等）",
+        catalog::metadata::dbc_columns => "表结构列信息",
+        catalog::table::dbc_table_data => "表数据分页浏览",
+        catalog::query::dbc_export_csv => "导出 CSV 文件（结果集导出）",
+        catalog::redis::dbc_redis_keys => "Redis 键列表（SCAN）",
+        catalog::redis::dbc_redis_key_info => "Redis 键信息（TYPE/TTL/预览）",
         admin::dbc_charset_options => "字符集与排序规则选项（建库对话框）",
         admin::dbc_users => "数据库用户清单（授权选择）",
         admin::dbc_create_database => "新建数据库（含可选分步授权）",

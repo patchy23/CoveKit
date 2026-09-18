@@ -8,8 +8,8 @@ use russh_sftp::protocol::{FileAttributes, OpenFlags};
 use tauri::State;
 use tokio::io::AsyncWriteExt;
 
-use super::conn::{get_session, get_sftp_session, shell_quote, SshState};
-use super::models::{ComposeOutput, ComposeProject};
+use crate::plugins::ssh::conn::{get_session, get_sftp_session, shell_quote, SshState};
+use crate::plugins::ssh::models::{ComposeOutput, ComposeProject};
 
 const MAX_OUTPUT: usize = 2 * 1024 * 1024;
 const MAX_CONFIG: usize = 1024 * 1024;

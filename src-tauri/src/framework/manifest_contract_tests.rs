@@ -442,7 +442,7 @@ mod tests {
         (
             "ssh",
             "ssh_profile_save",
-            "新增/更新服务器配置（凭证入 Vault）",
+            "新增/更新服务器配置（支持本地认证或 Vault）",
         ),
         ("ssh", "ssh_reconnect", "重新连接（新会话替换旧会话）"),
         ("ssh", "ssh_service_action", "服务启动/停止/重启"),

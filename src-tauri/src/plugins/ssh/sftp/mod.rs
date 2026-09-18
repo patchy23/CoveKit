@@ -9,3 +9,5 @@ pub(crate) mod transfer;
 pub(crate) mod util;
 
 pub use ops::TransferState;
+
+pub(crate) mod edit;

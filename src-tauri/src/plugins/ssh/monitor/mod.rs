@@ -201,3 +201,5 @@ mod tests {
         assert_eq!(d.net_upload_bps, 5);
     }
 }
+
+pub(crate) mod system_info;

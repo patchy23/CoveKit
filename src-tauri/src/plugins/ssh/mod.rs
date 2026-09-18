@@ -1,31 +1,20 @@
-//! SSH 远程管理插件 · 门面
-//! 命令函数（薄层）与插件装配在此；实现按能力拆分：
-//! - models/：serde 数据结构（与前端 plugins/ssh/contracts.ts 同步）
-//! - conn/：连接会话注册表（russh 客户端 + 分阶段事件 + 主机密钥人工确认 + 重连）
-//! - host_keys.rs：已知主机解析/删除/替换（私有 known_hosts 文件）
-//! - store/：服务器配置/分组/书签/隧道持久化（ssh.db，PluginDb 骨架）
-//! - terminal.rs：PTY 终端通道（事件推送）
-//! - sftp/：文件浏览/操作/传输（长驻会话 + 独立传输通道 + 协作取消）
-//! - log.rs：终端会话日志（ANSI 剥离后旁路落盘）
-//! - edit.rs / monitor.rs / system_info.rs / service.rs / process.rs / docker.rs / compose.rs / tunnel/：其余能力
+//! SSH 远程管理插件：命令清单与生命周期装配。
+//! conn/ 管连接；terminal/ 管终端和录制；sftp/ 管文件与编辑；
+//! containers/ 管容器和编排；monitor/ 管指标和系统信息；
+//! service.rs、process.rs 管服务与进程；store/ 管持久化；transfer/ 管数据导入导出。
 
 mod close_hooks; // 关闭清理钩子（登记到 framework/lifecycle，退出时由框架协调调用）
-pub(crate) mod compose;
 pub(crate) mod conn; // conn/ 目录：会话注册表 + 连接/重连（能力域下沉，引用路径经 mod.rs pub use 保持不变）
+pub(crate) mod containers;
 mod credential_refs;
-pub(crate) mod docker;
-pub(crate) mod edit;
 pub(crate) mod host_keys;
-pub(crate) mod log;
 mod models; // models/ 目录：serde 数据结构按域拆分
 pub(crate) mod monitor;
 pub(crate) mod process;
 pub(crate) mod service;
 pub(crate) mod sftp; // sftp/ 目录：文件浏览/传输/递归下载
 pub(crate) mod store;
-pub(crate) mod system_info;
 pub(crate) mod terminal;
-#[allow(dead_code)] // 导出适配在 C4 命令层接入前只有测试调用方（接入后删掉本行）
 mod transfer; // 导出/导入适配（数据集声明、按 id 导出、记录体检）
 pub(crate) mod tunnel;
 
@@ -39,10 +28,10 @@ crate::covekit_module! {
     owner: "ssh",
     feature: "ssh",
     commands: {
-        compose::ssh_compose_list => "查询 Docker Compose 项目",
-        compose::ssh_compose_action => "执行 Docker Compose 项目操作",
-        compose::ssh_compose_create => "新建远程 Compose 配置",
-        compose::ssh_compose_home => "查询编排默认远程目录",
+        containers::compose::ssh_compose_list => "查询 Docker Compose 项目",
+        containers::compose::ssh_compose_action => "执行 Docker Compose 项目操作",
+        containers::compose::ssh_compose_create => "新建远程 Compose 配置",
+        containers::compose::ssh_compose_home => "查询编排默认远程目录",
         conn::reconnect::ssh_disconnect => "断开连接并清理会话",
         conn::reconnect::ssh_reconnect => "重新连接（新会话替换旧会话）",
         conn::ssh_connections => "全部会话快照（侧栏轮询）",
@@ -53,7 +42,7 @@ crate::covekit_module! {
         store::bookmarks::ssh_bookmark_list => "目录书签列表",
         store::bookmarks::ssh_bookmark_add => "新增目录书签",
         store::bookmarks::ssh_bookmark_delete => "删除目录书签",
-        store::profiles::ssh_profile_save => "新增/更新服务器配置（凭证入 Vault）",
+        store::profiles::ssh_profile_save => "新增/更新服务器配置（支持本地认证或 Vault）",
         store::profiles::ssh_profile_delete => "删除服务器配置",
         store::profiles::ssh_group_list => "服务器分组列表",
         store::profiles::ssh_group_save => "新增/更新分组",
@@ -69,8 +58,8 @@ crate::covekit_module! {
         terminal::ssh_terminal_resize => "调整终端窗口大小",
         terminal::ssh_terminal_close => "关闭终端通道",
         terminal::ssh_terminal_list => "某连接下的全部终端会话",
-        log::ssh_terminal_log_stop => "停止录制并返回日志路径与字节数",
-        log::ssh_terminal_log_open_dir => "打开 SSH 终端日志目录",
+        terminal::log::ssh_terminal_log_stop => "停止录制并返回日志路径与字节数",
+        terminal::log::ssh_terminal_log_open_dir => "打开 SSH 终端日志目录",
         sftp::browse::ssh_file_list => "远程目录列表（SFTP）",
         sftp::transfer::ssh_file_upload => "上传文件（进度事件推送）",
         sftp::transfer::ssh_file_download => "下载文件（进度事件推送）",
@@ -85,10 +74,10 @@ crate::covekit_module! {
         sftp::browse::ssh_local_rename => "本地重命名/移动",
         sftp::transfer::ssh_file_download_recursive => "递归下载远程目录",
         sftp::ops::ssh_transfer_cancel => "取消传输任务",
-        edit::ssh_edit_open => "打开远程文件（下载内容）",
-        edit::ssh_edit_save => "保存远程文件（上传回写）",
+        sftp::edit::ssh_edit_open => "打开远程文件（下载内容）",
+        sftp::edit::ssh_edit_save => "保存远程文件（上传回写）",
         monitor::ssh_monitor_get => "资源监控数据（CPU/内存/磁盘/网络）",
-        system_info::ssh_system_info_get => "远程系统信息与磁盘分区明细",
+        monitor::system_info::ssh_system_info_get => "远程系统信息与磁盘分区明细",
         service::ssh_service_list => "systemd 服务列表",
         service::ssh_service_action => "服务启动/停止/重启",
         service::ssh_service_logs => "服务日志（journalctl）",
@@ -96,12 +85,12 @@ crate::covekit_module! {
         process::ssh_process_list => "进程列表",
         process::ssh_process_kill => "结束进程",
         process::ssh_process_detail => "进程详情（ps -fp）",
-        docker::ssh_docker_list => "Docker 容器列表",
-        docker::ssh_docker_action => "容器启动/停止/重启/删除",
-        docker::ssh_docker_logs => "容器日志",
-        docker::ssh_docker_exec => "进入容器终端（PTY）",
+        containers::docker::ssh_docker_list => "Docker 容器列表",
+        containers::docker::ssh_docker_action => "容器启动/停止/重启/删除",
+        containers::docker::ssh_docker_logs => "容器日志",
+        containers::docker::ssh_docker_exec => "进入容器终端（PTY）",
         conn::connect::ssh_connect => "建立 SSH 连接（按 profileId 取配置，凭证在 Rust 侧解析）",
-        log::ssh_terminal_log_start => "开始录制终端日志（幂等，已在录制则返回当前文件）",
+        terminal::log::ssh_terminal_log_start => "开始录制终端日志（幂等，已在录制则返回当前文件）",
     },
 }
 
@@ -110,9 +99,9 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     register_ipc_or_fail();
     // 凭证引用自报：框架删除凭证前据此判断还有哪些服务器在用
     credential_refs::register_provider();
-    // 导出适配登记：框架做导入导出时需要知道本插件有哪些数据集、按什么粒度勾选（sync L2）
+    // 导出适配登记：框架做导入导出时需要知道本插件有哪些数据集、按什么粒度勾选
     transfer::register();
-    // 关闭清理登记（AR06）：会话/终端/隧道/传输由本模块自己清，框架只协调、超时与汇总
+    // 关闭清理登记：会话/终端/隧道/传输由本模块自己清，框架只协调、超时与汇总
     crate::framework::lifecycle::register(
         crate::framework::lifecycle::ModuleLifecycle::exit_only(IPC_OWNER)
             .with_dispose(close_hooks::on_dispose),

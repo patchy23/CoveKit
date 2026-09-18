@@ -11,8 +11,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, watch};
 
 use crate::plugins::ssh::conn::{now_ms, resource_id, SshState};
-use crate::plugins::ssh::log::{self, SharedLog};
+pub(crate) mod log;
 use crate::plugins::ssh::models::{SshActionResult, TerminalClosed, TerminalData, TerminalSession};
+use log::SharedLog;
 
 /// 终端指令（前端 → 后台任务）
 pub(crate) enum TerminalCmd {

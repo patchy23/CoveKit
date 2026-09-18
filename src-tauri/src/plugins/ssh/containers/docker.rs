@@ -6,10 +6,10 @@ use tauri::{AppHandle, State};
 use tokio::sync::{mpsc, watch};
 
 use crate::plugins::ssh::conn::{exec_collect, get_session, resource_id, shell_quote, SshState};
-use crate::plugins::ssh::log;
 use crate::plugins::ssh::models::{
     DockerContainer, SshActionResult, SshDockerExecPayload, TerminalSession,
 };
+use crate::plugins::ssh::terminal::log;
 use crate::plugins::ssh::terminal::TerminalState;
 
 /// 解析 docker ps 行（纯函数）：tab 分隔 ID/NAME/IMAGE/STATUS/PORTS → DockerContainer
@@ -221,7 +221,7 @@ pub async fn ssh_docker_exec(
         },
     );
 
-    // 后台读写任务（复用 terminal.rs 公共实现）
+    // 后台读写任务（复用 terminal/ 公共实现）
     crate::plugins::ssh::terminal::spawn_channel_task(
         app.clone(),
         terminal_id.clone(),
