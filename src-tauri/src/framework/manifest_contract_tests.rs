@@ -33,6 +33,17 @@ mod tests {
     ///
     /// 冻结快照的是**前后端调用契约**：增删命令、改命令名或改归属者时这张表必须同步更新。
     const PUBLISHED: &[(&str, &str, &str)] = &[
+        ("codex_news", "codex_news_fetch", "获取 Codex 重置消息源"),
+        (
+            "codex_news",
+            "codex_news_load",
+            "读取 Codex 消息缓存与阅读状态",
+        ),
+        (
+            "codex_news",
+            "codex_news_save",
+            "保存 Codex 消息缓存与阅读状态",
+        ),
         ("database", "dbc_cancel", "取消进行中的查询"),
         (
             "database",
