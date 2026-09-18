@@ -49,6 +49,22 @@ class BudgetTests(unittest.TestCase):
 
 
 class TrackedFilesTests(unittest.TestCase):
+    def test_local_only_target_cannot_mask_broken_repository_link(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            page = root / "README.md"
+            local = root / "TODO.md"
+            local.write_text("# 任务", encoding="utf-8")
+            page.write_text("[任务](TODO.md#任务)", encoding="utf-8")
+            subprocess.run(["git", "add", "--", page.name, local.name], cwd=root, check=True)
+            self.assertFalse(markdown.check_file(page, root, markdown.tracked_files(root)))
+            subprocess.run(["git", "rm", "--cached", "--", local.name], cwd=root, check=True, capture_output=True)
+            self.assertTrue(local.is_file())
+            self.assertIn("未被 Git 跟踪", markdown.check_file(page, root, markdown.tracked_files(root))[0])
+            page.write_text("[目录](.)", encoding="utf-8")
+            self.assertFalse(markdown.check_file(page, root, markdown.tracked_files(root)))
+
     def test_untracked_draft_excluded_and_explicit_file_checked(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)

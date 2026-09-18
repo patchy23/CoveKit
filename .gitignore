@@ -38,3 +38,10 @@ test-results/
 
 # 本地设计素材与图标原型，不参与构建
 branding/
+
+# 任务过程材料仅本地保留；现行要求与契约继续入库
+/TODO.md
+/docs/batches/
+/docs/待人工验证清单.md
+/docs/plugins/vault/落地笔记.md
+/docs/plugins/ssh/设计.md

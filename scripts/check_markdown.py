@@ -48,7 +48,7 @@ def anchors(text: str) -> set[str]:
     return found
 
 
-def check_file(path: Path, root: Path) -> list[str]:
+def check_file(path: Path, root: Path, tracked: set[Path] | None = None) -> list[str]:
     text = path.read_text(encoding="utf-8")
     clean = prose(text)
     definitions = {key.casefold(): value for key, value in re.findall(
@@ -80,17 +80,25 @@ def check_file(path: Path, root: Path) -> list[str]:
         prefix = f"{path.relative_to(root)}:{line}"
         if not target.exists():
             errors.append(f"{prefix}: 失效链接 {value}")
+        elif tracked is not None and target.is_relative_to(root.resolve()) and not (
+            target in tracked or (target.is_dir() and any(p.is_relative_to(target) for p in tracked))
+        ):
+            errors.append(f"{prefix}: 链接目标未被 Git 跟踪 {value}")
         elif url.fragment and target.is_file() and target.suffix.lower() == ".md":
             if unquote(url.fragment) not in anchors(target.read_text(encoding="utf-8")):
                 errors.append(f"{prefix}: 不存在的标题锚点 {value}")
     return errors
 
 
+def tracked_files(root: Path) -> set[Path]:
+    """包含已暂存的新文件，排除取消跟踪后仍留在本地的过程材料。"""
+    result = subprocess.run(["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True)
+    return {(root / name).resolve() for name in result.stdout.decode("utf-8").split("\0") if name}
+
+
 def tracked_markdown(root: Path) -> list[Path]:
     """只取 Git 跟踪文件，排除未跟踪草稿；新文件由显式参数检查。"""
-    result = subprocess.run(["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True)
-    return sorted(root / name for name in result.stdout.decode("utf-8").split("\0")
-                  if name.lower().endswith(".md") and (root / name).is_file())
+    return sorted(p for p in tracked_files(root) if p.suffix.lower() == '.md' and p.is_file())
 
 
 def main(paths: list[str] | None = None) -> int:
@@ -99,10 +107,11 @@ def main(paths: list[str] | None = None) -> int:
     if missing:
         print("\n".join(missing))
         return 1
-    errors = [error for path in files for error in check_file(path, ROOT)]
+    tracked = tracked_files(ROOT)
+    errors = [error for path in files for error in check_file(path, ROOT, tracked)]
     for error in errors:
         print(f"✗ {error}")
-    print(f"Markdown：{len(files)}文件，{len(errors)}错误；仅显式本地链接/ATX锚点，外链/示例/普通代码路径不验证")
+    print(f"Markdown：{len(files)}文件，{len(errors)}错误；检查显式本地链接、Git 跟踪目标与 ATX 锚点，外链/示例/普通代码路径不验证")
     return int(bool(errors))
 
 

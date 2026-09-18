@@ -1,7 +1,7 @@
 /**
  * frp 插件 · IPC 契约（本插件私有，独立于框架与其它插件）
  * 与 src-tauri/src/plugins/frp/models.rs 逐字段同步（Rust 侧 serde `camelCase`）。
- * 契约冻结基线：docs/batches/frp-202609-001-frp客户端管理/任务书.md §3。
+ * 传输契约与 src-tauri/src/plugins/frp/models.rs 保持一致。
  */
 
 /** 档案运行状态：未运行 / 进程中待确认 / 已连接 / 失败 */
