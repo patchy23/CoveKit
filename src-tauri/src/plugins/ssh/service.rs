@@ -46,6 +46,28 @@ pub async fn ssh_service_list(
             _ => true,
         })
         .collect();
+    // 开机自启状态：list-units 输出不含此列，单独查 list-unit-files 按名字归并；
+    // 查询失败直接报错，不再静默显示全「否」
+    let states = exec_collect(
+        &session,
+        "systemctl list-unit-files --type=service --no-pager --plain",
+    )
+    .await
+    .map_err(|e| format!("读取服务启用状态失败: {e}"))?;
+    let enabled_names: std::collections::HashSet<&str> = states
+        .lines()
+        .filter_map(|line| {
+            // 行格式：`name.service enabled`（表头 UNIT FILE ... 不含 .service 被过滤）
+            let mut parts = line.split_whitespace();
+            match (parts.next(), parts.next()) {
+                (Some(name), Some("enabled")) if name.contains('.') => Some(name),
+                _ => None,
+            }
+        })
+        .collect();
+    for service in &mut services {
+        service.enabled = enabled_names.contains(service.name.as_str());
+    }
     services.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(services)
 }
@@ -65,19 +87,23 @@ pub async fn ssh_service_action(
         "restart" => "restart",
         _ => return Err(format!("不支持的操作: {action}")),
     };
-    let out = exec_collect(
+    // 成败以退出码为准（exec_collect 对非零退出码返回 Err，错误文案含 stderr 合并输出），
+    // 不再按 stdout 文本猜测
+    match exec_collect(
         &session,
         &format!("systemctl {action} {}", shell_quote(&service_name)),
     )
-    .await?;
-    Ok(SshActionResult {
-        ok: out.trim().is_empty() || !out.contains("Failed"),
-        error: if out.trim().is_empty() {
-            None
-        } else {
-            Some(out.trim().to_string())
-        },
-    })
+    .await
+    {
+        Ok(_) => Ok(SshActionResult {
+            ok: true,
+            error: None,
+        }),
+        Err(e) => Ok(SshActionResult {
+            ok: false,
+            error: Some(e),
+        }),
+    }
 }
 
 /// 服务日志（journalctl 最近 N 行）

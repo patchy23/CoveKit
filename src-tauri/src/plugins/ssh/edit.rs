@@ -89,28 +89,39 @@ pub async fn ssh_edit_save(
         }
     }
     let temp_path = format!("{target_path}.covekit-edit-{}", resource_id("file"));
-    let mut file = sftp
-        .create(&temp_path)
+    // 写入阶段任一失败都要清理临时文件，避免远程累积 .covekit-edit-* 残留
+    let write_result: Result<(), String> = async {
+        let mut file = sftp
+            .create(&temp_path)
+            .await
+            .map_err(|e| format!("创建文件失败: {e}"))?;
+        file.write_all(content.as_bytes())
+            .await
+            .map_err(|e| format!("写入失败: {e}"))?;
+        file.flush()
+            .await
+            .map_err(|e| format!("刷新文件失败: {e}"))?;
+        file.shutdown()
+            .await
+            .map_err(|e| format!("关闭远程文件失败: {e}"))?;
+        sftp.set_metadata(
+            &temp_path,
+            russh_sftp::protocol::FileAttributes {
+                permissions: metadata.permissions,
+                ..russh_sftp::protocol::FileAttributes::default()
+            },
+        )
         .await
-        .map_err(|e| format!("创建文件失败: {e}"))?;
-    file.write_all(content.as_bytes())
-        .await
-        .map_err(|e| format!("写入失败: {e}"))?;
-    file.flush()
-        .await
-        .map_err(|e| format!("刷新文件失败: {e}"))?;
-    file.shutdown()
-        .await
-        .map_err(|e| format!("关闭远程文件失败: {e}"))?;
-    sftp.set_metadata(
-        &temp_path,
-        russh_sftp::protocol::FileAttributes {
-            permissions: metadata.permissions,
-            ..russh_sftp::protocol::FileAttributes::default()
-        },
-    )
-    .await
-    .map_err(|e| format!("恢复远程文件属性失败: {e}"))?;
+        .map_err(|e| format!("恢复远程文件属性失败: {e}"))?;
+        Ok(())
+    }
+    .await;
+    if let Err(error) = write_result {
+        let _ = sftp.remove_file(&temp_path).await;
+        return Err(error);
+    }
+    // 替换失败时 replace_remote_file 内部已按需清理/保留临时文件
+    //（恢复旧文件失败的双重失败场景会刻意保留临时文件，作为新内容的唯一副本）
     replace_remote_file(&sftp, &temp_path, &target_path).await?;
     Ok(EditSaveResult {
         ok: true,

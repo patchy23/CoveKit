@@ -112,7 +112,10 @@ pub(crate) fn upsert_profile(
            name = excluded.name, host = excluded.host, port = excluded.port,
            username = excluded.username, auth_method = excluded.auth_method,
            credential_ref = excluded.credential_ref, group_id = excluded.group_id,
-           remark = excluded.remark, last_connected_at = excluded.last_connected_at,
+           remark = excluded.remark,
+           /* 编辑保存可能不带回最近连接时间（serde 缺省字段缺席即 None）：
+              excluded 为 NULL 时保留库里的原值，不能抹掉 */
+           last_connected_at = COALESCE(excluded.last_connected_at, ssh_profiles.last_connected_at),
            updated_at = excluded.updated_at",
         rusqlite::params![
             profile.id,
@@ -139,10 +142,19 @@ pub(crate) fn clear_profiles(conn: &Connection) -> Result<(), String> {
     Ok(())
 }
 
-/// 删除配置（只删配置行；Vault 凭证由用户在凭证库自行管理）
+/// 删除配置并级联清理关联数据（目录书签、隧道配置——两表无外键，不显式删就成孤儿行）；
+/// Vault 凭证由用户在凭证库自行管理，不在此删。
 pub(crate) fn delete_profile(conn: &Connection, id: &str) -> Result<(), String> {
-    conn.execute("DELETE FROM ssh_profiles WHERE id = ?1", [id])
+    // unchecked_transaction：rusqlite 事务 API 要 &mut Connection，本层统一 &Connection，
+    // 用其拿事务句柄保证三删原子（PluginDb 串行化连接访问，无并发嵌套事务）
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM profile_bookmarks WHERE profile_id = ?1", [id])
         .map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM ssh_tunnels WHERE profile_id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+    tx.execute("DELETE FROM ssh_profiles WHERE id = ?1", [id])
+        .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
     Ok(())
 }
 

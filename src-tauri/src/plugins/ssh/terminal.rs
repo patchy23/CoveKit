@@ -45,9 +45,62 @@ pub(crate) struct TerminalHandle {
 /// 终端注册表（State 注入）
 pub struct TerminalState(pub Mutex<HashMap<String, TerminalHandle>>);
 
+/// 增量 UTF-8 解码器：SSH 通道分块不保证字符边界，跨块的多字节字符（中文/emoji）
+/// 若逐块 from_utf8_lossy 会在块边界两侧各产生一个 U+FFFD 乱码，且不可恢复。
+/// 尾部不完整字节留存待下一块补齐；真正的无效字节输出替换符并丢弃（防缓冲区卡死）。
+#[derive(Default)]
+struct Utf8ChunkDecoder {
+    /// 暂存的尾部不完整字节（正常至多 3 字节）
+    pending: Vec<u8>,
+}
+
+impl Utf8ChunkDecoder {
+    /// 喂入一块通道数据，返回当前可完整解码的文本（可能为空串——等下一块补齐）
+    fn feed(&mut self, data: &[u8]) -> String {
+        self.pending.extend_from_slice(data);
+        let mut out = String::new();
+        loop {
+            match std::str::from_utf8(&self.pending) {
+                Ok(s) => {
+                    out.push_str(s);
+                    self.pending.clear();
+                    break;
+                }
+                Err(e) => {
+                    let valid = e.valid_up_to();
+                    // valid_up_to 之前必为合法 UTF-8（str::from_utf8 契约）
+                    if let Ok(s) = std::str::from_utf8(&self.pending[..valid]) {
+                        out.push_str(s);
+                    }
+                    match e.error_len() {
+                        // 真无效字节：替换符 + 丢弃后继续解码剩余部分
+                        Some(len) => {
+                            out.push('\u{FFFD}');
+                            self.pending.drain(..valid + len);
+                        }
+                        // 尾部不完整的多字节字符：留存等下一块
+                        None => {
+                            self.pending.drain(..valid);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// 收尾冲刷残留字节（正常连接不会有；坏字节按替换符输出，不丢失尾部文本）
+    fn finish(&mut self) -> String {
+        let tail = String::from_utf8_lossy(&self.pending).into_owned();
+        self.pending.clear();
+        tail
+    }
+}
+
 /// 启动终端通道后台任务（terminal.rs 与 docker.rs 共用）：
 /// select 双路——取消信号 + 前端指令（write/resize/close）与通道输出（wait → emit terminal-data）；
-/// 任务退出时从 TerminalState 注册表移除并标记非活跃。
+/// 任务退出时从 TerminalState 注册表移除并推送 terminal-closed。
 pub(crate) fn spawn_channel_task(
     app: AppHandle,
     terminal_id: String,
@@ -58,6 +111,7 @@ pub(crate) fn spawn_channel_task(
     log: SharedLog,
 ) {
     tauri::async_runtime::spawn(async move {
+        let mut decoder = Utf8ChunkDecoder::default();
         loop {
             tokio::select! {
                 changed = cancel_rx.changed() => {
@@ -79,13 +133,17 @@ pub(crate) fn spawn_channel_task(
                 msg = channel.wait() => {
                     match msg {
                         Some(ChannelMsg::Data { data }) => {
-                            let payload = TerminalData {
-                                terminal_id: terminal_id.clone(),
-                                connection_id: connection_id.clone(),
-                                data: String::from_utf8_lossy(&data).to_string(),
-                                time: now_ms(),
-                            };
-                            let _ = app.emit("ssh://terminal-data", &payload);
+                            let text = decoder.feed(&data);
+                            // 文本为空说明整块都是某字符的前半截，等下一块即可，不发空事件
+                            if !text.is_empty() {
+                                let payload = TerminalData {
+                                    terminal_id: terminal_id.clone(),
+                                    connection_id: connection_id.clone(),
+                                    data: text,
+                                    time: now_ms(),
+                                };
+                                let _ = app.emit("ssh://terminal-data", &payload);
+                            }
                             // 旁路写盘；失败则停录并通知前端（不静默）
                             if let Err(message) = log::append(&log, &data).await {
                                 log::finish(&log).await;
@@ -101,7 +159,20 @@ pub(crate) fn spawn_channel_task(
                 }
             }
         }
-        // 任务退出：先收尾日志（flush 落盘），再标记非活跃并从注册表移除
+        // 收尾：冲刷解码器残留（连接中断时尾部不完整字节按替换符输出，不丢文本）
+        let tail = decoder.finish();
+        if !tail.is_empty() {
+            let _ = app.emit(
+                "ssh://terminal-data",
+                &TerminalData {
+                    terminal_id: terminal_id.clone(),
+                    connection_id: connection_id.clone(),
+                    data: tail,
+                    time: now_ms(),
+                },
+            );
+        }
+        // 任务退出：先收尾日志（flush 落盘），再从注册表移除
         log::finish(&log).await;
         if let Ok(mut m) = app.state::<TerminalState>().0.lock() {
             m.remove(&terminal_id);
@@ -129,24 +200,24 @@ pub async fn ssh_terminal_open(
     if cols == 0 || rows == 0 || cols > u16::MAX as u32 || rows > u16::MAX as u32 {
         return Err("终端行列数必须在 1..=65535 范围内".into());
     }
-    // 从连接注册表取会话
-    let handle = ssh_state
+    // 从连接注册表取会话（Handle 是 Clone，取出供通道开启，不持锁跨 await）
+    let session = ssh_state
         .0
         .lock()
         .map_err(|e| e.to_string())?
         .get(&connection_id)
-        .map(|h| {
-            // Handle 是 Clone，取出供通道开启（不持锁跨 await）
-            (h.session.clone(), h.host.clone(), h.profile_id.clone())
-        })
+        .map(|h| h.session.clone())
         .ok_or("连接不存在或已断开")?;
-    let (session, _host, _profile_id) = handle;
 
     // 开通道 + PTY + shell（xterm 终端类型）
-    let channel = session
-        .channel_open_session()
-        .await
-        .map_err(|e| format!("打开通道失败: {e}"))?;
+    let channel = match session.channel_open_session().await {
+        Ok(channel) => channel,
+        Err(e) => {
+            // 通道打不开说明传输层已死（被动断线检测点）
+            crate::plugins::ssh::conn::mark_session_closed(ssh_state.inner(), &connection_id);
+            return Err(format!("打开通道失败: {e}"));
+        }
+    };
     channel
         .request_pty(false, "xterm", cols, rows, 0, 0, &[])
         .await
@@ -287,4 +358,40 @@ pub async fn ssh_terminal_list(
             active: h.active,
         })
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Utf8ChunkDecoder;
+
+    #[test]
+    fn 跨块的多字节字符不乱码() {
+        // 「中」= E4 B8 AD；按 2+1 字节拆块，逐块 lossy 解码必出两个 U+FFFD
+        let bytes = "a中b".as_bytes();
+        let cut = 3; // 'a' + 中的前两字节
+        let mut decoder = Utf8ChunkDecoder::default();
+        let first = decoder.feed(&bytes[..cut]);
+        let second = decoder.feed(&bytes[cut..]);
+        assert_eq!(first, "a");
+        assert_eq!(second, "中b");
+        assert!(decoder.finish().is_empty());
+    }
+
+    #[test]
+    fn 无效字节输出替换符且不卡死() {
+        let mut decoder = Utf8ChunkDecoder::default();
+        // 0xFF 是非法 UTF-8 起始字节：输出替换符并丢弃，后续文本正常
+        let out = decoder.feed(&[0x68, 0xFF, 0x69]);
+        assert_eq!(out, "h\u{FFFD}i");
+        assert!(decoder.finish().is_empty());
+    }
+
+    #[test]
+    fn 收尾冲刷不完整尾部() {
+        let mut decoder = Utf8ChunkDecoder::default();
+        let bytes = "中".as_bytes();
+        assert_eq!(decoder.feed(&bytes[..2]), "");
+        // 连接中断：残留半截字符按替换符输出，不丢也不等
+        assert_eq!(decoder.finish(), "\u{FFFD}");
+    }
 }

@@ -116,19 +116,23 @@ pub async fn ssh_docker_action(
         "remove" => "rm -f",
         _ => return Err(format!("不支持的操作: {action}")),
     };
-    let out = exec_collect(
+    // 成败以退出码为准（exec_collect 对非零退出码返回 Err，错误文案含 stderr 合并输出）。
+    // 成功时 docker 在 stdout 回显容器 ID，那是正常输出不是错误，不能回填 error 字段。
+    match exec_collect(
         &session,
         &format!("docker {action} {}", shell_quote(&container_id)),
     )
-    .await?;
-    Ok(SshActionResult {
-        ok: out.trim().is_empty() || !out.contains("Error"),
-        error: if out.trim().is_empty() {
-            None
-        } else {
-            Some(out.trim().to_string())
-        },
-    })
+    .await
+    {
+        Ok(_) => Ok(SshActionResult {
+            ok: true,
+            error: None,
+        }),
+        Err(e) => Ok(SshActionResult {
+            ok: false,
+            error: Some(e),
+        }),
+    }
 }
 
 /// 容器日志（最近 N 行）
@@ -174,10 +178,14 @@ pub async fn ssh_docker_exec(
         "/bin/bash" => "/bin/bash",
         _ => return Err("容器终端仅支持 /bin/sh 或 /bin/bash".into()),
     };
-    let channel = session
-        .channel_open_session()
-        .await
-        .map_err(|e| format!("打开通道失败: {e}"))?;
+    let channel = match session.channel_open_session().await {
+        Ok(channel) => channel,
+        Err(e) => {
+            // 通道打不开说明传输层已死（被动断线检测点）
+            crate::plugins::ssh::conn::mark_session_closed(ssh_state.inner(), &connection_id);
+            return Err(format!("打开通道失败: {e}"));
+        }
+    };
     channel
         .request_pty(false, "xterm", cols, rows, 0, 0, &[])
         .await

@@ -1,12 +1,13 @@
 //! SSH 远程管理插件 · 门面
 //! 命令函数（薄层）与插件装配在此；实现按能力拆分：
-//! - models.rs：serde 数据结构（与前端 plugins/ssh/contracts.ts 同步）
-//! - conn.rs：连接会话注册表（russh 客户端 + 分阶段事件 + 主机密钥人工确认）
+//! - models/：serde 数据结构（与前端 plugins/ssh/contracts.ts 同步）
+//! - conn/：连接会话注册表（russh 客户端 + 分阶段事件 + 主机密钥人工确认 + 重连）
 //! - host_keys.rs：已知主机解析/删除/替换（私有 known_hosts 文件）
-//! - store.rs：服务器配置与分组持久化（ssh.db，PluginDb 骨架）
+//! - store/：服务器配置/分组/书签/隧道持久化（ssh.db，PluginDb 骨架）
 //! - terminal.rs：PTY 终端通道（事件推送）
+//! - sftp/：文件浏览/操作/传输（长驻会话 + 独立传输通道 + 协作取消）
 //! - log.rs：终端会话日志（ANSI 剥离后旁路落盘）
-//! - file.rs / edit.rs / monitor.rs / system_info.rs / service.rs / process.rs / docker.rs：其余能力
+//! - edit.rs / monitor.rs / system_info.rs / service.rs / process.rs / docker.rs / compose.rs / tunnel/：其余能力
 
 mod close_hooks; // 关闭清理钩子（登记到 framework/lifecycle，退出时由框架协调调用）
 pub(crate) mod compose;

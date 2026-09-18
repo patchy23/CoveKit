@@ -113,7 +113,17 @@ impl client::Handler for SshHandler {
     ) -> Result<bool, Self::Error> {
         let fingerprint = host_keys::fingerprint_of(server_public_key);
         let algorithm = server_public_key.algorithm().as_str().to_string();
-        let saved = host_keys::entries_for(&self.known_hosts_path, &self.host, self.port)?;
+        // host_keys 是同步 std::fs 读写，在 async 回调里会阻塞执行器线程，转交阻塞线程池
+        let saved = {
+            let (path, host, port) = (
+                self.known_hosts_path.clone(),
+                self.host.clone(),
+                self.port,
+            );
+            tokio::task::spawn_blocking(move || host_keys::entries_for(&path, &host, port))
+                .await
+                .map_err(|e| format!("读取 known_hosts 任务失败: {e}"))??
+        };
         if saved.iter().any(|e| e.fingerprint == fingerprint) {
             return Ok(true);
         }
@@ -141,12 +151,19 @@ impl client::Handler for SshHandler {
         };
         match (kind, decision) {
             ("unknown", HostKeyDecision::TrustSave) => {
-                if let Err(e) = host_keys::learn(
-                    &self.known_hosts_path,
-                    &self.host,
-                    self.port,
-                    server_public_key,
-                ) {
+                let learn_result = {
+                    let (path, host, port, key) = (
+                        self.known_hosts_path.clone(),
+                        self.host.clone(),
+                        self.port,
+                        server_public_key.clone(),
+                    );
+                    tokio::task::spawn_blocking(move || host_keys::learn(&path, &host, port, &key))
+                        .await
+                        .map_err(|e| format!("写入 known_hosts 任务失败: {e}"))
+                        .and_then(|r| r)
+                };
+                if let Err(e) = learn_result {
                     self.record_failure(HOST_KEY_STORE_FAILED, "主机密钥保存失败", e.clone());
                     return Err(e.into());
                 }
@@ -155,12 +172,21 @@ impl client::Handler for SshHandler {
             ("unknown", HostKeyDecision::TrustOnce) => Ok(true),
             ("mismatch", HostKeyDecision::TrustOnce) => Ok(true),
             ("mismatch", HostKeyDecision::Replace) => {
-                if let Err(e) = host_keys::replace_entries(
-                    &self.known_hosts_path,
-                    &self.host,
-                    self.port,
-                    server_public_key,
-                ) {
+                let replace_result = {
+                    let (path, host, port, key) = (
+                        self.known_hosts_path.clone(),
+                        self.host.clone(),
+                        self.port,
+                        server_public_key.clone(),
+                    );
+                    tokio::task::spawn_blocking(move || {
+                        host_keys::replace_entries(&path, &host, port, &key)
+                    })
+                    .await
+                    .map_err(|e| format!("写入 known_hosts 任务失败: {e}"))
+                    .and_then(|r| r)
+                };
+                if let Err(e) = replace_result {
                     self.record_failure(HOST_KEY_STORE_FAILED, "主机密钥替换失败", e.clone());
                     return Err(e.into());
                 }

@@ -10,7 +10,7 @@ use crate::plugins::ssh::conn::handler::SshHandler;
 use crate::plugins::ssh::models::{AuthMethod, SshConnectError};
 use crate::plugins::ssh::tunnel::{new_forward_targets, ForwardTargets};
 
-use super::{connect_error, emit_stage, CONNECT_PHASE_TIMEOUT};
+use super::{connect_error, emit_stage, CONNECT_PHASE_TIMEOUT, HOST_KEY_WAIT};
 
 /// 认证并建立连接（ssh_connect / ssh_reconnect 共用）。
 /// 阶段：resolve → tcp → handshake（含 verify 回调）→ auth；每阶段推送事件。
@@ -131,9 +131,26 @@ pub(crate) async fn open_session(
         forward_targets: forward_targets.clone(),
     };
     emit_stage(app, request_id, &profile.id, "handshake", "start", None);
-    let mut session = match client::connect_stream(config, stream, handler).await {
-        Ok(session) => session,
-        Err(e) => {
+    // 握手总超时：协议 stall 兜底。预算 = 主机密钥人工确认等待（HOST_KEY_WAIT）+ 协议余量，
+    // 因为确认弹窗等待发生在握手回调内部。
+    // 注意：超时丢弃整个连接 future 时，主机密钥应答注册表中的挂起项随之失去接收端，
+    // 前端应答会收到「确认请求不存在或已超时」，不会产生可用会话。
+    let handshake_timeout = HOST_KEY_WAIT + CONNECT_PHASE_TIMEOUT;
+    let mut session = match tokio::time::timeout(
+        handshake_timeout,
+        client::connect_stream(config, stream, handler),
+    )
+    .await
+    {
+        Err(_) => {
+            return Err(connect_error(
+                "HANDSHAKE_TIMEOUT",
+                format!("SSH 握手超时（{} 秒）", handshake_timeout.as_secs()),
+                None,
+            ))
+        }
+        Ok(Ok(session)) => session,
+        Ok(Err(e)) => {
             // 主机密钥阶段的失败已在槽里带结构化信息（更精确），其余按协议错误分类
             let structured = resolved
                 .verify
@@ -160,16 +177,26 @@ pub(crate) async fn open_session(
                 .password
                 .as_deref()
                 .ok_or_else(|| connect_error("MISSING_CREDENTIAL", "缺少密码".into(), None))?;
-            session
-                .authenticate_password(&profile.username, pw)
-                .await
-                .map_err(|e| {
+            // 认证阶段同样要兜底超时：服务端收了请求不应答会无限挂起
+            tokio::time::timeout(
+                CONNECT_PHASE_TIMEOUT,
+                session.authenticate_password(&profile.username, pw),
+            )
+            .await
+            .map_err(|_| {
+                connect_error(
+                    "AUTH_TIMEOUT",
+                    format!("认证超时（{} 秒）", CONNECT_PHASE_TIMEOUT.as_secs()),
+                    None,
+                )
+            })?
+            .map_err(|e| {
                     connect_error(
                         "AUTH_FAILED",
                         format!("认证阶段失败：{}", profile.username),
                         Some(e.to_string()),
                     )
-                })?
+            })?
         }
         AuthMethod::PrivateKey | AuthMethod::PrivateKeyWithPassphrase => {
             let key_text = resolved
@@ -196,19 +223,28 @@ pub(crate) async fn open_session(
                 }
                 _ => key,
             };
-            session
-                .authenticate_publickey(
+            tokio::time::timeout(
+                CONNECT_PHASE_TIMEOUT,
+                session.authenticate_publickey(
                     &profile.username,
                     russh::keys::PrivateKeyWithHashAlg::new(Arc::new(key), None),
+                ),
+            )
+            .await
+            .map_err(|_| {
+                connect_error(
+                    "AUTH_TIMEOUT",
+                    format!("认证超时（{} 秒）", CONNECT_PHASE_TIMEOUT.as_secs()),
+                    None,
                 )
-                .await
-                .map_err(|e| {
+            })?
+            .map_err(|e| {
                     connect_error(
                         "AUTH_FAILED",
                         format!("认证阶段失败：{}", profile.username),
                         Some(e.to_string()),
                     )
-                })?
+            })?
         }
     };
 

@@ -1,6 +1,6 @@
 //! SSH 插件 · 文件浏览（远程目录列表 / 本地目录列表）
-//! 每次操作临时开 SFTP 通道（从连接会话），无需注册表；
-//! 上传/下载为后台任务分块传输，进度经事件 ssh://transfer-progress 推送。
+//! 远程浏览走 conn::get_sftp_session 长驻会话（不逐操作新建通道）；
+//! 目录项一律过 util::check_entry_name（防恶意服务端返回 `..` 等越界名字）。
 
 use std::path::Path;
 use tauri::State;

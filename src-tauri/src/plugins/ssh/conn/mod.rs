@@ -168,8 +168,25 @@ pub(crate) fn get_session(
         .lock()
         .map_err(|e| e.to_string())?
         .get(connection_id)
+        // 已标记断开的会话不再放出新操作（避免在死连接上堆积失败调用）
+        .filter(|h| h.open)
         .map(|h| h.session.clone())
         .ok_or_else(|| "连接不存在或已断开".to_string())
+}
+
+/// 标记会话已断开（被动断线检测）。
+/// russh 0.62 的 Handler 没有断链回调，NAT 掐线/服务端宕机只能在操作失败路径发现：
+/// 通道打开失败的调用方调用本函数翻转 open，侧栏轮询 ssh_connections 随即拿到 Disconnected。
+/// SFTP 长驻会话随传输层一并死亡，同时失效槽位，防后续操作撞上僵死会话。
+pub(crate) fn mark_session_closed(state: &SshState, connection_id: &str) {
+    if let Ok(mut map) = state.0.lock() {
+        if let Some(h) = map.get_mut(connection_id) {
+            h.open = false;
+            if let Ok(mut slot) = h.sftp.lock() {
+                *slot = None;
+            }
+        }
+    }
 }
 
 /// 取该连接的 SFTP 长驻会话（惰性创建，之后复用；并发首访时后者覆盖前者，
@@ -192,10 +209,14 @@ pub(crate) async fn get_sftp_session(
     }
     // 缓存未命中：新建 channel + SFTP 子系统握手
     let session = get_session(state, connection_id)?;
-    let channel = session
-        .channel_open_session()
-        .await
-        .map_err(|e| format!("打开通道失败: {e}"))?;
+    let channel = match session.channel_open_session().await {
+        Ok(channel) => channel,
+        Err(e) => {
+            // 通道打不开说明传输层已死（被动断线检测点）
+            mark_session_closed(state.inner(), connection_id);
+            return Err(format!("打开通道失败: {e}"));
+        }
+    };
     channel
         .request_subsystem(false, "sftp")
         .await
@@ -234,6 +255,18 @@ pub(crate) async fn exec_collect(
     session: &client::Handle<SshHandler>,
     command: &str,
 ) -> Result<String, String> {
+    // 整体兜底超时：仅靠 keepalive 时协议层 stall 会无限挂起（轮询类命令全是快路径）
+    const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
+    tokio::time::timeout(EXEC_TIMEOUT, exec_collect_inner(session, command))
+        .await
+        .map_err(|_| format!("命令执行超时（{} 秒）", EXEC_TIMEOUT.as_secs()))?
+}
+
+/// exec_collect 本体（超时由外层包裹）
+async fn exec_collect_inner(
+    session: &client::Handle<SshHandler>,
+    command: &str,
+) -> Result<String, String> {
     const MAX_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
     let mut channel = session
         .channel_open_session()
@@ -245,6 +278,8 @@ pub(crate) async fn exec_collect(
         .map_err(|e| format!("执行失败: {e}"))?;
     let mut out = String::new();
     let mut exit_status = None;
+    // 通道是否由服务端正常关闭（区别于传输层中断导致的 wait() 返回 None）
+    let mut channel_closed = false;
     while let Some(msg) = channel.wait().await {
         match msg {
             ChannelMsg::Data { data } => {
@@ -262,12 +297,19 @@ pub(crate) async fn exec_collect(
             ChannelMsg::ExitStatus {
                 exit_status: status,
             } => exit_status = Some(status),
-            ChannelMsg::Eof | ChannelMsg::Close => break,
+            ChannelMsg::Eof | ChannelMsg::Close => {
+                channel_closed = true;
+                break;
+            }
             _ => {}
         }
     }
     match exit_status {
-        Some(0) | None => Ok(out),
+        Some(0) => Ok(out),
+        // 少数服务端不发 exit-status 但正常关闭通道：兼容放行
+        None if channel_closed => Ok(out),
+        // 传输层中断：输出不完整，不能伪装成功（监控/Docker 会拿半截数据当完整结果解析）
+        None => Err("连接中断，命令未完整执行，请检查连接后重试".into()),
         Some(status) => Err(if out.trim().is_empty() {
             format!("远程命令失败（退出码 {status}）")
         } else {

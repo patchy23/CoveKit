@@ -140,25 +140,49 @@ pub(crate) async fn replace_remote_file(
 }
 
 /// 将已完整写入的本地临时文件替换为下载目标；失败时恢复旧文件。
-pub(crate) fn replace_local_file(temp_path: &str, target_path: &str) -> Result<(), String> {
-    if !std::path::Path::new(target_path).exists() {
-        return std::fs::rename(temp_path, target_path)
+/// async 版本（tokio::fs）：调用方都在 async 传输任务里，同步 std::fs 会卡 tokio worker。
+pub(crate) async fn replace_local_file(temp_path: &str, target_path: &str) -> Result<(), String> {
+    if !tokio::fs::try_exists(target_path)
+        .await
+        .map_err(|e| format!("检查下载目标失败: {e}"))?
+    {
+        return tokio::fs::rename(temp_path, target_path)
+            .await
             .map_err(|e| format!("提交下载文件失败: {e}"));
     }
     let backup_path = format!("{target_path}.covekit-backup-{}", resource_id("file"));
-    std::fs::rename(target_path, &backup_path).map_err(|e| format!("备份本地原文件失败: {e}"))?;
-    if let Err(error) = std::fs::rename(temp_path, target_path) {
-        let restore_error = std::fs::rename(&backup_path, target_path).err();
+    tokio::fs::rename(target_path, &backup_path)
+        .await
+        .map_err(|e| format!("备份本地原文件失败: {e}"))?;
+    if let Err(error) = tokio::fs::rename(temp_path, target_path).await {
+        let restore_error = tokio::fs::rename(&backup_path, target_path).await.err();
         if restore_error.is_none() {
-            let _ = std::fs::remove_file(temp_path);
+            let _ = tokio::fs::remove_file(temp_path).await;
         }
         return Err(match restore_error {
             Some(restore) => format!("提交下载文件失败: {error}；恢复原文件也失败: {restore}"),
             None => format!("提交下载文件失败，已恢复原文件: {error}"),
         });
     }
-    if let Err(error) = std::fs::remove_file(&backup_path) {
+    if let Err(error) = tokio::fs::remove_file(&backup_path).await {
         eprintln!("[ssh] 下载成功，但清理本地备份失败: {error}");
+    }
+    Ok(())
+}
+
+/// 校验 SFTP 目录项文件名安全（防恶意/异常服务端路径穿越）。
+/// SFTP 协议不保证文件名是单段：返回 `..` 或含 `/`、`\` 的名字会让递归下载/删除/chmod
+/// 越出用户选择的目标目录（下载可写本地任意位置，删除可删掉目标目录的父级）。
+/// 违规即中止整个操作——正常服务端永远不会产生这种名字，出现即是安全信号。
+/// 错误文案不回显原始文件名（可含控制字符，防终端转义注入）。
+pub(crate) fn check_entry_name(name: &str) -> Result<(), String> {
+    if name.is_empty()
+        || name == "."
+        || name == ".."
+        || name.contains('/')
+        || name.contains('\\')
+    {
+        return Err("服务端返回了非法文件名（含路径分隔符或 ..），已中止操作".into());
     }
     Ok(())
 }
@@ -335,5 +359,14 @@ mod policy_tests {
         // 递归在系统目录内需确认风险
         assert!(check_chmod_allowed("/var/www", true, false).is_err());
         assert!(check_chmod_allowed("/var/www", true, true).is_ok());
+    }
+
+    #[test]
+    fn 目录项文件名拦截路径穿越() {
+        assert!(check_entry_name("nginx.conf").is_ok());
+        assert!(check_entry_name("中文 文件.txt").is_ok());
+        for bad in ["", ".", "..", "../x", "a/b", "a\\b", "..\\win"] {
+            assert!(check_entry_name(bad).is_err(), "应拦截: {bad:?}");
+        }
     }
 }

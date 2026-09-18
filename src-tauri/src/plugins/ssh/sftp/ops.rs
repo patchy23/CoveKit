@@ -1,7 +1,6 @@
-//! SSH 插件 · 文件传输与操作（上传/下载/递归/删除/重命名/mkdir + 协作取消）
-
-//! 每次操作临时开 SFTP 通道（从连接会话），无需注册表；
-//! 上传/下载为后台任务分块传输，进度经事件 ssh://transfer-progress 推送。
+//! SSH 插件 · 远程文件操作（删除/重命名/mkdir/chmod/新建 + 递归展开 + 传输取消注册表）
+//! 浏览与操作走 conn::get_sftp_session 长驻会话（不逐操作新建通道）；
+//! 递归展开的服务端目录项一律过 util::check_entry_name（防恶意服务端路径穿越）。
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -11,7 +10,7 @@ use tauri::State;
 use crate::plugins::ssh::conn::{get_sftp_session, SshState};
 use crate::plugins::ssh::models::SshActionResult;
 use crate::plugins::ssh::sftp::util::{
-    check_chmod_allowed, check_delete_allowed, is_dir_mode, LocalUploadEntry,
+    check_chmod_allowed, check_delete_allowed, check_entry_name, is_dir_mode, LocalUploadEntry,
 };
 
 /// 删除远程文件/目录（目录需 recursive 或仅空目录）
@@ -67,6 +66,7 @@ async fn remove_dir_recursive(
 ) -> Result<(), String> {
     let entries = sftp.read_dir(path).await.map_err(|e| e.to_string())?;
     for entry in entries {
+        check_entry_name(&entry.file_name())?;
         let child = if path.ends_with('/') {
             format!("{path}{}", entry.file_name())
         } else {
@@ -213,6 +213,7 @@ pub(crate) async fn collect_remote_entries(
         let remote_entries = sftp.read_dir(&directory).await.map_err(|e| e.to_string())?;
         for entry in remote_entries {
             let name = entry.file_name();
+            check_entry_name(&name)?;
             let child_remote = if directory.ends_with('/') {
                 format!("{directory}{name}")
             } else {
@@ -252,14 +253,17 @@ pub async fn ssh_file_create(
     remote_path: String,
 ) -> Result<SshActionResult, String> {
     let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
-    // 先 stat 探测存在性（存在即拒绝，不用 truncate 语义防覆盖）
-    if sftp.metadata(&remote_path).await.is_ok() {
-        return Ok(SshActionResult {
-            ok: false,
-            error: Some("目标已存在".into()),
-        });
-    }
-    let result = match sftp.create(&remote_path).await {
+    // CREATE|EXCLUDE = 原子 create_new 语义：已存在由服务端直接报错，
+    // 替代「先 stat 探测再 create」的 TOCTOU 窗口（探测失败被误当不存在会 truncate 覆盖已有文件）
+    let result = match sftp
+        .open_with_flags(
+            &remote_path,
+            russh_sftp::protocol::OpenFlags::CREATE
+                | russh_sftp::protocol::OpenFlags::EXCLUDE
+                | russh_sftp::protocol::OpenFlags::WRITE,
+        )
+        .await
+    {
         Ok(file) => file.close().await.map_err(|e| e.to_string()),
         Err(e) => Err(e.to_string()),
     };
@@ -337,6 +341,7 @@ async fn chmod_recursive(
     if meta.permissions.map(is_dir_mode).unwrap_or(false) {
         let entries = sftp.read_dir(path).await.map_err(|e| e.to_string())?;
         for entry in entries {
+            check_entry_name(&entry.file_name())?;
             let child = if path.ends_with('/') {
                 format!("{path}{}", entry.file_name())
             } else {

@@ -202,8 +202,11 @@ pub async fn ssh_connect(
         connected_at: Some(now_ms()),
     };
     resume_for_profile(&app, profile_state.inner(), &profile.id, &session_id);
-    app.emit("ssh://connection-status", &conn)
-        .map_err(|e| e.to_string())?;
+    // 事件推送失败（如窗口已关闭）只记诊断日志：会话已注册、连接可用，
+    // 返回 Err 会让前端误判连接失败，且 session_id 未回传形成无法断开的幽灵会话
+    if let Err(e) = app.emit("ssh://connection-status", &conn) {
+        eprintln!("[ssh] 连接状态事件推送失败（连接本身已成功）: {e}");
+    }
     Ok(SshConnectOutcome {
         ok: true,
         connection: Some(conn),

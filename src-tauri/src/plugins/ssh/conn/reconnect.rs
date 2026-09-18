@@ -71,7 +71,8 @@ pub async fn ssh_disconnect(
             connected_at: None,
         };
         app.emit("ssh://connection-status", &conn)
-            .map_err(|e| e.to_string())?;
+            // 断开动作已完成；事件推送失败只记诊断日志，不把已断开误报为失败
+            .unwrap_or_else(|e| eprintln!("[ssh] 断开事件推送失败: {e}"));
     }
     Ok(SshActionResult {
         ok: true,
@@ -208,8 +209,10 @@ pub async fn ssh_reconnect(
         connected_at: Some(connected_at),
     };
     resume_for_profile(&app, profile_state.inner(), &profile.id, &new_id);
-    app.emit("ssh://connection-status", &conn)
-        .map_err(|e| e.to_string())?;
+    // 与 ssh_connect 同理：推送失败只记日志，新会话已注册，不能误判失败产生幽灵会话
+    if let Err(e) = app.emit("ssh://connection-status", &conn) {
+        eprintln!("[ssh] 重连状态事件推送失败（连接本身已成功）: {e}");
+    }
     Ok(SshConnectOutcome {
         ok: true,
         connection: Some(conn),

@@ -160,6 +160,51 @@ mod tests {
             AuthMethod::PrivateKeyWithPassphrase
         );
     }
+
+    /// 删除配置必须级联清掉书签与隧道配置行，否则产生孤儿行
+    #[test]
+    fn delete_profile_cascades_bookmarks_and_tunnels() {
+        let conn = open_memory();
+        upsert_profile(&conn, &profile("p1", None), 100).unwrap();
+        conn.execute(
+            "INSERT INTO profile_bookmarks (profile_id, path, name) VALUES ('p1', '/var/log', '日志')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO ssh_tunnels (id, profile_id, name, tunnel_type, listen_host, listen_port, target_host, target_port, auto_start, created_at)
+             VALUES ('t1', 'p1', '隧道1', 'local', '127.0.0.1', 8080, '127.0.0.1', 80, 0, 100)",
+            [],
+        )
+        .unwrap();
+        delete_profile(&conn, "p1").unwrap();
+        let orphans: i64 = conn
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM profile_bookmarks WHERE profile_id = 'p1')
+                        + (SELECT COUNT(*) FROM ssh_tunnels WHERE profile_id = 'p1')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(orphans, 0);
+        assert!(get_profile(&conn, "p1").is_err());
+    }
+
+    /// 编辑保存不带回 last_connected_at（None）时必须保留库里的原值
+    #[test]
+    fn upsert_profile_preserves_last_connected_at() {
+        let conn = open_memory();
+        let mut p = profile("p1", None);
+        p.last_connected_at = Some(1_758_000_000_000);
+        upsert_profile(&conn, &p, 100).unwrap();
+        // 模拟编辑保存：字段变更，但没带回 last_connected_at
+        p.last_connected_at = None;
+        p.remark = Some("改过备注".into());
+        upsert_profile(&conn, &p, 200).unwrap();
+        let saved = get_profile(&conn, "p1").unwrap();
+        assert_eq!(saved.last_connected_at, Some(1_758_000_000_000));
+        assert_eq!(saved.remark.as_deref(), Some("改过备注"));
+    }
 }
 
 /* ── 隧道配置 ── */
