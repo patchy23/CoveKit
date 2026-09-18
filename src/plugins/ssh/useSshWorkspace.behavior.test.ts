@@ -349,6 +349,69 @@ describe('SSH 工作区 · 服务器配置与分组', () => {
     expect(toastText()).toContain('保存失败')
   })
 
+  it('手工密码不入凭证库也可连接，重连继续传递内存认证信息', async () => {
+    const { api } = mountWorkspace()
+    await settle()
+    const manual = { ...profile('manual', '手工服务器'), credentialRef: undefined }
+    const credentials = { password: ' fixture password ' }
+    await api.saveProfile(manual, credentials, false)
+    expect(env.commands.sshProfileSave).toHaveBeenCalledWith(
+      expect.objectContaining({ saveCredential: false })
+    )
+    const connected = await api.openConnection(manual.id)
+    expect(env.commands.sshConnect).toHaveBeenCalledWith({
+      profileId: manual.id,
+      overrides: credentials,
+    })
+    expect(api.credentialRequestProfile.value).toBeNull()
+    connected!.connection.status = 'disconnected'
+    await api.reconnectWorkspace(connected!.id)
+    expect(env.commands.sshReconnect).toHaveBeenCalledWith('conn-manual', credentials)
+    expect(api.profiles.value[0]).not.toHaveProperty('password')
+    expect(api.profiles.value[0].credentialRef).toBeUndefined()
+  })
+
+  it('无凭证服务器先请求输入，取消不连接，重新打开工具后不复用密码', async () => {
+    const manual = { ...profile('manual', '手工服务器'), credentialRef: undefined }
+    env.commands.sshProfileList.mockResolvedValue([manual])
+    const first = mountWorkspace()
+    await settle()
+    const canceled = first.api.openConnection(manual.id)
+    expect(first.api.credentialRequestProfile.value?.id).toBe(manual.id)
+    first.api.respondCredentials()
+    expect(await canceled).toBeUndefined()
+    expect(env.commands.sshConnect).not.toHaveBeenCalled()
+    const connecting = first.api.openConnection(manual.id)
+    first.api.respondCredentials({ password: 'fixture' })
+    await connecting
+    first.unmount()
+    const second = mountWorkspace()
+    await settle()
+    const pending = second.api.openConnection(manual.id)
+    expect(second.api.credentialRequestProfile.value?.id).toBe(manual.id)
+    second.unmount()
+    expect(await pending).toBeUndefined()
+  })
+
+  it('手工认证失败后再次连接允许重新输入', async () => {
+    const manual = { ...profile('manual', '手工服务器'), credentialRef: undefined }
+    env.commands.sshProfileList.mockResolvedValue([manual])
+    env.commands.sshConnect.mockResolvedValue({
+      ok: false,
+      requestId: 'failed',
+      error: { code: 'AUTH_FAILED', message: '认证失败' },
+    })
+    const { api } = mountWorkspace()
+    await settle()
+    const first = api.openConnection(manual.id)
+    api.respondCredentials({ password: 'wrong-fixture' })
+    await first
+    const second = api.openConnection(manual.id)
+    expect(api.credentialRequestProfile.value?.id).toBe(manual.id)
+    api.respondCredentials()
+    await second
+  })
+
   it('新增服务器未提供完整凭证：拒绝提交且不发 IPC', async () => {
     const { api } = mountWorkspace()
     await settle()

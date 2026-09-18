@@ -105,7 +105,7 @@ pub(crate) fn resolve_credentials(
             connect_error(
                 "MISSING_CREDENTIAL",
                 format!(
-                    "服务器「{}」尚未保存凭证：请编辑服务器保存凭证后连接",
+                    "服务器「{}」缺少认证信息：请输入密码或私钥，也可选择已保存的凭证",
                     profile.name
                 ),
                 None,

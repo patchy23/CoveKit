@@ -3,6 +3,7 @@
 import { computed, defineAsyncComponent, h, ref, watch, type Component } from 'vue'
 import ServerList from './profiles/ServerList.vue'
 import ServerForm from './profiles/ServerForm.vue'
+import ConnectionCredentialsDialog from './connection/ConnectionCredentialsDialog.vue'
 import HostKeyDialog from './connection/HostKeyDialog.vue'
 import KnownHostsDialog from './connection/KnownHostsDialog.vue'
 import {
@@ -339,6 +340,13 @@ watch(
       @close="connectionMenu = null"
     />
 
+    <ConnectionCredentialsDialog
+      v-if="workspace.credentialRequestProfile.value"
+      :key="workspace.credentialRequestProfile.value.id"
+      :profile="workspace.credentialRequestProfile.value"
+      @confirm="workspace.respondCredentials"
+      @cancel="workspace.respondCredentials()"
+    />
     <ServerForm
       v-if="formOpen"
       :profile="editingProfile"

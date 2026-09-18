@@ -64,7 +64,7 @@ const form = reactive({
 
 /** 认证方式是否处于「凭证」档（UI 层状态；选了凭证后 credentialRef 才有值；须在 watch 之前声明） */
 
-/** 手工凭证是否保存到凭证库（默认保存；取消勾选则凭证仅本次连接使用，不落任何存储） */
+/** 取消保存时只在当前工具实例内存中用于连接和重连。 */
 const saveCredential = ref(true)
 const credentialMode = ref(true)
 
@@ -174,9 +174,9 @@ function submit() {
     'save',
     p,
     {
-      password: form.password.trim() || undefined,
+      password: form.password || undefined,
       privateKey: form.privateKey.trim() || undefined,
-      passphrase: form.passphrase.trim() || undefined,
+      passphrase: form.passphrase || undefined,
     },
     saveCredential.value
   )
@@ -252,11 +252,11 @@ function submit() {
       <UiField v-if="!credentialMode && form.authMethod === 'password'" label="密码">
         <UiInput v-model="form.password" type="password" />
       </UiField>
-      <!-- 手工凭证默认入凭证库；取消勾选则仅本次连接使用（不落任何存储） -->
+      <!-- 未保存的手工认证只保留在当前工具实例内存中 -->
       <UiCheckbox
         v-if="!credentialMode && (form.password || form.privateKey)"
         v-model="saveCredential"
-        label="保存凭证到凭证库（取消勾选则仅本次连接使用）"
+        label="保存凭证到凭证库（取消勾选则关闭 SSH 工具后忘记）"
       />
 
       <UiField v-if="!credentialMode && form.authMethod !== 'password'" label="私钥内容">

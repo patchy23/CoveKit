@@ -31,6 +31,7 @@ export interface SshProfilePorts {
   closeConnectionsOf: (profileId: string) => Promise<void>
   /** 服务器被删除后清掉指向它的选中态（页签不再指向已不存在的配置） */
   forgetActiveProfile: (profileId: string) => void
+  onSaved?: (profile: ServerProfile, credentials: SshProfileCredentials) => void
 }
 
 const NOOP_PORTS: SshProfilePorts = {
@@ -170,6 +171,7 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
         saveCredential: saveCredential && manualCredentialReady,
       })
       const existing = profiles.value.findIndex((item) => item.id === saved.id)
+      ports.onSaved?.(saved, credentials)
       if (existing >= 0) profiles.value[existing] = saved
       else profiles.value.push(saved)
       ui.toast(

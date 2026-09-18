@@ -12,7 +12,12 @@
 import { reactive, ref } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '../ipc'
-import type { ConnectStage, ServerConnection, ServerProfile } from '../contracts'
+import type {
+  ConnectStage,
+  CredentialOverride,
+  ServerConnection,
+  ServerProfile,
+} from '../contracts'
 
 /** 一个连接页签代表一条独立 SSH 连接，并拥有完整的右侧功能区。 */
 export interface SshConnectionWorkspace {
@@ -47,6 +52,9 @@ export interface SshConnectionPorts {
   onConnected: (profileId: string) => void
   /** 组件是否已卸载（生命周期域唯一写入） */
   isDisposed: () => boolean
+  requestCredentials: (profile: ServerProfile) => Promise<CredentialOverride | undefined>
+  getCredentials: (profileId: string) => CredentialOverride | undefined
+  forgetCredentials: (profileId: string) => void
 }
 
 /** 连接页签 id 序号（同一毫秒内连开多个页签也不重复） */
@@ -77,6 +85,10 @@ function stageTextFor(stage: string, status: string): string {
 }
 
 export function useSshConnections(ports: SshConnectionPorts) {
+  function reconnectSession(sessionId: string, profileId: string) {
+    const overrides = ports.getCredentials(profileId)
+    return overrides ? ipc.sshReconnect(sessionId, overrides) : ipc.sshReconnect(sessionId)
+  }
   const ui = useUiStore()
   const connectionWorkspaces = ref<SshConnectionWorkspace[]>([])
   const activeProfileId = ref<string | null>(null)
@@ -114,6 +126,13 @@ export function useSshConnections(ports: SshConnectionPorts) {
   async function openConnection(profileId: string): Promise<SshConnectionWorkspace | undefined> {
     const profile = ports.findProfile(profileId)
     if (!profile) return undefined
+    const overrides = profile.credentialRef ? undefined : await ports.requestCredentials(profile)
+    if (
+      ports.isDisposed() ||
+      ports.findProfile(profileId) !== profile ||
+      (!profile.credentialRef && !overrides)
+    )
+      return undefined
     activeProfileId.value = profileId
     // reactive 包裹：闭包后续对 workspace 的赋值（connected/connectRequest 等）必须触发响应式更新，
     // 否则页签状态点与终端 props 要等下一次任意重渲染才刷新（曾致"开第二个连接第一个才变绿"）
@@ -131,7 +150,9 @@ export function useSshConnections(ports: SshConnectionPorts) {
       lastActivityAt: Date.now(),
     })
     connectionWorkspaces.value.push(workspace)
-    const request = ipc.sshConnect({ profileId }).finally(() => pendingConnections.delete(request))
+    const request = ipc
+      .sshConnect({ profileId, ...(overrides ? { overrides } : {}) })
+      .finally(() => pendingConnections.delete(request))
     pendingConnections.add(request)
     try {
       const outcome = await request
@@ -144,6 +165,17 @@ export function useSshConnections(ports: SshConnectionPorts) {
       if (!outcome.ok || !outcome.connection) {
         removeWorkspace(workspace.id)
         const error = outcome.error
+        if (
+          error &&
+          [
+            'AUTH_FAILED',
+            'KEY_PASSPHRASE_INVALID',
+            'KEY_PARSE_FAILED',
+            'MISSING_CREDENTIAL',
+          ].includes(error.code)
+        ) {
+          ports.forgetCredentials(profileId)
+        }
         ui.toast(error ? `${error.message}（${error.code}）` : '连接失败')
         return undefined
       }
@@ -263,7 +295,7 @@ export function useSshConnections(ports: SshConnectionPorts) {
   /** 执行一次重连：成功则刷新会话并让终端保留缓冲打分隔线；失败继续退避重试 */
   async function attemptReconnect(workspace: SshConnectionWorkspace) {
     try {
-      const outcome = await ipc.sshReconnect(workspace.connection.sessionId)
+      const outcome = await reconnectSession(workspace.connection.sessionId, workspace.profileId)
       if (!connectionWorkspaces.value.includes(workspace)) {
         if (outcome.ok && outcome.connection) await disconnect(outcome.connection)
         return
@@ -307,7 +339,11 @@ export function useSshConnections(ports: SshConnectionPorts) {
    */
   async function reconnectByProfile(workspace: SshConnectionWorkspace): Promise<string | null> {
     try {
-      const outcome = await ipc.sshConnect({ profileId: workspace.profileId })
+      const overrides = ports.getCredentials(workspace.profileId)
+      const outcome = await ipc.sshConnect({
+        profileId: workspace.profileId,
+        ...(overrides ? { overrides } : {}),
+      })
       if (ports.isDisposed() || !connectionWorkspaces.value.includes(workspace)) {
         if (outcome.ok && outcome.connection) await disconnect(outcome.connection)
         return null
@@ -337,7 +373,7 @@ export function useSshConnections(ports: SshConnectionPorts) {
     workspace.stageText = '重新连接…'
     workspace.reconnectAttempt = 0
     try {
-      const outcome = await ipc.sshReconnect(disconnected.sessionId)
+      const outcome = await reconnectSession(disconnected.sessionId, workspace.profileId)
       if (ports.isDisposed() || !connectionWorkspaces.value.includes(workspace)) {
         if (outcome.ok && outcome.connection) await disconnect(outcome.connection)
         return

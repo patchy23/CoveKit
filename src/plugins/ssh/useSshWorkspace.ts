@@ -14,6 +14,7 @@
 import { onMounted } from 'vue'
 import { useHostKeyQueue } from './connection/useHostKeyQueue'
 import { useSshConnections } from './connection/useSshConnections'
+import { useConnectionCredentials } from './connection/useConnectionCredentials'
 import { ipc } from './ipc'
 import { useSshProfiles } from './profiles/useSshProfiles'
 import { useSshLifecycle } from './workspace/useSshLifecycle'
@@ -25,13 +26,18 @@ export type { SshConnectionWorkspace, SshWorkspaceSection } from './connection/u
  * 端口均为晚绑定回调（只在挂载后的事件与用户操作中执行），因此域之间可互相引用。
  */
 export function useSshWorkspace() {
+  const credentials = useConnectionCredentials()
   /* ── 域组装（配置域 → 连接域 → 主机密钥域 → 生命周期域） ── */
 
   const profilesApi = useSshProfiles({
     /** 删除服务器前关闭其名下工作区并断开会话 */
     closeConnectionsOf: (profileId) => connections.closeConnectionsOf(profileId),
     /** 服务器被删除后清掉指向它的活动页签 */
-    forgetActiveProfile: (profileId) => connections.forgetActiveProfile(profileId),
+    forgetActiveProfile: (profileId) => {
+      credentials.forget(profileId)
+      connections.forgetActiveProfile(profileId)
+    },
+    onSaved: credentials.remember,
   })
 
   const connections = useSshConnections({
@@ -41,6 +47,12 @@ export function useSshWorkspace() {
     onConnected: (profileId) => profilesApi.touchProfileConnected(profileId),
     /** 卸载标记由生命周期域持有 */
     isDisposed: () => lifecycle.isDisposed(),
+    requestCredentials: credentials.request,
+    forgetCredentials: credentials.forget,
+    getCredentials: (profileId) => {
+      const profile = profilesApi.profiles.value.find((item) => item.id === profileId)
+      return profile ? credentials.get(profile) : undefined
+    },
   })
 
   const hostKeys = useHostKeyQueue()
@@ -73,6 +85,8 @@ export function useSshWorkspace() {
   /* ── 对界面暴露的公开面（与拆分前逐一对应） ── */
 
   return {
+    credentialRequestProfile: credentials.requestProfile,
+    respondCredentials: credentials.respond,
     /* 配置与分组 */
     profiles: profilesApi.profiles,
     groups: profilesApi.groups,
