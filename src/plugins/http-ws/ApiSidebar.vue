@@ -7,6 +7,7 @@ import type { ApiKind, ApiRecord } from './contracts'
 import { groupRows, type ApiSidebarRow } from './apiGroups'
 import { methodTextClass } from './useHttp'
 import NewRequestMenu from './NewRequestMenu.vue'
+import { useApiDrag } from './useApiDrag'
 const props = defineProps<{
   apis: ApiRecord[]
   groups: string[]
@@ -21,9 +22,21 @@ const emit = defineEmits<{
   new: [kind: ApiKind, group: string]
   newGroup: [parent: string]
   retry: []
+  move: [id: number, group: string]
 }>()
 const search = ref(''),
   collapsed = ref(new Set<string>())
+const root = ref<HTMLElement | null>(null)
+const {
+  drag,
+  target: dropTarget,
+  start: startDrag,
+  captureClick,
+  cancel: cancelDrag,
+} = useApiDrag(root, (id, group) => {
+  collapsed.value.delete(group)
+  emit('move', id, group)
+})
 const menu = ref<{ x: number; y: number; parent: string; api?: ApiRecord; group: boolean } | null>(
   null
 )
@@ -46,6 +59,7 @@ function toggle(path: string) {
   collapsed.value = next
 }
 function openMenu(event: MouseEvent, parent = '', group = false, api?: ApiRecord) {
+  cancelDrag()
   event.preventDefault()
   event.stopPropagation()
   menu.value = { x: event.clientX, y: event.clientY, parent, group, api }
@@ -93,8 +107,11 @@ const menuItems = computed<ContextMenuItem[]>(() => {
 </script>
 <template>
   <aside
+    ref="root"
     class="flex w-[180px] shrink-0 flex-col border-r border-border dark:border-border-dark"
+    :class="{ 'select-none': drag?.active }"
     @contextmenu="blankMenu"
+    @click.capture="captureClick"
   >
     <div class="shrink-0 px-[12px] py-[10px]">
       <UiSearchInput
@@ -114,17 +131,38 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     </div>
     <UiScrollArea as-child axis="vertical"
       ><div class="min-h-0 flex-1 px-[6px] pb-[8px]">
-        <template
+        <div
           v-for="row in rows"
           :key="row.kind === 'group' ? `group:${row.path}` : `api:${row.api.id}`"
+          class="relative"
+          :data-depth="row.depth"
+          :style="{ paddingLeft: `${row.depth * 18}px` }"
         >
+          <span
+            v-for="level in row.depth"
+            :key="level"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-y-0 border-l border-border-strong dark:border-border-strong-dark"
+            :style="{ left: `${(level - 1) * 18 + 11}px` }"
+          />
+          <span
+            v-if="row.depth"
+            aria-hidden="true"
+            class="pointer-events-none absolute top-1/2 w-[7px] border-t border-border-strong dark:border-border-strong-dark"
+            :style="{ left: `${row.depth * 18 - 7}px` }"
+          />
           <UiButton
             v-if="row.kind === 'group'"
             size="sm"
             variant="ghost"
             block
             class="!justify-start !gap-[4px] !pr-[6px]"
-            :style="{ paddingLeft: `${6 + row.depth * 12}px` }"
+            :data-api-group-drop="row.path"
+            :class="
+              dropTarget === row.path
+                ? '!bg-tertiary-soft ring-1 ring-tertiary-strong dark:!bg-tertiary-soft-dark dark:ring-tertiary-dark'
+                : ''
+            "
             :title="row.path || '未分组'"
             :aria-expanded="!collapsed.has(row.path)"
             @click="toggle(row.path)"
@@ -135,7 +173,14 @@ const menuItems = computed<ContextMenuItem[]>(() => {
               :size="12"
               class="shrink-0 transition-transform"
               :class="{ 'rotate-90': !collapsed.has(row.path) }"
-            /><span class="min-w-0 flex-1 truncate text-left font-semibold">{{ row.label }}</span
+            /><UiIcon
+              name="folder"
+              :size="13"
+              class="shrink-0 text-text-muted dark:text-text-muted-dark"
+            /><span
+              class="min-w-0 flex-1 truncate text-left"
+              :class="row.depth === 0 ? 'font-semibold' : 'font-medium'"
+              >{{ row.label }}</span
             ><span class="text-caption text-text-muted dark:text-text-muted-dark">{{
               row.count
             }}</span>
@@ -144,7 +189,6 @@ const menuItems = computed<ContextMenuItem[]>(() => {
             v-else
             size="sm"
             :active="row.api.id === activeId"
-            :indent="row.depth * 12"
             class="group !py-0 !pr-0"
             @contextmenu="openMenu($event, row.api.groupName, false, row.api)"
           >
@@ -153,6 +197,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
               size="sm"
               class="min-w-0 flex-1 !justify-start !gap-[5px] !px-0 !bg-transparent hover:!bg-transparent dark:hover:!bg-transparent"
               :title="`${row.api.name} · ${row.api.url}`"
+              @pointerdown="startDrag($event, row.api)"
               @click="emit('select', row.api)"
               ><span
                 class="shrink-0 font-mono text-caption font-semibold"
@@ -172,7 +217,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
               @select="$event === 'rename' ? emit('rename', row.api) : emit('delete', row.api)"
             />
           </UiListRow>
-        </template>
+        </div>
         <p
           v-if="!rows.length"
           class="px-[8px] py-[16px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
@@ -195,5 +240,15 @@ const menuItems = computed<ContextMenuItem[]>(() => {
       size="sm"
       @close="menu = null"
     />
+    <Teleport to="body"
+      ><div
+        v-if="drag?.active"
+        class="pointer-events-none fixed z-[300] max-w-[240px] truncate rounded-md border border-border bg-surface px-[8px] py-[4px] text-body-sm text-primary shadow-sm dark:border-border-dark dark:bg-surface-dark dark:text-primary-dark"
+        :style="{ left: `${drag.x + 12}px`, top: `${drag.y + 12}px` }"
+      >
+        {{ drag.name }} ·
+        {{ dropTarget === null ? '拖到分组以移动' : `移至 ${dropTarget || '未分组'}` }}
+      </div></Teleport
+    >
   </aside>
 </template>

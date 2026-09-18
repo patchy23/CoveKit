@@ -266,6 +266,26 @@ pub fn api_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<ApiRec
     })
 }
 
+/// 仅更新接口的分组归属，不能用旧侧栏快照覆盖请求内容。
+#[tauri::command]
+pub fn api_move_group(
+    app: AppHandle,
+    state: State<'_, ApiState>,
+    id: i64,
+    group_name: String,
+) -> Result<(), String> {
+    let guard = db(&app, &state)?;
+    guard.as_ref().ok_or("本地库未初始化")?.with_transaction(|conn| {
+        if !group_name.is_empty() {
+            let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM api_groups WHERE path=?1 OR substr(path,1,length(?1)+1)=?1||'/')", [&group_name], |row| row.get(0)).map_err(|e| e.to_string())?;
+            if !exists { return Err("目标分组不存在，请刷新后重试".into()); }
+        }
+        let changed=conn.execute("UPDATE api_list SET group_name=?1, updated_at=datetime('now', 'localtime') WHERE id=?2", rusqlite::params![group_name,id]).map_err(|e|e.to_string())?;
+        if changed==0 { return Err("接口已不存在，请刷新后重试".into()); }
+        Ok(())
+    })
+}
+
 /// 删除单个接口
 #[tauri::command]
 pub fn api_delete(app: AppHandle, state: State<'_, ApiState>, id: i64) -> Result<(), String> {

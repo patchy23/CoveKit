@@ -48,7 +48,7 @@ export function groupRows(
   }
   visit('', 0)
   const ungrouped = apis.filter((api) => !api.groupName)
-  if (ungrouped.length) {
+  if (ungrouped.length || paths.length || apis.length) {
     result.push({ kind: 'group', path: '', label: '未分组', depth: 0, count: ungrouped.length })
     if (!collapsed.has(''))
       result.push(...ungrouped.map((api) => ({ kind: 'api' as const, api, depth: 1 })))

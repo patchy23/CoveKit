@@ -4,6 +4,7 @@ const mock = vi.hoisted(() => ({
   apiList: vi.fn(),
   apiGroupList: vi.fn(),
   apiGroupCreate: vi.fn(),
+  apiMoveGroup: vi.fn(),
   apiSave: vi.fn(),
   apiDelete: vi.fn(),
   wsClose: vi.fn(),
@@ -46,6 +47,40 @@ describe('接口库与多页签', () => {
     expect(workspace.dirty(tab)).toBe(false)
     tab.draft.url = 'https://example.invalid/changed'
     expect(workspace.dirty(tab)).toBe(true)
+    await workspace.dispose()
+  })
+  it('移动只更新分组，保留打开接口的未保存内容和脏标记', async () => {
+    const workspace = useApiWorkspace(vi.fn(), () => true)
+    await workspace.load()
+    const tab = workspace.open(workspace.apis.value[0])
+    tab.draft.body = '未保存内容'
+    mock.apiMoveGroup.mockResolvedValue(undefined)
+    await workspace.move(tab.recordId!, '开发/用户')
+    expect(mock.apiMoveGroup).toHaveBeenCalledWith(1, '开发/用户')
+    expect(mock.apiSave).not.toHaveBeenCalled()
+    expect(tab.groupName).toBe('开发/用户')
+    expect(tab.draft.body).toBe('未保存内容')
+    expect(workspace.dirty(tab)).toBe(true)
+    await workspace.dispose()
+  })
+  it('移动失败不改变归属，移动中不允许保存旧分组快照', async () => {
+    const workspace = useApiWorkspace(vi.fn(), () => true)
+    await workspace.load()
+    const tab = workspace.open(workspace.apis.value[0])
+    let reject!: (error: Error) => void
+    mock.apiMoveGroup.mockReturnValue(
+      new Promise((_, no) => {
+        reject = no
+      })
+    )
+    const moving = workspace.move(1, '目标')
+    await expect(workspace.save(tab, tab.name, tab.groupName)).rejects.toThrow('正在移动')
+    const failure = expect(moving).rejects.toThrow('写入失败')
+    reject(new Error('写入失败'))
+    await failure
+    expect(tab.groupName).toBe('测试')
+    expect(workspace.apis.value[0].groupName).toBe('测试')
+    expect(workspace.moving.value.size).toBe(0)
     await workspace.dispose()
   })
   it('空分组可读取，创建子分组携带上级路径且失败不冒充成功', async () => {

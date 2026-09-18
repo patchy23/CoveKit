@@ -38,6 +38,7 @@ crate::covekit_module! {
         persistence::api_list => "接口列表",
         persistence::api_group_list => "接口分组列表",
         persistence::api_group_create => "创建接口分组",
+        persistence::api_move_group => "移动接口分组",
         persistence::api_delete => "删除接口",
         persistence::api_clear => "清空全部接口",
     },

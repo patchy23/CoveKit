@@ -18,6 +18,7 @@ export interface ApiTab {
 export function useApiWorkspace(report: (message: string) => void, visible: () => boolean) {
   const apis = ref<ApiRecord[]>([])
   const groups = ref<string[]>([])
+  const moving = ref(new Set<number>())
   const tabs = shallowReactive<ApiTab[]>([])
   const activeKey = ref('')
   const loading = ref(false)
@@ -84,6 +85,8 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     return add(fromRecord(record), record)
   }
   async function save(tab: ApiTab, name: string, groupName: string, asCopy = false) {
+    if (tab.recordId !== null && moving.value.has(tab.recordId))
+      throw new Error('接口正在移动，请稍后保存')
     if (tab.saving) return false
     if (!name.trim()) throw new Error('请输入接口名称')
     const snapshot = fingerprint(tab.draft)
@@ -111,6 +114,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
   }
   /** 重命名/移动只取库中记录，不借用当前编辑面板。 */
   async function rename(record: ApiRecord, name: string, groupName: string) {
+    if (moving.value.has(record.id)) throw new Error('接口正在移动，请稍后修改')
     if (!name.trim()) throw new Error('请输入接口名称')
     await ipc.apiSave({
       id: record.id,
@@ -133,6 +137,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     await load()
   }
   async function remove(record: ApiRecord) {
+    if (moving.value.has(record.id)) throw new Error('接口正在移动，请稍后删除')
     await ipc.apiDelete(record.id)
     for (const tab of tabs.filter((t) => t.recordId === record.id)) {
       tab.recordId = null
@@ -149,6 +154,24 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     tabs.splice(index, 1)
     if (activeKey.value === tab.key) activeKey.value = (tabs[index] || tabs[index - 1])?.key || ''
   }
+  async function move(id: number, groupName: string) {
+    const record = apis.value.find((api) => api.id === id)
+    if (!record || record.groupName === groupName) return
+    if (moving.value.has(id) || tabs.some((tab) => tab.recordId === id && tab.saving))
+      throw new Error('接口正在保存或移动，请稍后重试')
+    moving.value.add(id)
+    try {
+      await ipc.apiMoveGroup(id, groupName)
+      if (!disposed) {
+        record.groupName = groupName
+        for (const tab of tabs.filter((tab) => tab.recordId === id)) tab.groupName = groupName
+      }
+      await load()
+      report(`已移动到 ${groupName || '未分组'}`)
+    } finally {
+      moving.value.delete(id)
+    }
+  }
   async function dispose() {
     disposed = true
     loadEpoch++
@@ -159,6 +182,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
   return {
     apis,
     groups,
+    moving,
     tabs,
     activeKey,
     current,
@@ -172,6 +196,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     save,
     rename,
     remove,
+    move,
     close,
     dispose,
   }

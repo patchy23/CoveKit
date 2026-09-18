@@ -31,8 +31,8 @@ function loaderFor(id: string) {
   return getTool(id)?.component ?? (() => Promise.reject(new Error(`未登记的工具：${id}`)))
 }
 
-/* ── 页签未保存/运行中标记 + 工具可见性分发（T10-1/T10-2）── */
-/** 各页签的关闭状态（订阅登记表，页签上显示「未保存」小圆点） */
+/* ── 页签运行中标记 + 工具可见性分发 ── */
+/** 工具页签只呈现运行状态；未保存提示由内部文档页签与关闭协商负责。 */
 const tabState = ref<Record<string, ToolCloseState>>({})
 /** 每个页签的关闭状态退订函数 */
 const stateStops = new Map<string, () => void>()
@@ -90,11 +90,6 @@ watch(
     ui.toast(`关闭时有清理失败：${owners}`)
   }
 )
-
-/** 某页签是否有未保存内容（页签标记用） */
-function tabDirty(id: string) {
-  return tabState.value[id]?.dirty ?? false
-}
 
 /** 某页签是否有运行中的任务（页签标记用） */
 function tabRunning(id: string) {
@@ -215,15 +210,10 @@ const hiddenTabItems = computed(() => hiddenItems.value)
           class="text-tertiary-strong dark:text-tertiary-dark"
         />
         <span class="max-w-[120px] truncate">{{ tabTitle(id) }}</span>
-        <!-- 关闭前会中断的状态标记：运行中（实心点）/ 未保存（空心点），避免用户以为直接关没事 -->
+        <!-- 工具页签只显示运行状态，未保存内容仍由关闭协商保护。 -->
         <UiTooltip v-if="tabRunning(id)" content="任务进行中">
           <span
             class="h-[6px] w-[6px] shrink-0 rounded-full bg-tertiary-strong dark:bg-tertiary-dark"
-          />
-        </UiTooltip>
-        <UiTooltip v-else-if="tabDirty(id)" content="有未保存内容">
-          <span
-            class="h-[6px] w-[6px] shrink-0 rounded-full border border-warning-strong dark:border-warning-dark"
           />
         </UiTooltip>
         <UiTooltip content="关闭页签">

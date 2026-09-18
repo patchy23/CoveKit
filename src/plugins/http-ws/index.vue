@@ -43,9 +43,9 @@ const items = computed(() =>
 const { visibleItems, hiddenItems } = useTabsOverflow(tabBar, items, activeKey, 130)
 watchEffect(() => {
   lifecycle.dirty.value = tabs.some((t) => workspace.dirty(t))
-  lifecycle.running.value = tabs.some(
-    (t) => t.saving || t.session.state.busy || t.session.state.connected
-  )
+  lifecycle.running.value =
+    workspace.moving.value.size > 0 ||
+    tabs.some((t) => t.saving || t.session.state.busy || t.session.state.connected)
 })
 const naming = ref<{
   tab?: ApiTab
@@ -174,6 +174,7 @@ onUnmounted(() => {
       @delete="deleting = $event"
       @new="create"
       @new-group="newGroup"
+      @move="(id, groupName) => perform(() => workspace.move(id, groupName))"
       @retry="workspace.load()"
     />
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">

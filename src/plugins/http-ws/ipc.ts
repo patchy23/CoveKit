@@ -13,6 +13,7 @@ function call<K extends keyof Payloads & keyof Results>(command: K, payload: Pay
   return invokeCommand<Payloads[K], Results[K]>(command, payload)
 }
 export const ipc = {
+  apiMoveGroup: (id: number, groupName: string) => call('api_move_group', { id, groupName }),
   apiGroupList: () => call('api_group_list', {}),
   apiGroupCreate: (name: string, parent: string) => call('api_group_create', { name, parent }),
   httpRequest: (payload: HttpRequestPayload) => call('http_request', { payload }),
