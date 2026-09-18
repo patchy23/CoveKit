@@ -16,7 +16,6 @@ import { UiButton, UiModal } from '@/core/ui'
 import { ipc } from '@/core/ipc/ipc'
 import type { StorageRecovery } from '@/core/ipc/contracts'
 import { useUiStore } from '@/stores/ui'
-import AppIcon from '@/features/ui/AppIcon.vue'
 
 const { t } = useI18n()
 const ui = useUiStore()
@@ -84,17 +83,12 @@ async function restartNow() {
 </script>
 
 <template>
-  <div
-    v-if="state"
-    class="fixed inset-0 z-50 flex items-center justify-center bg-primary/40 p-[24px] backdrop-blur-sm"
-  >
-    <div
-      class="flex w-full max-w-[560px] flex-col gap-sm rounded-lg border border-border bg-surface p-[20px] shadow-lg dark:border-border-dark dark:bg-surface-dark"
-    >
-      <h2 class="flex items-center gap-[8px] text-h1 font-bold dark:text-primary-dark">
-        <AppIcon name="database" :size="18" class="text-danger-strong dark:text-danger-dark" />
-        {{ t('storageRecovery.title') }}
-      </h2>
+  <!--
+    阻断式恢复弹窗：受控 open，close 事件不回写 state → ×/Esc 都不会真正关闭，
+    用户必须在四个动作里选一个（重试/换目录/用默认环境/重启）。
+  -->
+  <UiModal :open="!!state" size="md" :title="t('storageRecovery.title')">
+    <div v-if="state" class="flex flex-col gap-sm">
       <p class="text-body text-secondary dark:text-secondary-dark">{{ state.detail }}</p>
 
       <div
@@ -135,40 +129,39 @@ async function restartNow() {
       </p>
 
       <p v-if="error" class="text-body-sm text-danger-strong dark:text-danger-dark">{{ error }}</p>
+    </div>
+    <template v-if="state" #footer>
+      <UiButton v-if="state.canRetry" :disabled="busy" @click="retry">
+        {{ t('storageRecovery.retry') }}
+      </UiButton>
+      <UiButton :disabled="busy" @click="chooseNew">{{ t('storageRecovery.choose') }}</UiButton>
+      <UiButton v-if="state.canUseDefault" :disabled="busy" @click="defaultConfirmVisible = true">
+        {{ t('storageRecovery.useDefault') }}
+      </UiButton>
+      <span class="flex-1"></span>
+      <UiButton :disabled="busy" @click="restartNow">{{ t('storageRecovery.restart') }}</UiButton>
+    </template>
+  </UiModal>
 
-      <div class="mt-[4px] flex flex-wrap items-center gap-[8px]">
-        <UiButton v-if="state.canRetry" :disabled="busy" @click="retry">
-          {{ t('storageRecovery.retry') }}
+  <!-- 改用默认数据环境确认（明确告知会打开另一套环境；不删原数据） -->
+  <UiModal
+    :open="defaultConfirmVisible"
+    :title="t('storageRecovery.useDefaultTitle')"
+    size="md"
+    @close="defaultConfirmVisible = false"
+  >
+    <div class="flex flex-col gap-sm">
+      <p class="text-body text-secondary dark:text-secondary-dark">
+        {{ t('storageRecovery.useDefaultBody', { root: state?.configuredRoot ?? '' }) }}
+      </p>
+      <div class="mt-[4px] flex items-center justify-end gap-[8px]">
+        <UiButton @click="defaultConfirmVisible = false">{{
+          t('settings.storageCancel')
+        }}</UiButton>
+        <UiButton :disabled="busy" @click="act('use-default')">
+          {{ t('storageRecovery.useDefaultConfirm') }}
         </UiButton>
-        <UiButton :disabled="busy" @click="chooseNew">{{ t('storageRecovery.choose') }}</UiButton>
-        <UiButton v-if="state.canUseDefault" :disabled="busy" @click="defaultConfirmVisible = true">
-          {{ t('storageRecovery.useDefault') }}
-        </UiButton>
-        <span class="flex-1"></span>
-        <UiButton :disabled="busy" @click="restartNow">{{ t('storageRecovery.restart') }}</UiButton>
       </div>
     </div>
-
-    <!-- 改用默认数据环境确认（明确告知会打开另一套环境；不删原数据） -->
-    <UiModal
-      :open="defaultConfirmVisible"
-      :title="t('storageRecovery.useDefaultTitle')"
-      size="md"
-      @close="defaultConfirmVisible = false"
-    >
-      <div class="flex flex-col gap-sm">
-        <p class="text-body text-secondary dark:text-secondary-dark">
-          {{ t('storageRecovery.useDefaultBody', { root: state?.configuredRoot ?? '' }) }}
-        </p>
-        <div class="mt-[4px] flex items-center justify-end gap-[8px]">
-          <UiButton @click="defaultConfirmVisible = false">{{
-            t('settings.storageCancel')
-          }}</UiButton>
-          <UiButton :disabled="busy" @click="act('use-default')">
-            {{ t('storageRecovery.useDefaultConfirm') }}
-          </UiButton>
-        </div>
-      </div>
-    </UiModal>
-  </div>
+  </UiModal>
 </template>

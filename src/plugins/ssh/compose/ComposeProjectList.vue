@@ -9,6 +9,7 @@ import {
   UiTable,
   UiTableExpandableRow,
   UiTableCell,
+  UiToolbar,
 } from '@/core/ui'
 import type { ComposeAction, ComposeProject } from '../contracts'
 import { composeStatus, composeContainerCount } from './composeTemplates'
@@ -39,9 +40,7 @@ watch(filtered, (projects) => {
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div
-      class="flex shrink-0 flex-wrap items-center gap-sm border-b border-border px-md py-sm dark:border-border-dark"
-    >
+    <UiToolbar bordered class="flex-wrap">
       <UiSearchInput
         v-model="keyword"
         size="sm"
@@ -51,7 +50,7 @@ watch(filtered, (projects) => {
       <span class="text-caption text-text-muted dark:text-text-muted-dark"
         >{{ filtered.length }} 个编排</span
       >
-      <div class="ml-auto flex gap-sm">
+      <template #trailing>
         <UiButton
           size="sm"
           variant="ghost"
@@ -63,8 +62,8 @@ watch(filtered, (projects) => {
         <UiButton size="sm" :disabled="disabled || !connected" @click="$emit('add')"
           >添加容器编排</UiButton
         >
-      </div>
-    </div>
+      </template>
+    </UiToolbar>
     <p
       v-if="!connected"
       role="alert"
