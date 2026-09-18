@@ -119,20 +119,22 @@ watch(
             <tr
               class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
             >
-              <UiTableCell as="th" class="min-w-[160px] px-[12px] py-[8px]">
+              <UiTableCell as="th" resizable class="min-w-[160px] px-[12px] py-[8px]">
                 <UiButton variant="ghost" size="xs" @click="emit('sort', 'name')">
                   名称 {{ sortKey === 'name' ? (sortDirection === 'asc' ? '↑' : '↓') : '' }}
                 </UiButton>
               </UiTableCell>
-              <UiTableCell as="th" class="w-[76px] px-[12px] py-[8px]">大小</UiTableCell>
-              <UiTableCell as="th" class="w-[118px] px-[12px] py-[8px]">
+              <UiTableCell as="th" resizable class="w-[76px] px-[12px] py-[8px]">大小</UiTableCell>
+              <UiTableCell as="th" resizable class="w-[118px] px-[12px] py-[8px]">
                 <UiButton variant="ghost" size="xs" @click="emit('sort', 'modifiedAt')">
                   修改时间
                   {{ sortKey === 'modifiedAt' ? (sortDirection === 'asc' ? '↑' : '↓') : '' }}
                 </UiButton>
               </UiTableCell>
-              <UiTableCell as="th" class="w-[92px] px-[12px] py-[8px]">权限</UiTableCell>
-              <UiTableCell as="th" class="w-[88px] px-[12px] py-[8px]">所有者</UiTableCell>
+              <UiTableCell as="th" resizable class="w-[92px] px-[12px] py-[8px]">权限</UiTableCell>
+              <UiTableCell as="th" resizable class="w-[88px] px-[12px] py-[8px]"
+                >所有者</UiTableCell
+              >
             </tr>
           </thead>
           <tbody>
