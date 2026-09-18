@@ -139,14 +139,17 @@ function chooseDirectory(value: string) {
     <p class="my-sm break-all text-body-sm text-secondary dark:text-secondary-dark">
       最终路径：<span class="select-text font-mono">{{ finalPath }}</span>
     </p>
-    <UiCodeEditor
-      :model-value="content"
-      language="yaml"
-      :filename="filename"
-      height="min(42vh, 420px)"
-      :readonly="busy"
-      @update:model-value="emit('update:content', $event)"
-    />
+    <div class="relative h-[42vh] min-h-[240px] max-h-[420px]">
+      <UiCodeEditor
+        :model-value="content"
+        language="yaml"
+        :filename="filename"
+        class="absolute inset-0"
+        :readonly="busy"
+        @update:model-value="emit('update:content', $event)"
+        @error="localError = $event"
+      />
+    </div>
     <p class="mt-sm text-caption text-text-muted dark:text-text-muted-dark">
       相对路径 ./data
       位于项目目录下。保存会创建项目目录；不会代建挂载配置文件。数据库模板需先在项目目录的 .env

@@ -6,7 +6,7 @@
  */
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
-import { nextTick } from 'vue'
+import { defineComponent, h, nextTick, ref } from 'vue'
 import UiCodeEditor from './UiCodeEditor.vue'
 import EditorSearchBar from './editor/EditorSearchBar.vue'
 
@@ -18,6 +18,31 @@ async function settle(): Promise<void> {
 }
 
 describe('UiCodeEditor', () => {
+  it('滚动容器延后渲染宿主时仍能初始化并编辑', async () => {
+    const ready = ref(false)
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'services: {}', filename: 'compose.yml' },
+      global: {
+        stubs: {
+          UiScrollArea: defineComponent({
+            inheritAttrs: false,
+            setup(_, { slots }) {
+              return () => (ready.value ? slots.default?.() : h('div'))
+            },
+          }),
+        },
+      },
+    })
+    await settle()
+    ready.value = true
+    await settle()
+    try {
+      expect(wrapper.find('.cm-content').text()).toContain('services: {}')
+      expect(wrapper.find('.cm-content').attributes('contenteditable')).toBe('true')
+    } finally {
+      wrapper.unmount()
+    }
+  })
   it('挂载后创建编辑器实例并渲染内容', async () => {
     const wrapper = mount(UiCodeEditor, {
       props: { modelValue: '{"a":1}', filename: 'a.json' },

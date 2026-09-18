@@ -10,7 +10,7 @@ import UiScrollArea from './UiScrollArea.vue'
  *   浮层渲染在编辑器容器内，条件与统计由 `editor/searchController` 单一来源驱动；
  * - 大文件自动降级：>512KB 关语法高亮与折叠，>5MB 强制只读，并在状态栏与 `error` 事件中提示。
  */
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { CompletionSource } from '@codemirror/autocomplete'
 import type { Extension } from '@codemirror/state'
 import { useCodeEditor } from './editor/useCodeEditor'
@@ -200,10 +200,16 @@ function format(): boolean {
   return result.ok
 }
 
-onMounted(() => {
-  editor.host.value = hostRef.value
-  editor.mount()
-})
+// 插槽或弹窗可能延后提供宿主；以真实 DOM 就绪为准，不依赖一次性的 mounted。
+watch(
+  hostRef,
+  (host) => {
+    editor.destroy()
+    editor.host.value = host
+    if (host) editor.mount()
+  },
+  { flush: 'post' }
+)
 
 defineExpose({
   /** 聚焦 */
@@ -248,7 +254,7 @@ defineExpose({
     :style="{ height }"
   >
     <div class="relative min-h-0 flex-1">
-      <UiScrollArea as-child axis="vertical" managed>
+      <UiScrollArea axis="vertical" managed class="h-full">
         <div ref="hostRef" class="h-full w-full" />
       </UiScrollArea>
 

@@ -273,9 +273,10 @@ export function useCompose(
   }
 
   function discard() {
+    generation += 1
+    loading.value = false
     content.value = baseline.value
     if (isNew.value) {
-      generation += 1
       isNew.value = loaded.value = false
     }
   }

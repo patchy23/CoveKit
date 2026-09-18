@@ -1,22 +1,23 @@
 <script setup lang="ts">
 /** 当前编排的容器快照；请求代次隔离，日志与终端沿用 SSH 现有能力。 */
 import { onUnmounted, ref, watch } from 'vue'
-import { UiButton, UiModal, UiScrollArea, UiTable, UiTableCell } from '@/core/ui'
-import type { ComposeContainer, ComposeProject, ServerConnection } from '../contracts'
+import { UiButton, UiModal, UiEmptyState } from '@/core/ui'
+import type { DockerContainer, ComposeProject, ServerConnection } from '../contracts'
 import { ipc } from '../ipc'
 import { parseComposeContainers } from './composeContainers'
 import LiveLogDialog from '../monitor/LiveLogDialog.vue'
 import TerminalTab from '../terminal/TerminalTab.vue'
+import DockerTable from '../docker/DockerTable.vue'
 const props = defineProps<{
   project: ComposeProject
   connection?: ServerConnection
   busy: boolean
 }>()
-const rows = ref<ComposeContainer[]>([])
+const rows = ref<DockerContainer[]>([])
 const error = ref('')
 const loading = ref(false)
-const logs = ref<ComposeContainer>()
-const terminal = ref<ComposeContainer>()
+const logs = ref<DockerContainer>()
+const terminal = ref<DockerContainer>()
 let version = 0
 onUnmounted(() => {
   version++
@@ -39,7 +40,12 @@ async function refresh() {
     if (request !== version) return
     if (result.exitCode !== 0)
       throw new Error(result.stderr || result.stdout || `退出码 ${result.exitCode}`)
-    rows.value = parseComposeContainers(result.stdout)
+    const members = parseComposeContainers(result.stdout)
+    const containers = members.length ? await ipc.sshDockerList(props.connection.sessionId) : []
+    if (request !== version) return
+    rows.value = containers.filter((container) =>
+      members.some((member) => member.id === container.id)
+    )
   } catch (e) {
     if (request === version) {
       rows.value = []
@@ -88,50 +94,21 @@ defineExpose({ refresh })
       >
         {{ error }}
       </p>
-      <UiScrollArea v-else class="max-h-[190px]" axis="both">
-        <UiTable v-if="rows.length" :framed="false" density="compact">
-          <thead>
-            <tr>
-              <UiTableCell
-                v-for="title in ['服务 / 容器', '状态', '镜像', '端口', '操作']"
-                :key="title"
-                as="th"
-                >{{ title }}</UiTableCell
-              >
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="row in rows" :key="row.id">
-              <UiTableCell content="technical"
-                ><div>{{ row.service }}</div>
-                <div class="text-text-muted dark:text-text-muted-dark">
-                  {{ row.name }}
-                </div></UiTableCell
-              >
-              <UiTableCell
-                >{{ row.state }}<span v-if="row.health"> · {{ row.health }}</span></UiTableCell
-              >
-              <UiTableCell content="technical">{{ row.image }}</UiTableCell
-              ><UiTableCell content="technical">{{ row.ports || '—' }}</UiTableCell>
-              <UiTableCell content="action"
-                ><div class="flex gap-xs">
-                  <UiButton size="xs" variant="ghost" @click="logs = row">日志</UiButton
-                  ><UiButton
-                    size="xs"
-                    variant="ghost"
-                    :disabled="row.state !== 'running'"
-                    @click="terminal = row"
-                    >终端</UiButton
-                  >
-                </div></UiTableCell
-              >
-            </tr>
-          </tbody>
-        </UiTable>
-        <p v-else class="px-md py-sm text-body-sm text-text-muted dark:text-text-muted-dark">
-          {{ loading ? '正在读取容器…' : '尚未创建容器，启动后显示运行状态。' }}
-        </p>
-      </UiScrollArea>
+      <div v-else class="flex h-[55vh] min-h-[240px] flex-col">
+        <DockerTable
+          v-if="rows.length"
+          :containers="rows"
+          inspect-only
+          :disabled="busy || connection?.status !== 'connected'"
+          @logs="logs = $event"
+          @terminal="terminal = $event"
+        />
+        <UiEmptyState
+          v-else
+          :title="loading ? '正在读取容器…' : '尚未创建容器'"
+          description="启动编排后可查看容器情况。"
+        />
+      </div>
     </section>
     <LiveLogDialog
       v-if="logs && connection"

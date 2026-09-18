@@ -6,10 +6,21 @@ import { useCompose } from './useCompose'
 import { COMPOSE_TEMPLATE, mergeComposeProjects, validateComposeDraft } from './composeProjects'
 import ComposeTab from './ComposeTab.vue'
 import ComposeContainers from './ComposeContainers.vue'
+import DockerTable from '../docker/DockerTable.vue'
+import LiveLogDialog from '../monitor/LiveLogDialog.vue'
+import TerminalTab from '../terminal/TerminalTab.vue'
 import ComposeCreateDialog from './ComposeCreateDialog.vue'
 import ComposeDirectoryPicker from './ComposeDirectoryPicker.vue'
 import ComposeProjectList from './ComposeProjectList.vue'
-import { UiButton, UiCodeEditor, UiCombobox, UiSearchInput, UiIconButton, UiInput } from '@/core/ui'
+import {
+  UiButton,
+  UiCodeEditor,
+  UiModal,
+  UiSelect,
+  UiSearchInput,
+  UiIconButton,
+  UiInput,
+} from '@/core/ui'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 
 const env = vi.hoisted(() => ({
@@ -21,6 +32,7 @@ const env = vi.hoisted(() => ({
   sshEditOpen: vi.fn(),
   sshEditSave: vi.fn(),
   sshFileList: vi.fn(),
+  sshDockerList: vi.fn(),
   setToolSetting: vi.fn(),
 }))
 vi.mock('../ipc', () => ({ ipc: env }))
@@ -74,6 +86,17 @@ beforeEach(() => {
   env.sshEditSave.mockResolvedValue({ ok: true })
   env.sshComposeStream.mockImplementation((payload) => env.sshComposeAction(payload))
   env.sshComposeHome.mockResolvedValue('/home/test')
+  env.sshDockerList.mockResolvedValue([
+    {
+      id: 'new',
+      name: 'new-container',
+      image: 'nginx',
+      status: 'running',
+      uptime: 'Up 1 hour',
+      ports: '80/tcp',
+      createdAt: 0,
+    },
+  ])
 })
 
 it('以 Docker 查询为权威合并路径记录，失败保留列表并报错', async () => {
@@ -211,7 +234,7 @@ it('新建保存后关闭页面，不在路径记忆完成后继续访问旧连�
   expect(env.sshEditOpen).not.toHaveBeenCalled()
 })
 
-it('编辑后返回列表须确认，取消保留草稿并向连接页上报未保存状态', async () => {
+it('编辑弹窗关闭须确认，取消保留草稿并向连接页上报未保存状态', async () => {
   const wrapper = shallowMount(ComposeTab, {
     props: {
       connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
@@ -223,14 +246,15 @@ it('编辑后返回列表须确认，取消保留草稿并向连接页上报未�
   await flushPromises()
   const buttons = () => wrapper.findAllComponents(UiButton)
   buttons()
-    .find((button) => button.text() === 'app')!
+    .find((button) => button.text() === '编辑')!
     .vm.$emit('click')
   await flushPromises()
   wrapper.getComponent(UiCodeEditor).vm.$emit('update:modelValue', 'unsaved draft')
   await flushPromises()
-  buttons()
-    .find((button) => button.text() === '返回列表')!
-    .vm.$emit('click')
+  wrapper
+    .findAllComponents(UiModal)
+    .find((modal) => modal.props('title') === 'app · 编辑')!
+    .vm.$emit('close')
   await flushPromises()
   const confirmation = wrapper
     .findAllComponents(ConfirmDialog)
@@ -306,7 +330,7 @@ it('默认目录使用远程主目录，取消编辑恢复已加载内容', asyn
   expect(api.dirty.value).toBe(false)
 })
 
-it('编辑入口切换只读状态，保存遇到冲突时保留草稿且不会启动容器', async () => {
+it('编辑弹窗直接编辑，保存遇到冲突时保留草稿且不会启动容器', async () => {
   const wrapper = shallowMount(ComposeTab, {
     props: {
       connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
@@ -323,19 +347,13 @@ it('编辑入口切换只读状态，保存遇到冲突时保留草稿且不会�
     await flushPromises()
   }
   await flushPromises()
-  await click('app')
-  expect(wrapper.getComponent(UiCodeEditor).props('readonly')).toBe(true)
-  wrapper
-    .findAllComponents(UiButton)
-    .filter((b) => b.text() === '编辑')
-    .at(-1)!
-    .vm.$emit('click')
-  await flushPromises()
+  await click('编辑')
   expect(wrapper.getComponent(UiCodeEditor).props('readonly')).toBe(false)
   wrapper.getComponent(UiCodeEditor).vm.$emit('update:modelValue', 'new draft')
   await flushPromises()
   env.sshEditSave.mockResolvedValueOnce({ ok: false, conflict: true })
-  await click('保存')
+  wrapper.getComponent(UiCodeEditor).vm.$emit('save')
+  await flushPromises()
   expect(env.sshComposeStream).not.toHaveBeenCalled()
   expect(wrapper.getComponent(UiCodeEditor).props('modelValue')).toBe('new draft')
   expect(wrapper.text()).toContain('本次未覆盖')
@@ -355,7 +373,7 @@ it('切换编排后迟到的容器列表不覆盖新项目', async () => {
       connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
       busy: false,
     },
-    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
+    global: { renderStubDefaultSlot: true, stubs: { DockerTable: false } },
   })
   env.sshComposeAction.mockResolvedValueOnce({
     exitCode: 0,
@@ -368,94 +386,114 @@ it('切换编排后迟到的容器列表不覆盖新项目', async () => {
   await flushPromises()
   expect(wrapper.text()).toContain('new-container')
   expect(wrapper.text()).not.toContain('old-container')
+  const table = wrapper.getComponent(DockerTable)
+  expect(table.props('inspectOnly')).toBe(true)
+  expect(table.props('containers')[0]).toMatchObject({ uptime: 'Up 1 hour', ports: '80/tcp' })
+  expect(table.findAllComponents(UiButton).map((b) => b.text())).toEqual(['日志', '终端'])
+  table.vm.$emit('logs', table.props('containers')[0])
+  await flushPromises()
+  expect(wrapper.getComponent(LiveLogDialog).props('targetId')).toBe('new')
+  wrapper.getComponent(LiveLogDialog).vm.$emit('close')
+  table.vm.$emit('terminal', table.props('containers')[0])
+  await flushPromises()
+  expect(wrapper.getComponent(TerminalTab).props('dockerContainerId')).toBe('new')
 })
 
-it('打开编排后真实编辑器渲染读取的 YAML 内容', async () => {
+it('编辑真实弹窗可写入 YAML，关闭后列表保留搜索和滚动位置', async () => {
   env.sshEditOpen.mockResolvedValue(file('services:\n  web:\n    image: nginx:stable\n'))
-  const wrapper = mount(ComposeTab, {
-    props: {
-      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
-      profileId: 'profile',
-      workspaceId: 'yaml-render',
-    },
-    global: { stubs: { ComposeContainers: true, ConfirmDialog: true, UiModal: true } },
-  })
-  await flushPromises()
-  wrapper
-    .findAllComponents(UiButton)
-    .find((button) => button.text() === 'app')!
-    .vm.$emit('click')
-  await flushPromises()
-  expect(wrapper.getComponent(UiCodeEditor).props('modelValue')).toContain('nginx:stable')
-  expect(wrapper.find('.cm-content').text()).toContain('nginx:stable')
-})
-
-it('列表进入全宽详情，返回时保留搜索词与滚动位置', async () => {
   const wrapper = mount(ComposeTab, {
     attachTo: document.body,
     props: {
       connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
       profileId: 'profile',
-      workspaceId: 'navigation',
+      workspaceId: 'yaml-render',
     },
-    global: {
-      stubs: { ComposeContainers: true, UiCodeEditor: true, ConfirmDialog: true, UiModal: true },
-    },
+    global: { stubs: { ComposeContainers: true } },
   })
   await flushPromises()
   wrapper.getComponent(UiSearchInput).vm.$emit('update:modelValue', 'app')
-  await flushPromises()
   const scroll = wrapper.get('[data-testid="compose-list-scroll"]').element
   scroll.scrollTop = 120
-  wrapper
-    .findAllComponents(UiButton)
-    .find((b) => b.text() === 'app')!
-    .vm.$emit('click')
+  wrapper.getComponent(ComposeProjectList).vm.$emit('edit', project)
   await flushPromises()
-  expect(wrapper.getComponent(UiSearchInput).isVisible()).toBe(false)
-  expect(wrapper.getComponent(UiCodeEditor).isVisible()).toBe(true)
-  wrapper
-    .findAllComponents(UiButton)
-    .find((b) => b.text() === '返回列表')!
-    .vm.$emit('click')
+  const content = document.querySelector('[role="dialog"] .cm-content')!
+  expect(content.textContent).toContain('nginx:stable')
+  expect(content.getAttribute('contenteditable')).toBe('true')
+  expect(wrapper.findComponent(ComposeContainers).exists()).toBe(false)
+  ;(
+    document.querySelector('[role="dialog"] button[aria-label="关闭"]') as HTMLButtonElement
+  ).click()
   await flushPromises()
-  expect(wrapper.getComponent(UiSearchInput).isVisible()).toBe(true)
+  expect(wrapper.findComponent(UiCodeEditor).exists()).toBe(false)
   expect(wrapper.getComponent(UiSearchInput).props('modelValue')).toBe('app')
   expect(scroll.scrollTop).toBe(120)
-  expect(wrapper.findComponent(UiCodeEditor).exists()).toBe(false)
 })
 
-it('详情选择其他编排时保护草稿，确认放弃后才读取新文件', async () => {
-  const other = { ...project, name: 'other', configFiles: ['/srv/other/compose.yml'] }
-  env.sshComposeList.mockResolvedValue([project, other])
+it('切换 YAML 文件保护草稿，确认放弃后才读取新文件', async () => {
   const wrapper = shallowMount(ComposeTab, {
     props: {
       connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
       profileId: 'profile',
-      workspaceId: 'switch-project',
+      workspaceId: 'switch-file',
     },
-    global: { renderStubDefaultSlot: true, stubs: { ComposeProjectList: false } },
+    global: { renderStubDefaultSlot: true },
   })
   await flushPromises()
-  wrapper
-    .findAllComponents(UiButton)
-    .find((b) => b.text() === 'app')!
-    .vm.$emit('click')
+  wrapper.getComponent(ComposeProjectList).vm.$emit('edit', project)
   await flushPromises()
   wrapper.getComponent(UiCodeEditor).vm.$emit('update:modelValue', 'unsaved')
   await flushPromises()
-  wrapper.getComponent(UiCombobox).vm.$emit('update:modelValue', 'other')
+  wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', project.configFiles[1])
   await flushPromises()
   const confirm = wrapper
     .findAllComponents(ConfirmDialog)
     .find((c) => c.props('title') === '放弃未保存的修改')!
   expect(confirm.props('open')).toBe(true)
-  expect(wrapper.getComponent(UiCombobox).props('modelValue')).toBe('app')
   expect(env.sshEditOpen).toHaveBeenCalledTimes(1)
   confirm.vm.$emit('confirm')
   await flushPromises()
-  expect(env.sshEditOpen).toHaveBeenLastCalledWith('one', other.configFiles[0])
-  expect(wrapper.getComponent(UiCombobox).props('modelValue')).toBe('other')
+  expect(env.sshEditOpen).toHaveBeenLastCalledWith('one', project.configFiles[1])
+})
+
+it('查看容器打开独立弹窗，不读取 YAML，关闭后销毁容器面板', async () => {
+  const wrapper = shallowMount(ComposeTab, {
+    props: {
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      profileId: 'profile',
+      workspaceId: 'view-containers',
+    },
+    global: { renderStubDefaultSlot: true },
+  })
+  await flushPromises()
+  wrapper.getComponent(ComposeProjectList).vm.$emit('view', project)
+  await flushPromises()
+  expect(wrapper.getComponent(ComposeContainers).props('project')).toEqual(project)
+  expect(wrapper.findComponent(UiCodeEditor).exists()).toBe(false)
+  expect(env.sshEditOpen).not.toHaveBeenCalled()
+  wrapper
+    .findAllComponents(UiModal)
+    .find((m) => m.props('title') === 'app · 容器')!
+    .vm.$emit('close')
+  await flushPromises()
+  expect(wrapper.findComponent(ComposeContainers).exists()).toBe(false)
+})
+
+it('关闭读取中的编辑弹窗后，迟到的 YAML 不再回填', async () => {
+  const { api } = setup()
+  let finish!: (value: ReturnType<typeof file>) => void
+  env.sshEditOpen.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+  )
+  const pending = api.open(project)
+  api.discard()
+  finish(file('late'))
+  await pending
+  expect(api.loaded.value).toBe(false)
+  expect(api.loading.value).toBe(false)
+  expect(api.content.value).not.toBe('late')
 })
 
 it('新增窗口右上角关闭能退出真实模态层，修改后放弃确认也能退出', async () => {
@@ -545,6 +583,6 @@ it('列表行操作直接作用于该行项目，展示结果且不打开 YAML',
   await flushPromises()
   expect(env.sshComposeStream.mock.calls[0][0]).toMatchObject({ project: other, action: 'stop' })
   expect(env.sshEditOpen).not.toHaveBeenCalled()
-  expect(wrapper.findComponent(UiCombobox).exists()).toBe(false)
+  expect(wrapper.findComponent(UiCodeEditor).exists()).toBe(false)
   expect(wrapper.text()).toContain('stopped')
 })

@@ -20,7 +20,7 @@ const props = defineProps<{
   busyProjectName?: string
 }>()
 defineEmits<{
-  select: [project: ComposeProject]
+  view: [project: ComposeProject]
   edit: [project: ComposeProject]
   add: []
   refresh: []
@@ -86,15 +86,7 @@ const filtered = computed(() =>
         </thead>
         <tbody>
           <tr v-for="project in filtered" :key="project.name">
-            <UiTableCell content="action"
-              ><UiButton
-                variant="ghost"
-                size="sm"
-                :disabled="disabled"
-                @click="$emit('select', project)"
-                >{{ project.name }}</UiButton
-              ></UiTableCell
-            >
+            <UiTableCell>{{ project.name }}</UiTableCell>
             <UiTableCell
               ><span
                 v-if="busyProjectName === project.name"
@@ -107,6 +99,13 @@ const filtered = computed(() =>
             }}</UiTableCell>
             <UiTableCell content="action" align="right" class="whitespace-nowrap">
               <div class="flex items-center justify-end gap-[2px]">
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  :disabled="disabled || !connected"
+                  @click="$emit('view', project)"
+                  >查看容器</UiButton
+                >
                 <UiButton
                   variant="ghost"
                   size="xs"

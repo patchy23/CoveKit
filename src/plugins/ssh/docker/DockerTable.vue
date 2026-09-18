@@ -6,7 +6,15 @@ import type { DockerContainer } from '../contracts'
 import { shortContainerId } from '../connection/useSsh'
 import { UiButton, UiTable, UiTableCell } from '@/core/ui'
 
-defineProps<{ containers: DockerContainer[]; busyContainerId?: string | null }>()
+withDefaults(
+  defineProps<{
+    containers: DockerContainer[]
+    busyContainerId?: string | null
+    inspectOnly?: boolean
+    disabled?: boolean
+  }>(),
+  { inspectOnly: false, disabled: false, busyContainerId: null }
+)
 const emit = defineEmits<{
   (
     event: 'action',
@@ -43,7 +51,10 @@ function stateClass(status: string): string {
               >运行时间</UiTableCell
             >
             <UiTableCell as="th" class="w-[110px] px-[8px] py-[8px]">端口</UiTableCell>
-            <UiTableCell as="th" class="w-[210px] whitespace-nowrap px-[8px] py-[8px]"
+            <UiTableCell
+              as="th"
+              :class="inspectOnly ? 'w-[100px]' : 'w-[210px]'"
+              class="whitespace-nowrap px-[8px] py-[8px]"
               >操作</UiTableCell
             >
           </tr>
@@ -91,7 +102,7 @@ function stateClass(status: string): string {
             <UiTableCell content="action" class="whitespace-nowrap px-[8px] py-[8px]">
               <div class="flex items-center justify-end gap-[2px]">
                 <UiButton
-                  v-if="container.status !== 'running'"
+                  v-if="!inspectOnly && container.status !== 'running'"
                   variant="ghost"
                   size="xs"
                   @click="emit('action', container, 'start')"
@@ -99,7 +110,7 @@ function stateClass(status: string): string {
                   启动
                 </UiButton>
                 <UiButton
-                  v-if="container.status === 'running'"
+                  v-if="!inspectOnly && container.status === 'running'"
                   variant="ghost"
                   size="xs"
                   @click="emit('action', container, 'stop')"
@@ -107,20 +118,31 @@ function stateClass(status: string): string {
                   停止
                 </UiButton>
                 <UiButton
-                  v-if="container.status === 'running'"
+                  v-if="!inspectOnly && container.status === 'running'"
                   variant="ghost"
                   size="xs"
                   @click="emit('action', container, 'restart')"
                 >
                   重启
                 </UiButton>
-                <UiButton variant="ghost" size="xs" @click="emit('logs', container)">
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  :disabled="disabled"
+                  @click="emit('logs', container)"
+                >
                   日志
                 </UiButton>
-                <UiButton variant="ghost" size="xs" @click="emit('terminal', container)">
+                <UiButton
+                  variant="ghost"
+                  size="xs"
+                  :disabled="disabled || (inspectOnly && container.status !== 'running')"
+                  @click="emit('terminal', container)"
+                >
                   终端
                 </UiButton>
                 <UiButton
+                  v-if="!inspectOnly"
                   variant="ghost"
                   size="xs"
                   class="text-danger-strong dark:text-danger-dark"
