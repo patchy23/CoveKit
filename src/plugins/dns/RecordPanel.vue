@@ -213,16 +213,12 @@ onMounted(loadRecords)
             <tr
               class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
             >
-              <UiTableCell as="th" resizable class="py-[8px] pl-[12px] pr-[12px]"
-                >主机记录</UiTableCell
-              >
-              <UiTableCell as="th" resizable class="py-[8px] pr-[12px]">类型</UiTableCell>
-              <UiTableCell as="th" resizable class="py-[8px] pr-[12px]">TTL</UiTableCell>
-              <UiTableCell as="th" resizable class="py-[8px] pr-[12px]">记录值</UiTableCell>
-              <UiTableCell as="th" resizable class="py-[8px] pr-[12px]">线路</UiTableCell>
-              <UiTableCell as="th" resizable align="right" class="py-[8px] pr-[12px]"
-                >操作</UiTableCell
-              >
+              <UiTableCell as="th" class="py-[8px] pl-[12px] pr-[12px]">主机记录</UiTableCell>
+              <UiTableCell as="th" class="py-[8px] pr-[12px]">类型</UiTableCell>
+              <UiTableCell as="th" class="py-[8px] pr-[12px]">TTL</UiTableCell>
+              <UiTableCell as="th" class="py-[8px] pr-[12px]">记录值</UiTableCell>
+              <UiTableCell as="th" class="py-[8px] pr-[12px]">线路</UiTableCell>
+              <UiTableCell as="th" align="right" class="py-[8px] pr-[12px]">操作</UiTableCell>
             </tr>
           </thead>
           <tbody class="text-body-sm">

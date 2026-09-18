@@ -8,10 +8,10 @@ const props = withDefaults(
     as?: 'th' | 'td'
     content?: UiContentKind
     align?: 'left' | 'center' | 'right'
-    /** 表头可拖拽调宽：右缘拖拽手柄，双击手柄复位自动宽度（仅 as="th" 生效） */
+    /** 表头拖拽调宽（默认开启，仅 as="th" 生效）：右缘拖拽手柄，双击复位自动宽度 */
     resizable?: boolean
   }>(),
-  { as: 'td', content: 'text', align: 'left', resizable: false }
+  { as: 'td', content: 'text', align: 'left', resizable: true }
 )
 
 const classes = computed(() =>

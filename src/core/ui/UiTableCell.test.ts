@@ -23,8 +23,9 @@ describe('UiTableCell 表头行为', () => {
   })
 
   it('resizable 表头渲染拖拽手柄，拖拽写入行内宽度并有下限', async () => {
+    // resizable 默认开启：不传 prop 也应有手柄
     const wrapper = mount(UiTableCell, {
-      props: { as: 'th', resizable: true },
+      props: { as: 'th' },
       slots: { default: '名称' },
       attachTo: document.body,
     })
@@ -67,6 +68,14 @@ describe('UiTableCell 表头行为', () => {
     const wrapper = mount(UiTableCell, {
       props: { as: 'td', resizable: true },
       slots: { default: '内容' },
+    })
+    expect(wrapper.find('[aria-hidden="true"]').exists()).toBe(false)
+  })
+
+  it('显式关闭后不渲染手柄', () => {
+    const wrapper = mount(UiTableCell, {
+      props: { as: 'th', resizable: false },
+      slots: { default: '名称' },
     })
     expect(wrapper.find('[aria-hidden="true"]').exists()).toBe(false)
   })

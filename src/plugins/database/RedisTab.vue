@@ -51,10 +51,10 @@ const toneOf = (kind: string) => {
       <UiTable v-if="state.rows.length" density="compact" :hoverable="true">
         <thead>
           <tr>
-            <UiTableCell as="th" resizable>键</UiTableCell>
-            <UiTableCell as="th" resizable>类型</UiTableCell>
-            <UiTableCell as="th" resizable>TTL</UiTableCell>
-            <UiTableCell as="th" resizable>值</UiTableCell>
+            <UiTableCell as="th">键</UiTableCell>
+            <UiTableCell as="th">类型</UiTableCell>
+            <UiTableCell as="th">TTL</UiTableCell>
+            <UiTableCell as="th">值</UiTableCell>
           </tr>
         </thead>
         <tbody>

@@ -82,10 +82,10 @@ watch(filtered, (projects) => {
       <UiTable v-if="filtered.length" :framed="false" density="compact">
         <thead>
           <tr>
-            <UiTableCell as="th" resizable>编排名称</UiTableCell
-            ><UiTableCell as="th" resizable>状态</UiTableCell
-            ><UiTableCell as="th" resizable align="right">容器数量</UiTableCell>
-            <UiTableCell as="th" resizable align="right">操作</UiTableCell>
+            <UiTableCell as="th">编排名称</UiTableCell
+            ><UiTableCell as="th">状态</UiTableCell
+            ><UiTableCell as="th" align="right">容器数量</UiTableCell>
+            <UiTableCell as="th" align="right">操作</UiTableCell>
           </tr>
         </thead>
         <tbody>

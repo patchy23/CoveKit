@@ -146,16 +146,16 @@ async function create() {
         <UiTable density="compact">
           <thead>
             <tr>
-              <UiTableCell as="th" resizable class="w-[28px]"></UiTableCell>
-              <UiTableCell as="th" resizable>列名</UiTableCell>
-              <UiTableCell as="th" resizable class="w-[130px]">类型</UiTableCell>
-              <UiTableCell as="th" resizable class="w-[90px]">长度</UiTableCell>
-              <UiTableCell as="th" resizable class="w-[48px]">可空</UiTableCell>
-              <UiTableCell as="th" resizable class="w-[130px]">默认值</UiTableCell>
-              <UiTableCell as="th" resizable class="w-[48px]">自增</UiTableCell>
-              <UiTableCell as="th" resizable class="w-[48px]">主键</UiTableCell>
-              <UiTableCell as="th" resizable>注释</UiTableCell>
-              <UiTableCell as="th" resizable class="w-[60px]"></UiTableCell>
+              <UiTableCell as="th" class="w-[28px]"></UiTableCell>
+              <UiTableCell as="th">列名</UiTableCell>
+              <UiTableCell as="th" class="w-[130px]">类型</UiTableCell>
+              <UiTableCell as="th" class="w-[90px]">长度</UiTableCell>
+              <UiTableCell as="th" class="w-[48px]">可空</UiTableCell>
+              <UiTableCell as="th" class="w-[130px]">默认值</UiTableCell>
+              <UiTableCell as="th" class="w-[48px]">自增</UiTableCell>
+              <UiTableCell as="th" class="w-[48px]">主键</UiTableCell>
+              <UiTableCell as="th">注释</UiTableCell>
+              <UiTableCell as="th" class="w-[60px]"></UiTableCell>
             </tr>
           </thead>
           <tbody>

@@ -206,10 +206,10 @@ async function run() {
               <tr
                 class="border-b border-border text-left text-body-sm text-text-muted dark:border-border-dark dark:text-text-muted-dark"
               >
-                <UiTableCell as="th" resizable class="py-[4px] pr-[12px]">类型</UiTableCell>
-                <UiTableCell as="th" resizable class="py-[4px] pr-[12px]">名称</UiTableCell>
-                <UiTableCell as="th" resizable class="py-[4px] pr-[12px]">TTL</UiTableCell>
-                <UiTableCell as="th" resizable class="py-[4px]">值</UiTableCell>
+                <UiTableCell as="th" class="py-[4px] pr-[12px]">类型</UiTableCell>
+                <UiTableCell as="th" class="py-[4px] pr-[12px]">名称</UiTableCell>
+                <UiTableCell as="th" class="py-[4px] pr-[12px]">TTL</UiTableCell>
+                <UiTableCell as="th" class="py-[4px]">值</UiTableCell>
               </tr>
             </thead>
             <tbody class="text-body-sm">
