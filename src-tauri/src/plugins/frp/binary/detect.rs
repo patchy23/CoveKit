@@ -78,7 +78,11 @@ pub(super) fn which(name: &str) -> Option<PathBuf> {
 
 /// 读取版本号：`frpc -v` 输出形如 `frpc version 0.71.0`；失败返回 None（不影响可用性判定）
 pub(crate) async fn probe_version(exe: &Path) -> Option<String> {
-    let output = Command::new(exe).arg("-v").output().await.ok()?;
+    let mut command = Command::new(exe);
+    // 后台版本探测不创建控制台窗口，避免添加或刷新客户端时闪黑窗。
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
+    let output = command.arg("-v").output().await.ok()?;
     let mut text = String::from_utf8_lossy(&output.stdout).to_string();
     text.push_str(&String::from_utf8_lossy(&output.stderr));
     text.split_whitespace()

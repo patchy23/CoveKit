@@ -63,6 +63,8 @@ pub(super) async fn extract(archive: &Path, dir: &Path) -> Result<(), String> {
         ps_literal(dir)
     );
     let output = Command::new("powershell")
+        // CREATE_NO_WINDOW：系统解压是后台操作，不显示 PowerShell 控制台。
+        .creation_flags(0x0800_0000)
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .output()
         .await
