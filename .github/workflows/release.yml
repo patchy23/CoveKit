@@ -38,7 +38,7 @@ jobs:
         run: |
           pnpm run lint
           pnpm run test
-          pnpm run build
+          pnpm run build:web
           pnpm run format:check
       - name: Rust 门禁
         working-directory: src-tauri

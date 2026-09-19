@@ -36,3 +36,12 @@ CoveKit 是一个基于 [Tauri](https://tauri.app/) 的桌面端工具箱，集�
 pnpm install
 pnpm tauri dev
 ```
+
+## 打包
+
+执行 `pnpm build` 构建当前平台的桌面应用。Windows 默认生成：
+
+- 应用程序：`src-tauri/target/release/covekit.exe`。
+- EXE 安装包：`src-tauri/target/release/bundle/nsis/*-setup.exe`。
+
+两份文件来自同一次构建；直接运行应用程序仍需要系统具备 WebView2。macOS 默认生成 DMG。仅构建前端时使用 `pnpm build:web`；Tauri 的前端构建钩子也使用该命令，避免递归调用桌面打包。

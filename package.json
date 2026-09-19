@@ -6,7 +6,8 @@
   "packageManager": "pnpm@11.18.0",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "tauri build",
+    "build:web": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "lint": "eslint . --max-warnings 0",

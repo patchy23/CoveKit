@@ -62,7 +62,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm test
       - run: pnpm check:deps
-      - run: pnpm build
+      - run: pnpm build:web
 
   rust-checks:
     needs: [changes]
