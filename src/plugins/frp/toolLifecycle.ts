@@ -10,10 +10,10 @@
 import { ipc } from './ipc'
 import { useToolLifecycle } from '@/core/lifecycle'
 
-/** 仍在跑或正在启动的状态（关闭页签时需要停止、界面按此显示运行标记） */
+/** 仍在跑或正在启动的状态（关闭页签时需要停止） */
 const LIVE_STATES = ['running', 'starting']
 
-/** 该档案是否仍占用进程（关闭协商与运行标记共用同一判定，避免两处口径不一致） */
+/** 该档案是否处于活动状态（关闭协商与运行任务登记共用同一判定） */
 export function isFrpLive(state: string): boolean {
   return LIVE_STATES.includes(state)
 }

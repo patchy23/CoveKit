@@ -8,7 +8,7 @@ import { UiTooltip } from '@/core/ui'
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getTool } from '@/core/registry/toolRegistry'
-import { publishToolVisibility, watchToolCloseState, type ToolCloseState } from '@/core/lifecycle'
+import { publishToolVisibility } from '@/core/lifecycle'
 import { UiTabsOverflowMenu } from '@/core/ui'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import AppIcon from '@/features/ui/AppIcon.vue'
@@ -30,37 +30,6 @@ const searching = computed(() => ui.searchQuery.trim().length > 0)
 function loaderFor(id: string) {
   return getTool(id)?.component ?? (() => Promise.reject(new Error(`未登记的工具：${id}`)))
 }
-
-/* ── 页签运行中标记 + 工具可见性分发 ── */
-/** 工具页签只呈现运行状态；未保存提示由内部文档页签与关闭协商负责。 */
-const tabState = ref<Record<string, ToolCloseState>>({})
-/** 每个页签的关闭状态退订函数 */
-const stateStops = new Map<string, () => void>()
-
-/** 按当前打开的页签订阅/退订关闭状态变化，避免订阅长期挂在已关闭的工具上 */
-watch(
-  () => [...ui.openTabs],
-  (ids) => {
-    for (const id of ids) {
-      if (stateStops.has(id)) continue
-      stateStops.set(
-        id,
-        watchToolCloseState(id, (state) => {
-          tabState.value = { ...tabState.value, [id]: state }
-        })
-      )
-    }
-    for (const [id, stop] of [...stateStops]) {
-      if (ids.includes(id)) continue
-      stop()
-      stateStops.delete(id)
-      const rest = { ...tabState.value }
-      delete rest[id]
-      tabState.value = rest
-    }
-  },
-  { immediate: true }
-)
 
 /**
  * 向工具广播可见性：激活页签 / 被设置页覆盖 / 窗口隐藏分别可见。
@@ -90,11 +59,6 @@ watch(
     ui.toast(`关闭时有清理失败：${owners}`)
   }
 )
-
-/** 某页签是否有运行中的任务（页签标记用） */
-function tabRunning(id: string) {
-  return tabState.value[id]?.running ?? false
-}
 
 function tabTitle(id: string) {
   return getTool(id)?.name ?? id
@@ -134,8 +98,6 @@ function onTabKeydown(event: KeyboardEvent) {
 onMounted(() => window.addEventListener('keydown', onTabKeydown))
 onUnmounted(() => {
   window.removeEventListener('keydown', onTabKeydown)
-  for (const stop of stateStops.values()) stop()
-  stateStops.clear()
 })
 
 /** 溢出下拉里关闭页签：与页签关闭走同一条协商路径 */
@@ -210,12 +172,6 @@ const hiddenTabItems = computed(() => hiddenItems.value)
           class="text-tertiary-strong dark:text-tertiary-dark"
         />
         <span class="max-w-[120px] truncate">{{ tabTitle(id) }}</span>
-        <!-- 工具页签只显示运行状态，未保存内容仍由关闭协商保护。 -->
-        <UiTooltip v-if="tabRunning(id)" content="任务进行中">
-          <span
-            class="h-[6px] w-[6px] shrink-0 rounded-full bg-tertiary-strong dark:bg-tertiary-dark"
-          />
-        </UiTooltip>
         <UiTooltip content="关闭页签">
           <button
             class="grid h-[18px] w-[18px] shrink-0 place-items-center rounded-[4px] text-text-muted opacity-0 transition-opacity hover:bg-border hover:text-tertiary-strong group-hover:opacity-100 dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-tertiary-dark"
