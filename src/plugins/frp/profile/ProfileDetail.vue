@@ -7,7 +7,16 @@ import { UiTooltip } from '@/core/ui'
  */
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { UiBadge, UiButton, UiEmptyState, UiIcon, UiIconButton, UiSpinner, UiTabs } from '@/core/ui'
+import {
+  UiBadge,
+  UiButton,
+  UiEmptyState,
+  UiIcon,
+  UiIconButton,
+  UiSpinner,
+  UiTabs,
+  UiToolbar,
+} from '@/core/ui'
 import type { FrpRuntimeState } from '../contracts'
 import ClientPicker from '../client/ClientPicker.vue'
 import { FRP_CLIENTS_KEY } from '../client/context'
@@ -107,9 +116,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
 <template>
   <div class="flex h-full min-h-0 flex-col">
     <!-- 工具栏 -->
-    <div
-      class="flex h-[44px] shrink-0 items-center gap-[8px] border-b border-border px-[10px] dark:border-border-dark"
-    >
+    <UiToolbar bordered>
       <UiTooltip :content="props.fileName">
         <span class="min-w-0 max-w-[240px] truncate text-body font-medium dark:text-primary-dark">
           {{ props.fileName }}
@@ -123,43 +130,45 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         {{ t('frp.unsaved') }}
       </span>
 
-      <div class="min-w-0 flex-1" />
-
-      <UiIconButton
-        v-if="!running"
-        :label="t('frp.actionStart')"
-        size="sm"
-        class="text-success-strong hover:bg-success-soft disabled:opacity-40 dark:text-success-dark"
-        :disabled="props.busy || needsSave"
-        @click="emit('start', props.fileName)"
-      >
-        <UiIcon name="play" :size="18" />
-      </UiIconButton>
-      <UiIconButton
-        v-else
-        :label="t('frp.actionStop')"
-        size="sm"
-        class="text-danger-strong hover:bg-danger-soft dark:text-danger-dark"
-        :disabled="props.busy"
-        @click="emit('stop', props.fileName)"
-      >
-        <UiIcon name="stop" :size="18" />
-      </UiIconButton>
-      <UiIconButton
-        :label="t('frp.actionRestart')"
-        size="sm"
-        :disabled="props.busy || !running || needsSave"
-        @click="emit('restart', props.fileName)"
-      >
-        <UiIcon name="refresh" :size="18" />
-      </UiIconButton>
-      <UiButton size="sm" variant="secondary" :disabled="needsSave" @click="onVerify">
-        {{ editor.verifying.value ? t('frp.verifying') : t('frp.actionVerify') }}
-      </UiButton>
-      <UiButton size="sm" :disabled="editingBusy || !editor.dirty.value" @click="onSave">
-        {{ editor.saving.value ? t('frp.saving') : t('frp.actionSave') }}
-      </UiButton>
-    </div>
+      <template #trailing>
+        <UiButton
+          v-if="!running"
+          :aria-label="t('frp.actionStart')"
+          size="sm"
+          variant="primary"
+          :disabled="props.busy || needsSave"
+          @click="emit('start', props.fileName)"
+        >
+          <UiIcon name="play" :size="14" />
+          {{ t('frp.actionStart') }}
+        </UiButton>
+        <UiButton
+          v-else
+          :aria-label="t('frp.actionStop')"
+          size="sm"
+          class="text-danger-strong hover:bg-danger-soft dark:text-danger-dark"
+          :disabled="props.busy"
+          @click="emit('stop', props.fileName)"
+        >
+          <UiIcon name="stop" :size="14" />
+          {{ t('frp.actionStop') }}
+        </UiButton>
+        <UiIconButton
+          :label="t('frp.actionRestart')"
+          size="sm"
+          :disabled="props.busy || !running || needsSave"
+          @click="emit('restart', props.fileName)"
+        >
+          <UiIcon name="refresh" :size="18" />
+        </UiIconButton>
+        <UiButton size="sm" variant="secondary" :disabled="needsSave" @click="onVerify">
+          {{ editor.verifying.value ? t('frp.verifying') : t('frp.actionVerify') }}
+        </UiButton>
+        <UiButton size="sm" :disabled="editingBusy || !editor.dirty.value" @click="onSave">
+          {{ editor.saving.value ? t('frp.saving') : t('frp.actionSave') }}
+        </UiButton>
+      </template>
+    </UiToolbar>
 
     <!-- 错误行（加载失败等，始终可见） -->
     <p
@@ -169,36 +178,19 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
       {{ editor.error.value }}
     </p>
 
-    <!-- 客户端（本档案用哪个 frpc；服务端版本限制常只针对某些档案） -->
-    <div
-      v-if="clientsStore !== null"
-      class="flex shrink-0 items-center border-b border-border px-[10px] py-[4px] dark:border-border-dark"
-    >
-      <ClientPicker
-        :clients="clientsStore.clients.value"
-        :default-id="clientsStore.defaultId.value"
-        :bound-id="props.clientId"
-        :disabled="props.busy || running"
-        @change="onClientChange"
+    <!-- 编辑导航与客户端集中在同一行，窄窗口自动换行 -->
+    <UiToolbar bordered>
+      <UiTabs
+        size="sm"
+        :model-value="tab"
+        :items="[
+          { value: 'config', label: t('frp.tabConfig') },
+          { value: 'log', label: t('frp.tabLog') },
+        ]"
+        @update:model-value="tab = $event as 'config' | 'log'"
       />
-    </div>
 
-    <!-- 页签 -->
-    <UiTabs
-      size="sm"
-      :model-value="tab"
-      :items="[
-        { value: 'config', label: t('frp.tabConfig') },
-        { value: 'log', label: t('frp.tabLog') },
-      ]"
-      @update:model-value="tab = $event as 'config' | 'log'"
-    />
-
-    <!-- 配置页签 -->
-    <div v-if="tab === 'config'" class="flex min-h-0 flex-1 flex-col">
-      <div
-        class="flex shrink-0 items-center gap-[6px] border-b border-border px-[10px] py-[6px] dark:border-border-dark"
-      >
+      <div v-if="tab === 'config'" class="flex items-center gap-[4px]">
         <UiButton
           size="xs"
           :variant="mode === 'form' ? 'primary' : 'secondary'"
@@ -215,14 +207,26 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         >
           {{ t('frp.modeSource') }}
         </UiButton>
-        <span
-          v-if="commentWarning"
-          class="min-w-0 flex-1 truncate text-caption text-warning-strong dark:text-warning-dark"
-        >
-          {{ t('frp.formCommentWarning') }}
-        </span>
       </div>
+      <template v-if="clientsStore !== null" #trailing>
+        <ClientPicker
+          :clients="clientsStore.clients.value"
+          :default-id="clientsStore.defaultId.value"
+          :bound-id="props.clientId"
+          :disabled="props.busy || running"
+          @change="onClientChange"
+        />
+      </template>
+    </UiToolbar>
+    <p
+      v-if="commentWarning && tab === 'config'"
+      class="px-[16px] py-[4px] text-caption text-warning-strong dark:text-warning-dark"
+    >
+      {{ t('frp.formCommentWarning') }}
+    </p>
 
+    <!-- 配置页签 -->
+    <div v-if="tab === 'config'" class="flex min-h-0 flex-1 flex-col">
       <p
         v-if="editor.dirty.value"
         class="px-[10px] py-[4px] text-caption text-text-muted dark:text-text-muted-dark"

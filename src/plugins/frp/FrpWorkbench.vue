@@ -164,7 +164,7 @@ async function onClientsChanged() {
   <div class="flex h-full min-h-0">
     <!-- 左：档案列表 -->
     <ProfileSidebar
-      class="w-[272px] shrink-0"
+      class="w-[240px] shrink-0"
       :items="sidebarItems"
       :active="activeFile"
       :loading="profiles.loading.value"

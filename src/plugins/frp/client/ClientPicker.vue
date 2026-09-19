@@ -81,7 +81,7 @@ const effectiveText = computed(() => {
     />
     <UiTooltip :content="effectiveText">
       <span
-        class="min-w-0 truncate text-caption"
+        class="min-w-0 max-w-[160px] truncate text-caption"
         :class="
           missing
             ? 'text-danger-strong dark:text-danger-dark'

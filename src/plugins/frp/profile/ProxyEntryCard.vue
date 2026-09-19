@@ -56,9 +56,7 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
 </script>
 
 <template>
-  <div
-    class="rounded-md border border-border bg-surface-muted p-[10px] dark:border-border-dark dark:bg-surface-muted-dark"
-  >
+  <div class="border-b border-border pb-[16px] last:border-b-0 dark:border-border-dark">
     <!-- 标题行：序号 + 启用开关 + 删除（删除只此一处） -->
     <div class="mb-[10px] flex items-center gap-[8px]">
       <span class="min-w-0 flex-1 text-caption font-medium text-secondary dark:text-secondary-dark">
@@ -117,7 +115,7 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
       </div>
 
       <!-- 按类型显隐 -->
-      <div v-if="needsRemotePort" class="grid grid-cols-[120px_1fr] gap-[8px]">
+      <div v-if="needsRemotePort" class="grid grid-cols-[120px_1fr] items-end gap-[8px]">
         <UiField :label="t('frp.formProxyRemotePort')" size="sm">
           <UiInput
             type="number"
@@ -127,8 +125,16 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
             @update:model-value="setNumber('remotePort', $event)"
           />
         </UiField>
+        <p class="pb-[5px] text-caption text-text-muted dark:text-text-muted-dark">
+          {{ t('frp.formProxyRemotePortHint') }}
+        </p>
       </div>
-      <UiField v-if="needsDomains" :label="t('frp.formProxyDomains')" size="sm">
+      <UiField
+        v-if="needsDomains"
+        :label="t('frp.formProxyDomains')"
+        :description="t('frp.formProxyDomainsHint')"
+        size="sm"
+      >
         <UiInput
           :model-value="props.modelValue.customDomains"
           size="sm"
