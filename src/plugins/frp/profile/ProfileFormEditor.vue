@@ -75,7 +75,7 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
 
 <template>
   <UiScrollArea as-child axis="vertical">
-    <div class="frp-form h-full min-h-0 p-[16px]">
+    <div class="frp-form min-h-0 min-w-0 flex-1 p-[16px]">
       <div class="frp-form-columns">
         <div class="flex min-w-0 flex-col gap-[16px]">
           <!-- 服务器（常用） -->
@@ -84,7 +84,7 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
             :title="t('frp.formSectionServer')"
             padding="none"
           >
-            <div class="grid grid-cols-[1fr_120px] gap-[10px]">
+            <div class="grid grid-cols-[minmax(0,1fr)_110px] gap-[10px]">
               <UiField :label="t('frp.formServerAddr')" size="sm" required>
                 <UiInput
                   size="sm"
@@ -177,7 +177,7 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
                   @update:model-value="setField('user', String($event))"
                 />
               </UiField>
-              <div class="grid grid-cols-[1fr_120px] gap-[10px]">
+              <div class="grid grid-cols-[minmax(0,1fr)_110px] gap-[10px]">
                 <UiField :label="t('frp.formProtocol')" size="sm">
                   <UiSelect
                     size="sm"
@@ -275,6 +275,20 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
   gap: 24px;
   max-width: 1120px;
   margin-inline: auto;
+  align-items: start;
+}
+
+/* 各层允许收缩，长域名、凭证名称和输入控件不能撑开分栏。 */
+.frp-form :deep(section),
+.frp-form :deep(.field-input),
+.frp-form :deep([role='combobox']) {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.frp-form :deep(p),
+.frp-form :deep(.field-label) {
+  overflow-wrap: anywhere;
 }
 
 @container (min-width: 740px) {

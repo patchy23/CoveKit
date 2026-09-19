@@ -56,7 +56,7 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
 </script>
 
 <template>
-  <div class="border-b border-border pb-[16px] last:border-b-0 dark:border-border-dark">
+  <div class="min-w-0 border-b border-border pb-[16px] last:border-b-0 dark:border-border-dark">
     <!-- 标题行：序号 + 启用开关 + 删除（删除只此一处） -->
     <div class="mb-[10px] flex items-center gap-[8px]">
       <span class="min-w-0 flex-1 text-caption font-medium text-secondary dark:text-secondary-dark">
@@ -75,7 +75,7 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
 
     <div class="flex flex-col gap-[8px]">
       <!-- 类型 + 名称 -->
-      <div class="grid grid-cols-[110px_1fr] gap-[8px]">
+      <div class="grid grid-cols-[110px_minmax(0,1fr)] gap-[8px]">
         <UiField :label="t('frp.formProxyType')" size="sm">
           <UiSelect
             :model-value="props.modelValue.type"
@@ -94,7 +94,7 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
       </div>
 
       <!-- 本地地址 + 本地端口 -->
-      <div class="grid grid-cols-[1fr_120px] gap-[8px]">
+      <div class="grid grid-cols-[minmax(0,1fr)_110px] gap-[8px]">
         <UiField :label="t('frp.formProxyLocalIp')" size="sm">
           <UiInput
             :model-value="props.modelValue.localIP"
@@ -115,7 +115,7 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
       </div>
 
       <!-- 按类型显隐 -->
-      <div v-if="needsRemotePort" class="grid grid-cols-[120px_1fr] items-end gap-[8px]">
+      <div v-if="needsRemotePort" class="grid grid-cols-[110px_minmax(0,1fr)] items-end gap-[8px]">
         <UiField :label="t('frp.formProxyRemotePort')" size="sm">
           <UiInput
             type="number"

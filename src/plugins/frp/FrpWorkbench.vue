@@ -181,7 +181,9 @@ async function onClientsChanged() {
     />
 
     <!-- 右：引导卡 / 详情 -->
-    <div class="flex min-w-0 flex-1 flex-col border-l border-border dark:border-border-dark">
+    <div
+      class="flex min-h-0 min-w-0 flex-1 flex-col border-l border-border dark:border-border-dark"
+    >
       <div
         v-if="profiles.loading.value && profiles.items.value.length === 0"
         class="flex flex-1 items-center justify-center"

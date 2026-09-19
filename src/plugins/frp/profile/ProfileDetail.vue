@@ -7,7 +7,7 @@ import { UiTooltip } from '@/core/ui'
  */
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { UiBadge, UiButton, UiEmptyState, UiIcon, UiSpinner, UiTabs, UiToolbar } from '@/core/ui'
+import { UiBadge, UiButton, UiEmptyState, UiSpinner, UiTabs, UiToolbar } from '@/core/ui'
 import type { FrpRuntimeState } from '../contracts'
 import ClientPicker from '../client/ClientPicker.vue'
 import { FRP_CLIENTS_KEY } from '../client/context'
@@ -105,7 +105,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col">
+  <div class="flex h-full min-h-0 min-w-0 flex-col">
     <!-- 工具栏 -->
     <UiToolbar bordered>
       <UiTooltip :content="props.fileName">
@@ -130,7 +130,6 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
           :disabled="props.busy || needsSave"
           @click="emit('start', props.fileName)"
         >
-          <UiIcon name="play" :size="14" />
           {{ t('frp.actionStart') }}
         </UiButton>
         <UiButton
@@ -141,7 +140,6 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
           :disabled="props.busy"
           @click="emit('stop', props.fileName)"
         >
-          <UiIcon name="stop" :size="14" />
           {{ t('frp.actionStop') }}
         </UiButton>
         <UiButton
@@ -218,7 +216,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
     </p>
 
     <!-- 配置页签 -->
-    <div v-if="tab === 'config'" class="flex min-h-0 flex-1 flex-col">
+    <div v-if="tab === 'config'" class="flex min-h-0 min-w-0 flex-1 flex-col">
       <p
         v-if="editor.dirty.value"
         class="px-[10px] py-[4px] text-caption text-text-muted dark:text-text-muted-dark"
