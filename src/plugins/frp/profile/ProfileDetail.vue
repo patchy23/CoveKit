@@ -126,7 +126,8 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
           v-if="!running"
           :aria-label="t('frp.actionStart')"
           size="sm"
-          variant="primary"
+          variant="secondary"
+          class="text-success-strong dark:text-success-dark"
           :disabled="props.busy || needsSave"
           @click="emit('start', props.fileName)"
         >

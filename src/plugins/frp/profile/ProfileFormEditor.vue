@@ -79,11 +79,7 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
       <div class="frp-form-columns">
         <div class="flex min-w-0 flex-col gap-[16px]">
           <!-- 服务器（常用） -->
-          <UiPanel
-            class="rounded-none !border-0"
-            :title="t('frp.formSectionServer')"
-            padding="none"
-          >
+          <UiPanel :title="t('frp.formSectionServer')" padding="sm">
             <div class="grid grid-cols-[minmax(0,1fr)_110px] gap-[10px]">
               <UiField :label="t('frp.formServerAddr')" size="sm" required>
                 <UiInput
@@ -107,7 +103,7 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
           </UiPanel>
 
           <!-- 认证（常用） -->
-          <UiPanel class="rounded-none !border-0" :title="t('frp.formSectionAuth')" padding="none">
+          <UiPanel :title="t('frp.formSectionAuth')" padding="sm">
             <div class="flex flex-col gap-[10px]">
               <UiField :label="t('frp.formAuthMethod')" size="sm">
                 <UiSelect
@@ -162,12 +158,11 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
 
           <!-- 更多配置（默认收起，保持默认值即可） -->
           <UiPanel
-            class="rounded-none !border-0"
             collapsible
             :default-open="false"
             :title="t('frp.formSectionAdvanced')"
             :description="t('frp.formSectionAdvancedHint')"
-            padding="none"
+            padding="sm"
           >
             <div class="flex flex-col gap-[10px]">
               <UiField :label="t('frp.formUser')" size="sm">
@@ -230,9 +225,8 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
         <!-- 代理列表（核心，始终展开） -->
         <div class="frp-proxies min-w-0">
           <UiPanel
-            class="rounded-none !border-0"
             :title="t('frp.formSectionProxies', { count: props.modelValue.proxies.length })"
-            padding="none"
+            padding="sm"
           >
             <template #actions>
               <UiButton size="xs" @click="addProxy">{{ t('frp.formProxyAdd') }}</UiButton>
@@ -272,9 +266,8 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
 .frp-form-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
+  gap: 16px;
   max-width: 1120px;
-  margin-inline: auto;
   align-items: start;
 }
 
@@ -291,10 +284,9 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
   overflow-wrap: anywhere;
 }
 
-@container (min-width: 740px) {
+@container (min-width: 640px) {
   .frp-form-columns {
     grid-template-columns: 300px minmax(0, 1fr);
-    gap: 32px;
   }
 }
 
