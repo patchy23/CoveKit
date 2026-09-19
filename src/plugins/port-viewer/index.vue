@@ -194,7 +194,13 @@ async function reveal(entry: PortEntry) {
                 <UiTableCell as="th" :resizable="false">状态</UiTableCell>
                 <UiTableCell as="th" :resizable="false">进程 / PID</UiTableCell>
                 <UiTableCell as="th" :resizable="false">程序路径 / 提示</UiTableCell>
-                <UiTableCell as="th" :resizable="false" align="right">操作</UiTableCell>
+                <UiTableCell
+                  as="th"
+                  :resizable="false"
+                  align="right"
+                  class="sticky right-0 z-20 border-l border-border bg-surface-muted dark:border-border-dark dark:bg-surface-muted-dark"
+                  >操作</UiTableCell
+                >
               </tr>
             </thead>
             <tbody>
@@ -254,7 +260,10 @@ async function reveal(entry: PortEntry) {
                   >
                   <p v-if="entry.pid === 0">此连接无可操作的进程</p>
                 </UiTableCell>
-                <UiTableCell content="action" align="right" class="align-top"
+                <UiTableCell
+                  content="action"
+                  align="right"
+                  class="sticky right-0 z-[1] border-l border-border bg-surface align-top dark:border-border-dark dark:bg-surface-dark"
                   ><div class="flex justify-end gap-xs whitespace-nowrap">
                     <UiButton
                       size="sm"
