@@ -37,7 +37,6 @@ const {
   closeTarget,
   closing,
   closeError,
-  notice,
   requestClose,
   cancelClose,
   confirmClose,
@@ -105,7 +104,6 @@ async function revealProgram(process: FileProcess) {
       </form>
       <UiAlert v-if="error" tone="danger" title="查询未完成">{{ error }}</UiAlert>
       <UiAlert v-if="dropError" tone="warning">{{ dropError }}</UiAlert>
-      <UiAlert v-if="notice" tone="success">{{ notice }}</UiAlert>
     </div>
 
     <UiScrollArea class="min-h-0 flex-1">
@@ -147,18 +145,14 @@ async function revealProgram(process: FileProcess) {
               description="本次查询未发现使用者，不保证文件没有占用。关闭相关程序后可以再次查询。"
             />
             <UiTable v-else table-class="table-fixed min-w-[820px]">
-              <colgroup>
-                <col class="w-[148px]" />
-                <col class="w-[148px]" />
-                <col />
-                <col class="w-[300px]" />
-              </colgroup>
               <thead>
                 <tr>
-                  <UiTableCell as="th" :resizable="false">进程 / PID</UiTableCell>
-                  <UiTableCell as="th" :resizable="false">应用 / 服务</UiTableCell>
-                  <UiTableCell as="th" :resizable="false">程序路径 / 状态</UiTableCell>
-                  <UiTableCell as="th" align="right" :resizable="false">操作</UiTableCell>
+                  <UiTableCell as="th" class="w-[148px]">进程 / PID</UiTableCell>
+                  <UiTableCell as="th" class="w-[148px]">应用 / 服务</UiTableCell>
+                  <UiTableCell as="th">程序路径 / 状态</UiTableCell>
+                  <UiTableCell as="th" align="right" :resizable="false" class="w-[300px]"
+                    >操作</UiTableCell
+                  >
                 </tr>
               </thead>
               <tbody>

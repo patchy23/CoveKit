@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { publishToolVisibility, resetToolVisibilityForTest } from '@/core/lifecycle'
 import { scopeStats } from '@/core/lifecycle/scope'
+import { useUiStore } from '@/stores/ui'
 import { UiButton, UiConfirmDialog, UiPagination, UiSelect, UiSwitch, UiTooltip } from '@/core/ui'
 import Page from './index.vue'
 import type { PortSnapshot } from './contracts'
@@ -166,12 +167,22 @@ it('分页保持百条上限，筛选切换回第一页，全部连接展示远�
   expect(scroll.element.contains(page.get('table').element)).toBe(true)
   expect(scroll.element.contains(page.getComponent(UiPagination).element)).toBe(false)
   expect(scroll.classes()).toEqual(expect.arrayContaining(['min-h-0', 'flex-1']))
+  const header = page.get('thead th')
+  const handle = header.get('.cursor-col-resize')
+  await handle.trigger('pointerdown', { clientX: 100 })
+  window.dispatchEvent(new PointerEvent('pointermove', { clientX: 260 }))
+  window.dispatchEvent(new PointerEvent('pointerup'))
+  expect((header.element as HTMLElement).style.width).toBe('160px')
+  expect(page.find('colgroup').exists()).toBe(false)
   scroll.element.scrollTop = 500
   expect(page.text()).not.toContain('远端地址')
   page.getComponent(UiPagination).vm.$emit('update:modelValue', 2)
   await flushPromises()
   expect(page.findAll('tbody tr')).toHaveLength(1)
   expect(page.get('[data-scroll-axis="both"]').element.scrollTop).toBe(0)
+  expect((page.get('thead th').element as HTMLElement).style.width).toBe('160px')
+  await page.get('thead th .cursor-col-resize').trigger('dblclick')
+  expect((page.get('thead th').element as HTMLElement).style.width).toBe('')
   await page.get('input').setValue('8000')
   expect(page.text()).toContain('127.0.0.1:8000')
   expect(page.findComponent(UiPagination).exists()).toBe(false)
@@ -204,6 +215,7 @@ it('查询不重入，失败保留旧快照并禁用关闭，重试成功后恢�
 })
 
 it('关闭必须确认，取消不发送命令，确认携带端点和启动时间并刷新', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   const page = createPage()
   await flushPromises()
   await button(page, '关闭进程').trigger('click')
@@ -238,7 +250,12 @@ it('关闭必须确认，取消不发送命令，确认携带端点和启动时�
   pending.resolve()
   await flushPromises()
   expect(queryCount()).toBe(2)
-  expect(page.text()).toContain('进程 node.exe 已关闭')
+  const ui = useUiStore()
+  expect(ui.toastMessage).toBe('进程 node.exe 已关闭')
+  expect(ui.toastVisible).toBe(true)
+  expect(page.text()).not.toContain('进程 node.exe 已关闭')
+  await vi.advanceTimersByTimeAsync(1600)
+  expect(ui.toastVisible).toBe(false)
   expect(dialog.props('open')).toBe(false)
 })
 

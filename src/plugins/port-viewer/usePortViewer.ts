@@ -4,6 +4,7 @@ import { createScope, type Scope } from '@/core/lifecycle/scope'
 import { useToolScope } from '@/core/lifecycle/useToolLifecycle'
 import { isDesktopRuntime } from '@/core/platform/window'
 import { IpcError } from '@/core/ipc/ipc'
+import { useUiStore } from '@/stores/ui'
 import type { PortEntry, PortSnapshot } from './contracts'
 import { endpointOf, filterEntries, filterError, type PortFilter } from './entries'
 import { ipc } from './ipc'
@@ -14,6 +15,7 @@ function message(cause: unknown): string {
 }
 
 export function usePortViewer() {
+  const ui = useUiStore()
   const { scope, visibility } = useToolScope('port-viewer')
   const desktop = isDesktopRuntime()
   const supported = ref<boolean | null>(null)
@@ -22,7 +24,6 @@ export function usePortViewer() {
     auto = ref(false)
   const snapshot = ref<PortSnapshot | null>(null)
   const error = ref(''),
-    notice = ref(''),
     queriedAt = ref('')
   const filter = reactive<PortFilter>({
     search: '',
@@ -115,7 +116,6 @@ export function usePortViewer() {
     )
       return
     closeError.value = ''
-    notice.value = ''
     closeTarget.value = { ...entry }
   }
   function cancelClose() {
@@ -133,7 +133,7 @@ export function usePortViewer() {
       if (scope.disposed) return
       closeTarget.value = null
       closing.value = false
-      notice.value = `进程 ${target.processName || target.pid} 已关闭`
+      ui.toast(`进程 ${target.processName || target.pid} 已关闭`)
       await query()
     } catch (cause) {
       if (!scope.disposed) closeError.value = message(cause)
@@ -152,7 +152,6 @@ export function usePortViewer() {
     auto,
     snapshot,
     error,
-    notice,
     queriedAt,
     filter,
     validation,

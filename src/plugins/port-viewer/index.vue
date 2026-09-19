@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import {
   UiAlert,
@@ -29,7 +30,6 @@ const {
   auto,
   snapshot,
   error,
-  notice,
   queriedAt,
   filter,
   validation,
@@ -49,6 +49,11 @@ const {
 } = usePortViewer()
 const { copyText } = useCopy()
 const ui = useUiStore()
+const tableViewport = ref<InstanceType<typeof UiScrollArea> | null>(null)
+watch(page, () => {
+  const viewport = tableViewport.value?.$el
+  if (viewport instanceof HTMLElement) viewport.scrollTop = 0
+})
 const views = [
   { value: 'listeners', label: '监听与绑定' },
   { value: 'all', label: '全部连接' },
@@ -125,7 +130,6 @@ async function reveal(entry: PortEntry) {
       <UiAlert v-if="snapshot?.warnings.length" tone="warning" title="部分结果未能读取">{{
         snapshot.warnings.join('；')
       }}</UiAlert>
-      <UiAlert v-if="notice" tone="success">{{ notice }}</UiAlert>
     </div>
 
     <div class="flex min-h-0 flex-1 flex-col p-lg">
@@ -165,7 +169,7 @@ async function reveal(entry: PortEntry) {
         />
         <UiScrollArea
           v-else-if="pageEntries.length"
-          :key="page"
+          ref="tableViewport"
           axis="both"
           class="min-h-0 flex-1 rounded-lg border border-border dark:border-border-dark"
         >
@@ -175,30 +179,21 @@ async function reveal(entry: PortEntry) {
               filter.view === 'all' ? 'table-fixed min-w-[1200px]' : 'table-fixed min-w-[1000px]'
             "
           >
-            <colgroup>
-              <col class="w-[88px]" />
-              <col class="w-[184px]" />
-              <col v-if="filter.view === 'all'" class="w-[200px]" />
-              <col class="w-[112px]" />
-              <col class="w-[144px]" />
-              <col />
-              <col class="w-[288px]" />
-            </colgroup>
             <thead class="sticky top-0 z-10">
               <tr>
-                <UiTableCell as="th" :resizable="false">协议</UiTableCell>
-                <UiTableCell as="th" :resizable="false">本地地址 / 端口</UiTableCell>
-                <UiTableCell v-if="filter.view === 'all'" as="th" :resizable="false"
+                <UiTableCell as="th" class="w-[88px]">协议</UiTableCell>
+                <UiTableCell as="th" class="w-[184px]">本地地址 / 端口</UiTableCell>
+                <UiTableCell v-if="filter.view === 'all'" as="th" class="w-[200px]"
                   >远端地址 / 端口</UiTableCell
                 >
-                <UiTableCell as="th" :resizable="false">状态</UiTableCell>
-                <UiTableCell as="th" :resizable="false">进程 / PID</UiTableCell>
-                <UiTableCell as="th" :resizable="false">程序路径 / 提示</UiTableCell>
+                <UiTableCell as="th" class="w-[112px]">状态</UiTableCell>
+                <UiTableCell as="th" class="w-[144px]">进程 / PID</UiTableCell>
+                <UiTableCell as="th">程序路径 / 提示</UiTableCell>
                 <UiTableCell
                   as="th"
                   :resizable="false"
                   align="right"
-                  class="sticky right-0 z-20 border-l border-border bg-surface-muted dark:border-border-dark dark:bg-surface-muted-dark"
+                  class="sticky right-0 z-20 w-[288px] border-l border-border bg-surface-muted dark:border-border-dark dark:bg-surface-muted-dark"
                   >操作</UiTableCell
                 >
               </tr>

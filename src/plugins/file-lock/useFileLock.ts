@@ -4,11 +4,13 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useToolScope } from '@/core/lifecycle/useToolLifecycle'
 import { isDesktopRuntime } from '@/core/platform/window'
+import { useUiStore } from '@/stores/ui'
 import type { FileLockResult, FileProcess } from './contracts'
 import { ipc } from './ipc'
 
 /** 生命周期随工具卸载结束；隐藏页签不接收全窗口文件拖放。 */
 export function useFileLock(page: Ref<HTMLElement | null>) {
+  const ui = useUiStore()
   const { scope, visibility } = useToolScope('file-lock')
   const desktop = isDesktopRuntime()
   const supported = ref<boolean | null>(null)
@@ -24,7 +26,6 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
   const closeTarget = ref<{ path: string; process: FileProcess } | null>(null)
   const closing = ref(false)
   const closeError = ref('')
-  const notice = ref('')
   let revision = 0
   // 框架 hidden 同时包含窗口失焦，适合后台降频但不能用于外部拖放。
   // 从资源管理器拖入时允许窗口失焦；实际页面隐藏在原生事件到达时另行检查。
@@ -41,7 +42,6 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
       result.value = null
       error.value = ''
       queriedAt.value = ''
-      notice.value = ''
       if (!closing.value) closeTarget.value = null
     },
     { flush: 'sync' }
@@ -114,7 +114,6 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
   function requestClose(process: FileProcess) {
     if (!result.value || busy.value || closing.value || scope.disposed) return
     closeError.value = ''
-    notice.value = ''
     closeTarget.value = { path: result.value.path, process: { ...process } }
   }
 
@@ -138,7 +137,9 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
       if (scope.disposed) return
       closeTarget.value = null
       closing.value = false
-      notice.value = `进程 ${target.process.processName || target.process.appName || target.process.pid} 已关闭`
+      ui.toast(
+        `进程 ${target.process.processName || target.process.appName || target.process.pid} 已关闭`
+      )
       await query()
     } catch (cause) {
       if (!scope.disposed) closeError.value = String(cause)
@@ -224,7 +225,6 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
     closeTarget,
     closing,
     closeError,
-    notice,
     requestClose,
     cancelClose,
     confirmClose,
