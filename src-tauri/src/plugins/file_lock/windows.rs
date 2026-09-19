@@ -4,16 +4,11 @@ use std::path::Path;
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use windows_sys::Win32::Foundation::{
-    CloseHandle, ERROR_MORE_DATA, ERROR_SUCCESS, FILETIME, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT,
-};
+use crate::framework::windows_process::{self, filetime};
+use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, ERROR_SUCCESS, FILETIME};
 use windows_sys::Win32::System::RestartManager::{
     RmEndSession, RmGetList, RmRegisterResources, RmStartSession, RM_PROCESS_INFO,
     RM_UNIQUE_PROCESS,
-};
-use windows_sys::Win32::System::Threading::{
-    GetProcessTimes, IsProcessCritical, OpenProcess, QueryFullProcessImageNameW, TerminateProcess,
-    WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
 };
 
 use super::models::{FileLockResult, FileProcess};
@@ -72,20 +67,6 @@ impl Drop for Session {
     fn drop(&mut self) {
         if let Err(error) = self.close() {
             eprintln!("[file_lock] 资源释放失败：{error}");
-        }
-    }
-}
-
-struct ProcessHandle(HANDLE);
-
-impl Drop for ProcessHandle {
-    fn drop(&mut self) {
-        // SAFETY: 非空 OpenProcess 句柄由本对象独占，同步补全结束后仅关闭一次。
-        if unsafe { CloseHandle(self.0) } == 0 {
-            eprintln!(
-                "[file_lock] 关闭进程查询句柄失败：{}",
-                std::io::Error::last_os_error()
-            );
         }
     }
 }
@@ -195,130 +176,34 @@ fn wide_string(value: &[u16]) -> String {
     String::from_utf16_lossy(&value[..len])
 }
 
-fn filetime(value: FILETIME) -> u64 {
-    (u64::from(value.dwHighDateTime) << 32) | u64::from(value.dwLowDateTime)
-}
-
-fn executable_path(process: &RM_UNIQUE_PROCESS) -> Result<String, String> {
-    // SAFETY: 仅请求查询权限、不继承句柄；失败的空句柄不构造资源守卫。
-    let raw = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, process.dwProcessId) };
-    if raw.is_null() {
-        return Err(format!(
-            "无法读取进程详情，可能已退出或权限不足：{}",
-            std::io::Error::last_os_error()
-        ));
-    }
-    let handle = ProcessHandle(raw);
-    verify_identity(&handle, filetime(process.ProcessStartTime))?;
-    let mut buffer = vec![0u16; 32768];
-    let mut size = 32768u32;
-    // SAFETY: 有效查询句柄；size 等于可写 UTF-16 缓冲区长度，flags=0 请求 Win32 路径。
-    if unsafe { QueryFullProcessImageNameW(handle.0, 0, buffer.as_mut_ptr(), &mut size) } == 0 {
-        return Err(format!(
-            "无法读取程序路径：{}",
-            std::io::Error::last_os_error()
-        ));
-    }
-    let len = usize::try_from(size).map_err(|_| "程序路径长度无效")?;
-    let path = buffer.get(..len).ok_or("程序路径长度超出缓冲区")?;
-    String::from_utf16(path).map_err(|_| "程序路径包含无法显示的字符".into())
-}
-
-fn verify_identity(handle: &ProcessHandle, started_at: u64) -> Result<(), String> {
-    let (mut created, mut exited, mut kernel, mut user) =
-        (ZERO_TIME, ZERO_TIME, ZERO_TIME, ZERO_TIME);
-    // SAFETY: 有效查询句柄，四个独立 FILETIME 输出在调用期间均可写且不别名。
-    if unsafe { GetProcessTimes(handle.0, &mut created, &mut exited, &mut kernel, &mut user) } == 0
-    {
-        return Err(format!(
-            "无法核对进程身份：{}",
-            std::io::Error::last_os_error()
-        ));
-    }
-    if filetime(created) != started_at {
-        return Err("原进程已退出，PID 已被复用；请刷新查询".into());
-    }
-    Ok(())
-}
-
-fn validate_termination_target(pid: u32, started_at: &str) -> Result<u64, String> {
-    if pid <= 4 || pid == std::process::id() {
-        return Err("不允许关闭系统保留进程或 CoveKit 自身".into());
-    }
-    let started = started_at
-        .parse::<u64>()
-        .map_err(|_| "进程身份无效，请重新查询")?;
-    if started == 0 {
-        return Err("缺少进程启动时间，请重新查询".into());
-    }
-    Ok(started)
-}
-
-/// 仅关闭仍使用目标文件且身份匹配的进程；同一内核句柄完成核对、关闭与等待。
+/// 关闭前重新核对文件使用关系，共享平台能力负责进程身份与关键进程保护。
 pub(super) fn terminate(path: &str, pid: u32, started_at: &str) -> Result<(), String> {
-    let started = validate_termination_target(pid, started_at)?;
-    let snapshot = query(path)?;
-    if !snapshot
-        .processes
-        .iter()
-        .any(|process| process.pid == pid && process.started_at == started_at)
-    {
-        return Err("该进程已退出、身份已变化或不再使用此文件，请刷新查询".into());
-    }
-    // SAFETY: 仅打开用户指定 PID，不继承句柄；成功句柄由守卫独占，后续不再按 PID 重新打开。
-    let raw = unsafe {
-        OpenProcess(
-            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | PROCESS_SYNCHRONIZE,
-            0,
-            pid,
-        )
-    };
-    if raw.is_null() {
-        return Err(format!(
-            "无法关闭进程，可能已退出或权限不足：{}",
-            std::io::Error::last_os_error()
-        ));
-    }
-    let handle = ProcessHandle(raw);
-    verify_identity(&handle, started)?;
-    let mut critical = 0;
-    // SAFETY: 有效查询句柄与独立 BOOL 输出；检查失败时拒绝继续关闭。
-    if unsafe { IsProcessCritical(handle.0, &mut critical) } == 0 {
-        return Err(format!(
-            "无法核对系统关键进程状态，已取消关闭：{}",
-            std::io::Error::last_os_error()
-        ));
-    }
-    if critical != 0 {
-        return Err("不允许关闭系统关键进程".into());
-    }
-    // SAFETY: 句柄具备终止权限，已核对启动时间并排除自身与关键进程；仅终止这一个进程。
-    if unsafe { TerminateProcess(handle.0, 1) } == 0 {
-        return Err(format!(
-            "关闭进程失败，请刷新后重试：{}",
-            std::io::Error::last_os_error()
-        ));
-    }
-    // SAFETY: 句柄具备同步权限且在等待期间保持有效；阻塞线程最多等待五秒。
-    match unsafe { WaitForSingleObject(handle.0, 5000) } {
-        WAIT_OBJECT_0 => Ok(()),
-        WAIT_TIMEOUT => Err("已发出关闭请求，但进程尚未退出，请稍后刷新确认".into()),
-        _ => Err(format!(
-            "已发出关闭请求，但无法确认退出状态：{}",
-            std::io::Error::last_os_error()
-        )),
-    }
+    windows_process::terminate(pid, started_at, || {
+        let snapshot = query(path)?;
+        if snapshot
+            .processes
+            .iter()
+            .any(|process| process.pid == pid && process.started_at == started_at)
+        {
+            Ok(())
+        } else {
+            Err("该进程已退出、身份已变化或不再使用此文件，请刷新查询".into())
+        }
+    })
 }
 
 fn describe_process(info: &RM_PROCESS_INFO) -> FileProcess {
-    let (path, error) = match executable_path(&info.Process) {
-        Ok(path) => (Some(path), None),
-        Err(error) => (None, Some(error)),
+    let (path, name, error) = match windows_process::inspect(
+        info.Process.dwProcessId,
+        Some(filetime(info.Process.ProcessStartTime)),
+    ) {
+        Ok(process) => (
+            Some(process.executable_path),
+            Some(process.process_name),
+            None,
+        ),
+        Err(error) => (None, None, Some(error)),
     };
-    let name = path
-        .as_ref()
-        .and_then(|path| Path::new(path).file_name())
-        .map(|name| name.to_string_lossy().into_owned());
     let service = wide_string(&info.strServiceShortName);
     FileProcess {
         pid: info.Process.dwProcessId,
@@ -338,21 +223,6 @@ fn describe_process(info: &RM_PROCESS_INFO) -> FileProcess {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn refuses_reserved_self_and_invalid_termination_identity() {
-        for pid in [0, 4, std::process::id()] {
-            assert!(validate_termination_target(pid, "123").is_err());
-        }
-        let other = if std::process::id() == 42 { 43 } else { 42 };
-        for started in ["", "0", "-1", "bad", "18446744073709551616"] {
-            assert!(validate_termination_target(other, started).is_err());
-        }
-        assert_eq!(
-            validate_termination_target(other, "134029000000000000").unwrap(),
-            134029000000000000
-        );
-    }
 
     #[test]
     fn rejects_relative_nul_missing_and_directory_paths() {
@@ -425,18 +295,6 @@ mod tests {
         assert!(QueryPermit::acquire().is_err());
         drop(permit);
         assert!(QueryPermit::acquire().is_ok());
-    }
-
-    #[test]
-    fn does_not_attach_details_to_a_different_process_identity() {
-        let identity = RM_UNIQUE_PROCESS {
-            dwProcessId: std::process::id(),
-            // 当前进程不可能从 Windows 纪元起点开始运行，用它模拟 PID 被复用。
-            ProcessStartTime: ZERO_TIME,
-        };
-        assert!(executable_path(&identity)
-            .unwrap_err()
-            .contains("PID 已被复用"));
     }
 
     // Windows CI 使用隔离的临时文件验证原生调用链，不接触用户文件或关闭任何进程。

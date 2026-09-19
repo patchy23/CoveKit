@@ -32,6 +32,8 @@ pub mod store;
 pub mod tasks;
 pub mod updater;
 pub mod vault;
+#[cfg(windows)]
+pub(crate) mod windows_process;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, WebviewWindow};

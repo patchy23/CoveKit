@@ -11,6 +11,7 @@ pub mod file_lock;
 pub mod frp;
 pub mod hosts;
 pub mod http_ws;
+pub mod port_viewer;
 pub mod ssh;
 pub mod tts;
 
@@ -30,6 +31,7 @@ crate::covekit_routes! {
     "hosts" => hosts,
     "dns" => dns,
     "file_lock" => file_lock,
+    "port_viewer" => port_viewer,
     "frp" => frp,
     "ssh" => ssh,
     "tts" => tts,

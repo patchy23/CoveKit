@@ -89,14 +89,17 @@ syn = { version = "=2.0.119", default-features = false, features = [
 proc-macro2 = { version = "=1.0.107", features = ["span-locations"] }
 
 [target.'cfg(windows)'.dependencies]
-# framework/secure_store/win_acl：降级主密钥文件的 DACL 收紧（仅当前用户）
+# Windows 原生 ACL、窗口、文件使用关系、进程身份与 IP Helper 端点表；不引入命令行解析依赖。
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Graphics_Gdi",
+  "Win32_NetworkManagement_IpHelper",
+  "Win32_Networking_WinSock",
   "Win32_Security",
   "Win32_Security_Authorization",
   "Win32_Storage_FileSystem",
   "Win32_System_RestartManager",
+  "Win32_System_SystemInformation",
   "Win32_System_Threading",
   "Win32_UI_WindowsAndMessaging",
 ] }

@@ -34,6 +34,21 @@ mod tests {
     /// 冻结快照的是**前后端调用契约**：增删命令、改命令名或改归属者时这张表必须同步更新。
     const PUBLISHED: &[(&str, &str, &str)] = &[
         (
+            "port_viewer",
+            "port_viewer_supported",
+            "查询端口工具的平台支持状态",
+        ),
+        (
+            "port_viewer",
+            "port_viewer_query",
+            "读取本机 TCP 和 UDP 端口及进程快照",
+        ),
+        (
+            "port_viewer",
+            "port_viewer_terminate",
+            "核对端口归属与进程身份后关闭指定进程",
+        ),
+        (
             "file_lock",
             "file_lock_supported",
             "查询文件占用工具的平台支持状态",

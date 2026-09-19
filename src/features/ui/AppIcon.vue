@@ -61,6 +61,8 @@ const inner: Record<string, string> = {
     '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9h17M8 9v10.5M16 9v10.5"/>',
   'file-lock':
     '<path d="M11 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8l4 4v3M12 3v5h5M6 12h4M6 16h3"/><rect x="13" y="15" width="8" height="6" rx="1.5"/><path d="M15 15v-2a2 2 0 0 1 4 0v2"/>',
+  'port-viewer':
+    '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M7 8h3M7 12h6M16 8h1M9 20h6M12 16v4"/>',
   dns: '<circle cx="12" cy="12" r="7.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="2.2"/>',
   xml: '<path d="M8 6l-4 6 4 6M16 6l4 6-4 6M13.5 4l-3 16"/>',
   tts: '<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/>',
