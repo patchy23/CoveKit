@@ -109,6 +109,18 @@ pub struct FrpRun {
 }
 
 impl FrpRun {
+    /// 更新日志状态；连接恢复后清除旧错误，历史详情仍由日志保留。
+    fn record_line(&mut self, line: String) {
+        let (next, error) = next_state(self.state, &FrpEvent::Line(&line));
+        self.state = next;
+        if next == FrpStateName::Running {
+            self.last_error = None;
+        } else if let Some(error) = error {
+            self.last_error = Some(error);
+        }
+        self.last_line = Some(line);
+    }
+
     /// 新建条目（启动瞬间状态为 starting）
     fn new(pid: Option<u32>) -> Self {
         Self {
@@ -255,12 +267,7 @@ fn spawn_reader<R>(
                 },
             );
             update(&app, &file_name, |run| {
-                let (next, error) = next_state(run.state, &FrpEvent::Line(&line));
-                run.state = next;
-                if let Some(error) = error {
-                    run.last_error = Some(error);
-                }
-                run.last_line = Some(line.clone());
+                run.record_line(line);
             })
             .await;
         }
@@ -516,6 +523,22 @@ pub(crate) async fn shutdown_all(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 普通日志保留失败原因，明确成功后才清除，后续失败仍能重新报告。
+    #[test]
+    fn recovered_connection_clears_previous_error() {
+        let mut run = FrpRun::new(Some(1));
+        run.record_line("login to server failed: EOF".to_string());
+        run.record_line("retrying connection".to_string());
+        assert_eq!(run.state, FrpStateName::Error);
+        assert!(run.last_error.is_some());
+        run.record_line("login to server success".to_string());
+        assert_eq!(run.state, FrpStateName::Running);
+        assert!(run.last_error.is_none());
+        run.record_line("start error: port already used".to_string());
+        assert_eq!(run.state, FrpStateName::Error);
+        assert!(run.last_error.is_some());
+    }
 
     /// 迁移表逐行覆盖：成功行 / 失败行 / 退出码 / 超时 / 未知行（任务书 §5.2、§7.1）
     #[test]

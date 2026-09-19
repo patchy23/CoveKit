@@ -5,7 +5,7 @@
  * 无可用 frpc 时右侧显示引导卡；切换档案前若有未保存改动会拦截确认。
  */
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
-import { computed, onMounted, provide, ref, watch } from 'vue'
+import { computed, onMounted, provide, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUiStore } from '@/stores/ui'
 import { UiEmptyState, UiSpinner } from '@/core/ui'
@@ -21,6 +21,7 @@ import ProfileDetail from './profile/ProfileDetail.vue'
 import ProfileSidebar from './profile/ProfileSidebar.vue'
 import { useFrpProfiles } from './profile/useFrpProfiles'
 import { useFrpRuntime } from './runtime/useFrpRuntime'
+import { profileRuntimeView } from './runtime/frpStatus'
 import { useFrpToolLifecycle } from './toolLifecycle'
 
 const { t } = useI18n()
@@ -68,16 +69,9 @@ onMounted(async () => {
   if (profiles.items.value.length > 0) activeFile.value = profiles.items.value[0].fileName
 })
 
-/** 实时运行状态并回列表项，状态点跟随运行状态（不必等下次刷新） */
-watch(
-  () => runtime.states.value,
-  (states) => {
-    profiles.items.value = profiles.items.value.map((item) => {
-      const live = states[item.fileName]
-      return live === undefined ? item : { ...item, state: live.state }
-    })
-  },
-  { deep: true }
+/** 同步状态、错误与 PID；列表刷新也不能覆盖已经收到的运行快照。 */
+const sidebarItems = computed(() =>
+  profiles.items.value.map((item) => profileRuntimeView(item, runtime.states.value[item.fileName]))
 )
 
 /** 档案名规范化（与 Rust 侧一致：自动补 .toml） */
@@ -171,7 +165,7 @@ async function onClientsChanged() {
     <!-- 左：档案列表 -->
     <ProfileSidebar
       class="w-[272px] shrink-0"
-      :items="profiles.items.value"
+      :items="sidebarItems"
       :active="activeFile"
       :loading="profiles.loading.value"
       :error="profiles.error.value"

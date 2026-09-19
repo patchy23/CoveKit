@@ -2,7 +2,54 @@
  * frpStatus 单测：四态映射、日志等级识别、环形缓冲截断
  */
 import { describe, expect, it } from 'vitest'
-import { appendLogLine, logLevel, logLevelClass, statusView, type FrpLogLine } from './frpStatus'
+import {
+  appendLogLine,
+  logLevel,
+  logLevelClass,
+  statusView,
+  profileRuntimeView,
+  type FrpLogLine,
+} from './frpStatus'
+import type { FrpProfileSummary } from '../contracts'
+
+describe('FRP 列表运行快照', () => {
+  const profile: FrpProfileSummary = {
+    fileName: 'test.toml',
+    displayName: 'test',
+    remark: '备注',
+    serverAddr: 'localhost',
+    serverPort: 37000,
+    proxyCount: 1,
+    enabledProxyCount: 1,
+    mtime: 0,
+    state: 'error',
+    lastError: '上次异常退出',
+    pid: 123,
+  }
+
+  it('重新启动和连接成功时清除列表中的旧错误，同时保留档案信息', () => {
+    for (const state of ['starting', 'running'] as const) {
+      const result = profileRuntimeView(profile, { fileName: profile.fileName, state, pid: 456 })
+      expect(result).toMatchObject({ state, pid: 456, remark: '备注' })
+      expect(result.lastError).toBeUndefined()
+    }
+    expect(profile.lastError).toBe('上次异常退出')
+  })
+
+  it('新异常及时替换旧错误，进程退出时清除 PID', () => {
+    const result = profileRuntimeView(profile, {
+      fileName: profile.fileName,
+      state: 'error',
+      lastError: '新异常',
+    })
+    expect(result.lastError).toBe('新异常')
+    expect(result.pid).toBeUndefined()
+  })
+
+  it('尚未取得运行快照时使用列表返回的状态', () => {
+    expect(profileRuntimeView(profile, undefined)).toBe(profile)
+  })
+})
 
 /** 造一条日志行 */
 function line(text: string, ts = 0): FrpLogLine {

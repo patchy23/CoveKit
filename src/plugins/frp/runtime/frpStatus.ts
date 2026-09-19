@@ -2,7 +2,17 @@
  * frp 状态与日志的展示映射（纯函数：文案 key、语义色、日志等级、环形缓冲）
  * 集中在此便于单测锁定，组件只做渲染不做判定。
  */
-import type { FrpLogStream, FrpStateName } from '../contracts'
+import type { FrpLogStream, FrpStateName, FrpProfileSummary, FrpRuntimeState } from '../contracts'
+
+/** 运行快照优先于列表查询的旧状态；缺省字段也必须覆盖，才能清除旧错误和 PID。 */
+export function profileRuntimeView(
+  profile: FrpProfileSummary,
+  runtime: FrpRuntimeState | undefined
+): FrpProfileSummary {
+  return runtime === undefined
+    ? profile
+    : { ...profile, state: runtime.state, pid: runtime.pid, lastError: runtime.lastError }
+}
 
 /** 状态展示视图（i18n key + 语义色档 + 是否中间态） */
 export interface FrpStatusView {
