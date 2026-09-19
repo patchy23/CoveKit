@@ -27,6 +27,7 @@ import {
   Eye,
   EyeOff,
   Folder,
+  GripVertical,
   FolderUp,
   Info,
   LayoutGrid,
@@ -96,6 +97,8 @@ export const UI_ICONS = {
   trash: Trash2,
   /** 目录（列表栏脚、路径展示） */
   folder: Folder,
+  square: Square,
+  'grip-vertical': GripVertical,
   /** 信息提示（空状态与说明文案） */
   info: Info,
   /** 秘密字段显示/隐藏（眼睛切换） */

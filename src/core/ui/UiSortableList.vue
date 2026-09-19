@@ -1,10 +1,11 @@
 <script setup lang="ts">
-/** 可见节点与展开状态受控，兼容原有 UiTree 契约。 */
+/** 无层级列表，顺序更新仅通过 move 请求。 */
+import { computed } from 'vue'
 import CollectionSurface from './collection/CollectionSurface.vue'
-import type { UiTreeItem, UiCollectionMove, UiDropGuard } from './collection/types'
-withDefaults(
+import type { UiListItem, UiCollectionMove, UiDropGuard } from './collection/types'
+const props = withDefaults(
   defineProps<{
-    items: UiTreeItem[]
+    items: UiListItem[]
     modelValue?: string
     rowHeight?: 22 | 24 | 28 | 32
     draggable?: boolean
@@ -22,18 +23,18 @@ withDefaults(
     modelValue: '',
     canDrop: undefined,
     error: '',
-    rowHeight: 24,
-    label: '树形菜单',
+    rowHeight: 28,
+    draggable: true,
+    label: '可排序列表',
     emptyText: '暂无项目',
   }
 )
-export type { UiTreeItem } from './collection/types'
+const rows = computed(() => props.items.map((item) => ({ ...item, depth: 0 })))
 const emit = defineEmits<{
   'update:modelValue': [id: string]
-  select: [item: UiTreeItem]
-  open: [item: UiTreeItem]
-  toggle: [item: UiTreeItem]
-  contextmenu: [item: UiTreeItem, event: MouseEvent]
+  select: [item: UiListItem]
+  open: [item: UiListItem]
+  contextmenu: [item: UiListItem, event: MouseEvent]
   blankContextmenu: [event: MouseEvent]
   move: [move: UiCollectionMove]
   retry: []
@@ -42,9 +43,8 @@ const emit = defineEmits<{
 <template>
   <CollectionSurface
     v-bind="$props"
-    tree
+    :items="rows"
     @update:model-value="emit('update:modelValue', $event)"
-    @toggle="emit('toggle', $event)"
     @select="emit('select', $event)"
     @open="emit('open', $event)"
     @contextmenu="(item, event) => emit('contextmenu', item, event)"

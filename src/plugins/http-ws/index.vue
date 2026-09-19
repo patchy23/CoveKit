@@ -165,11 +165,14 @@ onUnmounted(() => {
   <div class="flex h-full min-h-0 min-w-0 text-primary dark:text-primary-dark">
     <ApiSidebar
       v-if="sidebar"
+      :busy="workspace.groupMoving.value"
+      :group-identities="workspace.groupIdentities.value"
       :apis="apis"
       :groups="groups"
       :active-id="current?.recordId ?? null"
       :loading="loading"
       :error="loadError"
+      @tree-move="(move) => perform(() => workspace.moveTree(move))"
       @select="perform(() => workspace.open($event))"
       @rename="rename"
       @delete="deleting = $event"

@@ -13,6 +13,8 @@ import { onSpaceDataChanged } from '@/core/ipc/spaceEvents'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '../ipc'
 import { useServerGroups } from './useServerGroups'
+import type { UiCollectionMove } from '@/core/ui'
+import { serverTreeDestination, UNGROUPED_DROP_KEY } from './serverTree'
 import type { ServerProfile } from '../contracts'
 
 /** 手工输入的认证；后端按保存方式写入本地库、Vault，或仅用于内存连接。 */
@@ -42,6 +44,20 @@ const NOOP_PORTS: SshProfilePorts = {
 export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
   const ui = useUiStore()
   const profiles = ref<ServerProfile[]>([])
+  const treeMoving = ref(false)
+  let pendingTreeWrites = 0
+  async function libraryWrite(action: () => Promise<void>) {
+    if (treeMoving.value) {
+      ui.toast('目录正在移动，请稍后重试')
+      return
+    }
+    pendingTreeWrites++
+    try {
+      await action()
+    } finally {
+      pendingTreeWrites--
+    }
+  }
   const searchKeyword = ref('')
   const formOpen = ref(false)
   /** 表单当前编辑的副本（新建为 null）；保存失败时保留，用户可继续编辑 */
@@ -110,6 +126,33 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
     } catch (error) {
       profile.groupId = previous
       ui.toast(`移动分组失败：${error}`)
+    }
+  }
+
+  async function moveTree(move: UiCollectionMove) {
+    if (treeMoving.value || pendingTreeWrites) {
+      ui.toast('配置正在保存或移动，请稍后重试')
+      return
+    }
+    const payload = serverTreeDestination(move, profiles.value)
+    if (!payload) return
+    treeMoving.value = true
+    try {
+      await ipc.sshTreeMove(payload)
+      // 写入成功后才更新列表，失败不会留下虚假的新顺序。
+      const [nextProfiles, nextGroups] = await Promise.all([
+        ipc.sshProfileList(),
+        ipc.sshGroupList(),
+      ])
+      profiles.value = nextProfiles
+      groups.value = nextGroups
+      if (payload.kind === 'profile')
+        expandedIds.value = new Set([...expandedIds.value, payload.parent || UNGROUPED_DROP_KEY])
+      ui.toast('位置已保存')
+    } catch (error) {
+      ui.toast(`移动或刷新失败：${error}`)
+    } finally {
+      treeMoving.value = false
     }
   }
 
@@ -246,13 +289,19 @@ export function useSshProfiles(ports: SshProfilePorts = NOOP_PORTS) {
     toggleGroup,
     loadProfiles,
     loadGroups,
-    createGroup,
-    renameGroup,
-    deleteGroup,
+    createGroup: (...args: Parameters<typeof createGroup>) =>
+      libraryWrite(() => createGroup(...args)),
+    renameGroup: (...args: Parameters<typeof renameGroup>) =>
+      libraryWrite(() => renameGroup(...args)),
+    deleteGroup: (...args: Parameters<typeof deleteGroup>) =>
+      libraryWrite(() => deleteGroup(...args)),
     moveToGroup,
-    saveProfile,
+    moveTree,
+    treeMoving,
+    saveProfile: (...args: Parameters<typeof saveProfile>) =>
+      libraryWrite(() => saveProfile(...args)),
     requestDelete,
-    confirmDelete,
+    confirmDelete: () => libraryWrite(confirmDelete),
     showError,
     touchProfileConnected,
   }

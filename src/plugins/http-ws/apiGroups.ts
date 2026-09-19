@@ -24,10 +24,15 @@ export function groupRows(
     }
   }
   const result: ApiSidebarRow[] = []
+  const order = new Map(paths.map((path, index) => [path, index]))
   function visit(parent: string, depth: number) {
     for (const node of [...nodes.values()]
       .filter((node) => node.parent === parent)
-      .sort((a, b) => a.label.localeCompare(b.label, 'zh-CN'))) {
+      .sort(
+        (a, b) =>
+          (order.get(a.path) ?? Number.MAX_SAFE_INTEGER) -
+          (order.get(b.path) ?? Number.MAX_SAFE_INTEGER)
+      )) {
       result.push({
         kind: 'group',
         path: node.path,

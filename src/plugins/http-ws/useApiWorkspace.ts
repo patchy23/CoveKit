@@ -1,6 +1,8 @@
 /** 接口库与多页签草稿；保存捕获目标和快照，异步完成不覆盖后续编辑。 */
 import { computed, reactive, ref, shallowReactive } from 'vue'
 import { ipc } from './ipc'
+import type { UiCollectionMove } from '@/core/ui'
+import { apiTreeDestination } from './apiTree'
 import { fingerprint, fromRecord, newDraft, toRecord, type RequestDraft } from './requestDraft'
 import { useRequestSession, type RequestSession } from './useRequestSession'
 import type { ApiKind, ApiRecord } from './contracts'
@@ -18,6 +20,8 @@ export interface ApiTab {
 export function useApiWorkspace(report: (message: string) => void, visible: () => boolean) {
   const apis = ref<ApiRecord[]>([])
   const groups = ref<string[]>([])
+  // 身份独立于路径，移动整棵目录时选中和折叠仍引用同一节点。
+  const groupIdentities = ref<Record<string, string>>({})
   const moving = ref(new Set<number>())
   const groupMoving = ref(false)
   let pendingWrites = 0
@@ -48,6 +52,9 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
       if (token === loadEpoch && !disposed) {
         apis.value = list
         groups.value = paths
+        groupIdentities.value = Object.fromEntries(
+          paths.map((path) => [path, groupIdentities.value[path] ?? crypto.randomUUID()])
+        )
         loadError.value = ''
       }
     } catch (error) {
@@ -185,6 +192,34 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
       moving.value.delete(id)
     }
   }
+  async function moveTree(move: UiCollectionMove) {
+    if (groupMoving.value || pendingWrites || moving.value.size || tabs.some((tab) => tab.saving))
+      throw new Error('接口库正在保存或移动，请稍后重试')
+    const payload = apiTreeDestination(move, apis.value, groupIdentities.value)
+    if (!payload) throw new Error('不能放置在此处')
+    groupMoving.value = true
+    try {
+      const destination = await ipc.apiTreeMove(payload)
+      if (disposed) return
+      if (payload.kind === 'group') {
+        const remap = (path: string) =>
+          path === payload.id || path.startsWith(`${payload.id}/`)
+            ? destination + path.slice(payload.id.length)
+            : path
+        for (const tab of tabs) tab.groupName = remap(tab.groupName)
+        groupIdentities.value = Object.fromEntries(
+          Object.entries(groupIdentities.value).map(([path, key]) => [remap(path), key])
+        )
+      } else {
+        for (const tab of tabs)
+          if (String(tab.recordId) === payload.id) tab.groupName = payload.parent
+      }
+      await load()
+      report('位置已保存')
+    } finally {
+      groupMoving.value = false
+    }
+  }
   async function dispose() {
     disposed = true
     loadEpoch++
@@ -209,6 +244,9 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
         // 包括尚未保存的新接口；移动不改变草稿快照或连接对象。
         for (const tab of tabs) tab.groupName = movedPath(tab.groupName)
         groups.value = groups.value.map(movedPath)
+        groupIdentities.value = Object.fromEntries(
+          Object.entries(groupIdentities.value).map(([path, key]) => [movedPath(path), key])
+        )
       }
       await load()
       report(`分组已移至 ${parent || '根目录'}`)
@@ -219,6 +257,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
   return {
     apis,
     groups,
+    groupIdentities,
     moving,
     groupMoving,
     tabs,
@@ -237,6 +276,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
     remove: (record: ApiRecord) => libraryWrite(() => remove(record)),
     move,
     moveGroup,
+    moveTree,
     close,
     dispose,
   }

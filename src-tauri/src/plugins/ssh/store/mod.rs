@@ -58,6 +58,9 @@ pub(crate) const MIGRATIONS: &[&str] = &[
        auth_method TEXT NOT NULL,
        password TEXT, private_key TEXT, passphrase TEXT
      );",
+    "ALTER TABLE ssh_profiles ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 2147483647;
+     WITH ranked AS (SELECT id, ROW_NUMBER() OVER (ORDER BY name,id) AS rank FROM ssh_profiles)
+     UPDATE ssh_profiles SET sort_order=(SELECT rank FROM ranked WHERE ranked.id=ssh_profiles.id);",
 ];
 
 /// profile/分组库的惰性句柄（首次访问时打开并迁移）
@@ -94,6 +97,7 @@ pub(crate) fn open_memory() -> Connection {
 
 pub(crate) mod bookmarks;
 pub(crate) mod local_auth;
+pub(crate) mod ordering;
 pub(crate) mod profiles;
 pub(crate) mod tunnels;
 

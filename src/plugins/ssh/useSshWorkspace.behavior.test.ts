@@ -109,6 +109,7 @@ const env = vi.hoisted(() => {
     sshConnections: vi.fn(),
     sshHostKeyRespond: vi.fn(),
     sshGroupList: vi.fn(),
+    sshTreeMove: vi.fn(),
     sshGroupSave: vi.fn(),
     sshGroupDelete: vi.fn(),
   }
@@ -296,6 +297,7 @@ function resetIpc(): void {
   c.sshConnections.mockResolvedValue([])
   c.sshHostKeyRespond.mockResolvedValue({ ok: true })
   c.sshGroupList.mockResolvedValue([])
+  c.sshTreeMove.mockResolvedValue(undefined)
   c.sshGroupSave.mockResolvedValue({ ok: true })
   c.sshGroupDelete.mockResolvedValue({ ok: true })
 }
@@ -320,6 +322,31 @@ afterEach(() => {
 /* ── 2. 服务器配置、凭证前置校验与单一状态源 ── */
 
 describe('SSH 工作区 · 服务器配置与分组', () => {
+  it('排序不触碰认证，失败保留列表，写入中拒绝保存旧配置', async () => {
+    env.commands.sshProfileList.mockResolvedValue([profile('p1', '一'), profile('p2', '二')])
+    const { api } = mountWorkspace()
+    await settle()
+    let reject!: (error: Error) => void
+    env.commands.sshTreeMove.mockReturnValue(
+      new Promise((_, no) => {
+        reject = no
+      })
+    )
+    const moving = api.moveTree({ id: 'profile:p1', targetId: 'profile:p2', position: 'after' })
+    expect(api.treeMoving.value).toBe(true)
+    await api.saveProfile(api.profiles.value[0], {}, false)
+    expect(env.commands.sshProfileSave).not.toHaveBeenCalled()
+    reject(new Error('排序写入失败'))
+    await moving
+    expect(api.profiles.value.map((item) => item.id)).toEqual(['p1', 'p2'])
+    expect(api.treeMoving.value).toBe(false)
+    expect(toastText()).toContain('排序写入失败')
+    env.commands.sshTreeMove.mockResolvedValue(undefined)
+    env.commands.sshProfileList.mockResolvedValue([profile('p2', '二'), profile('p1', '一')])
+    await api.moveTree({ id: 'profile:p1', targetId: 'profile:p2', position: 'after' })
+    expect(api.profiles.value.map((item) => item.id)).toEqual(['p2', 'p1'])
+    expect(env.commands.sshProfileSave).not.toHaveBeenCalled()
+  })
   it('保存成功：关闭表单并入列', async () => {
     const { api } = mountWorkspace()
     await settle()

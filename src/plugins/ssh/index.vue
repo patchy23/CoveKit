@@ -189,10 +189,12 @@ watch(
 <template>
   <div class="flex h-full min-h-0 w-full">
     <ServerList
+      :busy="workspace.treeMoving.value"
       :profiles="filteredProfiles"
       :groups="groups"
       :expanded-ids="expandedIds"
       :search-keyword="searchKeyword"
+      @tree-move="workspace.moveTree"
       @update:search-keyword="searchKeyword = $event"
       @open-connection="createConnection"
       @add="openAddServer"

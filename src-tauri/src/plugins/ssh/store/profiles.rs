@@ -73,13 +73,23 @@ fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerProfile> {
     })
 }
 
-/// 全部服务器配置（按创建顺序）
+/// 逻辑导出也会读取尚未迁移的旧库，因此该入口不依赖新增排序列。
 pub(crate) fn list_profiles(conn: &Connection) -> Result<Vec<ServerProfile>, String> {
+    read_profiles(conn, false)
+}
+
+/// UI 列表仅用于已完成迁移的库；手动排序不进入认证或导出契约。
+fn read_profiles(conn: &Connection, ordered: bool) -> Result<Vec<ServerProfile>, String> {
+    let order = if ordered {
+        "sort_order, created_at, id"
+    } else {
+        "created_at, id"
+    };
     let mut stmt = conn
-        .prepare(
+        .prepare(&format!(
             "SELECT id, name, host, port, username, auth_method, credential_ref, group_id,
-             remark, last_connected_at FROM ssh_profiles ORDER BY created_at, id",
-        )
+             remark, last_connected_at FROM ssh_profiles ORDER BY {order}",
+        ))
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], row_to_profile)
@@ -219,7 +229,7 @@ pub fn ssh_profile_list(
     state: State<'_, ProfileState>,
 ) -> Result<Vec<ServerProfile>, String> {
     with_db(&app, &state, |conn| {
-        let mut profiles = list_profiles(conn)?;
+        let mut profiles = read_profiles(conn, true)?;
         for profile in &mut profiles {
             super::local_auth::annotate(conn, profile)?;
         }

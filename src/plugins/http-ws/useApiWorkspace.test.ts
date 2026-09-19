@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApiRecord } from './contracts'
 const mock = vi.hoisted(() => ({
+  apiTreeMove: vi.fn(),
   apiList: vi.fn(),
   apiGroupList: vi.fn(),
   apiGroupCreate: vi.fn(),
@@ -206,4 +207,31 @@ describe('接口库与多页签', () => {
     expect(workspace.apis.value).toHaveLength(2)
     expect(workspace.loadError.value).toContain('数据库不可读')
   })
+})
+
+it('树排序失败保留顺序和草稿，进行中拒绝重复写入', async () => {
+  const workspace = useApiWorkspace(vi.fn(), () => true)
+  mock.apiList.mockResolvedValue([record(1), record(2)])
+  mock.apiGroupList.mockResolvedValue(['测试'])
+  await workspace.load()
+  const tab = workspace.open(workspace.apis.value[0])
+  tab.draft.body = '未保存正文'
+  let reject!: (error: Error) => void
+  mock.apiTreeMove.mockReturnValue(
+    new Promise((_, no) => {
+      reject = no
+    })
+  )
+  const moving = workspace.moveTree({ id: 'api:1', targetId: 'api:2', position: 'after' })
+  await expect(
+    workspace.moveTree({ id: 'api:2', targetId: 'api:1', position: 'before' })
+  ).rejects.toThrow('正在保存或移动')
+  await expect(workspace.save(tab, tab.name, tab.groupName)).rejects.toThrow('正在移动')
+  const failure = expect(moving).rejects.toThrow('写入失败')
+  reject(new Error('写入失败'))
+  await failure
+  expect(workspace.apis.value.map((api) => api.id)).toEqual([1, 2])
+  expect(tab.draft.body).toBe('未保存正文')
+  expect(workspace.groupMoving.value).toBe(false)
+  await workspace.dispose()
 })

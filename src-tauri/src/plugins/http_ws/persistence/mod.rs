@@ -6,6 +6,7 @@
 
 mod group_move;
 mod models;
+pub(crate) mod ordering;
 mod transfer;
 
 use std::sync::{Mutex, MutexGuard};
@@ -45,6 +46,18 @@ const MIGRATIONS: &[&str] = &[
      ALTER TABLE api_list ADD COLUMN options TEXT NOT NULL DEFAULT '{}';",
     "CREATE TABLE api_groups (path TEXT PRIMARY KEY NOT NULL);
      INSERT INTO api_groups(path) SELECT DISTINCT group_name FROM api_list WHERE group_name <> '';",
+    "ALTER TABLE api_list ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 2147483647;
+     ALTER TABLE api_groups ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 2147483647;
+     WITH RECURSIVE prefixes(path, rest) AS (
+       SELECT '', path || '/' FROM api_groups
+       UNION ALL
+       SELECT path || substr(rest,1,instr(rest,'/')), substr(rest,instr(rest,'/')+1)
+       FROM prefixes WHERE rest<>'' AND instr(rest,'/')>0
+     ) INSERT OR IGNORE INTO api_groups(path) SELECT rtrim(path,'/') FROM prefixes WHERE path<>'';
+     WITH ranked AS (SELECT id, ROW_NUMBER() OVER (ORDER BY updated_at DESC,id DESC) AS rank FROM api_list)
+     UPDATE api_list SET sort_order=(SELECT rank FROM ranked WHERE ranked.id=api_list.id);
+     WITH ranked AS (SELECT path, ROW_NUMBER() OVER (ORDER BY path) AS rank FROM api_groups)
+     UPDATE api_groups SET sort_order=(SELECT rank FROM ranked WHERE ranked.path=api_groups.path);",
 ];
 
 /// 分组使用 / 分隔层级，接口继续保存原有 group_name 路径，避免改写请求身份。
@@ -75,7 +88,7 @@ pub fn api_group_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<
     let guard = db(&app, &state)?;
     guard.as_ref().ok_or("本地库未初始化")?.with_conn(|conn| {
         let mut statement = conn
-            .prepare("SELECT path FROM api_groups ORDER BY path")
+            .prepare("SELECT path FROM api_groups ORDER BY sort_order, path")
             .map_err(|e| e.to_string())?;
         let paths = statement
             .query_map([], |row| row.get(0))
@@ -246,7 +259,7 @@ pub fn api_save(
     })
 }
 
-/// 接口列表（按更新时间倒序，前端侧栏直接渲染）
+/// 接口列表（手动顺序独立于更新时间，保存请求不改变排序）
 #[tauri::command]
 pub fn api_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<ApiRecord>, String> {
     let guard = db(&app, &state)?;
@@ -255,7 +268,7 @@ pub fn api_list(app: AppHandle, state: State<'_, ApiState>) -> Result<Vec<ApiRec
         let mut stmt = c
             .prepare(
                 "SELECT id, type, name, method, url, params, headers, body_mode, body, updated_at, group_name, options
-                 FROM api_list ORDER BY updated_at DESC, id DESC",
+                 FROM api_list ORDER BY sort_order, id",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt

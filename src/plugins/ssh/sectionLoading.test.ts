@@ -59,6 +59,8 @@ it('先显示主机列表，功能页首次进入才加载，返回终端保留�
   })
   const connections = ref<(typeof remote)[]>([])
   fixture.workspace = {
+    treeMoving: ref(false),
+    credentialRequestProfile: ref(null),
     profiles: ref([]),
     filteredProfiles: ref([]),
     groups: ref([]),

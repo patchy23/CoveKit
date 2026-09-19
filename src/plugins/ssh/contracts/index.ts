@@ -52,6 +52,7 @@ export interface CredentialOverride {
 }
 
 export const commands = {
+  sshTreeMove: 'ssh_tree_move',
   sshComposeList: 'ssh_compose_list',
   sshComposeAction: 'ssh_compose_action',
   sshComposeCreate: 'ssh_compose_create',
@@ -138,6 +139,13 @@ export interface CredentialOverride {
 }
 
 export type Payloads = {
+  ssh_tree_move: {
+    kind: 'profile' | 'group'
+    id: string
+    parent: string | null
+    anchor: string | null
+    after: boolean
+  }
   /* 连接 */
   ssh_connect: { profileId: string; overrides?: CredentialOverride }
   ssh_disconnect: { sessionId: string }
@@ -289,6 +297,7 @@ export type InvokePayloads = Omit<
 /* ── 命令返回 ── */
 
 export type Results = {
+  ssh_tree_move: void
   /* 连接 */
   ssh_connect: SshConnectOutcome
   ssh_disconnect: SshActionResult

@@ -1,7 +1,7 @@
 /**
  * 双栏文件拖拽（远程⇄本地上传/下载）：pointer 事件自实现
  * Tauri dragDropEnabled 会吞掉应用内 HTML5 拖拽（AGENTS.md 已知坑），必须用 pointerdown/move/up 手写。
- * 参照 useGroupDrag 的阈值与监听模式；拖拽起点 = 行 pointerdown，跨栏投放才生效（同栏投放丢弃）。
+ * 文件跨栏传输使用指针阈值；拖拽起点 = 行 pointerdown，跨栏投放才生效（同栏投放丢弃）。
  */
 import { onScopeDispose, ref, type Ref } from 'vue'
 import type { RemoteFile } from '../contracts'

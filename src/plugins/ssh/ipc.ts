@@ -28,6 +28,7 @@ function cmd<K extends keyof InvokePayloads & keyof Results>(
 }
 
 export const ipc = {
+  sshTreeMove: (payload: Payloads['ssh_tree_move']) => cmd(commands.sshTreeMove, payload),
   sshComposeList: (connectionId: string) => cmd(commands.sshComposeList, { connectionId }),
   sshComposeAction: (payload: Payloads['ssh_compose_action']) =>
     cmd(commands.sshComposeAction, payload),

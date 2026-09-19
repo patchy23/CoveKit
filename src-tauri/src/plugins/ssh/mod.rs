@@ -44,6 +44,7 @@ crate::covekit_module! {
         store::bookmarks::ssh_bookmark_delete => "删除目录书签",
         store::profiles::ssh_profile_save => "新增/更新服务器配置（支持本地认证或 Vault）",
         store::profiles::ssh_profile_delete => "删除服务器配置",
+        store::ordering::ssh_tree_move => "移动并排序服务器树节点",
         store::profiles::ssh_group_list => "服务器分组列表",
         store::profiles::ssh_group_save => "新增/更新分组",
         store::profiles::ssh_group_delete => "删除分组（组内配置移回未分组）",

@@ -43,10 +43,22 @@
 - **页签条三件套（2026-08-16 用户定稿：页签永不换行 + 溢出收纳公共化）**：① CSS 红线：`.ui-tab` 带 `whitespace-nowrap`/`shrink-0`，文字套 `.ui-tab-label`（max-w-160 truncate），`.ui-tabs` 是 `overflow-hidden` 不再 `overflow-x-auto`——「页签名字无论何时只能一行」。② 溢出用公共 **UiTabsOverflow**（`@/core/ui`）：触发器是**横向三点 dots 图标**（Ellipsis，UiIcon 注册名 `dots`；初版 chevron+数量徽标被用户否——「常规是三个点图标」），下拉样式对齐 UiSelect，逐行悬停 X 关闭，点外收起，emits `select/close`。③ composable **useTabsOverflow**（容器 ref + items + active + reserved + widthOpts{extra,maxLabel} → visible/hidden）：按**每个页签文字实际宽度**估算（CJK 14px/其余 8px + extra 固定宽，文字 capped）动态决定可见个数——固定单宽估算（如一律 190px）窄窗口只剩 3 个被用户否。两个硬约束：**容器必须 `overflow-hidden`**（否则 scrollWidth 不可测）；**估算必须配实测反馈**——纯估算偏小会出现「没显示完但没出三点」被裁掉，watchPostEffect 渲染后测 scrollWidth>clientWidth 即 trim+1 逐步多收直至收敛（宽度/页签数变化重置 trim）。**第三个硬约束（2026-09-05 实测）：UiTabsOverflow 下拉面板必须 Teleport 到 body 用 fixed 定位**——面板若绝对定位在页签条内，会被容器的 overflow-hidden 整体裁掉，症状是「点三点没反应」（其实开了但看不见）；触发器右缘对齐面板右缘。数据库工作台与 ToolWorkspace 都已接入同一套；ToolWorkspace 旧的自写「···」下拉已删，勿再造私有溢出菜单。
 - **components.test.ts 的原生控件/表格禁令只扫描 `src/plugins/**/*.vue`**：`src/features/**`、`src/core/**` 下的框架级页面（SettingsPage、凭证管理面板等）不被契约测试强制，但仍须自觉走 Ui* 组件与语义字体 token。
 - **UiCombobox（2026-09-05 新增，`@/core/ui`）**：可输入搜索的下拉选择（reka Combobox 封装）——触发框输入即过滤（匹配 label + keywords，大小写不敏感）、↑↓ 高亮、Enter 选中；样式对齐 UiSelect（`ui-control-*` 档位 + z-[220] 浮层）。props：`modelValue / options{value,label,keywords} / placeholder / searchPlaceholder / emptyText / size`；选项末尾可放「+ 新建」哨兵项由调用方拦截（ServerForm 的 `__create__` 模式）。选项多（>8 个）或需要搜索时用它，不要用 UiSelect 硬撑。
-- **UiListRow（2026-09-05 新增，`@/core/ui`）**：列表行壳——统一 size（sm=28px/md=34px）+ hover/选中态 + indent 缩进 + cursor 语义（default/pointer/grab），内容全走默认插槽，事件（click/dblclick/contextmenu/pointerdown）直接挂组件上透传根元素。侧栏/列表的自绘 div 行一律收编（SSH 连接行、ApiSidebar 接口行已迁移）；UiTree 不动（树逻辑已公共）。组件实验室 NavigationShowcase 有示例。
+- **UiListRow（2026-09-05 新增，`@/core/ui`）**：列表行壳——统一 size（sm=28px/md=34px）+ hover/选中态 + indent 缩进 + cursor 语义（default/pointer/grab），内容全走默认插槽，事件（click/dblclick/contextmenu/pointerdown）直接挂组件上透传根元素。普通列表行复用此壳；需要排序或层级时使用下述 UiSortableList / UiTree，SSH 和接口侧栏已接入。组件实验室 NavigationShowcase 有示例。
 - **含反斜杠的字符串 prop 禁止走 HTML 属性直传**（2026-09-08 本地面包屑不分层实测）：`separator="\\"` 传入的是两个字符的反斜杠，与 JS 里单 `'\\'` 不相等且**编译无警告**——必须 `:separator="'\\'"` 绑定表达式。排查信号：组件行为像「没收到 prop」但模板里明明写了。
 - **Vue 多根片段静默丢 class 透传（2026-09-06 FileBrowser 列表「显示不全」实测）**：组件 template 有多个根节点时，父组件传的 `class="min-w-0 flex-1"` 等 attrs 被 Vue **静默丢弃**（仅控制台 warning），flex 尺寸丢失 → 列表区塌陷空白。拆子组件时必须包单根 `div.flex.h-full.min-h-0.flex-col` 再谈内部布局。同类：给行元素挂 `:data-selected` 自定义属性但全仓没有对应 CSS = 选中态哑的（SSH 文件双栏两侧都踩过），选中态用真实 class 绑定或 UiListRow 的 `active` prop。
 - **Vue 模板内联事件处理器不支持多语句**（2026-09-05 vite 编译报错白屏实测；2026-09-09 在 ConfirmDialog `@confirm="emit(...); x = false; emit('close')"` 又踩一次——**「确认后连环动作」是高发形态**，写到弹窗 confirm 处理器时就要警觉）：分号/换行多语句直接被 vue compiler 拒绝（vite-error-overlay 报 Error parsing JavaScript expression）。多步操作一律抽成方法（如 `onConfirmed()`），模板只留单调用。
 - **右键菜单/弹窗内操作 xterm 后必须归还焦点**（2026-09-05 实测）：菜单点击把焦点带离 xterm 隐藏输入框 → 粘贴后光标消失、键盘无响应；TerminalTab 复制/全选/粘贴三个动作的 finally 统一 `term?.focus()`。新增终端类组件照此自检。
 - **凭证选择 UI 定稿（2026-09-05 两轮纠偏）**：工具侧选凭证 = **认证方式/来源下拉加「凭证」档 + 下方独立的 UiCombobox 可搜索凭证下拉**（参考 ssh/ServerForm）。两个被否方案勿回潮：① 独立「凭证库」字段与认证方式并列（初版 CredentialPicker 形态，被嫌割裂）；② 凭证条目直接混进认证方式下拉（vault:<id> 选项）——用户原话「认证方式里面加一个凭证类型，然后下面提供一个凭证的可输入搜索的下拉框」。配套行为：选中凭证后手工输入框隐藏；凭证档未选凭证时提交拦截；引用失效/凭证库加载失败**红字直接提示**（原 CredentialPicker 静默 catch 加载失败 → 「下拉是空的毫无反馈」实测 bug）；凭证类型不符由后端连接时明确报错（apply_vault_credential 模式）。
 
+
+
+## 可排序列表与可拖拽树
+
+- `UiSortableList`：`items: UiListItem[]`，每项有稳定 `id`、`label`，可选 `description/kind/badge/muted/disabled/draggable`。默认允许排序，无父子层级。
+- `UiTree`：`items: UiTreeItem[]` 是深度优先排列的**可见节点**，在列表项基础上增加 `depth/expandable/expanded/loading`。默认不拖动，启用时传 `draggable`。空目录显式设置 `expandable`，不要根据子项数量判定目录。兼容数据库工具原有展开事件。
+- 两者共用 `modelValue` 单选、`rowHeight` 22/24/28/32、`dragHandle`、`disabled/busy/loading/error/filtered/emptyText/label`。过滤中禁拖；busy 禁止重复操作；失败不改变传入数据。搜索、工具栏和业务菜单由页面组合。
+- `move` 只发请求 `{ id, targetId, position }`，position 为 before/after/inside；targetId 为 null 表示根层末尾。业务 `canDrop(move)` 附加约束，组件默认拒绝自身、后代及禁用节点。业务负责原子保存并更新 items，不能只改显示顺序。
+- 事件：`select(item)`、`update:modelValue(id)`、`toggle(item)`、`open(item)`、`contextmenu(item,event)`、`blankContextmenu(event)`、`retry()`。展开由业务持有，节点身份不随改名或移动改变。
+- 插槽：`icon/label/row/suffix` 均提供 item，row 另提供 selected；empty 可自定义空态。suffix 中的按钮不会选择或拖动行，不将按钮嵌入另一按钮。
+- 方向键导航，树左右展开/返回父项；Alt+上下移动顺序，树 Alt+左右移出/移入前一个目录。拖动超过阈值才启动；Esc、失焦、指针取消与卸载均清理；悬停目录延迟展开，边缘自动滚动。
+- 插入线和拖动预览不占布局空间，不在开始拖动后往列表中插入“移至根目录”行。组件实验室 `CollectionShowcase` 演示列表、树、空目录、禁用、长列表、加载、失败重试及模拟保存失败。

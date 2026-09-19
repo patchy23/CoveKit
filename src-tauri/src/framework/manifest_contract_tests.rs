@@ -365,6 +365,7 @@ mod tests {
         ("http_ws", "api_clear", "清空全部接口"),
         ("http_ws", "api_delete", "删除接口"),
         ("http_ws", "api_group_create", "创建接口分组"),
+        ("http_ws", "api_tree_move", "移动并排序接口树节点"),
         ("http_ws", "api_group_move", "移动接口分组树"),
         ("http_ws", "api_group_list", "接口分组列表"),
         ("http_ws", "api_list", "接口列表"),
@@ -412,6 +413,7 @@ mod tests {
         ("ssh", "ssh_file_rename", "重命名远程文件/目录"),
         ("ssh", "ssh_file_upload", "上传文件（进度事件推送）"),
         ("ssh", "ssh_group_delete", "删除分组（组内配置移回未分组）"),
+        ("ssh", "ssh_tree_move", "移动并排序服务器树节点"),
         ("ssh", "ssh_group_list", "服务器分组列表"),
         ("ssh", "ssh_group_save", "新增/更新分组"),
         (

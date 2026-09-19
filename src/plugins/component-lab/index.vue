@@ -6,6 +6,7 @@ import ExpandableTableShowcase from './ExpandableTableShowcase.vue'
 import DatabaseWorkbenchShowcase from './DatabaseWorkbenchShowcase.vue'
 import EditorShowcase from './EditorShowcase.vue'
 import NavigationShowcase from './NavigationShowcase.vue'
+import CollectionShowcase from './CollectionShowcase.vue'
 import { UiBadge } from '@/core/ui'
 </script>
 
@@ -28,5 +29,6 @@ import { UiBadge } from '@/core/ui'
     <DatabaseWorkbenchShowcase />
     <EditorShowcase />
     <NavigationShowcase />
+    <CollectionShowcase />
   </div>
 </template>

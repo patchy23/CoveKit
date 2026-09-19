@@ -107,6 +107,8 @@ export function useSshWorkspace() {
     renameGroup: profilesApi.renameGroup,
     deleteGroup: profilesApi.deleteGroup,
     moveToGroup: profilesApi.moveToGroup,
+    moveTree: profilesApi.moveTree,
+    treeMoving: profilesApi.treeMoving,
     toggleGroup: profilesApi.toggleGroup,
     /* 连接工作区 */
     connectionWorkspaces: connections.connectionWorkspaces,

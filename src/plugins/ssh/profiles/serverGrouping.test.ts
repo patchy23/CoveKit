@@ -47,7 +47,7 @@ it('空白处提供新建入口，分组和服务器菜单不会被冒泡覆盖'
   await wrapper.vm.$nextTick()
   expect(wrapper.find('input[placeholder="分组名称，如：生产环境"]').exists()).toBe(true)
 
-  await wrapper.get('[data-group-drop="group-1"]').trigger('contextmenu')
+  await wrapper.get('[data-collection-id="group:group-1"]').trigger('contextmenu')
   items = wrapper.getComponent(ContextMenu).props('items')
   items.find((item) => item.label === '添加服务器')?.onClick?.()
   expect(wrapper.emitted('add')?.[1]).toEqual(['group-1'])

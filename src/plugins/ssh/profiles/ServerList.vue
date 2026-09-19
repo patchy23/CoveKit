@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { UiScrollArea } from '@/core/ui'
-import { UiTooltip } from '@/core/ui'
 /**
  * SSH 服务器列表（分组版）：连接按分组归组，拖拽入组；「未分组」虚拟组固定沉底。
  * 连接状态由右侧连接页签持有，列表不展示连接状态。
@@ -8,8 +6,9 @@ import { UiTooltip } from '@/core/ui'
  */
 import { computed, ref } from 'vue'
 import type { ServerProfile } from '../contracts'
-import { useGroupDrag, type ServerGroup } from './useServerGroups'
-import ServerGroupList from './ServerGroupList.vue'
+import type { ServerGroup } from './useServerGroups'
+import type { UiTreeItem, UiCollectionMove } from '@/core/ui'
+import { serverTreeItems, serverTreeDestination } from './serverTree'
 import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import {
@@ -17,12 +16,15 @@ import {
   UiIcon,
   UiIconButton,
   UiInput,
-  UiListRow,
+  UiTooltip,
+  UiTree,
+  UiSortableList,
   UiModal,
   UiSearchInput,
 } from '@/core/ui'
 
 const props = defineProps<{
+  busy?: boolean
   profiles: ServerProfile[]
   groups: ServerGroup[]
   /** 展开的分组 id 集合（null 键 = 未分组虚拟组） */
@@ -42,20 +44,49 @@ const emit = defineEmits<{
   (event: 'createGroup', name: string): void
   (event: 'renameGroup', groupId: string, name: string): void
   (event: 'deleteGroup', groupId: string): void
+  (event: 'treeMove', move: UiCollectionMove): void
 }>()
-
-/** 拖拽入组（逻辑在 useGroupDrag；命中上抛为 moveToGroup 事件） */
-const { drag, dragOverId, onRowPointerDown } = useGroupDrag((profileId, groupId) =>
-  emit('moveToGroup', profileId, groupId)
-)
 
 const searching = computed(() => props.searchKeyword.trim().length > 0)
 
 /** 组内连接（按名称排序，稳定展示） */
 function profilesOf(groupId: string | null): ServerProfile[] {
-  return props.profiles
-    .filter((p) => (p.groupId ?? null) === groupId)
-    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+  return props.profiles.filter((p) => (p.groupId ?? null) === groupId)
+}
+
+const selected = ref('')
+const rows = computed(() =>
+  searching.value
+    ? props.profiles.map((profile) => ({
+        id: `profile:${profile.id}`,
+        label: profile.name,
+        depth: 0,
+        kind: 'profile',
+      }))
+    : serverTreeItems(props.groups, props.profiles, props.expandedIds)
+)
+function canDrop(move: UiCollectionMove) {
+  return serverTreeDestination(move, props.profiles) !== null
+}
+function nodeMenu(item: UiTreeItem, event: MouseEvent) {
+  const id = item.id.slice(item.id.indexOf(':') + 1)
+  if (item.kind === 'group') {
+    const group = props.groups.find((group) => group.id === id)
+    if (group) openGroupMenu(event, group)
+    else {
+      event.preventDefault()
+      menu.value = { kind: 'blank', x: event.clientX, y: event.clientY }
+    }
+  } else {
+    const profile = props.profiles.find((profile) => profile.id === id)
+    if (profile) openProfileMenu(event, profile)
+  }
+}
+function nodeTitle(item: UiTreeItem) {
+  const profile = props.profiles.find((profile) => `profile:${profile.id}` === item.id)
+  return profile
+    ? `${profile.username}@${profile.host}:${profile.port}（双击新建连接）`
+    : item.label
 }
 
 /* ── 右键菜单 ── */
@@ -164,7 +195,6 @@ function confirmDeleteGroup() {
 <template>
   <div
     class="flex w-[180px] shrink-0 flex-col border-r border-border dark:border-border-dark"
-    :class="{ 'select-none': drag?.active }"
     @contextmenu="openBlankMenu"
   >
     <div class="shrink-0 px-[12px] py-[10px]">
@@ -183,49 +213,36 @@ function confirmDeleteGroup() {
       </UiSearchInput>
     </div>
 
-    <UiScrollArea as-child axis="vertical">
-      <div class="min-h-0 flex-1 px-[6px] pb-[8px]">
-        <!-- 搜索态：平铺列表 -->
-        <template v-if="searching">
-          <UiTooltip
-            v-for="profile in profiles"
-            :key="profile.id"
-            :content="`${profile.username}@${profile.host}:${profile.port}（双击新建连接）`"
-          >
-            <UiListRow
-              size="sm"
-              @dblclick="emit('openConnection', profile.id)"
-              @contextmenu="openProfileMenu($event, profile)"
-            >
-              <span class="min-w-0 flex-1 truncate font-medium text-primary dark:text-primary-dark">
-                {{ profile.name }}
-              </span>
-            </UiListRow>
-          </UiTooltip>
-        </template>
-
-        <!-- 分组态（ServerGroupList 子组件承载分组行/组内行/未分组） -->
-        <ServerGroupList
-          v-else
-          :profiles="profiles"
-          :groups="groups"
-          :expanded-ids="expandedIds"
-          :drag-over-id="dragOverId"
-          @open-connection="emit('openConnection', $event)"
-          @profile-menu="openProfileMenu"
-          @group-menu="openGroupMenu"
-          @toggle-group="emit('toggleGroup', $event)"
-          @row-pointer-down="onRowPointerDown"
-        />
-
-        <p
-          v-if="!profiles.length"
-          class="px-[8px] py-[16px] text-center text-body-sm text-text-muted dark:text-text-muted-dark"
-        >
-          暂无服务器<br />点击「+ 添加服务器」新建配置
-        </p>
-      </div>
-    </UiScrollArea>
+    <component
+      :is="searching ? UiSortableList : UiTree"
+      v-model="selected"
+      :items="rows"
+      :row-height="28"
+      draggable
+      :filtered="searching"
+      :busy="busy"
+      :can-drop="canDrop"
+      label="服务器目录"
+      :empty-text="searching ? '没有匹配的服务器' : '暂无服务器'"
+      @toggle="emit('toggleGroup', $event.id.slice(6))"
+      @open="emit('openConnection', $event.id.slice(8))"
+      @contextmenu="nodeMenu"
+      @blank-contextmenu="openBlankMenu"
+      @move="emit('treeMove', $event)"
+    >
+      <template #icon="{ item }"
+        ><UiIcon
+          v-if="item.kind === 'group'"
+          name="folder"
+          :size="13"
+          class="text-text-muted dark:text-text-muted-dark"
+      /></template>
+      <template #label="{ item }"
+        ><UiTooltip :content="nodeTitle(item)"
+          ><span class="block truncate font-medium">{{ item.label }}</span></UiTooltip
+        ></template
+      >
+    </component>
 
     <!-- 底部入口常驻，搜索或列表铺满时仍可管理指纹。 -->
     <div class="shrink-0 border-t border-border px-[12px] py-[8px] dark:border-border-dark">
@@ -264,14 +281,5 @@ function confirmDeleteGroup() {
       @confirm="confirmDeleteGroup"
       @close="deleteGroupTarget = null"
     />
-
-    <!-- 拖拽中的浮动指示（跟随指针的迷你标签） -->
-    <div
-      v-if="drag?.active"
-      class="pointer-events-none fixed z-[300] rounded-md border border-tertiary bg-surface px-[8px] py-[4px] text-body-sm font-medium text-tertiary-strong shadow-md dark:bg-surface-dark dark:text-tertiary-dark"
-      :style="{ left: `${drag.x + 12}px`, top: `${drag.y + 12}px` }"
-    >
-      {{ drag.name }}
-    </div>
   </div>
 </template>
