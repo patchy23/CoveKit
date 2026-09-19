@@ -195,7 +195,7 @@ function onRemarkSubmit(remark: string) {
           </UiTooltip>
           <span class="min-w-0 flex-1">
             <span class="flex min-w-0 items-center gap-[6px]">
-              <UiTooltip :content="item.fileName">
+              <UiTooltip :content="item.remark.trim() || item.fileName">
                 <span class="min-w-0 flex-1 truncate text-body-sm dark:text-primary-dark">
                   {{ item.displayName || item.fileName }}
                 </span>
@@ -218,13 +218,6 @@ function onRemarkSubmit(remark: string) {
               }}
               · {{ t('frp.proxyCount', { count: item.proxyCount }) }}
             </span>
-            <UiTooltip v-if="item.remark !== ''" :content="item.remark">
-              <span
-                class="mt-[1px] block truncate text-caption text-tertiary-strong dark:text-tertiary-dark"
-              >
-                {{ item.remark }}
-              </span>
-            </UiTooltip>
             <UiTooltip v-if="item.lastError" :content="item.lastError">
               <span
                 class="mt-[1px] block truncate text-caption text-danger-strong dark:text-danger-dark"
