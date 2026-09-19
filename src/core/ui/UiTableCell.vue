@@ -10,8 +10,10 @@ const props = withDefaults(
     align?: 'left' | 'center' | 'right'
     /** 表头拖拽调宽（默认开启，仅 as="th" 生效）：右缘拖拽手柄，双击复位自动宽度 */
     resizable?: boolean
+    /** fit 在相邻可调列间分配宽度，保持表格总宽；双击恢复整行默认宽度。 */
+    resizeMode?: 'grow' | 'fit'
   }>(),
-  { as: 'td', content: 'text', align: 'left', resizable: true }
+  { as: 'td', content: 'text', align: 'left', resizable: true, resizeMode: 'grow' }
 )
 
 const classes = computed(() =>
@@ -41,7 +43,7 @@ let stopResize: (() => void) | undefined
 
 onBeforeUnmount(() => stopResize?.())
 watch(
-  () => [props.as, props.resizable],
+  () => [props.as, props.resizable, props.resizeMode],
   () => stopResize?.()
 )
 
@@ -52,14 +54,58 @@ function startResize(event: PointerEvent): void {
   event.preventDefault()
   dragStartX = event.clientX
   dragStartWidth = cell.getBoundingClientRect().width
+  const headers = Array.from(cell.parentElement?.children ?? []).filter(
+    (item): item is HTMLElement => item instanceof HTMLElement
+  )
+  const index = headers.indexOf(cell)
+  const adjustable = (item: HTMLElement | undefined) => item?.dataset.resizable === 'true'
+  const neighbor = adjustable(headers[index + 1])
+    ? headers[index + 1]
+    : adjustable(headers[index - 1])
+      ? headers[index - 1]
+      : undefined
+  const neighborWidth = neighbor?.getBoundingClientRect().width ?? 0
+  const widths = headers.map((header) => header.getBoundingClientRect().width)
+  const adjustableWidth = headers.reduce(
+    (sum, header, position) => sum + (adjustable(header) ? widths[position] : 0),
+    0
+  )
+  const fixedWidth = headers.reduce(
+    (sum, header, position) => sum + (adjustable(header) ? 0 : widths[position]),
+    0
+  )
+  const fitWidth = (width: number) => {
+    const ratio = width / adjustableWidth
+    return `calc(${ratio * 100}% - ${fixedWidth * ratio}px)`
+  }
+  if (props.resizeMode === 'fit') {
+    if (!neighbor || dragStartWidth < MIN_COLUMN_WIDTH || neighborWidth < MIN_COLUMN_WIDTH) return
+    // 按可用空间保存比例，窗口缩小时仍可收缩；固定操作列不参与分配。
+    headers.forEach((header, position) => {
+      if (adjustable(header)) header.style.width = fitWidth(widths[position])
+    })
+  }
   // 拖拽期间禁止选中文字（松手恢复）
   const alreadyLocked = document.body.classList.contains('ui-drag-select-lock')
   document.body.classList.add('ui-drag-select-lock')
   const onMove = (move: PointerEvent) => {
-    const next = Math.max(MIN_COLUMN_WIDTH, Math.round(dragStartWidth + move.clientX - dragStartX))
+    const requested = Math.max(
+      MIN_COLUMN_WIDTH,
+      Math.round(dragStartWidth + move.clientX - dragStartX)
+    )
+    const next =
+      props.resizeMode === 'fit'
+        ? Math.min(requested, dragStartWidth + neighborWidth - MIN_COLUMN_WIDTH)
+        : requested
     // width + minWidth 同写：table auto 布局下 width 只是建议值，minWidth 防止其他列把它压回去
-    cell.style.width = `${next}px`
-    cell.style.minWidth = `${next}px`
+    if (props.resizeMode === 'fit' && neighbor) {
+      const remaining = dragStartWidth + neighborWidth - next
+      cell.style.width = fitWidth(next)
+      neighbor.style.width = fitWidth(remaining)
+    } else {
+      cell.style.width = `${next}px`
+      cell.style.minWidth = `${next}px`
+    }
   }
   const onUp = () => {
     if (!alreadyLocked) document.body.classList.remove('ui-drag-select-lock')
@@ -80,13 +126,27 @@ function startResize(event: PointerEvent): void {
 function resetWidth(): void {
   const cell = cellRef.value
   if (!cell) return
+  if (props.resizeMode === 'fit') {
+    for (const header of Array.from(cell.parentElement?.children ?? [])) {
+      if (!(header instanceof HTMLElement)) continue
+      header.style.width = ''
+      header.style.minWidth = ''
+    }
+    return
+  }
   cell.style.width = ''
   cell.style.minWidth = ''
 }
 </script>
 
 <template>
-  <component :is="as" ref="cellRef" :class="classes" :data-content-kind="content">
+  <component
+    :is="as"
+    ref="cellRef"
+    :class="classes"
+    :data-content-kind="content"
+    :data-resizable="as === 'th' ? resizable : undefined"
+  >
     <slot />
     <span
       v-if="as === 'th' && resizable"

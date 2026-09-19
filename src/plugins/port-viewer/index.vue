@@ -54,6 +54,19 @@ watch(page, () => {
   const viewport = tableViewport.value?.$el
   if (viewport instanceof HTMLElement) viewport.scrollTop = 0
 })
+watch(
+  () => filter.view,
+  () => {
+    const viewport = tableViewport.value?.$el
+    if (!(viewport instanceof HTMLElement)) return
+    // 列集合改变后恢复比例，避免旧列宽与新增远端列叠加超出容器。
+    viewport.querySelectorAll<HTMLElement>('thead th').forEach((header) => {
+      header.style.width = ''
+      header.style.minWidth = ''
+    })
+  },
+  { flush: 'post' }
+)
 const views = [
   { value: 'listeners', label: '监听与绑定' },
   { value: 'all', label: '全部连接' },
@@ -170,30 +183,37 @@ async function reveal(entry: PortEntry) {
         <UiScrollArea
           v-else-if="pageEntries.length"
           ref="tableViewport"
-          axis="both"
-          class="min-h-0 flex-1 rounded-lg border border-border dark:border-border-dark"
+          axis="vertical"
+          class="min-h-0 min-w-0 flex-1 overflow-x-hidden rounded-lg border border-border dark:border-border-dark"
         >
-          <UiTable
-            :framed="false"
-            :table-class="
-              filter.view === 'all' ? 'table-fixed min-w-[1200px]' : 'table-fixed min-w-[1000px]'
-            "
-          >
+          <UiTable :framed="false" table-class="table-fixed">
             <thead class="sticky top-0 z-10">
               <tr>
-                <UiTableCell as="th" class="w-[88px]">协议</UiTableCell>
-                <UiTableCell as="th" class="w-[184px]">本地地址 / 端口</UiTableCell>
-                <UiTableCell v-if="filter.view === 'all'" as="th" class="w-[200px]"
+                <UiTableCell as="th" resize-mode="fit" class="w-[calc(10%-28.8px)]"
+                  >协议</UiTableCell
+                >
+                <UiTableCell as="th" resize-mode="fit" class="w-[calc(20%-57.6px)]"
+                  >本地地址 / 端口</UiTableCell
+                >
+                <UiTableCell
+                  v-if="filter.view === 'all'"
+                  as="th"
+                  resize-mode="fit"
+                  class="w-[calc(20%-57.6px)]"
                   >远端地址 / 端口</UiTableCell
                 >
-                <UiTableCell as="th" class="w-[112px]">状态</UiTableCell>
-                <UiTableCell as="th" class="w-[144px]">进程 / PID</UiTableCell>
-                <UiTableCell as="th">程序路径 / 提示</UiTableCell>
+                <UiTableCell as="th" resize-mode="fit" class="w-[calc(15%-43.2px)]"
+                  >状态</UiTableCell
+                >
+                <UiTableCell as="th" resize-mode="fit" class="w-[calc(15%-43.2px)]"
+                  >进程 / PID</UiTableCell
+                >
+                <UiTableCell as="th" resize-mode="fit">程序路径 / 提示</UiTableCell>
                 <UiTableCell
                   as="th"
                   :resizable="false"
                   align="right"
-                  class="sticky right-0 z-20 w-[288px] border-l border-border bg-surface-muted dark:border-border-dark dark:bg-surface-muted-dark"
+                  class="sticky right-0 z-20 w-[288px] bg-surface-muted dark:bg-surface-muted-dark"
                   >操作</UiTableCell
                 >
               </tr>
@@ -201,8 +221,8 @@ async function reveal(entry: PortEntry) {
             <tbody>
               <tr v-for="(entry, index) in pageEntries" :key="`${entryKey(entry)}:${index}`">
                 <UiTableCell content="technical" class="align-top"
-                  ><p>{{ entry.protocol }}</p>
-                  <p class="mt-xs">{{ entry.family }}</p></UiTableCell
+                  ><p class="truncate">{{ entry.protocol }}</p>
+                  <p class="mt-xs truncate">{{ entry.family }}</p></UiTableCell
                 >
                 <UiTableCell content="technical" class="align-top"
                   ><UiTooltip :content="addressText(entry.localAddress, entry.localPort)"
@@ -240,7 +260,7 @@ async function reveal(entry: PortEntry) {
                       {{ entry.processName ?? (entry.pid === 0 ? '无所属进程' : '进程名称未读取') }}
                     </p></UiTooltip
                   >
-                  <p class="mt-xs whitespace-nowrap">PID {{ entry.pid }}</p></UiTableCell
+                  <p class="mt-xs truncate">PID {{ entry.pid }}</p></UiTableCell
                 >
                 <UiTableCell content="technical" class="align-top">
                   <UiTooltip v-if="entry.executablePath" :content="entry.executablePath"
@@ -253,12 +273,12 @@ async function reveal(entry: PortEntry) {
                       {{ entry.detailError }}
                     </p></UiTooltip
                   >
-                  <p v-if="entry.pid === 0">此连接无可操作的进程</p>
+                  <p v-if="entry.pid === 0" class="truncate">此连接无可操作的进程</p>
                 </UiTableCell>
                 <UiTableCell
                   content="action"
                   align="right"
-                  class="sticky right-0 z-[1] border-l border-border bg-surface align-top dark:border-border-dark dark:bg-surface-dark"
+                  class="sticky right-0 z-[1] bg-surface align-top dark:bg-surface-dark"
                   ><div class="flex justify-end gap-xs whitespace-nowrap">
                     <UiButton
                       size="sm"

@@ -9,6 +9,8 @@
 
 ## 组件真实 API 备忘
 
+- **UiTableCell 列宽调整**：`as="th"` 默认启用 `resizable`；`resizeMode="grow"` 为原有像素调宽，允许表格变宽。需要表格始终贴合容器时，数据列表头统一使用 `resizeMode="fit"`，配合 `UiTable table-class="table-fixed"` 和按比例设置的初始表头宽度，不使用固定宽度的 `colgroup`。fit 在相邻可调列间分配空间，保留不可调操作列，以比例保存调宽结果以适应窗口变化；双击任一手柄恢复整行默认宽度。单行无合并单元格的表头适用，业务切换列集合时需清除旧行内宽度。
+
 - **UiEmptyState 紧凑空状态**：子表、展开详情等局部区域传 `compact`，使用正文小字号、常规字重与 64px 最小高度；默认仍为页面空状态的标题字号和 160px 最小高度。组件固定使用界面字体，避免继承表格的数据字体。
 
 - **展开行的视觉层级**：`UiTableExpandableRow` 使用缩进的 neutral 底衬与 surface 内容区、细边框和小圆角，避免详情与相邻主行斑马纹混在一起；不叠加阴影。子表推荐 `UiTable density="compact"`，不要使用 comfortable 放大次级信息；表单和反馈内容自行添加内部间距，表格可直接铺满内容区。

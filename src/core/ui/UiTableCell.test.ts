@@ -1,11 +1,43 @@
 /**
  * UiTableCell 契约测试：表头不换行、resizable 拖拽调宽与双击复位。
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import UiTableCell from './UiTableCell.vue'
 
 describe('UiTableCell 表头行为', () => {
+  it('fit 模式仅在相邻数据列间分配比例，保留固定操作列，双击恢复默认', async () => {
+    const wrapper = mount({
+      components: { UiTableCell },
+      template:
+        '<table><thead><tr><UiTableCell as="th" resize-mode="fit">名称</UiTableCell><UiTableCell as="th" resize-mode="fit">路径</UiTableCell><UiTableCell as="th" :resizable="false">操作</UiTableCell></tr></thead></table>',
+    })
+    const headers = wrapper.findAll('th')
+    const widths = [100, 200, 288]
+    headers.forEach((header, index) =>
+      vi
+        .spyOn(header.element, 'getBoundingClientRect')
+        .mockReturnValue({ width: widths[index] } as DOMRect)
+    )
+    try {
+      const handle = headers[0].get('.cursor-col-resize')
+      await handle.trigger('pointerdown', { clientX: 100 })
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX: 150 }))
+      expect((headers[0].element as HTMLElement).style.width).toBe('calc(50% - 144px)')
+      expect((headers[1].element as HTMLElement).style.width).toBe('calc(50% - 144px)')
+      expect((headers[2].element as HTMLElement).style.width).toBe('')
+      expect((headers[0].element as HTMLElement).style.minWidth).toBe('')
+      window.dispatchEvent(new PointerEvent('pointermove', { clientX: 1000 }))
+      expect((headers[1].element as HTMLElement).style.width).toContain(`${(40 / 300) * 100}%`)
+      window.dispatchEvent(new PointerEvent('pointerup'))
+      await handle.trigger('dblclick')
+      headers.forEach((header) => expect((header.element as HTMLElement).style.width).toBe(''))
+    } finally {
+      window.dispatchEvent(new PointerEvent('pointerup'))
+      wrapper.unmount()
+      vi.restoreAllMocks()
+    }
+  })
   for (const reason of ['pointercancel', 'blur', 'unmount', 'disabled']) {
     it(`拖拽在 ${reason} 后释放全局锁并停止修改列宽`, async () => {
       const wrapper = mount(UiTableCell, { props: { as: 'th' }, attachTo: document.body })
