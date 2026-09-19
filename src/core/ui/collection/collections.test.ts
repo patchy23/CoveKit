@@ -2,6 +2,7 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import UiTree from '../UiTree.vue'
 import UiSortableList from '../UiSortableList.vue'
+import UiIcon from '../UiIcon.vue'
 import { validMove } from './types'
 enableAutoUnmount(afterEach)
 afterEach(() => {
@@ -14,6 +15,25 @@ const rows = [
   { id: 'empty', label: '空目录', depth: 0, expandable: true, expanded: false },
   { id: 'locked', label: '不可用', depth: 0, disabled: true },
 ]
+it('叶子默认无图标，分支保留文件夹且业务可显式提供叶子图标', () => {
+  const tree = mount(UiTree, { props: { items: rows } })
+  expect(tree.get('[data-collection-id="child"]').findComponent(UiIcon).exists()).toBe(false)
+  expect(
+    tree
+      .get('[data-collection-id="a"]')
+      .findAllComponents(UiIcon)
+      .map((icon) => icon.props('name'))
+  ).toContain('folder')
+  const custom = mount(UiTree, {
+    props: { items: rows },
+    slots: { icon: '<span data-business-icon>GET</span>' },
+  })
+  expect(custom.get('[data-collection-id="child"] [data-business-icon]').text()).toBe('GET')
+  const list = mount(UiSortableList, {
+    props: { items: [{ id: 'one', label: '项目' }], draggable: false },
+  })
+  expect(list.findComponent(UiIcon).exists()).toBe(false)
+})
 const pointer = (type: string, x = 30, y = 15) =>
   window.dispatchEvent(
     new PointerEvent(type, { pointerId: 1, button: 0, clientX: x, clientY: y, cancelable: true })

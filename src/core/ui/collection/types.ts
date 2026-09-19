@@ -2,7 +2,7 @@
 export interface UiListItem {
   id: string
   label: string
-  /** false 时不渲染图标插槽及默认图标，层级缩进保持不变。 */
+  /** 默认仅分支显示文件夹，叶子无默认图标；false 同时隐藏业务图标插槽，层级缩进不变。 */
   showIcon?: boolean
   description?: string
   kind?: string

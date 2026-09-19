@@ -294,7 +294,8 @@ const insertion = computed(() => {
         <slot name="row" :item="item" :selected="modelValue === item.id">
           <slot v-if="item.showIcon !== false" name="icon" :item="item"
             ><UiIcon
-              :name="item.expandable ? 'folder' : 'square'"
+              v-if="item.expandable"
+              name="folder"
               :size="12"
               class="shrink-0 text-text-muted dark:text-text-muted-dark"
           /></slot>
