@@ -121,7 +121,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
       <UiIconButton
         v-if="!running"
         :label="t('frp.actionStart')"
-        size="md"
+        size="sm"
         class="text-success-strong hover:bg-success-soft disabled:opacity-40 dark:text-success-dark"
         :disabled="props.busy"
         @click="emit('start', props.fileName)"
@@ -131,7 +131,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
       <UiIconButton
         v-else
         :label="t('frp.actionStop')"
-        size="md"
+        size="sm"
         class="text-danger-strong hover:bg-danger-soft dark:text-danger-dark"
         :disabled="props.busy"
         @click="emit('stop', props.fileName)"
@@ -140,7 +140,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
       </UiIconButton>
       <UiIconButton
         :label="t('frp.actionRestart')"
-        size="md"
+        size="sm"
         :disabled="props.busy || !running"
         @click="emit('restart', props.fileName)"
       >
@@ -178,6 +178,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
 
     <!-- 页签 -->
     <UiTabs
+      size="sm"
       :model-value="tab"
       :items="[
         { value: 'config', label: t('frp.tabConfig') },

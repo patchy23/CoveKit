@@ -109,6 +109,7 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
           <UiInput
             type="number"
             :model-value="props.modelValue.localPort ?? ''"
+            class="frp-port-input"
             size="sm"
             @update:model-value="setNumber('localPort', $event)"
           />
@@ -121,6 +122,7 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
           <UiInput
             type="number"
             :model-value="props.modelValue.remotePort ?? ''"
+            class="frp-port-input"
             size="sm"
             @update:model-value="setNumber('remotePort', $event)"
           />

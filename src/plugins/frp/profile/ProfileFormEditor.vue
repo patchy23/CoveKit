@@ -79,15 +79,18 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
         <!-- 服务器（常用） -->
         <UiPanel :title="t('frp.formSectionServer')" padding="sm">
           <div class="grid grid-cols-[1fr_120px] gap-[10px]">
-            <UiField :label="t('frp.formServerAddr')" required>
+            <UiField :label="t('frp.formServerAddr')" size="sm" required>
               <UiInput
+                size="sm"
                 :model-value="props.modelValue.serverAddr"
                 :placeholder="t('frp.formServerAddrPlaceholder')"
                 @update:model-value="setField('serverAddr', String($event))"
               />
             </UiField>
-            <UiField :label="t('frp.formServerPort')">
+            <UiField :label="t('frp.formServerPort')" size="sm">
               <UiInput
+                size="sm"
+                class="frp-port-input"
                 type="number"
                 :model-value="props.modelValue.serverPort ?? ''"
                 placeholder="7000"
@@ -100,15 +103,21 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
         <!-- 认证（常用） -->
         <UiPanel :title="t('frp.formSectionAuth')" padding="sm">
           <div class="flex flex-col gap-[10px]">
-            <UiField :label="t('frp.formAuthMethod')">
+            <UiField :label="t('frp.formAuthMethod')" size="sm">
               <UiSelect
+                size="sm"
                 :model-value="props.modelValue.authMethod"
                 :options="authOptions"
                 @update:model-value="setField('authMethod', String($event))"
               />
             </UiField>
-            <UiField :label="t('frp.formAuthToken')" :description="t('frp.formAuthTokenHint')">
+            <UiField
+              :label="t('frp.formAuthToken')"
+              :description="t('frp.formAuthTokenHint')"
+              size="sm"
+            >
               <UiInput
+                size="sm"
                 :model-value="props.modelValue.authToken"
                 type="password"
                 @update:model-value="setField('authToken', String($event))"
@@ -126,22 +135,29 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
           padding="sm"
         >
           <div class="flex flex-col gap-[10px]">
-            <UiField :label="t('frp.formUser')">
+            <UiField :label="t('frp.formUser')" size="sm">
               <UiInput
+                size="sm"
                 :model-value="props.modelValue.user"
                 @update:model-value="setField('user', String($event))"
               />
             </UiField>
             <div class="grid grid-cols-[1fr_120px] gap-[10px]">
-              <UiField :label="t('frp.formProtocol')">
+              <UiField :label="t('frp.formProtocol')" size="sm">
                 <UiSelect
+                  size="sm"
                   :model-value="props.modelValue.protocol"
                   :options="protocolOptions"
                   @update:model-value="setField('protocol', String($event))"
                 />
               </UiField>
-              <UiField :label="t('frp.formPoolCount')" :description="t('frp.formPoolCountHint')">
+              <UiField
+                :label="t('frp.formPoolCount')"
+                :description="t('frp.formPoolCountHint')"
+                size="sm"
+              >
                 <UiInput
+                  size="sm"
                   type="number"
                   :model-value="props.modelValue.poolCount ?? ''"
                   @update:model-value="setNumber('poolCount', $event)"
@@ -150,20 +166,23 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
             </div>
             <!-- 开关与字段不同构：做成左标签右开关的一行，避免独占半列留出大片空白 -->
             <div class="flex items-center justify-between gap-[10px]">
-              <span class="field-label text-body">{{ t('frp.formTls') }}</span>
+              <span class="field-label text-body-sm">{{ t('frp.formTls') }}</span>
               <UiSwitch
+                size="sm"
                 :model-value="props.modelValue.tlsEnable"
                 @update:model-value="setField('tlsEnable', Boolean($event))"
               />
             </div>
-            <UiField :label="t('frp.formTlsServerName')">
+            <UiField :label="t('frp.formTlsServerName')" size="sm">
               <UiInput
+                size="sm"
                 :model-value="props.modelValue.tlsServerName"
                 @update:model-value="setField('tlsServerName', String($event))"
               />
             </UiField>
-            <UiField :label="t('frp.formLogLevel')">
+            <UiField :label="t('frp.formLogLevel')" size="sm">
               <UiSelect
+                size="sm"
                 :model-value="props.modelValue.logLevel"
                 :options="logLevelOptions"
                 @update:model-value="setField('logLevel', String($event))"
@@ -205,3 +224,16 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
     </div>
   </UiScrollArea>
 </template>
+
+<style scoped>
+/* 端口保留数字输入语义，但不显示逐个增减的步进按钮；同时覆盖代理条目。 */
+:deep(.frp-port-input) {
+  appearance: textfield;
+}
+
+:deep(.frp-port-input::-webkit-inner-spin-button),
+:deep(.frp-port-input::-webkit-outer-spin-button) {
+  margin: 0;
+  -webkit-appearance: none;
+}
+</style>
