@@ -219,6 +219,9 @@ export default {
     binaryVersionsFailed: 'Failed to load releases: {message}',
     binaryLoadingVersions: 'Loading releases…',
     binaryNoVersion: 'No release available',
+    binaryCustomVersion: 'Specify an older version',
+    binaryCustomVersionHint:
+      'Enter a full version such as 0.60.0. Prefer the same version as your server.',
     binaryFooterHint:
       'You can also point to a path manually; if auto-extract fails, unpack it yourself and pick frpc.',
   },

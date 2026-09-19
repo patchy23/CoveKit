@@ -213,6 +213,8 @@ export default {
     binaryVersionsFailed: '获取版本列表失败：{message}',
     binaryLoadingVersions: '正在获取版本列表…',
     binaryNoVersion: '没有可下载的版本',
+    binaryCustomVersion: '指定历史版本',
+    binaryCustomVersionHint: '填写完整版本号，如 0.60.0；优先与服务端版本一致。',
     binaryFooterHint: '也可以手动指定路径；若自动解压失败，请手动解压后选择 frpc。',
   },
   sshLog: {
