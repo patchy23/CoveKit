@@ -7,16 +7,7 @@ import { UiTooltip } from '@/core/ui'
  */
 import { computed, inject, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  UiBadge,
-  UiButton,
-  UiEmptyState,
-  UiIcon,
-  UiIconButton,
-  UiSpinner,
-  UiTabs,
-  UiToolbar,
-} from '@/core/ui'
+import { UiBadge, UiButton, UiEmptyState, UiIcon, UiSpinner, UiTabs, UiToolbar } from '@/core/ui'
 import type { FrpRuntimeState } from '../contracts'
 import ClientPicker from '../client/ClientPicker.vue'
 import { FRP_CLIENTS_KEY } from '../client/context'
@@ -153,14 +144,15 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
           <UiIcon name="stop" :size="14" />
           {{ t('frp.actionStop') }}
         </UiButton>
-        <UiIconButton
-          :label="t('frp.actionRestart')"
+        <UiButton
+          :aria-label="t('frp.actionRestart')"
           size="sm"
+          variant="secondary"
           :disabled="props.busy || !running || needsSave"
           @click="emit('restart', props.fileName)"
         >
-          <UiIcon name="refresh" :size="18" />
-        </UiIconButton>
+          {{ t('frp.actionRestart') }}
+        </UiButton>
         <UiButton size="sm" variant="secondary" :disabled="needsSave" @click="onVerify">
           {{ editor.verifying.value ? t('frp.verifying') : t('frp.actionVerify') }}
         </UiButton>
