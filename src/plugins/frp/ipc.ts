@@ -6,6 +6,7 @@ import { invokeCommand } from '@/core/ipc/ipc'
 import { commands } from './contracts'
 import type {
   FrpBinaryInfo,
+  FrpDeletedProfile,
   FrpClient,
   FrpClientList,
   FrpOpResult,
@@ -18,6 +19,11 @@ import type {
 } from './contracts'
 
 export const ipc = {
+  /** 查询当前目录和空间中的回收站。 */
+  profilesDeleted: (): Promise<FrpDeletedProfile[]> => invokeCommand(commands.profilesDeleted, {}),
+  /** 恢复原文件名，同名时拒绝覆盖。 */
+  profileRestore: (trashName: string, managed: boolean): Promise<FrpOpResult> =>
+    invokeCommand(commands.profileRestore, { trashName, managed }),
   /** 列出配置目录下的全部档案（含运行状态与元数据） */
   profilesList: (): Promise<FrpProfileList> => invokeCommand(commands.profilesList, {}),
   /** 读取单个档案（原文 + TOML 解析结果） */

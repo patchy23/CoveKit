@@ -16,6 +16,7 @@ import type { FrpProfileSummary } from '../contracts'
 import { statusView } from '../runtime/frpStatus'
 import ProfileNameDialog from './ProfileNameDialog.vue'
 import ProfileRemarkDialog from './ProfileRemarkDialog.vue'
+import DeletedProfilesDialog from './DeletedProfilesDialog.vue'
 
 const props = defineProps<{
   /** 档案摘要列表 */
@@ -40,12 +41,15 @@ const emit = defineEmits<{
   reveal: [fileName: string]
   /** 打开客户端管理弹窗 */
   openClients: []
+  /** 恢复成功后刷新档案列表。 */
+  restored: []
 }>()
 
 const { t } = useI18n()
 
 /** 搜索关键字 */
 const keyword = ref('')
+const showDeleted = ref(false)
 /** 右键菜单（null = 未打开） */
 const menu = ref<{ x: number; y: number; item: FrpProfileSummary } | null>(null)
 /** 名称弹窗（null = 未打开） */
@@ -158,6 +162,9 @@ function onRemarkSubmit(remark: string) {
     <!-- 搜索 -->
     <div class="shrink-0 px-[10px] pb-[6px]">
       <UiSearchInput v-model="keyword" size="sm" :placeholder="t('frp.searchPlaceholder')" />
+      <UiButton size="xs" variant="ghost" class="mt-[4px]" @click="showDeleted = true">
+        {{ t('frp.deletedTitle') }}
+      </UiButton>
     </div>
 
     <!-- 列表 -->
@@ -255,6 +262,12 @@ function onRemarkSubmit(remark: string) {
       @close="menu = null"
     />
 
+    <!-- 恢复已删除配置 -->
+    <DeletedProfilesDialog
+      :open="showDeleted"
+      @close="showDeleted = false"
+      @restored="emit('restored')"
+    />
     <!-- 新建 / 重命名 / 复制 -->
     <ProfileNameDialog
       :open="nameDialog !== null"

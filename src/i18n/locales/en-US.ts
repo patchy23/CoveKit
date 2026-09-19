@@ -104,6 +104,11 @@ export default {
     menuDuplicate: 'Duplicate',
     menuRemark: 'Edit note',
     menuDelete: 'Delete',
+    deletedTitle: 'Deleted profiles',
+    deletedHint:
+      'Restore to the original folder and name without starting. Rename any existing profile with the same name first.',
+    deletedEmpty: 'No profiles to restore',
+    restoreProfile: 'Restore',
     // Create / rename / duplicate
     dialogCreateTitle: 'New config profile',
     dialogRenameTitle: 'Rename profile',

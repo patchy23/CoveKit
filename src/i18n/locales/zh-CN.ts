@@ -119,6 +119,10 @@ export default {
     template_empty: '空白配置',
     // 删除确认
     deleteTitle: '删除配置档案',
+    deletedTitle: '已删除配置',
+    deletedHint: '恢复到原目录和原文件名，不自动启动。同名配置已存在时，请先重命名现有配置。',
+    deletedEmpty: '没有可恢复的配置',
+    restoreProfile: '恢复',
     deleteMessage: '将把 {name} 移入同目录下的 .trash/ 备份目录，不会直接抹除。',
     deleteConfirm: '移入 .trash',
     // 备注

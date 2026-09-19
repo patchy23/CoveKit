@@ -5,6 +5,20 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// 回收站条目；不向前端暴露可任意指定的磁盘路径。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FrpDeletedProfile {
+    /// 回收站内单段文件名。
+    pub trash_name: String,
+    /// 删除前的档案文件名。
+    pub file_name: String,
+    /// 删除时间，Unix 毫秒。
+    pub deleted_at: i64,
+    /// 是否位于当前空间的导入目录。
+    pub managed: bool,
+}
+
 /// 档案运行状态取值（契约字面量：stopped / starting / running / error）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

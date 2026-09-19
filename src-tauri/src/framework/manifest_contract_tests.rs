@@ -362,6 +362,8 @@ mod tests {
         ("frp", "frp_profile_client_set", "设置档案绑定的客户端"),
         ("frp", "frp_profile_create", "新建档案（内置模板）"),
         ("frp", "frp_profile_delete", "删除档案（移入 .trash/ 软删）"),
+        ("frp", "frp_profiles_deleted", "列出已删除的配置档案"),
+        ("frp", "frp_profile_restore", "恢复已删除的配置档案"),
         ("frp", "frp_profile_duplicate", "复制档案"),
         ("frp", "frp_profile_read", "读取档案原文与 TOML 解析结果"),
         ("frp", "frp_profile_remark", "写入档案备注（只落 frp.db）"),

@@ -81,6 +81,14 @@ export interface FrpProfileSummary {
   lastError?: string
 }
 
+/** 当前目录或空间导入目录中的已删除配置。 */
+export interface FrpDeletedProfile {
+  trashName: string
+  fileName: string
+  deletedAt: number
+  managed: boolean
+}
+
 /** 档案列表返回 */
 export interface FrpProfileList {
   ok: boolean
@@ -194,6 +202,8 @@ export const commands = {
   profileDuplicate: 'frp_profile_duplicate',
   profileRename: 'frp_profile_rename',
   profileDelete: 'frp_profile_delete',
+  profilesDeleted: 'frp_profiles_deleted',
+  profileRestore: 'frp_profile_restore',
   profileRemark: 'frp_profile_remark',
   verify: 'frp_verify',
   start: 'frp_start',
@@ -220,6 +230,8 @@ export type Payloads = {
   frp_profile_duplicate: { fileName: string; newName: string }
   frp_profile_rename: { fileName: string; newName: string }
   frp_profile_delete: { fileName: string }
+  frp_profiles_deleted: Record<string, never>
+  frp_profile_restore: { trashName: string; managed: boolean }
   frp_profile_remark: { fileName: string; remark: string }
   frp_verify: { fileName: string }
   frp_start: { fileName: string }
@@ -246,6 +258,8 @@ export type Results = {
   frp_profile_duplicate: FrpOpResult
   frp_profile_rename: FrpOpResult
   frp_profile_delete: FrpOpResult
+  frp_profiles_deleted: FrpDeletedProfile[]
+  frp_profile_restore: FrpOpResult
   frp_profile_remark: FrpOpResult
   frp_verify: FrpVerifyResult
   frp_start: FrpRuntimeState

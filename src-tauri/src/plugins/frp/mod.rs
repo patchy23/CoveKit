@@ -7,6 +7,7 @@ mod models;
 pub(crate) mod profile;
 pub(crate) mod runtime;
 mod transfer;
+pub(crate) mod trash;
 pub(crate) mod verify;
 
 pub(crate) mod client_commands;
@@ -97,6 +98,8 @@ crate::covekit_module! {
         profile_commands::frp_profile_duplicate => "复制档案",
         profile_commands::frp_profile_rename => "重命名档案（同步迁移备注）",
         profile_commands::frp_profile_delete => "删除档案（移入 .trash/ 软删）",
+        trash::frp_profiles_deleted => "列出已删除的配置档案",
+        trash::frp_profile_restore => "恢复已删除的配置档案",
         profile_commands::frp_profile_remark => "写入档案备注（只落 frp.db）",
         runtime_commands::frp_verify => "用 frpc verify 校验档案并解析错误行列",
         runtime_commands::frp_start => "启动档案对应的 frpc 进程",

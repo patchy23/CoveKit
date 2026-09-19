@@ -178,6 +178,7 @@ async function onClientsChanged() {
       @remove="onRemove"
       @reveal="onReveal"
       @open-clients="showClients = true"
+      @restored="profiles.refresh"
     />
 
     <!-- 右：引导卡 / 详情 -->
