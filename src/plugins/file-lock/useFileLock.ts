@@ -26,9 +26,11 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
   const closeError = ref('')
   const notice = ref('')
   let revision = 0
+  // 框架 hidden 同时包含窗口失焦，适合后台降频但不能用于外部拖放。
+  // 从资源管理器拖入时允许窗口失焦；实际页面隐藏在原生事件到达时另行检查。
   const visible = computed(() => {
     const state = visibility.value
-    return state.active && !state.covered && !state.hidden
+    return state.active && !state.covered
   })
   const available = computed(() => desktop && supported.value === true)
 
@@ -168,6 +170,7 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
           if (
             scope.disposed ||
             !visible.value ||
+            document.visibilityState === 'hidden' ||
             busy.value ||
             picking.value ||
             closing.value ||

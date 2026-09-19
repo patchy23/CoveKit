@@ -31,6 +31,7 @@ vi.mock('@tauri-apps/plugin-dialog', () => ({ open: mocks.open }))
 vi.mock('@tauri-apps/plugin-opener', () => ({ revealItemInDir: mocks.reveal }))
 vi.mock('@/core/platform/clipboard', () => ({ writeClipboardText: mocks.copy }))
 enableAutoUnmount(afterEach)
+afterEach(() => vi.restoreAllMocks())
 
 let onDrop: (event: Event<DragDropEvent>) => void
 const target = 'C:\\测试 文件\\占用.txt'
@@ -80,6 +81,7 @@ function drop(paths: string[], x = 100, y = 100) {
 
 beforeEach(() => {
   vi.resetAllMocks()
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
   resetToolVisibilityForTest()
   publishToolVisibility('file-lock', { active: true })
   mocks.desktop.mockReturnValue(true)
@@ -229,9 +231,11 @@ it('仅可见页签的内容区域接收单文件，拒绝多文件拖放', asyn
   publishToolVisibility('file-lock', { active: true, covered: true })
   drop([target])
   publishToolVisibility('file-lock', { covered: false, hidden: true })
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
   drop([target])
   expect(mocks.invoke).toHaveBeenCalledTimes(1)
   publishToolVisibility('file-lock', { hidden: false })
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible')
   drop([target, 'C:\\other.txt'])
   await flushPromises()
   expect(page.text()).toContain('请一次拖入一个文件')
@@ -242,6 +246,41 @@ it('仅可见页签的内容区域接收单文件，拒绝多文件拖放', asyn
   page.unmount()
   await flushPromises()
   expect(mocks.unlisten).toHaveBeenCalledTimes(1)
+})
+
+it('从资源管理器拖入时窗口失焦仍接收文件，不把失焦当作页面隐藏', async () => {
+  const page = createPage()
+  await flushPromises()
+  vi.spyOn(page.element, 'getBoundingClientRect').mockReturnValue({
+    left: 0,
+    top: 0,
+    right: 500,
+    bottom: 500,
+    width: 500,
+    height: 500,
+    x: 0,
+    y: 0,
+    toJSON() {},
+  })
+  // App.vue 的 onFocusChanged 会把失焦发布为 hidden=true，拖入时焦点可仍在资源管理器。
+  publishToolVisibility('file-lock', { active: true, covered: false, hidden: true })
+  onDrop({
+    event: 'tauri://drag-enter',
+    id: 1,
+    payload: {
+      type: 'enter',
+      paths: [target],
+      position: new PhysicalPosition(100, 100),
+    },
+  })
+  await flushPromises()
+  expect(page.text()).toContain('松开以查询这个文件')
+  drop([target])
+  await flushPromises()
+  expect(mocks.invoke).toHaveBeenLastCalledWith('file_lock_query', { path: target })
+  expect((page.get('input').element as HTMLInputElement).value).toBe(target)
+  expect(page.text()).toContain('PID 420')
+  expect(page.text()).not.toContain('松开以查询这个文件')
 })
 
 it('卸载后才完成的订阅立即解绑；迟到文件选择不查询', async () => {
