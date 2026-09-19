@@ -49,7 +49,11 @@ const keyword = ref('')
 /** 右键菜单（null = 未打开） */
 const menu = ref<{ x: number; y: number; item: FrpProfileSummary } | null>(null)
 /** 名称弹窗（null = 未打开） */
-const nameDialog = ref<{ mode: 'create' | 'rename' | 'duplicate'; initial: string } | null>(null)
+const nameDialog = ref<{
+  mode: 'create' | 'rename' | 'duplicate'
+  initial: string
+  target?: string
+} | null>(null)
 /** 备注弹窗目标（null = 未打开） */
 const remarkTarget = ref<FrpProfileSummary | null>(null)
 /** 待删除档案（null = 未打开确认） */
@@ -95,21 +99,25 @@ function openMenu(event: MouseEvent, item: FrpProfileSummary) {
 /** 打开名称弹窗（新建时初始名为空） */
 function openNameDialog(mode: 'create' | 'rename' | 'duplicate', item?: FrpProfileSummary) {
   const initial = item ? item.fileName.replace(/\.toml$/i, '') : ''
-  nameDialog.value = { mode, initial: mode === 'duplicate' ? `${initial}-copy` : initial }
+  nameDialog.value = {
+    mode,
+    initial: mode === 'duplicate' ? `${initial}-copy` : initial,
+    target: item?.fileName,
+  }
 }
 
 /** 名称弹窗提交 */
 function onNameSubmit(fileName: string, template: 'tcp' | 'http' | 'stcp' | 'empty') {
   const mode = nameDialog.value?.mode
-  const target = menu.value?.item
+  const target = nameDialog.value?.target
   nameDialog.value = null
   if (mode === 'create') {
     emit('create', fileName, template)
     return
   }
   if (!target) return
-  if (mode === 'rename') emit('rename', target.fileName, fileName)
-  if (mode === 'duplicate') emit('duplicate', target.fileName, fileName)
+  if (mode === 'rename') emit('rename', target, fileName)
+  if (mode === 'duplicate') emit('duplicate', target, fileName)
 }
 
 /** 确认删除（软删：移入 .trash/） */
@@ -194,7 +202,7 @@ function onRemarkSubmit(remark: string) {
               </UiTooltip>
               <UiTooltip v-if="item.proxyTypes?.length" :content="item.proxyTypes.join(' / ')">
                 <span
-                  class="max-w-[100px] shrink-0 truncate rounded border border-border px-[4px] text-caption text-secondary dark:border-border-dark dark:text-secondary-dark"
+                  class="max-w-[100px] shrink-0 truncate text-caption font-bold text-tertiary-strong dark:text-tertiary-dark"
                 >
                   {{ item.proxyTypes.join(' / ') }}
                 </span>
