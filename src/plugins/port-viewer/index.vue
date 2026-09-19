@@ -75,8 +75,8 @@ async function reveal(entry: PortEntry) {
 </script>
 
 <template>
-  <section class="flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
-    <div class="space-y-md border-b border-border p-lg dark:border-border-dark">
+  <section class="flex h-full min-h-0 flex-col overflow-hidden bg-surface dark:bg-surface-dark">
+    <div class="shrink-0 space-y-md border-b border-border p-lg dark:border-border-dark">
       <div class="flex items-baseline gap-sm">
         <h1 class="text-h1 text-primary dark:text-primary-dark">端口占用查询</h1>
         <span class="text-body-sm text-secondary dark:text-secondary-dark"
@@ -128,42 +128,49 @@ async function reveal(entry: PortEntry) {
       <UiAlert v-if="notice" tone="success">{{ notice }}</UiAlert>
     </div>
 
-    <UiScrollArea class="min-h-0 flex-1">
-      <div class="p-lg">
-        <UiEmptyState
-          v-if="!desktop"
-          title="请在 CoveKit 桌面应用中使用"
-          description="浏览器预览无法访问本机端口信息。"
-        />
-        <UiEmptyState
-          v-else-if="supported === false"
-          title="目前仅支持 Windows"
-          description="当前平台暂不支持端口占用查询。"
-        />
-        <UiEmptyState
-          v-else-if="supported === null"
-          :title="checking ? '正在检查平台支持…' : '无法确认平台支持状态'"
+    <div class="flex min-h-0 flex-1 flex-col p-lg">
+      <UiEmptyState
+        v-if="!desktop"
+        title="请在 CoveKit 桌面应用中使用"
+        description="浏览器预览无法访问本机端口信息。"
+      />
+      <UiEmptyState
+        v-else-if="supported === false"
+        title="目前仅支持 Windows"
+        description="当前平台暂不支持端口占用查询。"
+      />
+      <UiEmptyState
+        v-else-if="supported === null"
+        :title="checking ? '正在检查平台支持…' : '无法确认平台支持状态'"
+      >
+        <UiButton v-if="!checking" @click="initialize">重试</UiButton>
+      </UiEmptyState>
+      <div v-else class="flex min-h-0 flex-1 flex-col" :aria-busy="busy" aria-live="polite">
+        <div
+          v-if="snapshot"
+          class="mb-md flex shrink-0 flex-wrap items-baseline justify-between gap-sm"
         >
-          <UiButton v-if="!checking" @click="initialize">重试</UiButton>
-        </UiEmptyState>
-        <div v-else :aria-busy="busy" aria-live="polite">
-          <div v-if="snapshot" class="mb-md flex flex-wrap items-baseline justify-between gap-sm">
-            <h2 class="text-h2 text-primary dark:text-primary-dark">
-              {{ filter.view === 'listeners' ? '监听与绑定' : '全部连接' }} ·
-              {{ filtered.length }} 条
-            </h2>
-            <span class="text-body-sm text-secondary dark:text-secondary-dark">{{
-              busy ? '正在刷新…' : `查询时间 ${queriedAt}`
-            }}</span>
-          </div>
-          <UiEmptyState v-if="!snapshot && busy" title="正在读取本机端口…" />
-          <UiEmptyState
-            v-else-if="snapshot && !filtered.length && !validation"
-            title="未发现匹配的端口记录"
-            description="请核对查询条件，或切换全部连接。未发现记录不代表端口一定可以绑定。"
-          />
+          <h2 class="text-h2 text-primary dark:text-primary-dark">
+            {{ filter.view === 'listeners' ? '监听与绑定' : '全部连接' }} · {{ filtered.length }} 条
+          </h2>
+          <span class="text-body-sm text-secondary dark:text-secondary-dark">{{
+            busy ? '正在刷新…' : `查询时间 ${queriedAt}`
+          }}</span>
+        </div>
+        <UiEmptyState v-if="!snapshot && busy" title="正在读取本机端口…" />
+        <UiEmptyState
+          v-else-if="snapshot && !filtered.length && !validation"
+          title="未发现匹配的端口记录"
+          description="请核对查询条件，或切换全部连接。未发现记录不代表端口一定可以绑定。"
+        />
+        <UiScrollArea
+          v-else-if="pageEntries.length"
+          :key="page"
+          axis="both"
+          class="min-h-0 flex-1 rounded-lg border border-border dark:border-border-dark"
+        >
           <UiTable
-            v-else-if="pageEntries.length"
+            :framed="false"
             :table-class="
               filter.view === 'all' ? 'table-fixed min-w-[1200px]' : 'table-fixed min-w-[1000px]'
             "
@@ -177,7 +184,7 @@ async function reveal(entry: PortEntry) {
               <col />
               <col class="w-[288px]" />
             </colgroup>
-            <thead>
+            <thead class="sticky top-0 z-10">
               <tr>
                 <UiTableCell as="th" :resizable="false">协议</UiTableCell>
                 <UiTableCell as="th" :resizable="false">本地地址 / 端口</UiTableCell>
@@ -275,19 +282,22 @@ async function reveal(entry: PortEntry) {
               </tr>
             </tbody>
           </UiTable>
-          <div
-            v-if="filtered.length > 100"
-            class="mt-md flex flex-wrap items-center justify-between gap-sm"
-          >
-            <span class="text-body-sm text-secondary dark:text-secondary-dark">每页 100 条</span>
-            <UiPagination v-model="page" :total-pages="totalPages" />
-          </div>
-          <p v-if="snapshot" class="mt-md text-body-sm text-secondary dark:text-secondary-dark">
-            TCP 显示连接状态，UDP 显示绑定端口。关闭进程会结束整个程序，操作后将重新查询。
-          </p>
+        </UiScrollArea>
+        <div
+          v-if="filtered.length > 100"
+          class="mt-md flex shrink-0 flex-wrap items-center justify-between gap-sm"
+        >
+          <span class="text-body-sm text-secondary dark:text-secondary-dark">每页 100 条</span>
+          <UiPagination v-model="page" :total-pages="totalPages" />
         </div>
+        <p
+          v-if="snapshot"
+          class="mt-md shrink-0 text-body-sm text-secondary dark:text-secondary-dark"
+        >
+          TCP 显示连接状态，UDP 显示绑定端口。关闭进程会结束整个程序，操作后将重新查询。
+        </p>
       </div>
-    </UiScrollArea>
+    </div>
     <UiConfirmDialog
       :open="!!closeTarget"
       title="关闭端口使用进程"
