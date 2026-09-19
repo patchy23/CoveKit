@@ -72,13 +72,6 @@ async function revealProgram(process: FileProcess) {
 <template>
   <section ref="page" class="relative flex h-full min-h-0 flex-col bg-surface dark:bg-surface-dark">
     <div class="space-y-md border-b border-border p-lg dark:border-border-dark">
-      <div class="flex items-baseline gap-sm">
-        <h1 class="text-h1 text-primary dark:text-primary-dark">文件占用查询</h1>
-        <span class="text-body-sm text-secondary dark:text-secondary-dark">Windows</span>
-      </div>
-      <p class="text-body-sm text-secondary dark:text-secondary-dark">
-        选择或拖入单个文件，查找正在使用它的进程。
-      </p>
       <form class="flex flex-wrap items-center gap-sm" @submit.prevent="query">
         <UiInput
           v-model="path"

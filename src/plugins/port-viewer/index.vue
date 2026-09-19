@@ -95,12 +95,6 @@ async function reveal(entry: PortEntry) {
 <template>
   <section class="flex h-full min-h-0 flex-col overflow-hidden bg-surface dark:bg-surface-dark">
     <div class="shrink-0 space-y-md border-b border-border p-lg dark:border-border-dark">
-      <div class="flex items-baseline gap-sm">
-        <h1 class="text-h1 text-primary dark:text-primary-dark">端口占用查询</h1>
-        <span class="text-body-sm text-secondary dark:text-secondary-dark"
-          >Windows · IPv4 / IPv6</span
-        >
-      </div>
       <form class="flex flex-wrap items-center gap-sm" @submit.prevent="query">
         <UiSelect v-model="filter.view" :options="views" aria-label="端口视图" class="w-36" />
         <UiSelect
