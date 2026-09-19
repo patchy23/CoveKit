@@ -367,6 +367,7 @@ mod tests {
         ("http_ws", "api_group_create", "创建接口分组"),
         ("http_ws", "api_tree_move", "移动并排序接口树节点"),
         ("http_ws", "api_group_move", "移动接口分组树"),
+        ("http_ws", "api_rename", "修改接口名称与分组"),
         ("http_ws", "api_group_list", "接口分组列表"),
         ("http_ws", "api_list", "接口列表"),
         ("http_ws", "api_move_group", "移动接口分组"),

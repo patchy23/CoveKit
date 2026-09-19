@@ -13,6 +13,8 @@ function call<K extends keyof Payloads & keyof Results>(command: K, payload: Pay
   return invokeCommand<Payloads[K], Results[K]>(command, payload)
 }
 export const ipc = {
+  apiRename: (id: number, name: string, groupName: string) =>
+    call('api_rename', { id, name, groupName }),
   apiTreeMove: (payload: Payloads['api_tree_move']) => call('api_tree_move', payload),
   apiMoveGroup: (id: number, groupName: string) => call('api_move_group', { id, groupName }),
   apiGroupMove: (path: string, parent: string) => call('api_group_move', { path, parent }),

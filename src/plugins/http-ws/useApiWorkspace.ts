@@ -131,38 +131,40 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
       tab.saving = false
     }
   }
-  /** 重命名/移动只取库中记录，不借用当前编辑面板。 */
+  /** 只提交元数据，同一接口的保存、重命名和删除互斥。 */
   async function rename(record: ApiRecord, name: string, groupName: string) {
     if (moving.value.has(record.id)) throw new Error('接口正在移动，请稍后修改')
+    if (tabs.some((tab) => tab.recordId === record.id && tab.saving))
+      throw new Error('接口正在保存，请稍后修改')
     if (!name.trim()) throw new Error('请输入接口名称')
-    await ipc.apiSave({
-      id: record.id,
-      kind: record.type,
-      name: name.trim(),
-      groupName: groupName.trim(),
-      method: record.method,
-      url: record.url,
-      params: record.params,
-      headers: record.headers,
-      bodyMode: record.bodyMode,
-      body: record.body,
-      options: record.options || '{}',
-    })
-    const tab = tabs.find((t) => t.recordId === record.id)
-    if (tab) {
-      tab.name = name.trim()
-      tab.groupName = groupName.trim()
+    moving.value.add(record.id)
+    try {
+      await ipc.apiRename(record.id, name.trim(), groupName.trim())
+      const tab = tabs.find((t) => t.recordId === record.id)
+      if (tab) {
+        tab.name = name.trim()
+        tab.groupName = groupName.trim()
+      }
+      await load()
+    } finally {
+      moving.value.delete(record.id)
     }
-    await load()
   }
   async function remove(record: ApiRecord) {
     if (moving.value.has(record.id)) throw new Error('接口正在移动，请稍后删除')
-    await ipc.apiDelete(record.id)
-    for (const tab of tabs.filter((t) => t.recordId === record.id)) {
-      tab.recordId = null
-      tab.saved = ''
+    if (tabs.some((tab) => tab.recordId === record.id && tab.saving))
+      throw new Error('接口正在保存，请稍后删除')
+    moving.value.add(record.id)
+    try {
+      await ipc.apiDelete(record.id)
+      for (const tab of tabs.filter((t) => t.recordId === record.id)) {
+        tab.recordId = null
+        tab.saved = ''
+      }
+      await load()
+    } finally {
+      moving.value.delete(record.id)
     }
-    await load()
   }
   async function close(tab: ApiTab) {
     if (tab.saving) throw new Error('接口正在保存，请稍后关闭')

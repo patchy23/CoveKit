@@ -8,6 +8,7 @@ const mock = vi.hoisted(() => ({
   apiGroupMove: vi.fn(),
   apiMoveGroup: vi.fn(),
   apiSave: vi.fn(),
+  apiRename: vi.fn(),
   apiDelete: vi.fn(),
   wsClose: vi.fn(),
   sseStop: vi.fn(),
@@ -141,7 +142,7 @@ describe('接口库与多页签', () => {
   it('库写入期间不能移动分组，避免旧路径被异步保存恢复', async () => {
     const workspace = useApiWorkspace(vi.fn(), () => true)
     let resolve!: (id: number) => void
-    mock.apiSave.mockReturnValue(
+    mock.apiRename.mockReturnValue(
       new Promise<number>((yes) => {
         resolve = yes
       })
@@ -161,9 +162,8 @@ describe('接口库与多页签', () => {
     expect(workspace.open(record(1))).toBe(a)
     expect(workspace.tabs).toHaveLength(2)
     await workspace.rename(record(2), '改名', '新分组')
-    expect(mock.apiSave).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 2, body: 'body 2', name: '改名' })
-    )
+    expect(mock.apiRename).toHaveBeenCalledWith(2, '改名', '新分组')
+    expect(mock.apiSave).not.toHaveBeenCalled()
     expect(a.draft.body).toBe('未保存')
     expect(workspace.dirty(a)).toBe(true)
     expect(b.name).toBe('改名')
@@ -183,6 +183,39 @@ describe('接口库与多页签', () => {
     expect(a.draft.body).toBe('后续编辑')
     expect(workspace.dirty(a)).toBe(true)
     expect(workspace.current.value).toBe(b)
+    await workspace.dispose()
+  })
+  it('保存期间拒绝重命名和删除，重命名失败后释放写入锁', async () => {
+    const workspace = useApiWorkspace(vi.fn(), () => true)
+    const tab = workspace.open(record(1))
+    let resolve!: (id: number) => void
+    mock.apiSave.mockReturnValue(
+      new Promise<number>((yes) => {
+        resolve = yes
+      })
+    )
+    const saving = workspace.save(tab, tab.name, tab.groupName)
+    await expect(workspace.rename(record(1), '改名', '测试')).rejects.toThrow('正在保存')
+    await expect(workspace.remove(record(1))).rejects.toThrow('正在保存')
+    expect(mock.apiRename).not.toHaveBeenCalled()
+    expect(mock.apiDelete).not.toHaveBeenCalled()
+    resolve(1)
+    await saving
+    let reject!: (error: Error) => void
+    mock.apiRename.mockReturnValue(
+      new Promise((_, no) => {
+        reject = no
+      })
+    )
+    const renaming = workspace.rename(record(1), '改名', '新组')
+    await expect(workspace.save(tab, tab.name, tab.groupName)).rejects.toThrow('正在移动')
+    await expect(workspace.remove(record(1))).rejects.toThrow('正在移动')
+    const failure = expect(renaming).rejects.toThrow('写入失败')
+    reject(new Error('写入失败'))
+    await failure
+    expect(tab.name).toBe('接口 1')
+    expect(tab.groupName).toBe('测试')
+    expect(workspace.moving.value.size).toBe(0)
     await workspace.dispose()
   })
   it('关闭非活动页签不跳页，删除保留打开草稿供另存', async () => {

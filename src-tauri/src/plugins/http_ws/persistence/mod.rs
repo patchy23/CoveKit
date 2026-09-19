@@ -200,6 +200,40 @@ fn db<'a>(
     Ok(guard)
 }
 
+/// 只更新接口名称与分组，不覆盖请求内容。
+#[tauri::command]
+pub fn api_rename(
+    app: AppHandle,
+    state: State<'_, ApiState>,
+    id: i64,
+    name: String,
+    group_name: String,
+) -> Result<(), String> {
+    let guard = db(&app, &state)?;
+    guard
+        .as_ref()
+        .ok_or("本地库未初始化")?
+        .with_transaction(|conn| rename_record(conn, id, &name, &group_name))
+}
+
+/// 元数据修改不携带请求快照，避免重命名覆盖刚保存的内容。
+fn rename_record(
+    conn: &rusqlite::Connection,
+    id: i64,
+    name: &str,
+    group: &str,
+) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("接口名称不能为空".into());
+    }
+    ensure_group_paths(conn, group.trim())?;
+    let changed = conn.execute("UPDATE api_list SET name=?1, group_name=?2, updated_at=datetime('now','localtime') WHERE id=?3", rusqlite::params![name.trim(), group.trim(), id]).map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err("接口已被删除，请刷新后重试".into());
+    }
+    Ok(())
+}
+
 /// 保存接口：id 为 0/None 时新增，否则更新；返回记录 id
 #[tauri::command(rename_all = "camelCase")]
 #[allow(clippy::too_many_arguments)] // Tauri 命令按字段平铺入参（与前端契约一一对应）
@@ -346,6 +380,39 @@ mod tests {
     use super::*;
     use crate::framework::store::migrate;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn rename_only_changes_metadata_and_missing_record_rolls_back_group() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        migrate(&mut conn, MIGRATIONS).unwrap();
+        conn.execute("INSERT INTO api_list(name,method,url,body,updated_at,sort_order) VALUES('旧名','POST','新地址','刚保存的内容','',4)", []).unwrap();
+        let tx = conn.transaction().unwrap();
+        rename_record(&tx, 1, "新名", "新组/子组").unwrap();
+        tx.commit().unwrap();
+        let value: (String, String, String, i64) = conn
+            .query_row(
+                "SELECT name,url,body,sort_order FROM api_list WHERE id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            value,
+            ("新名".into(), "新地址".into(), "刚保存的内容".into(), 4)
+        );
+        {
+            let tx = conn.transaction().unwrap();
+            assert!(rename_record(&tx, 99, "新名", "不能留下").is_err());
+        }
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM api_groups WHERE path='不能留下'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 0);
+    }
 
     #[test]
     fn group_migration_preserves_saved_paths_and_empty_nested_groups() {
