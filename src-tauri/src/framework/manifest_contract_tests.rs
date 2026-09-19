@@ -39,6 +39,11 @@ mod tests {
             "查询文件占用工具的平台支持状态",
         ),
         ("file_lock", "file_lock_query", "查询指定文件的使用进程信息"),
+        (
+            "file_lock",
+            "file_lock_terminate",
+            "核对文件使用关系与进程身份后关闭指定进程",
+        ),
         ("codex_news", "codex_news_fetch", "获取 Codex 重置消息源"),
         (
             "codex_news",

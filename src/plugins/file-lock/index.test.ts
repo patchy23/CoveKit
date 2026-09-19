@@ -5,7 +5,7 @@ import type { DragDropEvent } from '@tauri-apps/api/webview'
 import { PhysicalPosition } from '@tauri-apps/api/dpi'
 import type { Event } from '@tauri-apps/api/event'
 import { publishToolVisibility, resetToolVisibilityForTest } from '@/core/lifecycle'
-import { UiButton } from '@/core/ui'
+import { UiButton, UiConfirmDialog } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 import Page from './index.vue'
 import type { FileLockResult } from './contracts'
@@ -269,4 +269,79 @@ it('打开目录失败给出操作反馈', async () => {
   await button(page, '打开所在目录').trigger('click')
   await flushPromises()
   expect(toast).toHaveBeenCalledWith(expect.stringContaining('打开程序所在目录失败'))
+})
+
+it('关闭前展示目标和丢失提示，取消不发送命令', async () => {
+  const page = createPage()
+  await flushPromises()
+  await search(page)
+  expect(page.text()).not.toContain('进程信息已读取')
+  expect(page.text()).not.toContain(target)
+  expect((page.get('input').element as HTMLInputElement).value).toBe(target)
+  await button(page, '关闭进程').trigger('click')
+  await flushPromises()
+  const dialog = page.getComponent(UiConfirmDialog)
+  expect(dialog.props('open')).toBe(true)
+  expect(dialog.props('message')).toContain('editor.exe（PID 420）')
+  expect(dialog.props('message')).toContain('未保存的内容可能丢失')
+  await button(page, '取消').trigger('click')
+  expect(dialog.props('open')).toBe(false)
+  expect(mocks.invoke.mock.calls.some(([name]) => name === 'file_lock_terminate')).toBe(false)
+})
+
+it('关闭传递查询文件与精确进程身份，防止重复执行，成功后刷新', async () => {
+  const page = createPage()
+  await flushPromises()
+  await search(page)
+  await button(page, '关闭进程').trigger('click')
+  await flushPromises()
+  const pending = deferred<void>()
+  mocks.invoke.mockImplementation((command: string) =>
+    command === 'file_lock_terminate'
+      ? pending.promise
+      : Promise.resolve({ path: target, processes: [] })
+  )
+  const dialog = page.getComponent(UiConfirmDialog)
+  await button(page, '确认关闭').trigger('click')
+  dialog.vm.$emit('confirm')
+  dialog.vm.$emit('close')
+  await flushPromises()
+  expect(dialog.props('open')).toBe(true)
+  expect(dialog.props('loading')).toBe(true)
+  expect(mocks.invoke.mock.calls.filter(([name]) => name === 'file_lock_terminate')).toHaveLength(1)
+  expect(mocks.invoke).toHaveBeenLastCalledWith('file_lock_terminate', {
+    path: target,
+    pid: 420,
+    startedAt: '134029000000000000',
+  })
+  pending.resolve()
+  await flushPromises()
+  expect(dialog.props('open')).toBe(false)
+  expect(page.text()).toContain('进程 editor.exe 已关闭')
+  expect(page.text()).toContain('未发现占用进程')
+  expect(mocks.invoke).toHaveBeenLastCalledWith('file_lock_query', { path: target })
+})
+
+it('关闭失败保留结果与弹窗错误，不伪装成功；卸载后的成功不再刷新', async () => {
+  const page = createPage()
+  await flushPromises()
+  await search(page)
+  await button(page, '关闭进程').trigger('click')
+  await flushPromises()
+  mocks.invoke.mockRejectedValueOnce('权限不足，拒绝关闭')
+  await button(page, '确认关闭').trigger('click')
+  await flushPromises()
+  const dialog = page.getComponent(UiConfirmDialog)
+  expect(dialog.props('error')).toContain('权限不足')
+  expect(dialog.props('open')).toBe(true)
+  expect(page.text()).not.toContain('已关闭')
+  expect(page.text()).toContain('PID 420')
+  const pending = deferred<void>()
+  mocks.invoke.mockReturnValueOnce(pending.promise)
+  await button(page, '确认关闭').trigger('click')
+  page.unmount()
+  const calls = mocks.invoke.mock.calls.length
+  pending.resolve()
+  await flushPromises()
+  expect(mocks.invoke).toHaveBeenCalledTimes(calls)
 })

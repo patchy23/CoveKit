@@ -4,7 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useToolScope } from '@/core/lifecycle/useToolLifecycle'
 import { isDesktopRuntime } from '@/core/platform/window'
-import type { FileLockResult } from './contracts'
+import type { FileLockResult, FileProcess } from './contracts'
 import { ipc } from './ipc'
 
 /** 生命周期随工具卸载结束；隐藏页签不接收全窗口文件拖放。 */
@@ -21,6 +21,10 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
   const dragging = ref(false)
   const result = ref<FileLockResult | null>(null)
   const queriedAt = ref('')
+  const closeTarget = ref<{ path: string; process: FileProcess } | null>(null)
+  const closing = ref(false)
+  const closeError = ref('')
+  const notice = ref('')
   let revision = 0
   const visible = computed(() => {
     const state = visibility.value
@@ -35,6 +39,8 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
       result.value = null
       error.value = ''
       queriedAt.value = ''
+      notice.value = ''
+      if (!closing.value) closeTarget.value = null
     },
     { flush: 'sync' }
   )
@@ -43,7 +49,15 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
   })
 
   async function query() {
-    if (!available.value || busy.value || picking.value || scope.disposed) return
+    if (
+      !available.value ||
+      busy.value ||
+      picking.value ||
+      closing.value ||
+      closeTarget.value ||
+      scope.disposed
+    )
+      return
     // 支持资源管理器“复制文件地址”的双引号，不改写路径内部空格。
     const raw = path.value.trim()
     const target = raw.startsWith('"') && raw.endsWith('"') ? raw.slice(1, -1) : raw
@@ -70,7 +84,15 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
   }
 
   async function chooseFile() {
-    if (!available.value || busy.value || picking.value || scope.disposed) return
+    if (
+      !available.value ||
+      busy.value ||
+      picking.value ||
+      closing.value ||
+      closeTarget.value ||
+      scope.disposed
+    )
+      return
     picking.value = true
     error.value = ''
     let selected: string | string[] | null = null
@@ -84,6 +106,42 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
     if (typeof selected === 'string' && !scope.disposed) {
       path.value = selected
       await query()
+    }
+  }
+
+  function requestClose(process: FileProcess) {
+    if (!result.value || busy.value || closing.value || scope.disposed) return
+    closeError.value = ''
+    notice.value = ''
+    closeTarget.value = { path: result.value.path, process: { ...process } }
+  }
+
+  function cancelClose() {
+    if (closing.value) return
+    closeTarget.value = null
+    closeError.value = ''
+  }
+
+  async function confirmClose() {
+    const target = closeTarget.value
+    if (!target || closing.value || scope.disposed) return
+    closing.value = true
+    closeError.value = ''
+    try {
+      await ipc.terminate({
+        path: target.path,
+        pid: target.process.pid,
+        startedAt: target.process.startedAt,
+      })
+      if (scope.disposed) return
+      closeTarget.value = null
+      closing.value = false
+      notice.value = `进程 ${target.process.processName || target.process.appName || target.process.pid} 已关闭`
+      await query()
+    } catch (cause) {
+      if (!scope.disposed) closeError.value = String(cause)
+    } finally {
+      if (!scope.disposed) closing.value = false
     }
   }
 
@@ -112,6 +170,8 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
             !visible.value ||
             busy.value ||
             picking.value ||
+            closing.value ||
+            closeTarget.value ||
             payload.type === 'leave'
           ) {
             dragging.value = false
@@ -158,5 +218,12 @@ export function useFileLock(page: Ref<HTMLElement | null>) {
     query,
     chooseFile,
     initialize,
+    closeTarget,
+    closing,
+    closeError,
+    notice,
+    requestClose,
+    cancelClose,
+    confirmClose,
   }
 }

@@ -4,6 +4,7 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import {
   UiAlert,
   UiButton,
+  UiConfirmDialog,
   UiEmptyState,
   UiInput,
   UiScrollArea,
@@ -32,6 +33,13 @@ const {
   query,
   chooseFile,
   initialize,
+  closeTarget,
+  closing,
+  closeError,
+  notice,
+  requestClose,
+  cancelClose,
+  confirmClose,
 } = useFileLock(page)
 const { copyText } = useCopy()
 const ui = useUiStore()
@@ -77,15 +85,18 @@ async function revealProgram(process: FileProcess) {
           aria-label="文件完整路径"
           placeholder="输入文件完整路径，或拖入一个文件"
           class="min-w-0 flex-1 basis-64 font-mono"
-          :disabled="!available || picking"
+          :disabled="!available || picking || !!closeTarget"
         />
-        <UiButton :disabled="!available || busy" :loading="picking" @click="chooseFile"
+        <UiButton
+          :disabled="!available || busy || !!closeTarget"
+          :loading="picking"
+          @click="chooseFile"
           >选择文件</UiButton
         >
         <UiButton
           type="submit"
           variant="primary"
-          :disabled="!available || picking || !path.trim()"
+          :disabled="!available || picking || !!closeTarget || !path.trim()"
           :loading="busy"
         >
           {{ result ? '刷新查询' : '查询占用' }}
@@ -93,6 +104,7 @@ async function revealProgram(process: FileProcess) {
       </form>
       <UiAlert v-if="error" tone="danger" title="查询未完成">{{ error }}</UiAlert>
       <UiAlert v-if="dropError" tone="warning">{{ dropError }}</UiAlert>
+      <UiAlert v-if="notice" tone="success">{{ notice }}</UiAlert>
     </div>
 
     <UiScrollArea class="min-h-0 flex-1">
@@ -128,22 +140,23 @@ async function revealProgram(process: FileProcess) {
                 >查询时间 {{ queriedAt }}</span
               >
             </div>
-            <p
-              class="mb-md break-all font-mono text-body-sm text-secondary select-text dark:text-secondary-dark"
-            >
-              {{ result.path }}
-            </p>
             <UiEmptyState
               v-if="result.processes.length === 0"
               title="未发现占用进程"
               description="本次查询未发现使用者，不保证文件没有占用。关闭相关程序后可以再次查询。"
             />
-            <UiTable v-else>
+            <UiTable v-else table-class="table-fixed min-w-[820px]">
+              <colgroup>
+                <col class="w-[148px]" />
+                <col class="w-[148px]" />
+                <col />
+                <col class="w-[300px]" />
+              </colgroup>
               <thead>
                 <tr>
-                  <UiTableCell as="th">进程 / PID</UiTableCell>
-                  <UiTableCell as="th">应用 / 服务</UiTableCell>
-                  <UiTableCell as="th">程序路径 / 状态</UiTableCell>
+                  <UiTableCell as="th" :resizable="false">进程 / PID</UiTableCell>
+                  <UiTableCell as="th" :resizable="false">应用 / 服务</UiTableCell>
+                  <UiTableCell as="th" :resizable="false">程序路径 / 状态</UiTableCell>
                   <UiTableCell as="th" align="right" :resizable="false">操作</UiTableCell>
                 </tr>
               </thead>
@@ -153,33 +166,44 @@ async function revealProgram(process: FileProcess) {
                   :key="`${process.pid}:${process.startedAt}:${process.serviceName ?? ''}`"
                 >
                   <UiTableCell content="technical" class="align-top">
-                    <p class="break-all text-primary dark:text-primary-dark">
+                    <p
+                      :title="process.processName ?? ''"
+                      class="truncate text-primary dark:text-primary-dark"
+                    >
                       {{ process.processName ?? '进程名称未读取' }}
                     </p>
                     <p class="mt-xs whitespace-nowrap">PID {{ process.pid }}</p>
                   </UiTableCell>
                   <UiTableCell class="align-top">
-                    <p class="break-all">{{ process.appName || '应用名称未提供' }}</p>
-                    <p v-if="process.serviceName" class="mt-xs break-all">
+                    <p :title="process.appName" class="truncate">
+                      {{ process.appName || '应用名称未提供' }}
+                    </p>
+                    <p
+                      v-if="process.serviceName"
+                      :title="process.serviceName"
+                      class="mt-xs truncate"
+                    >
                       服务：{{ process.serviceName }}
                     </p>
                   </UiTableCell>
-                  <UiTableCell content="technical" class="max-w-lg align-top">
-                    <p v-if="process.executablePath" class="break-all">
+                  <UiTableCell content="technical" class="align-top">
+                    <p
+                      v-if="process.executablePath"
+                      :title="process.executablePath"
+                      class="truncate"
+                    >
                       {{ process.executablePath }}
                     </p>
                     <p
                       v-if="process.detailError"
-                      class="break-words text-warning-strong dark:text-warning-dark"
+                      :title="process.detailError"
+                      class="truncate text-warning-strong dark:text-warning-dark"
                     >
                       {{ process.detailError }}
                     </p>
-                    <p v-else class="mt-xs text-secondary dark:text-secondary-dark">
-                      进程信息已读取
-                    </p>
                   </UiTableCell>
                   <UiTableCell content="action" align="right" class="align-top">
-                    <div class="flex flex-wrap justify-end gap-xs">
+                    <div class="flex justify-end gap-xs whitespace-nowrap">
                       <UiButton size="sm" variant="ghost" @click="copyProcess(process)"
                         >复制信息</UiButton
                       >
@@ -190,6 +214,15 @@ async function revealProgram(process: FileProcess) {
                         @click="revealProgram(process)"
                         >打开所在目录</UiButton
                       >
+                      <UiButton
+                        size="sm"
+                        variant="ghost"
+                        class="text-danger-strong dark:text-danger-dark"
+                        :disabled="closing"
+                        @click="requestClose(process)"
+                      >
+                        关闭进程
+                      </UiButton>
                     </div>
                   </UiTableCell>
                 </tr>
@@ -207,6 +240,17 @@ async function revealProgram(process: FileProcess) {
         </div>
       </div>
     </UiScrollArea>
+    <UiConfirmDialog
+      :open="!!closeTarget"
+      title="关闭进程"
+      :message="`确定强制关闭 ${closeTarget?.process.processName || closeTarget?.process.appName || '所选进程'}（PID ${closeTarget?.process.pid ?? ''}）？该进程的所有窗口和任务都会结束，未保存的内容可能丢失。`"
+      confirm-label="确认关闭"
+      danger
+      :loading="closing"
+      :error="closeError"
+      @confirm="confirmClose"
+      @close="cancelClose"
+    />
     <div
       v-if="dragging"
       class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center border-2 border-dashed border-tertiary-strong bg-tertiary-soft text-h2 text-tertiary-strong dark:border-tertiary-dark dark:bg-tertiary-soft-dark dark:text-tertiary-dark"

@@ -9,4 +9,5 @@ function call<K extends keyof Payloads & keyof Results>(command: K, payload: Pay
 export const ipc = {
   supported: () => call(commands.supported, {}),
   query: (path: string) => call(commands.query, { path }),
+  terminate: (payload: Payloads['file_lock_terminate']) => call(commands.terminate, payload),
 }

@@ -20,14 +20,17 @@ export interface FileLockResult {
 export const commands = {
   supported: 'file_lock_supported',
   query: 'file_lock_query',
+  terminate: 'file_lock_terminate',
 } as const
 
 export type Payloads = {
   file_lock_supported: Record<string, never>
   file_lock_query: { path: string }
+  file_lock_terminate: { path: string; pid: number; startedAt: string }
 }
 
 export type Results = {
   file_lock_supported: boolean
   file_lock_query: FileLockResult
+  file_lock_terminate: void
 }
