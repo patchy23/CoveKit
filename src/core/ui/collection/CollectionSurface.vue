@@ -292,7 +292,7 @@ const insertion = computed(() => {
         </button>
         <span v-else-if="tree" class="w-[16px] shrink-0" />
         <slot name="row" :item="item" :selected="modelValue === item.id">
-          <slot name="icon" :item="item"
+          <slot v-if="item.showIcon !== false" name="icon" :item="item"
             ><UiIcon
               :name="item.expandable ? 'folder' : 'square'"
               :size="12"

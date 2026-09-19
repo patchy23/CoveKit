@@ -2,6 +2,8 @@
 export interface UiListItem {
   id: string
   label: string
+  /** false 时不渲染图标插槽及默认图标，层级缩进保持不变。 */
+  showIcon?: boolean
   description?: string
   kind?: string
   badge?: string | number

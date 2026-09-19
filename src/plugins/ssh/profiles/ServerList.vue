@@ -49,7 +49,7 @@ const emit = defineEmits<{
 
 const searching = computed(() => props.searchKeyword.trim().length > 0)
 
-/** 组内连接（按名称排序，稳定展示） */
+/** 组内连接沿用已保存的顺序。 */
 function profilesOf(groupId: string | null): ServerProfile[] {
   return props.profiles.filter((p) => (p.groupId ?? null) === groupId)
 }
@@ -62,6 +62,7 @@ const rows = computed(() =>
         label: profile.name,
         depth: 0,
         kind: 'profile',
+        showIcon: false,
       }))
     : serverTreeItems(props.groups, props.profiles, props.expandedIds)
 )

@@ -29,6 +29,7 @@ export function serverTreeItems(
           label: profile.name,
           depth: 1,
           kind: 'profile',
+          showIcon: false,
         }))
       )
   }
