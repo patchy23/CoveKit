@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { UiTooltip } from '@/core/ui'
-import { UiIcon, UiIconButton } from '@/core/ui'
+import { UiIcon, UiIconButton, UiToolbar } from '@/core/ui'
 import InspectorPanel from './InspectorPanel.vue'
 import type { useDatabase } from './useDatabase'
 
@@ -23,14 +23,13 @@ const emit = defineEmits<{
     :style="{ width: `${width}px` }"
     class="flex shrink-0 flex-col border-l border-border dark:border-border-dark"
   >
-    <div
-      class="flex h-[28px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
-    >
+    <UiToolbar density="compact" bordered>
       <span class="text-caption font-semibold text-primary dark:text-primary-dark">摘要</span>
-      <UiIconButton label="收起摘要" size="xs" class="ml-auto" @click="emit('update:open', false)">
-        <UiIcon name="chevrons-right" :size="12" />
-      </UiIconButton>
-    </div>
+      <template #trailing
+        ><UiIconButton label="收起摘要" size="xs" @click="emit('update:open', false)">
+          <UiIcon name="chevrons-right" :size="12" /> </UiIconButton
+      ></template>
+    </UiToolbar>
     <InspectorPanel :db="db" />
   </aside>
   <div

@@ -219,6 +219,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     view.value = new EditorView({ parent, state })
     savedSnapshot = state.doc.toString()
     docStats.init(state)
+    view.value.dispatch({ effects: auxCompartment.reconfigure(auxExtensions()) })
     void applyLanguage()
   }
 
@@ -363,9 +364,12 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   })
 
   // 补全 / 校验开关
-  watch([() => options.completion?.(), () => options.linter?.()], () => {
-    view.value?.dispatch({ effects: auxCompartment.reconfigure(auxExtensions()) })
-  })
+  watch(
+    [() => options.completion?.(), () => options.linter?.(), () => options.completionSources?.()],
+    () => {
+      view.value?.dispatch({ effects: auxCompartment.reconfigure(auxExtensions()) })
+    }
+  )
 
   // 插件专用扩展变化（上层注入的领域能力，如数据库的语句运行 gutter）
   watch(

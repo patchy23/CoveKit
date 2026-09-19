@@ -11,6 +11,8 @@ import {
   UiIcon,
   UiIconButton,
   UiPagination,
+  UiSpinner,
+  UiToolbar,
 } from '@/core/ui'
 import type { useDatabase } from './useDatabase'
 
@@ -37,40 +39,38 @@ function refresh() {
 }
 
 function toStructure() {
-  const tabId = db.activeTabId.value
-  const table = tabId.replace(/^data-/, 'structure-')
-  const ctx = db.tabContexts.value[tabId]
-  if (!ctx) return
-  if (!db.tabs.value.some((t) => t.id === table)) {
-    db.tabs.value.push({
-      id: table,
-      label: `${table.split('structure-')[1]} · 结构`,
-      kind: 'structure',
-    })
-    db.tabContexts.value[table] = { ...ctx }
-  }
-  db.activeTabId.value = table
-  db.loadColumns(table)
+  const ctx = db.activeTabContext.value
+  if (!ctx.table) return
+  db.openStructureTab(ctx.connectionId, ctx.table, ctx.database, ctx.schema)
 }
 </script>
 
 <template>
-  <div
-    class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
-  >
+  <UiToolbar density="compact" bordered>
     <UiBadge tone="info" size="xs">只读浏览</UiBadge>
-    <UiIconButton label="刷新" size="xs" @click="refresh">
+    <UiIconButton label="刷新" size="xs" :disabled="state.status === 'running'" @click="refresh">
       <UiIcon name="refresh" :size="12" />
     </UiIconButton>
     <UiIconButton label="查看结构" size="xs" @click="toStructure">
       <UiIcon name="grid" :size="12" />
     </UiIconButton>
-    <span class="ml-auto font-mono text-caption text-secondary dark:text-secondary-dark">
-      {{ db.activeTabConnection.value?.label ?? '' }} · 共 {{ state.total }} 行
-    </span>
-  </div>
+    <template #trailing
+      ><span
+        class="max-w-[240px] truncate font-mono text-caption text-secondary dark:text-secondary-dark"
+      >
+        {{ db.activeTabConnection.value?.label ?? '' }} · 共 {{ state.total }} 行
+      </span></template
+    >
+  </UiToolbar>
 
-  <UiEmptyState v-if="state.status === 'error'" :title="'加载失败'" :description="state.error">
+  <div
+    v-if="state.status === 'running'"
+    role="status"
+    class="flex min-h-0 flex-1 items-center justify-center gap-[6px] text-caption text-secondary dark:text-secondary-dark"
+  >
+    <UiSpinner size="xs" />正在加载表数据…
+  </div>
+  <UiEmptyState v-else-if="state.status === 'error'" :title="'加载失败'" :description="state.error">
     <UiButton size="sm" variant="secondary" @click="refresh">重试</UiButton>
   </UiEmptyState>
 
@@ -84,17 +84,22 @@ function toStructure() {
     height="100%"
     @update:model-value="(v) => db.patchQueryState({ selectedRow: String(v) })"
   />
-  <div
-    class="flex h-[28px] shrink-0 items-center justify-end gap-[8px] border-t border-border px-[8px] dark:border-border-dark"
-  >
-    <span class="mr-auto text-caption text-text-muted dark:text-text-muted-dark">
-      {{ state.truncated ? '结果已截断' : `耗时 ${state.durationMs} ms` }}
+  <UiToolbar density="compact" class="border-t border-border px-[6px] dark:border-border-dark">
+    <span class="text-caption text-text-muted dark:text-text-muted-dark">
+      {{
+        state.status === 'running'
+          ? '加载中…'
+          : state.status === 'error'
+            ? '加载失败'
+            : `耗时 ${state.durationMs} ms`
+      }}
     </span>
-    <UiPagination
-      :model-value="state.page"
-      :total-pages="db.totalPages.value"
-      size="xs"
-      @update:model-value="db.setPage"
-    />
-  </div>
+    <template #trailing
+      ><UiPagination
+        :model-value="state.page"
+        :total-pages="db.totalPages.value"
+        size="xs"
+        @update:model-value="db.setPage"
+    /></template>
+  </UiToolbar>
 </template>

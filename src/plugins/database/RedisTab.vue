@@ -33,10 +33,10 @@ const toneOf = (kind: string) => {
 
 <template>
   <UiScrollArea as-child axis="both">
-    <div class="min-h-0 flex-1 p-[12px]">
-      <div class="mb-[12px]">
+    <div class="min-h-0 flex-1 p-[6px]">
+      <div class="mb-[6px]">
         <div class="flex items-center gap-[8px]">
-          <h2 class="font-mono text-card-title font-semibold text-primary dark:text-primary-dark">
+          <h2 class="font-mono text-body-sm font-semibold text-primary dark:text-primary-dark">
             {{ state.rows[0]?.[0] ?? '' }}
           </h2>
           <UiBadge v-if="state.rows[0]?.[1]" :tone="toneOf(state.rows[0][1])" size="xs">

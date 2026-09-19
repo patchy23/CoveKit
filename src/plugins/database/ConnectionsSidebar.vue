@@ -84,11 +84,14 @@ function onTreeContext(item: UiTreeItem, event: MouseEvent) {
     class="relative flex shrink-0 flex-col border-r border-border dark:border-border-dark"
     :style="{ width: `${sidebarWidth}px` }"
   >
-    <div class="shrink-0 space-y-[8px] px-[10px] py-[10px]">
-      <UiSearchInput v-model="db.keyword.value" size="sm" placeholder="搜索连接…" />
-      <UiButton variant="secondary" size="sm" block @click="emit('newConnection')"
-        >+ 新建连接</UiButton
-      >
+    <div class="shrink-0 px-[6px] py-[6px]">
+      <UiSearchInput v-model="db.keyword.value" size="xs" placeholder="搜索连接或对象…">
+        <template #actions>
+          <UiIconButton label="新建连接" size="xs" @click="emit('newConnection')">
+            <UiIcon name="plus" :size="14" />
+          </UiIconButton>
+        </template>
+      </UiSearchInput>
     </div>
     <UiScrollArea as-child axis="vertical">
       <div class="min-h-0 flex-1 px-[4px] pb-[8px]">

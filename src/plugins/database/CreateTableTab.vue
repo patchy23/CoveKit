@@ -15,6 +15,8 @@ import {
   UiSelect,
   UiTable,
   UiTableCell,
+  UiToolbar,
+  UiCodeEditor,
 } from '@/core/ui'
 import { useCopy } from '@/core/feedback/useCopy'
 import { buildCreateTableSql, emptyColumn, type CreateTableColumn } from './createTableSql'
@@ -120,25 +122,23 @@ async function create() {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <!-- 表选项工具行 -->
-    <div
-      class="flex h-[40px] shrink-0 items-center gap-[8px] border-b border-border px-[12px] dark:border-border-dark"
-    >
-      <span class="shrink-0 text-body-sm text-secondary dark:text-secondary-dark">表名</span>
-      <UiInput v-model="tableName" size="sm" class="w-[180px]" placeholder="new_table" />
-      <span class="shrink-0 text-body-sm text-secondary dark:text-secondary-dark">引擎</span>
-      <UiSelect v-model="engine" :options="engineOptions" size="sm" class="w-[110px]" />
-      <span class="shrink-0 text-body-sm text-secondary dark:text-secondary-dark">字符集</span>
-      <UiSelect v-model="charset" :options="charsetOptions" size="sm" class="w-[110px]" />
+    <UiToolbar density="compact" bordered class="flex-wrap">
+      <span class="shrink-0 text-caption text-secondary dark:text-secondary-dark">表名</span>
+      <UiInput v-model="tableName" size="xs" class="w-[140px]" placeholder="new_table" />
+      <span class="shrink-0 text-caption text-secondary dark:text-secondary-dark">引擎</span>
+      <UiSelect v-model="engine" :options="engineOptions" size="xs" class="w-[100px]" />
+      <span class="shrink-0 text-caption text-secondary dark:text-secondary-dark">字符集</span>
+      <UiSelect v-model="charset" :options="charsetOptions" size="xs" class="w-[100px]" />
       <UiInput
         v-model="tableComment"
-        size="sm"
+        size="xs"
         class="min-w-0 flex-1"
         placeholder="表注释（可选）"
       />
-      <UiButton size="sm" variant="primary" :disabled="!ddl || creating" @click="create">
+      <UiButton size="xs" variant="primary" :disabled="!ddl || creating" @click="create">
         {{ creating ? '创建中…' : '创建表' }}
       </UiButton>
-    </div>
+    </UiToolbar>
 
     <!-- 列编辑网格 -->
     <UiScrollArea as-child axis="both">
@@ -173,7 +173,7 @@ async function create() {
                 <UiSelect
                   v-model="column.type"
                   :options="typeOptions"
-                  size="sm"
+                  size="xs"
                   class="w-full"
                   @update:model-value="onTypeChange(column)"
                 />
@@ -188,7 +188,7 @@ async function create() {
                 />
               </UiTableCell>
               <UiTableCell>
-                <UiCheckbox v-model="column.nullable" size="sm" />
+                <UiCheckbox v-model="column.nullable" size="xs" />
               </UiTableCell>
               <UiTableCell>
                 <UiInput
@@ -201,12 +201,12 @@ async function create() {
               <UiTableCell>
                 <UiCheckbox
                   v-model="column.autoIncrement"
-                  size="sm"
+                  size="xs"
                   :disabled="!isIntFamily(column.type)"
                 />
               </UiTableCell>
               <UiTableCell>
-                <UiCheckbox v-model="column.primary" size="sm" />
+                <UiCheckbox v-model="column.primary" size="xs" />
               </UiTableCell>
               <UiTableCell>
                 <UiInput v-model="column.comment" size="xs" placeholder="可选" />
@@ -234,25 +234,22 @@ async function create() {
     </UiScrollArea>
 
     <!-- DDL 预览 -->
-    <UiScrollArea as-child axis="both">
-      <div class="max-h-[40%] shrink-0 border-t border-border dark:border-border-dark">
-        <div class="flex items-center justify-between px-[12px] pt-[8px]">
-          <span class="text-caption text-text-muted dark:text-text-muted-dark">DDL 预览</span>
-          <UiIconButton v-if="ddl" label="复制 DDL" size="xs" @click="copyText(ddl)">
-            <UiIcon name="copy" :size="12" />
-          </UiIconButton>
-        </div>
-        <pre
-          v-if="ddl"
-          class="whitespace-pre-wrap px-[12px] pb-[10px] pt-[4px] font-mono text-caption text-primary dark:text-primary-dark"
-          >{{ ddl }}</pre>
-        <p
-          v-else
-          class="px-[12px] pb-[10px] pt-[4px] text-caption text-text-muted dark:text-text-muted-dark"
-        >
-          填写表名与至少一列后生成 DDL
-        </p>
-      </div>
-    </UiScrollArea>
+    <div
+      class="flex h-[180px] max-h-[40%] min-h-0 shrink-0 flex-col border-t border-border dark:border-border-dark"
+    >
+      <UiToolbar density="compact" bordered title="DDL 预览">
+        <template #trailing
+          ><UiIconButton v-if="ddl" label="复制 DDL" size="xs" @click="copyText(ddl)"
+            ><UiIcon name="copy" :size="12" /></UiIconButton
+        ></template>
+      </UiToolbar>
+      <UiCodeEditor
+        :model-value="ddl || '-- 填写表名与至少一列后生成 DDL'"
+        language="sql"
+        readonly
+        :completion="false"
+        class="min-h-0 flex-1 !rounded-none !border-0"
+      />
+    </div>
   </div>
 </template>

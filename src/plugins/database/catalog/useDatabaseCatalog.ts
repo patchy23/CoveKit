@@ -7,7 +7,7 @@
  * 跨域只拿 connection 域只读快照/窄命令、workspace 域只读 computed 视图与页签命令，
  * 不持有其它域的可写状态。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { ComputedRef } from 'vue'
 import type { UiTreeItem } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
@@ -75,6 +75,8 @@ export interface DatabaseCatalogPorts {
   activeTabConnectionId: ComputedRef<string>
   /** 当前页签 schema 只读视图（workspace 域） */
   activeTabSchema: ComputedRef<string>
+  /** 当前页签数据库，用于 MySQL 补全范围与缓存隔离。 */
+  activeTabDatabase: ComputedRef<string>
   /** 选中连接（connection 域；连接不存在时不动） */
   activateConnection: (connId: string) => void
   /** 连接命令（connection 域；树双击未连接节点即连接） */
@@ -112,6 +114,7 @@ export interface DatabaseCatalogPorts {
 export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   // ── 元数据缓存 ──────────────────────────────────────────────────────────
   const metas = ref<Record<string, ConnMeta>>({})
+  const objectRequests = new Map<string, Promise<void>>()
 
   // ── 树显示状态 ──────────────────────────────────────────────────────────
   const keyword = ref('')
@@ -159,6 +162,9 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   /** 连接断开/删除（connection 域端口）：失效该连接的元数据缓存 */
   function invalidateConnectionMeta(connId: string) {
     delete metas.value[connId]
+    clearEditorColumns(connId)
+    for (const key of objectRequests.keys())
+      if (key.startsWith(`${connId}::`)) objectRequests.delete(key)
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -183,37 +189,85 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     return names.map((name) => ({ value: name, label: name }))
   })
 
-  /** SQL 编辑器补全元数据：当前连接已加载的表/视图（列暂不缓存，先补表名） */
+  const editorScope = computed(() => {
+    const conn = ports.connections.value.find(
+      (item) => item.id === ports.activeTabConnectionId.value
+    )
+    if (!conn) return undefined
+    return ports.ipcScopeArg(conn, {
+      connectionId: conn.id,
+      database: ports.activeTabDatabase.value,
+      schema: ports.activeTabSchema.value,
+    })
+  })
+
+  /** SQL 编辑器仅使用当前库/schema 的表与视图。 */
   const completionTables = computed<{ name: string; columns: { name: string }[] }[]>(() => {
     const meta = metas.value[ports.activeTabConnectionId.value]
     if (!meta) return []
     const names = new Set<string>()
-    for (const objects of Object.values(meta.objects)) {
-      for (const obj of objects) {
-        if ((obj.kind === 'table' || obj.kind === 'view') && obj.name) names.add(obj.name)
-      }
+    const objects =
+      meta.objects[`${ports.activeTabConnectionId.value}::${editorScope.value ?? ''}`] ?? []
+    for (const obj of objects) {
+      if ((obj.kind === 'table' || obj.kind === 'view') && obj.name) names.add(obj.name)
     }
     return [...names].map((name) => ({ name, columns: [] }))
   })
 
-  /** 编辑器补全列缓存（表名 → 列名，跨 schema 以连接为界） */
+  /** 列名缓存保留标识符大小写，按连接、库/schema 和表隔离。 */
   const editorColumnCache = new Map<string, string[]>()
+  const editorColumnRequests = new Map<string, Promise<string[]>>()
+
+  function clearEditorColumns(connId: string) {
+    const prefix = `${JSON.stringify(connId)},`
+    for (const key of editorColumnCache.keys())
+      if (key.startsWith(prefix)) editorColumnCache.delete(key)
+    for (const key of editorColumnRequests.keys())
+      if (key.startsWith(prefix)) editorColumnRequests.delete(key)
+  }
+
+  watch(
+    () =>
+      [
+        ports.activeTabConnectionId.value,
+        ports.activeTabDatabase.value,
+        ports.activeTabSchema.value,
+        ports.connections.value.find((item) => item.id === ports.activeTabConnectionId.value)
+          ?.status,
+      ] as const,
+    ([connId, database, schema, status]) => {
+      if (status !== 'online' || (!database && !schema)) return
+      const conn = ports.connections.value.find((item) => item.id === connId)
+      if (conn?.dbType === 'redis') return
+      void ensureObjects(connId, editorScope.value ?? '')
+    }
+  )
 
   /** 编辑器「表.」后补全：查列（带缓存，命中直接返回） */
   async function resolveEditorColumns(table: string): Promise<string[]> {
     const connId = ports.activeTabConnectionId.value
-    const cacheKey = `${connId}::${table.toLowerCase()}`
+    const scope = editorScope.value
+    const cacheKey = [connId, scope ?? '', table].map((part) => JSON.stringify(part)).join(',')
     const cached = editorColumnCache.get(cacheKey)
     if (cached) return cached
-    try {
-      const cols = await queryIpc.columns(connId, table, ports.activeTabSchema.value || undefined)
-      const names = cols.map((c) => c.name)
-      editorColumnCache.set(cacheKey, names)
-      return names
-    } catch {
-      editorColumnCache.set(cacheKey, [])
-      return []
-    }
+    const pending = editorColumnRequests.get(cacheKey)
+    if (pending) return pending
+    const request: Promise<string[]> = queryIpc
+      .columns(connId, table, scope)
+      .then((cols) => {
+        const names = cols.map((c) => c.name)
+        if (editorColumnRequests.get(cacheKey) === request) editorColumnCache.set(cacheKey, names)
+        return names
+      })
+      .catch((err: unknown) => {
+        ports.showError(err)
+        return []
+      })
+      .finally(() => {
+        if (editorColumnRequests.get(cacheKey) === request) editorColumnRequests.delete(cacheKey)
+      })
+    editorColumnRequests.set(cacheKey, request)
+    return request
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -258,12 +312,22 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     const meta = metaFor(connId)
     const key = `${connId}::${schema}`
     if (meta.objects[key]) return
-    try {
-      meta.objects[key] = await queryIpc.objects(connId, schema)
-    } catch (err) {
-      meta.objects[key] = []
-      ports.showError(err)
-    }
+    const pending = objectRequests.get(key)
+    if (pending) return pending
+    const request: Promise<void> = queryIpc
+      .objects(connId, schema)
+      .then((objects) => {
+        if (objectRequests.get(key) === request && metas.value[connId] === meta)
+          meta.objects[key] = objects
+      })
+      .catch((err: unknown) => {
+        if (objectRequests.get(key) === request) ports.showError(err)
+      })
+      .finally(() => {
+        if (objectRequests.get(key) === request) objectRequests.delete(key)
+      })
+    objectRequests.set(key, request)
+    return request
   }
 
   /** 加载 Redis 键列表 */
@@ -491,12 +555,18 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   /** 刷新树节点：连接=库/schema 列表+对象缓存全清；库/schema/分组=清该 scope 对象缓存重取 */
   async function refreshTreeNode(item: UiTreeItem) {
     const connId = item.id.split('::')[0]
+    clearEditorColumns(connId)
     const meta = metaFor(connId)
     if (item.kind === 'connection') {
+      for (const key of objectRequests.keys())
+        if (key.startsWith(`${connId}::`)) objectRequests.delete(key)
       meta.loaded = false
       meta.objects = {}
       meta.redisKeys = []
       await ensureMeta(connId)
+      if (connId === ports.activeTabConnectionId.value && editorScope.value !== undefined) {
+        await ensureObjects(connId, editorScope.value)
+      }
       return
     }
     const scope = item.id.split('::')[1]
@@ -507,6 +577,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       return
     }
     delete meta.objects[`${connId}::${scope}`]
+    objectRequests.delete(`${connId}::${scope}`)
     await ensureObjects(connId, scope)
   }
 

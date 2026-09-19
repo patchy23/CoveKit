@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
-import { UiAlert, UiButton, UiInput, UiModal, UiSpinner, UiSwitch } from '@/core/ui'
+import {
+  UiAlert,
+  UiButton,
+  UiInput,
+  UiModal,
+  UiSpinner,
+  UiSwitch,
+  UiField,
+  UiPanel,
+} from '@/core/ui'
 import { connectionIpc } from './ipc'
 import { withTimeout } from './useDatabase'
 import {
@@ -96,6 +105,18 @@ function pickType(type: V2DbType) {
 const fileType = computed(() => isFileType(form.dbType))
 const unsupported = computed(() => isUnsupportedType(form.dbType))
 
+async function pickFile() {
+  try {
+    const picked = await dialogOpen({
+      multiple: false,
+      filters: [{ name: 'SQLite', extensions: ['db', 'sqlite', 'sqlite3'] }],
+    })
+    if (picked) form.host = picked
+  } catch (err) {
+    saveError.value = String(err)
+  }
+}
+
 function buildConfig(): import('./contracts').ConnConfig {
   return {
     id: form.id,
@@ -155,145 +176,117 @@ async function onSave() {
 </script>
 
 <template>
-  <UiModal :open="open" :title="editing ? '编辑连接' : '新建连接'" size="lg" @close="emit('close')">
-    <div class="space-y-[12px]">
-      <UiAlert v-if="unsupported" tone="warning" title="暂未支持" size="sm">
-        达梦（DM8）驱动本版本未实现，可先选择其它数据库类型。
-      </UiAlert>
-
+  <UiModal
+    :open="open"
+    :title="editing ? '编辑连接' : '新建连接'"
+    width="min(460px, 92vw)"
+    @close="emit('close')"
+  >
+    <div class="space-y-[8px]">
+      <UiAlert v-if="unsupported" tone="warning" title="暂未支持" size="sm"
+        >达梦驱动本版本未实现，请选择其它数据库类型。</UiAlert
+      >
       <ConnectionBasicsFields
         :label="form.label"
-        :env="form.env"
         :db-type="form.dbType"
         @update:label="form.label = $event"
-        @update:env="form.env = $event"
         @update:db-type="pickType"
       />
-
       <template v-if="!fileType">
-        <div class="grid grid-cols-[1fr_96px] gap-[8px]">
-          <div>
-            <label
-              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
-              >主机</label
-            >
-            <UiInput v-model="form.host" size="sm" placeholder="127.0.0.1" />
-          </div>
-          <div>
-            <label
-              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
-              >端口</label
-            >
-            <UiInput v-model.number="form.port" size="sm" type="number" />
-          </div>
+        <div class="grid grid-cols-[1fr_80px] gap-[8px]">
+          <UiField label="主机" size="xs" required
+            ><UiInput v-model="form.host" size="xs" placeholder="127.0.0.1"
+          /></UiField>
+          <UiField label="端口" size="xs" required
+            ><UiInput v-model.number="form.port" size="xs" type="number"
+          /></UiField>
         </div>
         <div class="grid grid-cols-2 gap-[8px]">
-          <div>
-            <label
-              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
-              >用户名</label
-            >
-            <UiInput v-model="form.username" size="sm" placeholder="patchy" />
-          </div>
-          <div>
-            <label
-              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
-              >密码</label
-            >
-            <UiInput
-              v-model="form.password"
-              size="sm"
-              type="password"
-              :placeholder="editing ? '留空表示不修改密码' : '••••••'"
-            />
-          </div>
+          <UiField label="用户名" size="xs"
+            ><UiInput v-model="form.username" size="xs" placeholder="例如：db_user"
+          /></UiField>
+          <UiField
+            label="密码"
+            size="xs"
+            :description="editing ? '留空保留已保存的密码' : undefined"
+            ><UiInput v-model="form.password" size="xs" type="password"
+          /></UiField>
         </div>
-        <div class="grid grid-cols-2 gap-[8px]">
-          <div>
-            <label
-              class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
-            >
-              {{ form.dbType === 'redis' ? '数据库索引（db0/db1…）' : '默认数据库' }}
-            </label>
-            <UiInput
-              v-model="form.database"
-              size="sm"
-              :placeholder="form.dbType === 'redis' ? 'db0' : 'covekit'"
-            />
-          </div>
-          <div class="flex items-end gap-[16px] pb-[6px]">
-            <label
-              class="flex items-center gap-[6px] text-caption text-text-muted dark:text-text-muted-dark"
-            >
-              <UiSwitch v-model="form.ssl" size="sm" /> SSL
-            </label>
-            <label
-              class="flex items-center gap-[6px] text-caption text-text-muted dark:text-text-muted-dark"
-            >
-              <UiSwitch v-model="form.readonly" size="sm" /> 只读
-            </label>
-          </div>
-        </div>
+        <UiField :label="form.dbType === 'redis' ? '数据库索引' : '默认数据库'" size="xs">
+          <UiInput
+            v-model="form.database"
+            size="xs"
+            :placeholder="form.dbType === 'redis' ? 'db0' : '例如：app_data'"
+          />
+        </UiField>
       </template>
-
-      <div v-else>
-        <label
-          class="mb-[4px] block text-caption font-medium text-text-muted dark:text-text-muted-dark"
-          >SQLite 文件路径</label
-        >
-        <div class="flex gap-[8px]">
+      <UiField
+        v-else
+        label="SQLite 文件路径"
+        size="xs"
+        required
+        description="文件不存在时将创建数据库。"
+      >
+        <div class="flex gap-[4px]">
           <UiInput
             v-model="form.host"
-            size="sm"
-            placeholder="C:\data\app.db（不存在自动创建）"
-            class="flex-1"
+            size="xs"
+            placeholder="C:\data\app.db"
+            class="min-w-0 flex-1"
           />
-          <UiButton
-            size="sm"
-            variant="secondary"
-            @click="
-              (async () => {
-                const picked = await dialogOpen({
-                  multiple: false,
-                  filters: [{ name: 'SQLite', extensions: ['db', 'sqlite', 'sqlite3'] }],
-                })
-                if (picked) form.host = picked
-              })()
-            "
-          >
-            选择文件
-          </UiButton>
+          <UiButton size="xs" variant="secondary" @click="pickFile">选择文件</UiButton>
         </div>
-      </div>
-
+      </UiField>
+      <UiPanel
+        :key="String(open) + form.id"
+        title="更多配置"
+        padding="xs"
+        collapsible
+        :default-open="false"
+      >
+        <div class="space-y-[8px]">
+          <div class="grid grid-cols-2 gap-[8px]">
+            <UiField label="环境" size="xs"
+              ><UiInput v-model="form.env" size="xs" placeholder="开发"
+            /></UiField>
+            <UiField v-if="!fileType" label="连接超时（毫秒）" size="xs"
+              ><UiInput v-model.number="form.connectTimeoutMs" size="xs" type="number"
+            /></UiField>
+          </div>
+          <div class="flex items-center gap-[12px]">
+            <UiField v-if="!fileType" label="SSL" size="xs"
+              ><UiSwitch v-model="form.ssl" size="sm"
+            /></UiField>
+            <UiField label="只读" size="xs"><UiSwitch v-model="form.readonly" size="sm" /></UiField>
+          </div>
+        </div>
+      </UiPanel>
       <UiAlert v-if="saveError" tone="danger" title="保存失败" size="sm">{{ saveError }}</UiAlert>
-      <div v-if="testResult" class="flex items-center gap-[6px]">
-        <span
-          class="h-[8px] w-[8px] rounded-full"
-          :class="testResult.ok ? 'bg-success-strong' : 'bg-danger-strong'"
-        />
-        <span class="text-caption text-secondary dark:text-secondary-dark">{{
-          testResult.message
-        }}</span>
-      </div>
-    </div>
-
-    <template #footer>
-      <UiButton size="sm" variant="ghost" :disabled="saving" @click="emit('close')">取消</UiButton>
-      <UiButton
+      <UiAlert
+        v-if="testResult"
+        :tone="testResult.ok ? 'success' : 'danger'"
+        :title="testResult.ok ? '连接成功' : '连接失败'"
         size="sm"
+        >{{ testResult.message }}</UiAlert
+      >
+    </div>
+    <template #footer>
+      <UiButton size="xs" variant="ghost" :disabled="saving" @click="emit('close')">取消</UiButton>
+      <UiButton
+        size="xs"
         variant="secondary"
         :disabled="testing || saving"
-        :title="editing && !form.password ? '密码留空时使用已保存密码测试' : undefined"
+        :title="editing && !form.password ? '使用已保存密码测试' : undefined"
         @click="onTest"
+        ><UiSpinner v-if="testing" size="xs" label="测试中" /><template v-else
+          >测试连接</template
+        ></UiButton
       >
-        <UiSpinner v-if="testing" size="xs" label="测试中" />
-        <template v-else>测试连接</template>
-      </UiButton>
-      <UiButton size="sm" variant="primary" :disabled="saving || testing" @click="onSave()">
-        <UiSpinner v-if="saving" size="xs" label="保存中" />
-        <template v-else>保存</template>
-      </UiButton>
+      <UiButton size="xs" variant="primary" :disabled="saving || testing" @click="onSave"
+        ><UiSpinner v-if="saving" size="xs" label="保存中" /><template v-else
+          >保存</template
+        ></UiButton
+      >
     </template>
   </UiModal>
 </template>

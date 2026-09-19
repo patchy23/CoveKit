@@ -8,10 +8,12 @@ import {
   UiModal,
   UiTabs,
   UiTabsOverflowMenu,
+  UiToolbar,
 } from '@/core/ui'
 import { UiContextMenu, type UiContextMenuItem } from '@/core/ui'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import { useDatabase } from './useDatabase'
+import { useSettingsStore } from '@/stores/settings'
 import { useSplitPane } from '@/core/ui/useSplitPane'
 import ConnectionsSidebar from './ConnectionsSidebar.vue'
 import QueryTab from './QueryTab.vue'
@@ -27,7 +29,14 @@ import { useDatabaseToolLifecycle } from './toolLifecycle'
 const db = useDatabase()
 // 工具资源生命周期：关闭页签/退出时断开全部数据库连接（T10-4）
 useDatabaseToolLifecycle()
-const inspectorOpen = ref(true)
+const settings = useSettingsStore()
+const defaultInspectorOpen = typeof window !== 'undefined' && window.innerWidth >= 1200
+const inspectorOpen = computed(() =>
+  settings.getToolSetting<boolean>('database', 'inspectorOpen', defaultInspectorOpen)
+)
+function setInspectorOpen(open: boolean) {
+  void settings.setToolSetting('database', 'inspectorOpen', open).catch(db.showError)
+}
 
 /** 右侧摘要宽度（默认 220，可拖拽；不持久化） */
 const inspectorSplit = useSplitPane({ initial: 220, min: 160, max: 480, reverse: true })
@@ -50,14 +59,14 @@ const tabItems = computed(() =>
   })
 )
 
-/** 页签条溢出：按容器宽度切分可见/收纳（为「打开SQL编辑器」按钮与触发器预留 150px） */
+/** 页签条溢出：按容器宽度切分可见/收纳（只为容器内的溢出触发器预留宽度） */
 const tabBarRef = ref<HTMLElement | null>(null)
 const activeTabValue = computed(() => db.activeTabId.value)
 const { visibleItems: visibleTabs, hiddenItems: hiddenTabs } = useTabsOverflow(
   tabBarRef,
   tabItems,
   activeTabValue,
-  150
+  28
 )
 
 /** 页签右键菜单（重命名/关闭） */
@@ -108,6 +117,12 @@ const editorMenuItems = computed<UiContextMenuItem[]>(() => {
     : []
   return items
 })
+
+/** 新建查询继承当前页签的连接与库范围。 */
+function newSqlQuery() {
+  const ctx = db.activeTabContext.value
+  db.openSqlEditorWithSql(ctx.connectionId, '', ctx.database, ctx.schema)
+}
 
 function onNewConnection() {
   editingConnection.value = null
@@ -168,35 +183,15 @@ onMounted(() => {
 
     <!-- 中栏：页签工作区 -->
     <main class="flex min-h-0 min-w-0 flex-1 flex-col">
-      <!-- 独立工具栏：不随页签存在与否显示/隐藏 -->
-      <div
-        class="flex h-[32px] shrink-0 items-center gap-[2px] border-b border-border px-[6px] dark:border-border-dark"
-      >
-        <UiButton
-          size="xs"
-          variant="ghost"
-          title="新建 SQL 编辑器"
-          class="shrink-0"
-          @click="db.openSqlEditor()"
-        >
-          打开SQL编辑器
-        </UiButton>
-        <UiIconButton
-          v-if="db.savedSql.value.length"
-          label="打开已保存的 SQL 编辑器"
-          size="xs"
-          class="shrink-0"
-          @click="openEditorMenu($event)"
-        >
-          <UiIcon name="chevron-down" :size="10" :stroke-width="2.5" />
-        </UiIconButton>
+      <!-- 页签末端的新建入口固定可见，不重复扣减按钮宽度。 -->
+      <UiToolbar density="compact" bordered>
         <div ref="tabBarRef" class="flex min-w-0 flex-1 items-center overflow-hidden">
           <UiTabs
             v-if="db.tabs.value.length"
             :model-value="db.activeTabId.value"
             :items="visibleTabs"
             variant="line"
-            size="sm"
+            size="xs"
             class="min-w-0 flex-1"
             @update:model-value="(v) => (db.activeTabId.value = String(v))"
             @close="db.closeTab"
@@ -210,7 +205,20 @@ onMounted(() => {
             @close="db.closeTab"
           />
         </div>
-      </div>
+        <template #trailing
+          ><UiIconButton label="新建 SQL 查询" size="xs" class="shrink-0" @click="newSqlQuery">
+            <UiIcon name="plus" :size="14" />
+          </UiIconButton>
+          <UiIconButton
+            v-if="db.savedSql.value.length"
+            label="打开已保存的 SQL"
+            size="xs"
+            class="shrink-0"
+            @click="openEditorMenu"
+          >
+            <UiIcon name="chevron-down" :size="12" /> </UiIconButton
+        ></template>
+      </UiToolbar>
 
       <div
         v-if="!db.tabs.value.length"
@@ -218,7 +226,7 @@ onMounted(() => {
       >
         <div class="text-center">
           <p class="mb-[8px] text-h2">从左侧选择一个连接开始</p>
-          <p class="mb-[16px] text-body-sm">或点击「+ 新建连接」添加数据库</p>
+          <p class="mb-[16px] text-body-sm">或点击左侧搜索框旁的「＋」添加连接</p>
           <UiButton size="sm" variant="secondary" @click="db.openSqlEditor()">
             打开SQL编辑器
           </UiButton>
@@ -247,7 +255,7 @@ onMounted(() => {
       :open="inspectorOpen"
       :width="inspectorSplit.size.value"
       @resize="inspectorSplit.onPointerDown"
-      @update:open="inspectorOpen = $event"
+      @update:open="setInspectorOpen"
     />
 
     <!-- 提示条 -->

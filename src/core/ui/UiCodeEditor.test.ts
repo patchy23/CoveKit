@@ -9,6 +9,9 @@ import { describe, expect, it } from 'vitest'
 import { defineComponent, h, nextTick, ref } from 'vue'
 import UiCodeEditor from './UiCodeEditor.vue'
 import EditorSearchBar from './editor/EditorSearchBar.vue'
+import { EditorView } from '@codemirror/view'
+import { currentCompletions, startCompletion, closeCompletion } from '@codemirror/autocomplete'
+import { MySQL, sql } from '@codemirror/lang-sql'
 
 /** 等待编辑器挂载与异步语言加载 */
 async function settle(): Promise<void> {
@@ -18,6 +21,38 @@ async function settle(): Promise<void> {
 }
 
 describe('UiCodeEditor', () => {
+  it('首次挂载即装载补全，异步替换候选后无需重建编辑器', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: {
+        modelValue: 'cus',
+        language: 'sql',
+        languageExtension: sql({ dialect: MySQL }),
+        completionSources: [() => ({ from: 0, options: [{ label: 'customer_a' }] })],
+      },
+      attachTo: document.body,
+    })
+    try {
+      await settle()
+      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+      view.focus()
+      view.dispatch({ selection: { anchor: 3 } })
+      startCompletion(view)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(currentCompletions(view.state).map((item) => item.label)).toContain('customer_a')
+
+      closeCompletion(view)
+      await wrapper.setProps({
+        completionSources: [() => ({ from: 0, options: [{ label: 'customer_b' }] })],
+      })
+      startCompletion(view)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      expect(currentCompletions(view.state).map((item) => item.label)).toContain('customer_b')
+      expect(currentCompletions(view.state).map((item) => item.label)).not.toContain('customer_a')
+      expect(EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)).toBe(view)
+    } finally {
+      wrapper.unmount()
+    }
+  })
   it('滚动容器延后渲染宿主时仍能初始化并编辑', async () => {
     const ready = ref(false)
     const wrapper = mount(UiCodeEditor, {

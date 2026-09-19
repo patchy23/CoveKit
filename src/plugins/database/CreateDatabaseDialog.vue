@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UiScrollArea } from '@/core/ui'
+import { UiScrollArea, UiCodeEditor } from '@/core/ui'
 /**
  * 新建数据库对话框（分类型表单，对齐 dbx）：
  * - mysql/polardb：库名 + 字符集/排序规则联动 + 用户授权（权限白名单）+ SQL 预览 + 分步结果
@@ -163,12 +163,12 @@ async function submit() {
     size="md"
     @close="emit('close')"
   >
-    <div class="space-y-[12px]">
+    <div class="space-y-[8px]">
       <div>
         <p class="mb-[4px] text-body-sm text-secondary dark:text-secondary-dark">数据库名</p>
         <UiInput
           v-model="name"
-          size="sm"
+          size="xs"
           placeholder="字母或下划线开头，可含数字/下划线/$"
           @keydown.enter="submit"
         />
@@ -179,11 +179,11 @@ async function submit() {
           <p class="mb-[4px] text-body-sm text-secondary dark:text-secondary-dark">
             {{ isMysql ? '字符集' : '编码' }}
           </p>
-          <UiSelect v-model="charset" :options="charsetSelectOptions" size="sm" class="w-full" />
+          <UiSelect v-model="charset" :options="charsetSelectOptions" size="xs" class="w-full" />
         </div>
         <div v-if="isMysql" class="flex-1">
           <p class="mb-[4px] text-body-sm text-secondary dark:text-secondary-dark">排序规则</p>
-          <UiSelect v-model="collation" :options="collationOptions" size="sm" class="w-full" />
+          <UiSelect v-model="collation" :options="collationOptions" size="xs" class="w-full" />
         </div>
       </div>
 
@@ -198,7 +198,7 @@ async function submit() {
               { value: 'readwrite', label: '读写（增删改查）' },
               { value: 'all', label: '全部权限' },
             ]"
-            size="sm"
+            size="xs"
             class="w-[170px]"
           />
         </div>
@@ -220,7 +220,7 @@ async function submit() {
             >
               <UiCheckbox
                 :model-value="`${u.user}@${u.host}` in grants"
-                size="sm"
+                size="xs"
                 @update:model-value="(checked) => toggleUser(u, checked)"
               />
               <span class="font-mono text-caption">{{ u.user }}@{{ u.host }}</span>
@@ -238,9 +238,13 @@ async function submit() {
       <!-- SQL 预览 -->
       <div v-if="previewSql">
         <p class="mb-[4px] text-body-sm text-secondary dark:text-secondary-dark">SQL 预览</p>
-        <pre
-          class="whitespace-pre-wrap rounded-[6px] border border-border bg-surface-muted p-[8px] font-mono text-caption text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
-          >{{ previewSql }}</pre>
+        <UiCodeEditor
+          :model-value="previewSql"
+          language="sql"
+          readonly
+          :completion="false"
+          height="100px"
+        />
       </div>
 
       <!-- 分步执行结果 -->
@@ -268,8 +272,8 @@ async function submit() {
     </div>
 
     <template #footer>
-      <UiButton size="sm" variant="ghost" @click="emit('close')">取消</UiButton>
-      <UiButton size="sm" variant="primary" :disabled="!canSubmit" @click="submit">
+      <UiButton size="xs" variant="ghost" @click="emit('close')">取消</UiButton>
+      <UiButton size="xs" variant="primary" :disabled="!canSubmit" @click="submit">
         {{ submitting ? '创建中…' : '创建' }}
       </UiButton>
     </template>

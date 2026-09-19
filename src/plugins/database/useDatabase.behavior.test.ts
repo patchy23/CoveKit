@@ -27,6 +27,8 @@ import { useUiStore } from '@/stores/ui'
 import type { DbConnectionInfo, DbObjectInfo, DbTablePage, QueryResult } from './contracts'
 import { useDatabase } from './useDatabase'
 import DataTab from './DataTab.vue'
+import QueryTab from './QueryTab.vue'
+import StructureTab from './StructureTab.vue'
 
 /* ── IPC 门面假实现（vi.hoisted：mock 工厂先于被 mock 模块的导入执行） ── */
 
@@ -269,6 +271,140 @@ afterEach(() => {
 
 /* ────────────────────────────────────────────────────────────────────── */
 describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
+  it('查询结果表格按页显示，过滤会回到第一页且无匹配时显示空态', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    openEditor(api, 'conn-a', 'SELECT id FROM users')
+    api.patchQueryState({
+      status: 'success',
+      columns: ['id'],
+      rows: Array.from({ length: 61 }, (_, i) => [`user-${String(i + 1).padStart(3, '0')}`]),
+      total: 61,
+    })
+    const panel = mount(QueryTab, { props: { db: api } })
+    hosts.push(() => panel.unmount())
+    await flush()
+    expect(panel.text()).toContain('user-001')
+    expect(panel.text()).not.toContain('user-051')
+    await panel
+      .findAll('button')
+      .find((button) => button.text() === '下一页')!
+      .trigger('click')
+    await flush()
+    expect(panel.text()).toContain('user-051')
+    expect(panel.text()).not.toContain('user-001')
+    await panel.get('input[placeholder="过滤结果…"]').setValue('user-001')
+    await flush()
+    expect(api.queryState.value.page).toBe(1)
+    expect(panel.text()).toContain('user-001')
+    expect(panel.text()).not.toContain('user-051')
+    await panel.get('input[placeholder="过滤结果…"]').setValue('不存在')
+    await flush()
+    expect(panel.text()).toContain('无匹配结果')
+  })
+
+  it('数据页的结构入口加载 DDL，生成查询保留表名与库范围', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    env.commands.dbcTableData.mockResolvedValue(tablePage())
+    env.commands.dbcColumns.mockResolvedValue([])
+    env.commands.dbcTableIndexes.mockResolvedValue([])
+    env.commands.dbcTableDdl.mockResolvedValue('CREATE TABLE `user-records` (`id` INT)')
+    void api.selectResource('conn-a::db1::table:user-records')
+    await flush()
+    const data = mount(DataTab, { props: { db: api } })
+    hosts.push(() => data.unmount())
+    await data.get('button[aria-label="查看结构"]').trigger('click')
+    await flush()
+    expect(api.structureDdl.value[api.activeTabId.value]).toContain('CREATE TABLE')
+    const structure = mount(StructureTab, { props: { db: api } })
+    hosts.push(() => structure.unmount())
+    expect(structure.text()).toContain('user-records')
+    await structure
+      .findAll('button')
+      .find((button) => button.text() === '生成查询')!
+      .trigger('click')
+    expect(api.queryState.value.sql).toBe('SELECT * FROM `db1`.`user-records` LIMIT 100;')
+    expect(api.activeTabContext.value.database).toBe('db1')
+  })
+
+  it('无需展开树即可加载当前库表名，切库和列缓存均按库隔离', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    env.commands.dbcObjects.mockImplementation(async (_id: string, scope: string) => [
+      objectInfo(`${scope}_table`),
+    ])
+    env.commands.dbcColumns.mockImplementation(
+      async (_id: string, _table: string, scope: string) => [{ name: `${scope}_column` }]
+    )
+    api.openSqlEditorWithSql('conn-a', '', 'db1', '')
+    await flush()
+    expect(api.completionTables.value.map((table) => table.name)).toEqual(['db1_table'])
+    expect(await api.resolveEditorColumns('users')).toEqual(['db1_column'])
+    api.activeTabContext.value.database = 'db2'
+    await flush()
+    expect(api.completionTables.value.map((table) => table.name)).toEqual(['db2_table'])
+    expect(await api.resolveEditorColumns('users')).toEqual(['db2_column'])
+    expect(env.commands.dbcColumns).toHaveBeenCalledWith('conn-a', 'users', 'db2')
+    api.activeTabContext.value.database = 'db1'
+    await flush()
+    expect(await api.resolveEditorColumns('users')).toEqual(['db1_column'])
+    expect(env.commands.dbcColumns).toHaveBeenCalledTimes(2)
+  })
+
+  it('列补全读取失败不会缓存空结果，刷新目录会重新读取列', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    api.openSqlEditorWithSql('conn-a', '', 'db1', '')
+    env.commands.dbcColumns
+      .mockRejectedValueOnce(new Error('列读取失败'))
+      .mockResolvedValue([{ name: 'id' }])
+    expect(await api.resolveEditorColumns('users')).toEqual([])
+    expect(api.errorHint.value).toContain('列读取失败')
+    expect(await api.resolveEditorColumns('users')).toEqual(['id'])
+    await api.refreshTreeNode({ id: 'conn-a::db1', label: 'db1', kind: 'database', depth: 1 })
+    env.commands.dbcColumns.mockResolvedValue([{ name: 'new_column' }])
+    expect(await api.resolveEditorColumns('users')).toEqual(['new_column'])
+  })
+
+  it('刷新连接会重载当前库候选，刷新前的慢响应不覆盖新候选', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const oldObjects = deferred<DbObjectInfo[]>()
+    env.commands.dbcObjects
+      .mockReturnValueOnce(oldObjects.promise)
+      .mockResolvedValue([objectInfo('fresh_table')])
+    api.openSqlEditorWithSql('conn-a', '', 'db1', '')
+    await flush()
+    await api.refreshTreeNode({ id: 'conn-a', label: 'A 库', kind: 'connection', depth: 0 })
+    expect(api.completionTables.value.map((table) => table.name)).toEqual(['fresh_table'])
+    oldObjects.resolve([objectInfo('stale_table')])
+    await flush()
+    expect(api.completionTables.value.map((table) => table.name)).toEqual(['fresh_table'])
+  })
+
+  it('PostgreSQL 的列补全使用页签 schema，断开重连后丢弃旧列缓存', async () => {
+    env.commands.dbcConnections.mockResolvedValue([
+      connection('pg', 'PG', { dbType: 'postgresql', database: 'app' }),
+    ])
+    env.commands.dbcConnect.mockResolvedValue(
+      connection('pg', 'PG', { dbType: 'postgresql', database: 'app' })
+    )
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    api.openSqlEditorWithSql('pg', '', 'app', 'sales')
+    env.commands.dbcColumns.mockResolvedValue([{ name: 'sales_id' }])
+    expect(await api.resolveEditorColumns('users')).toEqual(['sales_id'])
+    expect(env.commands.dbcColumns).toHaveBeenLastCalledWith('pg', 'users', 'sales')
+    api.activeTabContext.value.schema = 'public'
+    env.commands.dbcColumns.mockResolvedValue([{ name: 'public_id' }])
+    expect(await api.resolveEditorColumns('users')).toEqual(['public_id'])
+    expect(env.commands.dbcColumns).toHaveBeenLastCalledWith('pg', 'users', 'public')
+    await api.disconnect(api.connections.value[0])
+    await api.connect(api.connections.value[0])
+    env.commands.dbcColumns.mockResolvedValue([{ name: 'updated_id' }])
+    expect(await api.resolveEditorColumns('users')).toEqual(['updated_id'])
+  })
   it('两个连接的两个页签并发执行，结果各自落在发起页签', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()

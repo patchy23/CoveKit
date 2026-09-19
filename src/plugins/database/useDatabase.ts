@@ -75,6 +75,7 @@ export function useDatabase() {
     connections: connection.connectionList,
     activeTabConnectionId: ws.activeTabConnectionId,
     activeTabSchema: ws.activeTabSchema,
+    activeTabDatabase: ws.activeTabDatabase,
     activateConnection: connection.activateConnection,
     connect: connection.connect,
     setConnectError: connection.setConnectError,

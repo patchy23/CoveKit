@@ -171,6 +171,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   /** catalog 只读视图：当前页签所属连接 / schema（库/schema 下拉与编辑器补全） */
   const activeTabConnectionId = computed(() => activeTabContext.value.connectionId)
   const activeTabSchema = computed(() => activeTabContext.value.schema)
+  const activeTabDatabase = computed(() => activeTabContext.value.database)
 
   const rowLimitOptions = ['50', '100', '500', '1000'].map((v) => ({ value: v, label: v }))
 
@@ -203,9 +204,11 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     const id = `q${tabSequence}`
     tabs.value.push({ id, label: `SQL编辑器 ${tabSequence}`, kind: 'query' })
     queryStates.value[id] = makeQueryState()
+    const connId = connectionId ?? ports.activeConnectionId.value
     tabContexts.value[id] = {
-      connectionId: connectionId ?? ports.activeConnectionId.value,
-      database: ports.activeConnection.value?.database ?? '',
+      connectionId: connId,
+      database:
+        ports.connections.value.find((connection) => connection.id === connId)?.database ?? '',
       schema: '',
     }
     activeTabId.value = id
@@ -499,6 +502,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       state.columns = page.columns
       state.rows = page.rows
       state.total = page.total
+      state.durationMs = page.durationMs
       state.truncated = false
       state.status = page.error ? 'error' : 'success'
       state.error = page.error ?? ''
@@ -685,6 +689,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     // catalog 只读视图 + 窄命令
     activeTabConnectionId,
     activeTabSchema,
+    activeTabDatabase,
     ipcScopeArg,
     openDataTab,
     openRedisKeyTab,

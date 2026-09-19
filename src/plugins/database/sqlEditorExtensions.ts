@@ -8,7 +8,7 @@
  * 两者分别通过 UiCodeEditor 的 `completionSources` 与 `extraExtensions` 装载。
  */
 import type { Extension } from '@codemirror/state'
-import { Range, RangeSet } from '@codemirror/state'
+import { Prec, Range, RangeSet } from '@codemirror/state'
 import { EditorView, GutterMarker, gutter } from '@codemirror/view'
 import {
   snippetCompletion,
@@ -163,13 +163,18 @@ export function statementRunGutterExtension(onRun?: (sql: string) => void): Exte
 
   // 按钮外观随扩展自带：配色走 token，深浅主题自动跟随（不需暗色单独覆盖）
   const style = EditorView.theme({
-    '.cm-run-statement-gutter': { minWidth: '24px' },
+    '.cm-lineNumbers .cm-gutterElement': { padding: '0 4px' },
+    '.cm-foldGutter': { width: '12px' },
+    '.cm-line': { padding: '0 6px' },
+    '.cm-indent-guides::before': { left: '6px' },
+    '.cm-content': { padding: '6px 0' },
+    '.cm-run-statement-gutter': { minWidth: '20px' },
     '.cm-run-statement-gutter .cm-gutterElement': {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      minWidth: '24px',
-      padding: '0 2px',
+      minWidth: '20px',
+      padding: '0',
     },
     '.cm-run-statement-btn': {
       display: 'inline-flex',
@@ -194,7 +199,8 @@ export function statementRunGutterExtension(onRun?: (sql: string) => void): Exte
     },
   })
 
-  return [gutterAndStyle, style]
+  // 执行栏紧邻行号，避免折叠栏插在两者之间；紧凑样式仅覆盖本 SQL 编辑器。
+  return [Prec.high(gutterAndStyle), Prec.high(style)]
 }
 
 /**

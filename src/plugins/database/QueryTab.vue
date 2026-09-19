@@ -1,8 +1,19 @@
 <script setup lang="ts">
 import { UiTooltip } from '@/core/ui'
+import { useCopy } from '@/core/feedback/useCopy'
+import { useUiStore } from '@/stores/ui'
 import { computed, onMounted, ref } from 'vue'
 import { save as dialogSave } from '@tauri-apps/plugin-dialog'
-import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiSelect } from '@/core/ui'
+import {
+  UiButton,
+  UiIcon,
+  UiIconButton,
+  UiInput,
+  UiModal,
+  UiSelect,
+  UiToolbar,
+  UiContextMenu,
+} from '@/core/ui'
 import SqlEditor from './SqlEditor.vue'
 import QueryResultPane from './QueryResultPane.vue'
 import { useSplitPane } from '@/core/ui/useSplitPane'
@@ -13,6 +24,8 @@ const props = defineProps<{
 }>()
 
 const { db } = props
+const { copyText } = useCopy()
+const ui = useUiStore()
 const { queryState, patchQueryState, activeTabContext, activeTabConnection } = db
 
 const editorRef = ref<InstanceType<typeof SqlEditor> | null>(null)
@@ -33,7 +46,22 @@ function editorMax(): number {
   return (parent ? parent.clientHeight : 800) - 140
 }
 
-/** 首次保存确认弹窗 */
+/** 窄工具栏内的低频操作收纳。 */
+const moreMenu = ref<{ x: number; y: number } | null>(null)
+const moreItems = computed(() => [
+  { label: '格式化', onClick: db.onFormatSql },
+  { label: '保存 SQL', onClick: onSave },
+])
+function changeConnection(value: string) {
+  const connection = db.connections.value.find((item) => item.id === value)
+  if (!connection) return
+  Object.assign(activeTabContext.value, {
+    connectionId: value,
+    database: connection.database,
+    schema: '',
+  })
+}
+/** 首次保存确认弹窗。 */
 const saveConfirmOpen = ref(false)
 const saveTitle = ref('')
 
@@ -105,8 +133,8 @@ function confirmSave() {
 /** 动态行对象（UiDataGrid 按 key 渲染；__row 作 row-key） */
 type GridRow = { __row: string } & Record<string, string>
 const gridRows = computed<GridRow[]>(() =>
-  queryState.value.rows.map((row, index) => ({
-    __row: String(index),
+  db.pageRows.value.map((row, index) => ({
+    __row: String((queryState.value.page - 1) * 50 + index),
     ...Object.fromEntries(
       queryState.value.columns.map((_, colIndex) => [`c${colIndex}`, row[colIndex] ?? ''])
     ),
@@ -115,33 +143,33 @@ const gridRows = computed<GridRow[]>(() =>
 
 /** 复制结果到剪贴板（TSV 制表符分隔） */
 async function copyResult() {
-  const text = gridRows.value
-    .map((row) => queryState.value.columns.map((_, i) => String(row[`c${i}`] ?? '')).join('\t'))
-    .join('\n')
-  if (text) {
-    const { writeText } = await import('@tauri-apps/plugin-clipboard-manager')
-    await writeText(text)
-  }
+  const text = db.filteredRows.value.map((row) => row.join('\t')).join('\n')
+  await copyText(text, '已复制筛选结果')
 }
 
 /** 导出 CSV（对话框选路径 → dbc_export_csv 落盘） */
 async function exportCsv() {
-  const rows = gridRows.value.map((row) =>
-    queryState.value.columns
-      .map((_, i) => {
-        const cell = String(row[`c${i}`] ?? '')
-        return /[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell
-      })
-      .join(',')
-  )
-  const csv = [queryState.value.columns.join(','), ...rows].join('\n')
-  const path = await dialogSave({
-    defaultPath: 'result.csv',
-    filters: [{ name: 'CSV', extensions: ['csv'] }],
-  })
-  if (path) {
-    const { invokeCommand } = await import('@/core/ipc/ipc')
-    await invokeCommand('dbc_export_csv', { path, text: csv })
+  try {
+    const rows = db.filteredRows.value.map((row) =>
+      queryState.value.columns
+        .map((_, i) => {
+          const cell = String(row[i] ?? '')
+          return /[",\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell
+        })
+        .join(',')
+    )
+    const csv = [queryState.value.columns.join(','), ...rows].join('\n')
+    const path = await dialogSave({
+      defaultPath: 'result.csv',
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+    })
+    if (path) {
+      const { invokeCommand } = await import('@/core/ipc/ipc')
+      await invokeCommand('dbc_export_csv', { path, text: csv })
+      ui.toast('已导出筛选结果')
+    }
+  } catch (err) {
+    db.showError(err)
   }
 }
 </script>
@@ -152,12 +180,10 @@ async function exportCsv() {
     class="flex min-h-0 flex-col"
     :style="{ flex: `0 0 ${editorSplit.size.value}px` }"
   >
-    <div
-      class="flex h-[32px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
-    >
+    <UiToolbar density="compact" bordered class="@container/querybar">
       <UiIconButton
         :label="queryState.status === 'running' ? '运行中…' : '运行选中 / 光标所在语句'"
-        size="sm"
+        size="xs"
         :disabled="!canExecute"
         class="text-success-strong dark:text-success-dark"
         @click="runCurrent"
@@ -165,15 +191,15 @@ async function exportCsv() {
         <UiIcon
           v-if="queryState.status === 'running'"
           name="loading"
-          :size="16"
+          :size="14"
           :stroke-width="2.5"
           class="shrink-0 animate-spin"
         />
-        <UiIcon v-else name="play" :size="16" class="shrink-0" />
+        <UiIcon v-else name="play" :size="14" class="shrink-0" />
       </UiIconButton>
       <UiIconButton
         label="停止"
-        size="sm"
+        size="xs"
         :disabled="queryState.status !== 'running'"
         class="text-danger-strong dark:text-danger-dark"
         @click="db.cancelQuery"
@@ -196,40 +222,54 @@ async function exportCsv() {
       </UiIconButton>
       <UiIconButton
         label="全部执行"
-        size="sm"
+        :disabled="!canExecute"
+        size="xs"
         class="text-success-strong dark:text-success-dark"
         @click="runAll"
       >
-        <UiIcon name="play-all" :size="16" class="shrink-0" />
+        <UiIcon name="play-all" :size="14" class="shrink-0" />
       </UiIconButton>
-      <UiIconButton label="格式化" size="sm" @click="db.onFormatSql">
-        <UiIcon name="format" :size="16" class="shrink-0" />
+      <UiIconButton
+        label="格式化"
+        size="xs"
+        class="hidden @[560px]/querybar:inline-flex"
+        @click="db.onFormatSql"
+      >
+        <UiIcon name="format" :size="14" class="shrink-0" />
       </UiIconButton>
       <UiIconButton
         :label="queryState.savedId ? '保存' : '保存（首次需确认别名）'"
-        size="sm"
-        class="text-success-strong dark:text-success-dark"
+        size="xs"
+        class="hidden text-success-strong dark:text-success-dark @[560px]/querybar:inline-flex"
         @click="onSave"
       >
-        <UiIcon name="save" :size="16" class="shrink-0" />
+        <UiIcon name="save" :size="14" class="shrink-0" />
       </UiIconButton>
 
+      <UiIconButton
+        label="更多查询操作"
+        size="xs"
+        class="@[560px]/querybar:hidden"
+        @click="(event) => (moreMenu = { x: event.clientX, y: event.clientY + 4 })"
+      >
+        <UiIcon name="chevron-down" :size="12" />
+      </UiIconButton>
       <span class="mx-[4px] h-[14px] w-px bg-border dark:bg-border-dark" />
 
       <UiSelect
         :model-value="activeTabContext.connectionId"
         :options="db.connectionOptions.value"
         size="xs"
-        class="w-[140px]"
+        class="min-w-0 flex-1 basis-[140px] max-w-[180px]"
         title="当前连接"
-        @update:model-value="(v) => (activeTabContext.connectionId = String(v))"
+        @update:model-value="changeConnection"
       />
       <UiSelect
         v-if="db.databaseOptions.value.length"
         :model-value="activeTabContext.database"
         :options="db.databaseOptions.value"
         size="xs"
-        class="w-[110px]"
+        class="min-w-0 flex-1 basis-[110px] max-w-[160px]"
         title="数据库"
         @update:model-value="(v) => (activeTabContext.database = String(v))"
       />
@@ -238,11 +278,11 @@ async function exportCsv() {
         :model-value="activeTabContext.schema"
         :options="db.schemaOptions.value"
         size="xs"
-        class="w-[90px]"
+        class="min-w-0 flex-1 basis-[90px] max-w-[140px]"
         title="Schema"
         @update:model-value="(v) => (activeTabContext.schema = String(v))"
       />
-    </div>
+    </UiToolbar>
 
     <SqlEditor
       ref="editorRef"
@@ -275,6 +315,15 @@ async function exportCsv() {
     @patch="patchQueryState"
   />
 
+  <UiContextMenu
+    v-if="moreMenu"
+    :x="moreMenu.x"
+    :y="moreMenu.y"
+    :items="moreItems"
+    size="sm"
+    @close="moreMenu = null"
+  />
+
   <!-- 首次保存确认 -->
   <UiModal
     :open="saveConfirmOpen"
@@ -288,14 +337,14 @@ async function exportCsv() {
       </p>
       <UiInput
         v-model="saveTitle"
-        size="sm"
+        size="xs"
         placeholder="编辑器名称（别名）"
         @keydown.enter="confirmSave"
       />
     </div>
     <template #footer>
-      <UiButton size="sm" variant="ghost" @click="saveConfirmOpen = false">取消</UiButton>
-      <UiButton size="sm" variant="primary" @click="confirmSave">保存</UiButton>
+      <UiButton size="xs" variant="ghost" @click="saveConfirmOpen = false">取消</UiButton>
+      <UiButton size="xs" variant="primary" @click="confirmSave">保存</UiButton>
     </template>
   </UiModal>
 </template>

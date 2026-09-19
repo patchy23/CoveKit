@@ -10,6 +10,7 @@ import {
   UiPagination,
   UiSpinner,
   UiTabs,
+  UiToolbar,
 } from '@/core/ui'
 import type { QueryState, useDatabase } from './useDatabase'
 
@@ -28,26 +29,32 @@ const emit = defineEmits<{
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col border-t border-border dark:border-border-dark">
-    <div
-      class="flex h-[28px] shrink-0 items-center gap-[4px] border-b border-border px-[8px] dark:border-border-dark"
-    >
+    <UiToolbar density="compact" bordered>
       <UiTabs
         :model-value="queryState.resultTab"
         :items="db.resultTabs.value"
         variant="line"
         size="xs"
-        @update:model-value="emit('patch', { resultTab: String($event) })"
-      />
-      <span class="ml-auto text-caption text-text-muted dark:text-text-muted-dark">{{
-        statusText
-      }}</span>
-      <UiIconButton label="复制结果" size="xs" @click="emit('copy')"
-        ><UiIcon name="copy" :size="12"
-      /></UiIconButton>
-      <UiIconButton label="导出 CSV" size="xs" @click="emit('export')"
-        ><UiIcon name="download" :size="12"
-      /></UiIconButton>
-    </div>
+        @update:model-value="emit('patch', { resultTab: String($event) })" />
+      <template #trailing
+        ><span class="text-caption text-text-muted dark:text-text-muted-dark">{{
+          statusText
+        }}</span>
+        <UiIconButton
+          label="复制筛选结果"
+          size="xs"
+          :disabled="!db.filteredRows.value.length || queryState.status === 'running'"
+          @click="emit('copy')"
+          ><UiIcon name="copy" :size="12"
+        /></UiIconButton>
+        <UiIconButton
+          label="导出筛选结果 CSV"
+          size="xs"
+          :disabled="!db.filteredRows.value.length || queryState.status === 'running'"
+          @click="emit('export')"
+          ><UiIcon name="download" :size="12"
+        /></UiIconButton> </template
+    ></UiToolbar>
     <div
       v-if="queryState.status === 'running'"
       class="flex min-h-0 flex-1 flex-col items-center justify-center gap-[8px]"
@@ -111,12 +118,10 @@ const emit = defineEmits<{
       height="100%"
       @update:model-value="emit('patch', { selectedRow: String($event) })"
     />
-    <div
-      class="flex h-[28px] shrink-0 items-center justify-between gap-[8px] border-t border-border px-[8px] dark:border-border-dark"
-    >
+    <UiToolbar density="compact" class="border-t border-border px-[6px] dark:border-border-dark">
       <UiInput
         :model-value="queryState.filter"
-        class="w-[160px]"
+        class="min-w-0 w-[160px]"
         size="xs"
         placeholder="过滤结果…"
         @update:model-value="emit('patch', { filter: String($event), page: 1 })"
@@ -124,12 +129,13 @@ const emit = defineEmits<{
       <span v-if="queryState.truncated" class="text-caption text-warning-strong"
         >结果已截断（仅显示前 1000 行）</span
       >
-      <UiPagination
-        :model-value="queryState.page"
-        :total-pages="db.totalPages.value"
-        size="xs"
-        @update:model-value="db.setPage"
-      />
-    </div>
+      <template #trailing
+        ><UiPagination
+          :model-value="queryState.page"
+          :total-pages="db.totalPages.value"
+          size="xs"
+          @update:model-value="db.setPage"
+      /></template>
+    </UiToolbar>
   </div>
 </template>

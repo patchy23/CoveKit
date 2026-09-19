@@ -6,7 +6,17 @@ import { UiScrollArea } from '@/core/ui'
  * 数据在打开页签时由 openStructureTab 一次性加载（loadColumns + loadStructureExtras）。
  */
 import { computed, ref } from 'vue'
-import { UiBadge, UiButton, UiIcon, UiIconButton, UiTable, UiTableCell, UiTabs } from '@/core/ui'
+import {
+  UiBadge,
+  UiButton,
+  UiIcon,
+  UiIconButton,
+  UiTable,
+  UiTableCell,
+  UiTabs,
+  UiToolbar,
+  UiCodeEditor,
+} from '@/core/ui'
 import { useCopy } from '@/core/feedback/useCopy'
 import type { useDatabase } from './useDatabase'
 
@@ -29,23 +39,31 @@ const columns = computed(() => db.structureColumns.value[db.activeTabId.value] ?
 const indexes = computed(() => db.structureIndexes.value[db.activeTabId.value] ?? [])
 const ddl = computed(() => db.structureDdl.value[db.activeTabId.value] ?? '')
 const tableName = computed(() => {
-  const m = db.activeTabId.value.match(/^structure-(?:[^-]+)-(.*)$/)
-  return m?.[1] ?? ''
+  return db.activeTabContext.value.table ?? ''
 })
 
 function genQuery() {
-  db.openSqlEditor()
-  db.patchQueryState({ sql: `SELECT * FROM ${tableName.value} LIMIT 100;` })
+  const ctx = db.activeTabContext.value
+  const mysql = ['mysql', 'polardb'].includes(db.activeTabConnection.value?.dbType ?? '')
+  const delimiter = mysql ? '`' : '"'
+  const quote = (name: string) =>
+    delimiter + name.replaceAll(delimiter, delimiter + delimiter) + delimiter
+  const scope = mysql ? ctx.database : ctx.schema
+  const qualified = [scope, tableName.value].filter(Boolean).map(quote).join('.')
+  db.openSqlEditorWithSql(
+    ctx.connectionId,
+    `SELECT * FROM ${qualified} LIMIT 100;`,
+    ctx.database,
+    ctx.schema
+  )
 }
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <div
-      class="flex h-[36px] shrink-0 items-center gap-[8px] border-b border-border px-[12px] dark:border-border-dark"
-    >
-      <div class="min-w-0">
-        <span class="text-card-title font-semibold text-primary dark:text-primary-dark">{{
+    <UiToolbar density="compact" bordered>
+      <div class="min-w-0 truncate">
+        <span class="text-caption font-semibold text-primary dark:text-primary-dark">{{
           tableName
         }}</span>
         <span class="ml-[8px] font-mono text-caption text-secondary dark:text-secondary-dark">
@@ -60,7 +78,7 @@ function genQuery() {
         class="ml-[8px]"
         @update:model-value="(v) => (subTab = v as typeof subTab)"
       />
-      <div class="ml-auto flex items-center gap-[4px]">
+      <template #trailing>
         <UiIconButton
           v-if="subTab === 'ddl' && ddl"
           label="复制 DDL"
@@ -70,12 +88,12 @@ function genQuery() {
           <UiIcon name="copy" :size="12" />
         </UiIconButton>
         <UiButton size="xs" variant="primary" @click="genQuery">生成查询</UiButton>
-      </div>
-    </div>
+      </template>
+    </UiToolbar>
 
     <!-- 列 -->
     <UiScrollArea v-if="subTab === 'columns'" as-child axis="both">
-      <div class="min-h-0 flex-1 p-[12px]">
+      <div class="min-h-0 flex-1 p-[6px]">
         <UiTable v-if="columns.length" density="compact" :hoverable="true" :striped="true">
           <thead>
             <tr>
@@ -114,7 +132,7 @@ function genQuery() {
 
     <!-- 索引 -->
     <UiScrollArea v-else-if="subTab === 'indexes'" as-child axis="both">
-      <div class="min-h-0 flex-1 p-[12px]">
+      <div class="min-h-0 flex-1 p-[6px]">
         <UiTable v-if="indexes.length" density="compact" :hoverable="true" :striped="true">
           <thead>
             <tr>
@@ -147,19 +165,13 @@ function genQuery() {
     </UiScrollArea>
 
     <!-- DDL -->
-    <UiScrollArea v-else as-child axis="both">
-      <div class="min-h-0 flex-1 p-[12px]">
-        <pre
-          v-if="ddl"
-          class="whitespace-pre-wrap rounded-[8px] border border-border bg-surface-muted p-[12px] font-mono text-body-sm text-primary dark:border-border-dark dark:bg-surface-muted-dark dark:text-primary-dark"
-          >{{ ddl }}</pre>
-        <div
-          v-else
-          class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
-        >
-          加载 DDL 中…
-        </div>
-      </div>
-    </UiScrollArea>
+    <UiCodeEditor
+      v-else
+      :model-value="ddl || '-- 正在加载 DDL…'"
+      language="sql"
+      readonly
+      :completion="false"
+      class="min-h-0 flex-1 !rounded-none !border-0"
+    />
   </div>
 </template>
