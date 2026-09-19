@@ -1,7 +1,7 @@
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import { defineComponent, ref } from 'vue'
-import ContextMenu from './ContextMenu.vue'
+import UiContextMenu from './UiContextMenu.vue'
 import UiModal from './UiModal.vue'
 
 enableAutoUnmount((cleanup) => {
@@ -27,7 +27,7 @@ function key(value: string) {
 it('重复右键更新原菜单，不在 mousedown 与 contextmenu 之间卸载，左键仍可关闭', async () => {
   const wrapper = mount(
     defineComponent({
-      components: { ContextMenu },
+      components: { UiContextMenu },
       setup() {
         const open = ref(false)
         const items = ref([{ label: '首次菜单' }])
@@ -38,7 +38,7 @@ it('重复右键更新原菜单，不在 mousedown 与 contextmenu 之间卸载�
         return { open, items, show }
       },
       template:
-        '<div><button @contextmenu.stop.prevent="show">目标</button><ContextMenu v-if="open" :x="10" :y="10" :items="items" @close="open = false" /></div>',
+        '<div><button @contextmenu.stop.prevent="show">目标</button><UiContextMenu v-if="open" :x="10" :y="10" :items="items" @close="open = false" /></div>',
     }),
     { attachTo: document.body }
   )
@@ -58,14 +58,14 @@ it('重复右键更新原菜单，不在 mousedown 与 contextmenu 之间卸载�
 
 it('另一个公共菜单接管时关闭旧菜单，未处理的外部右键也能关闭', async () => {
   const firstClose = vi.fn()
-  mount(ContextMenu, {
+  mount(UiContextMenu, {
     props: { x: 10, y: 10, items: [] },
     attrs: { onClose: firstClose },
     attachTo: document.body,
   })
   await flushPromises()
   const secondClose = vi.fn()
-  mount(ContextMenu, {
+  mount(UiContextMenu, {
     props: { x: 20, y: 20, items: [] },
     attrs: { onClose: secondClose },
     attachTo: document.body,
@@ -81,7 +81,7 @@ it('菜单焦点支持方向、首尾和 Escape，跳过禁用项及分隔线', 
   const trigger = document.createElement('button')
   document.body.append(trigger)
   trigger.focus()
-  const wrapper = mount(ContextMenu, {
+  const wrapper = mount(UiContextMenu, {
     props: {
       x: 10,
       y: 10,
@@ -114,7 +114,7 @@ it('菜单能在模态弹窗上取得焦点，选项执行一次后关闭', asyn
   })
   await flushPromises()
   const action = vi.fn()
-  const wrapper = mount(ContextMenu, {
+  const wrapper = mount(UiContextMenu, {
     props: { x: 10, y: 10, items: [{ label: '编辑', onClick: action }] },
     attachTo: document.body,
   })
@@ -134,7 +134,7 @@ it('菜单根据实际尺寸避让右下角，坐标变化时重新定位', asyn
     width: 200,
     height: 100,
   } as DOMRect)
-  const wrapper = mount(ContextMenu, {
+  const wrapper = mount(UiContextMenu, {
     props: { x: window.innerWidth - 1, y: window.innerHeight - 1, items: [{ label: '打开' }] },
     attachTo: document.body,
   })
@@ -149,7 +149,7 @@ it('菜单根据实际尺寸避让右下角，坐标变化时重新定位', asyn
 
 it('空菜单仍能用 Tab 退出，卸载后外部事件不再触发关闭', async () => {
   const close = vi.fn()
-  const wrapper = mount(ContextMenu, {
+  const wrapper = mount(UiContextMenu, {
     props: { x: 0, y: 0, items: [] },
     attrs: { onClose: close },
     attachTo: document.body,

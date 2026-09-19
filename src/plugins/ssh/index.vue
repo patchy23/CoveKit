@@ -12,8 +12,8 @@ import {
   type SshWorkspaceSection,
 } from './useSshWorkspace'
 import { UiSpinner, UiTabs, type UiTabItem } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import { UiConfirmDialog } from '@/core/ui'
+import { UiContextMenu, type UiContextMenuItem } from '@/core/ui'
 import { useSshToolLifecycle } from './toolLifecycle'
 
 /** 功能页首次进入才加载；加载异常继续交给 ToolHost 的错误面板和重试入口。 */
@@ -77,7 +77,7 @@ const openingProfileId = ref<string | null>(null)
 /** 「关闭全部会话」确认弹窗开关 */
 const cleanupAllOpen = ref(false)
 const connectionMenu = ref<{ x: number; y: number } | null>(null)
-const connectionMenuItems: ContextMenuItem[] = [
+const connectionMenuItems: UiContextMenuItem[] = [
   { label: '关闭全部', onClick: () => (cleanupAllOpen.value = true) },
 ]
 
@@ -333,7 +333,7 @@ watch(
       </template>
     </div>
 
-    <ContextMenu
+    <UiContextMenu
       v-if="connectionMenu"
       :x="connectionMenu.x"
       :y="connectionMenu.y"
@@ -362,7 +362,7 @@ watch(
       @cancel="formOpen = false"
     />
 
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="closingWorkspaceId !== null"
       title="关闭 SSH 连接"
       :message="`确定关闭连接「${closingWorkspace?.title ?? ''}」吗？该连接下的终端、文件传输、监控与日志任务都会结束。${composeCloseHint}`"
@@ -370,7 +370,7 @@ watch(
       @close="closingWorkspaceId = null"
       @confirm="confirmCloseWorkspace"
     />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="deleteTarget !== null"
       title="删除服务器连接信息"
       :message="`确定删除「${deleteTarget?.name ?? ''}」（${deleteTarget?.host ?? ''}）的连接信息？该服务器已打开的全部连接也会关闭，未保存的编排配置将丢失，正在执行的远端操作不保证停止。`"
@@ -382,7 +382,7 @@ watch(
     <HostKeyDialog :request="hostKeyRequest" @respond="workspace.respondHostKey" />
     <KnownHostsDialog :open="knownHostsOpen" @close="knownHostsOpen = false" />
 
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="cleanupAllOpen"
       title="关闭全部会话"
       :message="`将断开并关闭全部 ${connectionWorkspaces.length} 个会话，未保存的终端内容和编排配置将丢失；正在执行的远端操作不保证停止。`"

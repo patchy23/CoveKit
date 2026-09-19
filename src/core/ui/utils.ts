@@ -8,7 +8,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * 下拉浮层外壳类（UiSelect / UiCombobox / UiTabsOverflow 共用）。
+ * 下拉浮层外壳类（UiSelect / UiCombobox / UiTabsOverflowMenu 共用）。
  * z-[220] 是全局浮层基线：必须高于 UiModal 遮罩 z-[180]（11 号文定稿），新浮层组件勿用 z-50。
  * 各组件再自行叠加定位（fixed/popper）与宽度约束。
  */

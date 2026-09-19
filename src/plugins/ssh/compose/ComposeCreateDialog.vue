@@ -2,7 +2,7 @@
 /** 新建编排的名称、远程落位和模板；写盘由工作区统一管理。 */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { UiButton, UiCodeEditor, UiField, UiInput, UiModal, UiSelect } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import ComposeDirectoryPicker from './ComposeDirectoryPicker.vue'
 import { composePath, composeTemplates, parentDirectory } from './composeTemplates'
 import { validateComposeDraft } from './composeProjects'
@@ -173,7 +173,7 @@ function chooseDirectory(value: string) {
       @close="choosingDirectory = false"
       @select="chooseDirectory"
     />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="!!pendingTemplate"
       title="替换 YAML 内容"
       message="切换模板将替换当前已修改的 YAML。是否继续？"
@@ -181,7 +181,7 @@ function chooseDirectory(value: string) {
       @close="pendingTemplate = ''"
       @confirm="applyTemplate(pendingTemplate)"
     />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="confirmClose"
       title="放弃新增编排"
       message="关闭后将放弃尚未保存的编排内容。"

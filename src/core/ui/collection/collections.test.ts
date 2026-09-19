@@ -1,4 +1,4 @@
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import UiTree from '../UiTree.vue'
 import UiSortableList from '../UiSortableList.vue'
@@ -22,7 +22,7 @@ it('叶子默认无图标，分支保留文件夹且业务可显式提供叶子�
     tree
       .get('[data-collection-id="a"]')
       .findAllComponents(UiIcon)
-      .map((icon) => icon.props('name'))
+      .map((icon: VueWrapper) => (icon.props() as { name: string }).name)
   ).toContain('folder')
   const custom = mount(UiTree, {
     props: { items: rows },

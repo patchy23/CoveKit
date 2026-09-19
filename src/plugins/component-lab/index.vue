@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import FoundationShowcase from './FoundationShowcase.vue'
 import FormShowcase from './FormShowcase.vue'
+import SelectionDialogShowcase from './SelectionDialogShowcase.vue'
 import DataShowcase from './DataShowcase.vue'
 import ExpandableTableShowcase from './ExpandableTableShowcase.vue'
 import DatabaseWorkbenchShowcase from './DatabaseWorkbenchShowcase.vue'
@@ -24,6 +25,7 @@ import { UiBadge } from '@/core/ui'
 
     <FoundationShowcase />
     <FormShowcase />
+    <SelectionDialogShowcase />
     <DataShowcase />
     <ExpandableTableShowcase />
     <DatabaseWorkbenchShowcase />

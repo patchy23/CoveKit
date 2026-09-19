@@ -7,7 +7,7 @@ import { UiTooltip } from '@/core/ui'
 import { computed, ref, watch } from 'vue'
 import type { RemoteFile } from '../contracts'
 import { UiButton, UiCheckbox, UiInput, UiModal } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import { chmodNeedsRiskAck } from '../connection/sshPolicy'
 import {
   formatModeRwx,
@@ -170,7 +170,7 @@ const PERMS = ['读', '写', '执行'] as const
     </template>
 
     <!-- 二次确认 -->
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="confirming"
       title="确认修改权限"
       :message="`将把 ${file?.path} 的权限从 ${file?.permissions} 修改为 ${formatModeRwx(currentMode)}（${currentMode.toString(8)}）${file?.isDir && recursive ? '，并递归应用到子项' : ''}。`"

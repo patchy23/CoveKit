@@ -1,6 +1,6 @@
 import { computed, ref } from 'vue'
 import type { UiTreeItem } from '@/core/ui'
-import type { ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import type { UiContextMenuItem } from '@/core/ui'
 import { useCopy } from '@/core/feedback/useCopy'
 import type { DbConnectionInfo } from './contracts'
 import type { useDatabase } from './useDatabase'
@@ -31,7 +31,7 @@ export function useConnectionsMenu(
   } | null>(null)
   const renameValue = ref('')
 
-  const menuItems = computed<ContextMenuItem[]>(() => {
+  const menuItems = computed<UiContextMenuItem[]>(() => {
     const target = menu.value
     if (!target) return []
     if (target.connection) return connectionItems(target.connection)
@@ -46,7 +46,7 @@ export function useConnectionsMenu(
     }
     if (item.kind === 'database' || item.kind === 'schema' || item.kind?.startsWith('group')) {
       const context = db.scopeContext(connection, scope)
-      const items: ContextMenuItem[] = [
+      const items: UiContextMenuItem[] = [
         {
           label: '打开SQL编辑器',
           onClick: () => db.openSqlEditorWithSql(connId, '', context.database, context.schema),
@@ -74,7 +74,7 @@ export function useConnectionsMenu(
     if (!leaf) return []
     if (leaf.kind === 'table' || leaf.kind === 'view' || leaf.kind === 'materialized_view') {
       const context = db.scopeContext(connection, leaf.scope)
-      const items: ContextMenuItem[] = [
+      const items: UiContextMenuItem[] = [
         { label: '查看数据', onClick: () => void db.selectResource(item.id) },
         {
           label: '查看结构',
@@ -116,9 +116,9 @@ export function useConnectionsMenu(
     return [{ label: '复制名称', onClick: () => void copyText(leaf.name) }]
   })
 
-  function connectionItems(connection: DbConnectionInfo): ContextMenuItem[] {
+  function connectionItems(connection: DbConnectionInfo): UiContextMenuItem[] {
     const online = connection.status === 'online'
-    const items: ContextMenuItem[] = [
+    const items: UiContextMenuItem[] = [
       {
         label: online ? '断开连接' : '连接',
         onClick: () =>

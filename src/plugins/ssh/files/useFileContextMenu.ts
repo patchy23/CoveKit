@@ -3,7 +3,7 @@
  * 右键未选中项时先对齐为单选（业界惯例）；菜单项可见性受 sshPolicy 安全策略约束。
  */
 import { computed, ref } from 'vue'
-import type { ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import type { UiContextMenuItem } from '@/core/ui'
 import type { RemoteFile } from '../contracts'
 import { canEditRemoteFile } from '../connection/useSsh'
 import { chmodMenuVisible, deleteMenuVisible } from '../connection/sshPolicy'
@@ -45,9 +45,9 @@ export function useFileContextMenu(actions: RemoteMenuActions) {
     menu.value = { target, multi, x: event.clientX, y: event.clientY }
   }
 
-  const menuItems = computed<ContextMenuItem[]>(() => {
+  const menuItems = computed<UiContextMenuItem[]>(() => {
     const state = menu.value
-    const refreshItem: ContextMenuItem = { label: '刷新', onClick: actions.refresh }
+    const refreshItem: UiContextMenuItem = { label: '刷新', onClick: actions.refresh }
     if (!state) return [refreshItem]
     const target = state.target
 
@@ -65,7 +65,7 @@ export function useFileContextMenu(actions: RemoteMenuActions) {
     // 多选：批量下载/批量删除
     if (state.multi) {
       const sel = actions.selection()
-      const items: ContextMenuItem[] = [
+      const items: UiContextMenuItem[] = [
         { label: `批量下载（${sel.length} 项）`, onClick: () => actions.batchDownload(sel) },
       ]
       const deletable = sel.filter((f) => deleteMenuVisible(f.path))
@@ -80,7 +80,7 @@ export function useFileContextMenu(actions: RemoteMenuActions) {
     }
 
     // 单选：行操作 + 同目录新建（列表占满无空白处时仍可新建）
-    const items: ContextMenuItem[] = [{ label: '下载', onClick: () => actions.download(target) }]
+    const items: UiContextMenuItem[] = [{ label: '下载', onClick: () => actions.download(target) }]
     if (!target.isDir && canEditRemoteFile(target)) {
       items.push({ label: '编辑', onClick: () => actions.edit(target) })
     }

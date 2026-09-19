@@ -2,7 +2,7 @@
 /** SSH 风格侧栏：分组树、空白与分组右键菜单，整行统一选中和悬停。 */
 import { computed, ref } from 'vue'
 import { UiDropdownMenu, UiIcon, UiTree, UiSortableList, UiSearchInput, UiTooltip } from '@/core/ui'
-import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import { UiContextMenu, type UiContextMenuItem } from '@/core/ui'
 import type { ApiKind, ApiRecord } from './contracts'
 import type { UiTreeItem, UiCollectionMove } from '@/core/ui'
 import { apiTreeItems, apiTreeDestination } from './apiTree'
@@ -82,7 +82,7 @@ function blankMenu(event: MouseEvent) {
     return
   openMenu(event)
 }
-const menuItems = computed<ContextMenuItem[]>(() => {
+const menuItems = computed<UiContextMenuItem[]>(() => {
   const target = menu.value
   if (!target) return []
   if (target.api) {
@@ -194,7 +194,7 @@ const menuItems = computed<ContextMenuItem[]>(() => {
         />
       </template>
     </component>
-    <ContextMenu
+    <UiContextMenu
       v-if="menu"
       :x="menu.x"
       :y="menu.y"

@@ -11,7 +11,7 @@ import {
   UiButton,
   UiEmptyState,
   UiField,
-  UiRange,
+  UiSlider,
   UiSelect as Select,
   UiTextarea,
   UiToolbar,
@@ -118,10 +118,10 @@ onMounted(async () => {
         </UiField>
         <div class="grid grid-cols-2 gap-[14px]">
           <UiField :label="`语速（${rate > 0 ? '+' : ''}${rate}%）`">
-            <UiRange v-model="rate" :min="-50" :max="50" :step="5" />
+            <UiSlider v-model="rate" :min="-50" :max="50" :step="5" />
           </UiField>
           <UiField :label="`音调（${pitch > 0 ? '+' : ''}${pitch}Hz）`">
-            <UiRange v-model="pitch" :min="-50" :max="50" :step="5" />
+            <UiSlider v-model="pitch" :min="-50" :max="50" :step="5" />
           </UiField>
         </div>
         <div class="flex gap-[10px]">

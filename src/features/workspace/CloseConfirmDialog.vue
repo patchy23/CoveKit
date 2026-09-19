@@ -6,7 +6,7 @@
  * 用户可以选择「取消」或「放弃并关闭」——而不是让关闭静默丢东西。
  */
 import { computed } from 'vue'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import { formatClosePromptMessage } from '@/core/lifecycle/closePrompt'
 import { getTool } from '@/core/registry/toolRegistry'
 import { useUiStore } from '@/stores/ui'
@@ -40,7 +40,7 @@ function cancel() {
 </script>
 
 <template>
-  <ConfirmDialog
+  <UiConfirmDialog
     :open="ui.closePrompt !== null"
     :title="title"
     :message="message"

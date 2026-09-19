@@ -29,7 +29,7 @@ import {
   UiToolbar,
 } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 
 const props = defineProps<{
   connection: ServerConnection
@@ -458,7 +458,7 @@ onUnmounted(() => {
       </template>
     </UiModal>
 
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="deleteTarget !== null"
       title="删除隧道"
       :message="`确定删除隧道「${deleteTarget?.name ?? ''}」？运行中会先停止；配置不可恢复。`"

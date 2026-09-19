@@ -12,8 +12,8 @@ import {
   UiTree,
   type UiTreeItem,
 } from '@/core/ui'
-import ContextMenu from '@/core/ui/ContextMenu.vue'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiContextMenu } from '@/core/ui'
+import { UiConfirmDialog } from '@/core/ui'
 import CreateDatabaseDialog from './CreateDatabaseDialog.vue'
 import DbObjectIcon from './DbObjectIcon.vue'
 import { useSplitPane } from '@/core/ui/useSplitPane'
@@ -170,7 +170,7 @@ function onTreeContext(item: UiTreeItem, event: MouseEvent) {
       class="absolute -right-[3px] top-0 z-10 h-full w-[6px] cursor-col-resize hover:bg-tertiary/30"
       @mousedown="onDragStart"
     />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="deleteTarget !== null"
       title="删除连接"
       :message="`确定删除「${deleteTarget?.label ?? ''}」吗？该连接下的所有查询页签将被关闭。`"
@@ -180,7 +180,7 @@ function onTreeContext(item: UiTreeItem, event: MouseEvent) {
       @confirm="confirmDelete"
     />
     <CreateDatabaseDialog :db="db" :connection="createDbFor" @close="createDbFor = null" />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="dropDbTarget !== null"
       title="删除数据库"
       :message="`确定删除数据库「${dropDbTarget?.name ?? ''}」吗？库内所有表与数据将被删除，不可恢复。`"
@@ -212,7 +212,7 @@ function onTreeContext(item: UiTreeItem, event: MouseEvent) {
         >
       </template>
     </UiModal>
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="tableAction?.mode === 'truncate'"
       title="清空表"
       :message="`确定清空「${tableAction?.name ?? ''}」吗？表内所有数据将被删除，不可恢复。`"
@@ -221,7 +221,7 @@ function onTreeContext(item: UiTreeItem, event: MouseEvent) {
       @close="tableAction = null"
       @confirm="confirmTableAction"
     />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="tableAction?.mode === 'drop'"
       title="删除表"
       :message="`确定删除表「${tableAction?.name ?? ''}」吗？表结构与数据将被删除，不可恢复。`"
@@ -230,7 +230,7 @@ function onTreeContext(item: UiTreeItem, event: MouseEvent) {
       @close="tableAction = null"
       @confirm="confirmTableAction"
     />
-    <ContextMenu
+    <UiContextMenu
       v-if="menu"
       :x="menu.x"
       :y="menu.y"

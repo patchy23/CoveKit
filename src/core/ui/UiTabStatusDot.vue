@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * UiTabStatusDot · 页签状态点（UiTabs / UiTabsOverflow 共享的内部子组件，不经入口导出）
+ * UiTabStatusDot · 页签状态点（UiTabs / UiTabsOverflowMenu 共享的内部子组件，不经入口导出）
  * 颜色语义：success=已连接 danger=已断开 neutral=中性 progress=进行中（脉动）。
  */
 import UiTooltip from './UiTooltip.vue'

@@ -9,7 +9,7 @@ import { computed, onMounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useUiStore } from '@/stores/ui'
 import { UiEmptyState, UiSpinner } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import BinarySetupCard from './binary/BinarySetupCard.vue'
 import { useFrpBinary } from './binary/useFrpBinary'
 import ClientManagerDialog from './client/ClientManagerDialog.vue'
@@ -229,7 +229,7 @@ async function onClientsChanged() {
     />
 
     <!-- 未保存改动拦截 -->
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="pendingSwitch !== null"
       :title="t('frp.unsaved')"
       :message="t('frp.unsavedSwitch', { name: pendingSwitch ?? '' })"

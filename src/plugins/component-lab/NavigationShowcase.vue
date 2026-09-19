@@ -11,7 +11,7 @@ import {
   UiTabs,
 } from '@/core/ui'
 import type { UiSize } from '@/core/ui'
-import ContextMenu from '@/core/ui/ContextMenu.vue'
+import { UiContextMenu } from '@/core/ui'
 
 const sizes: UiSize[] = ['xs', 'sm', 'md', 'lg']
 const tabs = [
@@ -118,11 +118,14 @@ function openModal(size: 'sm' | 'md' | 'lg' | 'xl') {
     </UiPanel>
   </div>
 
-  <UiPanel title="右键菜单" description="可点击或右键打开；方向键选择，Enter 执行，Esc 关闭。">
+  <UiPanel
+    title="UiContextMenu · 右键菜单"
+    description="可点击或右键打开；方向键选择，Enter 执行，Esc 关闭。"
+  >
     <UiButton size="sm" @click="openMenu" @contextmenu.prevent="openMenu">打开操作菜单</UiButton>
     <p class="mt-sm text-body-sm text-secondary dark:text-secondary-dark">{{ menuResult }}</p>
   </UiPanel>
-  <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
+  <UiContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
 
   <UiModal
     :open="modalOpen"

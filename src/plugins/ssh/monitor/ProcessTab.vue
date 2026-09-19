@@ -8,7 +8,7 @@ import { computed, ref, watch } from 'vue'
 import type { ProcessDetail, ServerConnection, ServerProfile, ProcessInfo } from '../contracts'
 import { formatBytes } from '../connection/useSsh'
 import { useUiStore } from '@/stores/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import {
   UiButton,
   UiModal,
@@ -271,7 +271,7 @@ watch(
         <span>{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
       </template>
     </UiStatusBar>
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="pendingKill !== null"
       :title="pendingKill?.force ? '强制结束进程' : '结束进程'"
       :message="`${pendingKill?.force ? '强制结束' : '结束'}进程 ${pendingKill?.pid ?? ''}？`"

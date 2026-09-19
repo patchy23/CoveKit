@@ -9,7 +9,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { TransferItem } from './useFileTransfer'
 import { useBookmarks } from './useBookmarks'
 import { UiButton, UiIcon, UiIconButton } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 
 const props = defineProps<{
   /** 所属服务器（书签按 profile 隔离） */
@@ -253,7 +253,7 @@ const currentTaskLabel = computed(() => {
       </div>
     </div>
 
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="cancelAllConfirm"
       title="取消全部传输"
       :message="`将取消进行中的 ${runningTransfers.length} 个传输任务。`"

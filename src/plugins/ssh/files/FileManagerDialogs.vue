@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
-import InputDialog from '@/core/ui/InputDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
+import { UiInputDialog } from '@/core/ui'
 import EditorDialog from './EditorDialog.vue'
 import type { RemoteFile } from '../contracts'
 
@@ -39,7 +39,7 @@ const emit = defineEmits<{
     @save="(content, force) => emit('save', content, force)"
     @cancel="emit('cancelEdit')"
   />
-  <InputDialog
+  <UiInputDialog
     :open="renameTarget !== null"
     title="重命名"
     label="新名称"
@@ -48,7 +48,7 @@ const emit = defineEmits<{
     @close="emit('cancelRename')"
     @confirm="emit('rename', $event)"
   />
-  <ConfirmDialog
+  <UiConfirmDialog
     :open="deleteTarget !== null"
     title="删除文件"
     :message="`确定删除「${deleteTarget?.name ?? ''}」？此操作不可恢复。`"

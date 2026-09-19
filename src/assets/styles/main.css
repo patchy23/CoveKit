@@ -443,7 +443,7 @@ body.ui-drag-select-lock * {
     @apply border-danger/30 bg-danger-soft text-danger-strong dark:border-danger-dark/30 dark:bg-danger-soft-dark dark:text-danger-dark;
   }
   .ui-tabs {
-    /* 页签永不换行：超出由 UiTabsOverflow 收纳（父级负责切分可见/隐藏） */
+    /* 页签永不换行：超出由 UiTabsOverflowMenu 收纳（父级负责切分可见/隐藏） */
     @apply flex shrink-0 items-center overflow-hidden;
   }
   .ui-tabs-pill {

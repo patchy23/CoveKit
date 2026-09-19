@@ -6,7 +6,7 @@
 import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, DockerContainer } from '../contracts'
 import { useUiStore } from '@/stores/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import {
   UiButton,
   UiModal,
@@ -204,7 +204,7 @@ watch(
       :target-id="logTarget.id"
       @close="logTarget = null"
     />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="pendingAction !== null"
       :title="pendingActionText.title"
       :message="pendingActionText.message"

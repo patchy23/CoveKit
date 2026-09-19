@@ -83,8 +83,8 @@ it('先显示主机列表，功能页首次进入才加载，返回终端保留�
           emits: ['update:modelValue'],
           template: '<nav />',
         },
-        ConfirmDialog: true,
-        ContextMenu: true,
+        UiConfirmDialog: true,
+        UiContextMenu: true,
       },
     },
   })

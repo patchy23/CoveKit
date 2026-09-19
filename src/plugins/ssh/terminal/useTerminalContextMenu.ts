@@ -7,7 +7,7 @@ import { computed, ref } from 'vue'
 import type { Terminal } from 'xterm'
 import { readText, writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { useUiStore } from '@/stores/ui'
-import type { ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import type { UiContextMenuItem } from '@/core/ui'
 
 interface MenuState {
   x: number
@@ -114,7 +114,7 @@ export function useTerminalContextMenu(getTerm: () => Terminal | null) {
     }
   }
 
-  const menuItems = computed<ContextMenuItem[]>(() => [
+  const menuItems = computed<UiContextMenuItem[]>(() => [
     { label: '全选', onClick: selectAll },
     {
       label: '复制',

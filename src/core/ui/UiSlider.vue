@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * UiRange · 数值区间滑杆（label 走 UiField；独立使用时务必传 ariaLabel）。
+ * UiSlider · 单值滑杆（label 走 UiField；独立使用时务必传 ariaLabel）。
  * 未包在 UiField 里时 inject 到 undefined，label 关联自动跳过。
  */
 import { inject } from 'vue'

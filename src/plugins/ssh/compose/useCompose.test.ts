@@ -22,7 +22,7 @@ import {
   UiIconButton,
   UiInput,
 } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 
 const env = vi.hoisted(() => ({
   sshComposeList: vi.fn(),
@@ -261,7 +261,7 @@ it('编辑弹窗关闭须确认，取消保留草稿并向连接页上报未保�
     .vm.$emit('close')
   await flushPromises()
   const confirmation = wrapper
-    .findAllComponents(ConfirmDialog)
+    .findAllComponents(UiConfirmDialog)
     .find((dialog) => dialog.props('title') === '放弃未保存的修改')!
   expect(confirmation.props('open')).toBe(true)
   confirmation.vm.$emit('close')
@@ -458,7 +458,7 @@ it('切换 YAML 文件保护草稿，确认放弃后才读取新文件', async (
   wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', project.configFiles[1])
   await flushPromises()
   const confirm = wrapper
-    .findAllComponents(ConfirmDialog)
+    .findAllComponents(UiConfirmDialog)
     .find((c) => c.props('title') === '放弃未保存的修改')!
   expect(confirm.props('open')).toBe(true)
   expect(env.sshEditOpen).toHaveBeenCalledTimes(1)

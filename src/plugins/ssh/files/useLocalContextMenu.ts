@@ -2,7 +2,7 @@
  * SSH 本地文件右键菜单：单选/多选/空白三种场景（设计 v2 矩阵；全部带刷新）
  */
 import { computed, ref } from 'vue'
-import type { ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import type { UiContextMenuItem } from '@/core/ui'
 import type { RemoteFile } from '../contracts'
 
 interface LocalMenuActions {
@@ -37,9 +37,9 @@ export function useLocalContextMenu(actions: LocalMenuActions) {
     }
   }
 
-  const menuItems = computed<ContextMenuItem[]>(() => {
+  const menuItems = computed<UiContextMenuItem[]>(() => {
     const state = menu.value
-    const refreshItem: ContextMenuItem = { label: '刷新', onClick: actions.refresh }
+    const refreshItem: UiContextMenuItem = { label: '刷新', onClick: actions.refresh }
     if (!state) return [refreshItem]
     const target = state.target
 

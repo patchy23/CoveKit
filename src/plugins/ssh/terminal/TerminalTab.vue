@@ -14,7 +14,7 @@ import 'xterm/css/xterm.css'
 import type { ServerConnection, ServerProfile } from '../contracts'
 import { UiButton } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
-import ContextMenu from '@/core/ui/ContextMenu.vue'
+import { UiContextMenu } from '@/core/ui'
 import { useTerminalContextMenu } from './useTerminalContextMenu'
 import TerminalSearchBar from './TerminalSearchBar.vue'
 import { createTerminalSearch, isSearchShortcut } from './useTerminalSearch'
@@ -427,7 +427,7 @@ watch(
         />
       </UiScrollArea>
     </div>
-    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
+    <UiContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
     <div
       class="flex shrink-0 items-center border-t border-border px-[12px] py-[4px] dark:border-border-dark"
     >

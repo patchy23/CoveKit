@@ -5,8 +5,8 @@ let dismissActiveMenu: (() => void) | undefined
 
 <script setup lang="ts">
 /**
- * ContextMenu · 通用右键菜单（Teleport 到 body）
- * 用法：父组件监听 @contextmenu.prevent 记录坐标，渲染 <ContextMenu :x :y :items @close>。
+ * UiContextMenu · 通用右键菜单（Teleport 到 body）
+ * 用法：父组件监听 @contextmenu.prevent 记录坐标，渲染 <UiContextMenu :x :y :items @close>。
  * 点击外部 / 菜单项后自动关闭；菜单项支持分隔线与危险样式（红色）。
  * hover 高亮统一 bg-border（与 Select 下拉一致）。
  * size：md（默认，text-body，SSH 文件等场景）；sm（text-body-sm，树节点等紧凑场景）。
@@ -18,7 +18,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { FocusScope } from 'reka-ui'
 import UiScrollArea from './UiScrollArea.vue'
 
-export interface ContextMenuItem {
+export interface UiContextMenuItem {
   /** 菜单项文字 */
   label: string
   /** 危险操作（红色文字 + 红色 hover 底） */
@@ -37,7 +37,7 @@ const props = withDefaults(
     x: number
     y: number
     /** 菜单项列表 */
-    items: ContextMenuItem[]
+    items: UiContextMenuItem[]
     /** 尺寸：md 默认 / sm 紧凑（树、列表内嵌场景） */
     size?: 'md' | 'sm'
     label?: string
@@ -64,7 +64,7 @@ function close(restoreFocus = false) {
   emit('close')
 }
 
-function handleClick(item: ContextMenuItem) {
+function handleClick(item: UiContextMenuItem) {
   if (item.disabled || item.separator) return
   close(true)
   item.onClick?.()

@@ -9,8 +9,8 @@ import { UiTooltip } from '@/core/ui'
  */
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiContextMenu, type UiContextMenuItem } from '@/core/ui'
+import { UiConfirmDialog } from '@/core/ui'
 import { UiButton, UiIcon, UiIconButton, UiListRow, UiSearchInput, UiSpinner } from '@/core/ui'
 import type { FrpProfileSummary } from '../contracts'
 import { statusView } from '../runtime/frpStatus'
@@ -71,7 +71,7 @@ const visible = computed(() => {
 const runningCount = computed(() => props.items.filter((item) => item.state === 'running').length)
 
 /** 右键菜单项（按当前档案状态与能力组装） */
-const menuItems = computed<ContextMenuItem[]>(() => {
+const menuItems = computed<UiContextMenuItem[]>(() => {
   const target = menu.value?.item
   if (!target) return []
   return [
@@ -238,7 +238,7 @@ function onRemarkSubmit(remark: string) {
     </div>
 
     <!-- 右键菜单 -->
-    <ContextMenu
+    <UiContextMenu
       v-if="menu"
       :x="menu.x"
       :y="menu.y"
@@ -266,7 +266,7 @@ function onRemarkSubmit(remark: string) {
     />
 
     <!-- 删除确认（软删；文案写明去向） -->
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="pendingDelete !== null"
       danger
       :title="t('frp.deleteTitle')"

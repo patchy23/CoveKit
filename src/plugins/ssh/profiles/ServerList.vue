@@ -9,8 +9,8 @@ import type { ServerProfile } from '../contracts'
 import type { ServerGroup } from './useServerGroups'
 import type { UiTreeItem, UiCollectionMove } from '@/core/ui'
 import { serverTreeItems, serverTreeDestination } from './serverTree'
-import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiContextMenu, type UiContextMenuItem } from '@/core/ui'
+import { UiConfirmDialog } from '@/core/ui'
 import {
   UiButton,
   UiIcon,
@@ -130,7 +130,7 @@ function openGroupMenu(event: MouseEvent, group: ServerGroup) {
   }
 }
 
-const menuItems = computed<ContextMenuItem[]>(() => {
+const menuItems = computed<UiContextMenuItem[]>(() => {
   if (!menu.value) return []
   if (menu.value.kind === 'blank')
     return [
@@ -250,7 +250,7 @@ function confirmDeleteGroup() {
       <UiButton variant="ghost" size="sm" block @click="emit('knownHosts')">主机指纹管理</UiButton>
     </div>
 
-    <ContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
+    <UiContextMenu v-if="menu" :x="menu.x" :y="menu.y" :items="menuItems" @close="menu = null" />
 
     <!-- 新建/重命名分组 -->
     <UiModal
@@ -273,7 +273,7 @@ function confirmDeleteGroup() {
     </UiModal>
 
     <!-- 删除分组确认（不删连接，组内连接移回未分组） -->
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="deleteGroupTarget !== null"
       title="删除分组"
       :message="`删除分组「${deleteGroupTarget?.name}」？组内 ${deleteGroupTarget ? profilesOf(deleteGroupTarget.id).length : 0} 个连接将移回未分组，连接配置本身不会被删除。`"

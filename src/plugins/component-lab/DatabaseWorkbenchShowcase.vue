@@ -12,7 +12,7 @@ import {
   UiSplitPane,
   UiStatusBar,
   UiTabs,
-  UiTabsOverflow,
+  UiTabsOverflowMenu,
   UiToolbar,
   UiTree,
 } from '@/core/ui'
@@ -147,7 +147,7 @@ function toggleTree(item: UiTreeItem) {
                     size="xs"
                     @close="closeDocument"
                   />
-                  <UiTabsOverflow
+                  <UiTabsOverflowMenu
                     v-if="hiddenDocuments.length"
                     :items="hiddenDocuments"
                     :model-value="activeDocument"

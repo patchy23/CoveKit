@@ -71,5 +71,5 @@ if (props.value === "") throw new Error("A <SelectItem /> must have a value prop
 - **Select 与 Tooltip 的定位上下文不能错套**：禁止 `TooltipRoot → SelectTrigger`，否则 SelectTrigger 的 PopperAnchor 会登记到 Tooltip 的 PopperRoot，Select 浮层拿不到锚点，表现为箭头已展开、选项停在 `translate(0, -200%)` 的测量位置，外部点击只收起看不见的列表。公共 UiSelect 使用 `SelectTrigger as-child → UiTooltip → button`，按钮显式透传 disabled。测试必须检查浮层完成定位，不能只检查 aria-expanded 和选项 DOM 存在。
 
 - **reka 模态弹窗会把 `body` 置 `pointer-events: none`**：任何渲染在模态之上的自定义浮层（右键菜单、浮层面板）必须显式 `pointer-events-auto`，否则它显示正常但点不动。
-- **浮层 z 序是分层约定的**（`UiModal` `z-[180]`、`ContextMenu` `z-[200]`、`SelectContent` `z-[220]`）：新加浮层先看这几个档位再定 z-index，别随手写 `z-50`。
+- **浮层 z 序是分层约定的**（`UiModal` `z-[180]`、`UiContextMenu` `z-[200]`、`SelectContent` `z-[220]`）：新加浮层先看这几个档位再定 z-index，别随手写 `z-50`。
 - **公共浮层通常 Portal 到 body**：先核对实际渲染目标，再检查层级、裁剪和渲染错误；不能仅凭组件类型排除 overflow 或断言一定是异常。

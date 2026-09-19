@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import ServerList from './ServerList.vue'
 import ServerForm from './ServerForm.vue'
-import ContextMenu from '@/core/ui/ContextMenu.vue'
+import { UiContextMenu } from '@/core/ui'
 import { UiButton, UiInput, UiSelect } from '@/core/ui'
 
 vi.mock('./useServerCredentialChoice', () => ({
@@ -36,10 +36,10 @@ const modalStub = {
 it('空白处提供新建入口，分组和服务器菜单不会被冒泡覆盖', async () => {
   const wrapper = mount(ServerList, {
     props: { profiles: [profile], groups, expandedIds: new Set(['group-1']), searchKeyword: '' },
-    global: { stubs: { UiModal: modalStub, ConfirmDialog: true, ContextMenu: true } },
+    global: { stubs: { UiModal: modalStub, UiConfirmDialog: true, UiContextMenu: true } },
   })
   await wrapper.get('[data-scroll-axis="vertical"]').trigger('contextmenu')
-  let items = wrapper.getComponent(ContextMenu).props('items')
+  let items = wrapper.getComponent(UiContextMenu).props('items')
   expect(items.map((item) => item.label)).toEqual(['添加服务器', '新建分组'])
   items[0].onClick?.()
   expect(wrapper.emitted('add')?.[0]).toEqual([])
@@ -48,14 +48,14 @@ it('空白处提供新建入口，分组和服务器菜单不会被冒泡覆盖'
   expect(wrapper.find('input[placeholder="分组名称，如：生产环境"]').exists()).toBe(true)
 
   await wrapper.get('[data-collection-id="group:group-1"]').trigger('contextmenu')
-  items = wrapper.getComponent(ContextMenu).props('items')
+  items = wrapper.getComponent(UiContextMenu).props('items')
   items.find((item) => item.label === '添加服务器')?.onClick?.()
   expect(wrapper.emitted('add')?.[1]).toEqual(['group-1'])
   const row = wrapper.findAll('span').find((span) => span.text() === '服务器')!
   await row.trigger('contextmenu')
   expect(
     wrapper
-      .getComponent(ContextMenu)
+      .getComponent(UiContextMenu)
       .props('items')
       .map((item) => item.label)
   ).toContain('编辑')

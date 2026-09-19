@@ -7,7 +7,7 @@
  * 有未保存修改时关闭前二次确认，远端冲突时提供强制覆盖。
  */
 import { computed, ref, watch } from 'vue'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import { UiBadge, UiButton, UiCodeDiff, UiCodeEditor, UiModal } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 
@@ -154,7 +154,7 @@ watch(
     </div>
   </UiModal>
 
-  <ConfirmDialog
+  <UiConfirmDialog
     :open="discardOpen"
     title="放弃未保存的修改"
     message="文件尚未保存，确定放弃修改吗？"

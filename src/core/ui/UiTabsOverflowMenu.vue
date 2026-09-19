@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * UiTabsOverflow · 页签溢出收纳（UiDropdownMenu 的页签特化薄封装）
+ * UiTabsOverflowMenu · 页签溢出收纳（UiDropdownMenu 的页签特化薄封装）
  * 触发器「···」+ 下拉列出溢出页签；键盘导航/Esc/焦点归还/锚定由 UiDropdownMenu(reka)承载。
  * 用法：父组件按宽度把放不下的页签传给 items；选中 emit('select')，行内关闭 emit('close')。
  */

@@ -60,7 +60,7 @@ it('真实页面打开与切换接口保留组件、配置和结果，协议入�
         UiCodeEditor: { props: ['modelValue'], template: '<pre>{{modelValue}}</pre>' },
         CredentialPicker: true,
         UiModal: true,
-        ConfirmDialog: true,
+        UiConfirmDialog: true,
       },
     },
   })

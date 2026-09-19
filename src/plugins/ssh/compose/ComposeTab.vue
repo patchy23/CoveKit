@@ -2,7 +2,7 @@
 /** 编排列表负责运行操作；容器按行展开加载，文件编辑使用独立弹窗。 */
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { UiButton, UiCheckbox, UiCodeEditor, UiModal, UiScrollArea, UiSelect } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import type { ComposeAction, ComposeProject, ServerConnection } from '../contracts'
 import { useCompose } from './useCompose'
 import { composeTemplates } from './composeTemplates'
@@ -228,7 +228,7 @@ function down() {
           >保存</UiButton
         >
       </template>
-      <ConfirmDialog
+      <UiConfirmDialog
         :open="pendingDiscard !== null"
         title="放弃未保存的修改"
         message="当前 YAML 有未保存修改，是否放弃？"
@@ -279,7 +279,7 @@ function down() {
       @close="closeCreate"
       @save="createFile"
     />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="confirmDown"
       title="拆除编排"
       :message="`将停止并移除 ${pendingProject?.name} 的容器与默认网络，保留 YAML 和数据卷。`"

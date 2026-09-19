@@ -1,6 +1,6 @@
 /**
  * 远程新建文件/目录（从 FileManagerTab 拆出，300 行红线）
- * InputDialog 目标态 + 确认执行；统一 toast 反馈。
+ * UiInputDialog 目标态 + 确认执行；统一 toast 反馈。
  */
 import { ref } from 'vue'
 import { useUiStore } from '@/stores/ui'

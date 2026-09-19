@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import UiDropdownMenu from './UiDropdownMenu.vue'
-import UiKvEditor from './UiKvEditor.vue'
+import UiKeyValueEditor from './UiKeyValueEditor.vue'
 
 describe('UiDropdownMenu', () => {
   it('触发器打开菜单，选中项 emit select 与 update:modelValue', async () => {
@@ -42,11 +42,11 @@ describe('UiDropdownMenu', () => {
   })
 })
 
-describe('UiKvEditor', () => {
+describe('UiKeyValueEditor', () => {
   const rows = [{ id: 'r1', key: 'Accept', value: 'application/json' }]
 
   it('编辑键/值 emit 更新后的行数组', async () => {
-    const wrapper = mount(UiKvEditor, { props: { rows } })
+    const wrapper = mount(UiKeyValueEditor, { props: { rows } })
     const inputs = wrapper.findAll('input')
     await inputs[0].setValue('Content-Type')
     expect(wrapper.emitted('update:rows')?.[0]).toEqual([
@@ -55,7 +55,7 @@ describe('UiKvEditor', () => {
   })
 
   it('添加行生成新 id，删除行按 id 过滤', async () => {
-    const wrapper = mount(UiKvEditor, { props: { rows } })
+    const wrapper = mount(UiKeyValueEditor, { props: { rows } })
     const buttons = wrapper.findAll('button')
     await buttons[buttons.length - 1].trigger('click')
     const added = wrapper.emitted('update:rows')?.[0]?.[0] as { id: string }[]

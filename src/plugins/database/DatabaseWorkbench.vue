@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiTabs, UiTabsOverflow } from '@/core/ui'
-import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
+import {
+  UiButton,
+  UiIcon,
+  UiIconButton,
+  UiInput,
+  UiModal,
+  UiTabs,
+  UiTabsOverflowMenu,
+} from '@/core/ui'
+import { UiContextMenu, type UiContextMenuItem } from '@/core/ui'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import { useDatabase } from './useDatabase'
 import { useSplitPane } from '@/core/ui/useSplitPane'
@@ -57,7 +65,7 @@ const tabMenu = ref<{ x: number; y: number; tabId: string } | null>(null)
 const renameDialogOpen = ref(false)
 const renameValue = ref('')
 
-const tabMenuItems = computed<ContextMenuItem[]>(() => {
+const tabMenuItems = computed<UiContextMenuItem[]>(() => {
   if (!tabMenu.value) return []
   const tab = db.tabs.value.find((t) => t.id === tabMenu.value?.tabId)
   return [
@@ -90,9 +98,9 @@ const editorMenu = ref<{ x: number; y: number } | null>(null)
 function openEditorMenu(event: MouseEvent) {
   editorMenu.value = { x: event.clientX, y: event.clientY + 4 }
 }
-const editorMenuItems = computed<ContextMenuItem[]>(() => {
+const editorMenuItems = computed<UiContextMenuItem[]>(() => {
   const saved = db.savedSql.value
-  const items: ContextMenuItem[] = saved.length
+  const items: UiContextMenuItem[] = saved.length
     ? saved.map((entry) => ({
         label: entry.title || '未命名',
         onClick: () => db.applySaved(entry),
@@ -194,7 +202,7 @@ onMounted(() => {
             @close="db.closeTab"
             @contextmenu="onTabContext"
           />
-          <UiTabsOverflow
+          <UiTabsOverflowMenu
             v-if="hiddenTabs.length"
             :items="hiddenTabs"
             :model-value="db.activeTabId.value"
@@ -259,7 +267,7 @@ onMounted(() => {
     />
 
     <!-- 页签右键菜单 -->
-    <ContextMenu
+    <UiContextMenu
       v-if="tabMenu"
       :x="tabMenu.x"
       :y="tabMenu.y"
@@ -288,7 +296,7 @@ onMounted(() => {
     </UiModal>
 
     <!-- 已保存 SQL 编辑器下拉 -->
-    <ContextMenu
+    <UiContextMenu
       v-if="editorMenu"
       :x="editorMenu.x"
       :y="editorMenu.y"

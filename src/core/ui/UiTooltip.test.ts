@@ -5,7 +5,7 @@ import UiButton from './UiButton.vue'
 import UiIconButton from './UiIconButton.vue'
 import UiTooltip from './UiTooltip.vue'
 import UiDataGrid from './UiDataGrid.vue'
-import UiTabsOverflow from './UiTabsOverflow.vue'
+import UiTabsOverflowMenu from './UiTabsOverflowMenu.vue'
 
 const wrappers: Array<{ unmount: () => void }> = []
 afterEach(() => {
@@ -187,7 +187,7 @@ it('表格提示不改变单元格父节点或双击载荷，循环更新保持�
 })
 
 it('页签溢出菜单选中与行内关闭走对应 emit', async () => {
-  const wrapper = mount(UiTabsOverflow, {
+  const wrapper = mount(UiTabsOverflowMenu, {
     attachTo: document.body,
     props: {
       items: [
@@ -208,7 +208,7 @@ it('页签溢出菜单选中与行内关闭走对应 emit', async () => {
 })
 
 it('页签溢出菜单的行内关闭按钮不触发选中', async () => {
-  const wrapper = mount(UiTabsOverflow, {
+  const wrapper = mount(UiTabsOverflowMenu, {
     attachTo: document.body,
     props: { items: [{ value: 'a', label: '连接 A' }] },
   })

@@ -80,10 +80,11 @@ function pretty(text: string) {
         >复制</UiButton
       >
     </div>
-    <pre
-      v-if="showHeaders"
-      class="max-h-[100px] shrink-0 select-text overflow-auto p-[8px] font-mono text-body-sm"
-      >{{ state.streamHeaders.map(([k, v]) => `${k}: ${v}`).join('\n') }}</pre>
+    <UiScrollArea v-if="showHeaders" as-child axis="both">
+      <pre class="max-h-[100px] shrink-0 select-text p-[8px] font-mono text-body-sm">{{
+        state.streamHeaders.map(([k, v]) => `${k}: ${v}`).join('\n')
+      }}</pre>
+    </UiScrollArea>
     <div class="flex shrink-0 flex-wrap items-center gap-[6px] px-[10px] py-[6px]">
       <UiInput
         v-model="search"

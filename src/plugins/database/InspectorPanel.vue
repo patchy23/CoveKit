@@ -5,7 +5,7 @@ import { UiScrollArea } from '@/core/ui'
  */
 import { computed, ref } from 'vue'
 import { UiBadge, UiButton, UiIcon, UiIconButton, UiTable, UiTableCell, UiTabs } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import { DB_TYPE_META } from './useDatabaseMeta'
 import type { HistoryEntry, SavedEntry } from './contracts'
 import type { useDatabase } from './useDatabase'
@@ -199,7 +199,7 @@ function formatConnectedAt(epochSeconds: number): string {
       </div>
 
       <!-- 收藏删除确认 -->
-      <ConfirmDialog
+      <UiConfirmDialog
         :open="deleteTarget !== null"
         title="删除收藏"
         :message="`确定删除「${deleteTarget?.title ?? ''}」吗？删除后不可恢复。`"

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** ConfirmDialog · 项目统一确认弹窗（标题走 UiModal title，保证 Dialog 有可访问名称）。 */
+/** UiConfirmDialog · 项目统一确认弹窗（标题走 UiModal title，保证 Dialog 有可访问名称）。 */
 import UiButton from './UiButton.vue'
 import UiModal from './UiModal.vue'
 

@@ -7,8 +7,8 @@
  */
 import { computed, onMounted, ref } from 'vue'
 import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog'
-import ContextMenu, { type ContextMenuItem } from '@/core/ui/ContextMenu.vue'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiContextMenu, type UiContextMenuItem } from '@/core/ui'
+import { UiConfirmDialog } from '@/core/ui'
 import { useCopy } from '@/core/feedback/useCopy'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '@/core/ipc/ipc'
@@ -70,7 +70,7 @@ function openMenu(event: MouseEvent, item: CredentialSummary) {
   }
 }
 
-const menuItems = computed<ContextMenuItem[]>(() => {
+const menuItems = computed<UiContextMenuItem[]>(() => {
   const item = menu.value?.item
   if (!item) return []
   return [
@@ -266,7 +266,7 @@ async function confirmTransfer() {
     />
 
     <!-- 右键菜单 -->
-    <ContextMenu
+    <UiContextMenu
       v-if="menu"
       :x="menu.x"
       :y="menu.y"
@@ -284,7 +284,7 @@ async function confirmTransfer() {
     />
 
     <!-- 删除确认 -->
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="deleteTarget !== null"
       title="删除凭证"
       :message="deleteMessage"

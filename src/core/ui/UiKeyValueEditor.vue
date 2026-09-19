@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * UiKvEditor · 键值对行编辑器（HTTP Params/Headers、连接参数、环境变量等场景共用）
+ * UiKeyValueEditor · 键值对行编辑器（HTTP Params/Headers、连接参数、环境变量等场景共用）
  * 形态：表头（键/值/操作列）+ 行（两个 UiInput + 删除）+「+ 添加」按钮；行 id 由组件生成。
  */
 import UiButton from './UiButton.vue'
@@ -8,7 +8,7 @@ import UiIcon from './UiIcon.vue'
 import UiIconButton from './UiIconButton.vue'
 import UiInput from './UiInput.vue'
 
-export interface UiKvRow {
+export interface UiKeyValueRow {
   id: string
   key: string
   value: string
@@ -16,7 +16,7 @@ export interface UiKvRow {
 
 const props = withDefaults(
   defineProps<{
-    rows: UiKvRow[]
+    rows: UiKeyValueRow[]
     /** 表头与占位文案（缺省为通用「名/值」） */
     keyLabel?: string
     valueLabel?: string
@@ -36,7 +36,7 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  (e: 'update:rows', rows: UiKvRow[]): void
+  (e: 'update:rows', rows: UiKeyValueRow[]): void
 }>()
 
 function addRow(): void {

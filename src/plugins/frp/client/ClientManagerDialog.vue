@@ -8,7 +8,7 @@ import { UiScrollArea } from '@/core/ui'
 import { computed, inject, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import { UiAlert, UiButton, UiEmptyState, UiModal, UiSpinner } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 import { FRP_CLIENTS_KEY } from './context'
@@ -138,7 +138,7 @@ async function onInstalled(version: string) {
     </div>
 
     <!-- 移除确认：文案写明「不会删除磁盘上的文件」 -->
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="pendingRemove !== null"
       danger
       :title="t('frp.clientRemoveTitle')"

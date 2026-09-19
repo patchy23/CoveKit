@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** InputDialog · 基于 BaseModal 的项目统一单行输入弹窗。 */
+/** UiInputDialog · 基于 UiModal 的项目统一单行输入弹窗。 */
 import { nextTick, ref, watch } from 'vue'
 import UiButton from './UiButton.vue'
 import UiInput from './UiInput.vue'

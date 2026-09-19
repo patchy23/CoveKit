@@ -16,7 +16,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { UiAlert, UiBadge, UiButton, UiEmptyState, UiListRow } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import { useDataTransferStore } from '@/stores/dataTransfer'
 import type { SpaceSummary } from '@/core/ipc/contracts'
 import ExportPackDialog from './ExportPackDialog.vue'
@@ -149,7 +149,7 @@ async function confirmRestore(): Promise<void> {
     <ExportPackDialog v-model:open="exportOpen" />
     <ImportPackDialog v-model:open="importOpen" />
 
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="switchTarget !== null"
       :title="t('settings.dataManagement.switchTitle')"
       :message="t('settings.dataManagement.switchMessage')"
@@ -157,7 +157,7 @@ async function confirmRestore(): Promise<void> {
       @confirm="confirmSwitch"
       @close="switchTarget = null"
     />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="restoreTarget !== null"
       :title="t('settings.dataManagement.backupRestoreTitle')"
       :message="t('settings.dataManagement.backupRestoreMessage')"

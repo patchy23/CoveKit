@@ -1,7 +1,7 @@
 import { enableAutoUnmount, flushPromises, shallowMount } from '@vue/test-utils'
 import { afterEach, expect, it } from 'vitest'
 import { UiButton, UiInput, UiSelect, UiModal } from '@/core/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import ComposeCreateDialog from './ComposeCreateDialog.vue'
 import { composeTemplates, composeContainerCount } from './composeTemplates'
 enableAutoUnmount(afterEach)
@@ -60,7 +60,7 @@ it('默认模板未修改时关闭直接生效，填写后确认放弃才关闭'
   wrapper.getComponent(UiModal).vm.$emit('close')
   await flushPromises()
   const confirmation = wrapper
-    .findAllComponents(ConfirmDialog)
+    .findAllComponents(UiConfirmDialog)
     .find((c) => c.props('title') === '放弃新增编排')!
   expect(confirmation.props('open')).toBe(true)
   expect(wrapper.emitted('close')).toHaveLength(1)
@@ -100,9 +100,9 @@ it('有 YAML 草稿时切换模板需要确认，取消不替换内容', async (
   await wrapper.setProps({ content: 'services: { mine: {} }' })
   wrapper.getComponent(UiSelect).vm.$emit('update:modelValue', 'redis')
   await flushPromises()
-  expect(wrapper.getComponent(ConfirmDialog).props('open')).toBe(true)
+  expect(wrapper.getComponent(UiConfirmDialog).props('open')).toBe(true)
   expect(wrapper.emitted('update:content')).toBeUndefined()
-  wrapper.getComponent(ConfirmDialog).vm.$emit('close')
+  wrapper.getComponent(UiConfirmDialog).vm.$emit('close')
   await flushPromises()
   expect(wrapper.emitted('update:content')).toBeUndefined()
 })

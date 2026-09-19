@@ -9,7 +9,7 @@ import { UiTooltip } from '@/core/ui'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getTool } from '@/core/registry/toolRegistry'
 import { publishToolVisibility, watchToolCloseState, type ToolCloseState } from '@/core/lifecycle'
-import { UiTabsOverflow } from '@/core/ui'
+import { UiTabsOverflowMenu } from '@/core/ui'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import RecentStrip from '@/features/recent/RecentStrip.vue'
@@ -157,7 +157,7 @@ const { visibleItems, hiddenItems } = useTabsOverflow(tabBar, tabItems, activeTa
 })
 /** 页签条直接显示的页签 id */
 const visibleTabs = computed(() => visibleItems.value.map((t) => t.value))
-/** 收纳进下拉的页签（UiTabsOverflow items 形态） */
+/** 收纳进下拉的页签（UiTabsOverflowMenu items 形态） */
 const hiddenTabItems = computed(() => hiddenItems.value)
 </script>
 
@@ -228,7 +228,7 @@ const hiddenTabItems = computed(() => hiddenItems.value)
       </div>
 
       <!-- 溢出收纳：公共组件（··· 触发器 + 下拉） -->
-      <UiTabsOverflow
+      <UiTabsOverflowMenu
         v-if="hiddenTabItems.length"
         :items="hiddenTabItems"
         :model-value="ui.activeTab ?? ''"

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * UiDropdownMenu · 触发器式下拉菜单（按钮 → 面板，与坐标式 ContextMenu 互补）
+ * UiDropdownMenu · 触发器式下拉菜单（按钮 → 面板，与坐标式 UiContextMenu 互补）
  * 交互原语走 reka DropdownMenu（锚定、焦点管理、Esc/方向键全套）；
  * 项渲染默认「勾选点 + 文案」，需要复杂行（如页签溢出）时用 #item 插槽自绘。
  */

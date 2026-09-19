@@ -6,7 +6,7 @@ import { UiScrollArea } from '@/core/ui'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, SystemdService } from '../contracts'
 import { useUiStore } from '@/stores/ui'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import {
   UiButton,
   UiSearchInput,
@@ -247,7 +247,7 @@ onBeforeUnmount(() => {
       :service-name="configTarget.name"
       @close="configTarget = null"
     />
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="pendingAction !== null"
       :title="`${pendingAction?.action === 'stop' ? '停止' : '重启'}服务`"
       :message="`确定${pendingAction?.action === 'stop' ? '停止' : '重启'}服务「${pendingAction?.service.name ?? ''}」吗？`"

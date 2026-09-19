@@ -10,12 +10,12 @@ import {
   UiInput,
   UiModal,
   UiTabs,
-  UiTabsOverflow,
+  UiTabsOverflowMenu,
   UiTreeSelect,
 } from '@/core/ui'
 import { apiGroupOptions } from './apiTree'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
-import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
+import { UiConfirmDialog } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 import { useApiWorkspace, type ApiTab } from './useApiWorkspace'
 import type { ApiKind, ApiRecord } from './contracts'
@@ -240,7 +240,7 @@ onUnmounted(() => {
           size="sm"
           :items="visibleItems"
           @close="requestClose"
-        /><UiTabsOverflow
+        /><UiTabsOverflowMenu
           v-if="hiddenItems.length"
           :items="hiddenItems"
           :model-value="activeKey"
@@ -360,7 +360,7 @@ onUnmounted(() => {
         ></template
       ></UiModal
     >
-    <ConfirmDialog
+    <UiConfirmDialog
       :open="!!deleting"
       title="删除接口"
       :message="`删除「${deleting?.name}」？已打开的内容保留为未保存草稿。`"
