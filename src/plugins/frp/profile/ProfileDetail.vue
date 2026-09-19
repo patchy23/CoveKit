@@ -137,7 +137,8 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
           v-else
           :aria-label="t('frp.actionStop')"
           size="sm"
-          class="text-danger-strong hover:bg-danger-soft dark:text-danger-dark"
+          variant="secondary"
+          class="text-danger-strong dark:text-danger-dark"
           :disabled="props.busy"
           @click="emit('stop', props.fileName)"
         >
