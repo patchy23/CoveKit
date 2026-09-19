@@ -17,6 +17,54 @@ function proxiesOf(value: Record<string, unknown>): Record<string, unknown>[] {
   return Array.isArray(list) ? (list as Record<string, unknown>[]) : []
 }
 
+describe('代理类型切换', () => {
+  it.each(['http', 'https', 'stcp'])('TCP 切到 %s 时删除旧远端端口并保留公共配置', (type) => {
+    const parsed = {
+      serverAddr: 'example.test',
+      serverPort: 7000,
+      proxies: [
+        {
+          name: 'test',
+          type: 'tcp',
+          localPort: 8033,
+          remotePort: 35230,
+          transport: { useCompression: true },
+        },
+      ],
+    }
+    const model = toFormModel(parsed)
+    model.proxies[0].type = type
+    model.proxies[0].remotePort = -1
+    expect(validateFormModel(model)).toBe('')
+    const proxy = proxiesOf(mergeFormModel(parsed, model))[0]
+    expect(proxy).not.toHaveProperty('remotePort')
+    expect(proxy.localPort).toBe(8033)
+    expect(proxy.transport).toEqual({ useCompression: true })
+  })
+
+  it.each(['tcp', 'udp', 'http', 'https', 'stcp'])('%s 只写入适用的表单专属字段', (type) => {
+    const parsed = {
+      proxies: [
+        {
+          name: 'test',
+          type: 'http',
+          remotePort: 35230,
+          customDomains: ['example.test'],
+          secretKey: 'test-key',
+        },
+      ],
+    }
+    const model = toFormModel(parsed)
+    model.proxies[0].type = type
+    const proxy = proxiesOf(mergeFormModel(parsed, model))[0]
+    expect(proxy.remotePort).toBe(['tcp', 'udp'].includes(type) ? 35230 : undefined)
+    expect(proxy.customDomains).toEqual(
+      ['http', 'https'].includes(type) ? ['example.test'] : undefined
+    )
+    expect(proxy.secretKey).toBe(type === 'stcp' ? 'test-key' : undefined)
+  })
+})
+
 describe('frpForm · 读取', () => {
   it('缺失字段填默认值，已知字段原样读出', () => {
     const model = toFormModel({

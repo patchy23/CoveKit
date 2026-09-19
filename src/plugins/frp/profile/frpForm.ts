@@ -208,13 +208,14 @@ function mergeProxy(base: Record<string, unknown>, proxy: FrpFormProxy): Record<
   assign(next, 'type', proxy.type)
   assign(next, 'localIP', proxy.localIP)
   assign(next, 'localPort', proxy.localPort)
-  assign(next, 'remotePort', proxy.remotePort)
-  assign(next, 'secretKey', proxy.secretKey)
+  // 隐藏的表单值可保留在草稿中，但不能写进不支持该字段的代理类型。
+  assign(next, 'remotePort', NEEDS_REMOTE_PORT.includes(proxy.type) ? proxy.remotePort : null)
+  assign(next, 'secretKey', NEEDS_SECRET_KEY.includes(proxy.type) ? proxy.secretKey : '')
   const domains = proxy.customDomains
     .split(',')
     .map((item) => item.trim())
     .filter((item) => item !== '')
-  if (domains.length > 0) {
+  if (NEEDS_CUSTOM_DOMAINS.includes(proxy.type) && domains.length > 0) {
     next.customDomains = domains
   } else {
     delete next.customDomains
@@ -288,10 +289,10 @@ export function validateFormModel(model: FrpFormModel): string {
     if (proxy.localPort !== null && !validPort(proxy.localPort)) {
       return 'frp.formProxyPortInvalid'
     }
-    if (NEEDS_REMOTE_PORT.includes(proxy.type) && proxy.remotePort === null) {
-      return 'frp.formProxyRemotePortRequired'
+    if (NEEDS_REMOTE_PORT.includes(proxy.type)) {
+      if (proxy.remotePort === null) return 'frp.formProxyRemotePortRequired'
+      if (!validPort(proxy.remotePort)) return 'frp.formProxyPortInvalid'
     }
-    if (proxy.remotePort !== null && !validPort(proxy.remotePort)) return 'frp.formProxyPortInvalid'
   }
   return ''
 }
