@@ -42,8 +42,16 @@ pub async fn frp_start(
     state: State<'_, FrpState>,
     file_name: String,
 ) -> Result<FrpRuntimeState, String> {
+    eprintln!("[frp] INFO [{file_name}] 请求启动");
     touch_used(&app, &file_name);
-    runtime::start(&app, &state, &file_name).await
+    runtime::start(&app, &state, &file_name)
+        .await
+        .inspect_err(|error| {
+            eprintln!(
+                "[frp] ERROR [{file_name}] 启动失败：{}",
+                verify::clean_line(error)
+            );
+        })
 }
 
 /// 停止档案
@@ -53,7 +61,15 @@ pub async fn frp_stop(
     state: State<'_, FrpState>,
     file_name: String,
 ) -> Result<FrpRuntimeState, String> {
-    runtime::stop(&app, &state, &file_name).await
+    eprintln!("[frp] INFO [{file_name}] 请求停止");
+    runtime::stop(&app, &state, &file_name)
+        .await
+        .inspect_err(|error| {
+            eprintln!(
+                "[frp] ERROR [{file_name}] 停止失败：{}",
+                verify::clean_line(error)
+            );
+        })
 }
 
 /// 重启档案
@@ -63,7 +79,15 @@ pub async fn frp_restart(
     state: State<'_, FrpState>,
     file_name: String,
 ) -> Result<FrpRuntimeState, String> {
-    runtime::restart(&app, &state, &file_name).await
+    eprintln!("[frp] INFO [{file_name}] 请求重启");
+    runtime::restart(&app, &state, &file_name)
+        .await
+        .inspect_err(|error| {
+            eprintln!(
+                "[frp] ERROR [{file_name}] 重启失败：{}",
+                verify::clean_line(error)
+            );
+        })
 }
 
 /// 全部档案的当前状态（事件为主，前端 5 秒轮询兜底）
