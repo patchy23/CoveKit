@@ -186,11 +186,20 @@ function onRemarkSubmit(remark: string) {
             />
           </UiTooltip>
           <span class="min-w-0 flex-1">
-            <UiTooltip :content="item.fileName">
-              <span class="block truncate text-body-sm dark:text-primary-dark">
-                {{ item.displayName || item.fileName }}
-              </span>
-            </UiTooltip>
+            <span class="flex min-w-0 items-center gap-[6px]">
+              <UiTooltip :content="item.fileName">
+                <span class="min-w-0 flex-1 truncate text-body-sm dark:text-primary-dark">
+                  {{ item.displayName || item.fileName }}
+                </span>
+              </UiTooltip>
+              <UiTooltip v-if="item.proxyTypes?.length" :content="item.proxyTypes.join(' / ')">
+                <span
+                  class="max-w-[100px] shrink-0 truncate rounded border border-border px-[4px] text-caption text-secondary dark:border-border-dark dark:text-secondary-dark"
+                >
+                  {{ item.proxyTypes.join(' / ') }}
+                </span>
+              </UiTooltip>
+            </span>
             <span
               class="mt-[1px] block truncate text-caption text-text-muted dark:text-text-muted-dark"
             >

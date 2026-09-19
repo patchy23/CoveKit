@@ -72,6 +72,7 @@ pub async fn frp_profiles_list(
             .unwrap_or(0);
         let remark = remarks.get(&file_name).cloned().unwrap_or_default();
         profiles.push(FrpProfileSummary {
+            proxy_types: meta.proxy_types,
             file_name: file_name.clone(),
             display_name: display_name.trim_end_matches(".toml").to_string(),
             remark,

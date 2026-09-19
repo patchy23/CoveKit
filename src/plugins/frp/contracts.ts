@@ -53,6 +53,8 @@ export interface FrpClientList {
 
 /** 档案摘要（列表项；元数据来自 frp.db，统计来自 TOML 解析） */
 export interface FrpProfileSummary {
+  /** 档案内代理类型，包含停用条目，按出现顺序去重并转为大写。 */
+  proxyTypes: string[]
   /** 档案文件名（单段文件名，.toml 结尾） */
   fileName: string
   /** 展示名（DB displayName；缺省为文件名去扩展名） */

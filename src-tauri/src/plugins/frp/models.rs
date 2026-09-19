@@ -62,6 +62,8 @@ pub enum FrpDownloadPhase {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FrpProfileSummary {
+    /// 档案内代理类型，按出现顺序去重并转为大写。
+    pub proxy_types: Vec<String>,
     /// 档案文件名（单段文件名，.toml 结尾）
     pub file_name: String,
     /// 展示名（DB display_name；缺省为文件名去扩展名）
@@ -352,6 +354,8 @@ pub fn contains_comments(text: &str) -> bool {
 /// 档案展示统计（列表项用；来自 TOML 解析）
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProfileMeta {
+    /// 档案内代理类型，包含停用条目，按出现顺序去重。
+    pub proxy_types: Vec<String>,
     /// 服务器地址（serverAddr；缺失为空串）
     pub server_addr: String,
     /// 服务器端口（serverPort；缺失或越界为 0）
@@ -382,6 +386,17 @@ pub fn parse_meta(text: &str) -> ProfileMeta {
     let proxies = table
         .and_then(|t| t.get("proxies"))
         .and_then(|v| v.as_array());
+    let mut proxy_types = Vec::new();
+    if let Some(list) = proxies {
+        for item in list {
+            if let Some(kind) = item.get("type").and_then(|value| value.as_str()) {
+                let kind = kind.trim().to_ascii_uppercase();
+                if !kind.is_empty() && !proxy_types.contains(&kind) {
+                    proxy_types.push(kind);
+                }
+            }
+        }
+    }
     let count = proxies.map(|list| list.len()).unwrap_or(0);
     let enabled = proxies
         .map(|list| {
@@ -395,6 +410,7 @@ pub fn parse_meta(text: &str) -> ProfileMeta {
         })
         .unwrap_or(0);
     ProfileMeta {
+        proxy_types,
         server_addr,
         server_port,
         // 统计值是内存中的数组长度（u32 范围可证安全）；极端超限按上限截断而非 panic
@@ -441,11 +457,17 @@ mod tests {
         assert_eq!(meta.server_addr, "a.example.com");
         assert_eq!(meta.server_port, 7001);
         assert_eq!(meta.proxy_count, 2);
+        assert_eq!(meta.proxy_types, vec!["TCP"]);
         assert_eq!(meta.enabled_proxy_count, 1);
         assert!(contains_comments(text));
         assert!(!contains_comments("serverAddr = \"x\"\n"));
         // 坏配置与越界端口不 panic
         assert_eq!(parse_meta("这不是 toml = = =").server_port, 0);
         assert_eq!(parse_meta("serverPort = 99999\n").server_port, 0);
+        assert_eq!(
+            parse_meta("[[proxies]]\ntype = 'tcp'\n[[proxies]]\ntype = 'http'\n[[proxies]]\ntype = 'TCP'\n").proxy_types,
+            vec!["TCP", "HTTP"]
+        );
+        assert!(parse_meta("").proxy_types.is_empty());
     }
 }

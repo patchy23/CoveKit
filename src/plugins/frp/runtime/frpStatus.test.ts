@@ -20,6 +20,7 @@ describe('FRP 列表运行快照', () => {
     serverAddr: 'localhost',
     serverPort: 37000,
     proxyCount: 1,
+    proxyTypes: ['TCP'],
     enabledProxyCount: 1,
     mtime: 0,
     state: 'error',
