@@ -6,7 +6,7 @@ import { UiScrollArea } from '@/core/ui'
  * 排版目标：**常用字段一屏配完，其余收进「更多配置」**（默认值即可用，多数时候不会改）。
  *  - 常用：服务端地址 + 端口、认证方式 + Token、代理列表
  *  - 更多配置（默认收起）：用户标识、传输协议、连接池大小、TLS、TLS ServerName、日志等级
- * 连接设置与代理分栏，窄容器自动上下排列；相关字段同行、数值走窄列。
+ * 连接与认证合并在顶部，代理列表位于下方；相关字段同行、数值走窄列。
  * 覆盖服务器 / 认证 / 传输与日志 + 代理列表；未覆盖字段（healthCheck、metadatas、自定义段落）
  * 由 frpForm.mergeFormModel 在上游保留，这里只提示「高级字段请用源码模式」。
  */
@@ -77,9 +77,9 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
   <UiScrollArea as-child axis="vertical">
     <div class="frp-form min-h-0 min-w-0 flex-1 p-[16px]">
       <div class="frp-form-columns">
-        <div class="flex min-w-0 flex-col gap-[16px]">
-          <!-- 服务器（常用） -->
-          <UiPanel :title="t('frp.formSectionServer')" padding="sm">
+        <UiPanel :title="t('frp.formConnectionAuth')" padding="sm">
+          <div class="frp-connection-grid">
+            <!-- 服务器（常用） -->
             <div class="grid grid-cols-[minmax(0,1fr)_110px] gap-[10px]">
               <UiField :label="t('frp.formServerAddr')" size="sm" required>
                 <UiInput
@@ -100,11 +100,8 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
                 />
               </UiField>
             </div>
-          </UiPanel>
-
-          <!-- 认证（常用） -->
-          <UiPanel :title="t('frp.formSectionAuth')" padding="sm">
-            <div class="flex flex-col gap-[10px]">
+            <!-- 认证（常用） -->
+            <div class="frp-auth-grid">
               <UiField :label="t('frp.formAuthMethod')" size="sm">
                 <UiSelect
                   size="sm"
@@ -142,6 +139,7 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
               </UiField>
               <UiField
                 v-if="props.modelValue.authMethod === 'token' && !props.modelValue.authCredentialId"
+                class="col-span-full"
                 :label="t('frp.formAuthToken')"
                 :description="t('frp.formAuthTokenHint')"
                 size="sm"
@@ -154,73 +152,8 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
                 />
               </UiField>
             </div>
-          </UiPanel>
-
-          <!-- 更多配置（默认收起，保持默认值即可） -->
-          <UiPanel
-            collapsible
-            :default-open="false"
-            :title="t('frp.formSectionAdvanced')"
-            :description="t('frp.formSectionAdvancedHint')"
-            padding="sm"
-          >
-            <div class="flex flex-col gap-[10px]">
-              <UiField :label="t('frp.formUser')" size="sm">
-                <UiInput
-                  size="sm"
-                  :model-value="props.modelValue.user"
-                  @update:model-value="setField('user', String($event))"
-                />
-              </UiField>
-              <div class="grid grid-cols-[minmax(0,1fr)_110px] gap-[10px]">
-                <UiField :label="t('frp.formProtocol')" size="sm">
-                  <UiSelect
-                    size="sm"
-                    :model-value="props.modelValue.protocol"
-                    :options="protocolOptions"
-                    @update:model-value="setField('protocol', String($event))"
-                  />
-                </UiField>
-                <UiField
-                  :label="t('frp.formPoolCount')"
-                  :description="t('frp.formPoolCountHint')"
-                  size="sm"
-                >
-                  <UiInput
-                    size="sm"
-                    type="number"
-                    :model-value="props.modelValue.poolCount ?? ''"
-                    @update:model-value="setNumber('poolCount', $event)"
-                  />
-                </UiField>
-              </div>
-              <!-- 开关与字段不同构：做成左标签右开关的一行，避免独占半列留出大片空白 -->
-              <div class="flex items-center justify-between gap-[10px]">
-                <span class="field-label text-body-sm">{{ t('frp.formTls') }}</span>
-                <UiSwitch
-                  size="sm"
-                  :model-value="props.modelValue.tlsEnable"
-                  @update:model-value="setField('tlsEnable', Boolean($event))"
-                />
-              </div>
-              <UiField :label="t('frp.formTlsServerName')" size="sm">
-                <UiInput
-                  size="sm"
-                  :model-value="props.modelValue.tlsServerName"
-                  @update:model-value="setField('tlsServerName', String($event))"
-                />
-              </UiField>
-              <UiField :label="t('frp.formLogLevel')" size="sm">
-                <UiSelect
-                  size="sm"
-                  :model-value="props.modelValue.logLevel"
-                  :options="logLevelOptions"
-                  @update:model-value="setField('logLevel', String($event))"
-                />
-              </UiField>
-            </div>
-          </UiPanel>
-        </div>
+          </div>
+        </UiPanel>
 
         <!-- 代理列表（核心，始终展开） -->
         <div class="frp-proxies min-w-0">
@@ -253,6 +186,72 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
             {{ t('frp.formAdvancedHint') }}
           </p>
         </div>
+        <!-- 更多配置（默认收起，保持默认值即可） -->
+        <UiPanel
+          collapsible
+          :default-open="false"
+          :title="t('frp.formSectionAdvanced')"
+          :description="t('frp.formSectionAdvancedHint')"
+          padding="sm"
+        >
+          <div
+            class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] items-start gap-[16px]"
+          >
+            <UiField :label="t('frp.formUser')" size="sm">
+              <UiInput
+                size="sm"
+                :model-value="props.modelValue.user"
+                @update:model-value="setField('user', String($event))"
+              />
+            </UiField>
+            <div class="grid grid-cols-[minmax(0,1fr)_110px] gap-[10px]">
+              <UiField :label="t('frp.formProtocol')" size="sm">
+                <UiSelect
+                  size="sm"
+                  :model-value="props.modelValue.protocol"
+                  :options="protocolOptions"
+                  @update:model-value="setField('protocol', String($event))"
+                />
+              </UiField>
+              <UiField
+                :label="t('frp.formPoolCount')"
+                :description="t('frp.formPoolCountHint')"
+                size="sm"
+              >
+                <UiInput
+                  size="sm"
+                  type="number"
+                  :model-value="props.modelValue.poolCount ?? ''"
+                  @update:model-value="setNumber('poolCount', $event)"
+                />
+              </UiField>
+            </div>
+            <!-- 开关与字段不同构：做成左标签右开关的一行，避免独占半列留出大片空白 -->
+            <div class="flex items-center justify-between gap-[10px]">
+              <span class="field-label text-body-sm">{{ t('frp.formTls') }}</span>
+              <UiSwitch
+                size="sm"
+                :model-value="props.modelValue.tlsEnable"
+                @update:model-value="setField('tlsEnable', Boolean($event))"
+              />
+            </div>
+            <UiField :label="t('frp.formTlsServerName')" size="sm">
+              <UiInput
+                size="sm"
+                :model-value="props.modelValue.tlsServerName"
+                @update:model-value="setField('tlsServerName', String($event))"
+              />
+            </UiField>
+            <UiField :label="t('frp.formLogLevel')" size="sm">
+              <UiSelect
+                size="sm"
+                :model-value="props.modelValue.logLevel"
+                :options="logLevelOptions"
+                @update:model-value="setField('logLevel', String($event))"
+              />
+            </UiField>
+          </div>
+        </UiPanel>
       </div>
     </div>
   </UiScrollArea>
@@ -267,7 +266,6 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 16px;
-  max-width: 1120px;
   align-items: start;
 }
 
@@ -284,9 +282,22 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
   overflow-wrap: anywhere;
 }
 
-@container (min-width: 640px) {
-  .frp-form-columns {
-    grid-template-columns: 300px minmax(0, 1fr);
+.frp-connection-grid,
+.frp-auth-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+@container (min-width: 680px) {
+  .frp-connection-grid {
+    grid-template-columns: minmax(240px, 0.9fr) minmax(0, 1.1fr);
+    gap: 24px;
+  }
+
+  .frp-auth-grid {
+    grid-template-columns: 100px minmax(0, 1fr);
   }
 }
 

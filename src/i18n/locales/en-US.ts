@@ -139,6 +139,7 @@ export default {
     remarkSaved: 'Note saved',
     // Form
     formSectionServer: 'Server connection',
+    formConnectionAuth: 'Connection and authentication',
     formServerAddr: 'Server address',
     formServerAddrPlaceholder: 'frps.example.com',
     formServerPort: 'FRP connection port',

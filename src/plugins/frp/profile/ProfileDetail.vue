@@ -121,7 +121,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         {{ t('frp.unsaved') }}
       </span>
 
-      <template #trailing>
+      <div class="flex flex-wrap items-center gap-[8px]">
         <UiButton
           v-if="!running"
           :aria-label="t('frp.actionStart')"
@@ -158,7 +158,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         <UiButton size="sm" :disabled="editingBusy || !editor.dirty.value" @click="onSave">
           {{ editor.saving.value ? t('frp.saving') : t('frp.actionSave') }}
         </UiButton>
-      </template>
+      </div>
     </UiToolbar>
 
     <!-- 错误行（加载失败等，始终可见） -->
@@ -181,10 +181,13 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         @update:model-value="tab = $event as 'config' | 'log'"
       />
 
-      <div v-if="tab === 'config'" class="flex items-center gap-[4px]">
+      <div
+        v-if="tab === 'config'"
+        class="flex items-center gap-[4px] border-l border-border pl-[10px] dark:border-border-dark"
+      >
         <UiButton
           size="xs"
-          :variant="mode === 'form' ? 'primary' : 'secondary'"
+          :variant="mode === 'form' ? 'secondary' : 'ghost'"
           :disabled="needsSave && mode !== 'form'"
           @click="mode = 'form'"
         >
@@ -192,14 +195,14 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         </UiButton>
         <UiButton
           size="xs"
-          :variant="mode === 'source' ? 'primary' : 'secondary'"
+          :variant="mode === 'source' ? 'secondary' : 'ghost'"
           :disabled="needsSave && mode !== 'source'"
           @click="mode = 'source'"
         >
           {{ t('frp.modeSource') }}
         </UiButton>
       </div>
-      <template v-if="clientsStore !== null" #trailing>
+      <div v-if="clientsStore !== null" class="min-w-0">
         <ClientPicker
           :clients="clientsStore.clients.value"
           :default-id="clientsStore.defaultId.value"
@@ -207,7 +210,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
           :disabled="props.busy || running"
           @change="onClientChange"
         />
-      </template>
+      </div>
     </UiToolbar>
     <p
       v-if="commentWarning && tab === 'config'"

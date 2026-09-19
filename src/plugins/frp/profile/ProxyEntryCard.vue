@@ -73,7 +73,9 @@ const needsSecret = computed(() => NEEDS_SECRET_KEY.includes(props.modelValue.ty
       </UiIconButton>
     </div>
 
-    <div class="flex flex-col gap-[8px]">
+    <div
+      class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] items-start gap-[12px]"
+    >
       <!-- 类型 + 名称 -->
       <div class="grid grid-cols-[110px_minmax(0,1fr)] gap-[8px]">
         <UiField :label="t('frp.formProxyType')" size="sm">

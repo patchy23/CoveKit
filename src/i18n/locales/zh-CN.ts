@@ -134,6 +134,7 @@ export default {
     remarkSaved: '备注已保存',
     // 表单
     formSectionServer: '连接服务端',
+    formConnectionAuth: '连接与认证',
     formServerAddr: '服务端地址',
     formServerAddrPlaceholder: 'frps.example.com',
     formServerPort: 'FRP 连接端口',
