@@ -33,6 +33,12 @@ mod tests {
     ///
     /// 冻结快照的是**前后端调用契约**：增删命令、改命令名或改归属者时这张表必须同步更新。
     const PUBLISHED: &[(&str, &str, &str)] = &[
+        (
+            "file_lock",
+            "file_lock_supported",
+            "查询文件占用工具的平台支持状态",
+        ),
+        ("file_lock", "file_lock_query", "查询指定文件的使用进程信息"),
         ("codex_news", "codex_news_fetch", "获取 Codex 重置消息源"),
         (
             "codex_news",

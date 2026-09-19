@@ -7,6 +7,7 @@
 pub mod codex_news;
 pub mod database;
 pub mod dns;
+pub mod file_lock;
 pub mod frp;
 pub mod hosts;
 pub mod http_ws;
@@ -28,6 +29,7 @@ crate::covekit_routes! {
     "database" => database,
     "hosts" => hosts,
     "dns" => dns,
+    "file_lock" => file_lock,
     "frp" => frp,
     "ssh" => ssh,
     "tts" => tts,
