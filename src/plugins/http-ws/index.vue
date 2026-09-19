@@ -3,7 +3,17 @@
 import { computed, onMounted, onUnmounted, ref, watchEffect } from 'vue'
 import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { useToolLifecycle } from '@/core/lifecycle'
-import { UiButton, UiIcon, UiIconButton, UiInput, UiModal, UiTabs, UiTabsOverflow } from '@/core/ui'
+import {
+  UiButton,
+  UiIcon,
+  UiIconButton,
+  UiInput,
+  UiModal,
+  UiTabs,
+  UiTabsOverflow,
+  UiTreeSelect,
+} from '@/core/ui'
+import { apiGroupOptions } from './apiTree'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import ConfirmDialog from '@/core/ui/ConfirmDialog.vue'
 import { useUiStore } from '@/stores/ui'
@@ -60,6 +70,32 @@ const name = ref(''),
   dialogError = ref('')
 const closing = ref<ApiTab | null>(null),
   deleting = ref<ApiRecord | null>(null)
+const moveTarget = ref<{ api?: ApiRecord; path?: string } | null>(null)
+const moveParent = ref(''),
+  moveSaving = ref(false),
+  moveError = ref('')
+const groupOptions = computed(() => apiGroupOptions(groups.value))
+const moveOptions = computed(() => apiGroupOptions(groups.value, moveTarget.value?.path))
+function requestMove(target: { api?: ApiRecord; path?: string }) {
+  moveTarget.value = target
+  moveParent.value = target.api?.groupName ?? target.path?.split('/').slice(0, -1).join('/') ?? ''
+  moveError.value = ''
+}
+async function confirmMove() {
+  const target = moveTarget.value
+  if (!target || moveSaving.value) return
+  moveSaving.value = true
+  moveError.value = ''
+  try {
+    if (target.api) await workspace.move(target.api.id, moveParent.value)
+    else if (target.path) await workspace.moveGroup(target.path, moveParent.value)
+    moveTarget.value = null
+  } catch (error) {
+    moveError.value = String(error)
+  } finally {
+    moveSaving.value = false
+  }
+}
 async function perform(action: () => unknown) {
   try {
     await action()
@@ -114,8 +150,11 @@ async function confirmSave() {
   saving.value = true
   dialogError.value = ''
   try {
-    if (target.record) await workspace.rename(target.record, name.value, group.value)
-    else if (target.tab) {
+    if (target.record) {
+      const record = apis.value.find((api) => api.id === target.record?.id)
+      if (!record) throw new Error('接口已不存在，请刷新后重试')
+      await workspace.rename(record, name.value, record.groupName)
+    } else if (target.tab) {
       await workspace.save(target.tab, name.value, group.value, target.copy)
       if (target.closeAfter) await workspace.close(target.tab)
     }
@@ -175,6 +214,8 @@ onUnmounted(() => {
       @tree-move="(move) => perform(() => workspace.moveTree(move))"
       @select="perform(() => workspace.open($event))"
       @rename="rename"
+      @request-move="requestMove({ api: $event })"
+      @request-move-group="requestMove({ path: $event })"
       @delete="deleting = $event"
       @new="create"
       @new-group="newGroup"
@@ -232,7 +273,7 @@ onUnmounted(() => {
     <UiModal
       :open="!!naming"
       size="sm"
-      :title="naming?.record ? '重命名 / 移动分组' : naming?.copy ? '另存接口' : '保存接口'"
+      :title="naming?.record ? '重命名' : naming?.copy ? '另存接口' : '保存接口'"
       @close="!saving && (naming = null)"
       ><div class="space-y-[10px]">
         <UiInput
@@ -242,11 +283,12 @@ onUnmounted(() => {
           placeholder="接口名称"
           :disabled="saving"
           @keyup.enter="confirmSave"
-        /><UiInput
+        /><UiTreeSelect
+          v-if="!naming?.record"
           v-model="group"
+          :options="groupOptions"
           size="sm"
-          aria-label="分组名称"
-          placeholder="分组路径，如 开发/用户；留空为未分组"
+          label="所属分组"
           :disabled="saving"
         />
         <p
@@ -265,6 +307,35 @@ onUnmounted(() => {
         ></template
       ></UiModal
     >
+    <UiModal
+      :open="!!moveTarget"
+      size="sm"
+      title="移动到…"
+      @close="!moveSaving && (moveTarget = null)"
+    >
+      <UiTreeSelect
+        v-model="moveParent"
+        :options="moveOptions"
+        size="sm"
+        label="目标分组"
+        :disabled="moveSaving"
+      />
+      <p
+        v-if="moveError"
+        role="alert"
+        class="mt-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
+      >
+        {{ moveError }}
+      </p>
+      <template #footer>
+        <UiButton size="sm" variant="ghost" :disabled="moveSaving" @click="moveTarget = null"
+          >取消</UiButton
+        >
+        <UiButton size="sm" variant="primary" :loading="moveSaving" @click="confirmMove"
+          >移动</UiButton
+        >
+      </template>
+    </UiModal>
     <UiModal :open="!!closing" size="sm" title="关闭接口页签" @close="closing = null"
       ><p class="text-body-sm">
         关闭「{{ closing?.name }}」？{{

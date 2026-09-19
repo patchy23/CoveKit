@@ -1,7 +1,29 @@
 /** 接口树的业务落点：目录优先、未分组固定末尾，目录与接口各自排序。 */
-import type { UiCollectionMove, UiTreeItem } from '@/core/ui'
+import type { UiCollectionMove, UiTreeItem, TreeSelectOption } from '@/core/ui'
 import type { ApiRecord, Payloads } from './contracts'
 import { groupRows } from './apiGroups'
+
+/** 选择目标目录时排除移动源的整棵子树。 */
+export function apiGroupOptions(groups: string[], excluded?: string): TreeSelectOption[] {
+  const options: TreeSelectOption[] = [
+    { value: '', label: excluded === undefined ? '未分组' : '根目录' },
+  ]
+  const nodes = new Map<string, TreeSelectOption>()
+  for (const row of groupRows(groups, [], new Set())) {
+    if (
+      row.kind !== 'group' ||
+      !row.path ||
+      (excluded !== undefined && (row.path === excluded || row.path.startsWith(`${excluded}/`)))
+    )
+      continue
+    const node: TreeSelectOption = { value: row.path, label: row.label }
+    nodes.set(row.path, node)
+    const parent = nodes.get(row.path.split('/').slice(0, -1).join('/'))
+    if (parent) (parent.children ??= []).push(node)
+    else options.push(node)
+  }
+  return options
+}
 
 export function apiTreeItems(
   groups: string[],

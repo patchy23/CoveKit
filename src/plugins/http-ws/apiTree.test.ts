@@ -1,10 +1,19 @@
 import { expect, it } from 'vitest'
-import { apiTreeItems, apiTreeDestination } from './apiTree'
+import { apiTreeItems, apiTreeDestination, apiGroupOptions } from './apiTree'
 import type { ApiRecord } from './contracts'
 const apis = [
   { id: 1, name: '一', groupName: 'a' },
   { id: 2, name: '二', groupName: 'b' },
 ] as ApiRecord[]
+it('树形目标保留层级和根入口，排除源组及后代但不排除相似前缀', () => {
+  const choices = apiGroupOptions(
+    ['开发', '开发/用户', '开发/用户/子组', '开发/用户2'],
+    '开发/用户'
+  )
+  expect(choices[0]).toEqual({ value: '', label: '根目录' })
+  expect(choices[1].children).toEqual([{ value: '开发/用户2', label: '用户2' }])
+  expect(apiGroupOptions([])).toEqual([{ value: '', label: '未分组' }])
+})
 it('目录顺序不被后代的排名或名称覆盖，接口保持后端顺序', () => {
   const rows = apiTreeItems(['a/child', 'b', 'a'], apis, new Set())
   expect(rows.filter((row) => row.depth === 0).map((row) => row.id)).toEqual([

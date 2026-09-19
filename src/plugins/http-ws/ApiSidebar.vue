@@ -24,6 +24,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   select: [record: ApiRecord]
   rename: [record: ApiRecord]
+  requestMove: [record: ApiRecord]
+  requestMoveGroup: [path: string]
   delete: [record: ApiRecord]
   new: [kind: ApiKind, group: string]
   newGroup: [parent: string]
@@ -87,11 +89,15 @@ const menuItems = computed<ContextMenuItem[]>(() => {
     const api = target.api
     return [
       { label: '打开接口', onClick: () => emit('select', api) },
-      { label: '重命名 / 移动分组', onClick: () => emit('rename', api) },
+      { label: '重命名', onClick: () => emit('rename', api) },
+      { label: '移动到…', onClick: () => emit('requestMove', api) },
       { label: '删除接口', danger: true, onClick: () => emit('delete', api) },
     ]
   }
   return [
+    ...(target.group && target.parent
+      ? [{ label: '移动到…', onClick: () => emit('requestMoveGroup', target.parent) }]
+      : []),
     {
       label: target.group && target.parent ? '创建子分组' : '添加分组',
       onClick: () => {
@@ -174,11 +180,16 @@ const menuItems = computed<ContextMenuItem[]>(() => {
           size="xs"
           :trigger-label="`管理 ${item.label}`"
           :items="[
-            { value: 'rename', label: '重命名 / 移动分组' },
+            { value: 'rename', label: '重命名' },
+            { value: 'move', label: '移动到…' },
             { value: 'delete', label: '删除接口', danger: true },
           ]"
           @select="
-            $event === 'rename' ? emit('rename', apiOf(item.id)!) : emit('delete', apiOf(item.id)!)
+            $event === 'rename'
+              ? emit('rename', apiOf(item.id)!)
+              : $event === 'move'
+                ? emit('requestMove', apiOf(item.id)!)
+                : emit('delete', apiOf(item.id)!)
           "
         />
       </template>
