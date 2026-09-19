@@ -3,7 +3,7 @@ import { createPinia } from 'pinia'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { publishToolVisibility, resetToolVisibilityForTest } from '@/core/lifecycle'
 import { scopeStats } from '@/core/lifecycle/scope'
-import { UiButton, UiConfirmDialog, UiPagination, UiSelect, UiSwitch } from '@/core/ui'
+import { UiButton, UiConfirmDialog, UiPagination, UiSelect, UiSwitch, UiTooltip } from '@/core/ui'
 import Page from './index.vue'
 import type { PortSnapshot } from './contracts'
 
@@ -90,9 +90,10 @@ it('通过真实 IPC 封装加载，单行路径保留完整提示，支持复�
   expect(page.text()).toContain('127.0.0.1:8080')
   expect(page.text()).toContain('PID 420')
   const path = page
-    .findAll('p[title]')
-    .find((item) => item.attributes('title') === 'C:\\应用 程序\\node.exe')
-  expect(path?.classes()).toContain('truncate')
+    .findAllComponents(UiTooltip)
+    .find((item) => item.props('content') === 'C:\\应用 程序\\node.exe')
+  expect(path?.get('p').classes()).toContain('truncate')
+  expect(page.find('p[title]').exists()).toBe(false)
   await button(page, '复制信息').trigger('click')
   await flushPromises()
   expect(mocks.copy).toHaveBeenCalledWith(expect.stringContaining('TCP IPv4 127.0.0.1:8080'))
@@ -252,8 +253,19 @@ it('自动刷新遇到切换、覆盖或隐藏暂停，返回立即补查，关�
   const baseline = scopeStats()
   const page = createPage()
   await flushPromises()
+  const refresh = button(page, '刷新')
+  expect(refresh.classes()).toEqual(expect.arrayContaining(['w-24', 'shrink-0']))
+  const pending = deferred<PortSnapshot>()
+  mocks.invoke.mockReturnValueOnce(pending.promise)
   await autoRefresh(page, true)
   expect(queryCount()).toBe(2)
+  expect(refresh.attributes('aria-busy')).toBe('true')
+  expect(refresh.attributes('disabled')).toBeDefined()
+  expect(refresh.classes()).toEqual(expect.arrayContaining(['w-24', 'shrink-0']))
+  pending.resolve(fixture())
+  await flushPromises()
+  expect(refresh.attributes('aria-busy')).toBeUndefined()
+  expect(refresh.classes()).toEqual(expect.arrayContaining(['w-24', 'shrink-0']))
   await vi.advanceTimersByTimeAsync(3000)
   expect(queryCount()).toBe(3)
   for (const field of ['active', 'covered', 'hidden'] as const) {

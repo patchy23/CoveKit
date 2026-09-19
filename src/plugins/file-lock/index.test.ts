@@ -5,7 +5,7 @@ import type { DragDropEvent } from '@tauri-apps/api/webview'
 import { PhysicalPosition } from '@tauri-apps/api/dpi'
 import type { Event } from '@tauri-apps/api/event'
 import { publishToolVisibility, resetToolVisibilityForTest } from '@/core/lifecycle'
-import { UiButton, UiConfirmDialog } from '@/core/ui'
+import { UiButton, UiConfirmDialog, UiTooltip } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
 import Page from './index.vue'
 import type { FileLockResult } from './contracts'
@@ -106,6 +106,12 @@ it('真实 IPC 封装传递中文空格路径，展示进程并支持复制和�
   expect(page.text()).toContain('editor.exe')
   expect(page.text()).toContain('PID 420')
   expect(page.text()).toContain('测试应用')
+  expect(page.find('p[title]').exists()).toBe(false)
+  expect(
+    page
+      .findAllComponents(UiTooltip)
+      .some((item) => item.props('content') === 'C:\\应用 程序\\editor.exe')
+  ).toBe(true)
   await button(page, '复制信息').trigger('click')
   await flushPromises()
   expect(mocks.copy).toHaveBeenCalledWith(expect.stringContaining(`查询文件：${target}`))

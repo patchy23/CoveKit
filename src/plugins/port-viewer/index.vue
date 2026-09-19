@@ -12,6 +12,7 @@ import {
   UiSwitch,
   UiTable,
   UiTableCell,
+  UiTooltip,
 } from '@/core/ui'
 import { useCopy } from '@/core/feedback/useCopy'
 import { useUiStore } from '@/stores/ui'
@@ -107,6 +108,7 @@ async function reveal(entry: PortEntry) {
         <UiButton
           type="submit"
           variant="primary"
+          class="w-24 shrink-0 justify-center"
           :loading="busy"
           :disabled="!available || !!closeTarget"
           >刷新</UiButton
@@ -195,48 +197,54 @@ async function reveal(entry: PortEntry) {
                   <p class="mt-xs">{{ entry.family }}</p></UiTableCell
                 >
                 <UiTableCell content="technical" class="align-top"
-                  ><p class="truncate" :title="addressText(entry.localAddress, entry.localPort)">
-                    {{ addressText(entry.localAddress, entry.localPort) }}
-                  </p></UiTableCell
+                  ><UiTooltip :content="addressText(entry.localAddress, entry.localPort)"
+                    ><p class="truncate">
+                      {{ addressText(entry.localAddress, entry.localPort) }}
+                    </p></UiTooltip
+                  ></UiTableCell
                 >
                 <UiTableCell v-if="filter.view === 'all'" content="technical" class="align-top"
-                  ><p
-                    class="truncate"
-                    :title="
+                  ><UiTooltip
+                    :content="
                       entry.remoteAddress === null
                         ? ''
                         : addressText(entry.remoteAddress, entry.remotePort ?? 0)
                     "
+                    ><p class="truncate">
+                      {{
+                        entry.remoteAddress === null
+                          ? '—'
+                          : addressText(entry.remoteAddress, entry.remotePort ?? 0)
+                      }}
+                    </p></UiTooltip
+                  ></UiTableCell
+                >
+                <UiTableCell content="technical" class="align-top"
+                  ><UiTooltip :content="entry.state ?? '已绑定'"
+                    ><p class="truncate">
+                      {{ entry.state ?? '已绑定' }}
+                    </p></UiTooltip
+                  ></UiTableCell
+                >
+                <UiTableCell content="technical" class="align-top"
+                  ><UiTooltip :content="entry.processName ?? ''"
+                    ><p class="truncate">
+                      {{ entry.processName ?? (entry.pid === 0 ? '无所属进程' : '进程名称未读取') }}
+                    </p></UiTooltip
                   >
-                    {{
-                      entry.remoteAddress === null
-                        ? '—'
-                        : addressText(entry.remoteAddress, entry.remotePort ?? 0)
-                    }}
-                  </p></UiTableCell
-                >
-                <UiTableCell content="technical" class="align-top"
-                  ><p class="truncate" :title="entry.state ?? '已绑定'">
-                    {{ entry.state ?? '已绑定' }}
-                  </p></UiTableCell
-                >
-                <UiTableCell content="technical" class="align-top"
-                  ><p class="truncate" :title="entry.processName ?? ''">
-                    {{ entry.processName ?? (entry.pid === 0 ? '无所属进程' : '进程名称未读取') }}
-                  </p>
                   <p class="mt-xs whitespace-nowrap">PID {{ entry.pid }}</p></UiTableCell
                 >
                 <UiTableCell content="technical" class="align-top">
-                  <p v-if="entry.executablePath" class="truncate" :title="entry.executablePath">
-                    {{ entry.executablePath }}
-                  </p>
-                  <p
-                    v-if="entry.detailError"
-                    class="truncate text-warning-strong dark:text-warning-dark"
-                    :title="entry.detailError"
+                  <UiTooltip v-if="entry.executablePath" :content="entry.executablePath"
+                    ><p class="truncate">
+                      {{ entry.executablePath }}
+                    </p></UiTooltip
                   >
-                    {{ entry.detailError }}
-                  </p>
+                  <UiTooltip v-if="entry.detailError" :content="entry.detailError"
+                    ><p class="truncate text-warning-strong dark:text-warning-dark">
+                      {{ entry.detailError }}
+                    </p></UiTooltip
+                  >
                   <p v-if="entry.pid === 0">此连接无可操作的进程</p>
                 </UiTableCell>
                 <UiTableCell content="action" align="right" class="align-top"

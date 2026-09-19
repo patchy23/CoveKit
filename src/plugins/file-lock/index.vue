@@ -10,6 +10,7 @@ import {
   UiScrollArea,
   UiTable,
   UiTableCell,
+  UiTooltip,
 } from '@/core/ui'
 import { useCopy } from '@/core/feedback/useCopy'
 import { useUiStore } from '@/stores/ui'
@@ -166,41 +167,34 @@ async function revealProgram(process: FileProcess) {
                   :key="`${process.pid}:${process.startedAt}:${process.serviceName ?? ''}`"
                 >
                   <UiTableCell content="technical" class="align-top">
-                    <p
-                      :title="process.processName ?? ''"
-                      class="truncate text-primary dark:text-primary-dark"
+                    <UiTooltip :content="process.processName ?? ''"
+                      ><p class="truncate text-primary dark:text-primary-dark">
+                        {{ process.processName ?? '进程名称未读取' }}
+                      </p></UiTooltip
                     >
-                      {{ process.processName ?? '进程名称未读取' }}
-                    </p>
                     <p class="mt-xs whitespace-nowrap">PID {{ process.pid }}</p>
                   </UiTableCell>
                   <UiTableCell class="align-top">
-                    <p :title="process.appName" class="truncate">
-                      {{ process.appName || '应用名称未提供' }}
-                    </p>
-                    <p
-                      v-if="process.serviceName"
-                      :title="process.serviceName"
-                      class="mt-xs truncate"
+                    <UiTooltip :content="process.appName"
+                      ><p class="truncate">
+                        {{ process.appName || '应用名称未提供' }}
+                      </p></UiTooltip
                     >
-                      服务：{{ process.serviceName }}
-                    </p>
+                    <UiTooltip v-if="process.serviceName" :content="process.serviceName"
+                      ><p class="mt-xs truncate">服务：{{ process.serviceName }}</p></UiTooltip
+                    >
                   </UiTableCell>
                   <UiTableCell content="technical" class="align-top">
-                    <p
-                      v-if="process.executablePath"
-                      :title="process.executablePath"
-                      class="truncate"
+                    <UiTooltip v-if="process.executablePath" :content="process.executablePath"
+                      ><p class="truncate">
+                        {{ process.executablePath }}
+                      </p></UiTooltip
                     >
-                      {{ process.executablePath }}
-                    </p>
-                    <p
-                      v-if="process.detailError"
-                      :title="process.detailError"
-                      class="truncate text-warning-strong dark:text-warning-dark"
+                    <UiTooltip v-if="process.detailError" :content="process.detailError"
+                      ><p class="truncate text-warning-strong dark:text-warning-dark">
+                        {{ process.detailError }}
+                      </p></UiTooltip
                     >
-                      {{ process.detailError }}
-                    </p>
                   </UiTableCell>
                   <UiTableCell content="action" align="right" class="align-top">
                     <div class="flex justify-end gap-xs whitespace-nowrap">
