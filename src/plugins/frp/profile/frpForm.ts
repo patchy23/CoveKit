@@ -6,6 +6,7 @@
  * 绝不重建对象，避免把用户手写的 `healthCheck`、`metadatas`、自定义段落改没。
  */
 import type { FrpTemplateId } from '../contracts'
+import { tokenCredentialId, tokenReference } from './frpCredential'
 
 /** 表单里的单个代理条目 */
 export interface FrpFormProxy {
@@ -34,6 +35,8 @@ export interface FrpFormModel {
   user: string
   authMethod: string
   authToken: string
+  /** Vault 引用；秘密仅在 Rust 启动/校验时解析。 */
+  authCredentialId: string
   logLevel: string
   protocol: string
   tlsEnable: boolean
@@ -69,6 +72,7 @@ export function emptyFormModel(): FrpFormModel {
     user: '',
     authMethod: 'token',
     authToken: '',
+    authCredentialId: '',
     logLevel: 'info',
     protocol: 'tcp',
     tlsEnable: false,
@@ -156,7 +160,8 @@ export function toFormModel(parsed: Record<string, unknown>): FrpFormModel {
     serverPort: asNumber(parsed.serverPort) ?? base.serverPort,
     user: asString(parsed.user),
     authMethod: asString(auth.method) || base.authMethod,
-    authToken: asString(auth.token),
+    authToken: tokenCredentialId(asString(auth.token)) ? '' : asString(auth.token),
+    authCredentialId: tokenCredentialId(asString(auth.token)),
     logLevel: asString(log.level) || base.logLevel,
     protocol: asString(transport.protocol) || base.protocol,
     tlsEnable: asBool(tls.enable, base.tlsEnable),
@@ -237,12 +242,20 @@ export function mergeFormModel(
   assign(next, 'serverPort', model.serverPort)
   assign(next, 'user', model.user)
 
-  assignNested(next, 'auth', { method: model.authMethod, token: model.authToken })
+  assignNested(next, 'auth', {
+    method: model.authMethod,
+    token: model.authCredentialId ? tokenReference(model.authCredentialId) : model.authToken,
+  })
+  // 显式选择 Token 后清除互斥的外部 tokenSource；未编辑的外部来源照常保留。
+  if (model.authCredentialId || model.authToken) delete asObject(next.auth).tokenSource
   assignNested(next, 'log', { level: model.logLevel })
   assignNested(next, 'transport', {
     protocol: model.protocol,
     poolCount: model.poolCount,
-    tls: { enable: model.tlsEnable, serverName: model.tlsServerName },
+  })
+  assignNested(asObject(next.transport), 'tls', {
+    enable: model.tlsEnable,
+    serverName: model.tlsServerName,
   })
 
   const originals = asArray(parsed.proxies)
@@ -267,18 +280,22 @@ export function mergeFormModel(
 /** 表单是否含空的服务器地址（保存前的基本校验，返回中文原因） */
 export function validateFormModel(model: FrpFormModel): string {
   if (model.serverAddr.trim() === '') return 'frp.formServerRequired'
-  if (model.serverPort === null || model.serverPort <= 0 || model.serverPort > 65535) {
+  if (!validPort(model.serverPort)) {
     return 'frp.formServerPortInvalid'
   }
-  for (const [index, proxy] of model.proxies.entries()) {
+  for (const proxy of model.proxies) {
     if (proxy.name.trim() === '') return 'frp.formProxyNameRequired'
-    if (proxy.localPort !== null && (proxy.localPort <= 0 || proxy.localPort > 65535)) {
+    if (proxy.localPort !== null && !validPort(proxy.localPort)) {
       return 'frp.formProxyPortInvalid'
     }
     if (NEEDS_REMOTE_PORT.includes(proxy.type) && proxy.remotePort === null) {
       return 'frp.formProxyRemotePortRequired'
     }
-    void index
+    if (proxy.remotePort !== null && !validPort(proxy.remotePort)) return 'frp.formProxyPortInvalid'
   }
   return ''
+}
+
+function validPort(value: number | null): boolean {
+  return value !== null && Number.isInteger(value) && value > 0 && value <= 65535
 }

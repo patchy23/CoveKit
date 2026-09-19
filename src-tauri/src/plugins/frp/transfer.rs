@@ -19,6 +19,45 @@ const MANAGED: &str = "data/frp/imported";
 
 struct FrpAdapter;
 
+impl crate::framework::credential_refs::CredentialReferenceProvider for FrpAdapter {
+    fn owner(&self) -> &'static str {
+        "frp"
+    }
+
+    fn scan(
+        &self,
+        app: &AppHandle,
+    ) -> Result<Vec<crate::framework::credential_refs::CredentialReference>, String> {
+        let mut items = inventory(app)?;
+        include_contents(app, &mut items)?;
+        let mut references = Vec::new();
+        for item in items {
+            if let Some(id) = super::auth::reference_in(records::string(&item, "content")?)? {
+                references.push(crate::framework::credential_refs::CredentialReference {
+                    owner: "frp".into(),
+                    credential_id: id,
+                    object_id: records::string(&item, "id")?.into(),
+                    object_name: records::string(&item, "name")?.into(),
+                });
+            }
+        }
+        Ok(references)
+    }
+}
+
+fn remap_content(content: &str, ids: Option<&IdMap>) -> Result<String, String> {
+    let Some(id) = super::auth::reference_in(content)? else {
+        return Ok(content.into());
+    };
+    let Some(ids) = ids else {
+        return Ok(content.into());
+    };
+    let mapped = ids
+        .get(&("vault.credentials".into(), id.clone()))
+        .ok_or("FRP Token 凭证未导入，请同时选择引用的凭证")?;
+    super::auth::remap_reference(content, mapped)
+}
+
 /// 当前空间的导入配置目录；本机外部 profileDir 不影响此路径。
 pub(super) fn managed_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(paths::data_dir(app)?.join("frp/imported"))
@@ -242,7 +281,8 @@ fn apply(
                 if dataset==CONTENT {
                     let path=directory.join(&name);
                     if path.symlink_metadata().is_ok_and(|meta|meta.file_type().is_symlink()) { return Err("FRP 管理副本不能是符号链接".into()); }
-                    crate::framework::secure_store::replace_file(&path,records::string(record,"content")?.as_bytes())?;
+                    let content = remap_content(records::string(record,"content")?, target.map(|target| target.id_map))?;
+                    crate::framework::secure_store::replace_file(&path,content.as_bytes())?;
                 }
                 count+=1;
             }
@@ -309,12 +349,30 @@ impl DatasetAdapter for FrpAdapter {
             kind: "frpProfile".into(),
             dataset: META.into(),
         });
+        contents.pulls.push(DatasetPull {
+            kind: "credential".into(),
+            dataset: "vault.credentials".into(),
+        });
+        let mut with_contents = records;
+        include_contents(app, &mut with_contents)?;
         for entry in &mut contents.entries {
             entry.dependencies.push(DependencyEdge {
                 kind: "frpProfile".into(),
                 from_id: entry.id.clone(),
                 to_id: entry.id.clone(),
             });
+            if let Some(record) = with_contents
+                .iter()
+                .find(|record| record["id"].as_str() == Some(entry.id.as_str()))
+            {
+                if let Some(id) = super::auth::reference_in(records::string(record, "content")?)? {
+                    entry.dependencies.push(DependencyEdge {
+                        kind: "credential".into(),
+                        from_id: entry.id.clone(),
+                        to_id: id,
+                    });
+                }
+            }
         }
         Ok(vec![metadata, contents])
     }
@@ -346,16 +404,22 @@ impl DatasetAdapter for FrpAdapter {
         if dataset != CONTENT {
             return Ok(Vec::new());
         }
-        records
-            .iter()
-            .map(|record| {
-                Ok(DependencyEdge {
-                    kind: "frpProfile".into(),
+        let mut edges = Vec::new();
+        for record in records {
+            edges.push(DependencyEdge {
+                kind: "frpProfile".into(),
+                from_id: records::string(record, "id")?.into(),
+                to_id: records::string(record, "id")?.into(),
+            });
+            if let Some(id) = super::auth::reference_in(records::string(record, "content")?)? {
+                edges.push(DependencyEdge {
+                    kind: "credential".into(),
                     from_id: records::string(record, "id")?.into(),
-                    to_id: records::string(record, "id")?.into(),
-                })
-            })
-            .collect()
+                    to_id: id,
+                });
+            }
+        }
+        Ok(edges)
     }
     fn plan_import(
         &self,
@@ -364,6 +428,15 @@ impl DatasetAdapter for FrpAdapter {
         context: &ImportContext<'_>,
     ) -> Result<Vec<ImportPlanItem>, String> {
         validate(dataset, items)?;
+        if dataset == CONTENT {
+            for record in items {
+                if let Some(id) = super::auth::reference_in(records::string(record, "content")?)? {
+                    if !context.carries_id("vault.credentials", &id) {
+                        return Err("FRP Token 凭证未导入，请同时选择引用的凭证".into());
+                    }
+                }
+            }
+        }
         if dataset == CONTENT
             && items
                 .iter()
@@ -445,11 +518,40 @@ impl DatasetAdapter for FrpAdapter {
 pub(super) fn register() {
     static ADAPTER: FrpAdapter = FrpAdapter;
     adapter::register(&ADAPTER);
+    crate::framework::credential_refs::register(&ADAPTER);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn credential_dependencies_and_import_mapping_follow_the_file() {
+        let content = format!(
+            "auth.token = '{}'\n",
+            super::super::auth::token_reference("old")
+        );
+        let record = json!({"id":"profile", "name":"a.toml", "remark":"", "content":content});
+        let edges = FrpAdapter.enumerate_references(CONTENT, &[record]).unwrap();
+        assert!(edges
+            .iter()
+            .any(|edge| edge.kind == "credential" && edge.to_id == "old"));
+        let mut ids = IdMap::new();
+        assert!(remap_content(&content, Some(&ids)).is_err());
+        ids.insert(("vault.credentials".into(), "old".into()), "new".into());
+        let mapped = remap_content(&content, Some(&ids)).unwrap();
+        assert_eq!(
+            super::super::auth::reference_in(&mapped)
+                .unwrap()
+                .as_deref(),
+            Some("new")
+        );
+        assert_eq!(remap_content(&content, None).unwrap(), content);
+        assert_eq!(
+            remap_content("not-yet-valid-toml", Some(&ids)).unwrap(),
+            "not-yet-valid-toml"
+        );
+    }
 
     #[test]
     fn imported_files_stay_managed_and_metadata_does_not_replace_content() {

@@ -24,6 +24,8 @@ export default {
     saved: 'Saved',
     savedFormCommentsLost: 'Saved (comments in the file were lost)',
     unsaved: 'Unsaved',
+    saveBeforeAction:
+      'Save changes before switching editor modes, verifying or starting. Restart a running profile to apply changes.',
     unsavedSwitch: 'Switching to {name} discards the current unsaved changes. Continue?',
     unsavedDiscard: 'Discard and switch',
     dirUnknown: 'Config directory unknown',
@@ -144,7 +146,11 @@ export default {
     formSectionAuth: 'Authentication',
     formAuthMethod: 'Method',
     formAuthToken: 'Token',
-    formAuthTokenHint: 'Must match the server auth.token; leave empty to disable',
+    formAuthTokenHint:
+      'Must match the server auth.token. Manual tokens are saved as plain text in the config; an empty value uses the frpc default.',
+    formTokenCredential: 'Token credential',
+    formTokenCredentialHint:
+      'Select or create an API Token credential. Only its reference is saved; starting and verifying resolve it from the vault. Restart after changing credentials.',
     formSectionAdvanced: 'More options',
     formSectionAdvancedHint: 'Rarely changed — defaults work',
     formProtocol: 'Protocol',
@@ -175,7 +181,7 @@ export default {
     formServerRequired: 'Server address is required',
     formServerPortInvalid: 'Server port must be 1-65535',
     formProxyNameRequired: 'Proxy #{index} has no name',
-    formProxyPortInvalid: 'Proxy #{index} port must be 1-65535',
+    formProxyPortInvalid: 'Proxy ports must be integers between 1 and 65535',
     formProxyRemotePortRequired: 'Proxy #{index} has no remote port',
     // Source and validation
     sourceCommentHint: 'This file has comments; saving from the form will drop them.',

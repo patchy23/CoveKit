@@ -40,6 +40,6 @@
 | 跨批次决策 | [ADR索引](adr/README.md) |
 | 验证分工与命令 | [20验证矩阵](standards/20-验证矩阵.md)；具体待办仅本地 |
 | 本地数据传输与凭证边界 | [数据空间与导入导出](standards/07e-数据空间与导入导出.md) |
-| 插件现行说明 | [SSH](plugins/ssh/)、[Database](plugins/database/)、[Vault](plugins/vault/) |
+| 插件现行说明 | [SSH](plugins/ssh/)、[Database](plugins/database/)、[Vault](plugins/vault/)、[FRP](plugins/frp/设计.md) |
 
 命名与维护只见17。[本轮有效范围](standards/07-产品需求.md#当前有效范围裁决)先于旧需求。

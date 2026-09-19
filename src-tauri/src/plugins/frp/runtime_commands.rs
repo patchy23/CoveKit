@@ -20,8 +20,17 @@ pub async fn frp_verify(app: AppHandle, file_name: String) -> Result<FrpVerifyRe
     // 校验必须用档案实际绑定的客户端：否则会出现「校验通过但启动失败」
     // （不同 frpc 版本对配置字段的支持不同，服务端有版本限制时尤其明显）
     let exe = clients::resolve(&app, &file_name).await?;
-    let (raw, exit_ok) = verify::run_verify(&exe, &path).await?;
-    Ok(verify::build_verify_result(&file_name, &raw, exit_ok))
+    let config = super::auth::prepare(&app, &path).await?;
+    let (raw, exit_ok) = verify::run_verify(&exe, &config).await?;
+    let mut result = verify::build_verify_result(&file_name, &raw, exit_ok);
+    if config.has_generated_file() {
+        for error in &mut result.errors {
+            error.line = None;
+            error.column = None;
+            error.message = format!("凭证运行配置校验：{}", error.message);
+        }
+    }
+    Ok(result)
 }
 
 // ────────────────────────────── 运行命令 ──────────────────────────────

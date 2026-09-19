@@ -13,6 +13,7 @@ import { UiScrollArea } from '@/core/ui'
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { UiButton, UiField, UiInput, UiPanel, UiSelect, UiSwitch } from '@/core/ui'
+import { CredentialPicker } from '@/core/vault'
 import ProxyEntryCard from './ProxyEntryCard.vue'
 import {
   AUTH_METHOD_OPTIONS,
@@ -108,10 +109,38 @@ const logLevelOptions = computed(() => LOG_LEVEL_OPTIONS.map((value) => ({ value
                 size="sm"
                 :model-value="props.modelValue.authMethod"
                 :options="authOptions"
-                @update:model-value="setField('authMethod', String($event))"
+                @update:model-value="
+                  emit('update:modelValue', {
+                    ...props.modelValue,
+                    authMethod: String($event),
+                    authCredentialId: $event === 'token' ? props.modelValue.authCredentialId : '',
+                  })
+                "
               />
             </UiField>
             <UiField
+              v-if="props.modelValue.authMethod === 'token'"
+              :label="t('frp.formTokenCredential')"
+              size="sm"
+            >
+              <CredentialPicker
+                :model-value="props.modelValue.authCredentialId"
+                kind="api-token"
+                size="sm"
+                @update:model-value="
+                  emit('update:modelValue', {
+                    ...props.modelValue,
+                    authCredentialId: $event,
+                    authToken: '',
+                  })
+                "
+              />
+              <p class="text-caption text-text-muted dark:text-text-muted-dark">
+                {{ t('frp.formTokenCredentialHint') }}
+              </p>
+            </UiField>
+            <UiField
+              v-if="props.modelValue.authMethod === 'token' && !props.modelValue.authCredentialId"
               :label="t('frp.formAuthToken')"
               :description="t('frp.formAuthTokenHint')"
               size="sm"

@@ -24,6 +24,7 @@ export default {
     saved: '已保存',
     savedFormCommentsLost: '已保存（表单模式丢失了原文注释）',
     unsaved: '未保存',
+    saveBeforeAction: '请先保存修改，再切换编辑模式、校验或启动；运行中的配置需重启后生效。',
     unsavedSwitch: '切换到 {name} 会丢弃当前未保存的修改，确定继续？',
     unsavedDiscard: '丢弃并切换',
     dirUnknown: '配置目录未确定',
@@ -140,7 +141,11 @@ export default {
     formSectionAuth: '认证',
     formAuthMethod: '认证方式',
     formAuthToken: 'Token',
-    formAuthTokenHint: '与服务端 auth.token 一致；留空表示不校验',
+    formAuthTokenHint:
+      '与服务端 auth.token 一致；手工输入会明文保存在配置文件中，留空使用 frpc 默认值。',
+    formTokenCredential: 'Token 凭证',
+    formTokenCredentialHint:
+      '选择或新建 API Token 凭证；配置只保存引用，启动和校验时读取。更换凭证后需重启连接。',
     formSectionAdvanced: '更多配置',
     formSectionAdvancedHint: '不常用，保持默认即可',
     formProtocol: '传输协议',
@@ -171,7 +176,7 @@ export default {
     formServerRequired: '请填写服务端地址',
     formServerPortInvalid: '服务端端口需为 1-65535',
     formProxyNameRequired: '第 {index} 个代理缺少名称',
-    formProxyPortInvalid: '第 {index} 个代理的端口需为 1-65535',
+    formProxyPortInvalid: '代理端口需为 1-65535 的整数',
     formProxyRemotePortRequired: '第 {index} 个代理缺少服务端端口',
     // 源码与校验
     sourceCommentHint: '该文件含注释，表单模式保存会丢失注释。',

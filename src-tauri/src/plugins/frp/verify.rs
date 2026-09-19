@@ -72,7 +72,7 @@ fn position_of(line: &str) -> (Option<u32>, Option<u32>) {
 /// 解析 frpc verify 输出为结构化错误（纯函数）。
 /// 规则：① 命中错误关键字或带 `line N` 的行 → 一条错误（能取到位置就带行列）；
 /// ② 输出非空但一条都没认出来且退出码非 0 → 降级为「最后一行原文」单条；
-/// ③ 空输出 → 空列表（视为无错误）。
+/// ③ 空输出且退出失败 → 显式错误；仅成功退出时返回空列表。
 pub fn parse_verify_output(raw: &str, exit_ok: bool) -> Vec<FrpVerifyError> {
     let cleaned = strip_ansi(raw);
     let lines: Vec<&str> = cleaned
@@ -81,7 +81,15 @@ pub fn parse_verify_output(raw: &str, exit_ok: bool) -> Vec<FrpVerifyError> {
         .filter(|l| !l.is_empty())
         .collect();
     if lines.is_empty() {
-        return Vec::new();
+        return if exit_ok {
+            Vec::new()
+        } else {
+            vec![FrpVerifyError {
+                line: None,
+                column: None,
+                message: "frpc verify 失败（无输出）".into(),
+            }]
+        };
     }
     let mut errors = Vec::new();
     for line in &lines {
@@ -131,7 +139,7 @@ fn mask_secrets(text: &str) -> String {
     /// 取值最短长度（短于此长度的连续词按普通文本处理）
     const MIN_SECRET_LEN: usize = 6;
 
-    let lower = text.to_lowercase();
+    let lower = text.to_ascii_lowercase();
     let mut out = String::with_capacity(text.len());
     let mut cursor = 0usize;
     while cursor < text.len() {
@@ -168,7 +176,7 @@ fn mask_secrets(text: &str) -> String {
     out
 }
 
-/// 拼装校验结果（纯函数）：`ok` 取 frpc 退出码，`raw` 原样返回供用户判读（任务书 §5.5）
+/// 拼装校验结果（纯函数）：`ok` 取 frpc 退出码，`raw` 由调用方脱敏后传入。
 pub fn build_verify_result(file_name: &str, raw: &str, exit_ok: bool) -> FrpVerifyResult {
     FrpVerifyResult {
         ok: exit_ok,
@@ -180,11 +188,16 @@ pub fn build_verify_result(file_name: &str, raw: &str, exit_ok: bool) -> FrpVeri
 
 /// 执行 `frpc verify -c <path>`：stdout/stderr 合并返回，附「是否退出码 0」。
 /// 只读操作；不弹控制台窗口（Windows）；超时即返回可读错误，不 panic。
-pub async fn run_verify(exe: &Path, config: &Path) -> Result<(String, bool), String> {
+pub(super) async fn run_verify(
+    exe: &Path,
+    config: &super::auth::PreparedConfig,
+) -> Result<(String, bool), String> {
     let mut cmd = tokio::process::Command::new(exe);
+    config.configure(&mut cmd);
     cmd.arg("verify")
         .arg("-c")
-        .arg(config)
+        .arg(&config.path)
+        .kill_on_drop(true)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -205,7 +218,7 @@ pub async fn run_verify(exe: &Path, config: &Path) -> Result<(String, bool), Str
         }
         merged.push_str(&stderr);
     }
-    Ok((merged, output.status.success()))
+    Ok((config.redact(&merged), output.status.success()))
 }
 
 #[cfg(test)]
@@ -257,7 +270,10 @@ mod tests {
         assert!(parse_verify_output("load config from file: a.toml", true).is_empty());
         // 完全空输出 → 空列表（视为 ok）
         assert!(parse_verify_output("", true).is_empty());
-        assert!(parse_verify_output("   \n  ", false).is_empty());
+        assert_eq!(
+            parse_verify_output("   \n  ", false)[0].message,
+            "frpc verify 失败（无输出）"
+        );
     }
 
     #[test]

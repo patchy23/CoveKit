@@ -121,7 +121,7 @@ export interface FrpVerifyError {
 export interface FrpVerifyResult {
   ok: boolean
   fileName: string
-  /** frpc 原始输出（原样返回，供用户判读） */
+  /** frpc 输出（清理 ANSI 并脱敏，供用户判读） */
   raw: string
   errors: FrpVerifyError[]
 }

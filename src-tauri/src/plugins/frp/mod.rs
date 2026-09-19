@@ -1,5 +1,6 @@
 //! FRP 命令装配、持久化迁移与进程清理入口。
 
+mod auth;
 pub(crate) mod binary;
 mod clients;
 mod models;

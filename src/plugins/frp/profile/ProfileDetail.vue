@@ -54,8 +54,15 @@ const mode = ref<'form' | 'source'>('form')
 const view = computed(() => statusView(props.state?.state ?? 'stopped'))
 /** 是否运行中（日志页签与停止按钮用） */
 const running = computed(
-  () => props.state?.state === 'running' || props.state?.state === 'starting'
+  () =>
+    props.state?.pid != null ||
+    props.state?.state === 'running' ||
+    props.state?.state === 'starting'
 )
+const editingBusy = computed(
+  () => editor.loading.value || editor.saving.value || editor.verifying.value
+)
+const needsSave = computed(() => editor.dirty.value || editingBusy.value)
 
 /** 切换档案：重新加载内容（脏标记由 editor.load 内部重置） */
 watch(
@@ -123,7 +130,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         :label="t('frp.actionStart')"
         size="sm"
         class="text-success-strong hover:bg-success-soft disabled:opacity-40 dark:text-success-dark"
-        :disabled="props.busy"
+        :disabled="props.busy || needsSave"
         @click="emit('start', props.fileName)"
       >
         <UiIcon name="play" :size="18" />
@@ -141,15 +148,15 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
       <UiIconButton
         :label="t('frp.actionRestart')"
         size="sm"
-        :disabled="props.busy || !running"
+        :disabled="props.busy || !running || needsSave"
         @click="emit('restart', props.fileName)"
       >
         <UiIcon name="refresh" :size="18" />
       </UiIconButton>
-      <UiButton size="sm" variant="secondary" :disabled="editor.verifying.value" @click="onVerify">
+      <UiButton size="sm" variant="secondary" :disabled="needsSave" @click="onVerify">
         {{ editor.verifying.value ? t('frp.verifying') : t('frp.actionVerify') }}
       </UiButton>
-      <UiButton size="sm" :disabled="editor.saving.value || !editor.dirty.value" @click="onSave">
+      <UiButton size="sm" :disabled="editingBusy || !editor.dirty.value" @click="onSave">
         {{ editor.saving.value ? t('frp.saving') : t('frp.actionSave') }}
       </UiButton>
     </div>
@@ -195,6 +202,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         <UiButton
           size="xs"
           :variant="mode === 'form' ? 'primary' : 'secondary'"
+          :disabled="needsSave && mode !== 'form'"
           @click="mode = 'form'"
         >
           {{ t('frp.modeForm') }}
@@ -202,6 +210,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         <UiButton
           size="xs"
           :variant="mode === 'source' ? 'primary' : 'secondary'"
+          :disabled="needsSave && mode !== 'source'"
           @click="mode = 'source'"
         >
           {{ t('frp.modeSource') }}
@@ -214,6 +223,12 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
         </span>
       </div>
 
+      <p
+        v-if="editor.dirty.value"
+        class="px-[10px] py-[4px] text-caption text-text-muted dark:text-text-muted-dark"
+      >
+        {{ t('frp.saveBeforeAction') }}
+      </p>
       <div v-if="editor.loading.value" class="flex flex-1 items-center justify-center">
         <UiSpinner />
       </div>

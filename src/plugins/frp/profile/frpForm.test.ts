@@ -2,6 +2,7 @@
  * frpForm 单测：parsed ⇄ 表单往返不丢未知字段、缺失字段默认值、代理增删行、空 parsed 不崩、基本校验
  */
 import { describe, expect, it } from 'vitest'
+import { tokenCredentialId, tokenReference } from './frpCredential'
 import {
   emptyFormModel,
   emptyProxy,
@@ -68,6 +69,39 @@ describe('frpForm · 读取', () => {
 })
 
 describe('frpForm · 写回', () => {
+  it('凭证往返只保存引用，选择凭证会替换手工 Token 与互斥的 tokenSource', () => {
+    const parsed = {
+      serverAddr: 'example.test',
+      auth: { token: 'old', tokenSource: { type: 'file' } },
+    }
+    const model = toFormModel(parsed)
+    model.authCredentialId = '凭证-id'
+    const merged = mergeFormModel(parsed, model)
+    expect(merged.auth).toEqual({ method: 'token', token: tokenReference('凭证-id') })
+    expect(tokenReference('凭证-id')).toBe('{{ .Envs.COVEKIT_FRP_TOKEN_e587ade8af812d6964 }}')
+    expect(tokenCredentialId(tokenReference('凭证-id'))).toBe('凭证-id')
+    const restored = toFormModel(merged)
+    expect(restored.authCredentialId).toBe('凭证-id')
+    expect(restored.authToken).toBe('')
+    restored.authCredentialId = ''
+    restored.authToken = 'manual'
+    expect(mergeFormModel(merged, restored).auth).toEqual({ method: 'token', token: 'manual' })
+  })
+
+  it('表单改地址时保留 TLS 证书和未修改的外部 Token 来源', () => {
+    const parsed = {
+      serverAddr: 'old',
+      auth: { tokenSource: { type: 'file', file: { path: 'token.txt' } } },
+      transport: {
+        tls: { enable: true, certFile: 'client.pem', keyFile: 'key.pem', trustedCaFile: 'ca.pem' },
+      },
+    }
+    const model = toFormModel(parsed)
+    model.serverAddr = 'new'
+    const merged = mergeFormModel(parsed, model)
+    expect((merged.auth as Record<string, unknown>).tokenSource).toEqual(parsed.auth.tokenSource)
+    expect((merged.transport as Record<string, unknown>).tls).toEqual(parsed.transport.tls)
+  })
   it('未知顶层段落与代理内未知字段原样保留', () => {
     const parsed: Record<string, unknown> = {
       serverAddr: 'a.example.com',
@@ -160,6 +194,16 @@ describe('frpForm · 写回', () => {
 })
 
 describe('frpForm · 校验', () => {
+  it.each([NaN, Infinity, 1.5, 0, -1, 65536])('拒绝无效端口 %s', (port) => {
+    const model = { ...emptyFormModel(), serverAddr: 'example.test', serverPort: port }
+    expect(validateFormModel(model)).toBe('frp.formServerPortInvalid')
+    model.serverPort = 7000
+    model.proxies = [{ ...emptyProxy(), name: 'p', localPort: 22, remotePort: port }]
+    expect(validateFormModel(model)).toBe('frp.formProxyPortInvalid')
+    model.proxies[0].remotePort = 6000
+    model.proxies[0].localPort = port
+    expect(validateFormModel(model)).toBe('frp.formProxyPortInvalid')
+  })
   it('缺服务器地址 / 端口越界 / 代理名缺失 / tcp 缺远端端口均可被拦下', () => {
     const model = emptyFormModel()
     model.serverAddr = ''

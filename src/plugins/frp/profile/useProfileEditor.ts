@@ -77,12 +77,16 @@ export function useProfileEditor() {
   function updateContent(value: string): void {
     content.value = value
     dirty.value = true
+    verified.value = false
+    verifyErrors.value = []
   }
 
   /** 表单编辑回调（标记脏） */
   function updateModel(value: FrpFormModel): void {
     model.value = value
     dirty.value = true
+    verified.value = false
+    verifyErrors.value = []
   }
 
   /** 保存源码原文 */
@@ -133,11 +137,17 @@ export function useProfileEditor() {
 
   /** 调 frpc verify 校验当前文件（结果同时供源码模式与表单模式展示） */
   async function verify(): Promise<void> {
+    if (dirty.value) {
+      ui.toast(t('frp.saveBeforeAction'))
+      return
+    }
+    verified.value = false
+    verifyErrors.value = []
     verifying.value = true
     try {
       const result = await ipc.verify(fileName.value)
       verifyErrors.value = result.errors
-      verified.value = true
+      verified.value = result.ok
       if (result.ok) {
         ui.toast(t('frp.verifyPassed'))
       } else {

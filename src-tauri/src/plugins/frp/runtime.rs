@@ -6,6 +6,7 @@
 
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -14,7 +15,6 @@ use tokio::process::{Child, Command};
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 use crate::plugins::frp::models::{FrpLogPayload, FrpLogStream, FrpRuntimeState, FrpStateName};
-use crate::plugins::frp::verify::clean_line;
 use crate::plugins::frp::{clients, profile};
 
 /// `starting` 超时（秒）：迟迟不见成功/失败行即判 error，避免假绿灯
@@ -188,14 +188,19 @@ where
 }
 
 /// 按行读取一个流：每行推送 `frp://log` 并喂给状态机（流关闭即结束）
-fn spawn_reader<R>(app: AppHandle, file_name: String, reader: R, stream: FrpLogStream)
-where
+fn spawn_reader<R>(
+    app: AppHandle,
+    file_name: String,
+    reader: R,
+    stream: FrpLogStream,
+    config: Arc<super::auth::PreparedConfig>,
+) where
     R: AsyncRead + Unpin + Send + 'static,
 {
     tokio::spawn(async move {
         let mut lines = BufReader::new(reader).lines();
         while let Ok(Some(raw)) = lines.next_line().await {
-            let line = clean_line(&raw);
+            let line = config.redact(&raw);
             let _ = app.emit(
                 "frp://log",
                 FrpLogPayload {
@@ -224,12 +229,25 @@ async fn monitor(
     file_name: String,
     mut child: Child,
     mut stop_rx: oneshot::Receiver<()>,
+    config: Arc<super::auth::PreparedConfig>,
 ) {
     if let Some(stdout) = child.stdout.take() {
-        spawn_reader(app.clone(), file_name.clone(), stdout, FrpLogStream::Stdout);
+        spawn_reader(
+            app.clone(),
+            file_name.clone(),
+            stdout,
+            FrpLogStream::Stdout,
+            Arc::clone(&config),
+        );
     }
     if let Some(stderr) = child.stderr.take() {
-        spawn_reader(app.clone(), file_name.clone(), stderr, FrpLogStream::Stderr);
+        spawn_reader(
+            app.clone(),
+            file_name.clone(),
+            stderr,
+            FrpLogStream::Stderr,
+            Arc::clone(&config),
+        );
     }
     let timeout = tokio::time::sleep(Duration::from_secs(STARTUP_TIMEOUT_SECS));
     tokio::pin!(timeout);
@@ -300,9 +318,11 @@ pub(crate) async fn start(
     let config = profile::require_profile(&dir, file_name).await?;
     // 按档案绑定解析客户端：档案指定 → 默认客户端 → 兜底自动探测（保证清单为空也能跑）
     let exe = clients::resolve(app, file_name).await?;
+    let config = Arc::new(super::auth::prepare(app, &config).await?);
     let mut cmd = Command::new(&exe);
+    config.configure(&mut cmd);
     cmd.arg("-c")
-        .arg(&config)
+        .arg(&config.path)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -322,7 +342,13 @@ pub(crate) async fn start(
         run.stop_tx = Some(stop_tx);
         let snapshot = run.snapshot(file_name);
         map.insert(file_name.to_string(), run);
-        let handle = tokio::spawn(monitor(app.clone(), file_name.to_string(), child, stop_rx));
+        let handle = tokio::spawn(monitor(
+            app.clone(),
+            file_name.to_string(),
+            child,
+            stop_rx,
+            config,
+        ));
         if let Some(run) = map.get_mut(file_name) {
             run.handle = Some(handle);
         }
