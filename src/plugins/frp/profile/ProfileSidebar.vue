@@ -195,7 +195,12 @@ function onRemarkSubmit(remark: string) {
           </UiTooltip>
           <span class="min-w-0 flex-1">
             <span class="flex min-w-0 items-center gap-[6px]">
-              <UiTooltip :content="item.remark.trim() || item.fileName">
+              <UiTooltip
+                :content="
+                  [item.remark.trim(), item.lastError?.trim()].filter(Boolean).join('\n\n') ||
+                  item.fileName
+                "
+              >
                 <span class="min-w-0 flex-1 truncate text-body-sm dark:text-primary-dark">
                   {{ item.displayName || item.fileName }}
                 </span>
@@ -218,13 +223,6 @@ function onRemarkSubmit(remark: string) {
               }}
               · {{ t('frp.proxyCount', { count: item.proxyCount }) }}
             </span>
-            <UiTooltip v-if="item.lastError" :content="item.lastError">
-              <span
-                class="mt-[1px] block truncate text-caption text-danger-strong dark:text-danger-dark"
-              >
-                {{ item.lastError }}
-              </span>
-            </UiTooltip>
           </span>
         </UiListRow>
       </div>
