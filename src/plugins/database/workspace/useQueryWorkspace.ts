@@ -479,7 +479,9 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   /** 数据页签：从页签上下文取库/schema 与表名，后端分页 */
   async function loadTableData(tabId: string) {
     const ctx = tabContexts.value[tabId]
-    const state = (queryStates.value[tabId] ??= makeQueryState())
+    queryStates.value[tabId] ??= makeQueryState()
+    // 初始化后从响应式容器重新取值，避免首次异步回填写入原始对象而不触发渲染。
+    const state = queryStates.value[tabId]
     if (!ctx) return
     const table = ctx.table ?? tabTableName(tabId)
     if (!table) return

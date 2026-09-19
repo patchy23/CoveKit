@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useUiStore } from '@/stores/ui'
 import type { DbConnectionInfo, DbObjectInfo, DbTablePage, QueryResult } from './contracts'
 import { useDatabase } from './useDatabase'
+import DataTab from './DataTab.vue'
 
 /* ── IPC 门面假实现（vi.hoisted：mock 工厂先于被 mock 模块的导入执行） ── */
 
@@ -934,6 +935,55 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
 
     expect(api.tabs.value.map((t) => t.id)).toEqual([editorTab])
     expect(api.activeTabId.value).toBe(editorTab)
+  })
+
+  it('首次查看表数据时，异步返回后直接渲染列与数据，无需刷新', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const pending = deferred<DbTablePage>()
+    env.commands.dbcTableData.mockReturnValue(pending.promise)
+
+    void api.selectResource('conn-a::db1::table:users')
+    const panel = mount(DataTab, { props: { db: api } })
+    hosts.push(() => panel.unmount())
+    await nextTick()
+    expect(panel.text()).not.toContain('首次加载用户')
+
+    pending.resolve(tablePage({ columns: ['用户名'], rows: [['首次加载用户']], total: 1 }))
+    await flush()
+
+    expect(panel.text()).toContain('用户名')
+    expect(panel.text()).toContain('首次加载用户')
+    expect(panel.text()).toContain('共 1 行')
+    expect(env.commands.dbcTableData).toHaveBeenCalledTimes(1)
+    expect(env.commands.dbcTableData).toHaveBeenCalledWith('conn-a', 'users', 1, 50, 'db1')
+  })
+
+  it('首次查看表数据失败时立即显示错误，重试后显示数据', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const pending = deferred<DbTablePage>()
+    env.commands.dbcTableData.mockReturnValueOnce(pending.promise)
+
+    void api.selectResource('conn-a::db1::table:users')
+    const panel = mount(DataTab, { props: { db: api } })
+    hosts.push(() => panel.unmount())
+    await nextTick()
+    pending.reject(new Error('测试连接读取失败'))
+    await flush()
+
+    expect(panel.text()).toContain('加载失败')
+    expect(panel.text()).toContain('测试连接读取失败')
+    env.commands.dbcTableData.mockResolvedValue(
+      tablePage({ columns: ['用户名'], rows: [['重试成功用户']], total: 1 })
+    )
+    const retry = panel.findAll('button').find((button) => button.text() === '重试')
+    expect(retry).toBeDefined()
+    await retry!.trigger('click')
+    await flush()
+
+    expect(panel.text()).toContain('重试成功用户')
+    expect(panel.text()).not.toContain('加载失败')
   })
 
   it('数据页签按自己的页签状态加载分页数据，切换页签不影响已加载结果', async () => {
