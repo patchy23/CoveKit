@@ -17,7 +17,7 @@ import {
   UiTableCell,
   UiToolbar,
 } from '@/core/ui'
-import LiveLogDialog from './LiveLogDialog.vue'
+import { useLogWindows } from './logWindows'
 import ServiceConfigDialog from './ServiceConfigDialog.vue'
 import { ipc } from '../ipc'
 import RuntimeStatus from '../RuntimeStatus.vue'
@@ -38,7 +38,7 @@ const query = ref('')
 const configTarget = ref<SystemdService | null>(null)
 let refreshSequence = 0
 const loading = ref(false)
-const logTarget = ref<SystemdService | null>(null)
+const openLog = useLogWindows()
 const pendingAction = ref<{ service: SystemdService; action: 'stop' | 'restart' } | null>(null)
 const systemCount = computed(() => services.value.filter(isSystemService).length)
 
@@ -107,7 +107,13 @@ function confirmAction() {
 }
 
 function logs(service: SystemdService) {
-  logTarget.value = service
+  if (!props.connection) return
+  openLog({
+    connectionId: props.connection.sessionId,
+    kind: 'service',
+    targetId: service.name,
+    title: `${service.name} · 日志`,
+  })
 }
 
 watch(
@@ -115,7 +121,6 @@ watch(
   (sessionId) => {
     refreshSequence += 1
     configTarget.value = null
-    logTarget.value = null
     pendingAction.value = null
     services.value = []
     loading.value = false
@@ -233,14 +238,6 @@ onBeforeUnmount(() => {
         <span>{{ connection?.status === 'connected' ? '就绪' : '未连接' }}</span>
       </template>
     </UiStatusBar>
-    <LiveLogDialog
-      v-if="logTarget && connection"
-      :title="`${logTarget.name} · 实时日志`"
-      :connection-id="connection.sessionId"
-      kind="service"
-      :target-id="logTarget.name"
-      @close="logTarget = null"
-    />
     <ServiceConfigDialog
       v-if="configTarget && connection"
       :connection-id="connection.sessionId"

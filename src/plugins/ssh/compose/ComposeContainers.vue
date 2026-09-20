@@ -4,7 +4,7 @@ import { onUnmounted, ref, watch } from 'vue'
 import { UiModal, UiEmptyState } from '@/core/ui'
 import type { DockerContainer, ComposeProject, ServerConnection } from '../contracts'
 import { ipc } from '../ipc'
-import LiveLogDialog from '../monitor/LiveLogDialog.vue'
+import { useLogWindows } from '../monitor/logWindows'
 import TerminalTab from '../terminal/TerminalTab.vue'
 import DockerTable from '../docker/DockerTable.vue'
 const props = defineProps<{
@@ -15,7 +15,16 @@ const props = defineProps<{
 const rows = ref<DockerContainer[]>([])
 const error = ref('')
 const loading = ref(false)
-const logs = ref<DockerContainer>()
+const openLog = useLogWindows()
+function logs(container: DockerContainer) {
+  if (!props.connection) return
+  openLog({
+    connectionId: props.connection.sessionId,
+    kind: 'docker',
+    targetId: container.id,
+    title: `${container.name} · 日志`,
+  })
+}
 const terminal = ref<DockerContainer>()
 let version = 0
 onUnmounted(() => {
@@ -53,7 +62,7 @@ watch(
 watch(
   () => [props.project.name, props.connection?.sessionId, props.connection?.status],
   () => {
-    logs.value = terminal.value = undefined
+    terminal.value = undefined
   }
 )
 </script>
@@ -83,7 +92,7 @@ watch(
           inspect-only
           compact
           :disabled="busy || connection?.status !== 'connected'"
-          @logs="logs = $event"
+          @logs="logs"
           @terminal="terminal = $event"
         />
         <UiEmptyState
@@ -94,15 +103,6 @@ watch(
         />
       </div>
     </section>
-    <LiveLogDialog
-      v-if="logs && connection"
-      :key="connection.sessionId + logs.id"
-      :title="`${logs.name} · 日志`"
-      :connection-id="connection.sessionId"
-      kind="docker"
-      :target-id="logs.id"
-      @close="logs = undefined"
-    />
     <UiModal
       v-if="terminal"
       open

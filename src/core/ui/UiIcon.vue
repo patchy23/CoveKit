@@ -33,6 +33,10 @@ import {
   LayoutGrid,
   LoaderCircle,
   Minus,
+  Maximize2,
+  Minimize2,
+  MoveDiagonal2,
+  Pause,
   Package,
   Pencil,
   Play,
@@ -50,6 +54,10 @@ import {
 
 /** 已注册的通用图标（key 为语义名，新增图标在此加一行） */
 export const UI_ICONS = {
+  maximize: Maximize2,
+  restore: Minimize2,
+  resize: MoveDiagonal2,
+  pause: Pause,
   search: Search,
   'chevron-down': ChevronDown,
   'chevron-right': ChevronRight,

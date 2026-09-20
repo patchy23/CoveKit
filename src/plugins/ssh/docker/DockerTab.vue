@@ -16,7 +16,7 @@ import {
   UiToolbar,
 } from '@/core/ui'
 import TerminalTab from '../terminal/TerminalTab.vue'
-import LiveLogDialog from '../monitor/LiveLogDialog.vue'
+import { useLogWindows } from '../monitor/logWindows'
 import DockerTable from './DockerTable.vue'
 import { ipc } from '../ipc'
 
@@ -31,7 +31,7 @@ const containers = ref<DockerContainer[]>([])
 const keyword = ref('')
 const statusFilter = ref<'all' | 'running' | 'exited'>('all')
 const terminalContainer = ref<DockerContainer | null>(null)
-const logTarget = ref<DockerContainer | null>(null)
+const openLog = useLogWindows()
 const busyContainerId = ref<string | null>(null)
 const pendingAction = ref<{
   container: DockerContainer
@@ -120,7 +120,13 @@ const pendingActionText = computed(() => {
 })
 
 function logs(container: DockerContainer) {
-  logTarget.value = container
+  if (!props.connection) return
+  openLog({
+    connectionId: props.connection.sessionId,
+    kind: 'docker',
+    targetId: container.id,
+    title: `${container.name} · 日志`,
+  })
 }
 
 function exec(c: DockerContainer) {
@@ -196,14 +202,6 @@ watch(
         :connect-request="1"
       />
     </UiModal>
-    <LiveLogDialog
-      v-if="logTarget && connection"
-      :title="`${logTarget.name} · 实时日志`"
-      :connection-id="connection.sessionId"
-      kind="docker"
-      :target-id="logTarget.id"
-      @close="logTarget = null"
-    />
     <UiConfirmDialog
       :open="pendingAction !== null"
       :title="pendingActionText.title"

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /** SSH 工具主容器：服务器配置列表 + 多连接页签；每条连接拥有完整运维功能区。 */
 import { computed, defineAsyncComponent, h, ref, watch, type Component } from 'vue'
+import LiveLogDialog from './monitor/LiveLogDialog.vue'
+import { provideLogWindows } from './monitor/logWindows'
 import ServerList from './profiles/ServerList.vue'
 import ServerForm from './profiles/ServerForm.vue'
 import ConnectionCredentialsDialog from './connection/ConnectionCredentialsDialog.vue'
@@ -54,6 +56,12 @@ const {
   deleteTarget,
   hostKeyRequest,
 } = workspace
+
+const { windows: logWindows, close: closeLogWindow } = provideLogWindows(() =>
+  connectionWorkspaces.value
+    .filter((item) => item.connection.status === 'connected')
+    .map((item) => ({ sessionId: item.connection.sessionId, title: item.title }))
+)
 
 const sectionTabs: UiTabItem[] = [
   { value: 'terminal', label: '终端' },
@@ -187,7 +195,7 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 w-full">
+  <div class="relative isolate flex h-full min-h-0 w-full">
     <ServerList
       :busy="workspace.treeMoving.value"
       :profiles="filteredProfiles"
@@ -332,6 +340,17 @@ watch(
         </div>
       </template>
     </div>
+
+    <LiveLogDialog
+      v-for="log in logWindows"
+      :key="log.key"
+      :title="log.title"
+      :connection-id="log.connectionId"
+      :kind="log.kind"
+      :target-id="log.targetId"
+      :activation="log.activation"
+      @close="closeLogWindow(log.key)"
+    />
 
     <UiContextMenu
       v-if="connectionMenu"
