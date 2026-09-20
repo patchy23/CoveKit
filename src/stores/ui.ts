@@ -157,14 +157,31 @@ export const useUiStore = defineStore('ui', () => {
   const toastMessage = ref('')
   const toastVisible = ref(false)
   let toastTimer: ReturnType<typeof setTimeout> | null = null
+  let toastPaused = false
+
+  function pauseToast() {
+    toastPaused = true
+    if (toastTimer) clearTimeout(toastTimer)
+    toastTimer = null
+  }
+
+  function resumeToast() {
+    toastPaused = false
+    if (toastTimer) clearTimeout(toastTimer)
+    if (toastVisible.value) toastTimer = setTimeout(dismissToast, 1600)
+  }
+
+  function dismissToast() {
+    if (toastTimer) clearTimeout(toastTimer)
+    toastTimer = null
+    toastPaused = false
+    toastVisible.value = false
+  }
 
   function toast(msg: string) {
     toastMessage.value = msg
     toastVisible.value = true
-    if (toastTimer) clearTimeout(toastTimer)
-    toastTimer = setTimeout(() => {
-      toastVisible.value = false
-    }, 1600)
+    if (!toastPaused) resumeToast()
   }
 
   return {
@@ -193,5 +210,8 @@ export const useUiStore = defineStore('ui', () => {
     toastMessage,
     toastVisible,
     toast,
+    pauseToast,
+    resumeToast,
+    dismissToast,
   }
 })

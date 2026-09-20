@@ -129,7 +129,7 @@ watch(
     <p
       v-if="errorMessage"
       role="alert"
-      class="mx-[16px] mb-[12px] text-body-sm text-danger-strong dark:text-danger-dark"
+      class="select-text mx-[16px] mb-[12px] text-body-sm text-danger-strong dark:text-danger-dark"
     >
       {{ errorMessage }}
     </p>

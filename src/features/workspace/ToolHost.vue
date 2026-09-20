@@ -53,7 +53,8 @@ function createLoadErrorView(): Component {
         h(
           'p',
           {
-            class: 'max-w-[560px] break-all text-body-sm text-text-muted dark:text-text-muted-dark',
+            class:
+              'select-text max-w-[560px] break-all text-body-sm text-text-muted dark:text-text-muted-dark',
           },
           loadError.value ?? '未能载入工具组件'
         ),
@@ -119,7 +120,9 @@ function describe(error: unknown): string {
       <p class="text-body font-medium text-danger-strong dark:text-danger-dark">
         {{ title }} 出错了
       </p>
-      <p class="max-w-[560px] break-all text-body-sm text-text-muted dark:text-text-muted-dark">
+      <p
+        class="select-text max-w-[560px] break-all text-body-sm text-text-muted dark:text-text-muted-dark"
+      >
         {{ renderError }}
       </p>
       <button

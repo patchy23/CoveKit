@@ -144,6 +144,8 @@ defineExpose({ focus, toggleReplace })
       </UiButton>
     </div>
 
-    <p v-if="error" class="text-caption text-danger-strong dark:text-danger-dark">{{ error }}</p>
+    <p v-if="error" class="select-text text-caption text-danger-strong dark:text-danger-dark">
+      {{ error }}
+    </p>
   </div>
 </template>

@@ -6,6 +6,7 @@ import {
   UiIconButton,
   UiInput,
   UiModal,
+  UiScrollArea,
   UiTabs,
   UiTabsOverflowMenu,
   UiToolbar,
@@ -261,9 +262,14 @@ onMounted(() => {
     <!-- 提示条 -->
     <div
       v-if="db.errorHint.value"
-      class="pointer-events-none absolute bottom-[20px] left-1/2 z-10 -translate-x-1/2 rounded-md border border-border bg-surface px-[10px] py-[4px] text-caption text-primary shadow-md dark:border-border-dark dark:bg-surface-dark dark:text-primary-dark"
+      class="pointer-events-auto absolute bottom-[20px] left-1/2 z-10 flex max-w-[90%] -translate-x-1/2 items-center gap-sm rounded-md border border-border bg-surface px-[10px] py-[4px] text-caption text-primary shadow-md dark:border-border-dark dark:bg-surface-dark dark:text-primary-dark"
     >
-      {{ db.errorHint.value }}
+      <UiScrollArea class="max-h-[40vh] min-w-0" axis="vertical">
+        <p class="select-text whitespace-pre-wrap break-all">{{ db.errorHint.value }}</p>
+      </UiScrollArea>
+      <UiIconButton size="xs" label="关闭错误提示" @click="db.showError('')"
+        ><UiIcon name="x" :size="14"
+      /></UiIconButton>
     </div>
 
     <!-- 新建/编辑连接对话框 -->

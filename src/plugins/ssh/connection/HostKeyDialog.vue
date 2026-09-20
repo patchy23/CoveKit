@@ -52,13 +52,13 @@ function respond(decision: 'trustOnce' | 'trustSave' | 'cancel' | 'replace') {
       <div class="space-y-[4px] rounded-md bg-surface-muted p-[10px] dark:bg-surface-muted-dark">
         <div class="flex items-center justify-between gap-[10px]">
           <span class="text-caption text-text-muted dark:text-text-muted-dark">算法</span>
-          <span class="font-mono text-caption">{{ request?.algorithm }}</span>
+          <span class="select-text font-mono text-caption">{{ request?.algorithm }}</span>
         </div>
         <div class="flex items-center justify-between gap-[10px]">
           <span class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark">
             {{ isMismatch ? '新指纹' : '指纹（SHA256）' }}
           </span>
-          <span class="min-w-0 break-all text-right font-mono text-caption">{{
+          <span class="select-text min-w-0 break-all text-right font-mono text-caption">{{
             request?.fingerprint
           }}</span>
         </div>
@@ -68,7 +68,7 @@ function respond(decision: 'trustOnce' | 'trustSave' | 'cancel' | 'replace') {
               已保存指纹
             </span>
             <span
-              class="min-w-0 break-all text-right font-mono text-caption text-danger-strong dark:text-danger-dark"
+              class="select-text min-w-0 break-all text-right font-mono text-caption text-danger-strong dark:text-danger-dark"
             >
               {{ request?.savedFingerprints[0] }}
             </span>

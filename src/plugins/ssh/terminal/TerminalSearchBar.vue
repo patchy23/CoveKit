@@ -112,7 +112,9 @@ onMounted(async () => {
         <UiIcon name="x" :size="13" />
       </UiIconButton>
     </div>
-    <p v-if="error" class="text-caption text-danger-strong dark:text-danger-dark">{{ error }}</p>
+    <p v-if="error" class="select-text text-caption text-danger-strong dark:text-danger-dark">
+      {{ error }}
+    </p>
     <p v-else-if="noMatch" class="text-caption text-text-muted dark:text-text-muted-dark">无匹配</p>
   </div>
 </template>

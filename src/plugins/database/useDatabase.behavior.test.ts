@@ -1016,7 +1016,7 @@ describe('保存期间切页签的归属（决策书 §2.3 场景 7）', () => {
 
 /* ────────────────────────────────────────────────────────────────────── */
 describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => {
-  it('提示条内容可见并在 4 秒后自动清除', async () => {
+  it('错误正文保持可见直到手动关闭，新错误替换旧消息', async () => {
     const api = mountWorkbench()
     vi.useFakeTimers()
     api.showError(new Error('连接超时'))
@@ -1027,6 +1027,8 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
     await vi.advanceTimersByTimeAsync(3999)
     expect(api.errorHint.value).toBe('第二条')
     await vi.advanceTimersByTimeAsync(2)
+    expect(api.errorHint.value).toBe('第二条')
+    api.showError('')
     expect(api.errorHint.value).toBe('')
   })
 

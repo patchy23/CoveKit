@@ -248,10 +248,16 @@ function submit() {
           selectedCredential.kind === 'password' ? '用户名与密码' : '用户名与私钥'
         }}连接（用户名覆盖上方填写值）；类型不符时连接会明确报错。
       </p>
-      <p v-if="credentialMissing" class="text-caption text-danger-strong dark:text-danger-dark">
+      <p
+        v-if="credentialMissing"
+        class="select-text text-caption text-danger-strong dark:text-danger-dark"
+      >
         引用的凭证已删除或不可用，请重新选择。
       </p>
-      <p v-if="credentialsFailed" class="text-caption text-danger-strong dark:text-danger-dark">
+      <p
+        v-if="credentialsFailed"
+        class="select-text text-caption text-danger-strong dark:text-danger-dark"
+      >
         凭证库暂不可用；可稍后重试，或改用手工输入。
       </p>
 

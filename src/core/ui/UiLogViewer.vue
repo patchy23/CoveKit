@@ -116,7 +116,7 @@ onUnmounted(() => document.removeEventListener('selectionchange', captureSelecti
     <p
       v-if="error"
       role="alert"
-      class="shrink-0 px-md py-xs text-body-sm text-danger-strong dark:text-danger-dark"
+      class="select-text shrink-0 px-md py-xs text-body-sm text-danger-strong dark:text-danger-dark"
     >
       {{ error }}
     </p>

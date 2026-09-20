@@ -175,7 +175,7 @@ function onRemarkSubmit(remark: string) {
         </div>
         <p
           v-else-if="error !== ''"
-          class="px-[6px] py-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
+          class="select-text px-[6px] py-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
         >
           {{ error }}
         </p>

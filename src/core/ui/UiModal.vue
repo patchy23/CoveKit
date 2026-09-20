@@ -98,7 +98,7 @@ function onPointerDownOutside(event: Event) {
               </DialogTitle>
               <DialogDescription
                 v-if="description"
-                class="mt-xs text-body-sm text-secondary dark:text-secondary-dark"
+                class="select-text mt-xs text-body-sm text-secondary dark:text-secondary-dark"
               >
                 {{ description }}
               </DialogDescription>
@@ -147,7 +147,7 @@ function onPointerDownOutside(event: Event) {
                 </DialogTitle>
                 <DialogDescription
                   v-if="description"
-                  class="text-body-sm text-secondary dark:text-secondary-dark"
+                  class="select-text text-body-sm text-secondary dark:text-secondary-dark"
                 >
                   {{ description }}
                 </DialogDescription>

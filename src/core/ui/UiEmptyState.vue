@@ -1,14 +1,18 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ title: string; description?: string; compact?: boolean }>(), {
-  compact: false,
-  description: '',
-})
+withDefaults(
+  defineProps<{ title: string; description?: string; compact?: boolean; selectable?: boolean }>(),
+  {
+    compact: false,
+    description: '',
+    selectable: false,
+  }
+)
 </script>
 
 <template>
   <div
     class="flex flex-col items-center justify-center px-lg text-center font-sans"
-    :class="compact ? 'min-h-[64px] py-sm' : 'min-h-[160px] py-xl'"
+    :class="[compact ? 'min-h-[64px] py-sm' : 'min-h-[160px] py-xl', { 'select-text': selectable }]"
   >
     <div
       v-if="$slots.icon"

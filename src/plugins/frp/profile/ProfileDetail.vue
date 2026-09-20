@@ -165,7 +165,7 @@ const commentWarning = computed(() => mode.value === 'form' && editor.hasComment
     <!-- 错误行（加载失败等，始终可见） -->
     <p
       v-if="editor.error.value !== ''"
-      class="shrink-0 border-b border-border bg-danger-soft px-[10px] py-[5px] text-body-sm text-danger-strong dark:border-border-dark dark:bg-danger-soft-dark dark:text-danger-dark"
+      class="select-text shrink-0 border-b border-border bg-danger-soft px-[10px] py-[5px] text-body-sm text-danger-strong dark:border-border-dark dark:bg-danger-soft-dark dark:text-danger-dark"
     >
       {{ editor.error.value }}
     </p>

@@ -130,7 +130,7 @@ watch(
         <div
           v-if="errorMessage"
           role="alert"
-          class="border-b border-warning/30 bg-warning-soft px-[16px] py-[10px] text-body-sm text-warning-strong dark:border-warning-dark/30 dark:bg-warning-soft-dark dark:text-warning-dark"
+          class="select-text border-b border-warning/30 bg-warning-soft px-[16px] py-[10px] text-body-sm text-warning-strong dark:border-warning-dark/30 dark:bg-warning-soft-dark dark:text-warning-dark"
         >
           {{ errorMessage }}<span v-if="data"> · 当前保留上次采样数据</span>
         </div>

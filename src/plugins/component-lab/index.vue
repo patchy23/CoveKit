@@ -9,6 +9,7 @@ import EditorShowcase from './EditorShowcase.vue'
 import NavigationShowcase from './NavigationShowcase.vue'
 import CollectionShowcase from './CollectionShowcase.vue'
 import LogWindowShowcase from './LogWindowShowcase.vue'
+import TextSelectionShowcase from './TextSelectionShowcase.vue'
 import { UiBadge } from '@/core/ui'
 </script>
 
@@ -34,5 +35,6 @@ import { UiBadge } from '@/core/ui'
     <NavigationShowcase />
     <CollectionShowcase />
     <LogWindowShowcase />
+    <TextSelectionShowcase />
   </div>
 </template>

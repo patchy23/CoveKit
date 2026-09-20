@@ -57,7 +57,11 @@ onMounted(() => {
         @keydown.enter="browse(path)"
       />
     </div>
-    <p v-if="error" role="alert" class="text-body-sm text-danger-strong dark:text-danger-dark">
+    <p
+      v-if="error"
+      role="alert"
+      class="select-text text-body-sm text-danger-strong dark:text-danger-dark"
+    >
       {{ error }}
     </p>
     <UiScrollArea class="h-[260px]" axis="vertical">

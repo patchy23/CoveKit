@@ -25,10 +25,15 @@ const emit = defineEmits<{
 
 <template>
   <UiModal :open="open" size="sm" :title="title" @close="emit('close')">
-    <p class="mb-[20px] text-body leading-relaxed text-secondary dark:text-secondary-dark">
+    <p
+      class="select-text mb-[20px] text-body leading-relaxed text-secondary dark:text-secondary-dark"
+    >
       {{ message }}
     </p>
-    <p v-if="error" class="mb-[12px] text-caption text-danger-strong dark:text-danger-dark">
+    <p
+      v-if="error"
+      class="select-text mb-[12px] text-caption text-danger-strong dark:text-danger-dark"
+    >
       {{ error }}
     </p>
     <div class="flex justify-end gap-[8px]">

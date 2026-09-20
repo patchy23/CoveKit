@@ -57,7 +57,7 @@ function errorLabel(item: FrpVerifyError): string {
     <!-- 校验结果（错误逐条列出；通过时给一行确认） -->
     <UiScrollArea v-if="props.errors.length > 0" as-child axis="vertical">
       <div
-        class="max-h-[132px] shrink-0 border-t border-danger-soft bg-danger-soft px-[10px] py-[6px] dark:border-danger-dark dark:bg-danger-soft-dark"
+        class="select-text max-h-[132px] shrink-0 border-t border-danger-soft bg-danger-soft px-[10px] py-[6px] dark:border-danger-dark dark:bg-danger-soft-dark"
       >
         <p class="text-caption font-medium text-danger-strong dark:text-danger-dark">
           {{ t('frp.verifyFailedCount', { count: props.errors.length }) }}

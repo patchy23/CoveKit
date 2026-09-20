@@ -115,7 +115,7 @@ function changeSingle(value: boolean) {
             <div
               v-else-if="state === 'error'"
               role="alert"
-              class="flex items-center gap-sm px-sm py-md text-body-sm text-danger-strong dark:text-danger-dark"
+              class="select-text flex items-center gap-sm px-sm py-md text-body-sm text-danger-strong dark:text-danger-dark"
             >
               读取失败，请重试。<UiButton size="xs" @click="state = 'ready'">重试</UiButton>
             </div>

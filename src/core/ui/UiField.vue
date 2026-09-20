@@ -40,14 +40,14 @@ provide(uiFieldContextKey, context)
       v-if="error"
       :id="`ui-field-${baseId}-error`"
       role="alert"
-      class="text-caption text-danger-strong dark:text-danger-dark"
+      class="select-text text-caption text-danger-strong dark:text-danger-dark"
     >
       {{ error }}
     </span>
     <span
       v-else-if="description"
       :id="`ui-field-${baseId}-desc`"
-      class="text-caption text-text-muted dark:text-text-muted-dark"
+      class="select-text text-caption text-text-muted dark:text-text-muted-dark"
     >
       {{ description }}
     </span>

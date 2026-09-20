@@ -80,7 +80,7 @@ watch(
       <p
         v-else-if="error"
         role="alert"
-        class="px-md py-sm text-body-sm text-danger-strong dark:text-danger-dark"
+        class="select-text px-md py-sm text-body-sm text-danger-strong dark:text-danger-dark"
       >
         {{ error }}
       </p>

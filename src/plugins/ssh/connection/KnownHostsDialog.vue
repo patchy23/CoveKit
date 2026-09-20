@@ -68,7 +68,7 @@ defineExpose({ load })
 
     <div
       v-if="loadFailed"
-      class="py-[16px] text-center text-body-sm text-danger-strong dark:text-danger-dark"
+      class="select-text py-[16px] text-center text-body-sm text-danger-strong dark:text-danger-dark"
     >
       已知主机列表加载失败，请重试。
     </div>

@@ -235,9 +235,11 @@ const currentTaskLabel = computed(() => {
               <span v-if="item.total > 0" class="shrink-0 font-mono text-text-muted">
                 {{ Math.min(100, Math.round((item.transferred / item.total) * 100)) }}%
               </span>
-              <span v-if="item.error" class="shrink-0 text-danger-strong dark:text-danger-dark">{{
-                item.error
-              }}</span>
+              <span
+                v-if="item.error"
+                class="select-text shrink-0 text-danger-strong dark:text-danger-dark"
+                >{{ item.error }}</span
+              >
               <UiButton
                 v-if="!item.done"
                 variant="ghost"

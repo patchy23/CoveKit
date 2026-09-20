@@ -105,7 +105,7 @@ async function onInstalled(version: string) {
 
     <p
       v-if="clients.error.value !== ''"
-      class="mt-[6px] text-body-sm text-danger-strong dark:text-danger-dark"
+      class="select-text mt-[6px] text-body-sm text-danger-strong dark:text-danger-dark"
     >
       {{ clients.error.value }}
     </p>

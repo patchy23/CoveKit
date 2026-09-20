@@ -94,7 +94,10 @@ function onClose() {
         @keydown.enter="onSubmit"
       />
       <UiSelect v-if="props.mode === 'create'" v-model="template" :options="templateOptions" />
-      <p v-if="error !== ''" class="text-body-sm text-danger-strong dark:text-danger-dark">
+      <p
+        v-if="error !== ''"
+        class="select-text text-body-sm text-danger-strong dark:text-danger-dark"
+      >
         {{ error }}
       </p>
       <p class="text-caption text-text-muted dark:text-text-muted-dark">

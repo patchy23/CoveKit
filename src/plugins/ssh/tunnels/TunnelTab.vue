@@ -287,7 +287,7 @@ onUnmounted(() => {
       <div class="min-h-0 flex-1 p-[12px]">
         <div
           v-if="loadFailed"
-          class="py-[24px] text-center text-body-sm text-danger-strong dark:text-danger-dark"
+          class="select-text py-[24px] text-center text-body-sm text-danger-strong dark:text-danger-dark"
         >
           隧道配置加载失败，请重试。
         </div>
@@ -339,7 +339,7 @@ onUnmounted(() => {
               </div>
               <div
                 v-if="runtimeOf(config)?.status === 'error'"
-                class="mt-[2px] truncate text-caption text-danger-strong dark:text-danger-dark"
+                class="select-text mt-[2px] truncate text-caption text-danger-strong dark:text-danger-dark"
               >
                 {{ runtimeOf(config)?.error }}
               </div>

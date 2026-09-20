@@ -158,7 +158,7 @@ async function chooseDownloadDirectory() {
         <!-- 保存失败提示：任何分区的保存失败都在这里显示，不静默吞错误 -->
         <p
           v-if="settings.saveError"
-          class="mt-[10px] text-body-sm text-warning-strong dark:text-warning-dark"
+          class="select-text mt-[10px] text-body-sm text-warning-strong dark:text-warning-dark"
         >
           {{ t('settings.saveFailed', { message: settings.saveError }) }}
         </p>

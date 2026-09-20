@@ -294,7 +294,7 @@ onUnmounted(() => {
         <p
           v-if="dialogError"
           role="alert"
-          class="text-body-sm text-tertiary-strong dark:text-tertiary-dark"
+          class="select-text text-body-sm text-tertiary-strong dark:text-tertiary-dark"
         >
           {{ dialogError }}
         </p>
@@ -323,7 +323,7 @@ onUnmounted(() => {
       <p
         v-if="moveError"
         role="alert"
-        class="mt-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
+        class="select-text mt-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
       >
         {{ moveError }}
       </p>
@@ -392,7 +392,7 @@ onUnmounted(() => {
       <p
         v-if="groupError"
         role="alert"
-        class="mt-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
+        class="select-text mt-[8px] text-body-sm text-danger-strong dark:text-danger-dark"
       >
         {{ groupError }}
       </p>

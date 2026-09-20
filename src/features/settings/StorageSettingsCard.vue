@@ -236,7 +236,7 @@ async function restartNow() {
         </p>
         <p
           v-if="info.pendingMigration.lastError"
-          class="text-body-sm text-danger-strong dark:text-danger-dark"
+          class="select-text text-body-sm text-danger-strong dark:text-danger-dark"
         >
           {{ t('settings.storagePendingFailed', { message: info.pendingMigration.lastError }) }}
         </p>
@@ -262,10 +262,13 @@ async function restartNow() {
         <UiButton :disabled="!info" @click="openDir">{{ t('settings.storageOpen') }}</UiButton>
       </div>
 
-      <p v-if="loadError" class="text-body-sm text-danger-strong dark:text-danger-dark">
+      <p v-if="loadError" class="select-text text-body-sm text-danger-strong dark:text-danger-dark">
         {{ loadError }}
       </p>
-      <p v-if="actionError" class="text-body-sm text-danger-strong dark:text-danger-dark">
+      <p
+        v-if="actionError"
+        class="select-text text-body-sm text-danger-strong dark:text-danger-dark"
+      >
         {{ actionError }}
       </p>
     </div>

@@ -78,7 +78,9 @@ function clearAll() {
 <template>
   <section class="rounded-lg border border-border p-[16px] dark:border-border-dark">
     <h3 class="text-h2 font-bold dark:text-primary-dark">{{ t('settings.diagnostics') }}</h3>
-    <div class="mt-sm space-y-xs text-body-sm text-text-muted dark:text-text-muted-dark">
+    <div
+      class="select-text mt-sm space-y-xs text-body-sm text-text-muted dark:text-text-muted-dark"
+    >
       <p>{{ t('settings.diagnosticsActiveTasks', { count: tasks.activeCount }) }}</p>
       <p v-if="lastFinished">
         {{
@@ -110,9 +112,11 @@ function clearAll() {
       <span v-if="copied" class="text-body-sm text-text-muted dark:text-text-muted-dark">{{
         copied
       }}</span>
-      <span v-if="copyError" class="text-body-sm text-danger-strong dark:text-danger-dark">{{
-        copyError
-      }}</span>
+      <span
+        v-if="copyError"
+        class="select-text text-body-sm text-danger-strong dark:text-danger-dark"
+        >{{ copyError }}</span
+      >
     </div>
   </section>
 </template>

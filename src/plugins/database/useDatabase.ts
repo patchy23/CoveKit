@@ -15,7 +15,7 @@
  * 搬迁的纯函数（filterTreeItems、extractExecSql、withTimeout）在此再导出，
  * 既有单测与组件的 import 路径不变。
  */
-import { onBeforeUnmount, ref } from 'vue'
+import { ref } from 'vue'
 import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { useDatabaseConnections } from './connection/useDatabaseConnections'
 import { useQueryWorkspace } from './workspace/useQueryWorkspace'
@@ -31,18 +31,11 @@ type CatalogDomain = ReturnType<typeof useDatabaseCatalog>
 type WorkspaceDomain = ReturnType<typeof useQueryWorkspace>
 
 export function useDatabase() {
-  // ── 应用级协调：错误提示条（各域经 showError 端口写入，4 秒后自动清除） ──
+  // ── 应用级协调：错误提示条（各域经 showError 端口写入，保留到用户关闭，方便复制） ──
   const errorHint = ref('')
-  let errorTimer: ReturnType<typeof setTimeout> | undefined
   function showError(err: unknown) {
     errorHint.value = err instanceof Error ? err.message : String(err)
-    if (errorTimer) clearTimeout(errorTimer)
-    errorTimer = setTimeout(() => (errorHint.value = ''), 4000)
   }
-
-  onBeforeUnmount(() => {
-    if (errorTimer) clearTimeout(errorTimer)
-  })
 
   // ── 职责域装配 ─────────────────────────────────────────────────────────
   // 连接域对 catalog/workspace 的端口延迟绑定：端口只在用户交互（连接成功、删除连接）

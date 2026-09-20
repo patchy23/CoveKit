@@ -67,14 +67,14 @@ watch(filtered, (projects) => {
     <p
       v-if="!connected"
       role="alert"
-      class="px-md py-sm text-body-sm text-warning-strong dark:text-warning-dark"
+      class="select-text px-md py-sm text-body-sm text-warning-strong dark:text-warning-dark"
     >
       SSH 已断开，请恢复连接后操作。
     </p>
     <p
       v-if="error"
       role="alert"
-      class="px-md py-sm text-body-sm text-danger-strong dark:text-danger-dark"
+      class="select-text px-md py-sm text-body-sm text-danger-strong dark:text-danger-dark"
     >
       {{ error }}
     </p>

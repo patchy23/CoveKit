@@ -128,7 +128,9 @@ async function restartNow() {
         {{ t('storageRecovery.note') }}
       </p>
 
-      <p v-if="error" class="text-body-sm text-danger-strong dark:text-danger-dark">{{ error }}</p>
+      <p v-if="error" class="select-text text-body-sm text-danger-strong dark:text-danger-dark">
+        {{ error }}
+      </p>
     </div>
     <template v-if="state" #footer>
       <UiButton v-if="state.canRetry" :disabled="busy" @click="retry">

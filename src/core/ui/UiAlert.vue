@@ -36,7 +36,7 @@ const classes = computed(() => cn(alertVariants({ tone: props.tone, size: props.
 <template>
   <!-- danger 是断言性反馈（校验失败/操作出错），用 role=alert 让读屏立即播报；其余 tone 用 status -->
   <div :class="classes" :role="tone === 'danger' ? 'alert' : 'status'">
-    <p v-if="title" class="mb-xs font-semibold">{{ title }}</p>
-    <div class="leading-relaxed"><slot /></div>
+    <p v-if="title" class="select-text mb-xs font-semibold">{{ title }}</p>
+    <div class="select-text leading-relaxed"><slot /></div>
   </div>
 </template>

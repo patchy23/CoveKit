@@ -104,7 +104,7 @@ async function open(url: string) {
     <p
       v-if="error || saveError || linkError"
       role="alert"
-      class="px-md pb-sm text-body-sm text-danger-strong dark:text-danger-dark"
+      class="select-text px-md pb-sm text-body-sm text-danger-strong dark:text-danger-dark"
     >
       {{ [error, saveError, linkError].filter(Boolean).join('；') }}
     </p>

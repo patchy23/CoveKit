@@ -108,7 +108,10 @@ function onSaved(summary: CredentialSummary) {
     @close="formOpen = false"
     @saved="onSaved"
   />
-  <p v-if="selectionError" class="text-caption text-danger-strong dark:text-danger-dark">
+  <p
+    v-if="selectionError"
+    class="select-text text-caption text-danger-strong dark:text-danger-dark"
+  >
     {{ selectionError }}
   </p>
 </template>

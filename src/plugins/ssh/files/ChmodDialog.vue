@@ -118,7 +118,9 @@ const PERMS = ['读', '写', '执行'] as const
           :class="octalError ? '!border-danger-strong' : ''"
           @input="onOctalInput"
         />
-        <span v-if="octalError" class="text-caption text-danger-strong">{{ octalError }}</span>
+        <span v-if="octalError" class="select-text text-caption text-danger-strong">{{
+          octalError
+        }}</span>
         <span v-else class="text-caption text-text-muted">八进制（矩阵自动同步）</span>
       </div>
 

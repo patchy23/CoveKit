@@ -263,7 +263,10 @@ async function submit() {
           />
           <div class="min-w-0">
             <span>{{ s.label }}</span>
-            <p v-if="s.error" class="text-caption text-danger-strong dark:text-danger-dark">
+            <p
+              v-if="s.error"
+              class="select-text text-caption text-danger-strong dark:text-danger-dark"
+            >
               {{ s.error }}
             </p>
           </div>

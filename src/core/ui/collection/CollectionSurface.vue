@@ -202,7 +202,7 @@ const insertion = computed(() => {
       <div
         v-if="error"
         role="alert"
-        class="px-[8px] py-[6px] text-danger-strong dark:text-danger-dark"
+        class="select-text px-[8px] py-[6px] text-danger-strong dark:text-danger-dark"
       >
         {{ error }}<UiButton size="xs" variant="ghost" @click="emit('retry')">重试</UiButton>
       </div>
