@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import {
   UiButton,
+  UiCodeEditor,
   UiIcon,
   UiIconButton,
   UiInput,
@@ -29,7 +30,7 @@ import { useDatabaseToolLifecycle } from './toolLifecycle'
 
 const db = useDatabase()
 // 工具资源生命周期：关闭页签/退出时断开全部数据库连接（T10-4）
-useDatabaseToolLifecycle()
+useDatabaseToolLifecycle(db)
 const settings = useSettingsStore()
 const defaultInspectorOpen = typeof window !== 'undefined' && window.innerWidth >= 1200
 const inspectorOpen = computed(() =>
@@ -74,6 +75,7 @@ const { visibleItems: visibleTabs, hiddenItems: hiddenTabs } = useTabsOverflow(
 const tabMenu = ref<{ x: number; y: number; tabId: string } | null>(null)
 const renameDialogOpen = ref(false)
 const renameValue = ref('')
+const renameTarget = ref('')
 
 const tabMenuItems = computed<UiContextMenuItem[]>(() => {
   if (!tabMenu.value) return []
@@ -82,6 +84,7 @@ const tabMenuItems = computed<UiContextMenuItem[]>(() => {
     {
       label: '重命名',
       onClick: () => {
+        renameTarget.value = tab?.id ?? ''
         renameValue.value = tab?.label ?? ''
         renameDialogOpen.value = true
       },
@@ -99,7 +102,7 @@ function onTabContext(value: string, mouse: MouseEvent) {
 }
 
 function confirmRename() {
-  db.renameActiveTab(renameValue.value)
+  db.renameActiveTab(renameValue.value, renameTarget.value)
   renameDialogOpen.value = false
 }
 
@@ -145,6 +148,7 @@ function onEditConnection(connection: DbConnectionInfo) {
     connectTimeoutMs,
   } = connection
   editingConnection.value = {
+    credentialId: connection.credentialId,
     id,
     label,
     dbType,
@@ -163,12 +167,12 @@ function onEditConnection(connection: DbConnectionInfo) {
 async function onSaved(config: ConnConfig) {
   // 只刷新列表（保存后列表/右键菜单/编辑预填必须是最新配置）；
   // 不自动连接——用户双击左侧列表再连接
+  db.invalidateConnectionMeta(config.id)
   await db.refreshConnections()
-  void config
 }
 
 onMounted(() => {
-  void db.refreshConnections()
+  void db.refreshConnections().then(db.restoreDrafts)
   void db.refreshHistory()
   void db.refreshSaved()
 })
@@ -234,10 +238,10 @@ onMounted(() => {
         </div>
       </div>
 
-      <template v-else-if="db.activeTabKind.value === 'query'">
-        <QueryTab :db="db" />
-      </template>
-      <template v-else-if="db.activeTabKind.value === 'data'">
+      <KeepAlive>
+        <QueryTab v-if="db.activeTab.value && db.activeTabKind.value === 'query'" :db="db" />
+      </KeepAlive>
+      <template v-if="db.activeTab.value && db.activeTabKind.value === 'data'">
         <DataTab :db="db" />
       </template>
       <template v-else-if="db.activeTabKind.value === 'structure'">
@@ -290,6 +294,28 @@ onMounted(() => {
       @close="tabMenu = null"
     />
 
+    <UiModal
+      :open="Boolean(db.executionConfirmation.value)"
+      title="确认数据库操作"
+      size="lg"
+      @close="db.confirmExecution(false)"
+    >
+      <div class="space-y-[8px]">
+        <p class="text-body font-medium">{{ db.executionConfirmation.value?.target }}</p>
+        <p class="text-caption text-secondary">{{ db.executionConfirmation.value?.summary }}</p>
+        <UiCodeEditor
+          :model-value="db.executionConfirmation.value?.sql ?? ''"
+          language="sql"
+          readonly
+          class="h-[240px]"
+        />
+      </div>
+      <template #footer>
+        <UiButton size="xs" variant="ghost" @click="db.confirmExecution(false)">取消</UiButton>
+        <UiButton size="xs" variant="danger" @click="db.confirmExecution(true)">确认执行</UiButton>
+      </template>
+    </UiModal>
+
     <!-- 重命名页签 -->
     <UiModal
       :open="renameDialogOpen"
@@ -319,4 +345,27 @@ onMounted(() => {
       @close="editorMenu = null"
     />
   </div>
+  <UiModal
+    :open="!!db.closeConfirmation.value"
+    title="关闭页签"
+    size="sm"
+    @close="db.confirmClose(false)"
+  >
+    <p class="text-body-sm">{{ db.closeConfirmation.value?.label }}</p>
+    <p v-if="db.closeConfirmation.value?.dirty" class="mt-sm text-caption">
+      未保存的修改会丢失，请先保存需要保留的 SQL。
+    </p>
+    <p v-if="db.closeConfirmation.value?.transaction" class="mt-sm text-caption">
+      此页签有活动事务，关闭会话将回滚未提交的修改。
+    </p>
+    <p v-if="db.closeConfirmation.value?.running" class="mt-sm text-caption">
+      查询仍在运行，关闭将请求取消；已完成的写入不会因此撤销。
+    </p>
+    <template #footer
+      ><UiButton size="xs" variant="secondary" @click="db.confirmClose(false)">返回</UiButton
+      ><UiButton size="xs" variant="primary" @click="db.confirmClose(true)"
+        >确认关闭</UiButton
+      ></template
+    >
+  </UiModal>
 </template>

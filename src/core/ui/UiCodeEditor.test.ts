@@ -10,6 +10,7 @@ import { defineComponent, h, nextTick, ref } from 'vue'
 import UiCodeEditor from './UiCodeEditor.vue'
 import EditorSearchBar from './editor/EditorSearchBar.vue'
 import { EditorView } from '@codemirror/view'
+import { undo } from '@codemirror/commands'
 import { currentCompletions, startCompletion, closeCompletion } from '@codemirror/autocomplete'
 import { MySQL, sql } from '@codemirror/lang-sql'
 
@@ -359,5 +360,38 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
     expect(wrapper.find('.cm-foldGutter').exists()).toBe(false)
     expect(wrapper.text()).toContain('512KB')
     wrapper.unmount()
+  })
+})
+
+describe('独立文档的编辑状态', () => {
+  it('切换保留各自撤销和光标，关闭文档释放旧历史', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'A', language: 'text', documentKey: 'a', documentKeys: ['a', 'b'] },
+      attachTo: document.body,
+    })
+    try {
+      await settle()
+      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+      view.dispatch({ changes: { from: 1, insert: '1' }, selection: { anchor: 2 } })
+      await wrapper.setProps({ modelValue: 'A1' })
+      await wrapper.setProps({ documentKey: 'b', modelValue: 'B' })
+      view.dispatch({ changes: { from: 1, insert: '2' }, selection: { anchor: 2 } })
+      await wrapper.setProps({ modelValue: 'B2' })
+      await wrapper.setProps({ documentKey: 'a', modelValue: 'A1' })
+      expect(view.state.selection.main.head).toBe(2)
+      expect(undo(view)).toBe(true)
+      expect(view.state.doc.toString()).toBe('A')
+      await wrapper.setProps({ modelValue: 'A' })
+      await wrapper.setProps({ documentKey: 'b', modelValue: 'B2', documentKeys: ['b'] })
+      expect(view.state.doc.toString()).toBe('B2')
+      expect(undo(view)).toBe(true)
+      expect(view.state.doc.toString()).toBe('B')
+      await wrapper.setProps({ modelValue: 'B' })
+      await wrapper.setProps({ documentKey: 'a', modelValue: 'new A', documentKeys: ['a', 'b'] })
+      expect(undo(view)).toBe(false)
+      expect(view.state.doc.toString()).toBe('new A')
+    } finally {
+      wrapper.unmount()
+    }
   })
 })

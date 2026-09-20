@@ -38,10 +38,12 @@ export const DB_TYPE_META: Record<V2DbType, { label: string; icon: string }> = {
 }
 
 /** 新建连接对话框的类型选项（九宫格，含图标） */
-export const DB_TYPE_OPTIONS = (Object.keys(DB_TYPE_META) as V2DbType[]).map((value) => ({
-  value,
-  ...DB_TYPE_META[value],
-}))
+export const DB_TYPE_OPTIONS = (Object.keys(DB_TYPE_META) as V2DbType[])
+  .map((value) => ({
+    value,
+    ...DB_TYPE_META[value],
+  }))
+  .filter((option) => option.value !== 'dameng')
 
 /** 默认端口（新建对话框预填） */
 export const DEFAULT_PORT: Record<V2DbType, number> = {

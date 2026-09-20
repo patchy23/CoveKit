@@ -78,6 +78,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   async function applyLanguage(): Promise<void> {
     const info = resolveLanguage()
     languageInfo.value = info
+    const request = ++languageRequest
     const injected = options.languageExtension?.()
     // 空数组等价于「未注入」（调用方默认传 []），避免把空语言扩展当成有效配置
     const hasInjected = Array.isArray(injected) ? injected.length > 0 : Boolean(injected)
@@ -87,7 +88,6 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
       current.dispatch({ effects: languageCompartment.reconfigure(injected ?? []) })
       return
     }
-    const request = ++languageRequest
     const extension = await loadLanguage(info, options.filename())
     const current = view.value
     if (destroyed || !current || request !== languageRequest) return
@@ -163,15 +163,10 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     return false
   }
 
-  /** 创建 EditorView（仅执行一次） */
-  function mount(): void {
-    const parent = host.value
-    if (!parent || view.value) return
-    destroyed = false
-    languageInfo.value = resolveLanguage()
-
-    const state = EditorState.create({
-      doc: options.modelValue(),
+  /** 同一个编辑器内创建新文档的独立 state，复用公共扩展契约。 */
+  function createState(document: string): EditorState {
+    return EditorState.create({
+      doc: document,
       extensions: [
         Prec.high(
           keymap.of(
@@ -215,6 +210,16 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
         }),
       ],
     })
+  }
+
+  /** 创建 EditorView（仅执行一次） */
+  function mount(): void {
+    const parent = host.value
+    if (!parent || view.value) return
+    destroyed = false
+    languageInfo.value = resolveLanguage()
+
+    const state = createState(options.modelValue())
 
     view.value = new EditorView({ parent, state })
     savedSnapshot = state.doc.toString()
@@ -226,6 +231,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   /** 销毁 EditorView */
   function destroy(): void {
     destroyed = true
+    documents.clear()
     view.value?.destroy()
     view.value = null
   }
@@ -344,8 +350,55 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     return getValue() !== savedSnapshot
   }
 
-  // 外部值变化 → 同步进编辑器（writeValue 内部抑制 change 回调）
-  watch(options.modelValue, (value) => writeValue(value, false))
+  // 文档身份与文本一起观察，先保存旧 state 再同步新文本，避免跨页污染撤销栈。
+  const documents = new Map<
+    string,
+    { state: EditorState; top: number; left: number; saved: string }
+  >()
+  let activeDocument = options.documentKey?.() ?? ''
+  watch([() => options.documentKey?.() ?? '', options.modelValue], ([key, value]) => {
+    const current = view.value
+    if (!current) return
+    if (key !== activeDocument) {
+      if (
+        activeDocument &&
+        (!options.documentKeys?.() || options.documentKeys().includes(activeDocument))
+      )
+        documents.set(activeDocument, {
+          state: current.state,
+          top: current.scrollDOM.scrollTop,
+          left: current.scrollDOM.scrollLeft,
+          saved: savedSnapshot,
+        })
+      const cached = documents.get(key)
+      current.setState(cached?.state ?? createState(value))
+      activeDocument = key
+      savedSnapshot = cached?.saved ?? value
+      current.scrollDOM.scrollTop = cached?.top ?? 0
+      current.scrollDOM.scrollLeft = cached?.left ?? 0
+      docStats.init(current.state)
+      current.dispatch({
+        effects: [
+          extraCompartment.reconfigure(options.extraExtensions?.() ?? []),
+          auxCompartment.reconfigure(auxExtensions()),
+          editableCompartment.reconfigure(editableExtension(readOnlyNow())),
+          tabSizeCompartment.reconfigure(indentExtension(options.tabSize())),
+          wrappingCompartment.reconfigure(wrappingExtension(options.lineWrapping())),
+        ],
+      })
+      void applyLanguage()
+      search.refresh()
+    }
+    writeValue(value, false)
+  })
+  watch(
+    () => options.documentKeys?.(),
+    (keys) => {
+      if (!keys) return
+      const allowed = new Set(keys)
+      for (const key of documents.keys()) if (!allowed.has(key)) documents.delete(key)
+    }
+  )
 
   // 语言 / 文件名变化 → 重新识别并懒加载（校验与补全随之重配）
   watch([options.language, options.filename, () => options.languageExtension?.()], () => {
@@ -407,6 +460,16 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     goToLine,
     getSelection,
     getCursor,
+    setCursor: (from: number, to: number) => {
+      const current = view.value
+      if (!current) return
+      const clamp = (offset: number) =>
+        Math.max(0, Math.min(Math.trunc(offset) || 0, current.state.doc.length))
+      current.dispatch({
+        selection: { anchor: clamp(from), head: clamp(to) },
+        scrollIntoView: true,
+      })
+    },
     insert,
     undo,
     redo,

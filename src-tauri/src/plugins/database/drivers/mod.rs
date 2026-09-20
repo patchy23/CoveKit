@@ -14,9 +14,11 @@ pub(crate) mod connection;
 pub(crate) mod execution;
 pub(crate) mod probe;
 pub(crate) mod session;
+pub(crate) mod workspace;
+pub use workspace::WorkspaceState;
 
 pub use connection::{connect, disconnect, test_connection};
-pub(crate) use execution::{build_cancel_handle, execute_agent, json_cell_str};
+pub(crate) use execution::execute_agent;
 pub use session::{
     snapshot, AgentRuntimeState, CancelHandle, DbCancelState, DbSession, DbSessionEntry, DbState,
 };

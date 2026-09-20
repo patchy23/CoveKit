@@ -19,6 +19,9 @@ fn session(state: &State<'_, DbState>, conn_id: &str) -> Result<DbSessionEntry, 
 
 /// 在会话上执行一条无结果集语句（管理 DDL/DCL 用），返回影响行数
 async fn exec_admin(entry: &DbSessionEntry, sql: &str) -> Result<u64, String> {
+    if entry.config.readonly {
+        return Err("DB_READ_ONLY: 当前连接只读，拒绝管理写入".into());
+    }
     match &entry.session {
         DbSession::Mysql(pool) => {
             let mut conn = pool
@@ -272,6 +275,9 @@ pub async fn dbc_drop_database(
 /// 表维护操作统一入口（rename/truncate/drop），返回实际执行的 SQL 供前端提示
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_table_admin(
+    app: tauri::AppHandle,
+    secrets_state: State<'_, crate::plugins::database::secrets::SecretsState>,
+    database: Option<String>,
     state: State<'_, DbState>,
     conn_id: String,
     schema: Option<String>,
@@ -280,7 +286,14 @@ pub async fn dbc_table_admin(
     new_name: Option<String>,
     kind: Option<String>,
 ) -> Result<String, String> {
-    let entry = session(&state, &conn_id)?;
+    let entry = crate::plugins::database::catalog::scoped_session(
+        &app,
+        &state,
+        &secrets_state,
+        &conn_id,
+        database.as_deref(),
+    )
+    .await?;
     let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持表维护")?;
     let schema = schema.unwrap_or_default();
     let table = table.trim().to_string();
@@ -311,12 +324,22 @@ pub async fn dbc_table_admin(
 /// 表 DDL（mysql SHOW CREATE TABLE / sqlite sqlite_master；pg 等暂不支持返回提示）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_table_ddl(
+    app: tauri::AppHandle,
+    secrets_state: State<'_, crate::plugins::database::secrets::SecretsState>,
+    database: Option<String>,
     state: State<'_, DbState>,
     conn_id: String,
     schema: Option<String>,
     table: String,
 ) -> Result<String, String> {
-    let entry = session(&state, &conn_id)?;
+    let entry = crate::plugins::database::catalog::scoped_session(
+        &app,
+        &state,
+        &secrets_state,
+        &conn_id,
+        database.as_deref(),
+    )
+    .await?;
     let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持查看 DDL")?;
     // mysql 的 schema 段是库名：未传时回退连接默认库
     let schema = schema.unwrap_or_else(|| entry.config.database.clone());
@@ -338,12 +361,22 @@ pub async fn dbc_table_ddl(
 /// 表索引清单（mysql/pg 走方言 SQL；sqlite 用 PRAGMA 两段式拼）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_table_indexes(
+    app: tauri::AppHandle,
+    secrets_state: State<'_, crate::plugins::database::secrets::SecretsState>,
+    database: Option<String>,
     state: State<'_, DbState>,
     conn_id: String,
     schema: Option<String>,
     table: String,
 ) -> Result<Vec<DbIndexInfo>, String> {
-    let entry = session(&state, &conn_id)?;
+    let entry = crate::plugins::database::catalog::scoped_session(
+        &app,
+        &state,
+        &secrets_state,
+        &conn_id,
+        database.as_deref(),
+    )
+    .await?;
     let table = table.trim().to_string();
 
     // sqlite：PRAGMA index_list + index_info 两段式（方言 SQL 一次取不回）

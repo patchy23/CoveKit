@@ -39,13 +39,27 @@ pub async fn connect(
     password: &str,
 ) -> Result<DbSessionEntry, String> {
     let config = normalize_config(config);
+    if let Ok(entry) = state.entry(&config.id) {
+        if entry.config == config && state.is_current(&entry)? {
+            return Ok(entry);
+        }
+        return Err("连接配置已变化，请先断开再连接".into());
+    }
+    let generation = state.next_generation(&config.id)?;
     let started = Instant::now();
     let session = match config.db_type {
         DbType::Mysql | DbType::Polardb => {
             DbSession::Mysql(mysql::mysql_pool(&config, password).await?)
         }
         DbType::Postgresql => DbSession::Postgres(postgres::pg_pool(&config, password).await?),
-        DbType::Sqlite => DbSession::Sqlite(sqlite::sqlite_conn(&config)?),
+        DbType::Sqlite => {
+            let config = config.clone();
+            DbSession::Sqlite(
+                tokio::task::spawn_blocking(move || sqlite::sqlite_conn(&config))
+                    .await
+                    .map_err(|e| e.to_string())??,
+            )
+        }
         DbType::Redis => DbSession::Redis(redis_mgr(&config, password).await?),
         DbType::Oracle | DbType::Vastbase | DbType::Kingbase => {
             let (client, session_id) = agent_session(app, runtimes, &config, password).await?;
@@ -60,6 +74,7 @@ pub async fn connect(
     let (version, latency_ms) = probe_version(&session, &config).await;
     let latency_ms = latency_ms.unwrap_or_else(|| started.elapsed().as_millis() as u64);
     let entry = DbSessionEntry {
+        generation,
         config: config.clone(),
         session,
         version,
@@ -70,8 +85,28 @@ pub async fn connect(
             .unwrap_or(0),
     };
 
-    let mut map = state.0.lock().map_err(|e| e.to_string())?;
-    map.insert(config.id.clone(), entry.clone());
+    let accepted = {
+        let generations = state.1.lock().map_err(|e| e.to_string())?;
+        if generations.get(&config.id) == Some(&generation) {
+            state
+                .0
+                .lock()
+                .map_err(|e| e.to_string())?
+                .insert(config.id.clone(), entry.clone());
+            true
+        } else {
+            false
+        }
+    };
+    if !accepted {
+        match entry.session {
+            DbSession::Mysql(pool) => pool.disconnect().await.map_err(|e| e.to_string())?,
+            DbSession::Postgres(pool) => pool.close(),
+            DbSession::Agent { client, session_id } => client.close_session(&session_id).await?,
+            _ => {}
+        }
+        return Err("DB_CONNECTION_SUPERSEDED: 连接已取消或配置已变化".into());
+    }
     Ok(entry)
 }
 
@@ -111,13 +146,18 @@ pub async fn test_connection(
             Ok(version)
         }
         DbType::Sqlite => {
-            let conn = sqlite::sqlite_conn(&config)?;
-            let version: String = conn
-                .lock()
-                .map_err(|e| e.to_string())?
-                .query_row("SELECT sqlite_version()", [], |r| r.get::<_, String>(0))
-                .map_err(|e| e.to_string())?;
-            Ok(version)
+            let path = config.host.clone();
+            tokio::task::spawn_blocking(move || {
+                let conn = rusqlite::Connection::open_with_flags(
+                    path,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                )
+                .map_err(|e| format!("SQLite 测试只打开已有文件；新文件请保存后连接创建：{e}"))?;
+                conn.query_row("SELECT sqlite_version()", [], |r| r.get::<_, String>(0))
+                    .map_err(|e| e.to_string())
+            })
+            .await
+            .map_err(|e| e.to_string())?
         }
         DbType::Redis => {
             let mgr = redis_mgr(&config, password).await?;
@@ -153,6 +193,8 @@ pub async fn disconnect(
     conn_id: &str,
 ) -> Result<(), String> {
     let entry = {
+        let mut generations = state.1.lock().map_err(|e| e.to_string())?;
+        generations.insert(conn_id.to_string(), uuid::Uuid::new_v4());
         let mut map = state.0.lock().map_err(|e| e.to_string())?;
         map.remove(conn_id)
     };
@@ -201,14 +243,7 @@ async fn agent_session(
     let store = DriverStore::new(app)?;
     let binary = store.ensure_driver(config.db_type)?;
     let client = agent_client_for(app, runtimes, config.db_type, &binary).await?;
-    let session_id = format!(
-        "{}-{}",
-        config.id,
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    );
+    let session_id = format!("{}-{}", config.id, uuid::Uuid::new_v4());
     let params = connect_params(config, password, &session_id);
     client.open_session(&params).await?;
     Ok((client, session_id))
@@ -222,24 +257,51 @@ async fn agent_client_for(
     binary: &std::path::Path,
 ) -> Result<Arc<AgentClient>, String> {
     let key = crate::plugins::database::agent::driver_key(db_type);
-    if let Some(client) = runtimes.0.lock().map_err(|e| e.to_string())?.get(key) {
-        return Ok(client.clone());
+    let existing = runtimes
+        .0
+        .lock()
+        .map_err(|e| e.to_string())?
+        .get(key)
+        .cloned();
+    if let Some(client) = existing {
+        if client.is_running()? {
+            return Ok(client);
+        }
+        let mut map = runtimes.0.lock().map_err(|e| e.to_string())?;
+        if map
+            .get(key)
+            .is_some_and(|current| Arc::ptr_eq(current, &client))
+        {
+            map.remove(key);
+        }
     }
     let store = DriverStore::new(app)?;
     let dir = store.driver_dir(db_type)?;
     let client = AgentClient::spawn(binary, &dir).await?;
     client.handshake().await?;
     let client = Arc::new(client);
-    runtimes
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(key, client.clone());
+    let existing = {
+        let mut map = runtimes.0.lock().map_err(|e| e.to_string())?;
+        if let Some(existing) = map.get(key) {
+            Some(existing.clone())
+        } else {
+            map.insert(key, client.clone());
+            None
+        }
+    };
+    if let Some(existing) = existing {
+        client.shutdown().await?;
+        return Ok(existing);
+    }
     Ok(client)
 }
 
 /// 组装 agent 连接参数（snake_case，对齐 dbx ConnectParams）
-fn connect_params(config: &ConnConfig, password: &str, session_id: &str) -> AgentConnectParams {
+pub(crate) fn connect_params(
+    config: &ConnConfig,
+    password: &str,
+    session_id: &str,
+) -> AgentConnectParams {
     AgentConnectParams {
         session_id: session_id.to_string(),
         session_role: "workload",
@@ -253,38 +315,40 @@ fn connect_params(config: &ConnConfig, password: &str, session_id: &str) -> Agen
 }
 
 /// PostgreSQL 键标记探测（PK/UK）
-async fn redis_mgr(
+pub(crate) async fn redis_mgr(
     config: &ConnConfig,
     password: &str,
 ) -> Result<::redis::aio::ConnectionManager, String> {
-    let db_index = config
-        .database
-        .trim_start_matches("db")
-        .parse::<u8>()
-        .unwrap_or(0);
-    let url = if password.is_empty() {
-        format!("redis://{}:{}/{}", config.host, config.port, db_index)
+    let index = config.database.trim().trim_start_matches("db");
+    let db_index: u32 = if index.is_empty() {
+        0
     } else {
-        format!(
-            "redis://:{}@{}:{}/{}",
-            urlencode(password),
-            config.host,
-            config.port,
-            db_index
-        )
+        index
+            .parse()
+            .map_err(|_| "Redis 数据库索引必须是非负整数")?
     };
+    let scheme = if config.ssl { "rediss" } else { "redis" };
+    let authority = if config.username.is_empty() && password.is_empty() {
+        String::new()
+    } else {
+        format!("{}:{}@", urlencode(&config.username), urlencode(password))
+    };
+    let url = format!(
+        "{scheme}://{authority}{}:{}/{db_index}",
+        config.host, config.port
+    );
     let client =
         ::redis::Client::open(url.as_str()).map_err(|e| format!("Redis 地址解析失败: {e}"))?;
     // 连接管理器建立带超时（防挂起）
     let mgr = tokio::time::timeout(
-        std::time::Duration::from_millis(config.connect_timeout_ms.max(30000)),
+        std::time::Duration::from_millis(config.connect_timeout_ms.clamp(1000, 120_000)),
         ::redis::aio::ConnectionManager::new(client),
     )
     .await
     .map_err(|_| {
         format!(
             "Redis 连接超时（{} ms）",
-            config.connect_timeout_ms.max(30000)
+            config.connect_timeout_ms.clamp(1000, 120_000)
         )
     })?
     .map_err(|e| format!("Redis 连接失败: {e}"))?;
@@ -332,6 +396,7 @@ mod tests {
     #[test]
     fn connect_params_use_snake_case() {
         let config = ConnConfig {
+            credential_id: None,
             id: "c1".into(),
             label: "测试".into(),
             db_type: DbType::Oracle,

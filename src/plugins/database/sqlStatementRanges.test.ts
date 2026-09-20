@@ -104,3 +104,21 @@ describe('statementStartOffset', () => {
     expect(statementStartOffset(ranges[1])).toBe(12)
   })
 })
+
+describe('方言语句体', () => {
+  it('保留 dollar quote 与嵌套注释内的分号', () => {
+    const sql = "SELECT $body$a;'b$body$; /* 外 /* 内; */ 外; */ SELECT 2;"
+    expect(splitSqlStatements(sql, 'postgresql').map((range) => range.sql)).toEqual([
+      "SELECT $body$a;'b$body$;",
+      ' /* 外 /* 内; */ 外; */ SELECT 2;',
+    ])
+  })
+  it('脚本中间的 SQLite trigger 是一个执行单元', () => {
+    const sql =
+      'CREATE TABLE t(id); CREATE TRIGGER tr AFTER INSERT ON t BEGIN UPDATE t SET id=2; SELECT CASE WHEN 1 THEN 2 END; END; SELECT 1;'
+    expect(splitSqlStatements(sql, 'sqlite')).toHaveLength(3)
+  })
+  it('Oracle 程序块不被行侧执行按钮切开', () => {
+    expect(splitSqlStatements('BEGIN null; null; END;\n/', 'oracle')).toHaveLength(1)
+  })
+})

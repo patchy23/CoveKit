@@ -8,23 +8,41 @@
  * （activeTabConnectionId/activeTabSchema）与命令函数（openDataTab/openRedisKeyTab 等），
  * 不把可写页签状态对象交给别的域。
  */
-import { computed, ref } from 'vue'
+import { computed, markRaw, ref, watch, onScopeDispose } from 'vue'
 import type { ComputedRef } from 'vue'
 import type { UiDataGridColumn, UiTabItem } from '@/core/ui'
 import type { V2QueryStatus, V2Tab, V2TabKind } from '../useDatabaseMeta'
 import type {
+  QueryDraft,
+  DbValue,
+  TableOptions,
+  QueryResult,
   DbColumnInfo,
   DbConnectionInfo,
   DbIndexInfo,
   HistoryEntry,
   SavedEntry,
 } from '../contracts'
-import { adminIpc, queryIpc } from '../ipc'
+import { adminIpc, queryIpc, draftIpc } from '../ipc'
 import { formatSql } from '../sqlFormat'
 import { nextRequestId } from '../requestId'
 
 /** 查询页签状态（真实后端字段） */
 export interface QueryState {
+  selection?: { from: number; to: number }
+  transactionActive?: boolean
+  tableOptions?: TableOptions
+  querySql?: string
+  queryParams?: DbValue[]
+  exactCount?: string
+  hasMore?: boolean
+  totalKind?: string
+  stableOrder?: boolean
+  values: DbValue[][]
+  statements: QueryResult[]
+  activeStatement: number
+  cancelRequested: boolean
+  filePath?: string
   sql: string
   status: V2QueryStatus
   error: string
@@ -59,9 +77,18 @@ export function extractExecSql(text: string, start: number, end: number): string
   return text.slice(lineStart, lineEnd)
 }
 
+function historyStatus(error: string): string {
+  if (error.includes('DB_OUTCOME_UNKNOWN')) return 'unknown'
+  if (error.includes('DB_CANCELLED')) return 'cancelled'
+  return 'error'
+}
 function makeQueryState(sql = ''): QueryState {
   return {
     sql,
+    values: [],
+    statements: [],
+    activeStatement: 0,
+    cancelRequested: false,
     status: 'idle',
     error: '',
     resultTab: 'data',
@@ -111,8 +138,9 @@ export interface QueryWorkspacePorts {
   recordHistory: (
     connId: string,
     sql: string,
-    status: 'success' | 'error',
-    durationMs: number
+    status: string,
+    durationMs: number,
+    scope?: import('../contracts').ExecutionScope
   ) => void
   /** 新增收藏，返回收藏 id（library 域） */
   addSaved: (title: string, sql: string) => Promise<number>
@@ -128,11 +156,204 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   // ── 页签 ────────────────────────────────────────────────────────────────
   const tabs = ref<V2Tab[]>([])
   const activeTabId = ref('')
+  const closeConfirmation = ref<{
+    id: string
+    label: string
+    dirty: boolean
+    transaction: boolean
+    running: boolean
+  } | null>(null)
+  function confirmClose(approved: boolean) {
+    const pending = closeConfirmation.value
+    closeConfirmation.value = null
+    if (approved && pending) closeTab(pending.id, true)
+  }
   const tabContexts = ref<Record<string, TabContext>>({})
   const queryStates = ref<Record<string, QueryState>>({})
 
   /** 在途请求身份：页签 id → 请求 id（结果回填与取消都按它判定归属） */
+  const loadGeneration = new Map<string, number>()
+  let nextLoadGeneration = 0
+  const structureRequests = new Map<string, symbol>()
+  const structureErrors = ref<Record<string, { columns?: string; indexes?: string }>>({})
+  const resultBytes = new Map<string, number>()
+  /** 结果数组不深度代理；旧页结果总预算 64 MiB，编辑文档与事务状态不被驱逐。 */
+  function retainResult(tabId: string, state: QueryState) {
+    state.rows = markRaw(state.rows)
+    state.values = markRaw(state.values)
+    state.statements = markRaw(state.statements)
+    const size = (rows: string[][], values: DbValue[][]) =>
+      rows.reduce(
+        (sum, row) => sum + row.reduce((bytes, value) => bytes + value.length * 2 + 64, 0),
+        0
+      ) +
+      values.reduce(
+        (sum, row) =>
+          sum + row.reduce((bytes, value) => bytes + (value.value?.length ?? 0) * 2 + 128, 0),
+        0
+      )
+    const bytes =
+      size(state.rows, state.values) +
+      state.statements.reduce((sum, result) => sum + size(result.rows, result.values ?? []), 0)
+    resultBytes.delete(tabId)
+    resultBytes.set(tabId, bytes)
+    let total = [...resultBytes.values()].reduce((sum, bytes) => sum + bytes, 0)
+    for (const [id, bytes] of resultBytes) {
+      if (total <= 64 * 1024 * 1024) break
+      if (id === tabId || id === activeTabId.value) continue
+      const previous = queryStates.value[id]
+      if (!previous || previous.status === 'running') continue
+      Object.assign(previous, {
+        rows: [],
+        values: [],
+        statements: [],
+        total: 0,
+        status: 'idle',
+        resultTab: 'message',
+        error: '为限制内存占用，此页旧结果已释放；SQL 内容仍保留，可重新执行。',
+      })
+      resultBytes.delete(id)
+      total -= bytes
+    }
+  }
+  let draftsReady = false
+  let draftRestoreError = ''
+  let draftTimer: ReturnType<typeof setTimeout> | undefined
+  let draftSaving: Promise<void> = Promise.resolve()
+  const draftSnapshot = computed<QueryDraft[]>(() =>
+    tabs.value
+      .filter((tab) => tab.kind === 'query')
+      .map((tab) => {
+        const state = queryStates.value[tab.id]
+        const context = tabContexts.value[tab.id]
+        return {
+          label: tab.label,
+          sql: state.sql,
+          connectionId: context.connectionId,
+          database: context.database,
+          schema: context.schema,
+          from: state.selection?.from ?? 0,
+          to: state.selection?.to ?? 0,
+          dirty: state.dirty,
+          active: tab.id === activeTabId.value,
+          savedId: state.savedId,
+          savedTitle: state.savedTitle,
+          filePath: state.filePath,
+        }
+      })
+  )
+  function flushDrafts(): Promise<void> {
+    if (draftTimer) clearTimeout(draftTimer)
+    draftTimer = undefined
+    if (!draftsReady)
+      return draftRestoreError && draftSnapshot.value.length
+        ? Promise.reject(
+            new Error('旧草稿读取失败，已保留原记录；请先另存当前 SQL 文件：' + draftRestoreError)
+          )
+        : draftSaving
+    const snapshot = draftSnapshot.value
+    const next = draftSaving.catch(() => undefined).then(() => draftIpc.save(snapshot))
+    draftSaving = next
+    return next
+  }
+  watch(
+    draftSnapshot,
+    () => {
+      if (!draftsReady) return
+      if (draftTimer) clearTimeout(draftTimer)
+      draftTimer = setTimeout(() => {
+        void flushDrafts().catch(ports.showError)
+      }, 500)
+    },
+    { deep: true }
+  )
+  onScopeDispose(() => {
+    if (draftTimer) clearTimeout(draftTimer)
+  })
+  async function restoreDrafts() {
+    if (draftsReady) return
+    try {
+      const drafts = await draftIpc.list()
+      const previous = activeTabId.value
+      let restoredActive = ''
+      for (const draft of drafts) {
+        openSqlEditorWithSql(draft.connectionId, draft.sql, draft.database, draft.schema)
+        const id = activeTabId.value
+        tabs.value.find((tab) => tab.id === id)!.label = draft.label
+        Object.assign(queryStates.value[id], {
+          dirty: draft.dirty,
+          savedId: draft.savedId ?? undefined,
+          savedTitle: draft.savedTitle ?? undefined,
+          filePath: draft.filePath ?? undefined,
+          selection: {
+            from: Math.min(draft.from, draft.sql.length),
+            to: Math.min(draft.to, draft.sql.length),
+          },
+        })
+        if (draft.active) restoredActive = id
+      }
+      if (previous || restoredActive) activeTabId.value = previous || restoredActive
+      draftsReady = true
+      draftRestoreError = ''
+    } catch (error) {
+      draftRestoreError = String(error)
+      ports.showError(error)
+    }
+  }
   const inFlight = new Map<string, string>()
+  watch(ports.connections, (connections) => {
+    for (const [id, context] of Object.entries(tabContexts.value)) {
+      if (
+        connections.some(
+          (connection) => connection.id === context.connectionId && connection.status === 'online'
+        )
+      )
+        continue
+      const state = queryStates.value[id]
+      if (!state) continue
+      state.transactionActive = false
+      if (inFlight.has(id)) {
+        inFlight.delete(id)
+        state.status = 'error'
+        state.error = '连接已断开，请重新连接后执行；此前写入结果请核对数据库。'
+        state.resultTab = 'message'
+      }
+    }
+  })
+  const executionConfirmation = ref<{ target: string; summary: string; sql: string } | null>(null)
+  let resolveConfirmation: ((approved: boolean) => void) | null = null
+  function confirmExecution(approved: boolean) {
+    resolveConfirmation?.(approved)
+    resolveConfirmation = null
+    executionConfirmation.value = null
+  }
+  async function requestExecutionConfirmation(
+    preview: { target: string; summary: string },
+    sql: string
+  ): Promise<boolean> {
+    if (resolveConfirmation) throw new Error('请先处理当前待确认的数据库操作')
+    executionConfirmation.value = { ...preview, sql }
+    return new Promise<boolean>((resolve) => {
+      resolveConfirmation = resolve
+    })
+  }
+  function selectStatement(index: number) {
+    const result = queryState.value.statements[index]
+    if (!result) return
+    patchQueryState({
+      activeStatement: index,
+      columns: result.columns,
+      rows: result.rows,
+      values: result.values ?? [],
+      total: result.rows.length,
+      affected: result.rowsAffected,
+      truncated: result.truncated,
+      page: 1,
+      error: result.error ?? '',
+      resultTab: result.ok ? 'data' : 'message',
+      status: result.ok ? 'success' : 'error',
+    })
+  }
   const structureColumns = ref<Record<string, DbColumnInfo[]>>({})
   /** 结构页签 · 索引子页签数据 */
   const structureIndexes = ref<Record<string, DbIndexInfo[]>>({})
@@ -231,7 +452,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
 
   /** 表/视图数据页签（树选中「查看数据」入口）：库/schema 取叶子所在 scope，随后加载首页 */
   function openDataTab(connId: string, table: string, database: string, schema: string) {
-    const tabId = `data-${connId}-${table}`
+    const tabId = `data-${JSON.stringify([connId, database, schema, table])}`
     openOrFocusTab(tabId, `${table} · 数据`, 'data', connId, table)
     tabContexts.value[tabId].database = database
     tabContexts.value[tabId].schema = schema
@@ -240,8 +461,11 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
 
   /** Redis 键页签（树选中「查看数据」入口）：打开并加载键信息 */
   function openRedisKeyTab(connId: string, key: string) {
-    const tabId = `redis-${connId}-${key}`
+    const database =
+      ports.connections.value.find((connection) => connection.id === connId)?.database ?? ''
+    const tabId = `redis-${JSON.stringify([connId, database, key])}`
     openOrFocusTab(tabId, `${key} · 键`, 'redis', connId, key)
+    tabContexts.value[tabId].database = database
     void loadRedisKeyInfo(tabId, key)
   }
 
@@ -266,7 +490,10 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     database?: string,
     schema?: string
   ) {
-    const id = `structure-${connectionId}-${table}`
+    database ??=
+      ports.connections.value.find((connection) => connection.id === connectionId)?.database ?? ''
+    schema ??= ''
+    const id = `structure-${JSON.stringify([connectionId, database, schema, table])}`
     openOrFocusTab(id, `${table} · 结构`, 'structure', connectionId, table)
     if (database !== undefined) tabContexts.value[id].database = database
     if (schema !== undefined) tabContexts.value[id].schema = schema
@@ -286,23 +513,46 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     return tabs.value.find((t) => t.id === tabId)?.label ?? 'SQL编辑器'
   }
 
-  function closeTab(id: string) {
+  function closeTab(id: string, force = false) {
+    const source = queryStates.value[id]
+    if (
+      !force &&
+      source &&
+      (source.dirty || source.transactionActive || source.status === 'running')
+    ) {
+      closeConfirmation.value = {
+        id,
+        label: tabs.value.find((tab) => tab.id === id)?.label ?? '页签',
+        dirty: source.dirty,
+        transaction: !!source.transactionActive,
+        running: source.status === 'running',
+      }
+      return
+    }
+    const ctx = tabContexts.value[id]
+    const request = inFlight.get(id)
+    if (request) void queryIpc.cancel(request).catch(ports.showError)
+    if (ctx) void queryIpc.closeWorkspace(ctx.connectionId, id).catch(ports.showError)
     tabs.value = tabs.value.filter((t) => t.id !== id)
     delete tabContexts.value[id]
     delete queryStates.value[id]
     delete structureColumns.value[id]
+    delete structureIndexes.value[id]
+    delete structureDdl.value[id]
+    delete structureErrors.value[id]
+    structureRequests.delete(`columns:${id}`)
+    structureRequests.delete(`extras:${id}`)
+    resultBytes.delete(id)
+    loadGeneration.delete(id)
+    inFlight.delete(id)
     if (activeTabId.value === id) activeTabId.value = tabs.value[0]?.id ?? ''
   }
 
   /** 连接被删除：关闭其下全部页签与页签状态（connection 域经端口调用） */
   function closeTabsForConnection(connectionId: string) {
-    tabs.value = tabs.value.filter((t) => tabContexts.value[t.id]?.connectionId !== connectionId)
-    Object.keys(tabContexts.value).forEach((tid) => {
-      if (tabContexts.value[tid].connectionId === connectionId) {
-        delete tabContexts.value[tid]
-        delete queryStates.value[tid]
-      }
-    })
+    for (const tab of [...tabs.value]) {
+      if (tabContexts.value[tab.id]?.connectionId === connectionId) closeTab(tab.id, true)
+    }
   }
 
   /** 页签是否存在（catalog 关闭受影响页签前的只读判断） */
@@ -311,8 +561,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   }
 
   /** 重命名当前页签别名（仅本地；已保存的编辑器下次保存时同步到库） */
-  function renameActiveTab(label: string) {
-    const tabId = activeTabId.value
+  function renameActiveTab(label: string, tabId = activeTabId.value) {
     const tab = tabs.value.find((t) => t.id === tabId)
     if (!tab || !label.trim()) return
     tab.label = label.trim()
@@ -320,7 +569,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     if (state) state.savedTitle = label.trim()
     // 已保存的编辑器：别名立即同步到库
     if (state?.savedId && state.savedTitle) {
-      void ports.updateSaved(state.savedId, state.savedTitle, state.sql).catch(() => {})
+      void ports.updateSaved(state.savedId, state.savedTitle, state.sql).catch(ports.showError)
     }
   }
 
@@ -332,9 +581,10 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
    */
   async function saveQueryToDisk(title?: string) {
     const tabId = activeTabId.value
-    const state = (queryStates.value[tabId] ??= makeQueryState())
-    const sql = state.sql.trim()
-    if (!sql) {
+    queryStates.value[tabId] ??= makeQueryState()
+    const state = queryStates.value[tabId]
+    const sql = state.sql
+    if (!sql.trim()) {
       ports.showError('没有可保存的 SQL 内容')
       return
     }
@@ -347,7 +597,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       const tab = tabs.value.find((t) => t.id === tabId)
       if (tab) tab.label = resolved
     }
-    state.dirty = false
+    state.dirty = state.sql !== sql
     await ports.refreshSaved()
   }
 
@@ -375,7 +625,8 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
    */
   async function runQuery(sqlOverride?: string) {
     const tabId = activeTabId.value
-    const state = (queryStates.value[tabId] ??= makeQueryState())
+    queryStates.value[tabId] ??= makeQueryState()
+    const state = queryStates.value[tabId]
     if (state.status === 'running') return
     const conn = activeTabConnection.value
     if (!conn || conn.status !== 'online') {
@@ -399,9 +650,56 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     // 请求身份：后端按它登记取消句柄，本函数的回填也按它判定本次结果是否仍然有效
     const requestId = nextRequestId(tabId)
     inFlight.set(tabId, requestId)
-    patchQueryState({ status: 'running', error: '', page: 1, columns: [], rows: [], total: 0 })
+    patchQueryState({
+      status: 'running',
+      error: '',
+      page: 1,
+      columns: [],
+      rows: [],
+      values: [],
+      statements: [],
+      total: 0,
+      cancelRequested: false,
+    })
+    const ctx = tabContexts.value[tabId]
+    const scope = { database: ctx?.database ?? conn.database, schema: ctx?.schema ?? '' }
     try {
-      const result = await queryIpc.execute(conn.id, sql, 1000, requestId)
+      const preview = await queryIpc.prepare(conn.id, sql, requestId, scope)
+      if (state.cancelRequested) {
+        if (settleRequest(tabId, requestId))
+          patchTabState(state, {
+            status: 'idle',
+            error: '已取消，SQL 尚未执行',
+            resultTab: 'message',
+          })
+        return
+      }
+      if (preview.requiresConfirmation) {
+        const approved = await requestExecutionConfirmation(preview, sql)
+        if (!approved) {
+          if (settleRequest(tabId, requestId))
+            patchTabState(state, {
+              status: 'idle',
+              error: '已取消，SQL 尚未执行',
+              resultTab: 'message',
+            })
+          return
+        }
+      }
+      if (!tabs.value.some((tab) => tab.id === tabId) || inFlight.get(tabId) !== requestId) return
+      const result = await queryIpc.execute(
+        conn.id,
+        sql,
+        1000,
+        requestId,
+        tabId,
+        scope,
+        preview.confirmationToken ?? undefined
+      )
+      if (inFlight.get(tabId) !== requestId || !tabs.value.some((tab) => tab.id === tabId)) return
+      state.transactionActive = result.transactionActive ?? false
+      state.statements = result.statements ?? []
+      state.activeStatement = Math.max(0, state.statements.length - 1)
       const durationMs = Date.now() - startedAt
       // 等待期间用户可能切走页签、取消或重新执行：只有本次请求仍是该页签在途请求时才回填
       if (!settleRequest(tabId, requestId)) return
@@ -413,7 +711,8 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
           affected: result.rowsAffected,
           columns: result.columns,
           rows: result.rows,
-          total: result.rowsAffected,
+          values: result.values ?? [],
+          total: result.rows.length,
           truncated: result.truncated,
           filter: '',
         })
@@ -421,11 +720,25 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         patchTabState(state, {
           status: 'error',
           error: result.error ?? '查询失败',
+          columns: result.columns,
+          rows: result.rows,
+          values: result.values ?? [],
           resultTab: 'message',
           durationMs,
         })
       }
-      ports.recordHistory(conn.id, sql, result.ok ? 'success' : 'error', durationMs)
+      retainResult(tabId, state)
+      ports.recordHistory(
+        conn.id,
+        sql,
+        result.ok
+          ? 'success'
+          : result.statements?.some((statement) => statement.ok)
+            ? 'partial'
+            : historyStatus(result.error ?? ''),
+        durationMs,
+        scope
+      )
     } catch (err) {
       // 已取消的请求其失败不再回填（状态停留在「已取消」，不改写成错误）
       if (!settleRequest(tabId, requestId)) return
@@ -435,7 +748,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         resultTab: 'message',
         durationMs: Date.now() - startedAt,
       })
-      ports.recordHistory(conn.id, sql, 'error', Date.now() - startedAt)
+      ports.recordHistory(conn.id, sql, historyStatus(String(err)), Date.now() - startedAt, scope)
     }
   }
 
@@ -444,7 +757,8 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
    * 返回 false 表示已被取消或被新请求取代，本次结果作废。
    */
   function settleRequest(tabId: string, requestId: string): boolean {
-    if (inFlight.get(tabId) !== requestId) return false
+    if (inFlight.get(tabId) !== requestId || !tabs.value.some((tab) => tab.id === tabId))
+      return false
     inFlight.delete(tabId)
     return true
   }
@@ -456,18 +770,19 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     const requestId = inFlight.get(tabId)
     // 没有在途请求就没有取消对象，不打扰后端（取消与预期缺失不报错）
     if (!requestId) return
+    const pendingState = queryStates.value[tabId]
+    if (pendingState) pendingState.cancelRequested = true
     try {
       await queryIpc.cancel(requestId)
     } catch (err) {
       ports.showError(err)
       return
     }
-    // 该请求作废：后端迟到的结果不再回填本页签
-    inFlight.delete(tabId)
-    patchTabState(queryStates.value[tabId] ?? (queryStates.value[tabId] = makeQueryState()), {
-      status: 'cancelled',
-      resultTab: 'message',
-    })
+    const state = queryStates.value[tabId]
+    if (state && inFlight.get(tabId) === requestId) {
+      state.cancelRequested = true
+      state.error = '已请求停止，等待数据库确认；已完成的写操作不会自动撤销。'
+    }
   }
 
   function onFormatSql() {
@@ -491,14 +806,25 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     const conn = ports.connections.value.find((c) => c.id === ctx.connectionId)
     if (!conn) return
     state.status = 'running'
+    const generation = ++nextLoadGeneration
+    loadGeneration.set(tabId, generation)
     try {
       const page = await queryIpc.tableData(
         ctx.connectionId,
         table,
         state.page,
         PAGE_SIZE,
-        ipcScopeArg(conn, ctx)
+        ipcScopeArg(conn, ctx),
+        ctx.database,
+        state.tableOptions
       )
+      if (!tabContexts.value[tabId] || loadGeneration.get(tabId) !== generation) return
+      state.querySql = page.querySql
+      state.queryParams = page.queryParams
+      state.hasMore = page.hasMore
+      state.totalKind = page.totalKind
+      state.stableOrder = page.stableOrder
+      state.values = page.values ?? []
       state.columns = page.columns
       state.rows = page.rows
       state.total = page.total
@@ -507,7 +833,10 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       state.status = page.error ? 'error' : 'success'
       state.error = page.error ?? ''
       state.resultTab = 'data'
+      state.selectedRow = ''
+      retainResult(tabId, state)
     } catch (err) {
+      if (!tabContexts.value[tabId] || loadGeneration.get(tabId) !== generation) return
       state.status = 'error'
       state.error = String(err)
       state.resultTab = 'message'
@@ -532,50 +861,87 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     if (!table) return
     const conn = ports.connections.value.find((c) => c.id === ctx.connectionId)
     if (!conn) return
+    const request = Symbol()
+    structureRequests.set(`columns:${tabId}`, request)
+    structureErrors.value[tabId] ??= {}
+    delete structureErrors.value[tabId].columns
+    delete structureColumns.value[tabId]
+    const current = () =>
+      tabContexts.value[tabId] === ctx && structureRequests.get(`columns:${tabId}`) === request
     try {
-      structureColumns.value[tabId] = await queryIpc.columns(
+      const columns = await queryIpc.columns(
         ctx.connectionId,
         table,
-        ipcScopeArg(conn, ctx)
+        ipcScopeArg(conn, ctx),
+        ctx.database
       )
+      if (current()) structureColumns.value[tabId] = columns
     } catch (err) {
-      ports.showError(err)
+      if (current()) structureErrors.value[tabId].columns = String(err)
     }
   }
 
-  /** 结构页签：加载索引与 DDL（失败降级为提示文本，不阻塞列信息展示） */
+  /** 索引与 DDL 独立加载，关闭或刷新后旧结果不得恢复缓存。 */
   async function loadStructureExtras(tabId: string) {
     const ctx = tabContexts.value[tabId]
-    if (!ctx) return
-    const table = ctx.table ?? tabTableName(tabId)
-    if (!table) return
+    if (!ctx?.table) return
     const conn = ports.connections.value.find((c) => c.id === ctx.connectionId)
     if (!conn) return
+    const request = Symbol()
+    structureRequests.set(`extras:${tabId}`, request)
+    structureErrors.value[tabId] ??= {}
+    delete structureErrors.value[tabId].indexes
+    delete structureIndexes.value[tabId]
+    delete structureDdl.value[tabId]
+    const current = () =>
+      tabContexts.value[tabId] === ctx && structureRequests.get(`extras:${tabId}`) === request
     const scope = ipcScopeArg(conn, ctx)
-    try {
-      structureIndexes.value[tabId] = await adminIpc.tableIndexes(ctx.connectionId, table, scope)
-    } catch {
-      structureIndexes.value[tabId] = []
-    }
-    try {
-      structureDdl.value[tabId] = await adminIpc.tableDdl(ctx.connectionId, table, scope)
-    } catch (err) {
-      structureDdl.value[tabId] = `-- ${String(err)}`
-    }
+    await Promise.all([
+      adminIpc
+        .tableIndexes(ctx.connectionId, ctx.table, scope, ctx.database)
+        .then((indexes) => {
+          if (current()) structureIndexes.value[tabId] = indexes
+        })
+        .catch((err: unknown) => {
+          if (current()) structureErrors.value[tabId].indexes = String(err)
+        }),
+      adminIpc
+        .tableDdl(ctx.connectionId, ctx.table, scope, ctx.database)
+        .then((ddl) => {
+          if (current()) structureDdl.value[tabId] = ddl
+        })
+        .catch((err: unknown) => {
+          if (current()) structureDdl.value[tabId] = `-- ${String(err)}`
+        }),
+    ])
   }
 
-  /** Redis 键页签：加载键信息 */
+  /** Redis 首次加载必须读取响应式代理，且刷新只接收最新请求的结果。 */
   async function loadRedisKeyInfo(tabId: string, key: string) {
     const ctx = tabContexts.value[tabId]
     if (!ctx) return
-    const state = (queryStates.value[tabId] ??= makeQueryState())
+    queryStates.value[tabId] ??= makeQueryState()
+    const state = queryStates.value[tabId]
+    const generation = ++nextLoadGeneration
+    loadGeneration.set(tabId, generation)
+    const current = () =>
+      tabContexts.value[tabId] === ctx && loadGeneration.get(tabId) === generation
+    state.status = 'running'
+    state.error = ''
+    state.rows = []
     try {
       const info = await queryIpc.redisKeyInfo(ctx.connectionId, key)
+      if (!current()) return
       state.columns = ['键', '类型', 'TTL', '值']
-      state.rows = [[info.key, info.kind, info.ttl === -1 ? '永久' : `${info.ttl}s`, info.value]]
-      state.status = 'success'
+      state.rows =
+        info.kind === 'none' || info.ttl === -2
+          ? []
+          : [[info.key, info.kind, info.ttl === -1 ? '永久' : `${info.ttl}s`, info.value]]
+      state.status = state.rows.length ? 'success' : 'empty'
       state.resultTab = 'data'
+      retainResult(tabId, state)
     } catch (err) {
+      if (!current()) return
       state.status = 'error'
       state.error = String(err)
       state.resultTab = 'message'
@@ -593,8 +959,17 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   // ──────────────────────────────────────────────────────────────────────
 
   function applyHistory(entry: HistoryEntry) {
-    if (activeTabKind.value !== 'query' || queryState.value.sql.trim()) openSqlEditor()
-    patchQueryState({ sql: entry.sql, dirty: true })
+    if (!ports.connections.value.some((connection) => connection.id === entry.connId)) {
+      ports.showError('历史记录所属连接已删除，请复制 SQL 后选择目标连接')
+      return
+    }
+    openSqlEditorWithSql(
+      entry.connId,
+      entry.sql,
+      entry.database || undefined,
+      entry.schema || undefined
+    )
+    patchQueryState({ dirty: true })
   }
 
   /** 打开已保存的 SQL 编辑器：同一收藏只保留一个页签（已打开则聚焦）；记住 savedId（Ctrl+S 直接更新） */
@@ -608,7 +983,8 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     }
     if (activeTabKind.value !== 'query' || queryState.value.sql.trim()) openSqlEditor()
     const tabId = activeTabId.value
-    const state = (queryStates.value[tabId] ??= makeQueryState())
+    queryStates.value[tabId] ??= makeQueryState()
+    const state = queryStates.value[tabId]
     Object.assign(state, {
       sql: entry.sql,
       dirty: false,
@@ -667,10 +1043,15 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
 
   return {
     // 状态
+    executionConfirmation,
+    confirmExecution,
+    requestExecutionConfirmation,
+    selectStatement,
     tabs,
     activeTabId,
     tabContexts,
     queryStates,
+    structureErrors,
     structureColumns,
     structureIndexes,
     structureDdl,
@@ -695,7 +1076,11 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     openRedisKeyTab,
     hasTab,
     closeTabsForConnection,
+    closeConfirmation,
+    confirmClose,
     // 页签命令
+    flushDrafts,
+    restoreDrafts,
     openSqlEditor,
     openSqlEditorWithSql,
     openCreateTableTabAt,

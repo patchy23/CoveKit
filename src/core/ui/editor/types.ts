@@ -56,6 +56,9 @@ export interface EditorContextMenuPayload {
 
 /** useCodeEditor 需要的响应式取值函数与回调（组件把 props/emit 适配进来） */
 export interface UseCodeEditorOptions {
+  /** 独立文档身份及仍存活的文档；由宿主负责页签归属，关闭即释放缓存。 */
+  documentKey?: () => string
+  documentKeys?: () => string[]
   /** 当前值 */
   modelValue: () => string
   /** 文件名（language='auto' 时用于识别） */
@@ -146,6 +149,8 @@ export interface CodeEditorHandle {
   getSelection: () => string
   /** 读取选区与光标偏移（插件封装组件按选区取文本用） */
   getCursor: () => EditorCursorRange
+  /** 恢复有界选区；不改变文档或撤销历史。 */
+  setCursor: (from: number, to: number) => void
   /** 在光标处插入文本 */
   insert: (text: string) => void
   /** 撤销 */

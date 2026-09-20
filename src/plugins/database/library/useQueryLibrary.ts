@@ -4,7 +4,7 @@
  * 因此 workspace 每完成一次执行只是经 recordHistory 端口把结果落库。
  */
 import { ref } from 'vue'
-import type { HistoryEntry, SavedEntry } from '../contracts'
+import type { ExecutionScope, HistoryEntry, SavedEntry } from '../contracts'
 import { historyIpc, savedIpc } from '../ipc'
 
 /** library 域的跨域协作端口（由根门面注入） */
@@ -37,11 +37,14 @@ export function useQueryLibrary(ports: QueryLibraryPorts) {
   function recordHistory(
     connId: string,
     sql: string,
-    status: 'success' | 'error',
-    durationMs: number
+    status: string,
+    durationMs: number,
+    scope?: ExecutionScope
   ) {
-    void historyIpc.add(connId, sql, status, durationMs).catch(() => {})
-    void refreshHistory()
+    void historyIpc
+      .add(connId, sql, status, durationMs, scope)
+      .then(refreshHistory)
+      .catch(ports.showError)
   }
 
   /** 新增收藏，返回收藏 id */

@@ -15,6 +15,13 @@ const props = defineProps<{
 }>()
 
 const { db } = props
+const historyStatusLabels: Record<string, string> = {
+  success: '成功',
+  error: '失败',
+  partial: '部分完成',
+  cancelled: '已取消',
+  unknown: '结果未知',
+}
 
 const section = ref<'overview' | 'history' | 'saved'>('overview')
 
@@ -132,7 +139,9 @@ function formatConnectedAt(epochSeconds: number): string {
       <!-- 历史 -->
       <div v-else-if="section === 'history'" class="space-y-[2px]">
         <div class="mb-[4px] flex justify-end">
-          <UiButton size="xs" variant="ghost" @click="db.clearHistory()">清空</UiButton>
+          <UiButton size="xs" variant="ghost" @click="db.clearHistory().catch(db.showError)"
+            >清空</UiButton
+          >
         </div>
         <div
           v-for="entry in db.history.value"
@@ -146,11 +155,20 @@ function formatConnectedAt(epochSeconds: number): string {
               :class="entry.status === 'success' ? 'bg-success-strong' : 'bg-danger-strong'"
             />
             <span class="text-caption text-text-muted dark:text-text-muted-dark">{{
+              historyStatusLabels[entry.status] || entry.status
+            }}</span>
+            <span class="text-caption text-text-muted dark:text-text-muted-dark">{{
               entry.at
             }}</span>
             <span class="ml-auto font-mono text-caption text-text-muted dark:text-text-muted-dark"
               >{{ entry.durationMs }} ms</span
             >
+          </div>
+          <div
+            v-if="entry.database || entry.schema"
+            class="truncate text-caption text-text-muted dark:text-text-muted-dark"
+          >
+            {{ [entry.database, entry.schema].filter(Boolean).join(' / ') }}
           </div>
           <div class="line-clamp-2 font-mono text-caption text-primary dark:text-primary-dark">
             {{ entry.sql }}

@@ -29,6 +29,7 @@ import { useDatabase } from './useDatabase'
 import DataTab from './DataTab.vue'
 import QueryTab from './QueryTab.vue'
 import StructureTab from './StructureTab.vue'
+import RedisTab from './RedisTab.vue'
 
 /* ── IPC 门面假实现（vi.hoisted：mock 工厂先于被 mock 模块的导入执行） ── */
 
@@ -41,6 +42,7 @@ const env = vi.hoisted(() => {
     dbcConnectionSave: vi.fn(),
     dbcConnectionDelete: vi.fn(),
     // 查询
+    dbcPrepare: vi.fn(),
     dbcExecute: vi.fn(),
     dbcCancel: vi.fn(),
     // 元数据与结构
@@ -58,6 +60,8 @@ const env = vi.hoisted(() => {
     dbcDropDatabase: vi.fn(),
     dbcTableAdmin: vi.fn(),
     // 历史与收藏
+    dbcDrafts: vi.fn(),
+    dbcDraftsSave: vi.fn(),
     dbcHistory: vi.fn(),
     dbcHistoryAdd: vi.fn(),
     dbcHistoryClear: vi.fn(),
@@ -75,6 +79,7 @@ const env = vi.hoisted(() => {
 })
 
 vi.mock('./ipc', () => ({
+  draftIpc: { list: env.commands.dbcDrafts, save: env.commands.dbcDraftsSave },
   connectionIpc: {
     list: env.commands.dbcConnections,
     save: env.commands.dbcConnectionSave,
@@ -84,7 +89,12 @@ vi.mock('./ipc', () => ({
     test: vi.fn(),
     driverStatus: vi.fn(),
   },
+  csvIpc: { preview: vi.fn(), import: vi.fn() },
+  fileIpc: { exportQuery: vi.fn(), readSql: vi.fn(), writeSql: vi.fn(), exportRows: vi.fn() },
+  tableIpc: { count: vi.fn(), apply: vi.fn() },
   queryIpc: {
+    prepare: env.commands.dbcPrepare,
+    closeWorkspace: vi.fn(async () => undefined),
     execute: env.commands.dbcExecute,
     cancel: env.commands.dbcCancel,
     databases: env.commands.dbcDatabases,
@@ -258,6 +268,12 @@ beforeEach(() => {
   env.commands.dbcObjects.mockResolvedValue([])
   env.commands.dbcHistory.mockResolvedValue([])
   env.commands.dbcSaved.mockResolvedValue([])
+  env.commands.dbcPrepare.mockResolvedValue({
+    requiresConfirmation: false,
+    confirmationToken: null,
+    target: '测试',
+    summary: '',
+  })
   env.commands.dbcHistoryAdd.mockResolvedValue(undefined)
   env.commands.dbcConnect.mockImplementation(async (id: string) => connection(id, id))
   env.commands.dbcDisconnect.mockResolvedValue(undefined)
@@ -293,12 +309,12 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     await flush()
     expect(panel.text()).toContain('user-051')
     expect(panel.text()).not.toContain('user-001')
-    await panel.get('input[placeholder="过滤结果…"]').setValue('user-001')
+    await panel.get('input[placeholder="筛选已加载结果…"]').setValue('user-001')
     await flush()
     expect(api.queryState.value.page).toBe(1)
     expect(panel.text()).toContain('user-001')
     expect(panel.text()).not.toContain('user-051')
-    await panel.get('input[placeholder="过滤结果…"]').setValue('不存在')
+    await panel.get('input[placeholder="筛选已加载结果…"]').setValue('不存在')
     await flush()
     expect(panel.text()).toContain('无匹配结果')
   })
@@ -345,7 +361,7 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     await flush()
     expect(api.completionTables.value.map((table) => table.name)).toEqual(['db2_table'])
     expect(await api.resolveEditorColumns('users')).toEqual(['db2_column'])
-    expect(env.commands.dbcColumns).toHaveBeenCalledWith('conn-a', 'users', 'db2')
+    expect(env.commands.dbcColumns).toHaveBeenCalledWith('conn-a', 'users', 'db2', 'db2')
     api.activeTabContext.value.database = 'db1'
     await flush()
     expect(await api.resolveEditorColumns('users')).toEqual(['db1_column'])
@@ -395,11 +411,11 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     api.openSqlEditorWithSql('pg', '', 'app', 'sales')
     env.commands.dbcColumns.mockResolvedValue([{ name: 'sales_id' }])
     expect(await api.resolveEditorColumns('users')).toEqual(['sales_id'])
-    expect(env.commands.dbcColumns).toHaveBeenLastCalledWith('pg', 'users', 'sales')
+    expect(env.commands.dbcColumns).toHaveBeenLastCalledWith('pg', 'users', 'sales', 'app')
     api.activeTabContext.value.schema = 'public'
     env.commands.dbcColumns.mockResolvedValue([{ name: 'public_id' }])
     expect(await api.resolveEditorColumns('users')).toEqual(['public_id'])
-    expect(env.commands.dbcColumns).toHaveBeenLastCalledWith('pg', 'users', 'public')
+    expect(env.commands.dbcColumns).toHaveBeenLastCalledWith('pg', 'users', 'public', 'app')
     await api.disconnect(api.connections.value[0])
     await api.connect(api.connections.value[0])
     env.commands.dbcColumns.mockResolvedValue([{ name: 'updated_id' }])
@@ -523,7 +539,8 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     const cancelArg = cancelCalls[cancelCalls.length - 1]?.[0] as string | undefined
     expect(cancelArg).toBe(argB.requestId)
     expect(cancelArg).not.toBe(argA.requestId)
-    expect(stateOf(api, tabB).status).toBe('cancelled')
+    expect(stateOf(api, tabB).status).toBe('running')
+    expect(stateOf(api, tabB).cancelRequested).toBe(true)
 
     // B 的取消挂起期间，A 的结果照常回填自己的页签
     runA.resolve(result({ columns: ['a'], rows: [['a1']] }))
@@ -535,7 +552,7 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     runB.reject(new Error('查询已取消'))
     await pendingB.catch(() => undefined)
     await flush()
-    expect(stateOf(api, tabB).status).toBe('cancelled')
+    expect(stateOf(api, tabB).status).toBe('error')
   })
 
   it('取消后重试：新结果写入同一页签，页签不停留在 running', async () => {
@@ -551,7 +568,13 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     await flush()
     await api.cancelQuery()
     await flush()
-    expect(stateOf(api, tabA).status).toBe('cancelled')
+    expect(stateOf(api, tabA).status).toBe('running')
+    await api.runQuery()
+    expect(env.commands.dbcExecute).toHaveBeenCalledTimes(1)
+    first.reject(new Error('查询已取消'))
+    await pendingFirst
+    await flush()
+    expect(stateOf(api, tabA).status).toBe('error')
 
     env.commands.dbcExecute.mockImplementationOnce(async () =>
       result({ columns: ['a'], rows: [['retry-ok']] })
@@ -620,6 +643,7 @@ describe('页签与连接的连带影响（决策书 §2.3 场景 4）', () => {
     await flush()
 
     api.closeTab(tabA)
+    if (api.closeConfirmation.value) api.confirmClose(true)
     await flush()
 
     expect(api.tabs.value.map((t) => t.id)).toEqual([tabB])
@@ -658,14 +682,15 @@ describe('页签与连接的连带影响（决策书 §2.3 场景 4）', () => {
     expect(env.commands.dbcDatabases.mock.calls.length).toBe(callsBefore)
   })
 
-  it('最后一个连接不允许删除（避免工作台无连接可用）', async () => {
+  it('最后一个连接可删除，工作台回到空状态', async () => {
     const api = mountWorkbench()
     env.commands.dbcConnections.mockResolvedValue([connection('conn-a', 'A 库')])
     await api.refreshConnections()
-
+    env.commands.dbcConnections.mockResolvedValue([])
     await api.removeConnection('conn-a')
-    expect(env.commands.dbcConnectionDelete).not.toHaveBeenCalled()
-    expect(api.connections.value.map((c) => c.id)).toEqual(['conn-a'])
+    expect(env.commands.dbcConnectionDelete).toHaveBeenCalledWith('conn-a')
+    expect(api.connections.value).toEqual([])
+    expect(api.activeConnectionId.value).toBe('')
   })
 
   it('删除连接失败时保留连接与其页签（不伪装成功）', async () => {
@@ -824,7 +849,8 @@ describe('历史与收藏（决策书 §2.3 场景 6）', () => {
       'conn-a',
       'SELECT a',
       'success',
-      expect.any(Number)
+      expect.any(Number),
+      { database: 'db-conn-a', schema: '' }
     )
     expect(api.history.value.map((h) => h.id)).toEqual([1])
     expect(stateOf(api, tabA).status).toBe('success')
@@ -836,7 +862,8 @@ describe('历史与收藏（决策书 §2.3 场景 6）', () => {
       'conn-a',
       'SELECT a',
       'error',
-      expect.any(Number)
+      expect.any(Number),
+      { database: 'db-conn-a', schema: '' }
     )
   })
 
@@ -852,6 +879,8 @@ describe('历史与收藏（决策书 §2.3 场景 6）', () => {
     await flush()
 
     expect(stateOf(api, api.activeTabId.value).status).toBe('success')
+    expect(api.errorHint.value).toContain('磁盘只读')
+    await api.refreshHistory()
     expect(api.errorHint.value).toContain('历史库打不开')
   })
 
@@ -1034,6 +1063,7 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
 
   it('树上执行 DDL 成功给 toast 并刷新该 scope，失败只提示不 toast', async () => {
     const api = mountWorkbench()
+    await api.refreshConnections()
     const ui = useUiStore()
     const toast = vi.spyOn(ui, 'toast')
     env.commands.dbcExecute.mockResolvedValue(result())
@@ -1092,9 +1122,17 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
 
     expect(panel.text()).toContain('用户名')
     expect(panel.text()).toContain('首次加载用户')
-    expect(panel.text()).toContain('共 1 行')
+    expect(panel.text()).toContain('当前页 1 行')
     expect(env.commands.dbcTableData).toHaveBeenCalledTimes(1)
-    expect(env.commands.dbcTableData).toHaveBeenCalledWith('conn-a', 'users', 1, 50, 'db1')
+    expect(env.commands.dbcTableData).toHaveBeenCalledWith(
+      'conn-a',
+      'users',
+      1,
+      50,
+      'db1',
+      'db1',
+      undefined
+    )
   })
 
   it('首次查看表数据失败时立即显示错误，重试后显示数据', async () => {
@@ -1144,5 +1182,156 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
     expect(stateOf(api, tabA).rows).toEqual([['users-1']])
     expect(stateOf(api, tabA).status).toBe('success')
     expect(stateOf(api, tabB).rows).toEqual([['orders-1']])
+  })
+})
+
+describe('执行准备和持久化竞态', () => {
+  it('预检期间取消后不再向数据库发送 SQL', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const tab = openEditor(api, 'conn-a', 'SELECT 1')
+    const preparing = deferred<{ requiresConfirmation: boolean; target: string; summary: string }>()
+    env.commands.dbcPrepare.mockReturnValue(preparing.promise)
+    const pending = api.runQuery()
+    await flush()
+    await api.cancelQuery()
+    preparing.resolve({ requiresConfirmation: false, target: '测试', summary: '' })
+    await pending
+    expect(env.commands.dbcExecute).not.toHaveBeenCalled()
+    expect(stateOf(api, tab).status).toBe('idle')
+    expect(stateOf(api, tab).error).toContain('尚未执行')
+  })
+
+  it('收藏保存等待期间继续编辑仍保留未保存标记', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const tab = openEditor(api, 'conn-a', 'SELECT 1')
+    const saving = deferred<number>()
+    env.commands.dbcSavedAdd.mockReturnValue(saving.promise)
+    const pending = api.saveQueryToDisk('查询')
+    api.patchQueryState({ sql: 'SELECT 2', dirty: true })
+    saving.resolve(17)
+    await pending
+    expect(stateOf(api, tab).sql).toBe('SELECT 2')
+    expect(stateOf(api, tab).dirty).toBe(true)
+  })
+
+  it('连接取消清理完成前不允许重连，迟到成功不复活连接', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const target = api.connections.value[0]
+    const opening = deferred<DbConnectionInfo>()
+    env.commands.dbcConnect.mockReturnValue(opening.promise)
+    const pending = api.connect(target)
+    api.cancelConnect(target.id)
+    await api.connect(target)
+    expect(env.commands.dbcConnect).toHaveBeenCalledTimes(1)
+    opening.resolve(target)
+    await pending
+    expect(env.commands.dbcDisconnect).toHaveBeenCalledWith(target.id)
+    expect(api.connecting.value[target.id]).toBe(false)
+  })
+})
+
+describe('SQL 草稿恢复', () => {
+  it('恢复目标和选区，保持离线且不会执行 SQL 或恢复事务', async () => {
+    env.commands.dbcDrafts.mockResolvedValue([
+      {
+        label: '待处理',
+        sql: 'DELETE FROM items',
+        connectionId: 'removed',
+        database: 'db',
+        schema: 'custom',
+        from: 2,
+        to: 7,
+        dirty: true,
+        active: true,
+      },
+    ])
+    env.commands.dbcDraftsSave.mockResolvedValue(undefined)
+    const api = mountWorkbench()
+    await api.restoreDrafts()
+    expect(api.queryState.value.sql).toBe('DELETE FROM items')
+    expect(api.queryState.value.selection).toEqual({ from: 2, to: 7 })
+    expect(api.activeTabContext.value).toMatchObject({
+      connectionId: 'removed',
+      database: 'db',
+      schema: 'custom',
+    })
+    expect(api.queryState.value.transactionActive).toBeFalsy()
+    expect(env.commands.dbcExecute).not.toHaveBeenCalled()
+    expect(env.commands.dbcConnect).not.toHaveBeenCalled()
+    api.patchQueryState({ sql: 'SELECT 2' })
+    await api.flushDrafts()
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([
+      expect.objectContaining({ sql: 'SELECT 2' }),
+    ])
+    await api.closeTab(api.activeTabId.value, true)
+    await api.flushDrafts()
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([])
+  })
+  it('恢复失败不覆盖唯一草稿，保存失败传给关闭流程', async () => {
+    env.commands.dbcDrafts.mockRejectedValue(new Error('磁盘读取失败'))
+    const api = mountWorkbench()
+    await api.restoreDrafts()
+    openEditor(api, 'conn-a', 'SELECT 3')
+    await expect(api.flushDrafts()).rejects.toThrow('旧草稿读取失败')
+    expect(env.commands.dbcDraftsSave).not.toHaveBeenCalled()
+    expect(api.errorHint.value).toContain('磁盘读取失败')
+    env.commands.dbcDrafts.mockResolvedValue([])
+    await api.restoreDrafts()
+    env.commands.dbcDraftsSave.mockRejectedValue(new Error('磁盘已满'))
+    await expect(api.flushDrafts()).rejects.toThrow('磁盘已满')
+  })
+})
+
+describe('Redis 与结构页异步归属', () => {
+  it('Redis 首次返回直接渲染，刷新晚到不覆盖最新内容，过期键有明确提示', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const first = deferred<{ key: string; kind: string; ttl: number; value: string }>()
+    env.commands.dbcRedisKeyInfo.mockReturnValueOnce(first.promise)
+    await api.selectResource('conn-a::db1::key:sample')
+    const id = api.activeTabId.value
+    const panel = mount(RedisTab, { props: { db: api } })
+    hosts.push(() => panel.unmount())
+    first.resolve({ key: 'sample', kind: 'string', ttl: -1, value: '首次内容' })
+    await flush()
+    expect(panel.text()).toContain('首次内容')
+    const old = deferred<{ key: string; kind: string; ttl: number; value: string }>()
+    env.commands.dbcRedisKeyInfo
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValueOnce({ key: 'sample', kind: 'none', ttl: -2, value: '' })
+    const slow = api.loadRedisKeyInfo(id, 'sample')
+    await api.loadRedisKeyInfo(id, 'sample')
+    old.resolve({ key: 'sample', kind: 'string', ttl: -1, value: '旧内容' })
+    await slow
+    await flush()
+    expect(panel.text()).toContain('键不存在或已过期')
+    expect(panel.text()).not.toContain('旧内容')
+  })
+
+  it('同名表结构按库与 schema 分开，关闭后重开的旧列请求不得回写', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const old = deferred<never[]>()
+    env.commands.dbcColumns.mockReturnValueOnce(old.promise).mockResolvedValue([])
+    env.commands.dbcTableIndexes.mockResolvedValue([])
+    env.commands.dbcTableDdl.mockResolvedValue('CREATE TABLE sample (id INT)')
+    api.openStructureTab('conn-a', 'sample', 'one', 'a')
+    const one = api.activeTabId.value
+    api.openStructureTab('conn-a', 'sample', 'two', 'a')
+    expect(api.activeTabId.value).not.toBe(one)
+    api.closeTab(one, true)
+    env.commands.dbcColumns.mockRejectedValueOnce(new Error('列读取失败'))
+    api.openStructureTab('conn-a', 'sample', 'one', 'a')
+    await flush()
+    old.resolve([])
+    await flush()
+    expect(api.structureColumns.value[one]).toBeUndefined()
+    expect(api.structureErrors.value[one].columns).toContain('列读取失败')
+    const panel = mount(StructureTab, { props: { db: api } })
+    hosts.push(() => panel.unmount())
+    expect(panel.text()).toContain('列读取失败')
   })
 })

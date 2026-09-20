@@ -96,22 +96,20 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
   }
 
   async function connect(conn: DbConnectionInfo) {
+    if (connecting.value[conn.id]) return
     connecting.value[conn.id] = true
     connectError.value[conn.id] = ''
     cancelledConnect.value[conn.id] = false
     try {
-      const info = await withTimeout(
-        connectionIpc.connect(conn.id),
-        30000,
-        '连接超时（30 秒）：请检查网络与服务器配置'
-      )
+      // 超时由后端实际建连生命周期收尾，不能只丢弃 IPC Promise 留下迟到会话。
+      const info = await connectionIpc.connect(conn.id)
       // 连接过程中被取消：立即断开，避免留下幽灵会话
       if (cancelledConnect.value[conn.id]) {
         cancelledConnect.value[conn.id] = false
         try {
           await connectionIpc.disconnect(conn.id)
-        } catch {
-          // 忽略断开失败（会话可能尚未建立）
+        } catch (error) {
+          ports.showError(error)
         }
         return
       }
@@ -133,18 +131,19 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
     }
   }
 
-  /** 取消进行中的连接（结果返回后自动断开，UI 立即复位） */
+  /** 取消进行中的连接；完成清理前保持忙碌，避免迟到断开误伤重连。 */
   function cancelConnect(connId: string) {
     cancelledConnect.value[connId] = true
-    connecting.value[connId] = false
     connectError.value[connId] = ''
   }
 
   async function disconnect(conn: DbConnectionInfo) {
     try {
       await connectionIpc.disconnect(conn.id)
-    } catch {
-      // 断开失败不阻断状态更新
+    } catch (error) {
+      ports.showError(error)
+      await refreshConnections()
+      return
     }
     const index = connections.value.findIndex((c) => c.id === conn.id)
     if (index >= 0)
@@ -162,6 +161,7 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
   /** 保存连接配置（可选保存后立即连接） */
   async function saveConnection(config: ConnConfig, password: string, connectAfter = true) {
     await connectionIpc.save(config, password)
+    ports.invalidateCatalogMeta(config.id)
     await refreshConnections()
     if (connectAfter) {
       const conn = connections.value.find((c) => c.id === config.id)
@@ -170,12 +170,7 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
   }
 
   async function removeConnection(id: string) {
-    if (connections.value.length <= 1) return
-    try {
-      await connectionIpc.disconnect(id)
-    } catch {
-      // 未连接时忽略
-    }
+    // 删除命令自身负责取消与断开；错误必须由调用方展示。
     await connectionIpc.remove(id)
     // 关闭该连接下的页签（workspace 域）并失效元数据（catalog 域）
     ports.closeConnectionTabs(id)

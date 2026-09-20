@@ -22,7 +22,30 @@ use crate::plugins::database::models::{ConnConfig, ConnStatus, DbConnectionInfo}
 pub struct AgentRuntimeState(pub Mutex<HashMap<&'static str, Arc<AgentClient>>>);
 
 /// 会话注册表 State（命令层通过本结构取会话）
-pub struct DbState(pub Mutex<HashMap<String, DbSessionEntry>>);
+pub struct DbState(
+    pub Mutex<HashMap<String, DbSessionEntry>>,
+    pub Mutex<HashMap<String, uuid::Uuid>>,
+);
+impl DbState {
+    /// 生命周期代次在建连前发布，保存、断开和删除会使迟到结果失效。
+    pub(crate) fn next_generation(&self, id: &str) -> Result<uuid::Uuid, String> {
+        let generation = uuid::Uuid::new_v4();
+        self.1
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(id.to_string(), generation);
+        Ok(generation)
+    }
+    /// 核对连接代际，防止断开或重连后继续使用旧会话。
+    pub(crate) fn is_current(&self, entry: &DbSessionEntry) -> Result<bool, String> {
+        Ok(self
+            .1
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(&entry.config.id)
+            == Some(&entry.generation))
+    }
+}
 
 /// 查询取消注册表 State（conn_id → 取消句柄）
 pub struct DbCancelState(pub Mutex<HashMap<String, CancelHandle>>);
@@ -50,6 +73,8 @@ pub enum DbSession {
 /// 会话条目：会话 + 连接元信息（版本/时延探测结果缓存）
 #[derive(Clone)]
 pub struct DbSessionEntry {
+    /// 本次建连代际；后续重连使旧引用失效。
+    pub generation: uuid::Uuid,
     /// 连接配置（不含密码）
     pub config: ConnConfig,
     /// 会话本体
@@ -62,20 +87,93 @@ pub struct DbSessionEntry {
     pub connected_at: u64,
 }
 
-/// 取消句柄：进行中查询的取消方式（各驱动能力不同）
+/// 取消句柄绑定真实执行连接；gate 防止迟到取消命中同页的后继查询。
+#[derive(Clone)]
 pub struct CancelHandle {
-    /// 通用取消标志（所有驱动都设置；驱动无原生取消能力时仅标记）
+    /// 所属连接，断开时据此收集任务。
+    pub connection_id: String,
+    /// 所属 SQL 页；空值表示短期表格任务。
+    pub workspace_id: String,
+    /// 已请求取消的共享标记。
     pub aborted: Arc<AtomicBool>,
-    /// PostgreSQL 取消令牌（cancel_query 需要独立连接）
+    /// 驱动已收尾或已进入不可取消提交阶段。
+    pub finished: Arc<AtomicBool>,
+    /// 取消与连接复用的互斥门闩。
+    pub gate: Arc<tokio::sync::Mutex<()>>,
+    /// PostgreSQL 原生取消令牌。
     pub pg_cancel: Option<tokio_postgres::CancelToken>,
-    /// PostgreSQL 是否 TLS（取消连接需用 rustls 连接器）
+    /// 取消连接是否需要 TLS。
     pub pg_ssl: bool,
-    /// MySQL 会话线程 id（KILL QUERY 用）
+    /// 本次真实 MySQL 会话线程号。
     pub mysql_thread_id: Option<u32>,
-    /// 会话连接信息（mysql KILL 需要新建连接）
-    pub mysql_conn: Option<(String, u16, String, String)>,
-    /// agent 会话取消（cancel_session RPC）
+    /// 发送 KILL QUERY 的管理连接池。
+    pub mysql_pool: Option<mysql_async::Pool>,
+    /// 当前 SQLite 连接的 interrupt 句柄。
+    pub sqlite: Option<Arc<rusqlite::InterruptHandle>>,
+    /// 侧车客户端及真实会话标识。
     pub agent: Option<(Arc<AgentClient>, String)>,
+}
+impl CancelHandle {
+    /// 尚未取得工作连接时先登记，用户可在建连期间请求取消。
+    pub(crate) fn pending() -> Self {
+        Self {
+            connection_id: String::new(),
+            workspace_id: String::new(),
+            aborted: Arc::new(AtomicBool::new(false)),
+            finished: Arc::new(AtomicBool::new(false)),
+            gate: Arc::new(tokio::sync::Mutex::new(())),
+            pg_cancel: None,
+            pg_ssl: false,
+            mysql_thread_id: None,
+            mysql_pool: None,
+            sqlite: None,
+            agent: None,
+        }
+    }
+    /// 取消只表示请求已发送，最终结果由执行通道确定。
+    pub(crate) async fn cancel(&self) -> Result<(), String> {
+        use mysql_async::prelude::Queryable;
+        use std::sync::atomic::Ordering;
+        let _gate = self.gate.lock().await;
+        if self.finished.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        self.aborted.store(true, Ordering::Release);
+        if let Some(token) = &self.pg_cancel {
+            if self.pg_ssl {
+                let mut roots = rustls::RootCertStore::empty();
+                roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                let config = rustls::ClientConfig::builder()
+                    .with_root_certificates(roots)
+                    .with_no_client_auth();
+                token
+                    .cancel_query(tokio_postgres_rustls::MakeRustlsConnect::new(config))
+                    .await
+                    .map_err(|e| format!("PG 取消失败: {e}"))?;
+            } else {
+                token
+                    .cancel_query(tokio_postgres::NoTls)
+                    .await
+                    .map_err(|e| format!("PG 取消失败: {e}"))?;
+            }
+        }
+        if let (Some(pool), Some(id)) = (&self.mysql_pool, self.mysql_thread_id) {
+            let mut conn = pool
+                .get_conn()
+                .await
+                .map_err(|e| format!("取消控制连接失败: {e}"))?;
+            conn.query_drop(format!("KILL QUERY {id}"))
+                .await
+                .map_err(|e| format!("MySQL 取消失败: {e}"))?;
+        }
+        if let Some(handle) = &self.sqlite {
+            handle.interrupt();
+        }
+        if let Some((client, id)) = &self.agent {
+            client.cancel_session(id).await?;
+        }
+        Ok(())
+    }
 }
 
 impl DbState {
@@ -94,6 +192,7 @@ impl DbSessionEntry {
     /// 会话快照（前端连接列表展示）
     pub fn to_info(&self) -> DbConnectionInfo {
         DbConnectionInfo {
+            credential_id: self.config.credential_id.clone(),
             id: self.config.id.clone(),
             label: self.config.label.clone(),
             db_type: self.config.db_type,
@@ -174,6 +273,7 @@ pub async fn snapshot(state: &State<'_, DbState>, configs: &[ConnConfig]) -> Vec
                 None => info,
             },
             None => DbConnectionInfo {
+                credential_id: config.credential_id.clone(),
                 id: config.id.clone(),
                 label: config.label.clone(),
                 db_type: config.db_type,

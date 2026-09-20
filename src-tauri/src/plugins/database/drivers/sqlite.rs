@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 
 use rusqlite::Connection as SqliteConn;
 
-use crate::plugins::database::dialect::dialect_or_err;
 use crate::plugins::database::models::{ConnConfig, QueryResult};
 
 /// 打开 SQLite 文件并包装为插件会话使用的线程安全连接。
@@ -13,100 +12,81 @@ pub(crate) fn sqlite_conn(config: &ConnConfig) -> Result<Arc<Mutex<SqliteConn>>,
     if path.trim().is_empty() {
         return Err("SQLite 文件路径不能为空".to_string());
     }
-    let conn = SqliteConn::open(path).map_err(|e| format!("SQLite 打开失败（{path}）: {e}"))?;
+    let flags = if config.readonly {
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY
+    } else {
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_CREATE
+    };
+    let conn = SqliteConn::open_with_flags(path, flags)
+        .map_err(|e| format!("SQLite 打开失败（{path}）: {e}"))?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))
+        .map_err(|e| e.to_string())?;
     Ok(Arc::new(Mutex::new(conn)))
 }
 
-/// 执行 SQL：按方言拆分多语句逐条执行；查询语句返回结果集（超过 max_rows 标记截断），
-/// 非查询语句累计影响行数；Redis 会话不走这里。
+/// 同步驱动入口；异步调用方必须放到阻塞任务，并使用独立工作连接。
 pub(crate) fn execute_sqlite(
     conn: &std::sync::Mutex<rusqlite::Connection>,
     sql: &str,
     max_rows: u64,
 ) -> Result<QueryResult, String> {
-    let dialect = dialect_or_err(crate::plugins::database::models::DbType::Sqlite)?;
-    let statements = dialect.split_statements(sql);
-    if statements.is_empty() {
-        return Ok(QueryResult {
-            ok: true,
-            columns: Vec::new(),
-            rows: Vec::new(),
-            rows_affected: 0,
-            is_query: false,
-            duration_ms: 0,
-            truncated: false,
-            error: None,
-        });
-    }
+    use crate::plugins::database::{models::DbValue, results::ResultBudget};
     let guard = conn.lock().map_err(|e| e.to_string())?;
-    let mut result = QueryResult {
-        ok: true,
-        columns: Vec::new(),
-        rows: Vec::new(),
-        rows_affected: 0,
-        is_query: false,
-        duration_ms: 0,
-        truncated: false,
-        error: None,
-    };
-    for stmt in statements {
-        if dialect.is_query_sql(&stmt) {
+    let mut outcomes = Vec::new();
+    let mut budget = ResultBudget::new(max_rows);
+    for sql in crate::plugins::database::sql_analysis::split(
+        crate::plugins::database::models::DbType::Sqlite,
+        sql,
+    )? {
+        let outcome: Result<QueryResult, String> = (|| {
             let mut prepared = guard
-                .prepare(&stmt)
+                .prepare(&sql)
                 .map_err(|e| format!("语句解析失败: {e}"))?;
-            let columns = prepared
+            let mut result = QueryResult::empty();
+            result.columns = prepared
                 .column_names()
                 .iter()
                 .map(|s| s.to_string())
-                .collect::<Vec<_>>();
-            let mut rows_iter = prepared.query([]).map_err(|e| format!("查询失败: {e}"))?;
-            let mut rows = Vec::new();
-            let mut count = 0u64;
-            let mut truncated = false;
-            while let Some(row) = rows_iter.next().map_err(|e| format!("读取结果失败: {e}"))?
-            {
-                count += 1;
-                if count > max_rows {
-                    truncated = true;
-                    break;
+                .collect();
+            result.is_query = !result.columns.is_empty();
+            let readonly = prepared.readonly();
+            if !result.is_query {
+                result.rows_affected =
+                    prepared.execute([]).map_err(|e| format!("执行失败: {e}"))? as u64;
+            } else {
+                let mut rows = prepared.query([]).map_err(|e| format!("查询失败: {e}"))?;
+                let mut count = 0;
+                while let Some(row) = rows.next().map_err(|e| format!("读取结果失败: {e}"))? {
+                    count += 1;
+                    let mut values = Vec::with_capacity(result.columns.len());
+                    for i in 0..result.columns.len() {
+                        use rusqlite::types::ValueRef;
+                        values.push(match row.get_ref(i).map_err(|e| e.to_string())? {
+                            ValueRef::Null => DbValue::null(),
+                            ValueRef::Integer(v) => DbValue::text("integer", v.to_string()),
+                            ValueRef::Real(v) => DbValue::text("float", v.to_string()),
+                            ValueRef::Text(v) => match std::str::from_utf8(v) {
+                                Ok(text) => DbValue::text("text", text.to_string()),
+                                Err(_) => DbValue::binary(v),
+                            },
+                            ValueRef::Blob(v) => DbValue::binary(v),
+                        });
+                    }
+                    budget.push(&mut result, values);
                 }
-                let mut cells = Vec::with_capacity(columns.len());
-                for i in 0..columns.len() {
-                    cells.push(sqlite_cell_str(row, i)?);
-                }
-                rows.push(cells);
+                result.rows_affected = if readonly { count } else { guard.changes() };
             }
-            result = QueryResult {
-                ok: true,
-                columns,
-                rows,
-                rows_affected: count,
-                is_query: true,
-                duration_ms: 0,
-                truncated,
-                error: None,
-            };
-        } else {
-            let affected = guard
-                .execute(&stmt, [])
-                .map_err(|e| format!("执行失败: {e}"))?;
-            result.rows_affected += affected as u64;
-            result.is_query = false;
+            Ok(result)
+        })();
+        match outcome {
+            Ok(result) => outcomes.push(result),
+            Err(error) => {
+                outcomes.push(QueryResult::failed(error));
+                break;
+            }
         }
     }
-    Ok(result)
-}
-
-/// 单元格字符串化：NULL → "NULL"，二进制 → <blob N bytes>，其余按文本解码（非法 UTF-8 用替换字符）。
-pub(crate) fn sqlite_cell_str(row: &rusqlite::Row, index: usize) -> Result<String, String> {
-    let value = row.get_ref(index).map_err(|e| e.to_string())?;
-    Ok(match value {
-        rusqlite::types::ValueRef::Null => "NULL".to_string(),
-        rusqlite::types::ValueRef::Integer(n) => n.to_string(),
-        rusqlite::types::ValueRef::Real(f) => f.to_string(),
-        rusqlite::types::ValueRef::Text(t) => String::from_utf8_lossy(t).to_string(),
-        rusqlite::types::ValueRef::Blob(b) => format!("<blob {} bytes>", b.len()),
-    })
+    Ok(QueryResult::script(outcomes))
 }
 
 #[cfg(test)]
@@ -122,6 +102,7 @@ mod tests {
     /// SQLite 连接配置（只需 host 指向文件；其余字段与前端默认值一致）
     fn sqlite_config(path: &Path) -> ConnConfig {
         ConnConfig {
+            credential_id: None,
             id: "conn-test".to_string(),
             label: "临时库".to_string(),
             db_type: DbType::Sqlite,
@@ -148,6 +129,7 @@ mod tests {
     #[test]
     fn empty_path_is_rejected() {
         let config = ConnConfig {
+            credential_id: None,
             host: String::new(),
             ..sqlite_config(&temp_db_path("empty"))
         };
@@ -190,7 +172,7 @@ mod tests {
 
     /// NULL 与二进制不伪装成空字符串/文本
     #[test]
-    fn null_and_blob_cells_use_placeholder_text() {
+    fn null_and_blob_cells_preserve_typed_values() {
         let path = temp_db_path("cells");
         let conn = sqlite_conn(&sqlite_config(&path)).expect("打开临时库");
         execute_sqlite(&conn, "CREATE TABLE t (a TEXT, b BLOB, c REAL)", 10).expect("建表");
@@ -205,10 +187,13 @@ mod tests {
             page.rows,
             vec![vec![
                 "NULL".to_string(),
-                "<blob 2 bytes>".to_string(),
+                "0x0102".to_string(),
                 "1.5".to_string()
             ]]
         );
+        assert_eq!(page.values[0][0].kind, "null");
+        assert_eq!(page.values[0][1].kind, "binary");
+        assert_eq!(page.values[0][1].value.as_deref(), Some("0102"));
         drop(conn);
         let _ = std::fs::remove_file(&path);
     }
@@ -233,15 +218,19 @@ mod tests {
         let path = temp_db_path("invalid");
         let conn = sqlite_conn(&sqlite_config(&path)).expect("打开临时库");
         let query_err = execute_sqlite(&conn, "SELECT * FROM 不存在的表", 10)
-            .expect_err("查询不存在的表必须报错");
+            .expect("执行通道应返回语句错误结果");
+        assert!(!query_err.ok);
+        let query_err = query_err.error.expect("失败结果必须包含错误原因");
         assert!(
             query_err.contains("语句解析失败") || query_err.contains("查询失败"),
             "错误信息应说明失败阶段: {query_err}"
         );
         let write_err = execute_sqlite(&conn, "INSERT INTO 不存在的表 (x) VALUES (1)", 10)
-            .expect_err("写入不存在的表必须报错");
+            .expect("执行通道应返回语句错误结果");
+        assert!(!write_err.ok);
+        let write_err = write_err.error.expect("失败结果必须包含错误原因");
         assert!(
-            write_err.contains("执行失败"),
+            write_err.contains("语句解析失败") || write_err.contains("执行失败"),
             "错误信息应说明失败阶段: {write_err}"
         );
         drop(conn);

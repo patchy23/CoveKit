@@ -24,6 +24,9 @@ import type { EditorContextMenuPayload, EditorCursorInfo } from './editor/types'
 
 const props = withDefaults(
   defineProps<{
+    /** 多文档宿主的身份与存活集合，用于独立保留撤销栈和滚动位置。 */
+    documentKey?: string
+    documentKeys?: string[]
     /** 编辑内容（v-model） */
     modelValue?: string
     /** 语言 id；默认 'auto' 表示按 filename 识别 */
@@ -62,6 +65,8 @@ const props = withDefaults(
     extraExtensions?: Extension[]
   }>(),
   {
+    documentKey: undefined,
+    documentKeys: undefined,
     modelValue: '',
     language: 'auto',
     languageExtension: undefined,
@@ -106,6 +111,8 @@ const searchBar = ref<InstanceType<typeof EditorSearchBar> | null>(null)
 const goToLineBar = ref<InstanceType<typeof EditorGoToLineBar> | null>(null)
 
 const editor = useCodeEditor({
+  documentKey: () => props.documentKey ?? '',
+  documentKeys: () => props.documentKeys ?? [],
   modelValue: () => props.modelValue ?? '',
   filename: () => props.filename,
   language: () => props.language,
@@ -227,6 +234,7 @@ defineExpose({
   getSelection: () => editor.getSelection(),
   /** 读取选区与光标偏移（文档偏移） */
   getCursor: () => editor.getCursor(),
+  setCursor: (from: number, to: number) => editor.setCursor(from, to),
   /** 在光标处插入文本 */
   insert: (text: string) => editor.insert(text),
   /** 撤销 */

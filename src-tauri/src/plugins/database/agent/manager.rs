@@ -1,5 +1,5 @@
 //! agent 驱动 store：目录布局 + versions.json + 本地查找
-//! 布局：app_data_dir/agents/drivers/<key>/（agent 可执行文件或 agent.jar + versions.json）
+//! 布局：缓存分区 agents/drivers/<key>/，只接受兼容协议的 agent 可执行文件。
 //! 获取策略（与 dbx 一致但无物理依赖）：
 //!   1. 本地已有驱动二进制 → 直接使用
 //!   2. 没有 → 返回带指引的错误（给出该放的目录）
@@ -17,9 +17,9 @@ use crate::plugins::database::models::DbType;
 /// 驱动 store 根目录下的版本清单文件名
 const VERSIONS_FILE: &str = "versions.json";
 
-/// agent 驱动 store（路径解析 + 版本清单 + 下载）
+/// agent 驱动 store（路径解析与本地版本清单）
 pub struct DriverStore {
-    /// store 根目录（app_data_dir/agents/drivers）
+    /// store 根目录（缓存分区 agents/drivers）
     root: PathBuf,
 }
 
@@ -37,7 +37,7 @@ impl DriverStore {
         Ok(dir)
     }
 
-    /// 驱动二进制路径：优先 `agent(.exe)`，其次 `agent.jar`（Java 驱动）
+    /// 驱动二进制路径：只查找 `agent(.exe)`；JAR 不是可直接启动的进程。
     pub fn agent_binary(&self, db_type: DbType) -> Option<PathBuf> {
         let dir = self.root.join(driver_key(db_type));
         let exe = if cfg!(windows) {
@@ -51,10 +51,6 @@ impl DriverStore {
         let plain = dir.join("agent");
         if plain.is_file() {
             return Some(plain);
-        }
-        let jar = dir.join("agent.jar");
-        if jar.is_file() {
-            return Some(jar);
         }
         None
     }
@@ -70,7 +66,7 @@ impl DriverStore {
 
     /// 确保某类型驱动可用：本地二进制 → 缺失时给出放置指引
     pub fn ensure_driver(&self, db_type: DbType) -> Result<PathBuf, String> {
-        // 达梦本批次未实现（需要 Java agent + JRE，工作量大；UI 保留入口）
+        // 达梦尚无运行时契约，新建连接不展示该类型。
         if matches!(db_type, DbType::Dameng) {
             return Err("达梦驱动暂未支持（本版本未实现，后续版本提供）。".to_string());
         }

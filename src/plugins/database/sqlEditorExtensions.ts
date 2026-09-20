@@ -7,7 +7,7 @@
  * - `statementRunGutterExtension`：每条语句起始行的 ▶ 执行按钮。
  * 两者分别通过 UiCodeEditor 的 `completionSources` 与 `extraExtensions` 装载。
  */
-import type { Extension } from '@codemirror/state'
+import type { Extension, Text } from '@codemirror/state'
 import { Prec, Range, RangeSet } from '@codemirror/state'
 import { EditorView, GutterMarker, gutter } from '@codemirror/view'
 import {
@@ -87,28 +87,41 @@ export function sqlCompletionSources(
     return options.length ? { from: before.from, options, validFor: /^\w*$/ } : null
   }
 
-  /** 表名. 后异步补列名（未缓存时向后端要） */
-  const columnSource = async (ctx: CompletionContext): Promise<CompletionResult | null> => {
-    if (!resolveColumns) return null
-    const match = ctx.matchBefore(/([A-Za-z_][\w$]*)\s*\.\s*$/)
-    if (!match) return null
-    const table = match.text.match(/([A-Za-z_][\w$]*)\s*\.\s*$/)
-    if (!table) return null
-    const columns = await resolveColumns(table[1])
-    if (!columns.length) return null
-    return {
-      from: match.from + table[1].length + 1,
-      options: columns.map((name) => ({ label: name, type: 'variable', detail: table[1] })),
-      validFor: /^\w*$/,
+  /** 用 CodeMirror 自身的别名/引用解析定位缺列的表，不把别名当作表名查询。 */
+  const marker = '__covekit_lazy_columns__'
+  const targets = new Map<string, { parent: Record<string, SQLNamespace>; key: string }>()
+  function lazyNamespace(value: SQLNamespace, path: string[] = []): SQLNamespace {
+    if (Array.isArray(value)) return value
+    const result: Record<string, SQLNamespace> = {}
+    for (const [key, child] of Object.entries(value)) {
+      if (key === 'self') {
+        result[key] = child
+        continue
+      }
+      const next = [...path, key]
+      if (Array.isArray(child) && child.length === 0) {
+        const name = next.join('.')
+        result[key] = [{ label: marker, detail: name, type: 'property' }]
+        targets.set(name, { parent: result, key })
+      } else result[key] = lazyNamespace(child, next)
     }
+    return result
+  }
+  const lazySchema = schema ? lazyNamespace(schema) : undefined
+  const columnSource = async (ctx: CompletionContext): Promise<CompletionResult | null> => {
+    if (!resolveColumns || !lazySchema) return schemaCompletionSource({ dialect, schema })(ctx)
+    const candidate = await schemaCompletionSource({ dialect, schema: lazySchema })(ctx)
+    const targetName = candidate?.options.find((option) => option.label.includes(marker))?.detail
+    if (!targetName) return candidate
+    const target = targets.get(targetName)
+    if (!target) return null
+    const columns = await resolveColumns(targetName)
+    if (ctx.aborted || !columns.length) return null
+    target.parent[target.key] = columns
+    return schemaCompletionSource({ dialect, schema: lazySchema })(ctx)
   }
 
-  return [
-    snippetSource,
-    columnSource,
-    keywordCompletionSource(dialect ?? StandardSQL),
-    schemaCompletionSource({ dialect, schema }),
-  ]
+  return [snippetSource, columnSource, keywordCompletionSource(dialect ?? StandardSQL)]
 }
 
 /** 语句执行按钮的 gutter 标记（▶ 图标） */
@@ -129,12 +142,23 @@ class RunStatementMarker extends GutterMarker {
 }
 
 /** 每条语句起始行显示 ▶（样式随扩展自带）；点击执行该条语句（onRun 由上层接入） */
-export function statementRunGutterExtension(onRun?: (sql: string) => void): Extension {
+export function statementRunGutterExtension(
+  onRun?: (sql: string) => void,
+  dialect = ''
+): Extension {
+  const cache = new WeakMap<Text, ReturnType<typeof splitSqlStatements>>()
+  function rangesFor(doc: Text) {
+    let ranges = cache.get(doc)
+    if (!ranges) {
+      ranges = splitSqlStatements(doc.toString(), dialect)
+      cache.set(doc, ranges)
+    }
+    return ranges
+  }
   const gutterAndStyle = gutter({
     class: 'cm-run-statement-gutter',
     markers: (view) => {
-      const doc = view.state.doc.toString()
-      const ranges = splitSqlStatements(doc)
+      const ranges = rangesFor(view.state.doc)
       const entries: Range<GutterMarker>[] = []
       for (const range of ranges) {
         if (!range.sql.trim()) continue
@@ -147,9 +171,8 @@ export function statementRunGutterExtension(onRun?: (sql: string) => void): Exte
     domEventHandlers: {
       mousedown: (view, line, event) => {
         if (!(event instanceof MouseEvent) || event.button !== 0) return false
-        const doc = view.state.doc.toString()
         // 找到起始行与点击行一致的语句（与 markers 的定位逻辑保持一致）
-        const range = splitSqlStatements(doc).find(
+        const range = rangesFor(view.state.doc).find(
           (r) => r.sql.trim() && view.state.doc.lineAt(statementStartOffset(r)).from === line.from
         )
         if (!range) return false

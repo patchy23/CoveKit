@@ -60,9 +60,13 @@ export function filterTreeItems(source: UiTreeItem[], filter: string): UiTreeIte
 interface ConnMeta {
   databases: string[]
   schemas: string[]
+  schemasByDatabase: Record<string, string[]>
   /** schemaKey（mysql 用 database；pg 用 schema）→ 对象列表 */
   objects: Record<string, DbObjectInfo[]>
   redisKeys: string[]
+  redisCursor: number
+  redisLoaded: boolean
+  redisLoading: boolean
   loading: boolean
   loaded: boolean
 }
@@ -105,6 +109,10 @@ export interface DatabaseCatalogPorts {
   ) => void
   /** 页签是否存在（workspace 域只读视图） */
   hasTab: (tabId: string) => boolean
+  requestExecutionConfirmation: (
+    preview: { target: string; summary: string },
+    sql: string
+  ) => Promise<boolean>
   /** 关闭页签（workspace 域命令；表删除/重命名后关闭旧表页签） */
   closeTab: (tabId: string) => void
   /** 应用级错误提示（门面持有 errorHint） */
@@ -163,6 +171,8 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   function invalidateConnectionMeta(connId: string) {
     delete metas.value[connId]
     clearEditorColumns(connId)
+    for (const key of schemaRequests.keys())
+      if (JSON.parse(key)[0] === connId) schemaRequests.delete(key)
     for (const key of objectRequests.keys())
       if (key.startsWith(`${connId}::`)) objectRequests.delete(key)
   }
@@ -183,9 +193,11 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   const schemaOptions = computed(() => {
     const connId = ports.activeTabConnectionId.value
     const meta = metas.value[connId]
-    if (!meta || meta.schemas.length === 0) return []
+    if (!meta) return []
     const conn = ports.connections.value.find((c) => c.id === connId)
-    const names = conn ? filterSystem(connId, conn.dbType, meta.schemas) : meta.schemas
+    const schemas =
+      meta.schemasByDatabase[ports.activeTabDatabase.value || conn?.database || ''] ?? meta.schemas
+    const names = conn ? filterSystem(connId, conn.dbType, schemas) : schemas
     return names.map((name) => ({ value: name, label: name }))
   })
 
@@ -207,7 +219,13 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     if (!meta) return []
     const names = new Set<string>()
     const objects =
-      meta.objects[`${ports.activeTabConnectionId.value}::${editorScope.value ?? ''}`] ?? []
+      meta.objects[
+        objectKey(
+          ports.activeTabConnectionId.value,
+          editorScope.value ?? '',
+          ports.activeTabDatabase.value
+        )
+      ] ?? []
     for (const obj of objects) {
       if ((obj.kind === 'table' || obj.kind === 'view') && obj.name) names.add(obj.name)
     }
@@ -239,7 +257,8 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       if (status !== 'online' || (!database && !schema)) return
       const conn = ports.connections.value.find((item) => item.id === connId)
       if (conn?.dbType === 'redis') return
-      void ensureObjects(connId, editorScope.value ?? '')
+      void ensureObjects(connId, editorScope.value ?? '', database)
+      if (conn?.dbType === 'postgresql') void ensureSchemas(connId, database)
     }
   )
 
@@ -247,13 +266,15 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   async function resolveEditorColumns(table: string): Promise<string[]> {
     const connId = ports.activeTabConnectionId.value
     const scope = editorScope.value
-    const cacheKey = [connId, scope ?? '', table].map((part) => JSON.stringify(part)).join(',')
+    const cacheKey = [connId, ports.activeTabDatabase.value, scope ?? '', table]
+      .map((part) => JSON.stringify(part))
+      .join(',')
     const cached = editorColumnCache.get(cacheKey)
     if (cached) return cached
     const pending = editorColumnRequests.get(cacheKey)
     if (pending) return pending
     const request: Promise<string[]> = queryIpc
-      .columns(connId, table, scope)
+      .columns(connId, table, scope, ports.activeTabDatabase.value)
       .then((cols) => {
         const names = cols.map((c) => c.name)
         if (editorColumnRequests.get(cacheKey) === request) editorColumnCache.set(cacheKey, names)
@@ -278,8 +299,12 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     metas.value[connId] ??= {
       databases: [],
       schemas: [],
+      schemasByDatabase: {},
       objects: {},
       redisKeys: [],
+      redisCursor: 0,
+      redisLoaded: false,
+      redisLoading: false,
       loading: false,
       loaded: false,
     }
@@ -297,8 +322,10 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
         queryIpc.databases(connId),
         queryIpc.schemas(connId),
       ])
+      if (metas.value[connId] !== meta) return
       meta.databases = databases
       meta.schemas = schemas
+      meta.schemasByDatabase[conn.database] = schemas
       meta.loaded = true
     } catch (err) {
       ports.showError(err)
@@ -308,14 +335,14 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   }
 
   /** 加载某 schema（或 mysql 的 database）下的对象列表 */
-  async function ensureObjects(connId: string, schema: string) {
+  async function ensureObjects(connId: string, schema: string, database?: string) {
     const meta = metaFor(connId)
-    const key = `${connId}::${schema}`
+    const key = objectKey(connId, schema, database)
     if (meta.objects[key]) return
     const pending = objectRequests.get(key)
     if (pending) return pending
     const request: Promise<void> = queryIpc
-      .objects(connId, schema)
+      .objects(connId, schema, database)
       .then((objects) => {
         if (objectRequests.get(key) === request && metas.value[connId] === meta)
           meta.objects[key] = objects
@@ -330,15 +357,48 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     return request
   }
 
-  /** 加载 Redis 键列表 */
-  async function ensureRedisKeys(connId: string) {
+  function objectKey(connId: string, schema: string, database?: string) {
+    const conn = ports.connections.value.find((item) => item.id === connId)
+    return conn?.dbType === 'postgresql' && database && database !== conn.database
+      ? connId + '::@' + encodeURIComponent(JSON.stringify([database, schema]))
+      : connId + '::' + schema
+  }
+  const schemaRequests = new Map<string, Promise<void>>()
+  async function ensureSchemas(connId: string, database: string) {
     const meta = metaFor(connId)
-    if (meta.redisKeys.length) return
+    const key = JSON.stringify([connId, database])
+    if (meta.schemasByDatabase[database]) return
+    if (schemaRequests.has(key)) return schemaRequests.get(key)
+    const request = queryIpc
+      .schemas(connId, database)
+      .then((schemas) => {
+        if (schemaRequests.get(key) === request && metas.value[connId] === meta)
+          meta.schemasByDatabase[database] = schemas
+      })
+      .catch((error) => {
+        if (schemaRequests.get(key) === request) ports.showError(error)
+      })
+      .finally(() => {
+        if (schemaRequests.get(key) === request) schemaRequests.delete(key)
+      })
+    schemaRequests.set(key, request)
+    return request
+  }
+  /** SCAN 允许空批次和重复键；保留游标，并给用户明确的继续扫描入口。 */
+  async function ensureRedisKeys(connId: string, more = false) {
+    const meta = metaFor(connId)
+    if (meta.redisLoading || (meta.redisLoaded && !more) || (more && meta.redisCursor === 0)) return
+    meta.redisLoading = true
     try {
-      const [, keys] = await queryIpc.redisKeys(connId, '', 0)
-      meta.redisKeys = keys
+      const [cursor, keys] = await queryIpc.redisKeys(connId, '', more ? meta.redisCursor : 0)
+      if (metas.value[connId] !== meta) return
+      meta.redisKeys = [...new Set([...meta.redisKeys, ...keys])]
+      meta.redisCursor = cursor
+      meta.redisLoaded = true
     } catch (err) {
       ports.showError(err)
+    } finally {
+      meta.redisLoading = false
     }
   }
 
@@ -363,7 +423,10 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   /** 对象分组（每类型固定分组；子项来自懒加载缓存） */
   function objectGroups(conn: DbConnectionInfo, schemaKey: string, depth: number): UiTreeItem[] {
     const meta = metaFor(conn.id)
-    const objects = meta.objects[schemaKey] ?? []
+    const objects =
+      conn.dbType === 'redis'
+        ? meta.redisKeys.map((name) => ({ kind: 'key', name }))
+        : (meta.objects[schemaKey] ?? [])
     const groups: { key: string; label: string; kinds: string[] }[] =
       conn.dbType === 'redis'
         ? [{ key: 'keys', label: '键', kinds: ['key'] }]
@@ -380,6 +443,15 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       items.push(
         branch(groupId, group.label, depth, `group-${group.key}`, members.length || undefined)
       )
+      if (conn.dbType === 'redis' && meta.redisCursor !== 0)
+        items.push(
+          leaf(
+            conn.id + '::scan-more',
+            meta.redisLoading ? '扫描中…' : '继续扫描键…',
+            depth + 1,
+            'scan-more'
+          )
+        )
       for (const obj of members) {
         const itemId = `${schemaKey}::${obj.kind}:${obj.name}`
         items.push(leaf(itemId, obj.name, depth + 1, obj.kind))
@@ -436,6 +508,27 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
         continue
       }
 
+      if (conn.dbType === 'postgresql') {
+        const databases = meta.databases.length
+          ? filterSystem(conn.id, conn.dbType, meta.databases)
+          : [conn.database]
+        for (const database of databases) {
+          const id =
+            database === conn.database
+              ? prefix + '::db'
+              : prefix + '::database:' + encodeURIComponent(database)
+          items.push(branch(id, database, 1, 'database'))
+          const schemas =
+            meta.schemasByDatabase[database] ?? (database === conn.database ? meta.schemas : [])
+          for (const schema of filterSystem(conn.id, conn.dbType, schemas)) {
+            const scope = objectKey(conn.id, schema, database)
+            items.push(branch(scope, schema, 2, 'schema'))
+            items.push(...objectGroups(conn, scope, 3))
+          }
+        }
+        continue
+      }
+
       // 其余（sqlite）：连接 → 数据库 → 分组
       const database = conn.database
       items.push(branch(`${prefix}::db`, database, 1, 'database'))
@@ -474,6 +567,10 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   // ──────────────────────────────────────────────────────────────────────
 
   function toggleTree(item: UiTreeItem) {
+    if (item.kind === 'scan-more') {
+      void ensureRedisKeys(item.id.split('::')[0], true)
+      return
+    }
     // 连接节点：已连接 → 折叠/展开（不重新连接）；未连接 → 连接并在成功后展开
     const conn = ports.connections.value.find((c) => c.id === item.id)
     if (conn) {
@@ -488,16 +585,30 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       }
       return
     }
+    const owner = ports.connections.value.find((c) => c.id === item.id.split('::')[0])
+    if (owner?.dbType === 'redis') {
+      toggleExpanded(item.id)
+      void ensureRedisKeys(owner.id)
+      return
+    }
     toggleExpanded(item.id)
     // 展开 schema 节点 → 加载对象
     if (item.kind === 'schema' && item.expandable && !item.expanded) {
       const connId = item.id.split('::')[0]
       const schema = item.id.split('::')[1]
-      void ensureObjects(connId, schema)
+      const target = owner ? scopeContext(owner, schema) : { database: '', schema }
+      void ensureObjects(connId, target.schema, target.database)
     }
     // 展开 database 节点（mysql 库 / sqlite main）→ 加载该库对象
     if (item.kind === 'database' && item.expandable && !item.expanded) {
       const connId = item.id.split('::')[0]
+      if (owner?.dbType === 'postgresql') {
+        const database = item.id.includes('::database:')
+          ? decodeURIComponent(item.id.split('::database:')[1])
+          : owner.database
+        void ensureSchemas(connId, database)
+        return
+      }
       const dbMatch = item.id.match(/::db:(.+)$/)
       const schema = dbMatch ? dbMatch[1] : (item.id.split('::')[1] ?? 'main')
       void ensureObjects(connId, schema)
@@ -526,12 +637,28 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     const type = conn.dbType as V2DbType
     if (usesConnectionRootSchema(type)) return { database: conn.database, schema: scope }
     if (type === 'mysql' || type === 'polardb') return { database: scope, schema: '' }
-    if (usesSchemaTree(type)) return { database: conn.database, schema: scope }
+    if (usesSchemaTree(type)) {
+      if (scope.startsWith('database:'))
+        return { database: decodeURIComponent(scope.slice('database:'.length)), schema: 'public' }
+      if (scope === 'db') return { database: conn.database, schema: 'public' }
+      if (type === 'postgresql' && scope.startsWith('@')) {
+        const [database, schema] = JSON.parse(decodeURIComponent(scope.slice(1))) as [
+          string,
+          string,
+        ]
+        return { database, schema }
+      }
+      return { database: conn.database, schema: scope }
+    }
     return { database: conn.database || 'main', schema: '' }
   }
 
   /** 树选中/右键「查看数据」入口：打开数据页签并按叶子 scope 设置库/schema 上下文 */
   async function selectResource(id: string) {
+    if (id.endsWith('::scan-more')) {
+      await ensureRedisKeys(id.split('::')[0], true)
+      return
+    }
     selectedResource.value = id
     const connId = id.split('::')[0]
     const conn = ports.connections.value.find((c) => c.id === connId)
@@ -563,6 +690,8 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       meta.loaded = false
       meta.objects = {}
       meta.redisKeys = []
+      meta.redisLoaded = false
+      meta.redisCursor = 0
       await ensureMeta(connId)
       if (connId === ports.activeTabConnectionId.value && editorScope.value !== undefined) {
         await ensureObjects(connId, editorScope.value)
@@ -573,12 +702,26 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     if (!scope) return
     if (scope === 'redis') {
       meta.redisKeys = []
+      meta.redisLoaded = false
+      meta.redisCursor = 0
       await ensureRedisKeys(connId)
       return
     }
-    delete meta.objects[`${connId}::${scope}`]
-    objectRequests.delete(`${connId}::${scope}`)
-    await ensureObjects(connId, scope)
+    const owner = ports.connections.value.find((connection) => connection.id === connId)
+    if (owner?.dbType === 'postgresql' && item.kind === 'database') {
+      const database = scope.startsWith('database:')
+        ? decodeURIComponent(scope.slice(9))
+        : owner.database
+      delete meta.schemasByDatabase[database]
+      schemaRequests.delete(JSON.stringify([connId, database]))
+      await ensureSchemas(connId, database)
+      return
+    }
+    const target = owner ? scopeContext(owner, scope) : { database: '', schema: scope }
+    const key = objectKey(connId, target.schema, target.database)
+    delete meta.objects[key]
+    objectRequests.delete(key)
+    await ensureObjects(connId, target.schema, target.database)
   }
 
   // ──────────────────────────────────────────────────────────────────────
@@ -673,8 +816,24 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
 
   /** 执行 DDL（可视化建表等）：成功 toast + 刷新指定 scope 对象缓存 */
   async function executeDdl(connId: string, sql: string, scope?: string): Promise<boolean> {
+    const connection = ports.connections.value.find((connection) => connection.id === connId)
+    if (!connection) return false
+    const target = scopeContext(connection, scope ?? connection.database)
+    const requestId = nextRequestId('ddl')
+    const workspaceId = 'ddl-' + requestId
     try {
-      const result = await queryIpc.execute(connId, sql, 1, nextRequestId('ddl'))
+      const preview = await queryIpc.prepare(connId, sql, requestId, target)
+      if (preview.requiresConfirmation && !(await ports.requestExecutionConfirmation(preview, sql)))
+        return false
+      const result = await queryIpc.execute(
+        connId,
+        sql,
+        1,
+        requestId,
+        workspaceId,
+        target,
+        preview.confirmationToken ?? undefined
+      )
       if (!result.ok) throw new Error(result.error ?? '执行失败')
       useUiStore().toast('执行成功')
       if (scope) {
@@ -691,6 +850,8 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     } catch (err) {
       ports.showError(err)
       return false
+    } finally {
+      await queryIpc.closeWorkspace(connId, workspaceId).catch(ports.showError)
     }
   }
 
@@ -708,6 +869,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     const { database, schema } = scopeContext(conn, scope)
     try {
       const sql = await adminIpc.tableAdmin(connId, table, action, {
+        database,
         schema: ports.ipcScopeArg(conn, { connectionId: connId, database, schema }),
         newName,
         kind,
@@ -724,7 +886,10 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       })
       if (action === 'drop' || action === 'rename') {
         // 关闭指向旧表的页签（数据/结构）
-        for (const suffix of [`data-${connId}-${table}`, `structure-${connId}-${table}`]) {
+        for (const suffix of [
+          `data-${JSON.stringify([connId, database, schema, table])}`,
+          `structure-${JSON.stringify([connId, database, schema, table])}`,
+        ]) {
           if (ports.hasTab(suffix)) ports.closeTab(suffix)
         }
       }

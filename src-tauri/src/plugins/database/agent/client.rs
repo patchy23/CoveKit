@@ -27,7 +27,7 @@ pub struct AgentClient {
     /// 子进程句柄（保持存活；drop 时由 runtime 层负责 shutdown）
     child: Arc<Mutex<Child>>,
     /// 请求行写入通道（后台写任务消费）
-    writer: mpsc::UnboundedSender<String>,
+    writer: mpsc::Sender<String>,
     /// 待响应的请求表（id → 响应发送端）
     pending: PendingMap,
     /// 请求 id 递增
@@ -56,6 +56,17 @@ pub struct AgentConnectParams {
 }
 
 impl AgentClient {
+    /// 复用前检查子进程存活；失败连接不得永久复用已退出客户端。
+    pub(crate) fn is_running(&self) -> Result<bool, String> {
+        Ok(!self.writer.is_closed()
+            && self
+                .child
+                .lock()
+                .map_err(|e| e.to_string())?
+                .try_wait()
+                .map_err(|e| e.to_string())?
+                .is_none())
+    }
     /// 启动 agent 可执行文件并等待 ready 信号（不带额外环境变量）
     pub async fn spawn(program: &Path, working_dir: &Path) -> Result<Self, String> {
         Self::spawn_with_env_and_args(program, working_dir, &[], &[]).await
@@ -73,7 +84,10 @@ impl AgentClient {
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        cmd.creation_flags(0x08000000);
         for (k, v) in envs {
             cmd.env(k, v);
         }
@@ -84,7 +98,7 @@ impl AgentClient {
         let stdin = child.stdin.take().ok_or("agent stdin 不可用")?;
         let stdout = child.stdout.take().ok_or("agent stdout 不可用")?;
 
-        let (writer_tx, writer_rx) = mpsc::unbounded_channel::<String>();
+        let (writer_tx, writer_rx) = mpsc::channel::<String>(64);
         let pending = Arc::new(Mutex::new(HashMap::new()));
         let client = AgentClient {
             child: Arc::new(Mutex::new(child)),
@@ -94,7 +108,7 @@ impl AgentClient {
         };
 
         // 写任务：请求行 → 子进程 stdin
-        tokio::spawn(write_loop(stdin, writer_rx));
+        tokio::spawn(write_loop(stdin, writer_rx, Arc::clone(&pending)));
 
         // 等待 ready 行（10s 超时）：测试二进制等宿主会先输出噪音行，逐行跳过直到出现 ready
         let mut reader = BufReader::new(stdout);
@@ -102,12 +116,16 @@ impl AgentClient {
             let mut line = String::new();
             for _ in 0..200 {
                 line.clear();
-                match reader.read_line(&mut line).await {
+                match read_frame(&mut reader, &mut line).await {
                     Ok(0) => return Err("agent 进程提前退出（未输出 ready）".to_string()),
                     Err(e) => return Err(format!("读取 agent 输出失败: {e}")),
                     Ok(_) => {}
                 }
-                if line.contains("\"ready\"") {
+                if serde_json::from_str::<Value>(&line)
+                    .ok()
+                    .and_then(|v| v.get("ready").and_then(Value::as_bool))
+                    == Some(true)
+                {
                     return Ok(());
                 }
             }
@@ -126,29 +144,42 @@ impl AgentClient {
     pub async fn call(&self, method: &str, params: Value) -> Result<Value, String> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
-        self.pending
-            .lock()
-            .map_err(|e| e.to_string())?
-            .insert(id, tx);
+        {
+            let mut pending = self.pending.lock().map_err(|e| e.to_string())?;
+            if pending.len() >= 128 {
+                return Err("DB_RESOURCE_LIMIT: agent 待处理请求过多".into());
+            }
+            pending.insert(id, tx);
+        }
+        let _registration = PendingRequest {
+            pending: Arc::clone(&self.pending),
+            id,
+        };
         let request = json!({
             "jsonrpc": "2.0",
             "id": id,
             "method": method,
             "params": params,
         });
-        self.writer
-            .send(request.to_string())
-            .map_err(|_| "agent 写通道已关闭（进程退出？）".to_string())?;
-
-        let result = timeout(RPC_TIMEOUT, rx)
-            .await
-            .map_err(|_| format!("agent 方法 {method} 超时（{RPC_TIMEOUT:?}）"))?
-            .map_err(|_| format!("agent 方法 {method} 响应通道已关闭"))?;
+        let request = request.to_string();
+        if request.len() > 2 * 1024 * 1024 {
+            return Err("DB_RESOURCE_LIMIT: agent 请求超过 2 MiB".into());
+        }
+        let result = timeout(RPC_TIMEOUT, async {
+            self.writer
+                .send(request)
+                .await
+                .map_err(|_| "agent 写通道已关闭".to_string())?;
+            rx.await
+                .map_err(|_| format!("agent 方法 {method} 响应通道已关闭"))?
+        })
+        .await
+        .map_err(|_| format!("agent 方法 {method} 超时（{RPC_TIMEOUT:?}）"))?;
 
         result
     }
 
-    /// 能力协商：确认 multi_session / structured_error_v1 等能力（尽力而为，失败不阻断）
+    /// 能力协商：必须满足已适配的多会话协议，缺失即阻止连接。
     pub async fn handshake(&self) -> Result<(), String> {
         let result = self.call("handshake", json!({})).await?;
         let capabilities = result
@@ -161,11 +192,15 @@ impl AgentClient {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        if capabilities.iter().any(|c| c == "multi_session") {
+        if result
+            .get("protocolVersion")
+            .and_then(Value::as_u64)
+            .is_some_and(|version| version >= 2)
+            && capabilities.iter().any(|c| c == "multi_session")
+        {
             Ok(())
         } else {
-            // 老版单会话 agent 也可用（走 legacy connect 路径由调用方决定）
-            Ok(())
+            Err("agent 不支持所需的多会话协议，请安装兼容驱动".into())
         }
     }
 
@@ -255,7 +290,7 @@ impl AgentClient {
             json!({
                 "agentSessionId": session_id,
                 "sql": sql,
-                "options": { "maxRows": max_rows },
+                "maxRows": max_rows,
             }),
         )
         .await
@@ -290,12 +325,24 @@ impl AgentClient {
             )
             .await?;
         let mut out = Vec::new();
-        if let Some(items) = result.get("objects").and_then(|v| v.as_array()) {
+        {
+            let items = result
+                .as_array()
+                .or_else(|| result.get("objects").and_then(|v| v.as_array()))
+                .ok_or("DB_DRIVER_PROTOCOL: 对象信息必须是数组")?;
             for item in items {
-                let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let kind = item.get("type").and_then(|v| v.as_str()).unwrap_or("table");
+                let name = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .ok_or("DB_DRIVER_PROTOCOL: 对象缺少名称")?;
+                let kind = item
+                    .get("object_type")
+                    .or_else(|| item.get("type"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("table");
                 if !name.is_empty() {
-                    out.push((kind.to_string(), name.to_string()));
+                    out.push((kind.to_ascii_lowercase(), name.to_string()));
                 }
             }
         }
@@ -345,25 +392,39 @@ impl AgentClient {
 /// 从响应中提取名称列表（兼容 {"databases":[...]} 与裸数组两种形状）
 fn extract_names(result: Value, key: &str) -> Result<Vec<String>, String> {
     let arr = result
-        .get(key)
-        .or_else(|| result.get("names"))
-        .and_then(|v| v.as_array())
-        .ok_or_else(|| format!("agent 响应缺少 {key} 字段：{result}"))?;
-    Ok(arr
-        .iter()
-        .filter_map(|v| v.as_str().map(|s| s.to_string()))
-        .collect())
+        .as_array()
+        .or_else(|| {
+            result
+                .get(key)
+                .or_else(|| result.get("names"))
+                .and_then(|v| v.as_array())
+        })
+        .ok_or_else(|| format!("agent 响应缺少 {key} 数组"))?;
+    arr.iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "DB_DRIVER_PROTOCOL: 名称必须是字符串".into())
+        })
+        .collect()
 }
 
 /// 写循环：通道 → 子进程 stdin（每行一个请求）
-async fn write_loop(mut stdin: ChildStdin, mut rx: mpsc::UnboundedReceiver<String>) {
+async fn write_loop(mut stdin: ChildStdin, mut rx: mpsc::Receiver<String>, pending: PendingMap) {
     while let Some(line) = rx.recv().await {
         let mut buf = line.into_bytes();
         buf.push(b'\n');
         if stdin.write_all(&buf).await.is_err() {
             break;
         }
-        let _ = stdin.flush().await;
+        if stdin.flush().await.is_err() {
+            break;
+        }
+    }
+    if let Ok(mut map) = pending.lock() {
+        for (_, sender) in map.drain() {
+            let _ = sender.send(Err("agent 写通道已关闭".into()));
+        }
     }
 }
 
@@ -372,7 +433,7 @@ async fn read_loop(mut reader: BufReader<tokio::process::ChildStdout>, pending: 
     let mut line = String::new();
     loop {
         line.clear();
-        match reader.read_line(&mut line).await {
+        match read_frame(&mut reader, &mut line).await {
             Ok(0) | Err(_) => break, // EOF 或读错误：进程退出
             Ok(_) => {}
         }
@@ -515,4 +576,46 @@ mod tests {
             }
         }
     }
+}
+
+struct PendingRequest {
+    pending: PendingMap,
+    id: u64,
+}
+impl Drop for PendingRequest {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.pending.lock() {
+            pending.remove(&self.id);
+        }
+    }
+}
+/// 在读取时限制 NDJSON 帧，不能先分配无限长字符串再检查。
+async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(
+    reader: &mut R,
+    output: &mut String,
+) -> Result<usize, String> {
+    let mut bytes = Vec::new();
+    loop {
+        let buffer = reader.fill_buf().await.map_err(|e| e.to_string())?;
+        if buffer.is_empty() {
+            break;
+        }
+        let end = buffer
+            .iter()
+            .position(|b| *b == b'\n')
+            .map(|i| i + 1)
+            .unwrap_or(buffer.len());
+        if bytes.len() + end > 16 * 1024 * 1024 {
+            return Err("agent 响应帧超过 16 MiB".into());
+        }
+        let finished = buffer[end - 1] == b'\n';
+        bytes.extend_from_slice(&buffer[..end]);
+        reader.consume(end);
+        if finished {
+            break;
+        }
+    }
+    let length = bytes.len();
+    *output = String::from_utf8(bytes).map_err(|_| "agent 输出不是 UTF-8")?;
+    Ok(length)
 }

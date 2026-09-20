@@ -21,8 +21,7 @@ pub(crate) async fn scan_keys(
         .query_async(mgr)
         .await
         .map_err(|e| format!("SCAN 失败: {e}"))?;
-    let (next, keys) = parse_scan(value);
-    Ok((next, keys))
+    parse_scan(value)
 }
 
 /// 键信息：TYPE + TTL + 值预览（集合类返回条数与前若干元素）
@@ -58,7 +57,7 @@ pub(crate) async fn exec_command(
     if trimmed.is_empty() {
         return Err("命令不能为空".to_string());
     }
-    let mut parts = split_command(trimmed);
+    let mut parts = split_redis_command(trimmed)?;
     if parts.is_empty() {
         return Err("命令格式错误".to_string());
     }
@@ -82,12 +81,27 @@ async fn preview_value(
 ) -> Result<String, String> {
     match kind {
         "string" => {
-            let value: Option<String> = redis::cmd("GET")
+            let value: Vec<u8> = redis::cmd("GETRANGE")
                 .arg(key)
+                .arg(0)
+                .arg(65535)
                 .query_async(mgr)
                 .await
                 .map_err(|e| format!("GET 失败: {e}"))?;
-            Ok(value.unwrap_or_default())
+            let length: u64 = redis::cmd("STRLEN")
+                .arg(key)
+                .query_async(mgr)
+                .await
+                .map_err(|e| e.to_string())?;
+            let preview = render_bytes(&value);
+            Ok(if length > value.len() as u64 {
+                format!(
+                    "{preview}\n[仅预览前 {} 字节，共 {length} 字节]",
+                    value.len()
+                )
+            } else {
+                preview
+            })
         }
         "list" => {
             let len: i64 = redis::cmd("LLEN")
@@ -95,14 +109,21 @@ async fn preview_value(
                 .query_async(mgr)
                 .await
                 .map_err(|e| e.to_string())?;
-            let items: Vec<String> = redis::cmd("LRANGE")
+            let items: Vec<Vec<u8>> = redis::cmd("LRANGE")
                 .arg(key)
                 .arg(0)
                 .arg(9)
                 .query_async(mgr)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(format!("list（共 {len} 项）: [{}]", items.join(", ")))
+            Ok(format!(
+                "list（共 {len} 项）: [{}]",
+                items
+                    .iter()
+                    .map(|item| render_bytes(item))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
         }
         "set" => {
             let len: i64 = redis::cmd("SCARD")
@@ -110,12 +131,19 @@ async fn preview_value(
                 .query_async(mgr)
                 .await
                 .map_err(|e| e.to_string())?;
-            let items: Vec<String> = redis::cmd("SMEMBERS")
+            let (_, items): (u64, Vec<Vec<u8>>) = redis::cmd("SSCAN")
                 .arg(key)
+                .arg(0)
+                .arg("COUNT")
+                .arg(10)
                 .query_async(mgr)
                 .await
                 .map_err(|e| e.to_string())?;
-            let shown: Vec<String> = items.into_iter().take(10).collect();
+            let shown: Vec<String> = items
+                .iter()
+                .take(10)
+                .map(|item| render_bytes(item))
+                .collect();
             Ok(format!("set（共 {len} 项）: [{}]", shown.join(", ")))
         }
         "zset" => {
@@ -124,14 +152,21 @@ async fn preview_value(
                 .query_async(mgr)
                 .await
                 .map_err(|e| e.to_string())?;
-            let items: Vec<String> = redis::cmd("ZRANGE")
+            let items: Vec<Vec<u8>> = redis::cmd("ZRANGE")
                 .arg(key)
                 .arg(0)
                 .arg(9)
                 .query_async(mgr)
                 .await
                 .map_err(|e| e.to_string())?;
-            Ok(format!("zset（共 {len} 项）: [{}]", items.join(", ")))
+            Ok(format!(
+                "zset（共 {len} 项）: [{}]",
+                items
+                    .iter()
+                    .map(|item| render_bytes(item))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
         }
         "hash" => {
             let len: i64 = redis::cmd("HLEN")
@@ -139,15 +174,24 @@ async fn preview_value(
                 .query_async(mgr)
                 .await
                 .map_err(|e| e.to_string())?;
-            let items: Vec<String> = redis::cmd("HGETALL")
+            let (_, items): (u64, Vec<Vec<u8>>) = redis::cmd("HSCAN")
                 .arg(key)
+                .arg(0)
+                .arg("COUNT")
+                .arg(10)
                 .query_async(mgr)
                 .await
                 .map_err(|e| e.to_string())?;
             let pairs: Vec<String> = items
                 .chunks(2)
                 .take(10)
-                .map(|pair| format!("{}: {}", pair[0], pair.get(1).map_or("", |v| v.as_str())))
+                .map(|pair| {
+                    format!(
+                        "{}: {}",
+                        render_bytes(&pair[0]),
+                        pair.get(1).map(|v| render_bytes(v)).unwrap_or_default()
+                    )
+                })
                 .collect();
             Ok(format!("hash（共 {len} 项）: {{ {} }}", pairs.join(", ")))
         }
@@ -164,60 +208,101 @@ async fn preview_value(
 }
 
 /// 解析 SCAN 返回：([next_cursor, [keys...]])
-fn parse_scan(value: RedisValue) -> (u64, Vec<String>) {
-    if let RedisValue::Array(items) = value {
-        let mut iter = items.into_iter();
-        let next = match iter.next() {
-            Some(RedisValue::Int(n)) => n as u64,
-            Some(RedisValue::BulkString(b)) => String::from_utf8_lossy(&b).parse().unwrap_or(0),
-            _ => 0,
-        };
-        let keys = match iter.next() {
-            Some(RedisValue::Array(list)) => list
-                .into_iter()
-                .filter_map(|v| match v {
-                    RedisValue::BulkString(b) => Some(String::from_utf8_lossy(&b).to_string()),
-                    RedisValue::SimpleString(s) => Some(s),
-                    _ => None,
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        (next, keys)
+fn parse_scan(value: RedisValue) -> Result<(u64, Vec<String>), String> {
+    let RedisValue::Array(items) = value else {
+        return Err("SCAN 返回格式无效".into());
+    };
+    if items.len() != 2 {
+        return Err("SCAN 返回格式无效".into());
+    }
+    let mut iter = items.into_iter();
+    let next = match iter.next() {
+        Some(RedisValue::Int(n)) => u64::try_from(n).map_err(|_| "SCAN 游标无效")?,
+        Some(RedisValue::BulkString(b)) => std::str::from_utf8(&b)
+            .map_err(|_| "SCAN 游标编码无效")?
+            .parse()
+            .map_err(|_| "SCAN 游标无效")?,
+        _ => return Err("SCAN 游标缺失".into()),
+    };
+    let Some(RedisValue::Array(keys)) = iter.next() else {
+        return Err("SCAN 键列表缺失".into());
+    };
+    let keys = keys
+        .into_iter()
+        .map(|value| match value {
+            RedisValue::BulkString(b) => String::from_utf8(b).map_err(|_| {
+                "当前键树不支持非 UTF-8 键名，请使用 Redis 原生字节客户端处理该键".into()
+            }),
+            RedisValue::SimpleString(s) => Ok(s),
+            _ => Err("SCAN 键名格式无效".into()),
+        })
+        .collect::<Result<_, String>>()?;
+    Ok((next, keys))
+}
+
+/// 二进制预览保持原始字节，非法 UTF-8 不替换为伪文本。
+fn render_bytes(bytes: &[u8]) -> String {
+    let preview = &bytes[..bytes.len().min(65536)];
+    let value = match std::str::from_utf8(preview) {
+        Ok(text) => text.to_string(),
+        Err(_) => format!("hex:{}", hex::encode(preview)),
+    };
+    if bytes.len() > preview.len() {
+        format!("{value} [已截断，共 {} 字节]", bytes.len())
     } else {
-        (0, Vec::new())
+        value
     }
 }
 
-/// 命令行拆分：引号包裹的参数原样保留（如 `SET k "hello world"`）
-fn split_command(line: &str) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut quote: Option<char> = None;
-    for c in line.chars() {
-        match quote {
-            Some(q) => {
-                if c == q {
-                    quote = None;
-                } else {
-                    current.push(c);
-                }
+/// 命令参数保留空字符串与反斜线转义；实际执行以结构化参数传给驱动。
+pub(crate) fn split_redis_command(line: &str) -> Result<Vec<String>, String> {
+    let mut args = Vec::new();
+    let mut value = String::new();
+    let mut quote = None;
+    let mut started = false;
+    let mut escaped = false;
+    for ch in line.chars() {
+        if escaped {
+            value.push(match ch {
+                'n' => '\n',
+                'r' => '\r',
+                't' => '\t',
+                c => c,
+            });
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            started = true;
+            continue;
+        }
+        if let Some(q) = quote {
+            if ch == q {
+                quote = None;
+            } else {
+                value.push(ch);
             }
-            None => match c {
-                '\'' | '"' => quote = Some(c),
-                ' ' | '\t' => {
-                    if !current.is_empty() {
-                        parts.push(std::mem::take(&mut current));
-                    }
-                }
-                _ => current.push(c),
-            },
+        } else if ch == '\'' || ch == '"' {
+            quote = Some(ch);
+            started = true;
+        } else if ch.is_whitespace() {
+            if started {
+                args.push(std::mem::take(&mut value));
+                started = false;
+            }
+        } else {
+            value.push(ch);
+            started = true;
         }
     }
-    if !current.is_empty() {
-        parts.push(current);
+    if escaped || quote.is_some() {
+        return Err("Redis 命令存在未闭合引号或转义".into());
     }
-    parts
+    if started {
+        args.push(value);
+    }
+    Ok(args)
 }
 
 /// Redis 值渲染为展示文本
@@ -225,7 +310,7 @@ pub fn render_value(value: &RedisValue) -> String {
     match value {
         RedisValue::Nil => "(nil)".to_string(),
         RedisValue::Int(n) => n.to_string(),
-        RedisValue::BulkString(b) => String::from_utf8_lossy(b).to_string(),
+        RedisValue::BulkString(b) => render_bytes(b),
         RedisValue::SimpleString(s) => s.clone(),
         RedisValue::Okay => "OK".to_string(),
         RedisValue::Array(items) => {
@@ -243,15 +328,18 @@ mod tests {
     #[test]
     fn command_split_keeps_quoted_args() {
         assert_eq!(
-            split_command("SET user:1 \"hello world\""),
+            split_redis_command("SET user:1 \"hello world\"").unwrap(),
             vec!["SET", "user:1", "hello world"]
         );
-        assert_eq!(split_command("  GET  user:1  "), vec!["GET", "user:1"]);
         assert_eq!(
-            split_command("LPUSH list 'a b' c"),
+            split_redis_command("  GET  user:1  ").unwrap(),
+            vec!["GET", "user:1"]
+        );
+        assert_eq!(
+            split_redis_command("LPUSH list 'a b' c").unwrap(),
             vec!["LPUSH", "list", "a b", "c"]
         );
-        assert_eq!(split_command(""), Vec::<String>::new());
+        assert_eq!(split_redis_command("").unwrap(), Vec::<String>::new());
     }
 
     #[test]
@@ -260,7 +348,7 @@ mod tests {
             RedisValue::Int(42),
             RedisValue::Array(vec![RedisValue::BulkString(b"k1".to_vec())]),
         ]);
-        let (next, keys) = parse_scan(value);
+        let (next, keys) = parse_scan(value).unwrap();
         assert_eq!(next, 42);
         assert_eq!(keys, vec!["k1"]);
     }

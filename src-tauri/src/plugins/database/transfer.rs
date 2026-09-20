@@ -36,7 +36,7 @@ impl RecordStore for DatabaseRecords {
         records::query(conn, match dataset {
             CONNECTIONS => "SELECT json_object('id',id,'label',label,'dbType',db_type,'host',CASE WHEN db_type='sqlite' THEN '' ELSE host END,'port',port,'username',username,'database',CASE WHEN db_type='sqlite' THEN '' ELSE database END,'env',env,'readonly',json(CASE WHEN readonly<>0 THEN 'true' ELSE 'false' END),'ssl',json(CASE WHEN ssl<>0 THEN 'true' ELSE 'false' END),'connectTimeoutMs',connect_timeout_ms) FROM connections ORDER BY sort_order,id",
             SAVED => "SELECT json_object('id',uid,'title',title,'sql',sql,'at',at) FROM saved_sql ORDER BY id",
-            HISTORY => "SELECT json_object('id',h.uid,'connectionId',CASE WHEN c.id IS NULL THEN '' ELSE h.conn_id END,'sql',h.sql,'status',h.status,'durationMs',h.duration_ms,'at',h.at) FROM history h LEFT JOIN connections c ON c.id=h.conn_id ORDER BY h.id",
+            HISTORY => "SELECT json_object('id',h.uid,'connectionId',CASE WHEN c.id IS NULL THEN '' ELSE h.conn_id END,'sql',h.sql,'status',h.status,'database',h.database_name,'schema',h.schema_name,'durationMs',h.duration_ms,'at',h.at) FROM history h LEFT JOIN connections c ON c.id=h.conn_id ORDER BY h.id",
             _ => return Err("未知数据库数据集".into()),
         })
     }
@@ -58,7 +58,16 @@ impl RecordStore for DatabaseRecords {
                     "connectTimeoutMs",
                 ],
                 SAVED => &["id", "title", "sql", "at"],
-                HISTORY => &["id", "connectionId", "sql", "status", "durationMs", "at"],
+                HISTORY => &[
+                    "id",
+                    "connectionId",
+                    "sql",
+                    "status",
+                    "durationMs",
+                    "at",
+                    "database",
+                    "schema",
+                ],
                 _ => return Err("未知数据库数据集".into()),
             },
         )?;
@@ -110,9 +119,9 @@ impl RecordStore for DatabaseRecords {
     }
     fn write(&self, conn: &Connection, dataset: &str, record: &Value) -> Result<(), String> {
         let sql = match dataset {
-            CONNECTIONS => "INSERT INTO connections(id,label,db_type,host,port,username,database,env,readonly,ssl,connect_timeout_ms,credential_pending) VALUES(json_extract(?1,'$.id'),json_extract(?1,'$.label'),json_extract(?1,'$.dbType'),json_extract(?1,'$.host'),json_extract(?1,'$.port'),json_extract(?1,'$.username'),json_extract(?1,'$.database'),json_extract(?1,'$.env'),json_extract(?1,'$.readonly'),json_extract(?1,'$.ssl'),json_extract(?1,'$.connectTimeoutMs'),1) ON CONFLICT(id) DO UPDATE SET label=excluded.label,db_type=excluded.db_type,host=excluded.host,port=excluded.port,username=excluded.username,database=excluded.database,env=excluded.env,readonly=excluded.readonly,ssl=excluded.ssl,connect_timeout_ms=excluded.connect_timeout_ms,credential_pending=1",
+            CONNECTIONS => "INSERT INTO connections(id,label,db_type,host,port,username,database,env,readonly,ssl,connect_timeout_ms,credential_pending) VALUES(json_extract(?1,'$.id'),json_extract(?1,'$.label'),json_extract(?1,'$.dbType'),json_extract(?1,'$.host'),json_extract(?1,'$.port'),json_extract(?1,'$.username'),json_extract(?1,'$.database'),json_extract(?1,'$.env'),json_extract(?1,'$.readonly'),json_extract(?1,'$.ssl'),json_extract(?1,'$.connectTimeoutMs'),1) ON CONFLICT(id) DO UPDATE SET label=excluded.label,db_type=excluded.db_type,host=excluded.host,port=excluded.port,username=excluded.username,database=excluded.database,env=excluded.env,readonly=excluded.readonly,ssl=excluded.ssl,connect_timeout_ms=excluded.connect_timeout_ms,credential_pending=1,credential_ref=NULL",
             SAVED => "INSERT INTO saved_sql(uid,title,sql,at) VALUES(json_extract(?1,'$.id'),json_extract(?1,'$.title'),json_extract(?1,'$.sql'),json_extract(?1,'$.at')) ON CONFLICT(uid) DO UPDATE SET title=excluded.title,sql=excluded.sql,at=excluded.at",
-            HISTORY => "INSERT INTO history(uid,conn_id,sql,status,duration_ms,at) VALUES(json_extract(?1,'$.id'),json_extract(?1,'$.connectionId'),json_extract(?1,'$.sql'),json_extract(?1,'$.status'),json_extract(?1,'$.durationMs'),json_extract(?1,'$.at')) ON CONFLICT(uid) DO UPDATE SET conn_id=excluded.conn_id,sql=excluded.sql,status=excluded.status,duration_ms=excluded.duration_ms,at=excluded.at",
+            HISTORY => "INSERT INTO history(uid,conn_id,sql,status,duration_ms,at,database_name,schema_name) VALUES(json_extract(?1,'$.id'),json_extract(?1,'$.connectionId'),json_extract(?1,'$.sql'),json_extract(?1,'$.status'),json_extract(?1,'$.durationMs'),json_extract(?1,'$.at'),COALESCE(json_extract(?1,'$.database'),''),COALESCE(json_extract(?1,'$.schema'),'')) ON CONFLICT(uid) DO UPDATE SET conn_id=excluded.conn_id,sql=excluded.sql,status=excluded.status,duration_ms=excluded.duration_ms,at=excluded.at,database_name=excluded.database_name,schema_name=excluded.schema_name",
             _ => return Err("未知数据库数据集".into()),
         };
         conn.execute(sql, [record.to_string()])

@@ -35,6 +35,7 @@ const subTabs = [
   { value: 'ddl', label: 'DDL' },
 ]
 
+const errors = computed(() => db.structureErrors.value[db.activeTabId.value] ?? {})
 const columns = computed(() => db.structureColumns.value[db.activeTabId.value] ?? [])
 const indexes = computed(() => db.structureIndexes.value[db.activeTabId.value] ?? [])
 const ddl = computed(() => db.structureDdl.value[db.activeTabId.value] ?? '')
@@ -52,7 +53,9 @@ function genQuery() {
   const qualified = [scope, tableName.value].filter(Boolean).map(quote).join('.')
   db.openSqlEditorWithSql(
     ctx.connectionId,
-    `SELECT * FROM ${qualified} LIMIT 100;`,
+    db.activeTabConnection.value?.dbType === 'oracle'
+      ? `SELECT * FROM ${qualified} FETCH FIRST 100 ROWS ONLY;`
+      : `SELECT * FROM ${qualified} LIMIT 100;`,
     ctx.database,
     ctx.schema
   )
@@ -125,7 +128,10 @@ function genQuery() {
           v-else
           class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
         >
-          加载结构中…
+          {{
+            errors.columns ||
+            (db.structureColumns.value[db.activeTabId.value] ? '无列信息' : '加载结构中…')
+          }}
         </div>
       </div>
     </UiScrollArea>
@@ -159,7 +165,10 @@ function genQuery() {
           v-else
           class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
         >
-          无索引或该类型暂不支持
+          {{
+            errors.indexes ||
+            (db.structureIndexes.value[db.activeTabId.value] ? '无索引' : '加载索引中…')
+          }}
         </div>
       </div>
     </UiScrollArea>

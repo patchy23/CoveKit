@@ -1,17 +1,24 @@
 //! 数据库工作台插件 · 门面（命令薄层 + 插件装配）
 //! 命令前缀 `dbc_`（与既有 sqlite 插件的 `db_` 前缀区分；注册表全局唯一）。
 //! 结构：models.rs（契约）/ dialect/（方言纯函数）/ drivers/（会话注册表 + 驱动执行）/
-//! catalog/（查询执行、元数据、分页与 Redis 命令）/ store.rs（本地库）/ secrets.rs（AES（插件私有） 凭据）/ agent/（侧车驱动）。
+//! catalog/（查询执行、元数据、分页与 Redis 命令）/ store.rs（本地库）/ secrets.rs（公共 Vault 凭据）/ agent/（侧车驱动）。
 //! close_hooks.rs（退出清理：取消查询 → 结束 agent 子进程 → 清会话注册表）。
 
 pub(crate) mod admin;
 pub(crate) mod agent;
 pub(crate) mod catalog;
 pub(crate) mod close_hooks;
+mod credential_refs;
 pub(crate) mod dialect;
+mod drafts;
 pub(crate) mod drivers;
+#[cfg(test)]
+mod execution_tests;
+pub(crate) mod files;
 pub(crate) mod models;
+pub(crate) mod results;
 pub(crate) mod secrets;
+pub(crate) mod sql_analysis;
 pub(crate) mod store;
 mod transfer;
 use std::collections::HashMap;
@@ -23,23 +30,69 @@ use crate::plugins::database::models::{ConnConfig, HistoryEntry, SavedEntry};
 use crate::plugins::database::store::StoreState;
 
 /// 连接管理命令 ───────────────────────────────────────────────────────────
-/// 保存连接配置（含密码 → AES（插件私有）；已连接则更新会话配置）
+/// 保存连接配置（含密码 → 公共 Vault；已连接则更新会话配置）
 /// 密码留空且连接已存在时保留原密码（编辑模式不修改密码）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_connection_save(
+    session_state: State<'_, drivers::DbState>,
+    runtimes: State<'_, drivers::AgentRuntimeState>,
+    workspaces: State<'_, drivers::WorkspaceState>,
+    cancellations: State<'_, drivers::DbCancelState>,
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
     secrets_state: State<'_, secrets::SecretsState>,
-    config: ConnConfig,
+    mut config: ConnConfig,
     password: String,
+    clear_password: Option<bool>,
 ) -> Result<(), String> {
     let _maintenance = crate::framework::context::maintenance_guard().await;
     let existed = store::list_connections(&app, &store_state)?
         .iter()
         .any(|c| c.id == config.id);
-    store::save_connection(&app, &store_state, &config)?;
-    if !password.is_empty() || !existed || transfer::credential_pending(&app, &config.id)? {
+    session_state.next_generation(&config.id)?;
+    drivers::workspace::close_connection(&workspaces, &cancellations, &config.id).await?;
+    drivers::disconnect(&session_state, &runtimes, &config.id).await?;
+    let _credential_lock = secrets::CONFIG_CREDENTIAL_LOCK
+        .lock()
+        .map_err(|e| e.to_string())?;
+    if clear_password.unwrap_or(false) || config.db_type.is_sqlite() {
+        config.credential_id = None;
+    }
+    let password = if clear_password.unwrap_or(false) || config.db_type.is_sqlite() {
+        String::new()
+    } else if let Some(password) = secrets::referenced_password(&app, &mut config)? {
+        password
+    } else {
+        password
+    };
+    if config.credential_id.is_none() && !password.is_empty() {
+        config.credential_id = Some(secrets::import_password(&app, &config, &password)?);
+    }
+    let update_secret = clear_password.unwrap_or(false)
+        || !password.is_empty()
+        || !existed
+        || transfer::credential_pending(&app, &config.id)?;
+    let previous = if update_secret {
+        secrets::secret_snapshot(&app, &secrets_state, &config.id)?
+    } else {
+        None
+    };
+    if update_secret {
         secrets::secret_save(&app, &secrets_state, &config.id, &password)?;
+    }
+    if let Err(error) = store::save_connection(&app, &store_state, &config) {
+        if update_secret {
+            let rollback = if let Some(previous) = previous {
+                secrets::secret_save(&app, &secrets_state, &config.id, &previous)
+            } else {
+                secrets::secret_delete(&app, &secrets_state, &config.id)
+            };
+            rollback.map_err(|failure| format!("{error}；恢复原凭据失败：{failure}"))?;
+        }
+        return Err(error);
+    }
+    if update_secret || config.credential_id.is_some() {
+        transfer::credential_saved(&app, &config.id)?;
     }
     Ok(())
 }
@@ -47,13 +100,21 @@ pub async fn dbc_connection_save(
 /// 删除连接配置（并清理凭据；会话由前端先断开）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_connection_delete(
+    session_state: State<'_, drivers::DbState>,
+    runtimes: State<'_, drivers::AgentRuntimeState>,
+    workspaces: State<'_, drivers::WorkspaceState>,
+    cancellations: State<'_, drivers::DbCancelState>,
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
     secrets_state: State<'_, secrets::SecretsState>,
     id: String,
 ) -> Result<(), String> {
+    session_state.next_generation(&id)?;
+    drivers::workspace::close_connection(&workspaces, &cancellations, &id).await?;
+    drivers::disconnect(&session_state, &runtimes, &id).await?;
     store::delete_connection(&app, &store_state, &id)?;
-    let _ = secrets::secret_delete(&app, &secrets_state, &id);
+    secrets::secret_delete(&app, &secrets_state, &id)
+        .map_err(|e| format!("连接配置已删除，但凭据清理失败：{e}"))?;
     Ok(())
 }
 
@@ -63,12 +124,13 @@ pub async fn dbc_connections(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
     session_state: State<'_, drivers::DbState>,
+    secrets_state: State<'_, secrets::SecretsState>,
 ) -> Result<Vec<models::DbConnectionInfo>, String> {
-    let configs = store::list_connections(&app, &store_state)?;
+    let configs = secrets::migrate_references(&app, &secrets_state, &store_state)?;
     Ok(drivers::snapshot(&session_state, &configs).await)
 }
 
-/// 建立连接（读取 AES（插件私有） 凭据；成功后探测版本与时延）
+/// 建立连接（读取 公共 Vault 凭据；成功后探测版本与时延）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_connect(
     app: tauri::AppHandle,
@@ -85,45 +147,58 @@ pub async fn dbc_connect(
         .cloned()
         .ok_or_else(|| format!("连接配置不存在：{id}"))?;
     let password = secrets::secret_get(&app, &secrets_state, &id)?;
-    let entry = drivers::connect(&app, &session_state, &runtimes, &config, &password).await?;
+    let timeout =
+        std::time::Duration::from_millis(config.connect_timeout_ms.clamp(1000, 120_000) + 5000);
+    let entry = tokio::time::timeout(
+        timeout,
+        drivers::connect(&app, &session_state, &runtimes, &config, &password),
+    )
+    .await
+    .map_err(|_| "数据库连接超时，未建立工作会话")??;
     Ok(entry.to_info())
 }
 
 /// 断开连接
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_disconnect(
+    workspaces: State<'_, drivers::WorkspaceState>,
+    cancellations: State<'_, drivers::DbCancelState>,
     session_state: State<'_, drivers::DbState>,
     runtimes: State<'_, drivers::AgentRuntimeState>,
     id: String,
 ) -> Result<(), String> {
-    drivers::disconnect(&session_state, &runtimes, &id).await
+    session_state.next_generation(&id)?;
+    let cleanup = drivers::workspace::close_connection(&workspaces, &cancellations, &id).await;
+    let disconnect = drivers::disconnect(&session_state, &runtimes, &id).await;
+    cleanup.and(disconnect)
 }
 
 /// 测试连接（不保存、不落会话；返回版本信息）
-/// 密码为空且该连接已存在时，使用 AES（插件私有） 已保存密码（编辑模式「留空=不修改」对称语义）
+/// 密码为空且该连接已存在时，使用 公共 Vault 已保存密码（编辑模式「留空=不修改」对称语义）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_test(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
     secrets_state: State<'_, secrets::SecretsState>,
     runtimes: State<'_, drivers::AgentRuntimeState>,
-    config: ConnConfig,
+    mut config: ConnConfig,
     password: String,
+    clear_password: Option<bool>,
 ) -> Result<String, String> {
-    let password = if password.is_empty() {
+    let password = if clear_password.unwrap_or(false) {
+        String::new()
+    } else if let Some(password) = secrets::referenced_password(&app, &mut config)? {
+        password
+    } else if password.is_empty() && !config.db_type.is_sqlite() {
         let existed = store::list_connections(&app, &store_state)?
             .iter()
             .any(|c| c.id == config.id);
         if existed {
             let saved = secrets::secret_get(&app, &secrets_state, &config.id)?;
-            if saved.is_empty() {
-                return Err(
-                    "密码为空且没有已保存的密码：请在编辑连接时重新填写密码后再测试".into(),
-                );
-            }
+
             saved
         } else {
-            return Err("密码为空：请填写密码后再测试连接".into());
+            String::new()
         }
     } else {
         password
@@ -150,8 +225,17 @@ pub async fn dbc_history_add(
     sql: String,
     status: String,
     duration_ms: u64,
+    scope: Option<models::ExecutionScope>,
 ) -> Result<(), String> {
-    store::add_history(&app, &store_state, &conn_id, &sql, &status, duration_ms)
+    store::add_history(
+        &app,
+        &store_state,
+        &conn_id,
+        &sql,
+        &status,
+        duration_ms,
+        &scope.unwrap_or_default(),
+    )
 }
 
 /// 清空历史
@@ -240,6 +324,8 @@ crate::covekit_module! {
         dbc_connect => "建立数据库连接（探测版本与时延）",
         dbc_disconnect => "断开数据库连接",
         dbc_test => "测试数据库连接（不保存）",
+        drafts::dbc_drafts => "读取 SQL 恢复草稿",
+        drafts::dbc_drafts_save => "保存 SQL 恢复草稿",
         dbc_history => "查询历史列表",
         dbc_history_add => "追加查询历史",
         dbc_history_clear => "清空查询历史",
@@ -250,12 +336,22 @@ crate::covekit_module! {
         dbc_driver_status => "agent 驱动就绪状态（含目录指引）",
         catalog::query::dbc_execute => "执行 SQL（多语句拆分，查询返回表格）",
         catalog::query::dbc_cancel => "取消进行中的查询",
+        catalog::query::dbc_prepare_execution => "SQL 风险与执行目标预检",
+        catalog::query::dbc_workspace_close => "关闭 SQL 页签独占会话",
         catalog::metadata::dbc_databases => "数据库列表",
         catalog::metadata::dbc_schemas => "schema 列表",
         catalog::metadata::dbc_objects => "对象列表（表/视图等）",
         catalog::metadata::dbc_columns => "表结构列信息",
+        catalog::export::dbc_export_query => "完整查询结果流式导出",
+        catalog::csv_import::dbc_csv_preview => "预览 CSV 文件与列映射",
+        catalog::csv_import::dbc_csv_import => "事务导入 CSV 文件",
+        catalog::mutation::dbc_table_apply => "提交单表行变更",
+        catalog::table::dbc_table_count => "按当前筛选精确统计",
         catalog::table::dbc_table_data => "表数据分页浏览",
         catalog::query::dbc_export_csv => "导出 CSV 文件（结果集导出）",
+        files::dbc_sql_file_read => "打开 SQL 文件",
+        files::dbc_sql_file_write => "保存 SQL 文件",
+        files::dbc_export_rows => "导出类型化结果 CSV",
         catalog::redis::dbc_redis_keys => "Redis 键列表（SCAN）",
         catalog::redis::dbc_redis_key_info => "Redis 键信息（TYPE/TTL/预览）",
         admin::dbc_charset_options => "字符集与排序规则选项（建库对话框）",
@@ -265,7 +361,7 @@ crate::covekit_module! {
         admin::dbc_table_admin => "表维护（重命名/清空/删除）",
         admin::dbc_table_ddl => "表 DDL 查看",
         admin::dbc_table_indexes => "表索引清单",
-        dbc_connection_save => "保存连接配置（密码入插件私有 AES；已连接则更新会话）",
+        dbc_connection_save => "保存连接配置及公共凭证引用，旧会话失效",
     },
 }
 
@@ -273,6 +369,7 @@ crate::covekit_module! {
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
     transfer::register();
+    credential_refs::register_provider();
     // 关闭清理登记（AR06）：查询取消、agent 子进程与连接会话由本模块自己清，
     // 框架只协调、超时与汇总（没有这一步，父进程退出后 agent 会变成孤儿进程）
     crate::framework::lifecycle::register(
@@ -280,8 +377,12 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
             .with_dispose(close_hooks::on_dispose),
     );
     builder
-        .manage(drivers::DbState(Mutex::new(HashMap::new())))
+        .manage(drivers::DbState(
+            Mutex::new(HashMap::new()),
+            Mutex::new(HashMap::new()),
+        ))
         .manage(drivers::DbCancelState(Mutex::new(HashMap::new())))
+        .manage(drivers::WorkspaceState::default())
         .manage(drivers::AgentRuntimeState(Mutex::new(HashMap::new())))
         .manage(StoreState(Mutex::new(None)))
         .manage(secrets::SecretsState(Mutex::new(None)))

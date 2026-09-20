@@ -61,5 +61,9 @@ pub(crate) fn on_dispose(app: Option<&tauri::AppHandle>, _reason: CloseReason) -
         Err(_) => failures.push(format!("{OWNER}.session: 会话注册表锁不可用")),
     }
 
+    match app.state::<super::drivers::WorkspaceState>().0.lock() {
+        Ok(mut registry) => registry.clear(),
+        Err(_) => failures.push(format!("{OWNER}.workspace: 工作会话表锁不可用")),
+    }
     failures
 }

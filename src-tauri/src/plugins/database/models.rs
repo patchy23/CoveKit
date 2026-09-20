@@ -108,9 +108,12 @@ impl DbType {
 }
 
 /// 连接配置（保存于本地库；密码不入本结构，单独存 stronghold）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnConfig {
+    /// 公共 Vault 引用；旧记录缺省为空，由连接列表幂等迁移。
+    #[serde(default)]
+    pub credential_id: Option<String>,
     /// 连接唯一 id（前端生成，如 `conn-1723xxxx`）
     pub id: String,
     /// 展示名称（如「生产 · 订单库」）
@@ -151,6 +154,8 @@ pub enum ConnStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbConnectionInfo {
+    /// 公共凭证引用；不向前端返回密码。
+    pub credential_id: Option<String>,
     /// 连接 id
     pub id: String,
     /// 展示名称
@@ -213,10 +218,40 @@ pub struct DbColumnInfo {
     pub comment: String,
 }
 
+/// 可逆单元格；binary 的 value 为十六进制，数值保留十进制字符串精度。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbValue {
+    /// 值类型标签；null、binary、decimal 等由驱动显式区分。
+    pub kind: String,
+    /// 无损文本载荷；SQL NULL 为 None，空字符串仍为 Some。
+    pub value: Option<String>,
+}
+
+/// SQL 页签的实际执行目标，空值使用连接默认值。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutionScope {
+    /// 目标数据库；空值使用连接默认库。
+    pub database: String,
+    /// 目标 schema；无 schema 的驱动忽略。
+    pub schema: String,
+}
+
 /// SQL 执行结果（查询返回表格，非查询返回影响行数）
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryResult {
+    /// 多结果集按原 SQL 语句归属，不把 CALL 的第二结果误当成后续 SQL。
+    pub statement_index: Option<usize>,
+    /// 当前工作页是否处于显式事务；错误后的事务仍需回滚。
+    pub transaction_active: bool,
+    /// 与 rows 一一对应的原值，NULL 与文本 NULL 独立。
+    pub values: Vec<Vec<DbValue>>,
+    /// 驱动原生列类型；无声明类型的 SQLite 可为空。
+    pub column_types: Vec<String>,
+    /// 多语句执行按顺序保留各结果及失败，单语句为空。
+    pub statements: Vec<QueryResult>,
     /// 是否成功
     pub ok: bool,
     /// 列名（查询语句）
@@ -239,6 +274,18 @@ pub struct QueryResult {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DbTablePage {
+    /// 本页实际执行的参数化 SQL。
+    pub query_sql: String,
+    /// 与 SQL 占位符顺序一致的绑定值。
+    pub query_params: Vec<DbValue>,
+    /// 与显示行逐格对应的可逆值。
+    pub values: Vec<Vec<DbValue>>,
+    /// 通过额外读取一行判断是否存在下一页。
+    pub has_more: bool,
+    /// lowerBound/pageEnd 均非独立 COUNT 的精确总数。
+    pub total_kind: String,
+    /// 排序是否包含唯一主键以避免页边界随机漂移。
+    pub stable_order: bool,
     /// 列名
     pub columns: Vec<String>,
     /// 当前页数据行
@@ -273,6 +320,10 @@ pub struct RedisKeyInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryEntry {
+    /// 执行时实际目标数据库。
+    pub database: String,
+    /// 执行时实际目标 schema。
+    pub schema: String,
     /// 自增 id
     pub id: i64,
     /// 连接 id（可为空表示未归属）
@@ -363,4 +414,105 @@ pub struct DbIndexInfo {
     pub non_unique: bool,
     /// 索引类型/定义（mysql 为 BTREE 等；pg 为完整 indexdef）
     pub definition: String,
+}
+
+/// 服务端筛选只允许固定操作符，列名须在真实结构中存在。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableFilter {
+    #[serde(default)]
+    /// IN 或 BETWEEN 的绑定值列表，其余操作符忽略。
+    pub values: Vec<DbValue>,
+    /// 目标列名，须通过真实元数据白名单校验。
+    pub column: String,
+    /// 固定操作符标识，禁止传入 SQL 片段。
+    pub operator: String,
+    /// 单值操作符的绑定值。
+    pub value: DbValue,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// 服务端排序列及方向，列名必须属于目标表。
+pub struct TableSort {
+    /// 已校验的排序列名。
+    pub column: String,
+    /// 是否降序。
+    pub descending: bool,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// 数据浏览的筛选与排序条件，分页和精确计数共享此契约。
+pub struct TableOptions {
+    #[serde(default)]
+    /// 以 AND 组合的筛选条件，最多 20 条。
+    pub filters: Vec<TableFilter>,
+    #[serde(default)]
+    /// 排序列，最多 10 项；后端追加主键。
+    pub sort: Vec<TableSort>,
+}
+/// 单表的一次变更；original 是完整原行，用于主键定位和并发冲突检测。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TableChange {
+    /// insert、update 或 delete。
+    pub action: String,
+    #[serde(default)]
+    /// 修改前完整原行，用于主键定位和并发校验。
+    pub original: HashMap<String, DbValue>,
+    #[serde(default)]
+    /// 待写入列及新值；未提供的列保持默认或原值。
+    pub values: HashMap<String, DbValue>,
+}
+
+/** CSV 预览只返回前 20 行；指纹绑定用户确认的文件内容。 */
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvPreview {
+    /// CSV 表头，用户据此选择列映射。
+    pub columns: Vec<String>,
+    /// 前 20 行原始 CSV 文本。
+    pub rows: Vec<Vec<String>>,
+    /// 完整文件的数据行数。
+    pub total: u64,
+    /// 文件 SHA-256，导入时校验防止预览后被替换。
+    pub fingerprint: String,
+}
+/// CSV 源索引到目标表列的显式映射。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CsvMapping {
+    /// 从零开始的 CSV 列索引。
+    pub source: usize,
+    /// 目标表真实列名。
+    pub column: String,
+}
+
+/// 可恢复 SQL 文档；结果和事务不属于持久化草稿。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryDraft {
+    /// 恢复后的页签标题。
+    pub label: String,
+    /// 未执行的 SQL 原文。
+    pub sql: String,
+    /// 连接引用；连接不存在时保持离线草稿。
+    pub connection_id: String,
+    /// 文档目标数据库。
+    pub database: String,
+    /// 文档目标 schema。
+    pub schema: String,
+    /// CodeMirror 选区起点，UTF-16 偏移。
+    pub from: usize,
+    /// CodeMirror 选区终点，UTF-16 偏移。
+    pub to: usize,
+    /// 相对文件或收藏是否有未保存修改。
+    pub dirty: bool,
+    /// 是否优先恢复为当前编辑页。
+    pub active: bool,
+    /// 关联 SQL 收藏标识。
+    pub saved_id: Option<i64>,
+    /// 关联收藏的标题快照。
+    pub saved_title: Option<String>,
+    /// 关联 SQL 文件路径，不在恢复时自动读取。
+    pub file_path: Option<String>,
 }

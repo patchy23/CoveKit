@@ -6,9 +6,10 @@
  * 每条语句起始行的 ▶ 执行按钮、Ctrl(⌘)+点击表名跳结构。本组件只做两件事：
  * 把插件领域能力接进编辑器，以及按「有选中执行选中段、否则执行光标所在语句」给出可执行 SQL。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, nextTick, watch } from 'vue'
 import {
   MySQL,
+  PLSQL,
   PostgreSQL,
   SQLite,
   sql,
@@ -16,7 +17,8 @@ import {
   type SQLNamespace,
 } from '@codemirror/lang-sql'
 import type { CompletionSource } from '@codemirror/autocomplete'
-import type { Extension } from '@codemirror/state'
+import { Prec, type Extension } from '@codemirror/state'
+import { keymap } from '@codemirror/view'
 import { UiCodeEditor } from '@/core/ui'
 import {
   sqlCompletionSources,
@@ -35,6 +37,9 @@ export interface SqlEditorTable {
 }
 
 const props = defineProps<{
+  selection?: { from: number; to: number }
+  documentKey?: string
+  documentKeys?: string[]
   modelValue: string
   placeholder?: string
   tables?: SqlEditorTable[]
@@ -44,10 +49,30 @@ const props = defineProps<{
   onTableClick?: (table: string) => void
 }>()
 
-const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
+const emit = defineEmits<{
+  (e: 'update:modelValue', value: string): void
+  (e: 'save'): void
+  (e: 'selection', value: { from: number; to: number }): void
+}>()
 
 /** UiCodeEditor 实例引用 */
 const editor = ref<InstanceType<typeof UiCodeEditor> | null>(null)
+
+watch(
+  () => props.documentKey,
+  async () => {
+    const key = props.documentKey
+    const selection = props.selection
+    await nextTick()
+    if (key === props.documentKey && selection)
+      editor.value?.setCursor(selection.from, selection.to)
+  },
+  { immediate: true, flush: 'post' }
+)
+function reportSelection() {
+  const range = editor.value?.getCursor()
+  if (range) emit('selection', { from: range.from, to: range.to })
+}
 
 /** 方言对象：MySQL 系（mysql / polardb）、PostgreSQL 系（postgresql / kingbase / vastbase）、SQLite */
 const dialect = computed<SQLDialect | undefined>(() => {
@@ -55,6 +80,7 @@ const dialect = computed<SQLDialect | undefined>(() => {
   if (name === 'mysql' || name === 'polardb') return MySQL
   if (name === 'postgresql' || name === 'kingbase' || name === 'vastbase') return PostgreSQL
   if (name === 'sqlite') return SQLite
+  if (name === 'oracle') return PLSQL
   return undefined
 })
 
@@ -81,7 +107,27 @@ const completionSources = computed<CompletionSource[]>(() =>
 
 /** 插件专用扩展：语句运行按钮 + Ctrl(⌘)+点击表名 */
 const extraExtensions = computed<Extension[]>(() => [
-  ...(props.onRunStatement ? [statementRunGutterExtension(props.onRunStatement)] : []),
+  Prec.highest(
+    keymap.of([
+      {
+        key: 'Mod-Enter',
+        run: () => {
+          props.onRunStatement?.(getExecutableSql())
+          return true
+        },
+      },
+      {
+        key: 'Mod-Shift-Enter',
+        run: () => {
+          props.onRunStatement?.(getDoc())
+          return true
+        },
+      },
+    ])
+  ),
+  ...(props.onRunStatement
+    ? [statementRunGutterExtension(props.onRunStatement, props.dialect)]
+    : []),
   ...(props.onTableClick
     ? [tableNavigationExtension(() => props.tables ?? [], props.onTableClick)]
     : []),
@@ -101,7 +147,7 @@ function getSelection(): { from: number; to: number } {
 /** 光标所在语句范围 */
 function getCursorStatement(): SqlTextRange | null {
   const cursor = editor.value?.getCursor()
-  return statementRangeAtCursor(getDoc(), cursor?.head ?? 0)
+  return statementRangeAtCursor(getDoc(), cursor?.head ?? 0, props.dialect)
 }
 
 /** 可执行 SQL：有选中执行选中段，否则执行光标所在语句 */
@@ -123,6 +169,8 @@ defineExpose({ getSelection, getCursorStatement, getExecutableSql, getDoc, focus
 <template>
   <UiCodeEditor
     ref="editor"
+    :document-key="documentKey"
+    :document-keys="documentKeys"
     :model-value="modelValue"
     language="sql"
     :language-extension="languageExtension"
@@ -131,6 +179,8 @@ defineExpose({ getSelection, getCursorStatement, getExecutableSql, getDoc, focus
     :placeholder="placeholder"
     line-wrapping
     class="min-h-0 flex-1 !rounded-none !border-0"
+    @cursor="reportSelection"
+    @save="emit('save')"
     @update:model-value="emit('update:modelValue', $event)"
   />
 </template>

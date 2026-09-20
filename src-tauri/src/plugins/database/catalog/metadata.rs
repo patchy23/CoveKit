@@ -47,10 +47,20 @@ pub async fn dbc_databases(
 /// schema 列表（mysql/redis 无 schema 层返回空）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_schemas(
+    app: tauri::AppHandle,
+    secrets_state: State<'_, crate::plugins::database::secrets::SecretsState>,
+    database: Option<String>,
     state: State<'_, DbState>,
     conn_id: String,
 ) -> Result<Vec<String>, String> {
-    let entry = session(&state, &conn_id)?;
+    let entry = crate::plugins::database::catalog::scoped_session(
+        &app,
+        &state,
+        &secrets_state,
+        &conn_id,
+        database.as_deref(),
+    )
+    .await?;
     match &entry.session {
         DbSession::Mysql(_) | DbSession::Redis(_) => Ok(Vec::new()),
         DbSession::Postgres(pool) => {
@@ -69,11 +79,21 @@ pub async fn dbc_schemas(
 /// 对象列表（表/视图等；schema 为 null 时用默认值）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_objects(
+    app: tauri::AppHandle,
+    secrets_state: State<'_, crate::plugins::database::secrets::SecretsState>,
+    database: Option<String>,
     state: State<'_, DbState>,
     conn_id: String,
     schema: Option<String>,
 ) -> Result<Vec<DbObjectInfo>, String> {
-    let entry = session(&state, &conn_id)?;
+    let entry = crate::plugins::database::catalog::scoped_session(
+        &app,
+        &state,
+        &secrets_state,
+        &conn_id,
+        database.as_deref(),
+    )
+    .await?;
     match &entry.session {
         DbSession::Mysql(pool) => {
             let dialect = dialect_or_err(entry.config.db_type)?;
@@ -141,12 +161,31 @@ pub async fn dbc_objects(
 /// 表结构列信息
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_columns(
+    app: tauri::AppHandle,
+    secrets_state: State<'_, crate::plugins::database::secrets::SecretsState>,
+    database: Option<String>,
     state: State<'_, DbState>,
     conn_id: String,
     schema: Option<String>,
     table: String,
 ) -> Result<Vec<DbColumnInfo>, String> {
-    let entry = session(&state, &conn_id)?;
+    let entry = crate::plugins::database::catalog::scoped_session(
+        &app,
+        &state,
+        &secrets_state,
+        &conn_id,
+        database.as_deref(),
+    )
+    .await?;
+    columns_for_entry(&entry, schema, table).await
+}
+
+/// 供表浏览与数据修改共用的真实列元数据，避免重复拼写列身份。
+pub(crate) async fn columns_for_entry(
+    entry: &drivers::DbSessionEntry,
+    schema: Option<String>,
+    table: String,
+) -> Result<Vec<DbColumnInfo>, String> {
     match &entry.session {
         DbSession::Mysql(pool) => {
             let dialect = dialect_or_err(entry.config.db_type)?;
@@ -202,7 +241,7 @@ pub async fn dbc_columns(
         }
         DbSession::Sqlite(conn) => {
             let guard = conn.lock().map_err(|e| e.to_string())?;
-            let safe = table.replace(['"', '`'], "");
+            let safe = table.replace('"', "\"\"");
             let mut stmt = guard
                 .prepare(&format!("PRAGMA table_xinfo(\"{safe}\")"))
                 .map_err(|e| format!("列信息失败: {e}"))?;
@@ -235,11 +274,14 @@ pub async fn dbc_columns(
             let schema = schema.unwrap_or_default();
             let value = client.get_columns(session_id, &schema, &table).await?;
             let items = value
-                .get("columns")
-                .or_else(|| value.get("items"))
-                .and_then(|v| v.as_array())
-                .cloned()
-                .unwrap_or_default();
+                .as_array()
+                .or_else(|| {
+                    value
+                        .get("columns")
+                        .or_else(|| value.get("items"))
+                        .and_then(|v| v.as_array())
+                })
+                .ok_or("DB_DRIVER_PROTOCOL: 列信息必须是数组")?;
             Ok(items
                 .iter()
                 .map(|item| DbColumnInfo {
@@ -249,25 +291,35 @@ pub async fn dbc_columns(
                         .unwrap_or("")
                         .to_string(),
                     data_type: item
-                        .get("type")
+                        .get("data_type")
+                        .or_else(|| item.get("type"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
                     nullable: item
-                        .get("nullable")
+                        .get("is_nullable")
+                        .or_else(|| item.get("nullable"))
                         .and_then(|v| v.as_bool())
                         .map(|b| if b { "是" } else { "否" }.to_string())
                         .unwrap_or_default(),
                     default_value: item
-                        .get("default")
+                        .get("column_default")
+                        .or_else(|| item.get("default"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string(),
-                    key: item
-                        .get("key")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("—")
-                        .to_string(),
+                    key: if item
+                        .get("is_primary_key")
+                        .and_then(serde_json::Value::as_bool)
+                        == Some(true)
+                    {
+                        "PK".into()
+                    } else {
+                        item.get("key")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("—")
+                            .to_string()
+                    },
                     comment: item
                         .get("comment")
                         .and_then(|v| v.as_str())

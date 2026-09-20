@@ -1,6 +1,5 @@
 //! PostgreSQL 驱动：连接池构建 + 查询执行 + 单元格字符串化
 
-use crate::plugins::database::dialect::dialect_or_err;
 use std::time::Duration;
 
 use crate::plugins::database::models::{ConnConfig, QueryResult};
@@ -19,7 +18,9 @@ pub(crate) async fn pg_pool(
         .user(&config.username)
         .password(password)
         .dbname(&config.database)
-        .connect_timeout(Duration::from_millis(config.connect_timeout_ms.max(30000)));
+        .connect_timeout(Duration::from_millis(
+            config.connect_timeout_ms.clamp(1000, 120_000),
+        ));
 
     if config.ssl {
         // TLS：rustls ring 后端（tokio-postgres-rustls 默认 feature 即 ring）
@@ -37,14 +38,14 @@ pub(crate) async fn pg_pool(
             .map_err(|e| format!("PG 连接池构建失败: {e}"))?;
         // 借出一个连接校验连通性（校验后自动归还池；带超时防挂起）
         let _check = tokio::time::timeout(
-            Duration::from_millis(config.connect_timeout_ms.max(30000)),
+            Duration::from_millis(config.connect_timeout_ms.clamp(1000, 120_000)),
             pool.get(),
         )
         .await
         .map_err(|_| {
             format!(
                 "PostgreSQL 连接超时（{} ms）",
-                config.connect_timeout_ms.max(30000)
+                config.connect_timeout_ms.clamp(1000, 120_000)
             )
         })?
         .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
@@ -58,130 +59,112 @@ pub(crate) async fn pg_pool(
         .map_err(|e| format!("PG 连接池构建失败: {e}"))?;
     // 借出一个连接校验连通性（校验后自动归还池；带超时防挂起）
     let _check = tokio::time::timeout(
-        Duration::from_millis(config.connect_timeout_ms.max(30000)),
+        Duration::from_millis(config.connect_timeout_ms.clamp(1000, 120_000)),
         pool.get(),
     )
     .await
     .map_err(|_| {
         format!(
             "PostgreSQL 连接超时（{} ms）",
-            config.connect_timeout_ms.max(30000)
+            config.connect_timeout_ms.clamp(1000, 120_000)
         )
     })?
     .map_err(|e| format!("PostgreSQL 连接失败: {e}"))?;
     Ok(pool)
 }
 
-/// 打开 SQLite 文件（路径不存在自动创建；Arc 共享供会话表按值克隆）
-pub(crate) async fn execute_postgres(
-    pool: &deadpool_postgres::Pool,
+/// 在独占的工作连接上逐条执行；使用文本协议保留 NUMERIC/UUID/扩展类型精度。
+pub(crate) async fn execute_postgres_client(
+    client: &tokio_postgres::Client,
     sql: &str,
     max_rows: u64,
 ) -> Result<QueryResult, String> {
-    let dialect = dialect_or_err(crate::plugins::database::models::DbType::Postgresql)?;
-    let statements = dialect.split_statements(sql);
-    if statements.is_empty() {
-        return Ok(QueryResult {
-            ok: true,
-            columns: Vec::new(),
-            rows: Vec::new(),
-            rows_affected: 0,
-            is_query: false,
-            duration_ms: 0,
-            truncated: false,
-            error: None,
-        });
-    }
-    let client = pool.get().await.map_err(|e| format!("取连接失败: {e}"))?;
-    let mut result = QueryResult {
-        ok: true,
-        columns: Vec::new(),
-        rows: Vec::new(),
-        rows_affected: 0,
-        is_query: false,
-        duration_ms: 0,
-        truncated: false,
-        error: None,
-    };
-    for stmt in statements {
-        if dialect.is_query_sql(&stmt) {
-            let rows = client
-                .query(&stmt, &[])
-                .await
-                .map_err(|e| format!("查询失败: {e}"))?;
-            let columns: Vec<String> = rows
-                .first()
-                .map(|r| r.columns().iter().map(|c| c.name().to_string()).collect())
-                .unwrap_or_default();
-            let truncated = rows.len() as u64 > max_rows;
-            let data = rows
+    use crate::plugins::database::{models::DbValue, results::ResultBudget};
+    use futures_util::TryStreamExt;
+    let mut budget = ResultBudget::new(max_rows);
+    let mut outcomes = Vec::new();
+    for sql in crate::plugins::database::sql_analysis::split(
+        crate::plugins::database::models::DbType::Postgresql,
+        sql,
+    )? {
+        let outcome: Result<QueryResult, String> = async {
+            // prepare 只读取列元数据，不执行 SQL；实际语句只通过 simple_query_raw 执行一次。
+            let prepared = client.prepare(&sql).await.map_err(pg_error)?;
+            let mut result = QueryResult::empty();
+            result.column_types = prepared
+                .columns()
                 .iter()
-                .take(max_rows as usize)
-                .map(|row| {
-                    (0..columns.len())
-                        .map(|i| pg_cell_str(row, i))
-                        .collect::<Vec<_>>()
-                })
+                .map(|c| c.type_().name().to_string())
                 .collect();
-            result = QueryResult {
-                ok: true,
-                columns,
-                rows: data,
-                rows_affected: rows.len() as u64,
-                is_query: true,
-                duration_ms: 0,
-                truncated,
-                error: None,
-            };
-        } else {
-            let affected = client
-                .execute(&stmt, &[])
-                .await
-                .map_err(|e| format!("执行失败: {e}"))?;
-            result.rows_affected += affected;
-            result.is_query = false;
+            let stream = client.simple_query_raw(&sql).await.map_err(pg_error)?;
+            futures_util::pin_mut!(stream);
+            while let Some(message) = stream.try_next().await.map_err(pg_error)? {
+                match message {
+                    tokio_postgres::SimpleQueryMessage::RowDescription(columns) => {
+                        result.columns = columns.iter().map(|c| c.name().to_string()).collect();
+                        result.is_query = true;
+                    }
+                    tokio_postgres::SimpleQueryMessage::Row(row) => {
+                        let mut values = Vec::with_capacity(row.len());
+                        for i in 0..row.len() {
+                            let value = row.try_get(i).map_err(pg_error)?;
+                            let native = result
+                                .column_types
+                                .get(i)
+                                .map(String::as_str)
+                                .unwrap_or("text");
+                            values.push(match value {
+                                None => DbValue::null(),
+                                Some(value) => {
+                                    let kind = match native {
+                                        "int2" | "int4" | "int8" | "oid" => "integer",
+                                        "numeric" | "money" => "decimal",
+                                        "float4" | "float8" => "float",
+                                        "bool" => "boolean",
+                                        "json" | "jsonb" => "json",
+                                        "bytea" => "binary",
+                                        "date" | "time" | "timetz" | "timestamp"
+                                        | "timestamptz" | "interval" => "temporal",
+                                        _ => "text",
+                                    };
+                                    let text = if kind == "binary" {
+                                        value.strip_prefix("\\x").unwrap_or(value).to_string()
+                                    } else if kind == "boolean" {
+                                        (value == "t").to_string()
+                                    } else {
+                                        value.to_string()
+                                    };
+                                    DbValue::text(kind, text)
+                                }
+                            });
+                        }
+                        budget.push(&mut result, values);
+                    }
+                    tokio_postgres::SimpleQueryMessage::CommandComplete(count) => {
+                        result.rows_affected = count
+                    }
+                    _ => {}
+                }
+            }
+            Ok(result)
+        }
+        .await;
+        match outcome {
+            Ok(result) => outcomes.push(result),
+            Err(error) => {
+                outcomes.push(QueryResult::failed(error));
+                break;
+            }
         }
     }
-    Ok(result)
+    Ok(QueryResult::script(outcomes))
 }
 
-/// SQLite：rusqlite 锁内执行
-pub(crate) fn pg_cell_str(row: &tokio_postgres::Row, index: usize) -> String {
-    use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
-    if let Ok(v) = row.try_get::<usize, Option<String>>(index) {
-        return v.unwrap_or_else(|| "NULL".to_string());
+fn pg_error(error: tokio_postgres::Error) -> String {
+    match error.as_db_error() {
+        Some(db) => format!("PostgreSQL [{}]: {}", db.code().code(), db.message()),
+        None => format!("PostgreSQL: {error}"),
     }
-    if let Ok(v) = row.try_get::<usize, Option<i64>>(index) {
-        return v.map_or_else(|| "NULL".to_string(), |n| n.to_string());
-    }
-    if let Ok(v) = row.try_get::<usize, Option<f64>>(index) {
-        return v.map_or_else(|| "NULL".to_string(), |n| n.to_string());
-    }
-    if let Ok(v) = row.try_get::<usize, Option<bool>>(index) {
-        return v.map_or_else(|| "NULL".to_string(), |b| b.to_string());
-    }
-    if let Ok(v) = row.try_get::<usize, Option<NaiveDateTime>>(index) {
-        return v.map_or_else(|| "NULL".to_string(), |d| d.to_string());
-    }
-    if let Ok(v) = row.try_get::<usize, Option<DateTime<Utc>>>(index) {
-        return v.map_or_else(
-            || "NULL".to_string(),
-            |d| d.format("%Y-%m-%d %H:%M:%S").to_string(),
-        );
-    }
-    if let Ok(v) = row.try_get::<usize, Option<NaiveDate>>(index) {
-        return v.map_or_else(|| "NULL".to_string(), |d| d.to_string());
-    }
-    if let Ok(v) = row.try_get::<usize, Option<Vec<u8>>>(index) {
-        return v.map_or_else(
-            || "NULL".to_string(),
-            |b| format!("<blob {} bytes>", b.len()),
-        );
-    }
-    if let Ok(v) = row.try_get::<usize, Option<serde_json::Value>>(index) {
-        return v.map_or_else(|| "NULL".to_string(), |j| j.to_string());
-    }
-    "NULL".to_string()
 }
 
 /// SQLite 单元格 → 字符串

@@ -70,6 +70,22 @@ mod tests {
             "codex_news_save",
             "保存 Codex 消息缓存与阅读状态",
         ),
+        ("database", "dbc_drafts", "读取 SQL 恢复草稿"),
+        ("database", "dbc_drafts_save", "保存 SQL 恢复草稿"),
+        (
+            "database",
+            "dbc_prepare_execution",
+            "SQL 风险与执行目标预检",
+        ),
+        ("database", "dbc_workspace_close", "关闭 SQL 页签独占会话"),
+        ("database", "dbc_export_query", "完整查询结果流式导出"),
+        ("database", "dbc_csv_preview", "预览 CSV 文件与列映射"),
+        ("database", "dbc_csv_import", "事务导入 CSV 文件"),
+        ("database", "dbc_table_apply", "提交单表行变更"),
+        ("database", "dbc_table_count", "按当前筛选精确统计"),
+        ("database", "dbc_sql_file_read", "打开 SQL 文件"),
+        ("database", "dbc_sql_file_write", "保存 SQL 文件"),
+        ("database", "dbc_export_rows", "导出类型化结果 CSV"),
         ("database", "dbc_cancel", "取消进行中的查询"),
         (
             "database",
@@ -90,7 +106,7 @@ mod tests {
         (
             "database",
             "dbc_connection_save",
-            "保存连接配置（密码入插件私有 AES；已连接则更新会话）",
+            "保存连接配置及公共凭证引用，旧会话失效",
         ),
         ("database", "dbc_connections", "连接列表（配置 + 会话状态）"),
         (

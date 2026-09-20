@@ -1,118 +1,145 @@
-//! 数据库驱动层 · 查询执行与取消分派
-//! 职责：查询开始前按会话类型构造取消句柄（build_cancel_handle，各驱动取消能力不同），
-//! 以及把 agent 侧车的 JSON RPC 结果转换为统一查询结果（execute_agent + json_cell_str）。
-//! 不变量：取消元数据（pg cancel_token / mysql 线程 id / agent 会话）在执行开始后由
-//! 命令层补齐，此处只提供与驱动匹配的初始句柄；所有驱动都带通用 aborted 标志，
-//! 驱动无原生取消能力时仅标记该标志（查询结果不因此伪装成功或失败）。
+//! 侧车结果协议验证与类型恢复；每条语句保留结果，脚本累计使用统一预算。
+use crate::plugins::database::{
+    agent::AgentClient,
+    models::{DbType, DbValue, QueryResult},
+    results::ResultBudget,
+    sql_analysis,
+};
 
-use crate::plugins::database::agent::AgentClient;
-use crate::plugins::database::models::QueryResult;
-
-use super::session::{DbSession, DbSessionEntry};
-// 取消句柄类型经门面（mod.rs 重导出）引用：`drivers::CancelHandle` 是拆分前的 crate 内公开路径，
-// 保持它可达避免消费方跟随文件移动改 import。
-use super::CancelHandle;
-
-/// 按当前会话类型构造查询取消句柄；具体取消元数据在执行开始后补齐。
-pub(crate) fn build_cancel_handle(entry: &DbSessionEntry) -> CancelHandle {
-    match &entry.session {
-        DbSession::Postgres(_) => CancelHandle {
-            aborted: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            pg_cancel: None,
-            pg_ssl: entry.config.ssl,
-            mysql_thread_id: None,
-            mysql_conn: None,
-            agent: None,
-        },
-        DbSession::Mysql(_) => CancelHandle {
-            aborted: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            pg_cancel: None,
-            pg_ssl: false,
-            mysql_thread_id: None,
-            mysql_conn: Some((
-                entry.config.host.clone(),
-                entry.config.port,
-                entry.config.username.clone(),
-                String::new(),
-            )),
-            agent: None,
-        },
-        DbSession::Agent { client, session_id } => CancelHandle {
-            aborted: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            pg_cancel: None,
-            pg_ssl: false,
-            mysql_thread_id: None,
-            mysql_conn: None,
-            agent: Some((client.clone(), session_id.clone())),
-        },
-        _ => CancelHandle {
-            aborted: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            pg_cancel: None,
-            pg_ssl: false,
-            mysql_thread_id: None,
-            mysql_conn: None,
-            agent: None,
-        },
-    }
-}
-
-/// 通过数据库侧车执行 SQL，并把 JSON RPC 结果转换为统一查询结果。
+/// 执行完整脚本，Oracle PL/SQL 块由方言拆分器保持完整。
 pub(crate) async fn execute_agent(
     client: &AgentClient,
     session_id: &str,
     sql: &str,
     max_rows: u64,
+    kind: DbType,
 ) -> Result<QueryResult, String> {
-    let value = client.execute_query(session_id, sql, max_rows).await?;
+    let mut results = Vec::new();
+    let mut budget = ResultBudget::new(max_rows);
+    for statement in sql_analysis::split(kind, sql)? {
+        match client
+            .execute_query(session_id, &statement, max_rows)
+            .await
+            .and_then(|value| decode(value, &mut budget))
+        {
+            Ok(result) => results.push(result),
+            Err(error) => {
+                results.push(QueryResult::failed(error));
+                break;
+            }
+        }
+    }
+    Ok(QueryResult::script(results))
+}
+fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryResult, String> {
     let columns = value
         .get("columns")
-        .and_then(|c| c.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+        .and_then(|v| v.as_array())
+        .ok_or("DB_AGENT_PROTOCOL: 缺少 columns 数组")?;
     let rows = value
         .get("rows")
-        .and_then(|r| r.as_array())
-        .map(|arr| {
-            arr.iter()
-                .map(|row| {
-                    row.as_array()
-                        .map(|cells| cells.iter().map(json_cell_str).collect::<Vec<_>>())
-                        .unwrap_or_default()
-                })
-                .collect::<Vec<_>>()
+        .and_then(|v| v.as_array())
+        .ok_or("DB_AGENT_PROTOCOL: 缺少 rows 数组")?;
+    let mut result = QueryResult::empty();
+    result.columns = columns
+        .iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .ok_or("DB_AGENT_PROTOCOL: 列名不是字符串")
+        })
+        .collect::<Result<_, _>>()?;
+    result.column_types = value
+        .get("column_types")
+        .and_then(|v| v.as_array())
+        .map(|types| {
+            types
+                .iter()
+                .map(|v| v.as_str().unwrap_or("").to_string())
+                .collect()
         })
         .unwrap_or_default();
-    let affected = value
+    result.is_query = !result.columns.is_empty();
+    result.rows_affected = value
         .get("affected_rows")
         .and_then(|v| v.as_u64())
         .unwrap_or(0);
-    let truncated = value
+    result.truncated = value
         .get("truncated")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
-    Ok(QueryResult {
-        ok: true,
-        columns,
-        rows,
-        rows_affected: affected,
-        is_query: true,
-        duration_ms: 0,
-        truncated,
-        error: None,
-    })
+    for row in rows {
+        let row = row.as_array().ok_or("DB_AGENT_PROTOCOL: 结果行不是数组")?;
+        if row.len() != result.columns.len() {
+            return Err("DB_AGENT_PROTOCOL: 行列数不一致".into());
+        }
+        let mut cells = Vec::with_capacity(row.len());
+        for (i, value) in row.iter().enumerate() {
+            let native = result
+                .column_types
+                .get(i)
+                .map(|s| s.to_uppercase())
+                .unwrap_or_default();
+            let cell = match value {
+                serde_json::Value::Null => DbValue::null(),
+                serde_json::Value::Bool(v) => DbValue::text("boolean", v.to_string()),
+                serde_json::Value::Number(v) => DbValue::text(
+                    if v.is_i64() || v.is_u64() {
+                        "integer"
+                    } else {
+                        "decimal"
+                    },
+                    v.to_string(),
+                ),
+                serde_json::Value::String(text) => {
+                    let kind = if ["RAW", "VARRAW", "LONG RAW", "LONGRAW", "BLOB", "BFILE"]
+                        .contains(&native.as_str())
+                    {
+                        "binary"
+                    } else if native.contains("NUMBER")
+                        || native.contains("DECIMAL")
+                        || native.contains("NUMERIC")
+                    {
+                        "decimal"
+                    } else if native.contains("DATE") || native.contains("TIME") {
+                        "temporal"
+                    } else {
+                        "text"
+                    };
+                    let text = if kind == "binary" {
+                        let hex = text.strip_prefix("0x").unwrap_or(text);
+                        hex::decode(hex).map_err(|_| "DB_AGENT_PROTOCOL: 二进制值不是十六进制")?;
+                        hex.to_string()
+                    } else {
+                        text.clone()
+                    };
+                    DbValue::text(kind, text)
+                }
+                other => DbValue::text("json", other.to_string()),
+            };
+            cells.push(cell);
+        }
+        budget.push(&mut result, cells);
+    }
+    Ok(result)
 }
-
-/// 将侧车返回的 JSON 单元格稳定转换为表格展示字符串。
-pub(crate) fn json_cell_str(value: &serde_json::Value) -> String {
-    match value {
-        serde_json::Value::Null => "NULL".to_string(),
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::Bool(b) => b.to_string(),
-        other => other.to_string(),
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn agent_contract_preserves_empty_headers_null_and_raw() {
+        let mut budget = ResultBudget::new(10);
+        let result = decode(serde_json::json!({"columns":["n","raw"],"column_types":["NUMBER","RAW"],"rows":[[null,"0x00ff"]]}), &mut budget).unwrap();
+        assert_eq!(result.values[0][0].kind, "null");
+        assert_eq!(result.values[0][1].value.as_deref(), Some("00ff"));
+        assert!(decode(
+            serde_json::json!({"columns":["x"],"rows":[[]]}),
+            &mut budget
+        )
+        .is_err());
+        let empty = decode(serde_json::json!({"columns":["x"],"rows":[]}), &mut budget).unwrap();
+        assert!(empty.is_query);
+        assert_eq!(empty.columns, ["x"]);
+        assert!(decode(serde_json::json!({}), &mut budget).is_err());
     }
 }

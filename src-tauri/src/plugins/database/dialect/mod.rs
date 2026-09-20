@@ -1,5 +1,5 @@
 //! 数据库方言抽象（驱动与 SQL 语义的分界）
-//! 每个方言实现连接 URL/标识符引用/元数据 catalog SQL/分页包装等纯函数，
+//! 每个方言实现标识符引用与元数据 catalog SQL等纯函数，
 //! 全部可单测（不依赖真实数据库）。agent 类型（oracle/vastbase/kingbase）
 //! 的元数据由 agent 进程提供，不实现本 trait。
 
@@ -30,20 +30,8 @@ pub trait DbDialect: Send + Sync {
     /// 返回列顺序：name, data_type, nullable, default_value, comment（key 单独探测）
     fn columns_sql(&self) -> &'static str;
 
-    /// 表行数 SQL（参数：schema、表名）
-    fn row_count_sql(&self) -> &'static str;
-
     /// 版本探测 SQL
     fn version_sql(&self) -> &'static str;
-
-    /// 分页包装：`SELECT ...` → `SELECT ... LIMIT n OFFSET m`
-    fn paginate(&self, sql: &str, limit: u64, offset: u64) -> String;
-
-    /// 是否为查询语句（SELECT/WITH/SHOW/EXPLAIN/PRAGMA/DESC 前缀）
-    fn is_query_sql(&self, sql: &str) -> bool;
-
-    /// 多语句拆分（分号分隔，跳过引号/注释内的分号；空语句丢弃）
-    fn split_statements(&self, sql: &str) -> Vec<String>;
 
     // ── 管理操作（v2：建库/授权/DDL/索引/表维护；默认不支持，方言按需覆盖）──
 
@@ -159,74 +147,6 @@ pub fn dialect_or_err(db_type: DbType) -> Result<Box<dyn DbDialect>, String> {
     dialect_for(db_type).ok_or_else(|| format!("库类型 {db_type:?} 暂不支持该操作（方言未实现）"))
 }
 
-/// 通用多语句拆分：按分号切分，跳过单引号/双引号/反引号字符串与行注释/块注释。
-/// 返回去掉首尾空白后的语句列表（空语句丢弃）。
-pub fn split_sql_statements(sql: &str) -> Vec<String> {
-    let mut statements = Vec::new();
-    let mut current = String::new();
-    let mut chars = sql.chars().peekable();
-    let mut quote: Option<char> = None;
-    let mut line_comment = false;
-    let mut block_comment = false;
-
-    while let Some(c) = chars.next() {
-        if line_comment {
-            // 行注释：跳过（语句内注释对执行无意义；注释仅作分隔/说明）
-            if c == '\n' {
-                line_comment = false;
-            }
-            continue;
-        }
-        if block_comment {
-            if c == '*' && chars.peek() == Some(&'/') {
-                chars.next();
-                block_comment = false;
-            }
-            continue;
-        }
-        if let Some(q) = quote {
-            current.push(c);
-            if c == q {
-                // 处理转义：'' 或 \'
-                if chars.peek() == Some(&q) {
-                    current.push(q);
-                    chars.next();
-                } else {
-                    quote = None;
-                }
-            }
-            continue;
-        }
-        match c {
-            '\'' | '"' | '`' => {
-                quote = Some(c);
-                current.push(c);
-            }
-            '-' if chars.peek() == Some(&'-') => {
-                chars.next();
-                line_comment = true;
-            }
-            '/' if chars.peek() == Some(&'*') => {
-                chars.next();
-                block_comment = true;
-            }
-            ';' => {
-                let stmt = current.trim();
-                if !stmt.is_empty() {
-                    statements.push(stmt.to_string());
-                }
-                current.clear();
-            }
-            _ => current.push(c),
-        }
-    }
-    let tail = current.trim();
-    if !tail.is_empty() {
-        statements.push(tail.to_string());
-    }
-    statements
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,22 +155,26 @@ mod tests {
     fn split_statements_skips_quotes_and_comments() {
         let sql =
             "SELECT ';' AS a; -- 注释;注释\nUPDATE t SET v = 'x;y'; /* 块;注释 */ DELETE FROM t;";
-        let parts = split_sql_statements(sql);
+        let parts = crate::plugins::database::sql_analysis::split(DbType::Mysql, sql).unwrap();
         assert_eq!(parts.len(), 3);
         assert_eq!(parts[0], "SELECT ';' AS a");
-        assert_eq!(parts[1], "UPDATE t SET v = 'x;y'");
-        assert_eq!(parts[2], "DELETE FROM t");
+        assert!(parts[1].ends_with("UPDATE t SET v = 'x;y'"));
+        assert!(parts[2].ends_with("DELETE FROM t"));
     }
 
     #[test]
     fn empty_statements_and_trailing_semicolons_ignored() {
-        let parts = split_sql_statements(";;; SELECT 1 ;;;");
+        let parts =
+            crate::plugins::database::sql_analysis::split(DbType::Mysql, ";;; SELECT 1 ;;;")
+                .unwrap();
         assert_eq!(parts, vec!["SELECT 1"]);
     }
 
     #[test]
     fn escaped_quotes_do_not_break_strings() {
-        let parts = split_sql_statements("SELECT 'it''s; ok'");
+        let parts =
+            crate::plugins::database::sql_analysis::split(DbType::Mysql, "SELECT 'it''s; ok'")
+                .unwrap();
         assert_eq!(parts.len(), 1);
         assert_eq!(parts[0], "SELECT 'it''s; ok'");
     }

@@ -68,8 +68,12 @@ mysql_async = { version = "0.37", default-features = false, features = ["default
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-uuid-1", "with-serde_json-1"] }
 tokio-postgres-rustls = "0.13"
 deadpool-postgres = { version = "0.14", features = ["rt_tokio_1"] }
-# redis: 连接管理器 + 暂不开 TLS feature（避免 rustls 后端与现有 ring 构建冲突，需要时再开）
-redis = { version = "0.32", features = ["tokio-comp", "connection-manager"] }
+# Redis 连接管理器使用 tokio rustls，同时支持普通 TCP 与 TLS。
+redis = { version = "0.32", features = ["tokio-rustls-comp", "connection-manager"] }
+# 数据库 SQL 分析与 CSV 编码复用成熟库，不自建解析器。
+sqlparser = { version = "0.62", features = ["visitor"] }
+csv = "1.4"
+bytes = "1"
 toml = "1.1.6"
 
 # 规范检查器（src-tauri/tests/source_rules，AR02）的唯一直接开发依赖。

@@ -9,7 +9,7 @@ use crate::plugins::database::models::{ConnConfig, DbType, HistoryEntry, SavedEn
 
 /// 本地库迁移（v1：三张表；只允许追加新迁移）
 pub(super) const MIGRATIONS: &[&str] = &[
-    // v1：连接配置（密码存 stronghold，不在此表）
+    // v1：连接配置（密码存公共凭证库，不在此表）
     "CREATE TABLE IF NOT EXISTS connections (
         id TEXT PRIMARY KEY,
         label TEXT NOT NULL,
@@ -50,13 +50,20 @@ pub(super) const MIGRATIONS: &[&str] = &[
      CREATE UNIQUE INDEX history_uid ON history(uid);
      CREATE TRIGGER history_assign_uid AFTER INSERT ON history WHEN NEW.uid=''
      BEGIN UPDATE history SET uid=lower(hex(randomblob(16))) WHERE id=NEW.id; END;",
+    "CREATE TABLE query_drafts (id INTEGER PRIMARY KEY CHECK(id=1), content TEXT NOT NULL);",
+    "ALTER TABLE history ADD COLUMN database_name TEXT NOT NULL DEFAULT '';
+     ALTER TABLE history ADD COLUMN schema_name TEXT NOT NULL DEFAULT '';",
+    "ALTER TABLE connections ADD COLUMN credential_ref TEXT;",
 ];
 
 /// 本地库 State（惰性打开；锁内同步访问）
 pub struct StoreState(pub Mutex<Option<std::sync::Arc<PluginDb>>>);
 
 /// 取（或首次打开）本地库
-fn db(app: &tauri::AppHandle, state: &StoreState) -> Result<std::sync::Arc<PluginDb>, String> {
+pub(super) fn db(
+    app: &tauri::AppHandle,
+    state: &StoreState,
+) -> Result<std::sync::Arc<PluginDb>, String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
     if guard.is_none() {
         *guard = Some(std::sync::Arc::new(PluginDb::open(
@@ -77,13 +84,14 @@ pub fn list_connections(
     db(app, state)?.with_conn(|conn| {
         let mut stmt = conn
             .prepare(
-                "SELECT id, label, db_type, host, port, username, database, env, readonly, ssl, connect_timeout_ms \
+                "SELECT id, label, db_type, host, port, username, database, env, readonly, ssl, connect_timeout_ms, credential_ref \
                  FROM connections ORDER BY sort_order, updated_at",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(ConnConfig {
+                    credential_id: row.get(11)?,
                     id: row.get::<_, String>(0)?,
                     label: row.get::<_, String>(1)?,
                     db_type: DbType::parse(&row.get::<_, String>(2)?)
@@ -111,13 +119,13 @@ pub fn save_connection(
 ) -> Result<(), String> {
     db(app, state)?.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO connections (id, label, db_type, host, port, username, database, env, readonly, ssl, connect_timeout_ms, updated_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) \
+            "INSERT INTO connections (id, label, db_type, host, port, username, database, env, readonly, ssl, connect_timeout_ms, updated_at, credential_ref) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
              ON CONFLICT(id) DO UPDATE SET \
                label = excluded.label, db_type = excluded.db_type, host = excluded.host, \
                port = excluded.port, username = excluded.username, database = excluded.database, \
                env = excluded.env, readonly = excluded.readonly, ssl = excluded.ssl, \
-               connect_timeout_ms = excluded.connect_timeout_ms, updated_at = excluded.updated_at",
+               connect_timeout_ms = excluded.connect_timeout_ms, updated_at = excluded.updated_at, credential_ref = excluded.credential_ref",
             rusqlite::params![
                 config.id,
                 config.label,
@@ -131,6 +139,7 @@ pub fn save_connection(
                 config.ssl as i64,
                 config.connect_timeout_ms,
                 now_text(),
+                config.credential_id,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -160,12 +169,14 @@ pub fn list_history(
     db(app, state)?.with_conn(|conn| {
         let mut stmt = conn
             .prepare(
-                "SELECT id, conn_id, sql, status, duration_ms, at FROM history ORDER BY id DESC LIMIT 100",
+                "SELECT id, conn_id, sql, status, duration_ms, at, database_name, schema_name FROM history ORDER BY id DESC LIMIT 100",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |row| {
                 Ok(HistoryEntry {
+                    database: row.get(6)?,
+                    schema: row.get(7)?,
                     id: row.get::<_, i64>(0)?,
                     conn_id: row.get::<_, String>(1)?,
                     sql: row.get::<_, String>(2)?,
@@ -187,11 +198,15 @@ pub fn add_history(
     sql: &str,
     status: &str,
     duration_ms: u64,
+    scope: &super::models::ExecutionScope,
 ) -> Result<(), String> {
+    if sql.len() > 1024 * 1024 {
+        return Err("历史 SQL 超过 1 MiB".into());
+    }
     db(app, state)?.with_conn(|conn| {
         conn.execute(
-            "INSERT INTO history (conn_id, sql, status, duration_ms, at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            rusqlite::params![conn_id, sql, status, duration_ms as i64, now_text()],
+            "INSERT INTO history (conn_id, sql, status, duration_ms, at, database_name, schema_name) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            rusqlite::params![conn_id, sql, status, duration_ms.min(i64::MAX as u64) as i64, now_text(), scope.database, scope.schema],
         )
         .map_err(|e| e.to_string())?;
         conn.execute(

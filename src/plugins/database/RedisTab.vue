@@ -4,7 +4,7 @@ import { UiScrollArea } from '@/core/ui'
  * Redis 键详情页签：键名/类型/TTL/值（只读展示）
  */
 import { computed } from 'vue'
-import { UiBadge, UiTable, UiTableCell } from '@/core/ui'
+import { UiBadge, UiButton, UiTable, UiTableCell } from '@/core/ui'
 import type { useDatabase } from './useDatabase'
 
 const props = defineProps<{
@@ -36,6 +36,14 @@ const toneOf = (kind: string) => {
     <div class="min-h-0 flex-1 p-[6px]">
       <div class="mb-[6px]">
         <div class="flex items-center gap-[8px]">
+          <UiButton
+            size="xs"
+            :disabled="state.status === 'running'"
+            @click="
+              db.loadRedisKeyInfo(db.activeTabId.value, db.activeTabContext.value.table ?? '')
+            "
+            >刷新</UiButton
+          >
           <h2 class="font-mono text-body-sm font-semibold text-primary dark:text-primary-dark">
             {{ state.rows[0]?.[0] ?? '' }}
           </h2>
@@ -75,7 +83,13 @@ const toneOf = (kind: string) => {
         v-else
         class="py-[40px] text-center text-caption text-text-muted dark:text-text-muted-dark"
       >
-        {{ state.status === 'error' ? state.error : '加载中…' }}
+        {{
+          state.status === 'error'
+            ? state.error
+            : state.status === 'running'
+              ? '加载中…'
+              : '键不存在或已过期'
+        }}
       </div>
     </div>
   </UiScrollArea>

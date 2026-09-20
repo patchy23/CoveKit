@@ -1,7 +1,7 @@
 //! SQLite 方言
 //! 元数据走 sqlite_master + PRAGMA；schema 固定 main；标识符双引号（SQLite 标准引用）。
 
-use crate::plugins::database::dialect::{split_sql_statements, DbDialect};
+use crate::plugins::database::dialect::DbDialect;
 
 /// SQLite 方言（单文件库，无库/schema 列表语义）
 pub struct SqliteDialect;
@@ -32,28 +32,8 @@ impl DbDialect for SqliteDialect {
         ""
     }
 
-    fn row_count_sql(&self) -> &'static str {
-        ""
-    }
-
     fn version_sql(&self) -> &'static str {
         "SELECT sqlite_version()"
-    }
-
-    fn paginate(&self, sql: &str, limit: u64, offset: u64) -> String {
-        let trimmed = sql.trim_end_matches(';').trim_end();
-        format!("{trimmed} LIMIT {limit} OFFSET {offset}")
-    }
-
-    fn is_query_sql(&self, sql: &str) -> bool {
-        let upper = sql.trim_start().to_uppercase();
-        ["SELECT", "WITH", "EXPLAIN", "PRAGMA", "TABLE", "VALUES"]
-            .iter()
-            .any(|k| upper.starts_with(k))
-    }
-
-    fn split_statements(&self, sql: &str) -> Vec<String> {
-        split_sql_statements(sql)
     }
 
     // ── 管理操作（sqlite 差异点）──
@@ -85,18 +65,5 @@ mod tests {
     fn double_quote_quoted_identifiers() {
         assert_eq!(SqliteDialect.quote_ident("users"), "\"users\"");
         assert_eq!(SqliteDialect.quote_ident("a\"b"), "\"a\"\"b\"");
-    }
-
-    #[test]
-    fn pagination_appends_limit_and_offset() {
-        let sql = SqliteDialect.paginate("SELECT * FROM t", 10, 30);
-        assert_eq!(sql, "SELECT * FROM t LIMIT 10 OFFSET 30");
-    }
-
-    #[test]
-    fn query_statement_detection() {
-        assert!(SqliteDialect.is_query_sql("PRAGMA table_info(users)"));
-        assert!(SqliteDialect.is_query_sql("EXPLAIN QUERY PLAN SELECT 1"));
-        assert!(!SqliteDialect.is_query_sql("INSERT INTO t VALUES (1)"));
     }
 }

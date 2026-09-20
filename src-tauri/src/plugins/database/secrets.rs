@@ -1,8 +1,8 @@
 //! 数据库连接凭据 · 框架公共凭证模块薄封装
 //! 存储实现（AES-GCM 加密文件、主密钥、原子写）全部在 framework::credentials，
-//! 本模块只负责：命名空间「database」的读写 + 旧存储的一次性迁移。
+//! 本模块负责公共 Vault 引用解析、旧命名空间兼容和可恢复迁移。
 //! 迁移链：db.stronghold（早期）→ db-secrets.enc/db-master.key（AES-GCM 阶段）
-//! → credentials/database.enc（框架公共模块）。
+//! → credentials/database.enc（旧公共命名空间）→ 公共 Vault 引用。
 
 use std::sync::Mutex;
 
@@ -40,7 +40,8 @@ fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
         let key_bytes = std::fs::read(&legacy_key).map_err(|e| format!("旧主密钥读取失败: {e}"))?;
         if key_bytes.len() != 32 {
             return Err(
-                "旧主密钥文件损坏（长度不是 32 字节），请手动删除 db-master.key 后重试".into(),
+                "旧主密钥文件损坏（长度不是 32 字节），旧文件已保留；请恢复正确密钥或重新填写凭据"
+                    .into(),
             );
         }
         let mut key = [0u8; 32];
@@ -75,9 +76,7 @@ fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
     // 且快照格式与当前实现不兼容，直接提示用户重新输入（测试阶段数据量小）。
     let stronghold_file = dir.join("db.stronghold");
     if stronghold_file.exists() {
-        std::fs::remove_file(&stronghold_file).ok();
-        std::fs::remove_file(dir.join("db-client.snapshot")).ok();
-        eprintln!("[database] 已清理旧 stronghold 快照（凭据需重新输入）");
+        eprintln!("[database] 检测到旧 stronghold 快照，已保留原文件；请重新输入所需连接凭据");
     }
     Ok(())
 }
@@ -128,8 +127,24 @@ pub fn secret_save(
     password: &str,
 ) -> Result<(), String> {
     secrets(app, state)?;
-    credentials::save_secret(app, NAMESPACE, conn_id, &serde_json::json!(password))?;
-    super::transfer::credential_saved(app, conn_id)
+    credentials::save_secret(app, NAMESPACE, conn_id, &serde_json::json!(password))
+}
+
+/// 保存事务的旧值快照；只读取密文，不将待补录连接视为可连接。
+pub(super) fn secret_snapshot(
+    app: &tauri::AppHandle,
+    state: &SecretsState,
+    conn_id: &str,
+) -> Result<Option<String>, String> {
+    secrets(app, state)?;
+    credentials::get_secret(app, NAMESPACE, conn_id)?
+        .map(|value| {
+            value
+                .as_str()
+                .map(str::to_string)
+                .ok_or_else(|| "连接凭据格式损坏".into())
+        })
+        .transpose()
 }
 
 /// 读取连接密码（连接/测试连接时调用；无记录返回空串）
@@ -142,9 +157,21 @@ pub fn secret_get(
     if super::transfer::credential_pending(app, conn_id)? {
         return Err("导入的连接尚未配置凭证，请编辑连接并重新保存密码".into());
     }
-    Ok(credentials::get_secret(app, NAMESPACE, conn_id)?
-        .and_then(|v| v.as_str().map(|s| s.to_string()))
-        .unwrap_or_default())
+    use tauri::Manager;
+    let store = app.state::<super::store::StoreState>();
+    if let Some(mut config) = super::store::list_connections(app, &store)?
+        .into_iter()
+        .find(|config| config.id == conn_id)
+    {
+        let username = config.username.clone();
+        if let Some(password) = referenced_password(app, &mut config)? {
+            if config.username != username {
+                return Err("共享凭证的用户名已改变，请编辑并重新保存数据库连接".into());
+            }
+            return Ok(password);
+        }
+    }
+    Ok(secret_snapshot(app, state, conn_id)?.unwrap_or_default())
 }
 
 /// 删除连接密码（删除连接时调用）
@@ -191,4 +218,96 @@ mod tests {
         let error = verify_migrated(&expected, &read).unwrap_err();
         assert!(error.contains("读不到"), "{error}");
     }
+}
+
+/// 串行化配置与凭证间的同步提交；锁不跨 await。
+pub(super) static CONFIG_CREDENTIAL_LOCK: Mutex<()> = Mutex::new(());
+
+/// 解析公共凭证，不把秘密返回前端。共享凭证用户名变化时要求重新保存连接。
+pub(super) fn referenced_password(
+    app: &tauri::AppHandle,
+    config: &mut super::models::ConnConfig,
+) -> Result<Option<String>, String> {
+    use crate::framework::vault::{self, CredentialFields};
+    let Some(id) = config.credential_id.as_deref().filter(|id| !id.is_empty()) else {
+        return Ok(None);
+    };
+    let credential = vault::resolve(app, id)?;
+    match credential.fields {
+        CredentialFields::Password { username, password } => {
+            config.username = username;
+            Ok(Some(password))
+        }
+        CredentialFields::ApiToken { token } if config.db_type == super::models::DbType::Redis => {
+            config.username.clear();
+            Ok(Some(token))
+        }
+        _ => Err("数据库需要用户名密码凭证；Redis 也可使用单 token 密码凭证".into()),
+    }
+}
+
+/// 幂等迁移：公共库写入、回读相等、保存引用后才允许清理旧密文。
+/// 写凭证后配置保存失败时，重试按来源标记和完整字段匹配复用，不覆盖共享凭证。
+pub(super) fn import_password(
+    app: &tauri::AppHandle,
+    config: &super::models::ConnConfig,
+    password: &str,
+) -> Result<String, String> {
+    use crate::framework::vault::{self, CredentialFields, CredentialSavePayload};
+    let fields = if config.username.is_empty() && config.db_type == super::models::DbType::Redis {
+        CredentialFields::ApiToken {
+            token: password.into(),
+        }
+    } else {
+        CredentialFields::Password {
+            username: config.username.clone(),
+            password: password.into(),
+        }
+    };
+    let note = format!("CoveKit 数据库连接迁移：{}", config.id);
+    for summary in vault::vault_list(app.clone())? {
+        if summary.note == note && vault::resolve(app, &summary.id)?.fields == fields {
+            return Ok(summary.id);
+        }
+    }
+    let summary = vault::vault_save(
+        app.clone(),
+        CredentialSavePayload {
+            id: None,
+            name: format!("数据库 · {}", config.label),
+            kind: fields.kind(),
+            fields: fields.clone(),
+            note,
+        },
+    )?;
+    if vault::resolve(app, &summary.id)?.fields != fields {
+        return Err("数据库凭证迁移回读不一致，旧凭证已保留".into());
+    }
+    Ok(summary.id)
+}
+
+/// 迁移旧凭据为公共 Vault 引用；读回验证后保存引用并保留旧副本。
+pub(super) fn migrate_references(
+    app: &tauri::AppHandle,
+    state: &SecretsState,
+    store: &super::store::StoreState,
+) -> Result<Vec<super::models::ConnConfig>, String> {
+    let _lock = CONFIG_CREDENTIAL_LOCK.lock().map_err(|e| e.to_string())?;
+    let mut configs = super::store::list_connections(app, store)?;
+    for config in &mut configs {
+        if config.credential_id.is_some()
+            || config.db_type.is_sqlite()
+            || super::transfer::credential_pending(app, &config.id)?
+        {
+            continue;
+        }
+        if let Some(password) =
+            secret_snapshot(app, state, &config.id)?.filter(|password| !password.is_empty())
+        {
+            config.credential_id = Some(import_password(app, config, &password)?);
+            super::store::save_connection(app, store, config)?;
+            // 旧命名空间副本保留到显式修改/删除连接；失败不会丢失唯一恢复数据。
+        }
+    }
+    Ok(configs)
 }

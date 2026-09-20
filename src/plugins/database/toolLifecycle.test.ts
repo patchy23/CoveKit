@@ -1,9 +1,10 @@
 /**
  * 数据库工具关闭策略的行为测试（T10-4）
  *
- * 策略：关闭页签即断开全部连接（不弹询问，因为断开连接没有数据丢失风险）。
+ * 策略：先保护事务、运行中查询和草稿，再断开全部连接。
  * 这里锁住两点：全部连接都被断开；断开失败要报出来，不能静默留连接。
  */
+import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const list = vi.fn()
@@ -24,7 +25,11 @@ vi.mock('@/core/lifecycle', () => ({
 const { useDatabaseToolLifecycle } = await import('./toolLifecycle')
 
 /** 取出登记进框架的声明 */
-function spec(): { owner: string; prepare?: unknown; dispose: () => Promise<void> } {
+function spec(): {
+  owner: string
+  prepare: () => Promise<string | null>
+  dispose: () => Promise<void>
+} {
   useDatabaseToolLifecycle()
   expect(useToolLifecycle).toHaveBeenCalledWith('database', expect.any(Object))
   return useToolLifecycle.mock.calls[useToolLifecycle.mock.calls.length - 1]?.[1]
@@ -37,8 +42,22 @@ describe('数据库工具关闭策略', () => {
     useToolLifecycle.mockReset()
   })
 
-  it('不拦关闭：断开连接不需要用户确认', () => {
-    expect(spec().prepare).toBeUndefined()
+  it('空闲工具允许关闭', async () => {
+    expect(await spec().prepare()).toBeNull()
+  })
+  it('事务和查询阻止关闭，草稿保存失败也可见', async () => {
+    const queryStates = ref({ q: { status: 'success', transactionActive: true } })
+    const flushDrafts = vi.fn().mockResolvedValue(undefined)
+    useDatabaseToolLifecycle({ queryStates, flushDrafts })
+    const prepare = useToolLifecycle.mock.calls.at(-1)![1].prepare
+    expect(await prepare()).toContain('未提交事务')
+    queryStates.value.q = { status: 'running', transactionActive: false }
+    expect(await prepare()).toContain('仍在执行')
+    queryStates.value.q.status = 'success'
+    flushDrafts.mockRejectedValue(new Error('写入失败'))
+    expect(await prepare()).toContain('写入失败')
+    flushDrafts.mockResolvedValue(undefined)
+    expect(await prepare()).toBeNull()
   })
 
   it('关闭页签断开全部连接', async () => {
