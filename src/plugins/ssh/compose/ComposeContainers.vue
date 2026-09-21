@@ -7,6 +7,7 @@ import { ipc } from '../ipc'
 import { useLogWindows } from '../monitor/logWindows'
 import TerminalTab from '../terminal/TerminalTab.vue'
 import DockerTable from '../docker/DockerTable.vue'
+import { parseComposeContainers } from './composeContainers'
 const props = defineProps<{
   project: ComposeProject
   connection?: ServerConnection
@@ -40,9 +41,13 @@ async function refresh() {
   loading.value = true
   error.value = ''
   try {
-    const containers = await ipc.sshDockerList(props.connection.sessionId, props.project.name)
+    const result = await ipc.sshComposeAction({
+      connectionId: props.connection.sessionId,
+      project: props.project,
+      action: 'ps',
+    })
     if (request !== version) return
-    rows.value = containers
+    rows.value = parseComposeContainers(result)
   } catch (e) {
     if (request === version) {
       rows.value = []

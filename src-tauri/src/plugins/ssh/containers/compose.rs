@@ -32,6 +32,13 @@ fn compose_command(project: &ComposeProject, action: &str) -> Result<String, Str
     {
         return Err("项目名只能以小写字母或数字开头，包含小写字母、数字、下划线和短横线".into());
     }
+    // 容器归属交给 Compose 判定；只读查询不依赖 YAML 或原工作目录仍然存在。
+    if action == "ps" {
+        return Ok(format!(
+            "docker compose --ansi never -p {} ps --all --format json",
+            shell_quote(name)
+        ));
+    }
     if project.config_files.is_empty() || project.config_files.len() > 32 {
         return Err("项目必须包含 1 至 32 个配置文件".into());
     }
@@ -57,7 +64,6 @@ fn compose_command(project: &ComposeProject, action: &str) -> Result<String, Str
         "down" => "down",
         "pull" => "pull",
         "build" => "build",
-        "ps" => "ps --all --format json",
         "logs" => "logs --no-color --tail 200",
         "config" => "config --quiet",
         "update" => "up -d --pull always",
@@ -280,7 +286,7 @@ pub async fn ssh_compose_action(
         &ssh_state,
         &connection_id,
         &command,
-        600,
+        if action == "ps" { 30 } else { 600 },
         progress.as_ref(),
         draft_content.as_deref(),
     )
@@ -355,6 +361,29 @@ mod tests {
         assert!(serde_json::from_str::<Progress>("null").unwrap().is_none());
         assert!(serde_json::from_str::<Progress>(r#""not-a-channel""#).is_err());
         assert!(serde_json::from_str::<Progress>("42").is_err());
+    }
+
+    #[test]
+    fn container_query_uses_compose_identity_without_loading_yaml() {
+        let mut project = ComposeProject {
+            name: "echobank".into(),
+            status: String::new(),
+            config_files: vec![],
+            working_dir: Some("/removed/directory".into()),
+        };
+        assert_eq!(
+            compose_command(&project, "ps").unwrap(),
+            "docker compose --ansi never -p 'echobank' ps --all --format json"
+        );
+        assert!(compose_command(&project, "up").is_err());
+        project.name = "echobank1".into();
+        project.config_files = vec!["/missing/compose.yaml".into()];
+        assert_eq!(
+            compose_command(&project, "ps").unwrap(),
+            "docker compose --ansi never -p 'echobank1' ps --all --format json"
+        );
+        project.name = "app; id".into();
+        assert!(compose_command(&project, "ps").is_err());
     }
 
     #[test]

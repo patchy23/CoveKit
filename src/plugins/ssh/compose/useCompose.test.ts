@@ -1,13 +1,14 @@
+/* eslint-disable vue/one-component-per-file -- 独立挂载状态夹具与提供日志宿主的组件夹具 */
 import { enableAutoUnmount, flushPromises, mount, shallowMount } from '@vue/test-utils'
 import { defineComponent, h, ref } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import type { ComposeProject, DockerContainer, ServerConnection } from '../contracts'
+import type { ComposeOutput, ComposeProject, ServerConnection } from '../contracts'
 import { useCompose } from './useCompose'
 import { COMPOSE_TEMPLATE, mergeComposeProjects, validateComposeDraft } from './composeProjects'
 import ComposeTab from './ComposeTab.vue'
 import ComposeContainers from './ComposeContainers.vue'
 import DockerTable from '../docker/DockerTable.vue'
-import LiveLogDialog from '../monitor/LiveLogDialog.vue'
+import { provideLogWindows } from '../monitor/logWindows'
 import TerminalTab from '../terminal/TerminalTab.vue'
 import ComposeCreateDialog from './ComposeCreateDialog.vue'
 import ComposeDirectoryPicker from './ComposeDirectoryPicker.vue'
@@ -87,17 +88,18 @@ beforeEach(() => {
   env.sshEditSave.mockResolvedValue({ ok: true })
   env.sshComposeStream.mockImplementation((payload) => env.sshComposeAction(payload))
   env.sshComposeHome.mockResolvedValue('/home/test')
-  env.sshDockerList.mockResolvedValue([
-    {
-      id: 'new',
-      name: 'new-container',
-      image: 'nginx',
-      status: 'running',
-      uptime: 'Up 1 hour',
-      ports: '80/tcp',
-      createdAt: 0,
-    },
-  ])
+  env.sshComposeAction.mockResolvedValue({
+    exitCode: 0,
+    stdout: JSON.stringify({
+      ID: 'new',
+      Name: 'new-container',
+      Image: 'nginx',
+      State: 'running',
+      Status: 'Up 1 hour',
+      Ports: '80/tcp',
+    }),
+    stderr: '',
+  })
 })
 
 it('以 Docker 查询为权威合并路径记录，失败保留列表并报错', async () => {
@@ -367,45 +369,51 @@ it('编辑弹窗直接编辑，保存遇到冲突时保留草稿且不会启动�
 })
 
 it('切换编排后迟到的容器列表不覆盖新项目', async () => {
-  let finish!: (result: DockerContainer[]) => void
-  env.sshDockerList.mockImplementationOnce(
+  let finish!: (result: ComposeOutput) => void
+  env.sshComposeAction.mockImplementationOnce(
     () =>
       new Promise((resolve) => {
         finish = resolve
       })
   )
-  const wrapper = shallowMount(ComposeContainers, {
-    props: {
-      project,
-      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
-      busy: false,
-    },
-    global: { renderStubDefaultSlot: true, stubs: { DockerTable: false } },
-  })
-  await wrapper.setProps({ project: { ...project, name: 'new' } })
+  const currentProject = ref(project)
+  let logWindows!: ReturnType<typeof provideLogWindows>
+  const host = mount(
+    defineComponent({
+      setup() {
+        logWindows = provideLogWindows(() => [{ sessionId: 'one', title: '测试连接' }])
+        return () =>
+          h(ComposeContainers, {
+            project: currentProject.value,
+            connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+            busy: false,
+          })
+      },
+    }),
+    { global: { stubs: { TerminalTab: true } } }
+  )
+  const wrapper = host.getComponent(ComposeContainers)
+  currentProject.value = { ...project, name: 'new' }
   await flushPromises()
-  finish([
-    {
-      id: 'old',
-      name: 'old-container',
-      image: 'old',
-      status: 'running',
-      uptime: '',
-      ports: '',
-      createdAt: 0,
-    },
-  ])
+  finish({
+    exitCode: 0,
+    stdout: JSON.stringify({ ID: 'old', Name: 'old-container', State: 'running' }),
+    stderr: '',
+  })
   await flushPromises()
   expect(wrapper.text()).toContain('new-container')
   expect(wrapper.text()).not.toContain('old-container')
   const table = wrapper.getComponent(DockerTable)
   expect(table.props('inspectOnly')).toBe(true)
-  expect(table.props('containers')[0]).toMatchObject({ uptime: 'Up 1 hour', ports: '80/tcp' })
+  expect(table.props('containers')[0]).toMatchObject({ uptime: '1 hour', ports: '80/tcp' })
   expect(table.findAllComponents(UiButton).map((b) => b.text())).toEqual(['日志', '终端'])
   table.vm.$emit('logs', table.props('containers')[0])
   await flushPromises()
-  expect(wrapper.getComponent(LiveLogDialog).props('targetId')).toBe('new')
-  wrapper.getComponent(LiveLogDialog).vm.$emit('close')
+  expect(logWindows.windows.value[0]).toMatchObject({
+    targetId: 'new',
+    kind: 'docker',
+    connectionId: 'one',
+  })
   table.vm.$emit('terminal', table.props('containers')[0])
   await flushPromises()
   expect(wrapper.getComponent(TerminalTab).props('dockerContainerId')).toBe('new')
@@ -493,7 +501,11 @@ it('查看容器行内展开，单行切换与收起卸载面板，不读取 YAM
 })
 
 it('容器直接按项目查询，缺少 YAML 路径仍可查看，失败不显示零容器', async () => {
-  env.sshDockerList.mockRejectedValueOnce(new Error('permission denied'))
+  env.sshComposeAction.mockResolvedValueOnce({
+    exitCode: 1,
+    stdout: '',
+    stderr: 'permission denied',
+  })
   const wrapper = mount(ComposeContainers, {
     props: {
       project: { ...project, configFiles: [] },
@@ -508,14 +520,62 @@ it('容器直接按项目查询，缺少 YAML 路径仍可查看，失败不显�
   expect(wrapper.text()).not.toContain('容器 · 0')
   expect(wrapper.findAllComponents(UiButton).some((button) => button.text() === '刷新')).toBe(false)
   await flushPromises()
-  expect(env.sshDockerList).toHaveBeenCalledWith('one', 'app')
-  expect(env.sshComposeAction).not.toHaveBeenCalled()
+  expect(env.sshComposeAction).toHaveBeenCalledWith({
+    connectionId: 'one',
+    project: { ...project, configFiles: [] },
+    action: 'ps',
+  })
+  expect(env.sshDockerList).not.toHaveBeenCalled()
   expect(wrapper.text()).toContain('permission denied')
   expect(wrapper.text()).not.toContain('该编排下没有容器')
-  env.sshDockerList.mockResolvedValueOnce([])
+  env.sshComposeAction.mockResolvedValueOnce({ exitCode: 0, stdout: '[]', stderr: '' })
   await wrapper.setProps({ project: { ...project, configFiles: [] } })
   await flushPromises()
   expect(wrapper.text()).toContain('该编排下没有容器')
+})
+
+it('编排展开使用 Compose 返回结果，分别传递相近项目名，不读取全量 Docker 列表', async () => {
+  env.sshDockerList.mockResolvedValue([{ id: 'manual', name: 'echobank-8081' }])
+  env.sshComposeAction.mockImplementation(async ({ project: selected }) => ({
+    exitCode: 0,
+    stdout: JSON.stringify({ ID: selected.name, Name: selected.name, State: 'running' }),
+    stderr: '',
+  }))
+  const wrapper = mount(ComposeContainers, {
+    props: {
+      project: { ...project, name: 'echobank' },
+      connection: { profileId: 'profile', sessionId: 'one', status: 'connected' },
+      busy: false,
+    },
+  })
+  await flushPromises()
+  expect(
+    wrapper
+      .getComponent(DockerTable)
+      .props('containers')
+      .map((row) => row.name)
+  ).toEqual(['echobank'])
+  await wrapper.setProps({ project: { ...project, name: 'echobank1' } })
+  await flushPromises()
+  expect(
+    wrapper
+      .getComponent(DockerTable)
+      .props('containers')
+      .map((row) => row.name)
+  ).toEqual(['echobank1'])
+  expect(
+    env.sshComposeAction.mock.calls.map(([payload]) => [payload.project.name, payload.action])
+  ).toEqual([
+    ['echobank', 'ps'],
+    ['echobank1', 'ps'],
+  ])
+  expect(env.sshDockerList).not.toHaveBeenCalled()
+  env.sshComposeAction.mockResolvedValueOnce({ exitCode: 0, stdout: 'invalid json', stderr: '' })
+  await wrapper.setProps({ project: { ...project, name: 'echobank1' } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('不是有效 JSON')
+  expect(wrapper.findComponent(DockerTable).exists()).toBe(false)
+  expect(wrapper.text()).not.toContain('该编排下没有容器')
 })
 
 it('关闭读取中的编辑弹窗后，迟到的 YAML 不再回填', async () => {
