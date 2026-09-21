@@ -51,6 +51,8 @@ pub async fn ssh_file_upload(
     local_path: String,
     remote_path: String,
 ) -> Result<FileTransferProgress, String> {
+    let log_started = std::time::Instant::now();
+    let result: Result<FileTransferProgress, String> = async {
     let transfer_id = resource_id("up");
     // 本地目录递归遍历是同步阻塞 IO，移到 spawn_blocking 不卡 tokio worker
     let (scan_local, scan_remote) = (local_path.clone(), remote_path.clone());
@@ -60,6 +62,7 @@ pub async fn ssh_file_upload(
     let total = entries.iter().map(|entry| entry.size).sum();
     let session = get_session(&ssh_state, &connection_id)?;
     // 注册取消位放在所有可失败步骤之后：前置失败不会产生永久残留的注册表项
+    log::info!("文件传输开始 task={transfer_id} session={connection_id}");
     let cancel = register_cancel(&transfer_state, &transfer_id);
     let cancel_registry = transfer_state.0.clone();
     let event_connection_id = connection_id.clone();
@@ -198,6 +201,13 @@ pub async fn ssh_file_upload(
         .await;
         // 结束事件携带实际进度：失败时从已传字节数继续展示，不回跳 0
         let succeeded = result.is_ok();
+        if cancel.is_cancelled() {
+            log::info!("文件传输已取消 task={tid} session={event_connection_id}");
+        } else if result.is_err() {
+            log::error!("文件传输失败 task={tid} session={event_connection_id} code=sftp.transfer_failed");
+        } else {
+            log::info!("文件传输完成 task={tid} session={event_connection_id}");
+        }
         let _ = app2.emit(
             "ssh://transfer-progress",
             &FileTransferProgress {
@@ -224,6 +234,18 @@ pub async fn ssh_file_upload(
         done: false,
         error: None,
     })
+    }.await;
+    match &result {
+        Ok(_value) => log::info!(
+            "传输请求已受理 operation=ssh_file_upload elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_file_upload elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 下载文件（远程 → 本地；后台任务分块传输 + 进度事件）
@@ -236,9 +258,12 @@ pub async fn ssh_file_download(
     remote_path: String,
     local_path: String,
 ) -> Result<FileTransferProgress, String> {
+    let log_started = std::time::Instant::now();
+    let result: Result<FileTransferProgress, String> = async {
     let transfer_id = resource_id("down");
     let session = get_session(&ssh_state, &connection_id)?;
     // 注册取消位放在所有可失败步骤之后：前置失败不会产生永久残留的注册表项
+    log::info!("文件传输开始 task={transfer_id} session={connection_id}");
     let cancel = register_cancel(&transfer_state, &transfer_id);
     let cancel_registry = transfer_state.0.clone();
     let event_connection_id = connection_id.clone();
@@ -323,6 +348,13 @@ pub async fn ssh_file_download(
         }
         // 成功值是实际写入字节数；失败为 0（单文件下载失败无保留进度语义）
         let written = result.as_ref().copied().unwrap_or(0);
+        if cancel.is_cancelled() {
+            log::info!("文件传输已取消 task={tid} session={event_connection_id}");
+        } else if result.is_err() {
+            log::error!("文件传输失败 task={tid} session={event_connection_id} code=sftp.transfer_failed");
+        } else {
+            log::info!("文件传输完成 task={tid} session={event_connection_id}");
+        }
         let _ = app2.emit(
             "ssh://transfer-progress",
             &FileTransferProgress {
@@ -349,6 +381,18 @@ pub async fn ssh_file_download(
         done: false,
         error: None,
     })
+    }.await;
+    match &result {
+        Ok(_value) => log::info!(
+            "传输请求已受理 operation=ssh_file_download elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_file_download elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 递归下载（远程目录 → 本地目录；进度经事件推送；支持取消；本地侧原子替换）
@@ -362,9 +406,12 @@ pub async fn ssh_file_download_recursive(
     local_path: String,
     overwrite: Option<bool>,
 ) -> Result<FileTransferProgress, String> {
+    let log_started = std::time::Instant::now();
+    let result: Result<FileTransferProgress, String> = async {
     let transfer_id = resource_id("downr");
     let session = get_session(&ssh_state, &connection_id)?;
     // 注册取消位放在所有可失败步骤之后：前置失败不会产生永久残留的注册表项
+    log::info!("文件传输开始 task={transfer_id} session={connection_id}");
     let cancel = register_cancel(&transfer_state, &transfer_id);
     let cancel_registry = transfer_state.0.clone();
     let overwrite = overwrite.unwrap_or(false);
@@ -475,6 +522,13 @@ pub async fn ssh_file_download_recursive(
             Ok(())
         }
         .await;
+        if cancel.is_cancelled() {
+            log::info!("文件传输已取消 task={tid} session={event_connection_id}");
+        } else if result.is_err() {
+            log::error!("文件传输失败 task={tid} session={event_connection_id} code=sftp.transfer_failed");
+        } else {
+            log::info!("文件传输完成 task={tid} session={event_connection_id}");
+        }
         let _ = app2.emit(
             "ssh://transfer-progress",
             &FileTransferProgress {
@@ -501,4 +555,16 @@ pub async fn ssh_file_download_recursive(
         done: false,
         error: None,
     })
+    }.await;
+    match &result {
+        Ok(_value) => log::info!(
+            "传输请求已受理 operation=ssh_file_download_recursive elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_file_download_recursive elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }

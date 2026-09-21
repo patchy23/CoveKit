@@ -193,63 +193,78 @@ pub async fn dbc_create_database(
     collation: Option<String>,
     grants: Option<Vec<DbGrantInput>>,
 ) -> Result<Vec<DbStepResult>, String> {
-    let entry = session(&state, &conn_id)?;
-    let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持建库")?;
-    let name = name.trim().to_string();
-    if name.is_empty() {
-        return Err("数据库名不能为空".to_string());
-    }
-    let sql = dialect
-        .create_database_sql(&name, charset.as_deref(), collation.as_deref())
-        .ok_or("该类型不支持在线建库")?;
+    let log_started = std::time::Instant::now();
+    let result: Result<Vec<DbStepResult>, String> = async {
+        let entry = session(&state, &conn_id)?;
+        let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持建库")?;
+        let name = name.trim().to_string();
+        if name.is_empty() {
+            return Err("数据库名不能为空".to_string());
+        }
+        let sql = dialect
+            .create_database_sql(&name, charset.as_deref(), collation.as_deref())
+            .ok_or("该类型不支持在线建库")?;
 
-    let mut steps = Vec::new();
-    // 第一步：建库（失败即终止，不再授权）
-    match exec_admin(&entry, &sql).await {
-        Ok(_) => steps.push(DbStepResult {
-            label: "创建数据库".to_string(),
-            sql: sql.clone(),
-            ok: true,
-            error: None,
-        }),
-        Err(e) => {
-            steps.push(DbStepResult {
+        let mut steps = Vec::new();
+        // 第一步：建库（失败即终止，不再授权）
+        match exec_admin(&entry, &sql).await {
+            Ok(_) => steps.push(DbStepResult {
                 label: "创建数据库".to_string(),
-                sql,
-                ok: false,
-                // e 之后不再使用，直接移动（规范 §2：不 clone 只用一次的值）
-                error: Some(e),
-            });
-            return Ok(steps);
-        }
-    }
-    // 后续步骤：逐用户授权（单步失败不中断，逐步标错）
-    for grant in grants.unwrap_or_default() {
-        let label = format!("授权 {}@{}", grant.user, grant.host);
-        match dialect.grant_sql(&name, &grant.user, &grant.host, &grant.privilege) {
-            Some(grant_sql) => match exec_admin(&entry, &grant_sql).await {
-                Ok(_) => steps.push(DbStepResult {
-                    label,
-                    sql: grant_sql,
-                    ok: true,
-                    error: None,
-                }),
-                Err(e) => steps.push(DbStepResult {
-                    label,
-                    sql: grant_sql,
-                    ok: false,
-                    error: Some(e),
-                }),
-            },
-            None => steps.push(DbStepResult {
-                label,
-                sql: String::new(),
-                ok: false,
-                error: Some(format!("未知权限级别: {}", grant.privilege)),
+                sql: sql.clone(),
+                ok: true,
+                error: None,
             }),
+            Err(e) => {
+                steps.push(DbStepResult {
+                    label: "创建数据库".to_string(),
+                    sql,
+                    ok: false,
+                    // e 之后不再使用，直接移动（规范 §2：不 clone 只用一次的值）
+                    error: Some(e),
+                });
+                return Ok(steps);
+            }
         }
+        // 后续步骤：逐用户授权（单步失败不中断，逐步标错）
+        for grant in grants.unwrap_or_default() {
+            let label = format!("授权 {}@{}", grant.user, grant.host);
+            match dialect.grant_sql(&name, &grant.user, &grant.host, &grant.privilege) {
+                Some(grant_sql) => match exec_admin(&entry, &grant_sql).await {
+                    Ok(_) => steps.push(DbStepResult {
+                        label,
+                        sql: grant_sql,
+                        ok: true,
+                        error: None,
+                    }),
+                    Err(e) => steps.push(DbStepResult {
+                        label,
+                        sql: grant_sql,
+                        ok: false,
+                        error: Some(e),
+                    }),
+                },
+                None => steps.push(DbStepResult {
+                    label,
+                    sql: String::new(),
+                    ok: false,
+                    error: Some(format!("未知权限级别: {}", grant.privilege)),
+                }),
+            }
+        }
+        Ok(steps)
     }
-    Ok(steps)
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_create_database elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_create_database elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 删除数据库（危险操作，前端弹窗确认后才调用）
@@ -259,13 +274,28 @@ pub async fn dbc_drop_database(
     conn_id: String,
     name: String,
 ) -> Result<String, String> {
-    let entry = session(&state, &conn_id)?;
-    let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持删库")?;
-    let sql = dialect
-        .drop_database_sql(name.trim())
-        .ok_or("该类型不支持删库")?;
-    exec_admin(&entry, &sql).await?;
-    Ok(sql)
+    let log_started = std::time::Instant::now();
+    let result: Result<String, String> = async {
+        let entry = session(&state, &conn_id)?;
+        let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持删库")?;
+        let sql = dialect
+            .drop_database_sql(name.trim())
+            .ok_or("该类型不支持删库")?;
+        exec_admin(&entry, &sql).await?;
+        Ok(sql)
+    }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_drop_database elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_drop_database elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -286,35 +316,50 @@ pub async fn dbc_table_admin(
     new_name: Option<String>,
     kind: Option<String>,
 ) -> Result<String, String> {
-    let entry = crate::plugins::database::catalog::scoped_session(
-        &app,
-        &state,
-        &secrets_state,
-        &conn_id,
-        database.as_deref(),
-    )
-    .await?;
-    let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持表维护")?;
-    let schema = schema.unwrap_or_default();
-    let table = table.trim().to_string();
-    if table.is_empty() {
-        return Err("表名不能为空".to_string());
-    }
-    let sql = match action.as_str() {
-        "rename" => {
-            let new = new_name.unwrap_or_default().trim().to_string();
-            if new.is_empty() {
-                return Err("新表名不能为空".to_string());
-            }
-            dialect.rename_table_sql(&schema, &table, &new)
+    let log_started = std::time::Instant::now();
+    let result: Result<String, String> = async {
+        let entry = crate::plugins::database::catalog::scoped_session(
+            &app,
+            &state,
+            &secrets_state,
+            &conn_id,
+            database.as_deref(),
+        )
+        .await?;
+        let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持表维护")?;
+        let schema = schema.unwrap_or_default();
+        let table = table.trim().to_string();
+        if table.is_empty() {
+            return Err("表名不能为空".to_string());
         }
-        "truncate" => dialect.truncate_table_sql(&schema, &table),
-        "drop" => dialect.drop_object_sql(&schema, kind.as_deref().unwrap_or("table"), &table),
-        other => return Err(format!("未知表维护操作: {other}")),
+        let sql = match action.as_str() {
+            "rename" => {
+                let new = new_name.unwrap_or_default().trim().to_string();
+                if new.is_empty() {
+                    return Err("新表名不能为空".to_string());
+                }
+                dialect.rename_table_sql(&schema, &table, &new)
+            }
+            "truncate" => dialect.truncate_table_sql(&schema, &table),
+            "drop" => dialect.drop_object_sql(&schema, kind.as_deref().unwrap_or("table"), &table),
+            other => return Err(format!("未知表维护操作: {other}")),
+        }
+        .ok_or("该类型不支持此操作")?;
+        exec_admin(&entry, &sql).await?;
+        Ok(sql)
     }
-    .ok_or("该类型不支持此操作")?;
-    exec_admin(&entry, &sql).await?;
-    Ok(sql)
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_table_admin elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_table_admin elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 // ──────────────────────────────────────────────────────────────────────────

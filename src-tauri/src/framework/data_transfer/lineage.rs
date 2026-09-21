@@ -127,7 +127,7 @@ pub(crate) fn load(path: &Path) -> ImportMap {
         return ImportMap::default();
     };
     let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-        eprintln!("[lineage] 导入映射文件损坏，按空表处理：{}", path.display());
+        log::warn!("导入映射文件损坏，保留原文件并按空表处理");
         return ImportMap::default();
     };
     if value.get("version").and_then(|v| v.as_u64()) != Some(MAP_VERSION as u64) {
@@ -136,7 +136,10 @@ pub(crate) fn load(path: &Path) -> ImportMap {
     match serde_json::from_value::<ImportMap>(value) {
         Ok(map) => map,
         Err(error) => {
-            eprintln!("[lineage] 导入映射条目非法，按空表处理: {error}");
+            log::warn!(
+                "导入映射条目非法，按空表处理: {error_type}",
+                error_type = std::any::type_name_of_val(&error)
+            );
             ImportMap::default()
         }
     }

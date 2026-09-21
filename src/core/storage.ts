@@ -10,6 +10,8 @@
  * - 损坏数据先隔离备份（localStorage 下另存副本并删除原键），再返回空值让调用方用默认值，
  *   既不静默使用坏数据，也不会直接覆盖掉还能救回的内容。
  */
+import { isTauri } from '@tauri-apps/api/core'
+import { warn as logWarn } from '@tauri-apps/plugin-log'
 import { load, type Store } from '@tauri-apps/plugin-store'
 
 const isTauri = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -37,6 +39,11 @@ function quarantine(file: string, key: string, raw: string): void {
     localStorage.setItem(`${file}:${key}${QUARANTINE_SUFFIX}`, raw)
     localStorage.removeItem(`${file}:${key}`)
   } catch (error) {
+    if (isTauri()) {
+      void logWarn('本地存储解析或隔离失败 source=storage').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     console.error('[storage] 损坏数据隔离失败', error)
   }
 }
@@ -55,6 +62,11 @@ export const storage = {
       const store = await getStore(file)
       const value = (await store.get<T>(key)) ?? null
       if (value !== null && validate && !validate(value)) {
+        if (isTauri()) {
+          void logWarn('本地存储解析或隔离失败 source=storage').catch(() => {
+            console.warn('[diagnostics] 日志发送失败')
+          })
+        }
         console.error('[storage] 数据结构不符，按损坏处理并保留原文件', { file, key })
         return null
       }
@@ -66,11 +78,21 @@ export const storage = {
     try {
       parsed = JSON.parse(raw)
     } catch (error) {
+      if (isTauri()) {
+        void logWarn('本地存储解析或隔离失败 source=storage').catch(() => {
+          console.warn('[diagnostics] 日志发送失败')
+        })
+      }
       console.error('[storage] 数据解析失败，已隔离备份后按空值处理', { file, key, error })
       quarantine(file, key, raw)
       return null
     }
     if (validate && !validate(parsed)) {
+      if (isTauri()) {
+        void logWarn('本地存储解析或隔离失败 source=storage').catch(() => {
+          console.warn('[diagnostics] 日志发送失败')
+        })
+      }
       console.error('[storage] 数据结构不符，已隔离备份后按空值处理', { file, key })
       quarantine(file, key, raw)
       return null

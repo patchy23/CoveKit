@@ -121,10 +121,29 @@ pub async fn frp_profile_save_text(
     file_name: String,
     content: String,
 ) -> Result<FrpOpResult, String> {
-    let _maintenance = crate::framework::context::maintenance_guard().await;
-    let dir = transfer::directory_for(&app, &file_name)?;
-    let path = profile::write_profile_text(&dir, &file_name, &content).await?;
-    Ok(op_result(&path))
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpOpResult, String> = async {
+        let _maintenance = crate::framework::context::maintenance_guard().await;
+        let dir = transfer::directory_for(&app, &file_name)?;
+        let path = profile::write_profile_text(&dir, &file_name, &content).await?;
+        Ok(op_result(&path))
+    }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=frp_profile_save_text elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=frp_profile_save_text elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_profile_save_text elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 表单模式保存（传入解析后的 JSON，由 profile.rs 重建 TOML 并保留未知字段）
@@ -134,11 +153,30 @@ pub async fn frp_profile_save_form(
     file_name: String,
     parsed: serde_json::Value,
 ) -> Result<FrpOpResult, String> {
-    let _maintenance = crate::framework::context::maintenance_guard().await;
-    let dir = transfer::directory_for(&app, &file_name)?;
-    let text = models::parsed_to_toml_text(&parsed)?;
-    let path = profile::write_profile_text(&dir, &file_name, &text).await?;
-    Ok(op_result(&path))
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpOpResult, String> = async {
+        let _maintenance = crate::framework::context::maintenance_guard().await;
+        let dir = transfer::directory_for(&app, &file_name)?;
+        let text = models::parsed_to_toml_text(&parsed)?;
+        let path = profile::write_profile_text(&dir, &file_name, &text).await?;
+        Ok(op_result(&path))
+    }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=frp_profile_save_form elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=frp_profile_save_form elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_profile_save_form elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 新建档案（内置模板）
@@ -148,11 +186,30 @@ pub async fn frp_profile_create(
     file_name: String,
     template: String,
 ) -> Result<FrpOpResult, String> {
-    let _maintenance = crate::framework::context::maintenance_guard().await;
-    transfer::ensure_name_available(&app, &file_name)?;
-    let dir = profile_dir(&app)?;
-    let path = profile::create_profile(&dir, &file_name, &template).await?;
-    Ok(op_result(&path))
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpOpResult, String> = async {
+        let _maintenance = crate::framework::context::maintenance_guard().await;
+        transfer::ensure_name_available(&app, &file_name)?;
+        let dir = profile_dir(&app)?;
+        let path = profile::create_profile(&dir, &file_name, &template).await?;
+        Ok(op_result(&path))
+    }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=frp_profile_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=frp_profile_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_profile_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 复制档案
@@ -162,11 +219,30 @@ pub async fn frp_profile_duplicate(
     file_name: String,
     new_name: String,
 ) -> Result<FrpOpResult, String> {
-    let _maintenance = crate::framework::context::maintenance_guard().await;
-    transfer::ensure_name_available(&app, &new_name)?;
-    let dir = transfer::directory_for(&app, &file_name)?;
-    let path = profile::duplicate_profile(&dir, &file_name, &new_name).await?;
-    Ok(op_result(&path))
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpOpResult, String> = async {
+        let _maintenance = crate::framework::context::maintenance_guard().await;
+        transfer::ensure_name_available(&app, &new_name)?;
+        let dir = transfer::directory_for(&app, &file_name)?;
+        let path = profile::duplicate_profile(&dir, &file_name, &new_name).await?;
+        Ok(op_result(&path))
+    }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=frp_profile_duplicate elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=frp_profile_duplicate elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_profile_duplicate elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 重命名档案（同步迁移备注）
@@ -176,38 +252,76 @@ pub async fn frp_profile_rename(
     file_name: String,
     new_name: String,
 ) -> Result<FrpOpResult, String> {
-    let _maintenance = crate::framework::context::maintenance_guard().await;
-    if new_name != file_name {
-        transfer::ensure_name_available(&app, &new_name)?;
-    }
-    let dir = transfer::directory_for(&app, &file_name)?;
-    transfer::remember(&app, &file_name)?;
-    let path = profile::rename_profile(&dir, &file_name, &new_name).await?;
-    PluginDb::open(&app, TOOL_ID, MIGRATIONS)?.with_conn(|conn| {
-        conn.execute(
-            "UPDATE profile_meta SET file_name=?1,source_name='' WHERE file_name=?2",
-            rusqlite::params![new_name, file_name],
-        )
-        .map_err(|e| e.to_string())?;
-        Ok(())
-    })?;
-    let result = op_result(&path);
-    // 备注跟着档案名迁移，避免重命名后备注「丢失」
-    if let Some(target) = result.file_name.clone() {
-        if let Some(remark) = read_remarks(&app).get(&file_name).cloned() {
-            let _ = write_remark(&app, &target, &remark);
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpOpResult, String> = async {
+        let _maintenance = crate::framework::context::maintenance_guard().await;
+        if new_name != file_name {
+            transfer::ensure_name_available(&app, &new_name)?;
         }
+        let dir = transfer::directory_for(&app, &file_name)?;
+        transfer::remember(&app, &file_name)?;
+        let path = profile::rename_profile(&dir, &file_name, &new_name).await?;
+        PluginDb::open(&app, TOOL_ID, MIGRATIONS)?.with_conn(|conn| {
+            conn.execute(
+                "UPDATE profile_meta SET file_name=?1,source_name='' WHERE file_name=?2",
+                rusqlite::params![new_name, file_name],
+            )
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        })?;
+        let result = op_result(&path);
+        // 备注跟着档案名迁移，避免重命名后备注「丢失」
+        if let Some(target) = result.file_name.clone() {
+            if let Some(remark) = read_remarks(&app).get(&file_name).cloned() {
+                let _ = write_remark(&app, &target, &remark);
+            }
+        }
+        Ok(result)
     }
-    Ok(result)
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=frp_profile_rename elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=frp_profile_rename elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_profile_rename elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 删除档案（移入同目录 `.trash/`，不物理抹除）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_profile_delete(app: AppHandle, file_name: String) -> Result<FrpOpResult, String> {
-    let _maintenance = crate::framework::context::maintenance_guard().await;
-    let dir = transfer::directory_for(&app, &file_name)?;
-    let path = profile::delete_profile(&dir, &file_name).await?;
-    Ok(op_result(&path))
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpOpResult, String> = async {
+        let _maintenance = crate::framework::context::maintenance_guard().await;
+        let dir = transfer::directory_for(&app, &file_name)?;
+        let path = profile::delete_profile(&dir, &file_name).await?;
+        Ok(op_result(&path))
+    }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=frp_profile_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=frp_profile_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_profile_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 写入档案备注（只落 frp.db，不动用户 TOML）

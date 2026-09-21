@@ -34,50 +34,74 @@ pub async fn ssh_disconnect(
     tunnel_state: State<'_, crate::plugins::ssh::tunnel::TunnelState>,
     session_id: String,
 ) -> Result<SshActionResult, String> {
-    stop_session_tunnels(&tunnel_state, &session_id);
-    // 先取走句柄并释放锁（std MutexGuard 非 Send，不能跨 await 持锁）
-    let handle = {
-        let mut map = state.0.lock().map_err(|e| e.to_string())?;
-        map.remove(&session_id)
-    };
-    monitor_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(&session_id);
-    if let Some(h) = handle {
-        // 先关闭此连接下的全部终端任务，避免断开后注册表残留无效通道。
-        if let Ok(mut terminals) = terminal_state.0.lock() {
-            terminals.retain(|_, terminal| {
-                if terminal.connection_id == session_id {
-                    let _ = terminal.cancel.send(true);
-                    false
-                } else {
-                    true
-                }
-            });
-        }
-        let _ = h
-            .session
-            .disconnect(russh::Disconnect::ByApplication, "用户断开", "")
-            .await;
-        let conn = ServerConnection {
-            profile_id: h.profile_id,
-            session_id,
-            status: ConnectionStatus::Disconnected,
-            host: None,
-            latency_ms: None,
-            error: None,
-            connected_at: None,
+    let log_started = std::time::Instant::now();
+    let result: Result<SshActionResult, String> = async {
+        stop_session_tunnels(&tunnel_state, &session_id);
+        // 先取走句柄并释放锁（std MutexGuard 非 Send，不能跨 await 持锁）
+        let handle = {
+            let mut map = state.0.lock().map_err(|e| e.to_string())?;
+            map.remove(&session_id)
         };
-        app.emit("ssh://connection-status", &conn)
-            // 断开动作已完成；事件推送失败只记诊断日志，不把已断开误报为失败
-            .unwrap_or_else(|e| eprintln!("[ssh] 断开事件推送失败: {e}"));
+        monitor_state
+            .0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(&session_id);
+        if let Some(h) = handle {
+            // 先关闭此连接下的全部终端任务，避免断开后注册表残留无效通道。
+            if let Ok(mut terminals) = terminal_state.0.lock() {
+                terminals.retain(|_, terminal| {
+                    if terminal.connection_id == session_id {
+                        let _ = terminal.cancel.send(true);
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+            let _ = h
+                .session
+                .disconnect(russh::Disconnect::ByApplication, "用户断开", "")
+                .await;
+            let conn = ServerConnection {
+                profile_id: h.profile_id,
+                session_id,
+                status: ConnectionStatus::Disconnected,
+                host: None,
+                latency_ms: None,
+                error: None,
+                connected_at: None,
+            };
+            app.emit("ssh://connection-status", &conn)
+                // 断开动作已完成；事件推送失败只记诊断日志，不把已断开误报为失败
+                .unwrap_or_else(|e| {
+                    log::warn!(
+                        "断开事件推送失败: {e_type}",
+                        e_type = std::any::type_name_of_val(&e)
+                    )
+                });
+        }
+        Ok(SshActionResult {
+            ok: true,
+            error: None,
+        })
     }
-    Ok(SshActionResult {
-        ok: true,
-        error: None,
-    })
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=ssh_disconnect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=ssh_disconnect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_disconnect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 重新连接：配置与凭证由后端按 profileId 解析，前端无需再传任何秘密
@@ -89,136 +113,174 @@ pub async fn ssh_reconnect(
     session_id: String,
     overrides: Option<CredentialOverride>,
 ) -> Result<SshConnectOutcome, String> {
-    // 终端/监控/隧道的 State 走 app.state 内部获取（命令参数过多触发 clippy 8/7）
-    let terminal_state = app.state::<TerminalState>();
-    let monitor_state = app.state::<MonitorState>();
-    let tunnel_state = app.state::<crate::plugins::ssh::tunnel::TunnelState>();
-    let request_id = resource_id("sshc");
-    // 先取旧句柄的 profileId（句柄保留在表中，失败时不影响旧连接）
-    let profile_id = {
-        let map = state.0.lock().map_err(|e| e.to_string())?;
-        map.get(&session_id).map(|h| h.profile_id.clone())
-    };
-    let Some(profile_id) = profile_id else {
-        // 结构化返回（与其他失败路径一致），前端据此停止重连而非反复报 IPC 错
-        return Ok(SshConnectOutcome {
-            ok: false,
-            connection: None,
-            request_id,
-            error: Some(connect_error(
-                "SESSION_NOT_FOUND",
-                "连接不存在或已断开，无法重连".into(),
-                None,
-            )),
-        });
-    };
-    let profile = {
-        let pid = profile_id.clone();
-        store::with_db(&app, &profile_state, |c| store::get_profile(c, &pid))
-    };
-    let profile = match profile {
-        Ok(p) => p,
-        Err(_) => {
+    let log_started = std::time::Instant::now();
+    let result: Result<SshConnectOutcome, String> = async {
+        // 终端/监控/隧道的 State 走 app.state 内部获取（命令参数过多触发 clippy 8/7）
+        let terminal_state = app.state::<TerminalState>();
+        let monitor_state = app.state::<MonitorState>();
+        let tunnel_state = app.state::<crate::plugins::ssh::tunnel::TunnelState>();
+        let request_id = resource_id("sshc");
+        // 先取旧句柄的 profileId（句柄保留在表中，失败时不影响旧连接）
+        let profile_id = {
+            let map = state.0.lock().map_err(|e| e.to_string())?;
+            map.get(&session_id).map(|h| h.profile_id.clone())
+        };
+        let Some(profile_id) = profile_id else {
+            // 结构化返回（与其他失败路径一致），前端据此停止重连而非反复报 IPC 错
             return Ok(SshConnectOutcome {
                 ok: false,
                 connection: None,
                 request_id,
                 error: Some(connect_error(
-                    "PROFILE_NOT_FOUND",
-                    format!("服务器配置不存在（{}）", profile_id),
+                    "SESSION_NOT_FOUND",
+                    "连接不存在或已断开，无法重连".into(),
                     None,
                 )),
-            })
-        }
-    };
-    let resolved = match resolve_credentials(&app, &profile, overrides) {
-        Ok(r) => r,
-        Err(e) => {
-            return Ok(SshConnectOutcome {
-                ok: false,
-                connection: None,
-                request_id,
-                error: Some(e),
-            })
-        }
-    };
-    let known_hosts = host_keys::known_hosts_file(&app)?;
-    let opened = open_session(&app, &request_id, &resolved, known_hosts).await;
-    let (session, forward_targets) = match opened {
-        Ok(pair) => pair,
-        Err(e) => {
-            return Ok(SshConnectOutcome {
-                ok: false,
-                connection: None,
-                request_id,
-                error: Some(e),
-            })
-        }
-    };
-
-    let new_id = resource_id("conn");
-    let connected_at = now_ms();
-    let old = {
-        let mut sessions = state.0.lock().map_err(|e| e.to_string())?;
-        let old = sessions.remove(&session_id);
-        sessions.insert(
-            new_id.clone(),
-            SshSessionHandle {
-                profile_id: profile.id.clone(),
-                host: profile.host.clone(),
-                open: true,
-                connected_at,
-                session,
-                sftp: Mutex::new(None),
-                forward_targets,
-                id_names: Mutex::new(None),
-            },
-        );
-        old
-    };
-    if let Some(h) = old {
-        // 旧会话资源随重连一并清理：终端任务取消、监控采样移除、旧隧道停置（desired 保留供恢复）
-        if let Ok(mut terminals) = terminal_state.0.lock() {
-            terminals.retain(|_, terminal| {
-                if terminal.connection_id == session_id {
-                    let _ = terminal.cancel.send(true);
-                    false
-                } else {
-                    true
-                }
             });
+        };
+        let profile = {
+            let pid = profile_id.clone();
+            store::with_db(&app, &profile_state, |c| store::get_profile(c, &pid))
+        };
+        let profile = match profile {
+            Ok(p) => p,
+            Err(_) => {
+                return Ok(SshConnectOutcome {
+                    ok: false,
+                    connection: None,
+                    request_id,
+                    error: Some(connect_error(
+                        "PROFILE_NOT_FOUND",
+                        format!("服务器配置不存在（{}）", profile_id),
+                        None,
+                    )),
+                })
+            }
+        };
+        let resolved = match resolve_credentials(&app, &profile, overrides) {
+            Ok(r) => r,
+            Err(e) => {
+                return Ok(SshConnectOutcome {
+                    ok: false,
+                    connection: None,
+                    request_id,
+                    error: Some(e),
+                })
+            }
+        };
+        let known_hosts = host_keys::known_hosts_file(&app)?;
+        let opened = open_session(&app, &request_id, &resolved, known_hosts).await;
+        let (session, forward_targets) = match opened {
+            Ok(pair) => pair,
+            Err(e) => {
+                return Ok(SshConnectOutcome {
+                    ok: false,
+                    connection: None,
+                    request_id,
+                    error: Some(e),
+                })
+            }
+        };
+
+        let new_id = resource_id("conn");
+        let connected_at = now_ms();
+        let old = {
+            let mut sessions = state.0.lock().map_err(|e| e.to_string())?;
+            let old = sessions.remove(&session_id);
+            sessions.insert(
+                new_id.clone(),
+                SshSessionHandle {
+                    profile_id: profile.id.clone(),
+                    host: profile.host.clone(),
+                    open: true,
+                    connected_at,
+                    session,
+                    sftp: Mutex::new(None),
+                    forward_targets,
+                    id_names: Mutex::new(None),
+                },
+            );
+            old
+        };
+        if let Some(h) = old {
+            // 旧会话资源随重连一并清理：终端任务取消、监控采样移除、旧隧道停置（desired 保留供恢复）
+            if let Ok(mut terminals) = terminal_state.0.lock() {
+                terminals.retain(|_, terminal| {
+                    if terminal.connection_id == session_id {
+                        let _ = terminal.cancel.send(true);
+                        false
+                    } else {
+                        true
+                    }
+                });
+            }
+            monitor_state
+                .0
+                .lock()
+                .map_err(|e| e.to_string())?
+                .remove(&session_id);
+            crate::plugins::ssh::tunnel::stop_session_tunnels(&tunnel_state, &session_id);
+            let _ = h
+                .session
+                .disconnect(russh::Disconnect::ByApplication, "重连", "")
+                .await;
         }
-        monitor_state
-            .0
-            .lock()
-            .map_err(|e| e.to_string())?
-            .remove(&session_id);
-        crate::plugins::ssh::tunnel::stop_session_tunnels(&tunnel_state, &session_id);
-        let _ = h
-            .session
-            .disconnect(russh::Disconnect::ByApplication, "重连", "")
-            .await;
+        let conn = ServerConnection {
+            profile_id: profile.id.clone(),
+            session_id: new_id.clone(),
+            status: ConnectionStatus::Connected,
+            host: Some(profile.host.clone()),
+            latency_ms: None,
+            error: None,
+            connected_at: Some(connected_at),
+        };
+        resume_for_profile(&app, profile_state.inner(), &profile.id, &new_id);
+        // 与 ssh_connect 同理：推送失败只记日志，新会话已注册，不能误判失败产生幽灵会话
+        if let Err(e) = app.emit("ssh://connection-status", &conn) {
+            log::warn!(
+                "重连状态事件推送失败（连接本身已成功）: {e_type}",
+                e_type = std::any::type_name_of_val(&e)
+            );
+        }
+        Ok(SshConnectOutcome {
+            ok: true,
+            connection: Some(conn),
+            request_id,
+            error: None,
+        })
     }
-    let conn = ServerConnection {
-        profile_id: profile.id.clone(),
-        session_id: new_id.clone(),
-        status: ConnectionStatus::Connected,
-        host: Some(profile.host.clone()),
-        latency_ms: None,
-        error: None,
-        connected_at: Some(connected_at),
-    };
-    resume_for_profile(&app, profile_state.inner(), &profile.id, &new_id);
-    // 与 ssh_connect 同理：推送失败只记日志，新会话已注册，不能误判失败产生幽灵会话
-    if let Err(e) = app.emit("ssh://connection-status", &conn) {
-        eprintln!("[ssh] 重连状态事件推送失败（连接本身已成功）: {e}");
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=ssh_reconnect request={} elapsed_ms={}",
+            value.request_id,
+            log_started.elapsed().as_millis()
+        ),
+        Ok(value) => {
+            let code = value
+                .error
+                .as_ref()
+                .map(|error| error.code.as_str())
+                .unwrap_or("UNKNOWN");
+            if code == "CANCELLED" {
+                log::info!(
+                    "连接已取消 operation=ssh_reconnect request={}",
+                    value.request_id
+                );
+            } else {
+                log::warn!(
+                    "连接未建立 operation=ssh_reconnect request={} code={code} elapsed_ms={}",
+                    value.request_id,
+                    log_started.elapsed().as_millis()
+                );
+            }
+        }
+        Err(_) => log::error!(
+            "连接准备失败 operation=ssh_reconnect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
-    Ok(SshConnectOutcome {
-        ok: true,
-        connection: Some(conn),
-        request_id,
-        error: None,
-    })
+    result
 }
 
 #[cfg(test)]

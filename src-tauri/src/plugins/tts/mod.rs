@@ -21,24 +21,52 @@ pub async fn tts_synthesize(
     rate: Option<i32>,
     pitch: Option<i32>,
 ) -> Result<TtsResult, String> {
-    let audio = synth::synth_bytes(&text, &voice, rate, pitch).await?;
+    log::info!("语音合成开始");
+    let log_started = std::time::Instant::now();
+    let mut log_stage = "synthesize";
+    let result: Result<TtsResult, String> = async {
+        let audio = synth::synth_bytes(&text, &voice, rate, pitch).await?;
 
-    // 落盘缓存分区 <root>/cache/tts/<ts>.mp3
-    let dir = crate::framework::paths::cache_dir(&app, "tts")?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("创建 tts 目录失败: {e}"))?;
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0);
-    let path = dir.join(format!("{ts}.mp3"));
-    std::fs::write(&path, &audio).map_err(|e| format!("写入音频失败: {e}"))?;
+        // 落盘缓存分区 <root>/cache/tts/<ts>.mp3
+        log_stage = "cache_directory";
+        let dir = crate::framework::paths::cache_dir(&app, "tts")?;
+        std::fs::create_dir_all(&dir).map_err(|e| format!("创建 tts 目录失败: {e}"))?;
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let path = dir.join(format!("{ts}.mp3"));
+        log_stage = "cache_write";
+        std::fs::write(&path, &audio).map_err(|e| format!("写入音频失败: {e}"))?;
 
-    Ok(TtsResult {
-        ok: true,
-        file_path: Some(path.to_string_lossy().to_string()),
-        bytes: audio.len() as u64,
-        error: None,
-    })
+        Ok(TtsResult {
+            ok: true,
+            file_path: Some(path.to_string_lossy().to_string()),
+            bytes: audio.len() as u64,
+            error: None,
+        })
+    }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=tts_synthesize bytes={} elapsed_ms={}",
+            value.bytes,
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=tts_synthesize elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(error) if error == "请输入要合成的文字" || error == "文本过长（最多 2000 字）" =>
+        {
+            log::debug!("语音合成输入校验未通过");
+        }
+        Err(_) => log::error!(
+            "语音合成失败 stage={log_stage} elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 // 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）

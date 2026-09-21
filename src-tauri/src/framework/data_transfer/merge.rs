@@ -192,7 +192,10 @@ pub(crate) fn commit(app: &AppHandle, plan: &ImportPlan) -> Result<ImportReport,
 
     if let Err(error) = backup::prune_snapshots(device_root) {
         // 清理失败只意味着多留了几份备份，不阻断提交；但要留痕，不静默
-        eprintln!("[data_transfer] 清理旧快照失败（不影响本次提交）: {error}");
+        log::warn!(
+            "清理旧快照失败（不影响本次提交）: {error_type}",
+            error_type = std::any::type_name_of_val(&error)
+        );
     }
 
     // 5. 广播受影响数据集（前端订阅后定点重拉，不重启生效）

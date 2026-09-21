@@ -9,6 +9,8 @@
  * - 改动带 revision：其他窗口已改过设置时拒绝本轮保存，重新拉取后由调用方重试。
  * - 工具级设置按 owner/key 粒度提交，不再回传整个 tools 对象。
  */
+import { isTauri } from '@tauri-apps/api/core'
+import { warn as logWarn } from '@tauri-apps/plugin-log'
 import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -59,6 +61,11 @@ export const useSettingsStore = defineStore('settings', () => {
         .setTheme(dark ? 'dark' : 'light')
         .catch((error) => {
           // 失败不静默：标题栏可能不跟随主题（capability 缺失或平台不支持）
+          if (isTauri()) {
+            void logWarn('原生标题栏主题同步失败 source=settings').catch(() => {
+              console.warn('[diagnostics] 日志发送失败')
+            })
+          }
           console.warn('[theme] 原生标题栏主题同步失败', error)
         })
     }

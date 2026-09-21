@@ -51,11 +51,25 @@ pub async fn dbc_drafts_save(
     store_state: State<'_, StoreState>,
     drafts: Vec<QueryDraft>,
 ) -> Result<(), String> {
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
     let content = encode(&drafts)?;
     store::db(&app, &store_state)?.with_conn(|conn| {
         conn.execute("INSERT INTO query_drafts(id,content) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET content=excluded.content", [&content]).map_err(|e|e.to_string())?;
         Ok(())
     })
+    }.await;
+    match &result {
+        Ok(_value) => log::debug!(
+            "操作完成 operation=dbc_drafts_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::error!(
+            "操作未完成 operation=dbc_drafts_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 #[cfg(test)]
 mod tests {

@@ -102,67 +102,81 @@ pub fn settings_patch(
     revision: Option<u64>,
     patch: Map<String, Value>,
 ) -> Result<u64, String> {
-    if patch.is_empty() {
-        return settings_revision(app);
-    }
-    let _access = crate::framework::context::database_access()?;
-    for (key, value) in &patch {
-        validate_field(key, value)?;
-    }
-    let _guard = settings_lock().lock().map_err(|e| e.to_string())?;
-    let store = app.store("settings.json").map_err(|e| e.to_string())?;
-    let current_revision = store
-        .get(REVISION_KEY)
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    if let Some(expected) = revision {
-        if expected != current_revision {
-            return Err(
-                "设置已被其他窗口或工具修改，已放弃本次保存以免覆盖新值，请重试".to_string(),
-            );
+    let log_started = std::time::Instant::now();
+    let result: Result<u64, String> = (|| {
+        if patch.is_empty() {
+            return settings_revision(app);
         }
-    }
+        let _access = crate::framework::context::database_access()?;
+        for (key, value) in &patch {
+            validate_field(key, value)?;
+        }
+        let _guard = settings_lock().lock().map_err(|e| e.to_string())?;
+        let store = app.store("settings.json").map_err(|e| e.to_string())?;
+        let current_revision = store
+            .get(REVISION_KEY)
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        if let Some(expected) = revision {
+            if expected != current_revision {
+                return Err(
+                    "设置已被其他窗口或工具修改，已放弃本次保存以免覆盖新值，请重试".to_string(),
+                );
+            }
+        }
 
-    // 系统副作用先执行：失败即中止，不写入任何字段（避免出现「显示已开启但系统没生效」）
-    for (key, value) in &patch {
-        apply_side_effects(&app, key, value)?;
-    }
+        // 系统副作用先执行：失败即中止，不写入任何字段（避免出现「显示已开启但系统没生效」）
+        for (key, value) in &patch {
+            apply_side_effects(&app, key, value)?;
+        }
 
-    // 按归属拆两层（任务书 §13.1）：设备级进自举配置、空间级进本空间偏好文件。
-    // 空间级先落盘：偏好写失败即整体失败，避免出现「界面提示成功、偏好其实没存」。
-    let (device_patch, space_patch) = preferences::split_patch(&patch)?;
-    if !space_patch.is_empty() {
-        let mut current_space = preferences::read_current(&app)?;
-        for (key, value) in &space_patch {
-            // 工具级设置按 owner 合并，避免整对象覆盖丢掉别的窗口刚写入的字段
+        // 按归属拆两层（任务书 §13.1）：设备级进自举配置、空间级进本空间偏好文件。
+        // 空间级先落盘：偏好写失败即整体失败，避免出现「界面提示成功、偏好其实没存」。
+        let (device_patch, space_patch) = preferences::split_patch(&patch)?;
+        if !space_patch.is_empty() {
+            let mut current_space = preferences::read_current(&app)?;
+            for (key, value) in &space_patch {
+                // 工具级设置按 owner 合并，避免整对象覆盖丢掉别的窗口刚写入的字段
+                if key == "tools" {
+                    merge_tools(&mut current_space, value)?;
+                    continue;
+                }
+                current_space.insert(key.clone(), value.clone());
+            }
+            preferences::write_current(&app, &current_space)?;
+        }
+
+        let mut current = store.get(APP_KEY).unwrap_or_else(|| serde_json::json!({}));
+        let object = current.as_object_mut().ok_or_else(|| {
+            "设置根对象损坏（app 不是对象），请在设置页恢复默认后重试".to_string()
+        })?;
+        for (key, value) in &device_patch {
+            // 工具级设置走 settings_set_tool；批量写入 tools 时按 owner 合并，避免整对象覆盖
             if key == "tools" {
-                merge_tools(&mut current_space, value)?;
+                merge_tools(object, value)?;
                 continue;
             }
-            current_space.insert(key.clone(), value.clone());
+            object.insert(key.clone(), value.clone());
         }
-        preferences::write_current(&app, &current_space)?;
-    }
+        store.set(APP_KEY, current);
+        // 版本号只在自举配置里维护一处，空间级写入也递增：并发窗口看到的是同一个计数器
+        let next_revision = current_revision.saturating_add(1);
+        store.set(REVISION_KEY, serde_json::json!(next_revision));
+        store.save().map_err(|e| e.to_string())?;
 
-    let mut current = store.get(APP_KEY).unwrap_or_else(|| serde_json::json!({}));
-    let object = current
-        .as_object_mut()
-        .ok_or_else(|| "设置根对象损坏（app 不是对象），请在设置页恢复默认后重试".to_string())?;
-    for (key, value) in &device_patch {
-        // 工具级设置走 settings_set_tool；批量写入 tools 时按 owner 合并，避免整对象覆盖
-        if key == "tools" {
-            merge_tools(object, value)?;
-            continue;
-        }
-        object.insert(key.clone(), value.clone());
+        Ok(next_revision)
+    })();
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=settings_patch elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=settings_patch elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
-    store.set(APP_KEY, current);
-    // 版本号只在自举配置里维护一处，空间级写入也递增：并发窗口看到的是同一个计数器
-    let next_revision = current_revision.saturating_add(1);
-    store.set(REVISION_KEY, serde_json::json!(next_revision));
-    store.save().map_err(|e| e.to_string())?;
-
-    Ok(next_revision)
+    result
 }
 
 /// 读某个工具设置（合并视图：空间级偏好优先、设备级历史值回落）
@@ -185,13 +199,27 @@ pub fn settings_set_tool(
     key: String,
     value: Value,
 ) -> Result<u64, String> {
-    let mut entry = Map::new();
-    entry.insert(key, value);
-    let mut tools = Map::new();
-    tools.insert(tool, Value::Object(entry));
-    let mut patch = Map::new();
-    patch.insert("tools".to_string(), Value::Object(tools));
-    settings_patch(app, None, patch)
+    let log_started = std::time::Instant::now();
+    let result: Result<u64, String> = {
+        let mut entry = Map::new();
+        entry.insert(key, value);
+        let mut tools = Map::new();
+        tools.insert(tool, Value::Object(entry));
+        let mut patch = Map::new();
+        patch.insert("tools".to_string(), Value::Object(tools));
+        settings_patch(app, None, patch)
+    };
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=settings_set_tool elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=settings_set_tool elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 空间级用户数据键白名单：收藏与最近使用是**用户数据**而非设置项
@@ -229,13 +257,27 @@ pub fn preferences_get(app: AppHandle, key: String) -> Result<Value, String> {
 /// 写空间级用户数据：白名单 + 字段校验 → 合并进当前空间偏好文件（同目录原子替换）
 #[tauri::command]
 pub fn preferences_set(app: AppHandle, key: String, value: Value) -> Result<(), String> {
-    let _access = crate::framework::context::database_access()?;
-    validate_space_data_key(&key)?;
-    validate_field(&key, &value)?;
-    let _guard = settings_lock().lock().map_err(|e| e.to_string())?;
-    let mut space = preferences::read_current(&app)?;
-    space.insert(key, value);
-    preferences::write_current(&app, &space)
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = (|| {
+        let _access = crate::framework::context::database_access()?;
+        validate_space_data_key(&key)?;
+        validate_field(&key, &value)?;
+        let _guard = settings_lock().lock().map_err(|e| e.to_string())?;
+        let mut space = preferences::read_current(&app)?;
+        space.insert(key, value);
+        preferences::write_current(&app, &space)
+    })();
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=preferences_set elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=preferences_set elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 执行某字段的系统副作用（失败即返回错误，调用方不得落盘）
@@ -431,7 +473,10 @@ pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let store = match tauri_plugin_store::StoreExt::store(app, "settings.json") {
         Ok(store) => store,
         Err(e) => {
-            eprintln!("[settings] 设置文件打开失败，跳过启动核对: {e}");
+            log::warn!(
+                "设置文件打开失败，跳过启动核对: {e_type}",
+                e_type = std::any::type_name_of_val(&e)
+            );
             return Ok(());
         }
     };
@@ -443,9 +488,7 @@ pub fn init(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(false);
     if let Ok(actual) = app.autolaunch().is_enabled() {
         if actual != desired {
-            eprintln!(
-                "[autostart] 设置与实际状态不一致（设置 {desired}，系统 {actual}），按系统状态修正"
-            );
+            log::warn!("设置与实际状态不一致（设置 {desired}，系统 {actual}），按系统状态修正");
             if let Some(object) = current.as_object_mut() {
                 object.insert("launchAtStartup".to_string(), serde_json::json!(actual));
             }

@@ -23,6 +23,7 @@
     "autostart:default",
     "window-state:default",
     "updater:default",
-    "process:allow-restart"
+    "process:allow-restart",
+    "log:allow-log"
   ]
 }

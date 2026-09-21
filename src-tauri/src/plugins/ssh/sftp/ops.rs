@@ -21,42 +21,61 @@ pub async fn ssh_file_delete(
     remote_path: String,
     recursive: Option<bool>,
 ) -> Result<SshActionResult, String> {
-    // 系统路径删除拦截（后端最后防线；本体及子树一律禁止，根下自定义目录放行）
-    if let Err(msg) = check_delete_allowed(&remote_path) {
-        return Ok(SshActionResult {
-            ok: false,
-            error: Some(msg),
-        });
-    }
-    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
-    let meta = sftp
-        .metadata(&remote_path)
-        .await
-        .map_err(|e| e.to_string())?;
-    let is_dir = meta.permissions.map(is_dir_mode).unwrap_or(false);
-    let result = if is_dir {
-        if recursive.unwrap_or(false) {
-            remove_dir_recursive(&sftp, &remote_path).await
+    let log_started = std::time::Instant::now();
+    let result: Result<SshActionResult, String> = async {
+        // 系统路径删除拦截（后端最后防线；本体及子树一律禁止，根下自定义目录放行）
+        if let Err(msg) = check_delete_allowed(&remote_path) {
+            return Ok(SshActionResult {
+                ok: false,
+                error: Some(msg),
+            });
+        }
+        let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+        let meta = sftp
+            .metadata(&remote_path)
+            .await
+            .map_err(|e| e.to_string())?;
+        let is_dir = meta.permissions.map(is_dir_mode).unwrap_or(false);
+        let result = if is_dir {
+            if recursive.unwrap_or(false) {
+                remove_dir_recursive(&sftp, &remote_path).await
+            } else {
+                sftp.remove_dir(&remote_path)
+                    .await
+                    .map_err(|e| e.to_string())
+            }
         } else {
-            sftp.remove_dir(&remote_path)
+            sftp.remove_file(&remote_path)
                 .await
                 .map_err(|e| e.to_string())
+        };
+        match result {
+            Ok(_) => Ok(SshActionResult {
+                ok: true,
+                error: None,
+            }),
+            Err(e) => Ok(SshActionResult {
+                ok: false,
+                error: Some(format!("删除失败: {e}")),
+            }),
         }
-    } else {
-        sftp.remove_file(&remote_path)
-            .await
-            .map_err(|e| e.to_string())
-    };
-    match result {
-        Ok(_) => Ok(SshActionResult {
-            ok: true,
-            error: None,
-        }),
-        Err(e) => Ok(SshActionResult {
-            ok: false,
-            error: Some(format!("删除失败: {e}")),
-        }),
     }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=ssh_file_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=ssh_file_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_file_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 递归删除目录（SFTP 无递归 API，遍历子项后自底向上删）
@@ -91,17 +110,36 @@ pub async fn ssh_file_rename(
     old_path: String,
     new_path: String,
 ) -> Result<SshActionResult, String> {
-    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
-    match sftp.rename(&old_path, &new_path).await {
-        Ok(_) => Ok(SshActionResult {
-            ok: true,
-            error: None,
-        }),
-        Err(e) => Ok(SshActionResult {
-            ok: false,
-            error: Some(format!("重命名失败: {e}")),
-        }),
+    let log_started = std::time::Instant::now();
+    let result: Result<SshActionResult, String> = async {
+        let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+        match sftp.rename(&old_path, &new_path).await {
+            Ok(_) => Ok(SshActionResult {
+                ok: true,
+                error: None,
+            }),
+            Err(e) => Ok(SshActionResult {
+                ok: false,
+                error: Some(format!("重命名失败: {e}")),
+            }),
+        }
     }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=ssh_file_rename elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=ssh_file_rename elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_file_rename elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /* ── 传输取消注册表 ── */
@@ -146,18 +184,36 @@ pub fn ssh_transfer_cancel(
     state: State<'_, TransferState>,
     transfer_id: String,
 ) -> Result<SshActionResult, String> {
-    let found = {
-        let map = state.0.lock().map_err(|e| e.to_string())?;
-        map.get(&transfer_id).map(|f| {
-            f.store(true, std::sync::atomic::Ordering::Relaxed);
+    let log_started = std::time::Instant::now();
+    let result: Result<SshActionResult, String> = (|| {
+        let found = {
+            let map = state.0.lock().map_err(|e| e.to_string())?;
+            map.get(&transfer_id).map(|f| {
+                f.store(true, std::sync::atomic::Ordering::Relaxed);
+            })
+        };
+        Ok(SshActionResult {
+            ok: found.is_some(),
+            error: found
+                .is_none()
+                .then(|| "传输任务不存在或已结束".to_string()),
         })
-    };
-    Ok(SshActionResult {
-        ok: found.is_some(),
-        error: found
-            .is_none()
-            .then(|| "传输任务不存在或已结束".to_string()),
-    })
+    })();
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=ssh_transfer_cancel elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=ssh_transfer_cancel elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_transfer_cancel elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /* ── 本地目录列表（双栏文件管理的本地侧） ── */
@@ -169,17 +225,36 @@ pub async fn ssh_file_mkdir(
     connection_id: String,
     path: String,
 ) -> Result<SshActionResult, String> {
-    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
-    match sftp.create_dir(&path).await {
-        Ok(_) => Ok(SshActionResult {
-            ok: true,
-            error: None,
-        }),
-        Err(e) => Ok(SshActionResult {
-            ok: false,
-            error: Some(format!("创建目录失败: {e}")),
-        }),
+    let log_started = std::time::Instant::now();
+    let result: Result<SshActionResult, String> = async {
+        let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+        match sftp.create_dir(&path).await {
+            Ok(_) => Ok(SshActionResult {
+                ok: true,
+                error: None,
+            }),
+            Err(e) => Ok(SshActionResult {
+                ok: false,
+                error: Some(format!("创建目录失败: {e}")),
+            }),
+        }
     }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=ssh_file_mkdir elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=ssh_file_mkdir elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_file_mkdir elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /* ── 递归下载 ── */
@@ -252,31 +327,50 @@ pub async fn ssh_file_create(
     connection_id: String,
     remote_path: String,
 ) -> Result<SshActionResult, String> {
-    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
-    // CREATE|EXCLUDE = 原子 create_new 语义：已存在由服务端直接报错，
-    // 替代「先 stat 探测再 create」的 TOCTOU 窗口（探测失败被误当不存在会 truncate 覆盖已有文件）
-    let result = match sftp
-        .open_with_flags(
-            &remote_path,
-            russh_sftp::protocol::OpenFlags::CREATE
-                | russh_sftp::protocol::OpenFlags::EXCLUDE
-                | russh_sftp::protocol::OpenFlags::WRITE,
-        )
-        .await
-    {
-        Ok(file) => file.close().await.map_err(|e| e.to_string()),
-        Err(e) => Err(e.to_string()),
-    };
-    match result {
-        Ok(_) => Ok(SshActionResult {
-            ok: true,
-            error: None,
-        }),
-        Err(e) => Ok(SshActionResult {
-            ok: false,
-            error: Some(format!("新建文件失败: {e}")),
-        }),
+    let log_started = std::time::Instant::now();
+    let result: Result<SshActionResult, String> = async {
+        let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+        // CREATE|EXCLUDE = 原子 create_new 语义：已存在由服务端直接报错，
+        // 替代「先 stat 探测再 create」的 TOCTOU 窗口（探测失败被误当不存在会 truncate 覆盖已有文件）
+        let result = match sftp
+            .open_with_flags(
+                &remote_path,
+                russh_sftp::protocol::OpenFlags::CREATE
+                    | russh_sftp::protocol::OpenFlags::EXCLUDE
+                    | russh_sftp::protocol::OpenFlags::WRITE,
+            )
+            .await
+        {
+            Ok(file) => file.close().await.map_err(|e| e.to_string()),
+            Err(e) => Err(e.to_string()),
+        };
+        match result {
+            Ok(_) => Ok(SshActionResult {
+                ok: true,
+                error: None,
+            }),
+            Err(e) => Ok(SshActionResult {
+                ok: false,
+                error: Some(format!("新建文件失败: {e}")),
+            }),
+        }
     }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=ssh_file_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=ssh_file_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_file_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 修改远程文件/目录权限（安全策略见 util::check_chmod_allowed；目录可递归）
@@ -289,31 +383,50 @@ pub async fn ssh_file_chmod(
     recursive: Option<bool>,
     acknowledge_risk: Option<bool>,
 ) -> Result<SshActionResult, String> {
-    let recursive = recursive.unwrap_or(false);
-    if let Err(msg) =
-        check_chmod_allowed(&remote_path, recursive, acknowledge_risk.unwrap_or(false))
-    {
-        return Ok(SshActionResult {
-            ok: false,
-            error: Some(msg),
-        });
+    let log_started = std::time::Instant::now();
+    let result: Result<SshActionResult, String> = async {
+        let recursive = recursive.unwrap_or(false);
+        if let Err(msg) =
+            check_chmod_allowed(&remote_path, recursive, acknowledge_risk.unwrap_or(false))
+        {
+            return Ok(SshActionResult {
+                ok: false,
+                error: Some(msg),
+            });
+        }
+        let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+        let result = if recursive {
+            chmod_recursive(&sftp, &remote_path, mode).await
+        } else {
+            set_mode(&sftp, &remote_path, mode).await
+        };
+        match result {
+            Ok(_) => Ok(SshActionResult {
+                ok: true,
+                error: None,
+            }),
+            Err(e) => Ok(SshActionResult {
+                ok: false,
+                error: Some(format!("修改权限失败: {e}")),
+            }),
+        }
     }
-    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
-    let result = if recursive {
-        chmod_recursive(&sftp, &remote_path, mode).await
-    } else {
-        set_mode(&sftp, &remote_path, mode).await
-    };
-    match result {
-        Ok(_) => Ok(SshActionResult {
-            ok: true,
-            error: None,
-        }),
-        Err(e) => Ok(SshActionResult {
-            ok: false,
-            error: Some(format!("修改权限失败: {e}")),
-        }),
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=ssh_file_chmod elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=ssh_file_chmod elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_file_chmod elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
+    result
 }
 
 /// setstat 单目标权限

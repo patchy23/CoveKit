@@ -62,38 +62,56 @@ pub async fn http_request(
     app: AppHandle,
     payload: HttpRequestPayload,
 ) -> Result<HttpResponseResult, String> {
-    let request = request(&app, payload, false)?;
-    let start = Instant::now();
-    let mut response = request
-        .send()
-        .await
-        .map_err(|e| e.without_url().to_string())?;
-    let status = response.status().as_u16();
-    let status_text = response
-        .status()
-        .canonical_reason()
-        .unwrap_or("")
-        .to_string();
-    let headers = response_headers(&response);
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|e| e.without_url().to_string())?
-    {
-        if bytes.len() + chunk.len() > 20 * 1024 * 1024 {
-            return Err("响应超过 20 MiB，请缩小请求范围".into());
+    let log_started = std::time::Instant::now();
+    let result: Result<HttpResponseResult, String> = async {
+        let request = request(&app, payload, false)?;
+        let start = Instant::now();
+        let mut response = request
+            .send()
+            .await
+            .map_err(|e| e.without_url().to_string())?;
+        let status = response.status().as_u16();
+        let status_text = response
+            .status()
+            .canonical_reason()
+            .unwrap_or("")
+            .to_string();
+        let headers = response_headers(&response);
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|e| e.without_url().to_string())?
+        {
+            if bytes.len() + chunk.len() > 20 * 1024 * 1024 {
+                return Err("响应超过 20 MiB，请缩小请求范围".into());
+            }
+            bytes.extend_from_slice(&chunk);
         }
-        bytes.extend_from_slice(&chunk);
+        Ok(HttpResponseResult {
+            ok: status < 400,
+            status,
+            status_text,
+            headers,
+            body_size: bytes.len(),
+            body: String::from_utf8_lossy(&bytes).into_owned(),
+            duration_ms: start.elapsed().as_millis() as u64,
+            error: None,
+        })
     }
-    Ok(HttpResponseResult {
-        ok: status < 400,
-        status,
-        status_text,
-        headers,
-        body_size: bytes.len(),
-        body: String::from_utf8_lossy(&bytes).into_owned(),
-        duration_ms: start.elapsed().as_millis() as u64,
-        error: None,
-    })
+    .await;
+    match &result {
+        Ok(value) => log::info!(
+            "HTTP 请求结束 status={} ok={} bytes={} elapsed_ms={}",
+            value.status,
+            value.ok,
+            value.body_size,
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=http_request elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }

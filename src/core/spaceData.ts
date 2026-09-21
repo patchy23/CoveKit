@@ -12,6 +12,8 @@
  * 隔离语义：读取不做设备层回落。旧 `covekit.json` 里的收藏与最近使用只属于默认空间，
  * 若回落，非默认空间会读到别处的数据。
  */
+import { isTauri } from '@tauri-apps/api/core'
+import { warn as logWarn } from '@tauri-apps/plugin-log'
 import { ipc } from '@/core/ipc/ipc'
 import type { SpaceDataKey } from '@/core/ipc/contracts'
 import { storage } from '@/core/storage'
@@ -36,6 +38,11 @@ export const spaceData = {
     const value = await ipc.preferencesGet(key)
     if (value === null || value === undefined) return null
     if (validate && !validate(value)) {
+      if (isTauri()) {
+        void logWarn('空间数据结构异常 source=spaceData').catch(() => {
+          console.warn('[diagnostics] 日志发送失败')
+        })
+      }
       console.error('[spaceData] 数据结构不符，按空值处理并保留原文件', { key })
       return null
     }

@@ -148,6 +148,9 @@ pub async fn dbc_execute(
     scope: Option<ExecutionScope>,
     confirmation_token: Option<String>,
 ) -> Result<QueryResult, String> {
+    let log_started = std::time::Instant::now();
+    let mut log_cancelled = false;
+    let result: Result<QueryResult, String> = async {
     if request_id.trim().is_empty() {
         return Err("执行请求缺少请求标识".into());
     }
@@ -305,6 +308,7 @@ pub async fn dbc_execute(
     // 与 cancel RPC 同步收尾；finished 置位后旧句柄不能影响后继查询。
     let gate = handle.gate.lock().await;
     handle.finished.store(true, Ordering::Release);
+    log_cancelled = handle.aborted.load(Ordering::Acquire) && !timed_out;
     drop(gate);
     let result = outcome.map(|mut result| {
         if let Ok(parts) = sql_analysis::split(entry.config.db_type, &sql) {
@@ -343,23 +347,60 @@ pub async fn dbc_execute(
     }
     drop(registration);
     result
+    }.await;
+    match &result {
+        _ if log_cancelled => log::info!("查询取消后收尾 request={request_id}"),
+        Ok(value) if value.ok => log::info!(
+            "查询完成 request={request_id} elapsed_ms={} rows={} transaction={}",
+            log_started.elapsed().as_millis(),
+            value.rows.len(),
+            value.transaction_active
+        ),
+        Err(error) if error.starts_with("DB_CANCELLED:") => {
+            log::info!("查询已取消 request={request_id}")
+        }
+        Ok(_) => log::error!(
+            "查询执行失败 request={request_id} elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "查询未完成 request={request_id} elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 请求取消；原生驱动发送真实请求，Redis 不能撤销已发送命令。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_cancel(state: State<'_, DbCancelState>, request_id: String) -> Result<(), String> {
-    let handle = state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(request_id.trim())
-        .cloned();
-    if let Some(handle) = handle {
-        tokio::time::timeout(Duration::from_secs(5), handle.cancel())
-            .await
-            .map_err(|_| "取消请求超时，原查询可能仍在运行")??;
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        let handle = state
+            .0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(request_id.trim())
+            .cloned();
+        if let Some(handle) = handle {
+            tokio::time::timeout(Duration::from_secs(5), handle.cancel())
+                .await
+                .map_err(|_| "取消请求超时，原查询可能仍在运行")??;
+        }
+        Ok(())
     }
-    Ok(())
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_cancel elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_cancel elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 关闭内部 SQL 页签的独占会话；不触碰其他页签或目录连接池。
@@ -369,27 +410,57 @@ pub async fn dbc_workspace_close(
     conn_id: String,
     workspace_id: String,
 ) -> Result<(), String> {
-    let slot = workspaces
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(&(conn_id, workspace_id));
-    if let Some(slot) = slot {
-        let mut session = slot.lock().await;
-        if let Some(session) = session.take() {
-            workspace::close(session).await?;
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        let slot = workspaces
+            .0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(&(conn_id, workspace_id));
+        if let Some(slot) = slot {
+            let mut session = slot.lock().await;
+            if let Some(session) = session.take() {
+                workspace::close(session).await?;
+            }
         }
+        Ok(())
     }
-    Ok(())
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_workspace_close elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_workspace_close elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 导出已加载 CSV；异步 IO 不阻塞 tokio 执行线程。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_export_csv(path: String, text: String) -> Result<(), String> {
-    if path.trim().is_empty() {
-        return Err("保存路径不能为空".into());
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        if path.trim().is_empty() {
+            return Err("保存路径不能为空".into());
+        }
+        tokio::fs::write(&path, text)
+            .await
+            .map_err(|e| format!("CSV 写入失败: {e}"))
     }
-    tokio::fs::write(&path, text)
-        .await
-        .map_err(|e| format!("CSV 写入失败: {e}"))
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_export_csv elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_export_csv elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }

@@ -321,6 +321,7 @@ pub(crate) fn emit_stage(
     status: &str,
     message: Option<String>,
 ) {
+    log::debug!("SSH 连接阶段 request={request_id} stage={stage} status={status}");
     let _ = app.emit(
         "ssh://connect-stage",
         &crate::plugins::ssh::models::ConnectStage {

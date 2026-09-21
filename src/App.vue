@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isTauri } from '@tauri-apps/api/core'
+import { warn as logWarn } from '@tauri-apps/plugin-log'
 /**
  * App.vue · M1 主界面（多页签工作区布局）
  * 侧栏 + 顶栏 + ToolWorkspace（工具库首页 / 工具页签子页面）；
@@ -53,6 +55,11 @@ async function watchWindowVisibility() {
     })
   } catch (error) {
     // 浏览器预览环境没有窗口 API：退化为只用页面可见性，不阻断界面
+    if (isTauri()) {
+      void logWarn('窗口焦点监听降级 source=App').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     console.warn('[app] 窗口焦点监听不可用，改用页面可见性', error)
   }
 }

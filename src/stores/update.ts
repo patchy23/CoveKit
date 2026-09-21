@@ -13,6 +13,7 @@
  *
  * 重复保护：每个阶段都对同一动作做重入拦截，连点不会起第二次检查/下载。
  */
+import { error as logError, info as logInfo } from '@tauri-apps/plugin-log'
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { check, type Update } from '@tauri-apps/plugin-updater'
@@ -97,6 +98,11 @@ export const useUpdateStore = defineStore('update', () => {
     errorMessage.value = reason instanceof Error ? reason.message : String(reason)
     phase.value = 'error'
     recordError({ code, message: errorMessage.value, source: 'update' })
+    if (supported) {
+      void logError(`更新操作失败 code=${code}`).catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
   }
 
   /** 关闭并清掉更新句柄（取消或收尾时调用，避免句柄泄漏） */
@@ -113,6 +119,11 @@ export const useUpdateStore = defineStore('update', () => {
         message: reason instanceof Error ? reason.message : String(reason),
         source: 'update',
       })
+      if (supported) {
+        void logError('更新句柄释放失败 code=update.release_failed').catch(() => {
+          console.warn('[diagnostics] 日志发送失败')
+        })
+      }
     }
   }
 
@@ -120,6 +131,11 @@ export const useUpdateStore = defineStore('update', () => {
   async function checkNow(): Promise<void> {
     if (!canCheck.value) return
     phase.value = 'checking'
+    if (supported) {
+      void logInfo('更新阶段 phase=checking').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     errorMessage.value = ''
     errorCode.value = ''
     try {
@@ -132,6 +148,11 @@ export const useUpdateStore = defineStore('update', () => {
       }
       version.value = found.version
       phase.value = 'available'
+      if (supported) {
+        void logInfo('更新阶段 phase=available').catch(() => {
+          console.warn('[diagnostics] 日志发送失败')
+        })
+      }
     } catch (reason) {
       await releaseHandle()
       fail('update.check_failed', reason)
@@ -143,6 +164,11 @@ export const useUpdateStore = defineStore('update', () => {
     if (!handle || phase.value === 'downloading' || phase.value === 'installing') return
     if (phase.value !== 'available' && phase.value !== 'ready') return
     phase.value = 'downloading'
+    if (supported) {
+      void logInfo('更新阶段 phase=downloading').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     downloaded.value = 0
     total.value = undefined
     errorMessage.value = ''
@@ -157,6 +183,11 @@ export const useUpdateStore = defineStore('update', () => {
       })
       if (handle !== current) return
       phase.value = 'ready'
+      if (supported) {
+        void logInfo('更新阶段 phase=ready').catch(() => {
+          console.warn('[diagnostics] 日志发送失败')
+        })
+      }
     } catch (reason) {
       if (handle !== current) return
       fail('update.download_failed', reason)
@@ -171,12 +202,22 @@ export const useUpdateStore = defineStore('update', () => {
     total.value = undefined
     version.value = ''
     phase.value = 'idle'
+    if (supported) {
+      void logInfo('更新操作已取消').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
   }
 
   /** 安装已下载的更新并重启（不可取消） */
   async function install(): Promise<void> {
     if (!handle || phase.value !== 'ready') return
     phase.value = 'installing'
+    if (supported) {
+      void logInfo('更新阶段 phase=installing').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     try {
       await handle.install()
       await relaunch()

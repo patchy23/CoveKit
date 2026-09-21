@@ -122,18 +122,20 @@ pub fn api_group_create(
     name: String,
     parent: Option<String>,
 ) -> Result<String, String> {
-    let name = name.trim();
-    if name.is_empty() || name.contains('/') {
-        return Err("分组名称不能为空或包含 /".into());
-    }
-    let parent = parent.unwrap_or_default();
-    let path = if parent.is_empty() {
-        name.to_string()
-    } else {
-        format!("{parent}/{name}")
-    };
-    let guard = db(&app, &state)?;
-    guard.as_ref().ok_or("本地库未初始化")?.with_transaction(|conn| {
+    let log_started = std::time::Instant::now();
+    let result: Result<String, String> = (|| {
+        let name = name.trim();
+        if name.is_empty() || name.contains('/') {
+            return Err("分组名称不能为空或包含 /".into());
+        }
+        let parent = parent.unwrap_or_default();
+        let path = if parent.is_empty() {
+            name.to_string()
+        } else {
+            format!("{parent}/{name}")
+        };
+        let guard = db(&app, &state)?;
+        guard.as_ref().ok_or("本地库未初始化")?.with_transaction(|conn| {
         if !parent.is_empty() {
             let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM api_groups WHERE path=?1 OR substr(path,1,length(?1)+1)=?1||'/')", [&parent], |row| row.get(0)).map_err(|e| e.to_string())?;
             if !exists { return Err("上级分组不存在，请刷新后重试".into()); }
@@ -143,6 +145,18 @@ pub fn api_group_create(
         ensure_group_paths(conn, &path)?;
         Ok(path.clone())
     })
+    })();
+    match &result {
+        Ok(_value) => log::debug!(
+            "操作完成 operation=api_group_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=api_group_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 持久化仅允许超时与凭证引用，拒绝意外传入的临时秘密。
@@ -209,11 +223,25 @@ pub fn api_rename(
     name: String,
     group_name: String,
 ) -> Result<(), String> {
-    let guard = db(&app, &state)?;
-    guard
-        .as_ref()
-        .ok_or("本地库未初始化")?
-        .with_transaction(|conn| rename_record(conn, id, &name, &group_name))
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = (|| {
+        let guard = db(&app, &state)?;
+        guard
+            .as_ref()
+            .ok_or("本地库未初始化")?
+            .with_transaction(|conn| rename_record(conn, id, &name, &group_name))
+    })();
+    match &result {
+        Ok(_value) => log::debug!(
+            "操作完成 operation=api_rename elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=api_rename elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 元数据修改不携带请求快照，避免重命名覆盖刚保存的内容。
@@ -252,17 +280,19 @@ pub fn api_save(
     group_name: Option<String>,
     options: Option<String>,
 ) -> Result<i64, String> {
-    if !matches!(kind.as_str(), "http" | "sse" | "ws") {
-        return Err("接口类型不支持".into());
-    }
-    if name.trim().is_empty() {
-        return Err("接口名称不能为空".into());
-    }
-    let group_name = group_name.unwrap_or_default();
-    let options = validate_options(options.as_deref().unwrap_or("{}"))?;
-    let guard = db(&app, &state)?;
-    let d = guard.as_ref().ok_or("本地库未初始化")?;
-    d.with_transaction(|c| {
+    let log_started = std::time::Instant::now();
+    let result: Result<i64, String> = (|| {
+        if !matches!(kind.as_str(), "http" | "sse" | "ws") {
+            return Err("接口类型不支持".into());
+        }
+        if name.trim().is_empty() {
+            return Err("接口名称不能为空".into());
+        }
+        let group_name = group_name.unwrap_or_default();
+        let options = validate_options(options.as_deref().unwrap_or("{}"))?;
+        let guard = db(&app, &state)?;
+        let d = guard.as_ref().ok_or("本地库未初始化")?;
+        d.with_transaction(|c| {
         ensure_group_paths(c, &group_name)?;
         let id = match id {
             // 新增：INSERT 后取自增主键
@@ -291,6 +321,18 @@ pub fn api_save(
         };
         Ok(id)
     })
+    })();
+    match &result {
+        Ok(_value) => log::debug!(
+            "操作完成 operation=api_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=api_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 接口列表（手动顺序独立于更新时间，保存请求不改变排序）
@@ -352,21 +394,49 @@ pub fn api_move_group(
 /// 删除单个接口
 #[tauri::command]
 pub fn api_delete(app: AppHandle, state: State<'_, ApiState>, id: i64) -> Result<(), String> {
-    let guard = db(&app, &state)?;
-    let d = guard.as_ref().ok_or("本地库未初始化")?;
-    d.with_conn(|c| {
-        c.execute("DELETE FROM api_list WHERE id=?1", rusqlite::params![id])
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    })
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = (|| {
+        let guard = db(&app, &state)?;
+        let d = guard.as_ref().ok_or("本地库未初始化")?;
+        d.with_conn(|c| {
+            c.execute("DELETE FROM api_list WHERE id=?1", rusqlite::params![id])
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+    })();
+    match &result {
+        Ok(_value) => log::debug!(
+            "操作完成 operation=api_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=api_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 清空全部接口
 #[tauri::command]
 pub fn api_clear(app: AppHandle, state: State<'_, ApiState>) -> Result<(), String> {
-    let guard = db(&app, &state)?;
-    let d = guard.as_ref().ok_or("本地库未初始化")?;
-    d.execute("DELETE FROM api_list").map(|_| ())
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = (|| {
+        let guard = db(&app, &state)?;
+        let d = guard.as_ref().ok_or("本地库未初始化")?;
+        d.execute("DELETE FROM api_list").map(|_| ())
+    })();
+    match &result {
+        Ok(_value) => log::debug!(
+            "操作完成 operation=api_clear elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=api_clear elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 装配接口库 State（命令登记与分派 handler 由 http_ws 模块清单统一生成）

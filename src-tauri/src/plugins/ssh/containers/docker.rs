@@ -108,31 +108,50 @@ pub async fn ssh_docker_action(
     container_id: String,
     action: String,
 ) -> Result<SshActionResult, String> {
-    let session = get_session(&ssh_state, &connection_id)?;
-    let action = match action.as_str() {
-        "start" => "start",
-        "stop" => "stop",
-        "restart" => "restart",
-        "remove" => "rm -f",
-        _ => return Err(format!("不支持的操作: {action}")),
-    };
-    // 成败以退出码为准（exec_collect 对非零退出码返回 Err，错误文案含 stderr 合并输出）。
-    // 成功时 docker 在 stdout 回显容器 ID，那是正常输出不是错误，不能回填 error 字段。
-    match exec_collect(
-        &session,
-        &format!("docker {action} {}", shell_quote(&container_id)),
-    )
-    .await
-    {
-        Ok(_) => Ok(SshActionResult {
-            ok: true,
-            error: None,
-        }),
-        Err(e) => Ok(SshActionResult {
-            ok: false,
-            error: Some(e),
-        }),
+    let log_started = std::time::Instant::now();
+    let result: Result<SshActionResult, String> = async {
+        let session = get_session(&ssh_state, &connection_id)?;
+        let action = match action.as_str() {
+            "start" => "start",
+            "stop" => "stop",
+            "restart" => "restart",
+            "remove" => "rm -f",
+            _ => return Err(format!("不支持的操作: {action}")),
+        };
+        // 成败以退出码为准（exec_collect 对非零退出码返回 Err，错误文案含 stderr 合并输出）。
+        // 成功时 docker 在 stdout 回显容器 ID，那是正常输出不是错误，不能回填 error 字段。
+        match exec_collect(
+            &session,
+            &format!("docker {action} {}", shell_quote(&container_id)),
+        )
+        .await
+        {
+            Ok(_) => Ok(SshActionResult {
+                ok: true,
+                error: None,
+            }),
+            Err(e) => Ok(SshActionResult {
+                ok: false,
+                error: Some(e),
+            }),
+        }
     }
+    .await;
+    match &result {
+        Ok(value) if value.ok => ::log::info!(
+            "操作完成 operation=ssh_docker_action elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => ::log::warn!(
+            "操作未完成 operation=ssh_docker_action elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => ::log::warn!(
+            "操作未完成 operation=ssh_docker_action elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 容器日志（最近 N 行）

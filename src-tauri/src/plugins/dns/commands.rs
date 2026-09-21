@@ -42,6 +42,12 @@ pub async fn dns_query(
                 elapsed_ms: 0,
                 records: vec![],
             });
+        if !result.ok {
+            log::warn!(
+                "DNS 查询未完成 code=dns.query_failed elapsed_ms={}",
+                result.elapsed_ms
+            );
+        }
         results.push(result);
     }
     Ok(results)
@@ -56,17 +62,39 @@ pub async fn dns_domains(
     state: State<'_, DnsState>,
     platform: String,
 ) -> Result<DomainList, String> {
-    let cfg = load_effective_config(&app, &state)?;
-    match platform.as_str() {
-        models::PLATFORM_ALIYUN => alidns::AliyunDns::new(&cfg.aliyun)?.get_domains().await,
-        models::PLATFORM_DNSPOD => dnspod::TencentDns::new(&cfg.dnspod)?.get_domains().await,
-        models::PLATFORM_CLOUDFLARE => {
-            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
-                .get_domains()
-                .await
+    let log_started = std::time::Instant::now();
+    let result: Result<DomainList, String> = async {
+        let cfg = load_effective_config(&app, &state)?;
+        match platform.as_str() {
+            models::PLATFORM_ALIYUN => alidns::AliyunDns::new(&cfg.aliyun)?.get_domains().await,
+            models::PLATFORM_DNSPOD => dnspod::TencentDns::new(&cfg.dnspod)?.get_domains().await,
+            models::PLATFORM_CLOUDFLARE => {
+                cloudflare::CloudflareDns::new(&cfg.cloudflare)?
+                    .get_domains()
+                    .await
+            }
+            _ => Err(format!("不支持的平台: {platform}")),
         }
-        _ => Err(format!("不支持的平台: {platform}")),
     }
+    .await;
+    match &result {
+        Ok(_value) => log::debug!(
+            "操作完成 operation=dns_domains elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(error)
+            if error.starts_with("请先在")
+                || error.starts_with("不支持的平台:")
+                || error == "主机记录与记录值不能为空" =>
+        {
+            log::debug!("DNS 操作预检未通过 operation=dns_domains");
+        }
+        Err(_) => log::error!(
+            "操作未完成 operation=dns_domains elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 云解析记录列表（分页；keyword 非空时服务端按主机记录/记录值模糊搜索）
@@ -80,25 +108,47 @@ pub async fn dns_records(
     size: u32,
     keyword: String,
 ) -> Result<RecordList, String> {
-    let cfg = load_effective_config(&app, &state)?;
-    match platform.as_str() {
-        models::PLATFORM_ALIYUN => {
-            alidns::AliyunDns::new(&cfg.aliyun)?
-                .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
-                .await
+    let log_started = std::time::Instant::now();
+    let result: Result<RecordList, String> = async {
+        let cfg = load_effective_config(&app, &state)?;
+        match platform.as_str() {
+            models::PLATFORM_ALIYUN => {
+                alidns::AliyunDns::new(&cfg.aliyun)?
+                    .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
+                    .await
+            }
+            models::PLATFORM_DNSPOD => {
+                dnspod::TencentDns::new(&cfg.dnspod)?
+                    .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
+                    .await
+            }
+            models::PLATFORM_CLOUDFLARE => {
+                cloudflare::CloudflareDns::new(&cfg.cloudflare)?
+                    .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
+                    .await
+            }
+            _ => Err(format!("不支持的平台: {platform}")),
         }
-        models::PLATFORM_DNSPOD => {
-            dnspod::TencentDns::new(&cfg.dnspod)?
-                .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
-                .await
-        }
-        models::PLATFORM_CLOUDFLARE => {
-            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
-                .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
-                .await
-        }
-        _ => Err(format!("不支持的平台: {platform}")),
     }
+    .await;
+    match &result {
+        Ok(_value) => log::debug!(
+            "操作完成 operation=dns_records elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(error)
+            if error.starts_with("请先在")
+                || error.starts_with("不支持的平台:")
+                || error == "主机记录与记录值不能为空" =>
+        {
+            log::debug!("DNS 操作预检未通过 operation=dns_records");
+        }
+        Err(_) => log::error!(
+            "操作未完成 operation=dns_records elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 云解析添加记录（payload 打包，规避 clippy too_many_arguments）
@@ -108,46 +158,68 @@ pub async fn dns_add_record(
     state: State<'_, DnsState>,
     payload: models::AddRecordPayload,
 ) -> Result<(), String> {
-    if payload.rr.trim().is_empty() || payload.value.trim().is_empty() {
-        return Err("主机记录与记录值不能为空".into());
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        if payload.rr.trim().is_empty() || payload.value.trim().is_empty() {
+            return Err("主机记录与记录值不能为空".into());
+        }
+        let cfg = load_effective_config(&app, &state)?;
+        match payload.platform.as_str() {
+            models::PLATFORM_ALIYUN => {
+                alidns::AliyunDns::new(&cfg.aliyun)?
+                    .add_record(
+                        &payload.domain,
+                        payload.rr.trim(),
+                        &payload.rtype,
+                        payload.value.trim(),
+                        payload.ttl,
+                    )
+                    .await
+            }
+            models::PLATFORM_DNSPOD => {
+                dnspod::TencentDns::new(&cfg.dnspod)?
+                    .add_record(
+                        &payload.domain,
+                        payload.rr.trim(),
+                        &payload.rtype,
+                        payload.value.trim(),
+                        payload.ttl,
+                    )
+                    .await
+            }
+            models::PLATFORM_CLOUDFLARE => {
+                cloudflare::CloudflareDns::new(&cfg.cloudflare)?
+                    .add_record(
+                        &payload.domain,
+                        payload.rr.trim(),
+                        &payload.rtype,
+                        payload.value.trim(),
+                        payload.ttl,
+                    )
+                    .await
+            }
+            _ => Err(format!("不支持的平台: {}", payload.platform)),
+        }
     }
-    let cfg = load_effective_config(&app, &state)?;
-    match payload.platform.as_str() {
-        models::PLATFORM_ALIYUN => {
-            alidns::AliyunDns::new(&cfg.aliyun)?
-                .add_record(
-                    &payload.domain,
-                    payload.rr.trim(),
-                    &payload.rtype,
-                    payload.value.trim(),
-                    payload.ttl,
-                )
-                .await
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dns_add_record elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(error)
+            if error.starts_with("请先在")
+                || error.starts_with("不支持的平台:")
+                || error == "主机记录与记录值不能为空" =>
+        {
+            log::debug!("DNS 操作预检未通过 operation=dns_add_record");
         }
-        models::PLATFORM_DNSPOD => {
-            dnspod::TencentDns::new(&cfg.dnspod)?
-                .add_record(
-                    &payload.domain,
-                    payload.rr.trim(),
-                    &payload.rtype,
-                    payload.value.trim(),
-                    payload.ttl,
-                )
-                .await
-        }
-        models::PLATFORM_CLOUDFLARE => {
-            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
-                .add_record(
-                    &payload.domain,
-                    payload.rr.trim(),
-                    &payload.rtype,
-                    payload.value.trim(),
-                    payload.ttl,
-                )
-                .await
-        }
-        _ => Err(format!("不支持的平台: {}", payload.platform)),
+        Err(_) => log::error!(
+            "操作未完成 operation=dns_add_record elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
+    result
 }
 
 /// 云解析更新记录（payload 打包，规避 clippy too_many_arguments）
@@ -157,46 +229,68 @@ pub async fn dns_update_record(
     state: State<'_, DnsState>,
     payload: models::UpdateRecordPayload,
 ) -> Result<(), String> {
-    let cfg = load_effective_config(&app, &state)?;
-    match payload.platform.as_str() {
-        models::PLATFORM_ALIYUN => {
-            alidns::AliyunDns::new(&cfg.aliyun)?
-                .update_record(
-                    &payload.domain,
-                    &payload.record_id,
-                    payload.rr.trim(),
-                    &payload.rtype,
-                    payload.value.trim(),
-                    payload.ttl,
-                )
-                .await
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        let cfg = load_effective_config(&app, &state)?;
+        match payload.platform.as_str() {
+            models::PLATFORM_ALIYUN => {
+                alidns::AliyunDns::new(&cfg.aliyun)?
+                    .update_record(
+                        &payload.domain,
+                        &payload.record_id,
+                        payload.rr.trim(),
+                        &payload.rtype,
+                        payload.value.trim(),
+                        payload.ttl,
+                    )
+                    .await
+            }
+            models::PLATFORM_DNSPOD => {
+                dnspod::TencentDns::new(&cfg.dnspod)?
+                    .update_record(
+                        &payload.domain,
+                        &payload.record_id,
+                        payload.rr.trim(),
+                        &payload.rtype,
+                        payload.value.trim(),
+                        payload.ttl,
+                    )
+                    .await
+            }
+            models::PLATFORM_CLOUDFLARE => {
+                cloudflare::CloudflareDns::new(&cfg.cloudflare)?
+                    .update_record(
+                        &payload.domain,
+                        &payload.record_id,
+                        payload.rr.trim(),
+                        &payload.rtype,
+                        payload.value.trim(),
+                        payload.ttl,
+                    )
+                    .await
+            }
+            _ => Err(format!("不支持的平台: {}", payload.platform)),
         }
-        models::PLATFORM_DNSPOD => {
-            dnspod::TencentDns::new(&cfg.dnspod)?
-                .update_record(
-                    &payload.domain,
-                    &payload.record_id,
-                    payload.rr.trim(),
-                    &payload.rtype,
-                    payload.value.trim(),
-                    payload.ttl,
-                )
-                .await
-        }
-        models::PLATFORM_CLOUDFLARE => {
-            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
-                .update_record(
-                    &payload.domain,
-                    &payload.record_id,
-                    payload.rr.trim(),
-                    &payload.rtype,
-                    payload.value.trim(),
-                    payload.ttl,
-                )
-                .await
-        }
-        _ => Err(format!("不支持的平台: {}", payload.platform)),
     }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dns_update_record elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(error)
+            if error.starts_with("请先在")
+                || error.starts_with("不支持的平台:")
+                || error == "主机记录与记录值不能为空" =>
+        {
+            log::debug!("DNS 操作预检未通过 operation=dns_update_record");
+        }
+        Err(_) => log::error!(
+            "操作未完成 operation=dns_update_record elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 云解析删除记录
@@ -208,23 +302,45 @@ pub async fn dns_delete_record(
     domain: String,
     record_id: String,
 ) -> Result<(), String> {
-    let cfg = load_effective_config(&app, &state)?;
-    match platform.as_str() {
-        models::PLATFORM_ALIYUN => {
-            alidns::AliyunDns::new(&cfg.aliyun)?
-                .delete_record(&record_id)
-                .await
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        let cfg = load_effective_config(&app, &state)?;
+        match platform.as_str() {
+            models::PLATFORM_ALIYUN => {
+                alidns::AliyunDns::new(&cfg.aliyun)?
+                    .delete_record(&record_id)
+                    .await
+            }
+            models::PLATFORM_DNSPOD => {
+                dnspod::TencentDns::new(&cfg.dnspod)?
+                    .delete_record(&domain, &record_id)
+                    .await
+            }
+            models::PLATFORM_CLOUDFLARE => {
+                cloudflare::CloudflareDns::new(&cfg.cloudflare)?
+                    .delete_record(&domain, &record_id)
+                    .await
+            }
+            _ => Err(format!("不支持的平台: {platform}")),
         }
-        models::PLATFORM_DNSPOD => {
-            dnspod::TencentDns::new(&cfg.dnspod)?
-                .delete_record(&domain, &record_id)
-                .await
-        }
-        models::PLATFORM_CLOUDFLARE => {
-            cloudflare::CloudflareDns::new(&cfg.cloudflare)?
-                .delete_record(&domain, &record_id)
-                .await
-        }
-        _ => Err(format!("不支持的平台: {platform}")),
     }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dns_delete_record elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(error)
+            if error.starts_with("请先在")
+                || error.starts_with("不支持的平台:")
+                || error == "主机记录与记录值不能为空" =>
+        {
+            log::debug!("DNS 操作预检未通过 operation=dns_delete_record");
+        }
+        Err(_) => log::error!(
+            "操作未完成 operation=dns_delete_record elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }

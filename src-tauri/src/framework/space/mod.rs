@@ -144,10 +144,7 @@ pub fn fallback() -> Option<SpaceFallback> {
 
 /// 记录回落（只登记首因：一次启动里为什么回落到默认空间，首个原因最接近根因）
 fn record_fallback(fallback: &SpaceFallback) {
-    eprintln!(
-        "[space] 活动空间标识不可用，已回落默认空间：raw={} reason={}",
-        fallback.raw, fallback.reason
-    );
+    log::warn!("活动空间标识不可用，已回落默认空间");
     let _ = FALLBACK.set(Some(fallback.clone()));
 }
 

@@ -184,9 +184,11 @@ pub fn dns_config_set(
     state: State<'_, DnsState>,
     config: DnsConfig,
 ) -> Result<(), String> {
-    let guard = db(&app, &state)?;
-    let conn = guard.as_ref().ok_or("本地库未初始化")?;
-    conn.with_conn(|c| {
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = (|| {
+        let guard = db(&app, &state)?;
+        let conn = guard.as_ref().ok_or("本地库未初始化")?;
+        conn.with_conn(|c| {
         for (platform, provider) in [
             (models::PLATFORM_ALIYUN, config.aliyun),
             (models::PLATFORM_DNSPOD, config.dnspod),
@@ -210,4 +212,16 @@ pub fn dns_config_set(
         .map_err(|e| e.to_string())?;
         Ok(())
     })
+    })();
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dns_config_set elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dns_config_set elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }

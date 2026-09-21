@@ -200,20 +200,14 @@ where
         if snapshot.state == FrpStateName::Error
             && (before.0 != snapshot.state || before.3 != snapshot.last_error)
         {
-            eprintln!(
-                "[frp] ERROR [{file_name}] {}",
-                snapshot.last_error.as_deref().unwrap_or("运行状态异常")
-            );
+            log::error!("FRP 运行状态异常 pid={:?}", snapshot.pid);
         } else if before.0 != snapshot.state && snapshot.state == FrpStateName::Running {
-            eprintln!("[frp] INFO [{file_name}] 已连接服务端");
+            log::info!("已连接服务端");
         } else if before.1.is_some()
             && snapshot.pid.is_none()
             && snapshot.state == FrpStateName::Stopped
         {
-            eprintln!(
-                "[frp] INFO [{file_name}] 进程已停止，退出码 {:?}",
-                snapshot.exit_code
-            );
+            log::info!("进程已停止，退出码 {:?}", snapshot.exit_code);
         }
         let _ = app.emit("frp://state", snapshot);
     }
@@ -231,32 +225,17 @@ fn spawn_reader<R>(
 {
     tokio::spawn(async move {
         let mut lines = BufReader::new(reader).lines();
-        let mut ordinary_lines = 0;
         loop {
             let raw = match lines.next_line().await {
                 Ok(Some(raw)) => raw,
                 Ok(None) => break,
                 Err(error) => {
-                    eprintln!("[frp] ERROR [{file_name}] 读取 {stream:?} 输出失败：{error}");
+                    log::error!("读取 {stream:?} 输出失败 kind={:?}", error.kind());
                     break;
                 }
             };
             let line = config.redact(&raw);
-            // 早期配置错误可能没有等级前缀：每个流保留前 20 行普通输出，之后只同步告警/错误。
-            // 页面仍接收完整日志，后台不持续镜像正常逐行输出。
-            if line.contains("[E]") {
-                eprintln!("[frp] ERROR [{file_name}] {line}");
-            } else if line.contains("[W]") || stream == FrpLogStream::Stderr {
-                eprintln!("[frp] WARN [{file_name}] {line}");
-            } else if ordinary_lines < 20 {
-                ordinary_lines += 1;
-                eprintln!("[frp] INFO [{file_name}] {line}");
-            } else if ordinary_lines == 20 {
-                ordinary_lines += 1;
-                eprintln!(
-                    "[frp] INFO [{file_name}] 后续普通输出仅在页面日志展示，后台继续记录告警和错误"
-                );
-            }
+            // 原始行只供业务日志展示，不复制进应用诊断文件。
             let _ = app.emit(
                 "frp://log",
                 FrpLogPayload {
@@ -327,7 +306,7 @@ async fn monitor(
                 match result {
                     Ok(status) => break status.code(),
                     Err(error) => {
-                        eprintln!("[frp] ERROR [{file_name}] 等待 frpc 退出失败：{error}");
+                        log::error!("等待 frpc 退出失败 kind={:?}", error.kind());
                         break None;
                     }
                 }
@@ -414,7 +393,7 @@ pub(crate) async fn start(
         snapshot
     };
     // starting 立即外推：前端状态点变黄
-    eprintln!("[frp] INFO [{file_name}] frpc 进程已创建，PID {pid:?}，等待连接服务端");
+    log::info!("frpc 进程已创建，PID {pid:?}，等待连接服务端");
     let _ = app.emit("frp://state", snapshot.clone());
     Ok(snapshot)
 }

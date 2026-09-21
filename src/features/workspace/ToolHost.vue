@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isTauri } from '@tauri-apps/api/core'
+import { warn as logWarn } from '@tauri-apps/plugin-log'
 /**
  * ToolHost · 工具页签宿主（可靠性 T10-6）
  *
@@ -82,6 +84,11 @@ const frame = computed<Component>(() => {
     timeout: 30000,
     onError: (error, retryLoad, fail) => {
       loadError.value = describe(error)
+      if (isTauri()) {
+        void logWarn('工具加载或渲染失败 source=ToolHost').catch(() => {
+          console.warn('[diagnostics] 日志发送失败')
+        })
+      }
       console.error(`[tool:${props.toolId}] 组件加载失败（第 ${current + 1} 次）`, error)
       // 第一次失败自动重试一次（分包读取偶发失败很常见），再失败就交给错误面板
       if (current === 0) retryLoad()
@@ -93,6 +100,11 @@ const frame = computed<Component>(() => {
 /** 渲染期错误边界：工具内部抛错只影响这个页签 */
 onErrorCaptured((error, _instance, info) => {
   renderError.value = `${describe(error)}（${info}）`
+  if (isTauri()) {
+    void logWarn('工具加载或渲染失败 source=ToolHost').catch(() => {
+      console.warn('[diagnostics] 日志发送失败')
+    })
+  }
   console.error(`[tool:${props.toolId}] 渲染失败`, error)
   return false
 })

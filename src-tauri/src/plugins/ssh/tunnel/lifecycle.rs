@@ -29,15 +29,29 @@ pub async fn ssh_tunnel_start(
     connection_id: String,
     tunnel_id: String,
 ) -> Result<TunnelRuntime, String> {
-    ssh_tunnel_start_inner(
-        &app,
-        &ssh_state,
-        &tunnel_state,
-        profile_state.inner(),
-        &connection_id,
-        &tunnel_id,
-    )
-    .await
+    let log_started = std::time::Instant::now();
+    let result: Result<TunnelRuntime, String> = {
+        ssh_tunnel_start_inner(
+            &app,
+            &ssh_state,
+            &tunnel_state,
+            profile_state.inner(),
+            &connection_id,
+            &tunnel_id,
+        )
+        .await
+    };
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=ssh_tunnel_start elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_tunnel_start elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 停止隧道（desired_running 置 false：显式停止即用户不再想要自动恢复）
@@ -48,17 +62,32 @@ pub async fn ssh_tunnel_stop(
     tunnel_state: State<'_, TunnelState>,
     tunnel_id: String,
 ) -> Result<TunnelRuntime, String> {
-    let handle = {
-        let map = tunnel_state.0.lock().map_err(|e| e.to_string())?;
-        map.get(&tunnel_id).cloned()
-    };
-    let Some(handle) = handle else {
-        return Err("隧道未在运行".into());
-    };
-    let session_info = session_for_handle(&ssh_state, &handle);
-    stop_handle_with_session(&app, session_info, &handle).await;
-    handle.desired_running.store(false, Ordering::Relaxed);
-    Ok(handle.runtime())
+    let log_started = std::time::Instant::now();
+    let result: Result<TunnelRuntime, String> = async {
+        let handle = {
+            let map = tunnel_state.0.lock().map_err(|e| e.to_string())?;
+            map.get(&tunnel_id).cloned()
+        };
+        let Some(handle) = handle else {
+            return Err("隧道未在运行".into());
+        };
+        let session_info = session_for_handle(&ssh_state, &handle);
+        stop_handle_with_session(&app, session_info, &handle).await;
+        handle.desired_running.store(false, Ordering::Relaxed);
+        Ok(handle.runtime())
+    }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=ssh_tunnel_stop elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_tunnel_stop elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 某连接下的全部隧道运行时快照
@@ -89,21 +118,36 @@ pub async fn ssh_tunnel_delete(
     profile_state: State<'_, ProfileState>,
     tunnel_id: String,
 ) -> Result<(), String> {
-    let handle = {
-        let map = tunnel_state.0.lock().map_err(|e| e.to_string())?;
-        map.get(&tunnel_id).cloned()
-    };
-    if let Some(handle) = handle {
-        let session_info = session_for_handle(&ssh_state, &handle);
-        stop_handle_with_session(&app, session_info, &handle).await;
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        let handle = {
+            let map = tunnel_state.0.lock().map_err(|e| e.to_string())?;
+            map.get(&tunnel_id).cloned()
+        };
+        if let Some(handle) = handle {
+            let session_info = session_for_handle(&ssh_state, &handle);
+            stop_handle_with_session(&app, session_info, &handle).await;
+        }
+        store::with_db(&app, &profile_state, |conn| {
+            store::delete_tunnel(conn, &tunnel_id)
+        })?;
+        if let Ok(mut map) = tunnel_state.0.lock() {
+            map.remove(&tunnel_id);
+        }
+        Ok(())
     }
-    store::with_db(&app, &profile_state, |conn| {
-        store::delete_tunnel(conn, &tunnel_id)
-    })?;
-    if let Ok(mut map) = tunnel_state.0.lock() {
-        map.remove(&tunnel_id);
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=ssh_tunnel_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_tunnel_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
-    Ok(())
+    result
 }
 
 /* ── 启停核心 ── */

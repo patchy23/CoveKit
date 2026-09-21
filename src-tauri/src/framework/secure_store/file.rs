@@ -84,7 +84,10 @@ pub(crate) fn replace_file(path: &Path, content: &[u8]) -> Result<(), String> {
     }
     // 到这里新版本已提交（文件已转正）；清理 `.bak` 属于收尾，失败只影响下次择版，不阻断写入
     if let Err(error) = std::fs::remove_file(&backup) {
-        eprintln!("[secure-store] 凭证已保存，但备份清理失败: {error}");
+        log::error!(
+            "凭证已保存，但备份清理失败: {error_type}",
+            error_type = std::any::type_name_of_val(&error)
+        );
     }
     Ok(())
 }
@@ -133,7 +136,10 @@ pub(crate) fn load_verified<T>(
             // 主文件已提交：把残留 `.bak` 当过期版本清理（内容仍在主文件里）
             if backup.exists() {
                 if let Err(error) = std::fs::remove_file(&backup) {
-                    eprintln!("[secure-store] 过期凭证备份清理失败: {error}");
+                    log::error!(
+                        "过期凭证备份清理失败: {error_type}",
+                        error_type = std::any::type_name_of_val(&error)
+                    );
                 }
             }
             Ok(Some(value))
@@ -152,10 +158,7 @@ pub(crate) fn load_verified<T>(
                     archived.display()
                 )
             })?;
-            eprintln!(
-                "[secure-store] 主凭证文件无法读取，已留档为 {} 并改用备份",
-                archived.display()
-            );
+            log::warn!("主凭证文件无法读取，已留档并改用备份");
             Ok(Some(value))
         }
     }

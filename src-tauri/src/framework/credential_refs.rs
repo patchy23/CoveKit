@@ -100,10 +100,7 @@ fn registry() -> &'static Mutex<Vec<&'static dyn CredentialReferenceProvider>> {
 /// 提供者必须是 `'static`：插件在启动装配时登记，生命周期覆盖整个进程。
 pub fn register(provider: &'static dyn CredentialReferenceProvider) {
     let Ok(mut list) = registry().lock() else {
-        eprintln!(
-            "[credential_refs] 注册表锁定失败，跳过登记: {}",
-            provider.owner()
-        );
+        log::error!("注册表锁定失败，跳过登记: {}", provider.owner());
         return;
     };
     list.retain(|existing| existing.owner() != provider.owner());

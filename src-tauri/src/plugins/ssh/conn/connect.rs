@@ -144,87 +144,125 @@ pub async fn ssh_connect(
     profile_state: State<'_, ProfileState>,
     payload: SshConnectPayload,
 ) -> Result<SshConnectOutcome, String> {
-    let request_id = resource_id("sshc");
-    // 从插件库读配置
-    let profile = {
-        let profile_id = payload.profile_id.clone();
-        store::with_db(&app, &profile_state, |c| store::get_profile(c, &profile_id))
-    };
-    let profile = match profile {
-        Ok(p) => p,
-        Err(_) => {
-            return Ok(SshConnectOutcome {
-                ok: false,
-                connection: None,
-                request_id,
-                error: Some(connect_error(
-                    "PROFILE_NOT_FOUND",
-                    format!("服务器配置不存在（{}）", payload.profile_id),
-                    None,
-                )),
-            })
-        }
-    };
-    // 解析一次性覆盖、Vault 引用或本地认证。
-    let resolved = match resolve_credentials(&app, &profile, payload.overrides) {
-        Ok(r) => r,
-        Err(e) => {
-            return Ok(SshConnectOutcome {
-                ok: false,
-                connection: None,
-                request_id,
-                error: Some(e),
-            })
-        }
-    };
-    let known_hosts = host_keys::known_hosts_file(&app)?;
-    let opened = open_session(&app, &request_id, &resolved, known_hosts).await;
-    let (session, forward_targets) = match opened {
-        Ok(pair) => pair,
-        Err(e) => {
-            return Ok(SshConnectOutcome {
-                ok: false,
-                connection: None,
-                request_id,
-                error: Some(e),
-            })
-        }
-    };
+    let log_started = std::time::Instant::now();
+    let result: Result<SshConnectOutcome, String> = async {
+        let request_id = resource_id("sshc");
+        // 从插件库读配置
+        let profile = {
+            let profile_id = payload.profile_id.clone();
+            store::with_db(&app, &profile_state, |c| store::get_profile(c, &profile_id))
+        };
+        let profile = match profile {
+            Ok(p) => p,
+            Err(_) => {
+                return Ok(SshConnectOutcome {
+                    ok: false,
+                    connection: None,
+                    request_id,
+                    error: Some(connect_error(
+                        "PROFILE_NOT_FOUND",
+                        format!("服务器配置不存在（{}）", payload.profile_id),
+                        None,
+                    )),
+                })
+            }
+        };
+        // 解析一次性覆盖、Vault 引用或本地认证。
+        let resolved = match resolve_credentials(&app, &profile, payload.overrides) {
+            Ok(r) => r,
+            Err(e) => {
+                return Ok(SshConnectOutcome {
+                    ok: false,
+                    connection: None,
+                    request_id,
+                    error: Some(e),
+                })
+            }
+        };
+        let known_hosts = host_keys::known_hosts_file(&app)?;
+        let opened = open_session(&app, &request_id, &resolved, known_hosts).await;
+        let (session, forward_targets) = match opened {
+            Ok(pair) => pair,
+            Err(e) => {
+                return Ok(SshConnectOutcome {
+                    ok: false,
+                    connection: None,
+                    request_id,
+                    error: Some(e),
+                })
+            }
+        };
 
-    let session_id = match register_session(&state, &profile, session, forward_targets) {
-        Ok(id) => id,
-        Err(e) => {
-            return Ok(SshConnectOutcome {
-                ok: false,
-                connection: None,
-                request_id,
-                error: Some(e),
-            })
-        }
-    };
-    let _ = store::with_db(&app, &profile_state, |c| {
-        store::touch_last_connected(c, &profile.id, now_ms() as i64)
-    });
+        let session_id = match register_session(&state, &profile, session, forward_targets) {
+            Ok(id) => id,
+            Err(e) => {
+                return Ok(SshConnectOutcome {
+                    ok: false,
+                    connection: None,
+                    request_id,
+                    error: Some(e),
+                })
+            }
+        };
+        let _ = store::with_db(&app, &profile_state, |c| {
+            store::touch_last_connected(c, &profile.id, now_ms() as i64)
+        });
 
-    let conn = ServerConnection {
-        profile_id: profile.id.clone(),
-        session_id: session_id.clone(),
-        status: ConnectionStatus::Connected,
-        host: Some(profile.host.clone()),
-        latency_ms: None,
-        error: None,
-        connected_at: Some(now_ms()),
-    };
-    resume_for_profile(&app, profile_state.inner(), &profile.id, &session_id);
-    // 事件推送失败（如窗口已关闭）只记诊断日志：会话已注册、连接可用，
-    // 返回 Err 会让前端误判连接失败，且 session_id 未回传形成无法断开的幽灵会话
-    if let Err(e) = app.emit("ssh://connection-status", &conn) {
-        eprintln!("[ssh] 连接状态事件推送失败（连接本身已成功）: {e}");
+        let conn = ServerConnection {
+            profile_id: profile.id.clone(),
+            session_id: session_id.clone(),
+            status: ConnectionStatus::Connected,
+            host: Some(profile.host.clone()),
+            latency_ms: None,
+            error: None,
+            connected_at: Some(now_ms()),
+        };
+        resume_for_profile(&app, profile_state.inner(), &profile.id, &session_id);
+        // 事件推送失败（如窗口已关闭）只记诊断日志：会话已注册、连接可用，
+        // 返回 Err 会让前端误判连接失败，且 session_id 未回传形成无法断开的幽灵会话
+        if let Err(e) = app.emit("ssh://connection-status", &conn) {
+            log::warn!(
+                "连接状态事件推送失败（连接本身已成功）: {e_type}",
+                e_type = std::any::type_name_of_val(&e)
+            );
+        }
+        Ok(SshConnectOutcome {
+            ok: true,
+            connection: Some(conn),
+            request_id,
+            error: None,
+        })
     }
-    Ok(SshConnectOutcome {
-        ok: true,
-        connection: Some(conn),
-        request_id,
-        error: None,
-    })
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=ssh_connect request={} elapsed_ms={}",
+            value.request_id,
+            log_started.elapsed().as_millis()
+        ),
+        Ok(value) => {
+            let code = value
+                .error
+                .as_ref()
+                .map(|error| error.code.as_str())
+                .unwrap_or("UNKNOWN");
+            if code == "CANCELLED" {
+                log::info!(
+                    "连接已取消 operation=ssh_connect request={}",
+                    value.request_id
+                );
+            } else {
+                log::warn!(
+                    "连接未建立 operation=ssh_connect request={} code={code} elapsed_ms={}",
+                    value.request_id,
+                    log_started.elapsed().as_millis()
+                );
+            }
+        }
+        Err(_) => log::error!(
+            "连接准备失败 operation=ssh_connect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }

@@ -135,6 +135,7 @@ async fn receive(
     {
         return Err("响应类型不是 text/event-stream".into());
     }
+    log::info!("SSE 连接已建立 status={}", response.status().as_u16());
     channel
         .send(SseUpdate::Connected {
             status: response.status().as_u16(),
@@ -165,36 +166,73 @@ pub fn sse_start(
     payload: HttpRequestPayload,
     on_event: Channel<SseUpdate>,
 ) -> Result<(), String> {
-    let mut tasks = state.0.lock().map_err(|e| e.to_string())?;
-    if tasks.contains_key(&id) {
-        return Err("SSE 会话已经存在".into());
-    }
-    let task_id = id.clone();
-    let task = tauri::async_runtime::spawn(async move {
-        if let Err(message) = receive(&app, payload, &on_event).await {
-            // 接收端关闭时任务也结束；报告失败不能再启动另一条连接。
-            if let Err(error) = on_event.send(SseUpdate::Error { message }) {
-                eprintln!("[http-ws] SSE 状态通道已关闭: {error}");
-            }
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = (|| {
+        let mut tasks = state.0.lock().map_err(|e| e.to_string())?;
+        if tasks.contains_key(&id) {
+            return Err("SSE 会话已经存在".into());
         }
-        match app.state::<SseState>().0.lock() {
-            Ok(mut tasks) => {
-                tasks.remove(&task_id);
+        let task_id = id.clone();
+        let task = tauri::async_runtime::spawn(async move {
+            log::info!("SSE 接收任务开始 session={task_id}");
+            if let Err(message) = receive(&app, payload, &on_event).await {
+                log::warn!("SSE 接收任务异常结束 session={task_id}");
+                // 接收端关闭时任务也结束；报告失败不能再启动另一条连接。
+                if let Err(error) = on_event.send(SseUpdate::Error { message }) {
+                    log::info!(
+                        "SSE 状态通道已关闭: {error_type}",
+                        error_type = std::any::type_name_of_val(&error)
+                    );
+                }
             }
-            Err(error) => eprintln!("[http-ws] SSE 会话清理失败: {error}"),
-        };
-    });
-    tasks.insert(id, task);
-    Ok(())
+            log::info!("SSE 接收任务结束 session={task_id}");
+            match app.state::<SseState>().0.lock() {
+                Ok(mut tasks) => {
+                    tasks.remove(&task_id);
+                }
+                Err(error) => log::error!(
+                    "SSE 会话清理失败: {error_type}",
+                    error_type = std::any::type_name_of_val(&error)
+                ),
+            };
+        });
+        tasks.insert(id, task);
+        Ok(())
+    })();
+    match &result {
+        Ok(_value) => log::info!(
+            "接收请求已受理 operation=sse_start elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=sse_start elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 幂等取消，abort 使挂起的握手和读取也能被终止。
 #[tauri::command]
 pub fn sse_stop(state: State<'_, SseState>, id: String) -> Result<(), String> {
-    if let Some(task) = state.0.lock().map_err(|e| e.to_string())?.remove(&id) {
-        task.abort();
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = (|| {
+        if let Some(task) = state.0.lock().map_err(|e| e.to_string())?.remove(&id) {
+            task.abort();
+        }
+        Ok(())
+    })();
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=sse_stop elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::error!(
+            "操作未完成 operation=sse_stop elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
-    Ok(())
+    result
 }
 
 /// 工具与应用生命周期统一清理入口。

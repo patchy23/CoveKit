@@ -32,7 +32,20 @@ pub async fn frp_binary_versions(
 /// 下载并安装 frpc（进度走 `frp://download` 事件；失败不改动已配置路径）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_binary_download(app: AppHandle, version: String) -> Result<FrpBinaryInfo, String> {
-    binary::download(&app, &version).await
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpBinaryInfo, String> =
+        async { binary::download(&app, &version).await }.await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=frp_binary_download elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_binary_download elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 // ──────────────────────── 客户端管理命令 ────────────────────────
@@ -46,27 +59,76 @@ pub async fn frp_client_list(app: AppHandle) -> Result<FrpClientList, String> {
 /// 登记一个外部 frpc 可执行文件（只引用路径，不复制文件）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_client_add(app: AppHandle, path: String) -> Result<FrpClient, String> {
-    clients::add_external(&app, &path).await
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpClient, String> =
+        async { clients::add_external(&app, &path).await }.await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=frp_client_add elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_client_add elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 移除客户端登记（只删记录不删文件；同时解绑引用它的档案）
 #[tauri::command(rename_all = "camelCase")]
 pub fn frp_client_remove(app: AppHandle, id: String) -> Result<FrpOpResult, String> {
-    clients::remove(&app, &id)?;
-    Ok(FrpOpResult {
-        ok: true,
-        file_name: None,
-        error: None,
-    })
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpOpResult, String> = (|| {
+        clients::remove(&app, &id)?;
+        Ok(FrpOpResult {
+            ok: true,
+            file_name: None,
+            error: None,
+        })
+    })();
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=frp_client_remove elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=frp_client_remove elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_client_remove elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 设为默认客户端（全局唯一）
 #[tauri::command(rename_all = "camelCase")]
 pub fn frp_client_set_default(app: AppHandle, id: String) -> Result<FrpOpResult, String> {
-    clients::set_default(&app, &id)?;
-    Ok(FrpOpResult {
-        ok: true,
-        file_name: None,
-        error: None,
-    })
+    let log_started = std::time::Instant::now();
+    let result: Result<FrpOpResult, String> = (|| {
+        clients::set_default(&app, &id)?;
+        Ok(FrpOpResult {
+            ok: true,
+            file_name: None,
+            error: None,
+        })
+    })();
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=frp_client_set_default elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=frp_client_set_default elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=frp_client_set_default elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }

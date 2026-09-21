@@ -28,10 +28,7 @@ impl Drop for ProcessHandle {
     fn drop(&mut self) {
         // SAFETY: 非空 OpenProcess 句柄由本对象独占，所有同步操作结束后仅关闭一次。
         if unsafe { CloseHandle(self.0) } == 0 {
-            eprintln!(
-                "[windows_process] 关闭进程查询句柄失败：{}",
-                std::io::Error::last_os_error()
-            );
+            log::warn!("关闭进程查询句柄失败：{}", std::io::Error::last_os_error());
         }
     }
 }

@@ -82,7 +82,10 @@ pub(crate) fn surface_veto(app: &AppHandle, decision: &CloseDecision) {
         let _ = window.set_focus();
     }
     if let Err(error) = app.emit(EXIT_VETO_EVENT, decision.clone()) {
-        eprintln!("[lifecycle] 退出被拒绝但事件上报失败: {error}");
+        log::warn!(
+            "退出被拒绝但事件上报失败: {error_type}",
+            error_type = std::any::type_name_of_val(&error)
+        );
     }
 }
 
@@ -147,9 +150,6 @@ pub fn app_commit_close(
     if reason == CloseReason::Tab {
         let tool = tool.unwrap_or_default();
         let outcome = lifecycle::dispose_tool(&app, &tool, reason);
-        for failure in &outcome.failures {
-            eprintln!("[lifecycle] 页签关闭清理失败（{tool}）: {failure}");
-        }
         return Ok(CloseDecision {
             proceed: true,
             forced,
@@ -177,9 +177,7 @@ pub fn decide_exit(app: &AppHandle) -> CloseDecision {
     let outcome = lifecycle::prepare_close(app, CloseReason::Exit);
     let decision = lifecycle::compose_decision(lifecycle::force_requested(), Vec::new(), outcome);
     if !decision.proceed {
-        for blocker in &decision.blockers {
-            eprintln!("[lifecycle] 退出被拒绝: {blocker}");
-        }
+        log::info!("退出被阻止 blockers={}", decision.blockers.len());
         surface_veto(app, &decision);
     }
     decision

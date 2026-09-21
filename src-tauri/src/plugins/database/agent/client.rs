@@ -95,6 +95,7 @@ impl AgentClient {
             .spawn()
             .map_err(|e| format!("启动 agent 失败（{}）：{e}", program.display()))?;
 
+        log::info!("数据库 agent 进程已创建 pid={:?}", child.id());
         let stdin = child.stdin.take().ok_or("agent stdin 不可用")?;
         let stdout = child.stdout.take().ok_or("agent stdout 不可用")?;
 
@@ -134,6 +135,7 @@ impl AgentClient {
         .await
         .map_err(|_| "等待 agent ready 超时（10s）".to_string())?;
         ready?;
+        log::info!("数据库 agent 就绪");
 
         // 读任务：子进程 stdout → 按 id 路由响应（与 ready 等待共用同一读取器）
         tokio::spawn(read_loop(reader, pending.clone()));
@@ -374,7 +376,10 @@ impl AgentClient {
     /// 服务端会话随 stdout 管道断开一起结束。
     pub fn kill_now(&self) -> Result<(), String> {
         let mut guard = self.child.lock().map_err(|e| e.to_string())?;
-        let _ = guard.start_kill();
+        match guard.start_kill() {
+            Ok(()) => log::info!("数据库 agent 终止信号已发送 pid={:?}", guard.id()),
+            Err(error) => log::error!("数据库 agent 终止信号失败 kind={:?}", error.kind()),
+        }
         Ok(())
     }
 
@@ -383,7 +388,10 @@ impl AgentClient {
         // shutdown 后进程自行退出；失败时由调用方 kill（start_kill 为同步信号，避免跨 await 持锁）
         let result = self.call("shutdown", json!({})).await;
         let mut guard = self.child.lock().map_err(|e| e.to_string())?;
-        let _ = guard.start_kill();
+        match guard.start_kill() {
+            Ok(()) => log::info!("数据库 agent 终止信号已发送 pid={:?}", guard.id()),
+            Err(error) => log::error!("数据库 agent 终止信号失败 kind={:?}", error.kind()),
+        }
         drop(guard);
         result.map(|_| ())
     }
@@ -422,6 +430,9 @@ async fn write_loop(mut stdin: ChildStdin, mut rx: mpsc::Receiver<String>, pendi
         }
     }
     if let Ok(mut map) = pending.lock() {
+        if !map.is_empty() {
+            log::warn!("数据库 agent 通道关闭 pending={}", map.len());
+        }
         for (_, sender) in map.drain() {
             let _ = sender.send(Err("agent 写通道已关闭".into()));
         }
@@ -468,6 +479,9 @@ async fn read_loop(mut reader: BufReader<tokio::process::ChildStdout>, pending: 
     }
     // 进程退出：全部挂起请求报错
     if let Ok(mut map) = pending.lock() {
+        if !map.is_empty() {
+            log::warn!("数据库 agent 通道关闭 pending={}", map.len());
+        }
         for (_, sender) in map.drain() {
             let _ = sender.send(Err("agent 进程已退出".to_string()));
         }

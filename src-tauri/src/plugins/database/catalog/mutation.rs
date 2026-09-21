@@ -131,78 +131,94 @@ pub async fn dbc_table_apply(
     changes: Vec<TableChange>,
     request_id: String,
 ) -> Result<u64, String> {
-    let config = store::list_connections(&app, &store_state)?
-        .into_iter()
-        .find(|c| c.id == conn_id)
-        .ok_or("连接已删除")?;
-    if config.readonly {
-        return Err("DB_READ_ONLY: 当前连接只读".into());
-    }
-    if changes.is_empty() || changes.len() > 500 {
-        return Err("每次提交须为 1 至 500 行".into());
-    }
-    let mut task = BoundTask::register(&cancel_state, request_id, &conn_id)?;
-    let entry =
-        super::scoped_session(&app, &state, &secrets_state, &conn_id, database.as_deref()).await?;
-    let columns = columns_for_entry(&entry, schema.clone(), table.clone()).await?;
-    let name = qualified(&entry, schema.as_deref(), &table);
-    let statements = changes
-        .iter()
-        .map(|change| mutation_sql(entry.config.db_type, &name, &columns, change))
-        .collect::<Result<Vec<_>, _>>()?;
-    let mut conn = BoundConnection::open(&entry).await?;
-    task.bind(&conn, &entry).await?;
-    if !state.is_current(&entry)? {
-        return Err("连接已变化，写入未执行".into());
-    }
-    task.query(&mut conn, "BEGIN", &[]).await?;
-    let started = std::time::Instant::now();
-    let result = async {
-        let mut affected = 0;
-        for (index, (sql, values)) in statements.iter().enumerate() {
-            if started.elapsed().as_secs() >= 120 {
-                return Err("批量写入超过 120 秒，整批回滚".into());
-            }
-            let result = task.query(&mut conn, sql, values).await?;
-            if result.rows_affected != 1 {
-                return Err(format!(
-                    "第 {} 行影响 {} 行，原始数据可能已变化；整批操作已回滚，请刷新后重试",
-                    index + 1,
-                    result.rows_affected
-                ));
-            }
-            affected += result.rows_affected;
+    let log_started = std::time::Instant::now();
+    let result: Result<u64, String> = async {
+        let config = store::list_connections(&app, &store_state)?
+            .into_iter()
+            .find(|c| c.id == conn_id)
+            .ok_or("连接已删除")?;
+        if config.readonly {
+            return Err("DB_READ_ONLY: 当前连接只读".into());
         }
-        Ok::<u64, String>(affected)
-    }
-    .await;
-    let result = match result {
-        Ok(count) => task.before_commit().await.map(|()| count),
-        Err(error) => Err(error),
-    };
-    match result {
-        Ok(count) => {
-            tokio::time::timeout(
+        if changes.is_empty() || changes.len() > 500 {
+            return Err("每次提交须为 1 至 500 行".into());
+        }
+        let mut task = BoundTask::register(&cancel_state, request_id, &conn_id)?;
+        let entry =
+            super::scoped_session(&app, &state, &secrets_state, &conn_id, database.as_deref())
+                .await?;
+        let columns = columns_for_entry(&entry, schema.clone(), table.clone()).await?;
+        let name = qualified(&entry, schema.as_deref(), &table);
+        let statements = changes
+            .iter()
+            .map(|change| mutation_sql(entry.config.db_type, &name, &columns, change))
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut conn = BoundConnection::open(&entry).await?;
+        task.bind(&conn, &entry).await?;
+        if !state.is_current(&entry)? {
+            return Err("连接已变化，写入未执行".into());
+        }
+        task.query(&mut conn, "BEGIN", &[]).await?;
+        let started = std::time::Instant::now();
+        let result = async {
+            let mut affected = 0;
+            for (index, (sql, values)) in statements.iter().enumerate() {
+                if started.elapsed().as_secs() >= 120 {
+                    return Err("批量写入超过 120 秒，整批回滚".into());
+                }
+                let result = task.query(&mut conn, sql, values).await?;
+                if result.rows_affected != 1 {
+                    return Err(format!(
+                        "第 {} 行影响 {} 行，原始数据可能已变化；整批操作已回滚，请刷新后重试",
+                        index + 1,
+                        result.rows_affected
+                    ));
+                }
+                affected += result.rows_affected;
+            }
+            Ok::<u64, String>(affected)
+        }
+        .await;
+        let result = match result {
+            Ok(count) => task.before_commit().await.map(|()| count),
+            Err(error) => Err(error),
+        };
+        match result {
+            Ok(count) => {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    conn.query("COMMIT", &[], 1),
+                )
+                .await
+                .map_err(|_| "DB_OUTCOME_UNKNOWN: 提交超时，请核对数据后再操作")?
+                .map_err(|e| {
+                    format!("DB_OUTCOME_UNKNOWN: 提交结果无法确认，请刷新核对，勿直接重复提交：{e}")
+                })?;
+                Ok(count)
+            }
+            Err(error) => match tokio::time::timeout(
                 std::time::Duration::from_secs(10),
-                conn.query("COMMIT", &[], 1),
+                conn.query("ROLLBACK", &[], 1),
             )
             .await
-            .map_err(|_| "DB_OUTCOME_UNKNOWN: 提交超时，请核对数据后再操作")?
-            .map_err(|e| {
-                format!("DB_OUTCOME_UNKNOWN: 提交结果无法确认，请刷新核对，勿直接重复提交：{e}")
-            })?;
-            Ok(count)
+            .map_err(|_| "回滚超时".to_string())
+            .and_then(|result| result)
+            {
+                Ok(_) => Err(error),
+                Err(rollback) => Err(format!("{error}；回滚失败：{rollback}，请核对数据库状态")),
+            },
         }
-        Err(error) => match tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            conn.query("ROLLBACK", &[], 1),
-        )
-        .await
-        .map_err(|_| "回滚超时".to_string())
-        .and_then(|result| result)
-        {
-            Ok(_) => Err(error),
-            Err(rollback) => Err(format!("{error}；回滚失败：{rollback}，请核对数据库状态")),
-        },
     }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_table_apply elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_table_apply elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }

@@ -269,28 +269,45 @@ pub async fn ssh_compose_action(
     draft_path: Option<String>,
     draft_content: Option<String>,
 ) -> Result<ComposeOutput, String> {
-    // Channel 仅支持顶层 CommandArg；可选参数通过可反序列化的 ID 绑定调用窗口。
-    let progress = progress.map(|id| id.channel_on::<_, (bool, Vec<u8>)>(webview));
-    let mut command = compose_command(&project, &action)?;
-    if let (Some(path), Some(content)) = (&draft_path, &draft_content) {
-        if action != "config" || !project.config_files.contains(path) || content.len() > MAX_CONFIG
-        {
-            return Err("仅配置校验可传入当前文件草稿，且不得超过 1 MiB".into());
+    let log_started = std::time::Instant::now();
+    let result: Result<ComposeOutput, String> = async {
+        // Channel 仅支持顶层 CommandArg；可选参数通过可反序列化的 ID 绑定调用窗口。
+        let progress = progress.map(|id| id.channel_on::<_, (bool, Vec<u8>)>(webview));
+        let mut command = compose_command(&project, &action)?;
+        if let (Some(path), Some(content)) = (&draft_path, &draft_content) {
+            if action != "config"
+                || !project.config_files.contains(path)
+                || content.len() > MAX_CONFIG
+            {
+                return Err("仅配置校验可传入当前文件草稿，且不得超过 1 MiB".into());
+            }
+            // stdin 替换有序 -f 中的当前文件，不写盘；项目目录保持显式传入。
+            command = command.replacen(&format!("-f {}", shell_quote(path)), "-f -", 1);
+        } else if draft_path.is_some() || draft_content.is_some() {
+            return Err("校验草稿的路径与内容必须同时提供".into());
         }
-        // stdin 替换有序 -f 中的当前文件，不写盘；项目目录保持显式传入。
-        command = command.replacen(&format!("-f {}", shell_quote(path)), "-f -", 1);
-    } else if draft_path.is_some() || draft_content.is_some() {
-        return Err("校验草稿的路径与内容必须同时提供".into());
+        execute(
+            &ssh_state,
+            &connection_id,
+            &command,
+            if action == "ps" { 30 } else { 600 },
+            progress.as_ref(),
+            draft_content.as_deref(),
+        )
+        .await
     }
-    execute(
-        &ssh_state,
-        &connection_id,
-        &command,
-        if action == "ps" { 30 } else { 600 },
-        progress.as_ref(),
-        draft_content.as_deref(),
-    )
-    .await
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=ssh_compose_action elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_compose_action elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 创建项目目录与新的远程 YAML；独占创建拒绝覆盖，不创建 YAML 中引用的挂载文件。
@@ -301,51 +318,66 @@ pub async fn ssh_compose_create(
     remote_path: String,
     content: String,
 ) -> Result<(), String> {
-    validate_path(&remote_path)?;
-    if content.is_empty() || content.len() > MAX_CONFIG {
-        return Err("Compose 配置内容不能为空且不得超过 1 MiB".into());
-    }
-    let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
-    let (parent, _) = remote_path.rsplit_once('/').ok_or("配置路径无效")?;
-    let parent = if parent.is_empty() { "/" } else { parent };
-    let created = execute(
-        &ssh_state,
-        &connection_id,
-        &format!("mkdir -p -- {}", shell_quote(parent)),
-        30,
-        None,
-        None,
-    )
-    .await?;
-    if created.exit_code != 0 {
-        return Err(format!("创建项目目录失败：{}", created.stderr));
-    }
-    let mut file = sftp
-        .open_with_flags_and_attributes(
-            &remote_path,
-            OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE,
-            FileAttributes {
-                permissions: Some(0o600),
-                ..Default::default()
-            },
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        validate_path(&remote_path)?;
+        if content.is_empty() || content.len() > MAX_CONFIG {
+            return Err("Compose 配置内容不能为空且不得超过 1 MiB".into());
+        }
+        let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
+        let (parent, _) = remote_path.rsplit_once('/').ok_or("配置路径无效")?;
+        let parent = if parent.is_empty() { "/" } else { parent };
+        let created = execute(
+            &ssh_state,
+            &connection_id,
+            &format!("mkdir -p -- {}", shell_quote(parent)),
+            30,
+            None,
+            None,
         )
-        .await
-        .map_err(|e| format!("新建配置失败，请检查父目录、权限及同名文件：{e}"))?;
-    let result = async {
-        file.write_all(content.as_bytes()).await?;
-        file.flush().await?;
-        file.shutdown().await
+        .await?;
+        if created.exit_code != 0 {
+            return Err(format!("创建项目目录失败：{}", created.stderr));
+        }
+        let mut file = sftp
+            .open_with_flags_and_attributes(
+                &remote_path,
+                OpenFlags::CREATE | OpenFlags::EXCLUDE | OpenFlags::WRITE,
+                FileAttributes {
+                    permissions: Some(0o600),
+                    ..Default::default()
+                },
+            )
+            .await
+            .map_err(|e| format!("新建配置失败，请检查父目录、权限及同名文件：{e}"))?;
+        let result = async {
+            file.write_all(content.as_bytes()).await?;
+            file.flush().await?;
+            file.shutdown().await
+        }
+        .await;
+        if let Err(error) = result {
+            return match sftp.remove_file(&remote_path).await {
+                Ok(_) => Err(format!("写入失败，已清理本次新建文件：{error}")),
+                Err(cleanup) => Err(format!(
+                    "写入失败：{error}；清理失败：{cleanup}，请检查 {remote_path}"
+                )),
+            };
+        }
+        Ok(())
     }
     .await;
-    if let Err(error) = result {
-        return match sftp.remove_file(&remote_path).await {
-            Ok(_) => Err(format!("写入失败，已清理本次新建文件：{error}")),
-            Err(cleanup) => Err(format!(
-                "写入失败：{error}；清理失败：{cleanup}，请检查 {remote_path}"
-            )),
-        };
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=ssh_compose_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ssh_compose_create elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
-    Ok(())
+    result
 }
 
 #[cfg(test)]

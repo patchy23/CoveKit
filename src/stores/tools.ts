@@ -2,6 +2,8 @@
  * 工具状态（Pinia）：注册表聚合 / 分类过滤 / 模糊搜索 / 最近使用
  * 工具本体只负责注册；展示、过滤、排序全部由本 store 承担。
  */
+import { isTauri } from '@tauri-apps/api/core'
+import { warn as logWarn } from '@tauri-apps/plugin-log'
 import { defineStore } from 'pinia'
 import { useDataRefresh } from '@/core/dataTransfer/useDataRefresh'
 import { computed, ref, watch } from 'vue'
@@ -89,6 +91,11 @@ export const useToolsStore = defineStore('tools', () => {
     try {
       await spaceData.set(RECENT_KEY, recent.value)
     } catch (error) {
+      if (isTauri()) {
+        void logWarn('工具使用记录写入失败 source=tools').catch(() => {
+          console.warn('[diagnostics] 日志发送失败')
+        })
+      }
       console.error('[tools] 最近使用写入失败（工具已打开，仅记账未落盘）', error)
     }
   }

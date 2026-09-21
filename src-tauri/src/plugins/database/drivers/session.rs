@@ -224,7 +224,10 @@ pub async fn snapshot(state: &State<'_, DbState>, configs: &[ConnConfig]) -> Vec
         let map = match state.0.lock() {
             Ok(map) => map,
             Err(e) => {
-                eprintln!("[database] 会话注册表锁失败，快照返回空: {e}");
+                log::warn!(
+                    "会话注册表锁失败，快照返回空: {e_type}",
+                    e_type = std::any::type_name_of_val(&e)
+                );
                 return Vec::new();
             }
         };

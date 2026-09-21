@@ -28,6 +28,11 @@ pub const KEY_STORAGE_ROOT: &str = "storageRoot";
 /// 新建导入、存储迁移暂存目录共用的应用前缀。
 pub const STAGING_PREFIX: &str = ".covekit-staging-";
 
+/// 应用诊断目录由系统解析，不依赖尚未初始化的 DataContext 或可迁移的业务数据根。
+pub fn app_log_dir(app: &AppHandle) -> Result<PathBuf, tauri::Error> {
+    app.path().app_log_dir()
+}
+
 /// 读取设置项（settings.json → app.<key>；不存在返回 None）
 pub(crate) fn read_setting(app: &AppHandle, key: &str) -> Option<serde_json::Value> {
     let store = app.store("settings.json").ok()?;
@@ -243,14 +248,20 @@ pub fn grant_asset_scope(app: &AppHandle) {
     let location = match current_location(app) {
         Ok(location) => location,
         Err(error) => {
-            eprintln!("[asset] 未取到存储位置，跳过资源协议授权: {error}");
+            log::warn!(
+                "未取到存储位置，跳过资源协议授权: {error_type}",
+                error_type = std::any::type_name_of_val(&error)
+            );
             return;
         }
     };
     let scope = app.asset_protocol_scope();
     for dir in asset_scope_dirs(&location) {
         if let Err(error) = scope.allow_directory(&dir, true) {
-            eprintln!("[asset] 授权目录失败（{}）: {error}", dir.display());
+            log::warn!(
+                "资源协议目录授权失败 error_type={}",
+                std::any::type_name_of_val(&error)
+            );
         }
     }
 }

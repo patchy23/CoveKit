@@ -58,7 +58,7 @@ pub enum MigrationOutcome {
 }
 
 impl MigrationOutcome {
-    /// 一行摘要（日志与恢复状态共用）
+    /// 安全诊断摘要；路径与原始错误仅保留在既有恢复状态中。
     pub fn summary(&self) -> String {
         match self {
             Self::NoPlan => "无待执行迁移".to_string(),
@@ -70,14 +70,12 @@ impl MigrationOutcome {
                 copied_bytes,
                 resumed,
             } => format!(
-                "存储根迁移完成[{plan_id}]：{source} → {target}（{copied_files} 个文件 / {copied_bytes} 字节{}）",
-                if *resumed { "，续跑提交" } else { "" }
+                "存储根迁移完成[{plan_id}]（{copied_files} 个文件 / {copied_bytes} 字节{}） root_changed={}",
+                if *resumed { "，续跑提交" } else { "" }, source != target
             ),
-            Self::Failed {
-                plan_id,
-                stage,
-                detail,
-            } => format!("存储根迁移失败[{plan_id}]（{stage}）：{detail}"),
+            Self::Failed { plan_id, stage, .. } => {
+                format!("存储根迁移失败[{plan_id}] stage={stage}")
+            }
         }
     }
 }
@@ -300,10 +298,16 @@ pub fn execute_pending(
         copied_bytes,
     };
     if let Err(e) = plan::save_last(cfg, &last) {
-        eprintln!("[storage] 迁移留档写入失败：{e}");
+        log::warn!(
+            "迁移留档写入失败：{e_type}",
+            e_type = std::any::type_name_of_val(&e)
+        );
     }
     if let Err(e) = plan::clear_pending(cfg) {
-        eprintln!("[storage] 迁移计划清理失败（下次启动会走续跑路径）：{e}");
+        log::error!(
+            "迁移计划清理失败（下次启动会走续跑路径）：{e_type}",
+            e_type = std::any::type_name_of_val(&e)
+        );
     }
     recovery::clear();
     throttle.tick("done", copied_files, copied_bytes, total_bytes, true);
@@ -333,7 +337,10 @@ fn fail(
     }
     pending.last_error = Some(detail.clone());
     if let Err(e) = plan::save_pending(cfg, &pending) {
-        eprintln!("[storage] 迁移计划失败状态写入失败：{e}");
+        log::warn!(
+            "迁移计划失败状态写入失败：{e_type}",
+            e_type = std::any::type_name_of_val(&e)
+        );
     }
     Ok(MigrationOutcome::Failed {
         plan_id: pending.id,
@@ -361,7 +368,7 @@ pub fn run_pending(app: &tauri::AppHandle, configured_root: &str) -> MigrationOu
     );
     if task.is_rejected() {
         // 登记表满只影响可观测性，不影响迁移本身：这一步必须说清楚，避免用户以为界面卡住
-        eprintln!("[storage] 长任务登记已达上限，本次迁移不记录进度（不影响迁移本身）");
+        log::warn!("长任务登记已达上限，本次迁移不记录进度（不影响迁移本身）");
     }
     let emit = |phase: &'static str, files: u64, bytes: u64, total: u64| {
         super::emit_progress(app, phase, files, bytes, total);
@@ -381,13 +388,13 @@ pub fn run_pending(app: &tauri::AppHandle, configured_root: &str) -> MigrationOu
         MigrationOutcome::NoPlan => {}
         MigrationOutcome::Committed { .. } => {
             task.succeed(Some(app));
-            eprintln!("[storage] {}", outcome.summary());
+            log::debug!("{}", outcome.summary());
         }
         MigrationOutcome::Failed {
             plan_id, detail, ..
         } => {
             task.fail(Some(app), "storage.migrate.failed", detail);
-            eprintln!("[storage] {}", outcome.summary());
+            log::debug!("{}", outcome.summary());
             // 失败时生效根仍停在源目录（提交从不半途生效）：恢复页展示的就是它
             let active = plan::load_pending(&cfg)
                 .map(|p| p.source)

@@ -45,56 +45,71 @@ pub async fn dbc_connection_save(
     password: String,
     clear_password: Option<bool>,
 ) -> Result<(), String> {
-    let _maintenance = crate::framework::context::maintenance_guard().await;
-    let existed = store::list_connections(&app, &store_state)?
-        .iter()
-        .any(|c| c.id == config.id);
-    session_state.next_generation(&config.id)?;
-    drivers::workspace::close_connection(&workspaces, &cancellations, &config.id).await?;
-    drivers::disconnect(&session_state, &runtimes, &config.id).await?;
-    let _credential_lock = secrets::CONFIG_CREDENTIAL_LOCK
-        .lock()
-        .map_err(|e| e.to_string())?;
-    if clear_password.unwrap_or(false) || config.db_type.is_sqlite() {
-        config.credential_id = None;
-    }
-    let password = if clear_password.unwrap_or(false) || config.db_type.is_sqlite() {
-        String::new()
-    } else if let Some(password) = secrets::referenced_password(&app, &mut config)? {
-        password
-    } else {
-        password
-    };
-    if config.credential_id.is_none() && !password.is_empty() {
-        config.credential_id = Some(secrets::import_password(&app, &config, &password)?);
-    }
-    let update_secret = clear_password.unwrap_or(false)
-        || !password.is_empty()
-        || !existed
-        || transfer::credential_pending(&app, &config.id)?;
-    let previous = if update_secret {
-        secrets::secret_snapshot(&app, &secrets_state, &config.id)?
-    } else {
-        None
-    };
-    if update_secret {
-        secrets::secret_save(&app, &secrets_state, &config.id, &password)?;
-    }
-    if let Err(error) = store::save_connection(&app, &store_state, &config) {
-        if update_secret {
-            let rollback = if let Some(previous) = previous {
-                secrets::secret_save(&app, &secrets_state, &config.id, &previous)
-            } else {
-                secrets::secret_delete(&app, &secrets_state, &config.id)
-            };
-            rollback.map_err(|failure| format!("{error}；恢复原凭据失败：{failure}"))?;
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        let _maintenance = crate::framework::context::maintenance_guard().await;
+        let existed = store::list_connections(&app, &store_state)?
+            .iter()
+            .any(|c| c.id == config.id);
+        session_state.next_generation(&config.id)?;
+        drivers::workspace::close_connection(&workspaces, &cancellations, &config.id).await?;
+        drivers::disconnect(&session_state, &runtimes, &config.id).await?;
+        let _credential_lock = secrets::CONFIG_CREDENTIAL_LOCK
+            .lock()
+            .map_err(|e| e.to_string())?;
+        if clear_password.unwrap_or(false) || config.db_type.is_sqlite() {
+            config.credential_id = None;
         }
-        return Err(error);
+        let password = if clear_password.unwrap_or(false) || config.db_type.is_sqlite() {
+            String::new()
+        } else if let Some(password) = secrets::referenced_password(&app, &mut config)? {
+            password
+        } else {
+            password
+        };
+        if config.credential_id.is_none() && !password.is_empty() {
+            config.credential_id = Some(secrets::import_password(&app, &config, &password)?);
+        }
+        let update_secret = clear_password.unwrap_or(false)
+            || !password.is_empty()
+            || !existed
+            || transfer::credential_pending(&app, &config.id)?;
+        let previous = if update_secret {
+            secrets::secret_snapshot(&app, &secrets_state, &config.id)?
+        } else {
+            None
+        };
+        if update_secret {
+            secrets::secret_save(&app, &secrets_state, &config.id, &password)?;
+        }
+        if let Err(error) = store::save_connection(&app, &store_state, &config) {
+            if update_secret {
+                let rollback = if let Some(previous) = previous {
+                    secrets::secret_save(&app, &secrets_state, &config.id, &previous)
+                } else {
+                    secrets::secret_delete(&app, &secrets_state, &config.id)
+                };
+                rollback.map_err(|failure| format!("{error}；恢复原凭据失败：{failure}"))?;
+            }
+            return Err(error);
+        }
+        if update_secret || config.credential_id.is_some() {
+            transfer::credential_saved(&app, &config.id)?;
+        }
+        Ok(())
     }
-    if update_secret || config.credential_id.is_some() {
-        transfer::credential_saved(&app, &config.id)?;
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_connection_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_connection_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
-    Ok(())
+    result
 }
 
 /// 删除连接配置（并清理凭据；会话由前端先断开）
@@ -109,13 +124,28 @@ pub async fn dbc_connection_delete(
     secrets_state: State<'_, secrets::SecretsState>,
     id: String,
 ) -> Result<(), String> {
-    session_state.next_generation(&id)?;
-    drivers::workspace::close_connection(&workspaces, &cancellations, &id).await?;
-    drivers::disconnect(&session_state, &runtimes, &id).await?;
-    store::delete_connection(&app, &store_state, &id)?;
-    secrets::secret_delete(&app, &secrets_state, &id)
-        .map_err(|e| format!("连接配置已删除，但凭据清理失败：{e}"))?;
-    Ok(())
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        session_state.next_generation(&id)?;
+        drivers::workspace::close_connection(&workspaces, &cancellations, &id).await?;
+        drivers::disconnect(&session_state, &runtimes, &id).await?;
+        store::delete_connection(&app, &store_state, &id)?;
+        secrets::secret_delete(&app, &secrets_state, &id)
+            .map_err(|e| format!("连接配置已删除，但凭据清理失败：{e}"))?;
+        Ok(())
+    }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_connection_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_connection_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 连接列表（配置 + 会话状态合并；agent 会话附带存活校验）
@@ -140,22 +170,37 @@ pub async fn dbc_connect(
     runtimes: State<'_, drivers::AgentRuntimeState>,
     id: String,
 ) -> Result<models::DbConnectionInfo, String> {
-    let configs = store::list_connections(&app, &store_state)?;
-    let config = configs
-        .iter()
-        .find(|c| c.id == id)
-        .cloned()
-        .ok_or_else(|| format!("连接配置不存在：{id}"))?;
-    let password = secrets::secret_get(&app, &secrets_state, &id)?;
-    let timeout =
-        std::time::Duration::from_millis(config.connect_timeout_ms.clamp(1000, 120_000) + 5000);
-    let entry = tokio::time::timeout(
-        timeout,
-        drivers::connect(&app, &session_state, &runtimes, &config, &password),
-    )
-    .await
-    .map_err(|_| "数据库连接超时，未建立工作会话")??;
-    Ok(entry.to_info())
+    let log_started = std::time::Instant::now();
+    let result: Result<models::DbConnectionInfo, String> = async {
+        let configs = store::list_connections(&app, &store_state)?;
+        let config = configs
+            .iter()
+            .find(|c| c.id == id)
+            .cloned()
+            .ok_or_else(|| format!("连接配置不存在：{id}"))?;
+        let password = secrets::secret_get(&app, &secrets_state, &id)?;
+        let timeout =
+            std::time::Duration::from_millis(config.connect_timeout_ms.clamp(1000, 120_000) + 5000);
+        let entry = tokio::time::timeout(
+            timeout,
+            drivers::connect(&app, &session_state, &runtimes, &config, &password),
+        )
+        .await
+        .map_err(|_| "数据库连接超时，未建立工作会话")??;
+        Ok(entry.to_info())
+    }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_connect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_connect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 断开连接
@@ -167,10 +212,25 @@ pub async fn dbc_disconnect(
     runtimes: State<'_, drivers::AgentRuntimeState>,
     id: String,
 ) -> Result<(), String> {
-    session_state.next_generation(&id)?;
-    let cleanup = drivers::workspace::close_connection(&workspaces, &cancellations, &id).await;
-    let disconnect = drivers::disconnect(&session_state, &runtimes, &id).await;
-    cleanup.and(disconnect)
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        session_state.next_generation(&id)?;
+        let cleanup = drivers::workspace::close_connection(&workspaces, &cancellations, &id).await;
+        let disconnect = drivers::disconnect(&session_state, &runtimes, &id).await;
+        cleanup.and(disconnect)
+    }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_disconnect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_disconnect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 测试连接（不保存、不落会话；返回版本信息）
@@ -185,25 +245,40 @@ pub async fn dbc_test(
     password: String,
     clear_password: Option<bool>,
 ) -> Result<String, String> {
-    let password = if clear_password.unwrap_or(false) {
-        String::new()
-    } else if let Some(password) = secrets::referenced_password(&app, &mut config)? {
-        password
-    } else if password.is_empty() && !config.db_type.is_sqlite() {
-        let existed = store::list_connections(&app, &store_state)?
-            .iter()
-            .any(|c| c.id == config.id);
-        if existed {
-            let saved = secrets::secret_get(&app, &secrets_state, &config.id)?;
-
-            saved
-        } else {
+    let log_started = std::time::Instant::now();
+    let result: Result<String, String> = async {
+        let password = if clear_password.unwrap_or(false) {
             String::new()
-        }
-    } else {
-        password
-    };
-    drivers::test_connection(&app, &runtimes, &config, &password).await
+        } else if let Some(password) = secrets::referenced_password(&app, &mut config)? {
+            password
+        } else if password.is_empty() && !config.db_type.is_sqlite() {
+            let existed = store::list_connections(&app, &store_state)?
+                .iter()
+                .any(|c| c.id == config.id);
+            if existed {
+                let saved = secrets::secret_get(&app, &secrets_state, &config.id)?;
+
+                saved
+            } else {
+                String::new()
+            }
+        } else {
+            password
+        };
+        drivers::test_connection(&app, &runtimes, &config, &password).await
+    }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_test elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_test elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 查询历史与收藏 ─────────────────────────────────────────────────────────

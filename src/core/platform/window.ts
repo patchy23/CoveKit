@@ -5,6 +5,8 @@
  * 调用方（业务界面）按结果决定是否给反馈。非桌面环境（浏览器预览）返回
  * `unsupported`，属预期缺失而非失败。
  */
+import { isTauri } from '@tauri-apps/api/core'
+import { warn as logWarn } from '@tauri-apps/plugin-log'
 import { getCurrentWindow, type Window } from '@tauri-apps/api/window'
 
 /** 窗口动作结果：`unsupported` = 非桌面运行环境；`failed` = 平台调用失败（权限/句柄异常） */
@@ -47,6 +49,11 @@ export async function runWindowAction(action: WindowAction): Promise<WindowActio
     return { ok: true }
   } catch (error) {
     // 保留诊断（多为 capabilities 权限缺失），同时把结果交回调用方做可见反馈
+    if (isTauri()) {
+      void logWarn('窗口操作失败 source=window').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     console.warn('[window] 窗口操作失败（检查 capabilities 权限）:', error)
     return { ok: false, reason: 'failed', error }
   }

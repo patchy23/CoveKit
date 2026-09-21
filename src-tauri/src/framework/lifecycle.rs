@@ -377,9 +377,15 @@ pub fn dispose_with_timeout(
             match std::panic::catch_unwind(AssertUnwindSafe(|| dispose(app.as_ref(), reason))) {
                 Ok(list) => {
                     owners.push(hook.owner);
+                    if !list.is_empty() {
+                        log::error!("模块资源清理失败 owner={} count={}", hook.owner, list.len());
+                    } else {
+                        log::info!("模块资源清理完成 owner={}", hook.owner);
+                    }
                     failures.extend(list.into_iter().map(|msg| format!("{}: {msg}", hook.owner)));
                 }
                 Err(_) => {
+                    log::error!("模块资源清理异常 owner={}", hook.owner);
                     failures.push(format!("{}: 清理钩子异常（已兜住，计入失败）", hook.owner))
                 }
             }
@@ -392,14 +398,17 @@ pub fn dispose_with_timeout(
             timed_out: false,
             owners,
         },
-        Err(_) => DisposeOutcome {
-            failures: vec![format!(
-                "关闭清理总超时（{} ms）：未完成的模块按清理失败处理",
-                timeout.as_millis()
-            )],
-            timed_out: true,
-            owners: Vec::new(),
-        },
+        Err(_) => {
+            log::error!("资源清理未在预算内完成 timeout_ms={}", timeout.as_millis());
+            DisposeOutcome {
+                failures: vec![format!(
+                    "关闭清理总超时（{} ms）：未完成的模块按清理失败处理",
+                    timeout.as_millis()
+                )],
+                timed_out: true,
+                owners: Vec::new(),
+            }
+        }
     }
 }
 

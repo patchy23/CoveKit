@@ -66,7 +66,10 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         if let Err(error) = self.close() {
-            eprintln!("[file_lock] 资源释放失败：{error}");
+            log::error!(
+                "资源释放失败：{error_type}",
+                error_type = std::any::type_name_of_val(&error)
+            );
         }
     }
 }

@@ -128,7 +128,10 @@ pub fn display_name(app: &AppHandle, space_id: &str) -> String {
             None => space_id.to_string(),
         },
         Err(error) => {
-            eprintln!("[space] 空间索引不可读，展示名退回空间 id: {error}");
+            log::info!(
+                "空间索引不可读，展示名退回空间 id: {error_type}",
+                error_type = std::any::type_name_of_val(&error)
+            );
             space_id.to_string()
         }
     }

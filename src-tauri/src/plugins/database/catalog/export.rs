@@ -58,91 +58,109 @@ pub async fn dbc_export_query(
     path: String,
     request_id: String,
 ) -> Result<u64, String> {
-    let mut entry = state.entry(&conn_id)?;
-    entry.config = store::list_connections(&app, &store_state)?
-        .into_iter()
-        .find(|c| c.id == conn_id)
-        .ok_or("连接配置已删除")?;
-    if sql_analysis::split(entry.config.db_type, &sql)?.len() != 1
-        || sql_analysis::assess(entry.config.db_type, &sql)?.0
-    {
-        return Err("完整导出仅接受一条只读查询，不执行脚本或写入语句".into());
-    }
-    if entry.config.db_type.is_agent() || entry.config.db_type.is_redis() {
-        return Err("此驱动暂不支持 SQL 结果流式导出".into());
-    }
-    entry.config.readonly = true;
-    let mut handle = CancelHandle::pending();
-    handle.connection_id = conn_id.clone();
-    {
-        let mut registry = cancel_state.0.lock().map_err(|e| e.to_string())?;
-        if request_id.is_empty() || registry.contains_key(&request_id) {
-            return Err("导出请求身份无效".into());
+    let log_started = std::time::Instant::now();
+    let result: Result<u64, String> = async {
+        let mut entry = state.entry(&conn_id)?;
+        entry.config = store::list_connections(&app, &store_state)?
+            .into_iter()
+            .find(|c| c.id == conn_id)
+            .ok_or("连接配置已删除")?;
+        if sql_analysis::split(entry.config.db_type, &sql)?.len() != 1
+            || sql_analysis::assess(entry.config.db_type, &sql)?.0
+        {
+            return Err("完整导出仅接受一条只读查询，不执行脚本或写入语句".into());
         }
-        registry.insert(request_id.clone(), handle.clone());
-    }
-    let registration = Registration {
-        state: &cancel_state,
-        id: request_id.clone(),
-        handle: handle.clone(),
-    };
-    let password = secrets::secret_get(&app, &secrets_state, &conn_id)?;
-    let mut session = workspace::open(&entry, scope, &password).await?;
-    match &session.connection {
-        WorkspaceConnection::Mysql(conn, pool) => {
-            handle.mysql_thread_id = Some(conn.id());
-            handle.mysql_pool = Some(pool.clone());
+        if entry.config.db_type.is_agent() || entry.config.db_type.is_redis() {
+            return Err("此驱动暂不支持 SQL 结果流式导出".into());
         }
-        WorkspaceConnection::Postgres(client) => {
-            handle.pg_cancel = Some(client.cancel_token());
-            handle.pg_ssl = entry.config.ssl;
+        entry.config.readonly = true;
+        let mut handle = CancelHandle::pending();
+        handle.connection_id = conn_id.clone();
+        {
+            let mut registry = cancel_state.0.lock().map_err(|e| e.to_string())?;
+            if request_id.is_empty() || registry.contains_key(&request_id) {
+                return Err("导出请求身份无效".into());
+            }
+            registry.insert(request_id.clone(), handle.clone());
         }
-        WorkspaceConnection::Sqlite(conn) => {
-            handle.sqlite = Some(Arc::new(
-                conn.lock()
-                    .map_err(|e| e.to_string())?
-                    .get_interrupt_handle(),
-            ));
+        let registration = Registration {
+            state: &cancel_state,
+            id: request_id.clone(),
+            handle: handle.clone(),
+        };
+        let password = secrets::secret_get(&app, &secrets_state, &conn_id)?;
+        let mut session = workspace::open(&entry, scope, &password).await?;
+        match &session.connection {
+            WorkspaceConnection::Mysql(conn, pool) => {
+                handle.mysql_thread_id = Some(conn.id());
+                handle.mysql_pool = Some(pool.clone());
+            }
+            WorkspaceConnection::Postgres(client) => {
+                handle.pg_cancel = Some(client.cancel_token());
+                handle.pg_ssl = entry.config.ssl;
+            }
+            WorkspaceConnection::Sqlite(conn) => {
+                handle.sqlite = Some(Arc::new(
+                    conn.lock()
+                        .map_err(|e| e.to_string())?
+                        .get_interrupt_handle(),
+                ));
+            }
+            _ => return Err("驱动不支持流式导出".into()),
         }
-        _ => return Err("驱动不支持流式导出".into()),
-    }
-    cancel_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(request_id, handle.clone());
-    let destination = std::path::PathBuf::from(path);
-    let parent = destination.parent().ok_or("导出路径缺少目录")?;
-    let temporary = parent.join(format!(".covekit-export-{}.tmp", uuid::Uuid::new_v4()));
-    let outcome = write_rows(&mut session.connection, &sql, &temporary, &handle).await;
-    let gate = handle.gate.lock().await;
-    handle.finished.store(true, Ordering::Release);
-    let outcome = if handle.aborted.load(Ordering::Acquire) {
-        Err("DB_CANCELLED: 导出已取消，目标文件未改动".into())
-    } else {
-        outcome
-    };
-    drop(gate);
-    let cleanup = workspace::close(session).await;
-    let outcome = match outcome {
-        Ok(count) => cleanup.map(|_| count),
-        Err(error) => Err(error),
-    };
-    let result = match outcome {
-        Ok(count) => tokio::fs::rename(&temporary, &destination)
-            .await
-            .map(|_| count)
-            .map_err(|e| e.to_string()),
-        Err(error) => Err(error),
-    };
-    if result.is_err() {
-        if let Err(error) = tokio::fs::remove_file(&temporary).await {
-            if error.kind() != std::io::ErrorKind::NotFound {
-                eprintln!("[database] 未完成导出文件清理失败：{error}");
+        cancel_state
+            .0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(request_id, handle.clone());
+        let destination = std::path::PathBuf::from(path);
+        let parent = destination.parent().ok_or("导出路径缺少目录")?;
+        let temporary = parent.join(format!(".covekit-export-{}.tmp", uuid::Uuid::new_v4()));
+        let outcome = write_rows(&mut session.connection, &sql, &temporary, &handle).await;
+        let gate = handle.gate.lock().await;
+        handle.finished.store(true, Ordering::Release);
+        let outcome = if handle.aborted.load(Ordering::Acquire) {
+            Err("DB_CANCELLED: 导出已取消，目标文件未改动".into())
+        } else {
+            outcome
+        };
+        drop(gate);
+        let cleanup = workspace::close(session).await;
+        let outcome = match outcome {
+            Ok(count) => cleanup.map(|_| count),
+            Err(error) => Err(error),
+        };
+        let result = match outcome {
+            Ok(count) => tokio::fs::rename(&temporary, &destination)
+                .await
+                .map(|_| count)
+                .map_err(|e| e.to_string()),
+            Err(error) => Err(error),
+        };
+        if result.is_err() {
+            if let Err(error) = tokio::fs::remove_file(&temporary).await {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    log::error!(
+                        "未完成导出文件清理失败：{error_type}",
+                        error_type = std::any::type_name_of_val(&error)
+                    );
+                }
             }
         }
+        drop(registration);
+        result
     }
-    drop(registration);
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_export_query elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_export_query elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
     result
 }
 

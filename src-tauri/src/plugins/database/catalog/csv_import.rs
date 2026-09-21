@@ -109,106 +109,124 @@ pub async fn dbc_csv_import(
     mapping: Vec<CsvMapping>,
     request_id: String,
 ) -> Result<u64, String> {
-    let config = store::list_connections(&app, &store_state)?
-        .into_iter()
-        .find(|c| c.id == conn_id)
-        .ok_or("连接已删除")?;
-    if config.readonly {
-        return Err("DB_READ_ONLY: 当前连接只读".into());
-    }
-    let mut task = BoundTask::register(&cancel_state, request_id, &conn_id)?;
-    let (headers, rows, current) = read_csv(&path).await?;
-    if fingerprint != current {
-        return Err("CSV 文件在预览后已变化，请重新预览确认".into());
-    }
-    if mapping.is_empty() || rows.is_empty() {
-        return Err("没有待导入的列或数据".into());
-    }
-    let entry =
-        super::scoped_session(&app, &state, &secrets_state, &conn_id, database.as_deref()).await?;
-    let columns = columns_for_entry(&entry, schema.clone(), table.clone()).await?;
-    let mut seen = std::collections::HashSet::new();
-    for item in &mapping {
-        if item.source >= headers.len()
-            || !columns.iter().any(|c| c.name == item.column)
-            || !seen.insert(&item.column)
-        {
-            return Err("列映射无效或目标列重复，请重新选择".into());
+    let log_started = std::time::Instant::now();
+    let result: Result<u64, String> = async {
+        let config = store::list_connections(&app, &store_state)?
+            .into_iter()
+            .find(|c| c.id == conn_id)
+            .ok_or("连接已删除")?;
+        if config.readonly {
+            return Err("DB_READ_ONLY: 当前连接只读".into());
         }
-    }
-    let name = qualified(&entry, schema.as_deref(), &table);
-    let mut conn = BoundConnection::open(&entry).await?;
-    task.bind(&conn, &entry).await?;
-    if !state.is_current(&entry)? {
-        return Err("连接已变化，导入未执行".into());
-    }
-    task.query(&mut conn, "BEGIN", &[]).await?;
-    let started = std::time::Instant::now();
-    let result = async {
-        let mut count = 0;
-        for (index, row) in rows.iter().enumerate() {
+        let mut task = BoundTask::register(&cancel_state, request_id, &conn_id)?;
+        let (headers, rows, current) = read_csv(&path).await?;
+        if fingerprint != current {
+            return Err("CSV 文件在预览后已变化，请重新预览确认".into());
+        }
+        if mapping.is_empty() || rows.is_empty() {
+            return Err("没有待导入的列或数据".into());
+        }
+        let entry =
+            super::scoped_session(&app, &state, &secrets_state, &conn_id, database.as_deref())
+                .await?;
+        let columns = columns_for_entry(&entry, schema.clone(), table.clone()).await?;
+        let mut seen = std::collections::HashSet::new();
+        for item in &mapping {
+            if item.source >= headers.len()
+                || !columns.iter().any(|c| c.name == item.column)
+                || !seen.insert(&item.column)
+            {
+                return Err("列映射无效或目标列重复，请重新选择".into());
+            }
+        }
+        let name = qualified(&entry, schema.as_deref(), &table);
+        let mut conn = BoundConnection::open(&entry).await?;
+        task.bind(&conn, &entry).await?;
+        if !state.is_current(&entry)? {
+            return Err("连接已变化，导入未执行".into());
+        }
+        task.query(&mut conn, "BEGIN", &[]).await?;
+        let started = std::time::Instant::now();
+        let result = async {
+            let mut count = 0;
+            for (index, row) in rows.iter().enumerate() {
+                task.check()?;
+                if started.elapsed().as_secs() >= 120 {
+                    return Err("导入超过 120 秒，整批回滚；请拆分文件后重试".into());
+                }
+                let values = mapping
+                    .iter()
+                    .map(|item| {
+                        let column = columns
+                            .iter()
+                            .find(|c| c.name == item.column)
+                            .ok_or("列结构已变化")?;
+                        Ok((
+                            item.column.clone(),
+                            value(&row[item.source], &column.data_type),
+                        ))
+                    })
+                    .collect::<Result<HashMap<_, _>, String>>()?;
+                let change = TableChange {
+                    action: "insert".into(),
+                    original: HashMap::new(),
+                    values,
+                };
+                let (sql, params) = mutation_sql(entry.config.db_type, &name, &columns, &change)?;
+                let result = task
+                    .query(&mut conn, &sql, &params)
+                    .await
+                    .map_err(|e| format!("第 {} 条数据导入失败：{e}", index + 1))?;
+                if result.rows_affected != 1 {
+                    return Err(format!("第 {} 条数据影响行数异常", index + 1));
+                }
+                count += 1;
+            }
             task.check()?;
-            if started.elapsed().as_secs() >= 120 {
-                return Err("导入超过 120 秒，整批回滚；请拆分文件后重试".into());
-            }
-            let values = mapping
-                .iter()
-                .map(|item| {
-                    let column = columns
-                        .iter()
-                        .find(|c| c.name == item.column)
-                        .ok_or("列结构已变化")?;
-                    Ok((
-                        item.column.clone(),
-                        value(&row[item.source], &column.data_type),
-                    ))
-                })
-                .collect::<Result<HashMap<_, _>, String>>()?;
-            let change = TableChange {
-                action: "insert".into(),
-                original: HashMap::new(),
-                values,
-            };
-            let (sql, params) = mutation_sql(entry.config.db_type, &name, &columns, &change)?;
-            let result = task
-                .query(&mut conn, &sql, &params)
-                .await
-                .map_err(|e| format!("第 {} 条数据导入失败：{e}", index + 1))?;
-            if result.rows_affected != 1 {
-                return Err(format!("第 {} 条数据影响行数异常", index + 1));
-            }
-            count += 1;
+            Ok::<u64, String>(count)
         }
-        task.check()?;
-        Ok::<u64, String>(count)
+        .await;
+        let result = match result {
+            Ok(count) => task.before_commit().await.map(|()| count),
+            Err(error) => Err(error),
+        };
+        match result {
+            Ok(count) => {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    conn.query("COMMIT", &[], 1),
+                )
+                .await
+                .map_err(|_| "DB_OUTCOME_UNKNOWN: 提交超时，请核对导入结果")?
+                .map_err(|e| {
+                    format!("DB_OUTCOME_UNKNOWN: 提交状态无法确认，请核对数据再操作：{e}")
+                })?;
+                Ok(count)
+            }
+            Err(error) => {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(10),
+                    conn.query("ROLLBACK", &[], 1),
+                )
+                .await
+                .map_err(|_| "DB_OUTCOME_UNKNOWN: 导入回滚超时，请核对数据")?
+                .map_err(|e| format!("{error}；回滚失败：{e}"))?;
+                Err(error)
+            }
+        }
     }
     .await;
-    let result = match result {
-        Ok(count) => task.before_commit().await.map(|()| count),
-        Err(error) => Err(error),
-    };
-    match result {
-        Ok(count) => {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                conn.query("COMMIT", &[], 1),
-            )
-            .await
-            .map_err(|_| "DB_OUTCOME_UNKNOWN: 提交超时，请核对导入结果")?
-            .map_err(|e| format!("DB_OUTCOME_UNKNOWN: 提交状态无法确认，请核对数据再操作：{e}"))?;
-            Ok(count)
-        }
-        Err(error) => {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(10),
-                conn.query("ROLLBACK", &[], 1),
-            )
-            .await
-            .map_err(|_| "DB_OUTCOME_UNKNOWN: 导入回滚超时，请核对数据")?
-            .map_err(|e| format!("{error}；回滚失败：{e}"))?;
-            Err(error)
-        }
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=dbc_csv_import elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=dbc_csv_import elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
+    result
 }
 
 #[cfg(test)]

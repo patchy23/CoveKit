@@ -15,20 +15,36 @@ pub fn port_viewer_supported() -> bool {
 /// 读取 TCP/UDP 的 IPv4/IPv6 快照，系统调用在阻塞线程执行。
 #[tauri::command]
 pub async fn port_viewer_query() -> Result<PortSnapshot, String> {
-    #[cfg(windows)]
-    {
-        let permit = windows::OperationPermit::acquire()?;
-        tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            windows::query()
-        })
-        .await
-        .map_err(|e| format!("端口查询任务失败：{e}"))?
+    let log_started = std::time::Instant::now();
+    let result: Result<PortSnapshot, String> = async {
+        #[cfg(windows)]
+        {
+            let permit = windows::OperationPermit::acquire()?;
+            tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                windows::query()
+            })
+            .await
+            .map_err(|e| format!("端口查询任务失败：{e}"))?
+        }
+        #[cfg(not(windows))]
+        {
+            Err("端口占用查询目前仅支持 Windows".into())
+        }
     }
-    #[cfg(not(windows))]
-    {
-        Err("端口占用查询目前仅支持 Windows".into())
+    .await;
+    match &result {
+        Ok(_value) => log::debug!(
+            "操作完成 operation=port_viewer_query elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) if !cfg!(windows) => {}
+        Err(_) => log::warn!(
+            "操作未完成 operation=port_viewer_query elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
+    result
 }
 
 /// 关闭前重新读取指定协议与地址族的端点，核对资源归属及进程身份。
@@ -37,21 +53,37 @@ pub async fn port_viewer_terminate(
     endpoint: PortEndpoint,
     started_at: String,
 ) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let permit = windows::OperationPermit::acquire()?;
-        tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            windows::terminate(&endpoint, &started_at)
-        })
-        .await
-        .map_err(|e| format!("关闭端口使用进程失败：{e}"))?
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        #[cfg(windows)]
+        {
+            let permit = windows::OperationPermit::acquire()?;
+            tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                windows::terminate(&endpoint, &started_at)
+            })
+            .await
+            .map_err(|e| format!("关闭端口使用进程失败：{e}"))?
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (endpoint, started_at);
+            Err("关闭端口使用进程目前仅支持 Windows".into())
+        }
     }
-    #[cfg(not(windows))]
-    {
-        let _ = (endpoint, started_at);
-        Err("关闭端口使用进程目前仅支持 Windows".into())
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=port_viewer_terminate elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) if !cfg!(windows) => {}
+        Err(_) => log::warn!(
+            "操作未完成 operation=port_viewer_terminate elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
+    result
 }
 
 crate::covekit_module! {

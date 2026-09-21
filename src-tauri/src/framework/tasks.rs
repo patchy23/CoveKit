@@ -261,6 +261,26 @@ impl TaskHandle {
             guard.finished.push_front(snapshot.clone());
             snapshot
         };
+        if snapshot.state == TaskState::Failed {
+            log::error!(
+                "任务失败 owner={} operation={} task={} code={}",
+                snapshot.owner,
+                snapshot.kind,
+                snapshot.id,
+                snapshot
+                    .error
+                    .as_ref()
+                    .map(|error| error.code.as_str())
+                    .unwrap_or("task.failed")
+            );
+        } else {
+            log::info!(
+                "任务完成 owner={} operation={} task={}",
+                snapshot.owner,
+                snapshot.kind,
+                snapshot.id
+            );
+        }
         emit(app, &snapshot);
     }
 }
@@ -271,7 +291,10 @@ fn emit(app: Option<&AppHandle>, snapshot: &TaskSnapshot) {
         return;
     };
     if let Err(error) = app.emit(TASK_EVENT, snapshot) {
-        eprintln!("[tasks] 任务事件发送失败：{error}");
+        log::warn!(
+            "任务事件发送失败：{error_type}",
+            error_type = std::any::type_name_of_val(&error)
+        );
     }
 }
 
@@ -315,7 +338,7 @@ pub(crate) fn begin_with_epoch(
     let id = format!("t{}", guard.seq);
     if guard.active.len() >= MAX_ACTIVE_TASKS {
         // 容量上限：不登记、不覆盖，调用方通过 is_rejected + 失败句柄的语义知道没记上
-        eprintln!("[tasks] 活跃任务已达上限 {MAX_ACTIVE_TASKS}，{kind} 未登记");
+        log::warn!("活跃任务已达上限 {MAX_ACTIVE_TASKS}，{kind} 未登记");
         return TaskHandle {
             id,
             rejected: true,
@@ -343,6 +366,7 @@ pub(crate) fn begin_with_epoch(
         snapshot: snapshot.clone(),
     });
     drop(guard);
+    log::info!("任务开始 owner={owner} operation={kind} task={id}");
     emit(app, &snapshot);
     TaskHandle {
         id,

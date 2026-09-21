@@ -133,10 +133,7 @@ pub fn init_from_app(app: &AppHandle) -> Result<&'static DataContext, String> {
                 &root.display().to_string(),
             ),
         );
-        eprintln!(
-            "[storage] 配置的存储目录不可用，进入恢复状态（不回退默认目录）: {}",
-            root.display()
-        );
+        log::error!("配置的存储目录不可用，进入恢复状态");
     }
     // 空间解析是位置描述符的唯一来源：标识不可用时可见回落，绝不静默新建空环境
     let resolution = crate::framework::space::resolve_active(app)?;

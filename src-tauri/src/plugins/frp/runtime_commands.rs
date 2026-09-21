@@ -42,14 +42,14 @@ pub async fn frp_start(
     state: State<'_, FrpState>,
     file_name: String,
 ) -> Result<FrpRuntimeState, String> {
-    eprintln!("[frp] INFO [{file_name}] 请求启动");
+    log::info!("请求启动");
     touch_used(&app, &file_name);
     runtime::start(&app, &state, &file_name)
         .await
         .inspect_err(|error| {
-            eprintln!(
-                "[frp] ERROR [{file_name}] 启动失败：{}",
-                verify::clean_line(error)
+            log::error!(
+                "FRP 运行操作失败 error_type={}",
+                std::any::type_name_of_val(error)
             );
         })
 }
@@ -61,13 +61,13 @@ pub async fn frp_stop(
     state: State<'_, FrpState>,
     file_name: String,
 ) -> Result<FrpRuntimeState, String> {
-    eprintln!("[frp] INFO [{file_name}] 请求停止");
+    log::info!("请求停止");
     runtime::stop(&app, &state, &file_name)
         .await
         .inspect_err(|error| {
-            eprintln!(
-                "[frp] ERROR [{file_name}] 停止失败：{}",
-                verify::clean_line(error)
+            log::error!(
+                "FRP 运行操作失败 error_type={}",
+                std::any::type_name_of_val(error)
             );
         })
 }
@@ -79,13 +79,13 @@ pub async fn frp_restart(
     state: State<'_, FrpState>,
     file_name: String,
 ) -> Result<FrpRuntimeState, String> {
-    eprintln!("[frp] INFO [{file_name}] 请求重启");
+    log::info!("请求重启");
     runtime::restart(&app, &state, &file_name)
         .await
         .inspect_err(|error| {
-            eprintln!(
-                "[frp] ERROR [{file_name}] 重启失败：{}",
-                verify::clean_line(error)
+            log::error!(
+                "FRP 运行操作失败 error_type={}",
+                std::any::type_name_of_val(error)
             );
         })
 }

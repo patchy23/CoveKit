@@ -122,7 +122,10 @@ pub(crate) fn spawn_channel_task(
                 cmd = rx.recv() => {
                     match cmd {
                         Some(TerminalCmd::Write(data)) => {
-                            if channel.data_bytes(data).await.is_err() { break; }
+                            if channel.data_bytes(data).await.is_err() {
+                                ::log::warn!("终端写入失败 terminal={terminal_id} session={connection_id}");
+                                break;
+                            }
                         }
                         Some(TerminalCmd::Resize(c, r)) => {
                             let _ = channel.window_change(c, r, 0, 0).await;
@@ -147,6 +150,7 @@ pub(crate) fn spawn_channel_task(
                             }
                             // 旁路写盘；失败则停录并通知前端（不静默）
                             if let Err(message) = log::append(&log, &data).await {
+                                ::log::error!("终端录制写入失败 terminal={terminal_id} session={connection_id}");
                                 log::finish(&log).await;
                                 let _ = app.emit(
                                     "ssh://terminal-log-error",
@@ -173,6 +177,7 @@ pub(crate) fn spawn_channel_task(
                 },
             );
         }
+        ::log::info!("终端通道已结束 terminal={terminal_id} session={connection_id}");
         // 任务退出：先收尾日志（flush 落盘），再从注册表移除
         log::finish(&log).await;
         if let Ok(mut m) = app.state::<TerminalState>().0.lock() {
@@ -198,78 +203,93 @@ pub async fn ssh_terminal_open(
     cols: u32,
     rows: u32,
 ) -> Result<TerminalSession, String> {
-    if cols == 0 || rows == 0 || cols > u16::MAX as u32 || rows > u16::MAX as u32 {
-        return Err("终端行列数必须在 1..=65535 范围内".into());
-    }
-    // 从连接注册表取会话（Handle 是 Clone，取出供通道开启，不持锁跨 await）
-    let session = ssh_state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .get(&connection_id)
-        .map(|h| h.session.clone())
-        .ok_or("连接不存在或已断开")?;
-
-    // 开通道 + PTY + shell（xterm 终端类型）
-    let channel = match session.channel_open_session().await {
-        Ok(channel) => channel,
-        Err(e) => {
-            crate::plugins::ssh::conn::mark_session_closed(
-                ssh_state.inner(),
-                &connection_id,
-                &session,
-            );
-            return Err(format!("打开通道失败: {e}"));
+    let log_started = std::time::Instant::now();
+    let result: Result<TerminalSession, String> = async {
+        if cols == 0 || rows == 0 || cols > u16::MAX as u32 || rows > u16::MAX as u32 {
+            return Err("终端行列数必须在 1..=65535 范围内".into());
         }
-    };
-    channel
-        .request_pty(false, "xterm", cols, rows, 0, 0, &[])
-        .await
-        .map_err(|e| format!("PTY 请求失败: {e}"))?;
-    channel
-        .request_shell(false)
-        .await
-        .map_err(|e| format!("shell 启动失败: {e}"))?;
+        // 从连接注册表取会话（Handle 是 Clone，取出供通道开启，不持锁跨 await）
+        let session = ssh_state
+            .0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(&connection_id)
+            .map(|h| h.session.clone())
+            .ok_or("连接不存在或已断开")?;
 
-    let terminal_id = resource_id("term");
-    let (tx, rx) = mpsc::channel::<TerminalCmd>(128);
-    let (cancel, cancel_rx) = watch::channel(false);
-    // 会话日志共享状态（默认未录制；命令层开启后由后台任务写盘）
-    let log = log::new_shared();
+        // 开通道 + PTY + shell（xterm 终端类型）
+        let channel = match session.channel_open_session().await {
+            Ok(channel) => channel,
+            Err(e) => {
+                crate::plugins::ssh::conn::mark_session_closed(
+                    ssh_state.inner(),
+                    &connection_id,
+                    &session,
+                );
+                return Err(format!("打开通道失败: {e}"));
+            }
+        };
+        channel
+            .request_pty(false, "xterm", cols, rows, 0, 0, &[])
+            .await
+            .map_err(|e| format!("PTY 请求失败: {e}"))?;
+        channel
+            .request_shell(false)
+            .await
+            .map_err(|e| format!("shell 启动失败: {e}"))?;
 
-    // 登记句柄（先插入，任务退出时移除）
-    state.0.lock().map_err(|e| e.to_string())?.insert(
-        terminal_id.clone(),
-        TerminalHandle {
-            connection_id: connection_id.clone(),
+        let terminal_id = resource_id("term");
+        let (tx, rx) = mpsc::channel::<TerminalCmd>(128);
+        let (cancel, cancel_rx) = watch::channel(false);
+        // 会话日志共享状态（默认未录制；命令层开启后由后台任务写盘）
+        let log = log::new_shared();
+
+        // 登记句柄（先插入，任务退出时移除）
+        state.0.lock().map_err(|e| e.to_string())?.insert(
+            terminal_id.clone(),
+            TerminalHandle {
+                connection_id: connection_id.clone(),
+                title: String::new(),
+                cols,
+                rows,
+                active: true,
+                tx,
+                cancel,
+                log: log.clone(),
+            },
+        );
+
+        spawn_channel_task(
+            app.clone(),
+            terminal_id.clone(),
+            connection_id.clone(),
+            channel,
+            rx,
+            cancel_rx,
+            log,
+        );
+
+        Ok(TerminalSession {
+            id: terminal_id,
+            connection_id,
             title: String::new(),
-            cols,
-            rows,
+            cols: cols as u16,
+            rows: rows as u16,
             active: true,
-            tx,
-            cancel,
-            log: log.clone(),
-        },
-    );
-
-    spawn_channel_task(
-        app.clone(),
-        terminal_id.clone(),
-        connection_id.clone(),
-        channel,
-        rx,
-        cancel_rx,
-        log,
-    );
-
-    Ok(TerminalSession {
-        id: terminal_id,
-        connection_id,
-        title: String::new(),
-        cols: cols as u16,
-        rows: rows as u16,
-        active: true,
-    })
+        })
+    }
+    .await;
+    match &result {
+        Ok(_value) => ::log::info!(
+            "操作完成 operation=ssh_terminal_open elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => ::log::warn!(
+            "操作未完成 operation=ssh_terminal_open elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 写入终端数据（键盘输入）
@@ -328,19 +348,38 @@ pub async fn ssh_terminal_close(
     state: State<'_, TerminalState>,
     terminal_id: String,
 ) -> Result<SshActionResult, String> {
-    let cancel = state
-        .0
-        .lock()
-        .map_err(|e| e.to_string())?
-        .remove(&terminal_id)
-        .map(|h| h.cancel);
-    if let Some(cancel) = cancel {
-        let _ = cancel.send(true);
+    let log_started = std::time::Instant::now();
+    let result: Result<SshActionResult, String> = async {
+        let cancel = state
+            .0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .remove(&terminal_id)
+            .map(|h| h.cancel);
+        if let Some(cancel) = cancel {
+            let _ = cancel.send(true);
+        }
+        Ok(SshActionResult {
+            ok: true,
+            error: None,
+        })
     }
-    Ok(SshActionResult {
-        ok: true,
-        error: None,
-    })
+    .await;
+    match &result {
+        Ok(value) if value.ok => ::log::info!(
+            "操作完成 operation=ssh_terminal_close elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => ::log::warn!(
+            "操作未完成 operation=ssh_terminal_close elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => ::log::warn!(
+            "操作未完成 operation=ssh_terminal_close elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 某连接下的全部终端会话

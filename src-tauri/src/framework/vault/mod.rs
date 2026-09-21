@@ -92,52 +92,66 @@ pub fn vault_save(
     app: AppHandle,
     payload: CredentialSavePayload,
 ) -> Result<CredentialSummary, String> {
-    crate::framework::context::assert_writable()?;
-    validate_payload(&payload)?;
-    let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
-    let dir = store::data_dir_of(&app)?;
-    let mut all = store::read_all_at(
-        &dir,
-        &crate::framework::space::keyring_store()?,
-        &crate::framework::space::current_id()?,
-    )?;
-    let now = chrono::Utc::now().timestamp();
-    let saved = match &payload.id {
-        // 更新：保留 id 与 created_at
-        Some(id) => {
-            let existing = all
-                .iter_mut()
-                .find(|c| &c.id == id)
-                .ok_or_else(|| format!("凭证不存在或已删除（id: {id}）"))?;
-            existing.name = payload.name.trim().to_string();
-            existing.kind = payload.fields.kind();
-            existing.fields = payload.fields.clone();
-            existing.note = payload.note.clone();
-            existing.updated_at = now;
-            existing.clone()
-        }
-        // 新增：uuid v4
-        None => {
-            let credential = Credential {
-                id: uuid::Uuid::new_v4().to_string(),
-                name: payload.name.trim().to_string(),
-                kind: payload.fields.kind(),
-                fields: payload.fields.clone(),
-                note: payload.note.clone(),
-                created_at: now,
-                updated_at: now,
-            };
-            all.push(credential.clone());
-            credential
-        }
-    };
-    store::write_all_at(
-        &dir,
-        &crate::framework::space::keyring_store()?,
-        &all,
-        &crate::framework::space::current_id()?,
-    )?;
-    Ok(store::summary_of(&saved))
+    let log_started = std::time::Instant::now();
+    let result: Result<CredentialSummary, String> = (|| {
+        crate::framework::context::assert_writable()?;
+        validate_payload(&payload)?;
+        let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
+        let dir = store::data_dir_of(&app)?;
+        let mut all = store::read_all_at(
+            &dir,
+            &crate::framework::space::keyring_store()?,
+            &crate::framework::space::current_id()?,
+        )?;
+        let now = chrono::Utc::now().timestamp();
+        let saved = match &payload.id {
+            // 更新：保留 id 与 created_at
+            Some(id) => {
+                let existing = all
+                    .iter_mut()
+                    .find(|c| &c.id == id)
+                    .ok_or_else(|| format!("凭证不存在或已删除（id: {id}）"))?;
+                existing.name = payload.name.trim().to_string();
+                existing.kind = payload.fields.kind();
+                existing.fields = payload.fields.clone();
+                existing.note = payload.note.clone();
+                existing.updated_at = now;
+                existing.clone()
+            }
+            // 新增：uuid v4
+            None => {
+                let credential = Credential {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    name: payload.name.trim().to_string(),
+                    kind: payload.fields.kind(),
+                    fields: payload.fields.clone(),
+                    note: payload.note.clone(),
+                    created_at: now,
+                    updated_at: now,
+                };
+                all.push(credential.clone());
+                credential
+            }
+        };
+        store::write_all_at(
+            &dir,
+            &crate::framework::space::keyring_store()?,
+            &all,
+            &crate::framework::space::current_id()?,
+        )?;
+        Ok(store::summary_of(&saved))
+    })();
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=vault_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=vault_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 删除凭证：删除前由后端重新核对当前引用，不依赖前端可能过期的计数
@@ -153,55 +167,69 @@ pub fn vault_delete(
     force: Option<bool>,
     expected_references: Option<usize>,
 ) -> Result<VaultDeleteResult, String> {
-    crate::framework::context::assert_writable()?;
-    let summary = credential_refs::summarize(&app, &id);
-    let referenced_by = summary.total;
-    if !force.unwrap_or(false) {
-        if summary.has_unknown() {
-            return Err(format!(
-                "有插件暂时无法统计引用（{}），为避免误删请先确认后再强制删除",
-                summary.unknown_owners.join("、")
-            ));
-        }
-        if summary.total > 0 {
-            return Err(format!(
-                "该凭证仍被 {referenced_by} 处配置引用，请先改绑或确认强制删除"
-            ));
-        }
-    } else if let Some(expected) = expected_references {
-        if !summary.matches_total(expected) {
-            return Err(format!(
+    let log_started = std::time::Instant::now();
+    let result: Result<VaultDeleteResult, String> = (|| {
+        crate::framework::context::assert_writable()?;
+        let summary = credential_refs::summarize(&app, &id);
+        let referenced_by = summary.total;
+        if !force.unwrap_or(false) {
+            if summary.has_unknown() {
+                return Err(format!(
+                    "有插件暂时无法统计引用（{}），为避免误删请先确认后再强制删除",
+                    summary.unknown_owners.join("、")
+                ));
+            }
+            if summary.total > 0 {
+                return Err(format!(
+                    "该凭证仍被 {referenced_by} 处配置引用，请先改绑或确认强制删除"
+                ));
+            }
+        } else if let Some(expected) = expected_references {
+            if !summary.matches_total(expected) {
+                return Err(format!(
                 "引用情况已变化（确认时 {expected} 处，当前 {referenced_by} 处），请重新确认后删除"
             ));
+            }
         }
-    }
-    let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
-    let dir = store::data_dir_of(&app)?;
-    let mut all = store::read_all_at(
-        &dir,
-        &crate::framework::space::keyring_store()?,
-        &crate::framework::space::current_id()?,
-    )?;
-    let before = all.len();
-    all.retain(|c| c.id != id);
-    if all.len() == before {
-        return Ok(VaultDeleteResult {
-            ok: false,
-            error: Some(format!("凭证不存在或已删除（id: {id}）")),
+        let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
+        let dir = store::data_dir_of(&app)?;
+        let mut all = store::read_all_at(
+            &dir,
+            &crate::framework::space::keyring_store()?,
+            &crate::framework::space::current_id()?,
+        )?;
+        let before = all.len();
+        all.retain(|c| c.id != id);
+        if all.len() == before {
+            return Ok(VaultDeleteResult {
+                ok: false,
+                error: Some(format!("凭证不存在或已删除（id: {id}）")),
+                referenced_by,
+            });
+        }
+        store::write_all_at(
+            &dir,
+            &crate::framework::space::keyring_store()?,
+            &all,
+            &crate::framework::space::current_id()?,
+        )?;
+        Ok(VaultDeleteResult {
+            ok: true,
+            error: None,
             referenced_by,
-        });
+        })
+    })();
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=vault_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=vault_delete elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
-    store::write_all_at(
-        &dir,
-        &crate::framework::space::keyring_store()?,
-        &all,
-        &crate::framework::space::current_id()?,
-    )?;
-    Ok(VaultDeleteResult {
-        ok: true,
-        error: None,
-        referenced_by,
-    })
+    result
 }
 
 /// 查询凭证引用概况（按 owner 批量扫描各插件的自报能力）
@@ -219,7 +247,19 @@ pub fn vault_credential_references(
 /// 读取单条凭证明文（仅用户点「显示/复制」时调用；列表永远走脱敏数据）
 #[tauri::command]
 pub fn vault_reveal(app: AppHandle, id: String) -> Result<Credential, String> {
-    store::resolve(&app, &id)
+    let log_started = std::time::Instant::now();
+    let result: Result<Credential, String> = (|| store::resolve(&app, &id))();
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=vault_reveal elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=vault_reveal elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 凭证保护状态（T04-5）：主密钥实际来源（系统密钥库 / 本地降级文件 / 不可用）与可用性。
@@ -234,14 +274,29 @@ pub fn vault_protection_status(
 /// 导出 .pbvault 备份（用户设一次性密码 → Argon2id 派生密钥 → AES-256-GCM；路径由前端 dialog 选定）
 #[tauri::command]
 pub async fn vault_export(app: AppHandle, path: String, password: String) -> Result<(), String> {
-    let all = store::read_all(&app)?;
-    let plain = serde_json::to_vec(&all).map_err(|e| e.to_string())?;
-    // Argon2id 是 CPU 重负载（数百 ms），异步命令里必须挪到阻塞线程池（规范 §4）
-    let backup =
-        tauri::async_runtime::spawn_blocking(move || export::encrypt_backup(&password, &plain))
-            .await
-            .map_err(|e| format!("加密任务失败: {e}"))??;
-    export::write_backup_file(std::path::Path::new(&path), &backup)
+    let log_started = std::time::Instant::now();
+    let result: Result<(), String> = async {
+        let all = store::read_all(&app)?;
+        let plain = serde_json::to_vec(&all).map_err(|e| e.to_string())?;
+        // Argon2id 是 CPU 重负载（数百 ms），异步命令里必须挪到阻塞线程池（规范 §4）
+        let backup =
+            tauri::async_runtime::spawn_blocking(move || export::encrypt_backup(&password, &plain))
+                .await
+                .map_err(|e| format!("加密任务失败: {e}"))??;
+        export::write_backup_file(std::path::Path::new(&path), &backup)
+    }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=vault_export elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=vault_export elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 导入 .pbvault 备份（overwrite=false 合并：同 id 冲突跳过；true 全量覆盖）。
@@ -253,59 +308,78 @@ pub async fn vault_import(
     password: String,
     overwrite: bool,
 ) -> Result<VaultImportResult, String> {
-    // 1) 备份文件由用户密码解开（不依赖主密钥，密钥丢失场景也能导入）
-    let backup = export::read_backup_file(std::path::Path::new(&path))?;
-    // Argon2id 解密同属 CPU 重负载，挪到阻塞线程池（规范 §4）
-    let plain =
-        tauri::async_runtime::spawn_blocking(move || export::decrypt_backup(&password, &backup))
-            .await
-            .map_err(|e| format!("解密任务失败: {e}"))??;
-    let imported: Vec<Credential> =
-        serde_json::from_slice(&plain).map_err(|e| format!("备份内容解析失败: {e}"))?;
+    let log_started = std::time::Instant::now();
+    let result: Result<VaultImportResult, String> = async {
+        // 1) 备份文件由用户密码解开（不依赖主密钥，密钥丢失场景也能导入）
+        let backup = export::read_backup_file(std::path::Path::new(&path))?;
+        // Argon2id 解密同属 CPU 重负载，挪到阻塞线程池（规范 §4）
+        let plain = tauri::async_runtime::spawn_blocking(move || {
+            export::decrypt_backup(&password, &backup)
+        })
+        .await
+        .map_err(|e| format!("解密任务失败: {e}"))??;
+        let imported: Vec<Credential> =
+            serde_json::from_slice(&plain).map_err(|e| format!("备份内容解析失败: {e}"))?;
 
-    let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
-    let dir = store::data_dir_of(&app)?;
-    // 2) 现有库读不出 → 原文件改名留档（防误删），按空库继续
-    let existing = match store::read_all_at(
-        &dir,
-        &crate::framework::space::keyring_store()?,
-        &crate::framework::space::current_id()?,
-    ) {
-        Ok(all) => all,
-        Err(e) => {
-            eprintln!("[vault] 现有凭证库无法读取（{e}），导入前已将原文件改名留档");
-            store::orphan_vault_file(&dir)?;
-            Vec::new()
-        }
-    };
-    // 3) 合并 / 覆盖
-    let (merged, imported_count, skipped) = if overwrite {
-        let count = imported.len();
-        (imported, count, 0)
-    } else {
-        let mut merged = existing;
-        let mut count = 0;
-        let mut skipped = 0;
-        for credential in imported {
-            if merged.iter().any(|c| c.id == credential.id) {
-                skipped += 1;
-            } else {
-                merged.push(credential);
-                count += 1;
+        let _guard = store::vault_lock().lock().map_err(|e| e.to_string())?;
+        let dir = store::data_dir_of(&app)?;
+        // 2) 现有库读不出 → 原文件改名留档（防误删），按空库继续
+        let existing = match store::read_all_at(
+            &dir,
+            &crate::framework::space::keyring_store()?,
+            &crate::framework::space::current_id()?,
+        ) {
+            Ok(all) => all,
+            Err(e) => {
+                log::warn!(
+                    "现有凭证库无法读取（{e_type}），导入前已将原文件改名留档",
+                    e_type = std::any::type_name_of_val(&e)
+                );
+                store::orphan_vault_file(&dir)?;
+                Vec::new()
             }
-        }
-        (merged, count, skipped)
-    };
-    store::write_all_at(
-        &dir,
-        &crate::framework::space::keyring_store()?,
-        &merged,
-        &crate::framework::space::current_id()?,
-    )?;
-    Ok(VaultImportResult {
-        imported: imported_count,
-        skipped,
-    })
+        };
+        // 3) 合并 / 覆盖
+        let (merged, imported_count, skipped) = if overwrite {
+            let count = imported.len();
+            (imported, count, 0)
+        } else {
+            let mut merged = existing;
+            let mut count = 0;
+            let mut skipped = 0;
+            for credential in imported {
+                if merged.iter().any(|c| c.id == credential.id) {
+                    skipped += 1;
+                } else {
+                    merged.push(credential);
+                    count += 1;
+                }
+            }
+            (merged, count, skipped)
+        };
+        store::write_all_at(
+            &dir,
+            &crate::framework::space::keyring_store()?,
+            &merged,
+            &crate::framework::space::current_id()?,
+        )?;
+        Ok(VaultImportResult {
+            imported: imported_count,
+            skipped,
+        })
+    }
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=vault_import elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=vault_import elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 #[cfg(test)]

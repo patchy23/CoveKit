@@ -188,7 +188,10 @@ pub(crate) async fn rotate_backups(dir: &Path, name: &str) {
     backups.sort();
     for stale in backups.into_iter().rev().skip(MAX_BACKUPS) {
         if let Err(e) = tokio::fs::remove_file(&stale).await {
-            eprintln!("[frp] 清理旧备份失败（{}）: {e}", stale.display());
+            log::warn!(
+                "旧备份清理失败 error_type={}",
+                std::any::type_name_of_val(&e)
+            );
         }
     }
 }

@@ -42,7 +42,8 @@ fn read_hosts() -> Result<String, String> {
 /// 读取 hosts 文件（普通权限可读）
 #[tauri::command]
 pub fn hosts_read() -> Result<HostsResult, String> {
-    match read_hosts() {
+    let log_started = std::time::Instant::now();
+    let result: Result<HostsResult, String> = match read_hosts() {
         Ok(c) => Ok(HostsResult {
             ok: true,
             content: c,
@@ -53,15 +54,49 @@ pub fn hosts_read() -> Result<HostsResult, String> {
             content: String::new(),
             error: Some(e),
         }),
+    };
+    match &result {
+        Ok(value) if value.ok => log::debug!(
+            "操作完成 operation=hosts_read elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::error!(
+            "操作未完成 operation=hosts_read elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::error!(
+            "操作未完成 operation=hosts_read elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
     }
+    result
 }
 
 /// 备份 + 写入 hosts（平台提权；取消/失败返回 ok=false）
 #[tauri::command]
 pub async fn hosts_save(content: String) -> Result<HostsResult, String> {
-    tauri::async_runtime::spawn_blocking(move || save_hosts_blocking(&content))
-        .await
-        .map_err(|e| format!("提权任务失败: {e}"))?
+    let log_started = std::time::Instant::now();
+    let result: Result<HostsResult, String> = async {
+        tauri::async_runtime::spawn_blocking(move || save_hosts_blocking(&content))
+            .await
+            .map_err(|e| format!("提权任务失败: {e}"))?
+    }
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::info!(
+            "操作完成 operation=hosts_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!(
+            "操作未完成 operation=hosts_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=hosts_save elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 平台分派：按当前 OS 走对应提权写入实现

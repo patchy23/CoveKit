@@ -11,6 +11,8 @@
  * - **裁决通过之前不清理**：原来先 `disposeAllTools` 再请后端裁决，用户点「取消」时前端已经清完了；
  * - 后端清理仍只在 `RunEvent::Exit` 一处执行，提交命令不重复清理。
  */
+import { isTauri } from '@tauri-apps/api/core'
+import { warn as logWarn } from '@tauri-apps/plugin-log'
 import { invokeCommand } from '@/core/ipc/ipc'
 import type { CloseDecision } from '@/core/ipc/contracts'
 import { commitBackendClose, requestBackendClose } from './closeBridge'
@@ -49,6 +51,11 @@ export async function requestAppExit(reason: CloseReason = 'exit'): Promise<Clos
   const cleanup = await disposeAllTools(reason)
   if (cleanup.failures.length > 0) {
     // 清理失败不阻止退出，但必须留痕（用户可在诊断里看到）
+    if (isTauri()) {
+      void logWarn('应用关闭协调异常 source=appClose').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     console.warn('[app-close] 退出前清理失败:', cleanup.failures)
   }
   try {
@@ -82,6 +89,11 @@ export async function watchExitVeto(
     const { listen } = await import('@tauri-apps/api/event')
     return await listen<CloseDecision>(EXIT_VETO_EVENT, (event) => handler(event.payload))
   } catch (error) {
+    if (isTauri()) {
+      void logWarn('应用关闭协调异常 source=appClose').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     console.warn('[app-close] 订阅退出拒绝事件失败:', error)
     return () => {}
   }

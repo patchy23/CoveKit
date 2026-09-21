@@ -68,7 +68,7 @@ fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
         std::fs::remove_file(&legacy_file).ok();
         std::fs::remove_file(&legacy_key).ok();
         std::fs::remove_file(dir.join("db-secrets.bak")).ok();
-        eprintln!("[database] 旧凭据已迁移到公共凭证库（{} 条）", map.len());
+        log::info!("旧凭据已迁移到公共凭证库（{} 条）", map.len());
     }
 
     // 迁移 1：stronghold 阶段（db.stronghold）→ 公共库
@@ -76,7 +76,7 @@ fn migrate_legacy(app: &tauri::AppHandle) -> Result<(), String> {
     // 且快照格式与当前实现不兼容，直接提示用户重新输入（测试阶段数据量小）。
     let stronghold_file = dir.join("db.stronghold");
     if stronghold_file.exists() {
-        eprintln!("[database] 检测到旧 stronghold 快照，已保留原文件；请重新输入所需连接凭据");
+        log::info!("检测到旧 stronghold 快照，已保留原文件；请重新输入所需连接凭据");
     }
     Ok(())
 }

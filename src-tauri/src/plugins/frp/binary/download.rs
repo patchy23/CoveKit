@@ -149,11 +149,19 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         let started = std::time::Instant::now();
         match fetch_archive(app, &url, &archive, version, budget).await {
             Ok((received, total)) => {
+                log::info!(
+                    "FRP 下载完成 bytes={received} attempts={}",
+                    failures.len() + 1
+                );
                 picked = Some((prefix, received, total));
                 break;
             }
             Err(error) => {
                 let _ = tokio::fs::remove_file(&archive).await;
+                log::warn!(
+                    "FRP 下载源失败，按剩余预算尝试后续源 attempt={}",
+                    failures.len() + 1
+                );
                 failures.push(format!("{}：{error}", source_label(prefix)));
             }
         }
@@ -176,8 +184,13 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
         total,
         None,
     );
-    let outcome = verify_checksum(version, &archive, source).await?;
+    let outcome = verify_checksum(version, &archive, source)
+        .await
+        .inspect_err(|_| {
+            log::debug!("FRP 下载校验未完成 stage=checksum");
+        })?;
     if let ChecksumStatus::Mismatch { expected, actual } = &outcome.status {
+        log::debug!("FRP 下载校验未通过 stage=checksum_mismatch");
         let _ = tokio::fs::remove_file(&archive).await;
         return Err(format!(
             "SHA256 校验不通过，已丢弃下载文件（来源 {}）：期望 {expected}，实际 {actual}；可重试或稍后再试",
@@ -198,11 +211,13 @@ pub(crate) async fn download(app: &AppHandle, version: &str) -> Result<FrpBinary
     // `has_entries` 成立，退出码不可信的问题又绕回来了
     let unpack = staging.join("unpack");
     if let Err(error) = extract(&archive, &unpack).await {
+        log::debug!("FRP 下载解包失败 stage=extract");
         // 失败即清理：整包约 14MB，留着既占空间又会让用户误以为已经装好
         let _ = tokio::fs::remove_dir_all(&staging).await;
         return Err(error);
     }
     let from = unpack.join(package_dir_name(version)).join(exe_name());
+    log::debug!("FRP 解包完成 stage=extract");
     if !from.is_file() {
         let _ = tokio::fs::remove_dir_all(&staging).await;
         return Err(format!(

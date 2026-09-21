@@ -103,7 +103,10 @@ impl Drop for PreparedConfig {
         if self.temporary {
             if let Err(error) = std::fs::remove_file(&self.path) {
                 if error.kind() != std::io::ErrorKind::NotFound {
-                    eprintln!("[frp] 清理临时配置失败：{error}");
+                    log::warn!(
+                        "清理临时配置失败：{error_type}",
+                        error_type = std::any::type_name_of_val(&error)
+                    );
                 }
             }
         }

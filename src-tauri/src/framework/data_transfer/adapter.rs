@@ -142,10 +142,7 @@ fn registry() -> &'static Mutex<Vec<&'static dyn DatasetAdapter>> {
 /// 装配阶段登记（重复登记同一 owner 直接覆盖，保持幂等）
 pub(crate) fn register(adapter: &'static dyn DatasetAdapter) {
     let Ok(mut list) = registry().lock() else {
-        eprintln!(
-            "[data_transfer] 适配器注册表锁定失败，跳过登记: {}",
-            adapter.owner()
-        );
+        log::error!("适配器注册表锁定失败，跳过登记: {}", adapter.owner());
         return;
     };
     list.retain(|existing| existing.owner() != adapter.owner());
@@ -157,7 +154,7 @@ pub(crate) fn all() -> Vec<&'static dyn DatasetAdapter> {
     let mut list: Vec<&'static dyn DatasetAdapter> = match registry().lock() {
         Ok(list) => list.clone(),
         Err(_) => {
-            eprintln!("[data_transfer] 适配器注册表锁定失败，按无适配器处理");
+            log::error!("适配器注册表锁定失败，按无适配器处理");
             Vec::new()
         }
     };

@@ -62,8 +62,45 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // 单实例插件已完成初始化；文件独立于业务数据根，维护期间也能记录故障。
+            app.handle().plugin(
+                tauri_plugin_log::Builder::new()
+                    .targets([
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stderr),
+                        tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Folder {
+                            path: framework::paths::app_log_dir(app.handle())?,
+                            file_name: Some("covekit".into()),
+                        }),
+                    ])
+                    .level(log::LevelFilter::Info)
+                    .level_for(
+                        "covekit_lib",
+                        if cfg!(debug_assertions) {
+                            log::LevelFilter::Debug
+                        } else {
+                            log::LevelFilter::Info
+                        },
+                    )
+                    // 仅持久化应用与显式前端诊断，依赖可能在错误原文中回显秘密。
+                    .filter(|metadata| {
+                        metadata.target().starts_with("covekit_lib")
+                            || metadata.target() == "webview"
+                            || metadata.target().starts_with("webview::")
+                    })
+                    .max_file_size(5 * 1024 * 1024)
+                    // KeepSome 的参数是归档数，另有一个当前文件。
+                    .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(4))
+                    .build(),
+            )?;
+            log::info!(
+                "应用启动 version={} platform={}",
+                env!("CARGO_PKG_VERSION"),
+                std::env::consts::OS
+            );
             // 改名接续先于任何设置读取，失败不创建空环境冒充旧数据已加载。
-            framework::brand_compat::prepare(app.handle())?;
+            framework::brand_compat::prepare(app.handle()).inspect_err(|_| {
+                log::error!("启动维护失败 stage=brand_prepare");
+            })?;
             // ── 维护阶段（必须最早执行）：待执行的存储根迁移 ──
             // 复制与校验在任何业务资源初始化之前完成；校验通过才提交新根配置，
             // 失败则保留源、计划与错误详情并登记可见恢复状态（不阻塞启动，用户能看到提示）。
@@ -74,19 +111,22 @@ pub fn run() {
                         .unwrap_or_default()
                 });
             let migration = framework::storage::run_pending(app.handle(), &configured_before);
-            eprintln!("[storage] {}", migration.summary());
+            log::debug!("{}", migration.summary());
 
             // ── 空间自举（首装建 uid 空间 + 完整性自检；不读不搬任何旧布局内容）──
             // 必须在数据上下文固定之前执行：上下文要读到自举确定的空间标识。
             // fail-fast：失败即登记恢复状态（保留现场，重试 = 重启后重跑，自举幂等）。
             if framework::storage::recovery::current().is_some() {
-                eprintln!("[space] 存在未处理的存储故障，跳过空间自举");
+                log::warn!("存在未处理的存储故障，跳过空间自举");
             } else {
                 let root = framework::paths::storage_root(app.handle())?;
                 match framework::space::bootstrap::ensure_space(app.handle(), &root) {
-                    Ok(report) => eprintln!("[space] {}", report.summary()),
+                    Ok(report) => log::info!("{}", report.summary()),
                     Err(error) => {
-                        eprintln!("[space] 空间自举失败: {error}");
+                        log::error!(
+                            "空间自举失败: {error_type}",
+                            error_type = std::any::type_name_of_val(&error)
+                        );
                         framework::storage::recovery::set(
                             framework::storage::recovery::StorageRecovery::migration_failed(
                                 "",
@@ -105,7 +145,10 @@ pub fn run() {
             // 初始化失败（空间自举损坏等）不终止启动：登记恢复状态，数据读写会得到
             // 明确错误，用户能看到恢复页而不是一个打不开的应用。
             if let Err(error) = framework::context::init_from_app(app.handle()) {
-                eprintln!("[space] 数据上下文初始化失败: {error}");
+                log::error!(
+                    "数据上下文初始化失败: {error_type}",
+                    error_type = std::any::type_name_of_val(&error)
+                );
                 framework::storage::recovery::set(
                     framework::storage::recovery::StorageRecovery::migration_failed(
                         "",
@@ -115,7 +158,9 @@ pub fn run() {
                     ),
                 );
             }
-            framework::settings::init(app)?;
+            framework::settings::init(app).inspect_err(|_| {
+                log::error!("启动配置初始化失败 stage=settings_init");
+            })?;
 
             // 资源协议（asset://）范围跟随本次生效根：只授权可播放的 cache/tts
             framework::paths::grant_asset_scope(app.handle());
@@ -133,32 +178,32 @@ pub fn run() {
                 .default_window_icon()
                 .cloned()
                 .ok_or("缺少默认窗口图标")?;
-            let _tray =
-                TrayIconBuilder::with_id("main")
-                    .icon(icon)
-                    .menu(&menu)
-                    .show_menu_on_left_click(false)
-                    .on_menu_event(|app: &tauri::AppHandle, event: tauri::menu::MenuEvent| {
-                        match event.id().as_ref() {
-                            "show" => framework::show_main(app),
-                            // 退出不直接 app.exit：与页面/系统发起同一条裁决，业务可拒绝
-                            "quit" => framework::exit::quit_from_tray(app),
-                            _ => {}
+            let _tray = TrayIconBuilder::with_id("main")
+                .icon(icon)
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app: &tauri::AppHandle, event: tauri::menu::MenuEvent| {
+                    match event.id().as_ref() {
+                        "show" => framework::show_main(app),
+                        // 退出不直接 app.exit：与页面/系统发起同一条裁决，业务可拒绝
+                        "quit" => framework::exit::quit_from_tray(app),
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(
+                    |tray: &tauri::tray::TrayIcon, event: tauri::tray::TrayIconEvent| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            ..
+                        } = event
+                        {
+                            framework::show_main(tray.app_handle());
                         }
-                    })
-                    .on_tray_icon_event(
-                        |tray: &tauri::tray::TrayIcon, event: tauri::tray::TrayIconEvent| {
-                            if let TrayIconEvent::Click {
-                                button: MouseButton::Left,
-                                ..
-                            } = event
-                            {
-                                framework::show_main(tray.app_handle());
-                            }
-                        },
-                    )
-                    .build(app)?;
+                    },
+                )
+                .build(app)?;
 
+            log::info!("应用初始化完成");
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -178,11 +223,8 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 let reason = framework::lifecycle::CloseReason::Exit;
                 let outcome = framework::lifecycle::dispose(app_handle, reason);
-                for failure in &outcome.failures {
-                    eprintln!("[lifecycle] 退出清理失败: {failure}");
-                }
-                eprintln!(
-                    "[lifecycle] 关闭完成(原因={}, 模块={}[{}], 超时={}, epoch={}, 丢弃晚到事件={})",
+                log::info!(
+                    "关闭完成(原因={}, 模块={}[{}], 超时={}, epoch={}, 丢弃晚到事件={})",
                     reason.code(),
                     outcome.owners.len(),
                     outcome.owners.join(","),
@@ -192,6 +234,7 @@ pub fn run() {
                         .unwrap_or(0),
                     framework::context::stale_dropped(),
                 );
+                log::logger().flush();
             }
             _ => {}
         });

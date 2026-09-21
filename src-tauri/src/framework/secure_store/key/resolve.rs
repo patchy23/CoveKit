@@ -66,17 +66,19 @@ fn create_master_key(
         Ok(()) => match store.read(spec.account) {
             Ok(Some(readback)) if readback == key => true,
             other => {
-                eprintln!(
-                    "{}；主密钥降级为本地密钥文件",
-                    describe_readback(spec.scope, &other)
+                log::warn!(
+                    "主密钥回读失败，降级为本地密钥文件 scope={} error_type={}",
+                    spec.scope,
+                    std::any::type_name_of_val(&other)
                 );
                 false
             }
         },
         Err(e) => {
-            eprintln!(
-                "[{}] 密钥库写入失败（{e}）；主密钥降级为本地密钥文件",
-                spec.scope
+            log::warn!(
+                "[{}] 密钥库写入失败（{e_type}）；主密钥降级为本地密钥文件",
+                spec.scope,
+                e_type = std::any::type_name_of_val(&e)
             );
             false
         }
@@ -85,9 +87,10 @@ fn create_master_key(
         let path = dir.join(spec.fallback_file);
         replace_file(&path, &key)?;
         if let Err(e) = restrict_to_current_user(&path) {
-            eprintln!(
-                "[{}] 降级密钥文件权限收紧失败（文件已写入，权限维持默认）: {e}",
-                spec.scope
+            log::warn!(
+                "[{}] 降级密钥文件权限收紧失败（文件已写入，权限维持默认）: {e_type}",
+                spec.scope,
+                e_type = std::any::type_name_of_val(&e)
             );
         }
     }

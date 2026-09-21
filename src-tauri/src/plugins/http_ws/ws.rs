@@ -81,6 +81,8 @@ pub async fn ws_connect(
     auth: Option<RequestAuth>,
     timeout_ms: Option<u64>,
 ) -> Result<WsSession, String> {
+    let log_started = std::time::Instant::now();
+    let result: Result<WsSession, String> = async {
     let parsed = reqwest::Url::parse(&url).map_err(|_| "WebSocket 地址无效".to_string())?;
     if !matches!(parsed.scheme(), "ws" | "wss") {
         return Err("WebSocket 地址必须使用 WS 或 WSS".into());
@@ -134,7 +136,7 @@ pub async fn ws_connect(
                     if result.is_ok() {
                         match app.state::<WsState>().0.lock() {
                             Ok(mut map) => if let Some(handle) = map.get_mut(&task_id) { handle.push("sent", content); },
-                            Err(error) => eprintln!("[http-ws] WebSocket 消息记录失败: {error}"),
+                            Err(error) => log::warn!("WebSocket 消息记录失败: {error_type}", error_type = std::any::type_name_of_val(&error)),
                         };
                     }
                     // 页签关闭后接收端可以消失，此时仍由任务清理 socket。
@@ -157,6 +159,11 @@ pub async fn ws_connect(
                 }
             }
         };
+        if error.is_some() {
+            log::warn!("WebSocket 连接异常结束 session={task_id}");
+        } else {
+            log::info!("WebSocket 连接结束 session={task_id}");
+        }
         match app.state::<WsState>().0.lock() {
             Ok(mut map) => {
                 if let Some(handle) = map.get_mut(&task_id) {
@@ -164,7 +171,7 @@ pub async fn ws_connect(
                     handle.error = error;
                 }
             }
-            Err(error) => eprintln!("[http-ws] WebSocket 会话清理失败: {error}"),
+            Err(error) => log::error!("WebSocket 会话清理失败: {error_type}", error_type = std::any::type_name_of_val(&error)),
         };
     });
     let handle = WsSessionHandle {
@@ -182,6 +189,18 @@ pub async fn ws_connect(
     let snapshot = handle.snapshot(&id);
     map.insert(id, handle);
     Ok(snapshot)
+    }.await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=ws_connect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ws_connect elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 有界发送并等待后台写入完成，关闭会话会使等待明确失败。
@@ -191,30 +210,46 @@ pub async fn ws_send(
     id: String,
     message: String,
 ) -> Result<WsActionResult, String> {
-    if message.len() > 1024 * 1024 {
-        return Err("单条消息不能超过 1 MiB".into());
+    let log_started = std::time::Instant::now();
+    let result: Result<WsActionResult, String> = async {
+        if message.len() > 1024 * 1024 {
+            return Err("单条消息不能超过 1 MiB".into());
+        }
+        let tx = {
+            let map = state.0.lock().map_err(|e| e.to_string())?;
+            map.get(&id)
+                .filter(|h| h.open)
+                .ok_or("会话不存在或已断开")?
+                .tx
+                .clone()
+        };
+        let (done, received) = oneshot::channel();
+        tx.try_send(Outgoing {
+            text: message,
+            done,
+        })
+        .map_err(|_| "发送队列已满或连接已关闭".to_string())?;
+        received
+            .await
+            .map_err(|_| "发送未完成，连接已关闭".to_string())??;
+        Ok(WsActionResult {
+            ok: true,
+            message: None,
+        })
     }
-    let tx = {
-        let map = state.0.lock().map_err(|e| e.to_string())?;
-        map.get(&id)
-            .filter(|h| h.open)
-            .ok_or("会话不存在或已断开")?
-            .tx
-            .clone()
-    };
-    let (done, received) = oneshot::channel();
-    tx.try_send(Outgoing {
-        text: message,
-        done,
-    })
-    .map_err(|_| "发送队列已满或连接已关闭".to_string())?;
-    received
-        .await
-        .map_err(|_| "发送未完成，连接已关闭".to_string())??;
-    Ok(WsActionResult {
-        ok: true,
-        message: None,
-    })
+    .await;
+    match &result {
+        Ok(value) if value.ok => log::debug!(
+            "消息发送完成 elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Ok(_) => log::warn!("消息未发送 code=ws.send_failed"),
+        Err(_) => log::warn!(
+            "操作未完成 operation=ws_send elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 快照读取不跨 await 持锁。
@@ -232,13 +267,28 @@ pub async fn ws_recv(state: State<'_, WsState>, id: String) -> Result<WsSession,
 /// 幂等关闭；直接取消任务使阻塞读写同时释放。
 #[tauri::command]
 pub async fn ws_close(state: State<'_, WsState>, id: String) -> Result<WsActionResult, String> {
-    if let Some(handle) = state.0.lock().map_err(|e| e.to_string())?.remove(&id) {
-        handle.task.abort();
+    let log_started = std::time::Instant::now();
+    let result: Result<WsActionResult, String> = async {
+        if let Some(handle) = state.0.lock().map_err(|e| e.to_string())?.remove(&id) {
+            handle.task.abort();
+        }
+        Ok(WsActionResult {
+            ok: true,
+            message: None,
+        })
     }
-    Ok(WsActionResult {
-        ok: true,
-        message: None,
-    })
+    .await;
+    match &result {
+        Ok(_value) => log::info!(
+            "操作完成 operation=ws_close elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+        Err(_) => log::error!(
+            "操作未完成 operation=ws_close elapsed_ms={}",
+            log_started.elapsed().as_millis()
+        ),
+    }
+    result
 }
 
 /// 生命周期入口，不把锁故障当作清理成功。

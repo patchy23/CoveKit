@@ -8,9 +8,11 @@
  * - 只收**结构化**摘要：稳定 code、面向用户的 message、来源、次数、首次/最近时间；
  * - message 截断到 [`MAX_MESSAGE_LEN`]，堆栈只留前 [`MAX_DETAIL_LEN`] 字符；
  * - 条数上限 [`MAX_ERROR_ENTRIES`]，超出丢最旧的；同一 code+message 合并计数；
- * - 不写日志文件、不发网络请求：内容只在本进程内，直到用户主动复制。
+ * - 错误详情只保存在本进程；全局异常另写固定安全摘要到本地应用日志，不发送任意异常正文。
  */
 import type { App } from 'vue'
+import { isTauri } from '@tauri-apps/api/core'
+import { error as logError } from '@tauri-apps/plugin-log'
 import { recordError } from './errors-core'
 
 export {
@@ -39,11 +41,21 @@ export function installErrorCollectors(app: App): void {
       source: `vue:${info}`,
       detail: error instanceof Error ? (error.stack ?? '') : '',
     })
+    if (isTauri()) {
+      void logError('前端异常 code=ui.render_failed').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     // 保留既有处理（框架其它地方可能已注册）
     previous?.(error, instance, info)
   }
 
   window.addEventListener('unhandledrejection', (event) => {
+    if (isTauri()) {
+      void logError('前端异常 code=ui.unhandled_rejection').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     const reason = event.reason
     recordError({
       code: 'ui.unhandled_rejection',
@@ -54,6 +66,11 @@ export function installErrorCollectors(app: App): void {
   })
 
   window.addEventListener('error', (event) => {
+    if (isTauri()) {
+      void logError('前端异常 code=ui.uncaught_error').catch(() => {
+        console.warn('[diagnostics] 日志发送失败')
+      })
+    }
     // 资源加载失败也会走这里：event.error 为空时用 message 兜底
     const error = event.error as unknown
     recordError({

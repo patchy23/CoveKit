@@ -130,7 +130,9 @@ pub fn migrate(conn: &mut rusqlite::Connection, migrations: &[&str]) -> Result<(
             let repairable =
                 message.contains("duplicate column name") || message.contains("already exists");
             if repairable && schema_verified_repair(&tx, sql)? {
-                eprintln!("[store] 迁移 v{version} 由 schema 校验确认已生效，跳过该版本（历史半执行修复）");
+                log::warn!(
+                    "迁移 v{version} 由 schema 校验确认已生效，跳过该版本（历史半执行修复）"
+                );
             } else {
                 return Err(format!("迁移 v{version} 失败（已回滚）: {error}"));
             }

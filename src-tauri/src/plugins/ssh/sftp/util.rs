@@ -134,7 +134,10 @@ pub(crate) async fn replace_remote_file(
         });
     }
     if let Err(error) = fs.remove_file(&backup_path).await {
-        eprintln!("[ssh] 新文件已保存，但清理远程备份失败: {error}");
+        log::warn!(
+            "新文件已保存，但清理远程备份失败: {error_type}",
+            error_type = std::any::type_name_of_val(&error)
+        );
     }
     Ok(())
 }
@@ -165,7 +168,10 @@ pub(crate) async fn replace_local_file(temp_path: &str, target_path: &str) -> Re
         });
     }
     if let Err(error) = tokio::fs::remove_file(&backup_path).await {
-        eprintln!("[ssh] 下载成功，但清理本地备份失败: {error}");
+        log::warn!(
+            "下载成功，但清理本地备份失败: {error_type}",
+            error_type = std::any::type_name_of_val(&error)
+        );
     }
     Ok(())
 }
@@ -176,12 +182,7 @@ pub(crate) async fn replace_local_file(temp_path: &str, target_path: &str) -> Re
 /// 违规即中止整个操作——正常服务端永远不会产生这种名字，出现即是安全信号。
 /// 错误文案不回显原始文件名（可含控制字符，防终端转义注入）。
 pub(crate) fn check_entry_name(name: &str) -> Result<(), String> {
-    if name.is_empty()
-        || name == "."
-        || name == ".."
-        || name.contains('/')
-        || name.contains('\\')
-    {
+    if name.is_empty() || name == "." || name == ".." || name.contains('/') || name.contains('\\') {
         return Err("服务端返回了非法文件名（含路径分隔符或 ..），已中止操作".into());
     }
     Ok(())
