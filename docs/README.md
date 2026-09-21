@@ -18,6 +18,7 @@
 | 组件API/表单/浮层 | [11a](standards/11a-公共组件API备忘.md)、[13](standards/13-表单排版约定.md)、[12](standards/12-reka-ui坑.md)相关节 | 真实props/emits与相应交互约束 |
 | 框架/IPC | [02架构](standards/02-架构.md)、[03模块](standards/03-模块开发规则.md)、[19契约审计](standards/19-Tauri契约审计.md)相关节 | 当前contracts、handler、事件、取消与消费方 |
 | Rust | [05规范](standards/05-Rust代码规范.md) | 错误、锁、生命周期、安全与源检查边界 |
+| 日志接入与补充 | [05日志标准](standards/05-Rust代码规范.md#7-日志约定)，实际操作与错误传播链 | 生态日志库接口、输出位置、级别、去重与敏感信息；区分接入标准和已实现能力 |
 | 新功能范围 | [07总纲](standards/07-产品需求.md)，对应分册 | 核对当前有效范围裁决；分册不自动授权实现 |
 | SSH | [07a](standards/07a-需求-SSH远程管理.md)、[工具文档](plugins/ssh/) | 当前需求与本轮不做项 |
 | HTTP/网络、DNS/Hosts、数据/媒体 | [07b](standards/07b-需求-网络与调试.md)、[07c](standards/07c-需求-DNS与Hosts.md)、[07d](standards/07d-需求-数据与媒体工具.md) | 只取对应工具节，必要时读总纲的跨域约束 |
