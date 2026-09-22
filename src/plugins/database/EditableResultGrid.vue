@@ -279,13 +279,7 @@ function discard() {
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
-    <UiToolbar density="compact" bordered>
-      <UiButton size="xs" :title="reason" :disabled="!!reason || !selected" @click="start()"
-        >编辑</UiButton
-      >
-      <UiButton size="xs" :disabled="!!reason || !selected" @click="setNull">设为 NULL</UiButton>
-      <UiButton size="xs" variant="ghost" :disabled="!selected" @click="showDetail">查看</UiButton>
-      <UiButton size="xs" variant="ghost" :disabled="!selected" @click="copyCell">复制</UiButton>
+    <UiToolbar v-if="pending || state.gridSaving" density="compact" bordered>
       <template #trailing>
         <span v-if="pending" class="text-caption text-text-muted">{{ count }} 行待保存</span>
         <UiButton
@@ -296,7 +290,11 @@ function discard() {
           @click="save"
           >{{ state.gridSaving ? '提交中…' : '保存并提交' }}</UiButton
         >
-        <UiButton size="xs" :disabled="!pending || state.gridSaving" @click="discardOpen = true"
+        <UiButton
+          size="xs"
+          variant="ghost"
+          :disabled="!pending || state.gridSaving"
+          @click="discardOpen = true"
           >放弃修改</UiButton
         >
       </template>

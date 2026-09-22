@@ -65,6 +65,7 @@ function button(wrapper: ReturnType<typeof mount>, name: string) {
 describe('结果单元格编辑事务', () => {
   it('双击就地编辑，失焦不写库，手动保存保留精确主键和原值', async () => {
     const { wrapper, state } = setup()
+    expect(button(wrapper, '保存并提交')).toBeUndefined()
     await edit(wrapper, '修改值')
     expect(mocks.apply).not.toHaveBeenCalled()
     await wrapper.get('input').trigger('blur')
@@ -87,15 +88,22 @@ describe('结果单元格编辑事务', () => {
       expect.any(String)
     )
     expect(state.gridEdits).toEqual({})
+    expect(button(wrapper, '保存并提交')).toBeUndefined()
     expect(wrapper.text()).toContain('已提交 1 行')
     expect(wrapper.text()).toContain('修改值')
   })
-  it('空串不等于 NULL，通过按钮设置空值', async () => {
+  it('空串不等于 NULL，通过单元格右键菜单设置空值', async () => {
     const { wrapper, state } = setup()
     await edit(wrapper, '')
     expect(state.gridEdits?.[0].name).toEqual({ kind: 'text', value: '' })
     await wrapper.get('input').trigger('blur')
-    await button(wrapper, '设为 NULL').trigger('click')
+    await wrapper.findAll('td')[2].trigger('contextmenu', { clientX: 100, clientY: 100 })
+    await flushPromises()
+    const nullAction = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')
+    ).find((item) => item.textContent?.trim() === '设为 NULL')!
+    nullAction.click()
+    await nextTick()
     expect(state.gridEdits?.[0].name).toEqual({ kind: 'null', value: null })
   })
   it('保存冲突保留草稿，结果未知禁止直接重试', async () => {
@@ -122,7 +130,7 @@ describe('结果单元格编辑事务', () => {
     await flushPromises()
     await wrapper.findAll('td')[2].trigger('dblclick')
     expect(wrapper.find('input').exists()).toBe(false)
-    expect(button(wrapper, '编辑').attributes('disabled')).toBeDefined()
+    expect(button(wrapper, '编辑')).toBeUndefined()
     expect(wrapper.text()).not.toContain('只读结果')
   })
 })
