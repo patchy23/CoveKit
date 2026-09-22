@@ -191,32 +191,40 @@ function selectCategory(item: { id: string }) {
       </nav>
     </UiScrollArea>
 
-    <!-- 底部入口 -->
-    <div class="mt-md flex flex-col gap-[2px] border-t border-border pt-md dark:border-border-dark">
-      <button
-        class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        @click="toggleTheme"
+    <!-- 底部固定区：资源统计独立成栏，主题与设置保持同一菜单组。 -->
+    <div class="mt-md shrink-0 border-t border-border pt-md dark:border-border-dark">
+      <section
+        v-if="settings.settings.resourceMonitorEnabled"
+        aria-label="应用资源统计"
+        class="mb-sm border-b border-border pb-sm dark:border-border-dark"
       >
-        <AppIcon
-          :name="settings.settings.theme === 'dark' ? 'sun' : 'moon'"
-          :size="16"
-          class="shrink-0"
-        />
-        {{ settings.settings.theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode') }}
-      </button>
-      <ResourceMonitor />
-      <button
-        class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium transition-colors duration-150 hover:bg-border hover:text-primary dark:hover:bg-border-dark dark:hover:text-primary-dark"
-        :class="
-          ui.settingsOpen
-            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-            : 'text-secondary dark:text-secondary-dark'
-        "
-        @click="ui.toggleSettings()"
-      >
-        <AppIcon name="sliders" :size="16" class="shrink-0" />
-        {{ t('common.settings') }}
-      </button>
+        <ResourceMonitor />
+      </section>
+      <div class="flex flex-col gap-[2px]">
+        <button
+          class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium text-secondary transition-colors duration-150 hover:bg-border hover:text-primary dark:text-secondary-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+          @click="toggleTheme"
+        >
+          <AppIcon
+            :name="settings.settings.theme === 'dark' ? 'sun' : 'moon'"
+            :size="16"
+            class="shrink-0"
+          />
+          {{ settings.settings.theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode') }}
+        </button>
+        <button
+          class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium transition-colors duration-150 hover:bg-border hover:text-primary dark:hover:bg-border-dark dark:hover:text-primary-dark"
+          :class="
+            ui.settingsOpen
+              ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+              : 'text-secondary dark:text-secondary-dark'
+          "
+          @click="ui.toggleSettings()"
+        >
+          <AppIcon name="sliders" :size="16" class="shrink-0" />
+          {{ t('common.settings') }}
+        </button>
+      </div>
     </div>
   </aside>
 </template>
