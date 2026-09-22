@@ -122,6 +122,7 @@ describe('结果单元格编辑事务', () => {
     await flushPromises()
     await wrapper.findAll('td')[2].trigger('dblclick')
     expect(wrapper.find('input').exists()).toBe(false)
-    expect(wrapper.text()).toContain('没有主键')
+    expect(button(wrapper, '编辑').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('只读结果')
   })
 })

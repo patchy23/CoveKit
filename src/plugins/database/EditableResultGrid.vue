@@ -255,7 +255,7 @@ async function save() {
       rows,
       gridEdits: {},
       editTarget: null,
-      gridMessage: `已提交 ${affected} 行，请刷新或重新查询以获取数据库最新值`,
+      gridMessage: `已提交 ${affected} 行，请重新查询`,
     })
     if (props.db.tabs.value.find((tab) => tab.id === savedTabId)?.kind === 'data') {
       update({ gridSaving: false })
@@ -271,7 +271,7 @@ async function save() {
   }
 }
 function discard() {
-  patch({ gridEdits: {}, gridError: '', gridMessage: '已放弃本地编辑草稿，请刷新核对数据库当前值' })
+  patch({ gridEdits: {}, gridError: '', gridMessage: '已放弃本地修改' })
   editing.value = null
   discardOpen.value = false
 }
@@ -280,36 +280,34 @@ function discard() {
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
     <UiToolbar density="compact" bordered>
-      <UiButton size="xs" :disabled="!!reason || !selected" @click="start()">编辑单元格</UiButton>
+      <UiButton size="xs" :title="reason" :disabled="!!reason || !selected" @click="start()"
+        >编辑</UiButton
+      >
       <UiButton size="xs" :disabled="!!reason || !selected" @click="setNull">设为 NULL</UiButton>
-      <UiButton size="xs" variant="ghost" :disabled="!selected" @click="showDetail"
-        >查看完整值</UiButton
-      >
-      <UiButton size="xs" variant="ghost" :disabled="!selected" @click="copyCell"
-        >复制单元格</UiButton
-      >
+      <UiButton size="xs" variant="ghost" :disabled="!selected" @click="showDetail">查看</UiButton>
+      <UiButton size="xs" variant="ghost" :disabled="!selected" @click="copyCell">复制</UiButton>
       <template #trailing>
-        <span v-if="target" class="text-caption text-text-muted"
-          >{{ connection?.label }} / {{ target.schema || target.database }}.{{ target.table }}</span
+        <span v-if="pending" class="text-caption text-text-muted">{{ count }} 行待保存</span>
+        <UiButton
+          size="xs"
+          variant="primary"
+          :title="reason"
+          :disabled="!pending || !!reason"
+          @click="save"
+          >{{ state.gridSaving ? '提交中…' : '保存并提交' }}</UiButton
         >
-        <span class="text-caption text-text-muted">{{
-          pending ? `${count} 行待保存` : '双击编辑'
-        }}</span>
-        <UiButton size="xs" variant="primary" :disabled="!pending || !!reason" @click="save">{{
-          state.gridSaving ? '提交中…' : '保存并提交'
-        }}</UiButton>
         <UiButton size="xs" :disabled="!pending || state.gridSaving" @click="discardOpen = true"
           >放弃修改</UiButton
         >
       </template>
     </UiToolbar>
     <p
-      v-if="state.gridError || state.gridMessage || reason"
+      v-if="state.gridError || metadataError || state.gridMessage"
       role="status"
       class="px-[6px] py-[2px] text-caption"
-      :class="state.gridError ? 'text-danger-strong' : 'text-text-muted'"
+      :class="state.gridError || metadataError ? 'text-danger-strong' : 'text-text-muted'"
     >
-      {{ state.gridError || state.gridMessage || reason }}
+      {{ state.gridError || metadataError || state.gridMessage }}
     </p>
     <UiDataGrid
       :model-value="state.selectedRow"
@@ -360,9 +358,7 @@ function discard() {
     />
     <CellValueDialog :detail="detail" @close="detail = null" />
     <UiModal :open="discardOpen" title="放弃未保存修改" size="sm" @close="discardOpen = false">
-      <p class="text-body-sm">
-        放弃当前结果中 {{ count }} 行编辑草稿？此操作只清除本地草稿，不撤销已提交的数据库修改。
-      </p>
+      <p class="text-body-sm">放弃这 {{ count }} 行的本地修改？</p>
       <template #footer
         ><UiButton size="xs" @click="discardOpen = false">返回</UiButton
         ><UiButton size="xs" variant="primary" @click="discard">放弃修改</UiButton></template
