@@ -192,7 +192,14 @@ function selectCategory(item: { id: string }) {
     </UiScrollArea>
 
     <!-- 底部固定区：资源统计独立成栏，主题与设置保持同一菜单组。 -->
-    <div class="mt-md shrink-0 border-t border-border pt-md dark:border-border-dark">
+    <div
+      class="mt-md shrink-0 pt-md"
+      :class="
+        !settings.settings.resourceMonitorEnabled
+          ? 'border-t border-border dark:border-border-dark'
+          : ''
+      "
+    >
       <section
         v-if="settings.settings.resourceMonitorEnabled"
         aria-label="应用资源统计"

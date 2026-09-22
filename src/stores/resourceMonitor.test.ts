@@ -111,3 +111,42 @@ it('保存失败回滚开关并只在分区显示错误', async () => {
   expect(settings.saveError).toBeNull()
   wrapper.unmount()
 })
+
+it('关闭且无活动的工具收紧为一行，在途请求与残留资源仍展示明细', async () => {
+  const settings = useSettingsStore()
+  const monitor = useResourceMonitorStore()
+  await settings.set('resourceMonitorEnabled', true)
+  await settings.set('resourceMonitorTools', ['idle', 'pending', 'retained'])
+  await flushPromises()
+  const empty = {
+    requests: 10,
+    failures: 0,
+    completed: 10,
+    totalMs: 100,
+    inFlight: 0,
+    scopes: 0,
+    listeners: 0,
+    timers: 0,
+  }
+  monitor.details = [
+    { id: 'idle', ...empty },
+    { id: 'pending', ...empty, inFlight: 1 },
+    { id: 'retained', ...empty, listeners: 1 },
+  ]
+  const wrapper = mount(ResourceMonitor, { attachTo: document.body, global: { plugins: [pinia] } })
+  await wrapper.find('button').trigger('click')
+  await flushPromises()
+  expect(document.querySelector('[data-tool="idle"]')?.textContent).not.toContain('请求')
+  expect(document.querySelector('[data-tool="pending"]')?.textContent).toContain('在途 1')
+  expect(document.querySelector('[data-tool="retained"]')?.textContent).toContain('订阅 1')
+  const toggle = document.querySelector<HTMLElement>(
+    '[role="dialog"] [role="button"][aria-controls]'
+  )!
+  const extra = document.getElementById(toggle.getAttribute('aria-controls')!)!
+  expect(extra.style.display).toBe('none')
+  toggle.click()
+  await flushPromises()
+  expect(extra.style.display).not.toBe('none')
+  expect(extra.textContent).toContain('私有提交合计')
+  wrapper.unmount()
+})
