@@ -8,6 +8,12 @@ export interface TimedSnapshot {
 
 export function resourceTotals(current: TimedSnapshot, previous?: TimedSnapshot) {
   const processes = current.value.processes
+  const memoryKey =
+    current.value.memoryMetric === 'privateWorkingSet' ? 'privateResidentBytes' : 'residentBytes'
+  const memoryTotal = (group = processes) =>
+    group.every((p) => p[memoryKey] !== null)
+      ? group.reduce((sum, p) => sum + (p[memoryKey] ?? 0), 0)
+      : null
   const sumOptional = (key: 'privateBytes' | 'threads' | 'handles') =>
     processes.every((p) => p[key] !== null)
       ? processes.reduce((sum, p) => sum + (p[key] ?? 0), 0)
@@ -32,12 +38,11 @@ export function resourceTotals(current: TimedSnapshot, previous?: TimedSnapshot)
       )
   }
   return {
+    memory: memoryTotal(),
     resident: processes.reduce((sum, p) => sum + p.residentBytes, 0),
-    main: processes.filter((p) => p.kind === 'main').reduce((sum, p) => sum + p.residentBytes, 0),
-    webview: processes
-      .filter((p) => p.kind === 'webview')
-      .reduce((sum, p) => sum + p.residentBytes, 0),
-    child: processes.filter((p) => p.kind === 'child').reduce((sum, p) => sum + p.residentBytes, 0),
+    main: memoryTotal(processes.filter((p) => p.kind === 'main')),
+    webview: memoryTotal(processes.filter((p) => p.kind === 'webview')),
+    child: memoryTotal(processes.filter((p) => p.kind === 'child')),
     privateBytes: sumOptional('privateBytes'),
     threads: sumOptional('threads'),
     handles: sumOptional('handles'),

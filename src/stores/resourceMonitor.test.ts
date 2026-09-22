@@ -23,6 +23,7 @@ vi.mock('@/core/registry/toolRegistry', () => ({
 vi.mock('@/stores/ui', () => ({ useUiStore: () => ({ openTabs: [], openSettings: vi.fn() }) }))
 let pinia: Pinia
 const value: ResourceSnapshot = {
+  memoryMetric: 'privateWorkingSet',
   partial: false,
   coverage: '进程树',
   missingProcesses: 0,
@@ -33,7 +34,8 @@ const value: ResourceSnapshot = {
       identity: 'start',
       kind: 'main',
       cpuSeconds: 1,
-      residentBytes: 1024 ** 2,
+      residentBytes: 3 * 1024 ** 2,
+      privateResidentBytes: 1024 ** 2,
       privateBytes: null,
       handles: null,
       threads: 2,
@@ -66,7 +68,8 @@ it('默认不采样，设置只列支持工具，关闭保留选择且停止采�
   expect(wrapper.text()).not.toContain('未接入工具')
   await wrapper.find('[role="switch"]').trigger('click')
   await flushPromises()
-  expect(monitor.totals?.resident).toBe(1024 ** 2)
+  expect(monitor.totals?.memory).toBe(1024 ** 2)
+  expect(monitor.peakMemory).toBe(1024 ** 2)
   await wrapper.find('[role="checkbox"]').trigger('click')
   await flushPromises()
   expect(settings.settings.resourceMonitorTools).toEqual(['ssh'])
@@ -91,12 +94,12 @@ it('采样失败保留旧值并标记中断；关闭后清空会话', async () =
   api.resourceMonitorSnapshot.mockRejectedValueOnce(new Error('进程不可读'))
   await vi.advanceTimersByTimeAsync(1000)
   expect(monitor.error).toContain('进程不可读')
-  expect(monitor.totals?.resident).toBe(1024 ** 2)
+  expect(monitor.totals?.memory).toBe(1024 ** 2)
   expect(monitor.updatedAt).toBeDefined()
   await settings.set('resourceMonitorEnabled', false)
   await flushPromises()
   expect(monitor.totals).toBeUndefined()
-  expect(monitor.peakMemory).toBe(0)
+  expect(monitor.peakMemory).toBeNull()
 })
 
 it('保存失败回滚开关并只在分区显示错误', async () => {
@@ -109,6 +112,24 @@ it('保存失败回滚开关并只在分区显示错误', async () => {
   expect(settings.settings.resourceMonitorEnabled).toBe(false)
   expect(wrapper.find('[role="alert"]').text()).toContain('磁盘只读')
   expect(settings.saveError).toBeNull()
+  wrapper.unmount()
+})
+
+it('私有工作集不可用时不混用完整工作集或抬高峰值', async () => {
+  const settings = useSettingsStore()
+  const monitor = useResourceMonitorStore()
+  await settings.set('resourceMonitorEnabled', true)
+  await flushPromises()
+  api.resourceMonitorSnapshot.mockResolvedValue({
+    ...value,
+    processes: value.processes.map((p) => ({ ...p, privateResidentBytes: null })),
+  })
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(monitor.totals?.memory).toBeNull()
+  expect(monitor.peakMemory).toBe(1024 ** 2)
+  const wrapper = mount(ResourceMonitor, { global: { plugins: [pinia] } })
+  expect(wrapper.text()).toContain('不可用')
+  expect(wrapper.text()).not.toContain('3 MiB')
   wrapper.unmount()
 })
 

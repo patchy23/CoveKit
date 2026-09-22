@@ -8,12 +8,14 @@
 
 /** 应用进程快照；内存单位字节，CPU 为进程累计秒数，空值表示指标不可用。 */
 export interface ResourceSnapshot {
+  memoryMetric: 'privateWorkingSet' | 'rss'
   partial: boolean
   processes: {
     pid: number
     identity: string
     kind: 'main' | 'webview' | 'child'
     residentBytes: number
+    privateResidentBytes: number | null
     privateBytes: number | null
     cpuSeconds: number
     threads: number | null

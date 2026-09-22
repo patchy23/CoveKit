@@ -17,6 +17,8 @@ pub struct ProcessSample {
     pub kind: &'static str,
     /// 工作集/RSS 字节；跨进程相加可能重复包含共享页。
     pub resident_bytes: u64,
+    /// 私有工作集字节；不含共享页，系统不支持时为空。
+    pub private_resident_bytes: Option<u64>,
     /// 私有提交字节；平台不可用时为空，不伪装为零。
     pub private_bytes: Option<u64>,
     /// 累计用户态与内核态 CPU 秒数，不包含等待时间。
@@ -29,6 +31,8 @@ pub struct ProcessSample {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourceSnapshot {
+    /// 展示内存的统一口径：Windows 私有工作集，macOS RSS。
+    pub memory_metric: &'static str,
     /// 平台本身无法完整覆盖应用进程时为真。
     pub partial: bool,
     pub processes: Vec<ProcessSample>,

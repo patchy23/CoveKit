@@ -13,11 +13,17 @@ const cpu = computed(() =>
 const overview = computed(() => [
   {
     label: '内存',
-    value: memoryLabel(monitor.totals?.resident),
+    detailLabel:
+      monitor.snapshot?.value.memoryMetric === 'rss' ? '内存 · RSS' : '内存 · 私有工作集',
+    value:
+      monitor.totals && monitor.totals.memory === null
+        ? '不可用'
+        : memoryLabel(monitor.totals?.memory),
     peak: monitor.totals ? memoryLabel(monitor.peakMemory) : '—',
   },
   {
     label: 'CPU',
+    detailLabel: 'CPU',
     value: cpu.value,
     peak: monitor.peakCpu == null ? '—' : `${monitor.peakCpu.toFixed(1)}%`,
   },
@@ -33,6 +39,7 @@ const memoryRows = computed(() => [
 ])
 const extraRows = computed(() => [
   ['其他子进程内存', memoryLabel(monitor.totals?.child)],
+  ['完整工作集合计', memoryLabel(monitor.totals?.resident)],
   [
     '私有提交合计',
     monitor.totals?.privateBytes == null ? '不可用' : memoryLabel(monitor.totals.privateBytes),
@@ -105,7 +112,7 @@ function openSettings(close: () => void) {
           </p>
           <div class="select-text grid grid-cols-2 gap-md py-xs">
             <div v-for="metric in overview" :key="metric.label" class="min-w-0">
-              <p class="text-secondary dark:text-secondary-dark">{{ metric.label }}</p>
+              <p class="text-secondary dark:text-secondary-dark">{{ metric.detailLabel }}</p>
               <p
                 class="mt-xs whitespace-nowrap font-mono text-h1 font-semibold tabular-nums text-primary dark:text-primary-dark"
               >

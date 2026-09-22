@@ -27,7 +27,7 @@ export const useResourceMonitorStore = defineStore('resourceMonitor', () => {
   const totals = shallowRef<ReturnType<typeof resourceTotals>>()
   const error = ref('')
   const updatedAt = ref<number>()
-  const peakMemory = ref(0)
+  const peakMemory = ref<number | null>(null)
   const peakCpu = ref<number | null>(null)
   const details = ref<({ id: string } & ReturnType<typeof toolMetricSnapshot>)[]>([])
   const focusSettings = ref(false)
@@ -69,7 +69,8 @@ export const useResourceMonitorStore = defineStore('resourceMonitor', () => {
       snapshot.value = current
       updatedAt.value = Date.now()
       error.value = ''
-      peakMemory.value = Math.max(peakMemory.value, totals.value.resident)
+      if (totals.value.memory !== null)
+        peakMemory.value = Math.max(peakMemory.value ?? 0, totals.value.memory)
       if (totals.value.cpu !== null) peakCpu.value = Math.max(peakCpu.value ?? 0, totals.value.cpu)
       details.value = selected.value.map((id) => ({ id, ...toolMetricSnapshot(id) }))
     },
@@ -98,7 +99,7 @@ export const useResourceMonitorStore = defineStore('resourceMonitor', () => {
         totals.value = undefined
         updatedAt.value = undefined
         error.value = ''
-        peakMemory.value = 0
+        peakMemory.value = null
         peakCpu.value = null
       }
     },

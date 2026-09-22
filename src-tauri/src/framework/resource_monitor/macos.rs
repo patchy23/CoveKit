@@ -58,6 +58,7 @@ pub(super) async fn sample() -> Result<ResourceSnapshot, String> {
                 kind: if pid == root { "main" } else { "child" },
                 resident_bytes: resident_kib.checked_mul(1024).ok_or("内存计数溢出")?,
                 private_bytes: None,
+                private_resident_bytes: None,
                 cpu_seconds: cpu_seconds(fields[3])?,
                 threads: None,
                 handles: None,
@@ -82,6 +83,7 @@ pub(super) async fn sample() -> Result<ResourceSnapshot, String> {
         .collect();
     let selected = descendants(root, &parents);
     Ok(ResourceSnapshot {
+        memory_metric: "rss",
         partial: true,
         processes: rows.into_iter().filter(|(_, _, row)| selected.contains(&row.pid)).map(|(_, _, row)| row).collect(),
         logical_cpus: std::thread::available_parallelism().map_err(|e| format!("CPU 核心数读取失败：{e}"))?.get(),

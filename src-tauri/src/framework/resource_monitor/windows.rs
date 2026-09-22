@@ -10,7 +10,7 @@ use windows_sys::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows_sys::Win32::System::ProcessStatus::{
-    K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX,
+    K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX, PROCESS_MEMORY_COUNTERS_EX2,
 };
 use windows_sys::Win32::System::Threading::{
     GetActiveProcessorCount, GetProcessHandleCount, GetProcessTimes, OpenProcess,
@@ -74,6 +74,26 @@ fn read_process(
             std::io::Error::last_os_error()
         ));
     }
+    // EX2 仅在较新系统可用；保留哨兵，避免旧系统只写基础前缀时误报零。
+    // SAFETY: EX2 仅含整数；零初始化合法，系统调用前设置结构大小。
+    let mut extended: PROCESS_MEMORY_COUNTERS_EX2 = unsafe { std::mem::zeroed() };
+    extended.cb = u32::try_from(std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX2>())
+        .map_err(|_| "扩展内存计数结构大小超出范围")?;
+    extended.PrivateWorkingSetSize = usize::MAX;
+    // SAFETY: EX2 与基础结构前缀 ABI 兼容，缓冲区大小与传入大小一致。
+    let private_resident_bytes = if unsafe {
+        K32GetProcessMemoryInfo(
+            handle.0,
+            (&mut extended as *mut PROCESS_MEMORY_COUNTERS_EX2).cast(),
+            extended.cb,
+        )
+    } != 0
+        && extended.PrivateWorkingSetSize != usize::MAX
+    {
+        Some(u64::try_from(extended.PrivateWorkingSetSize).map_err(|_| "私有工作集计数超出范围")?)
+    } else {
+        None
+    };
     let mut handles = 0;
     // SAFETY: 有效查询句柄与可写 DWORD；读取失败仅该可选指标为空。
     let handle_count = if unsafe { GetProcessHandleCount(handle.0, &mut handles) } != 0 {
@@ -90,6 +110,7 @@ fn read_process(
             pid,
             identity: started.to_string(),
             kind,
+            private_resident_bytes,
             resident_bytes: u64::try_from(memory.WorkingSetSize)
                 .map_err(|_| "工作集计数超出范围")?,
             private_bytes: Some(
@@ -206,10 +227,11 @@ pub(super) fn sample() -> Result<ResourceSnapshot, String> {
         return Err("无法读取整机逻辑核心数".into());
     }
     Ok(ResourceSnapshot {
+        memory_metric: "privateWorkingSet",
         partial: false,
         missing_processes: candidates.len().saturating_sub(processes.len()),
         processes,
         logical_cpus: usize::try_from(logical_cpus).map_err(|_| "逻辑核心数超出范围")?,
-        coverage: "统计本进程及可验证的子进程；内存为工作集合计，共享页可能重复计算，不等同于独占物理内存。",
+        coverage: "统计本进程及可验证的子进程；内存及峰值采用私有工作集，系统不支持时不可用；完整工作集与私有提交单独列示。",
     })
 }
