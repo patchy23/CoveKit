@@ -22,6 +22,7 @@ import CredentialManagerPage from '@/features/vault/CredentialManagerPage.vue'
 import UpdateSettingsCard from './UpdateSettingsCard.vue'
 import StorageSettingsCard from './StorageSettingsCard.vue'
 import DiagnosticsCard from './DiagnosticsCard.vue'
+import ResourceMonitorSettings from './ResourceMonitorSettings.vue'
 import DataCard from './data/DataCard.vue'
 
 const settings = useSettingsStore()
@@ -266,6 +267,7 @@ async function chooseDownloadDirectory() {
 
           <UpdateSettingsCard />
           <DiagnosticsCard />
+          <ResourceMonitorSettings />
 
           <!-- 工具级设置（settingsSchema 自动渲染） -->
           <section

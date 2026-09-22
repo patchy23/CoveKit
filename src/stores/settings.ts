@@ -32,6 +32,8 @@ const createDefaults = (): AppSettings => ({
   language: 'zh-CN',
   launchAtStartup: false,
   defaultDownloadDirectory: '',
+  resourceMonitorEnabled: false,
+  resourceMonitorTools: [],
   tools: {},
 })
 

@@ -24,6 +24,7 @@ pub mod lifecycle;
 pub mod module_manifest;
 pub mod paths;
 pub mod preferences;
+pub mod resource_monitor;
 pub mod secure_store;
 pub mod settings;
 pub mod space;
@@ -56,6 +57,7 @@ crate::covekit_module! {
     owner: "framework",
     feature: "core",
     commands: {
+        resource_monitor::resource_monitor_snapshot => "读取应用进程资源快照",
         window_toggle => "切换主窗口显示/隐藏（返回切换后可见性）",
         window_hide => "隐藏主窗口（最小化到托盘）",
         exit::app_request_close => "请求关闭（页签或退出）：只裁决，业务可拒绝，原因交回前端展示",

@@ -7,6 +7,7 @@ import { UiScrollArea } from '@/core/ui'
  */
 import { computed, ref } from 'vue'
 import AppIcon from '@/features/ui/AppIcon.vue'
+import ResourceMonitor from './ResourceMonitor.vue'
 import { useI18n } from 'vue-i18n'
 import type { ToolManifest } from '@/core/registry/types'
 import { searchTools, type HighlightChunk } from '@/core/search/fuzzy'
@@ -203,6 +204,7 @@ function selectCategory(item: { id: string }) {
         />
         {{ settings.settings.theme === 'dark' ? t('nav.lightMode') : t('nav.darkMode') }}
       </button>
+      <ResourceMonitor />
       <button
         class="flex items-center gap-[10px] rounded-sm px-[10px] py-[9px] text-body font-medium transition-colors duration-150 hover:bg-border hover:text-primary dark:hover:bg-border-dark dark:hover:text-primary-dark"
         :class="

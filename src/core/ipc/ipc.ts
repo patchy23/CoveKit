@@ -4,6 +4,7 @@
  * - 业务插件在各自 ipc.ts 用 invokeCommand 封装自己的命令（命令名/类型见插件 contracts.ts）。
  */
 import { invoke } from '@tauri-apps/api/core'
+import { beginMeasuredCommand } from '@/core/resourceMonitor/metrics'
 import type {
   ConflictChoice,
   CredentialSavePayload,
@@ -29,11 +30,16 @@ export async function invokeCommand<P = Record<string, never>, R = void>(
   command: string,
   payload?: P
 ): Promise<R> {
+  const finish = beginMeasuredCommand(command)
+  let failed = false
   try {
     return await invoke<R>(command, (payload ?? {}) as Record<string, unknown>)
   } catch (err) {
+    failed = true
     const detail = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err)
     throw new IpcError(command, detail)
+  } finally {
+    finish?.(failed)
   }
 }
 
@@ -46,6 +52,7 @@ async function call<K extends keyof FrameworkPayloads & keyof FrameworkResults>(
 
 /** 框架命令封装（设置/窗口/外链/命令清单/Vault 凭证） */
 export const ipc = {
+  resourceMonitorSnapshot: () => call('resource_monitor_snapshot', {}),
   settingsGet: (key?: string) => call('settings_get', { key }),
   settingsSet: (key: string, value: unknown) => call('settings_set', { key, value }),
   settingsPatch: (patch: Record<string, unknown>, revision?: number) =>

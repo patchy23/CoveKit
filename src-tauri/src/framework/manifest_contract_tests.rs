@@ -34,6 +34,11 @@ mod tests {
     /// 冻结快照的是**前后端调用契约**：增删命令、改命令名或改归属者时这张表必须同步更新。
     const PUBLISHED: &[(&str, &str, &str)] = &[
         (
+            "framework",
+            "resource_monitor_snapshot",
+            "读取应用进程资源快照",
+        ),
+        (
             "port_viewer",
             "port_viewer_supported",
             "查询端口工具的平台支持状态",

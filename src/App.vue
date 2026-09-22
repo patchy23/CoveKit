@@ -26,12 +26,15 @@ import { useSettingsStore } from '@/stores/settings'
 import { useToolsStore } from '@/stores/tools'
 import { useTasksStore } from '@/stores/tasks'
 import { useUiStore } from '@/stores/ui'
+import { useResourceMonitorStore } from '@/stores/resourceMonitor'
 
 const tools = useToolsStore()
 const favorites = useFavoritesStore()
 const settings = useSettingsStore()
 const ui = useUiStore()
 const tasks = useTasksStore()
+// 采样属于应用会话，收起侧栏和切换页面不停止采集。
+const resourceMonitor = useResourceMonitorStore()
 
 /**
  * 窗口隐藏状态来源一：页面可见性（最小化、切到其他虚拟桌面时浏览器层会更新）。
@@ -74,6 +77,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  resourceMonitor.$dispose()
   document.removeEventListener('visibilitychange', onVisibilityChange)
   stopWindowWatch?.()
   stopWindowWatch = null

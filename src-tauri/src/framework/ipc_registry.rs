@@ -66,6 +66,8 @@ pub fn snapshot() -> Vec<IpcEntry> {
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IpcCommandInfo {
+    /// 来自模块清单的前端工具标识；框架命令也保留实际 feature，不按名称猜测。
+    tool_id: &'static str,
     /// 命令名
     name: String,
     /// 中文用途说明
@@ -75,11 +77,18 @@ pub struct IpcCommandInfo {
 /// 框架命令：查询全量已入库命令（名称 + 说明）
 #[tauri::command]
 pub fn framework_commands() -> Vec<IpcCommandInfo> {
+    let modules = crate::framework::module_manifest::modules();
     snapshot()
         .into_iter()
-        .map(|e| IpcCommandInfo {
-            name: e.name.to_string(),
-            doc: e.doc.to_string(),
+        .filter_map(|e| {
+            Some(IpcCommandInfo {
+                tool_id: modules
+                    .iter()
+                    .find(|module| module.owner == e.owner)?
+                    .feature_id,
+                name: e.name.to_string(),
+                doc: e.doc.to_string(),
+            })
         })
         .collect()
 }

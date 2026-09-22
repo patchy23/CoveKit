@@ -6,6 +6,24 @@
 
 // ── 出参结构 ──
 
+/** 应用进程快照；内存单位字节，CPU 为进程累计秒数，空值表示指标不可用。 */
+export interface ResourceSnapshot {
+  partial: boolean
+  processes: {
+    pid: number
+    identity: string
+    kind: 'main' | 'webview' | 'child'
+    residentBytes: number
+    privateBytes: number | null
+    cpuSeconds: number
+    threads: number | null
+    handles: number | null
+  }[]
+  logicalCpus: number
+  coverage: string
+  missingProcesses: number
+}
+
 /**
  * 应用设置（Rust framework/settings.rs 全量读写）
  *
@@ -17,6 +35,9 @@ export interface AppSettings {
   launchAtStartup: boolean
   /** 工具箱级默认下载目录；各工具的保存对话框优先从这里打开。 */
   defaultDownloadDirectory: string
+  /** 默认关闭；只控制本地采样，不改变工具业务生命周期。 */
+  resourceMonitorEnabled?: boolean
+  resourceMonitorTools?: string[]
   tools: Record<string, Record<string, unknown>>
 }
 
@@ -592,6 +613,7 @@ export interface CancelResult {
 // ── 框架命令清单 ──
 
 export const frameworkCommands = {
+  resourceMonitorSnapshot: 'resource_monitor_snapshot',
   settingsGet: 'settings_get',
   settingsSet: 'settings_set',
   settingsPatch: 'settings_patch',
@@ -639,6 +661,7 @@ export const frameworkCommands = {
 
 /** 框架命令入参（Record<string, never> = 无参命令） */
 export type FrameworkPayloads = {
+  resource_monitor_snapshot: Record<string, never>
   settings_get: { key?: string }
   settings_set: { key: string; value: unknown }
   settings_patch: { revision?: number; patch: Record<string, unknown> }
@@ -689,6 +712,7 @@ export type FrameworkPayloads = {
 
 /** 框架命令返回 */
 export type FrameworkResults = {
+  resource_monitor_snapshot: ResourceSnapshot
   settings_get: AppSettings
   settings_set: number
   settings_patch: number
@@ -704,7 +728,7 @@ export type FrameworkResults = {
   app_force_exit: CloseDecision
   framework_tasks: TaskList
   open_external: void
-  framework_commands: { name: string; doc: string }[]
+  framework_commands: { name: string; doc: string; toolId: string }[]
   storage_info: StorageInfo
   storage_schedule_migration: StorageScheduleResult
   storage_cancel_migration: boolean

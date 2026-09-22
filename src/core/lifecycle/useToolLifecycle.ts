@@ -50,7 +50,7 @@ export function useToolScope(
   toolId: string,
   name: string = toolId
 ): Pick<ToolLifecycle, 'scope' | 'visibility' | 'onResume'> {
-  const scope = createScope(name)
+  const scope = createScope(name, toolId)
   const visibility = ref<ToolVisibility>(toolVisibility(toolId))
 
   const stopWatch = watchToolVisibility(toolId, (state) => {

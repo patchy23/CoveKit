@@ -317,6 +317,10 @@ fn validate_field(key: &str, value: &Value) -> Result<(), String> {
         "theme" => expect_enum(value, &["light", "dark", "system"], "主题"),
         "language" => expect_enum(value, &["zh-CN", "en-US"], "语言"),
         "launchAtStartup" => expect_type(value, Value::is_boolean, "开机自启必须是布尔值"),
+        "resourceMonitorEnabled" => {
+            expect_type(value, Value::is_boolean, "资源监测开关必须是布尔值")
+        }
+        "resourceMonitorTools" => expect_string_array(value, "资源监测工具"),
         "defaultDownloadDirectory" => {
             expect_type(value, Value::is_string, "默认下载目录必须是字符串")
         }
@@ -526,6 +530,19 @@ mod tests {
         assert!(err.contains("theme"));
         assert!(err.contains("favorites"));
         assert!(err.contains("settings_patch"));
+    }
+
+    #[test]
+    fn resource_monitor_configuration_rejects_wrong_types() {
+        assert!(validate_field("resourceMonitorEnabled", &serde_json::json!(true)).is_ok());
+        assert!(validate_field("resourceMonitorEnabled", &serde_json::json!("true")).is_err());
+        assert!(validate_field(
+            "resourceMonitorTools",
+            &serde_json::json!(["ssh", "database"])
+        )
+        .is_ok());
+        assert!(validate_field("resourceMonitorTools", &serde_json::json!([])).is_ok());
+        assert!(validate_field("resourceMonitorTools", &serde_json::json!([123])).is_err());
     }
 
     /// 收藏与最近使用的值必须是字符串数组：类型错误当场报错，不落盘

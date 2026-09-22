@@ -11,10 +11,11 @@
  * `onUnmounted(() => void scope.dispose())`；所有订阅与定时器都从 scope 建。
  *
  * 另附活体计数（`scopeStats`）：页签快速开关后订阅与定时器必须回到基线，
- * 正式版没有页内计数器、外部不可观测，走查时由开发构建的钩子读回来比对。
+ * 开发走查读取全局计数；可选资源监测读取按工具聚合的数字，不持有资源引用。
  */
 import { listen } from '@tauri-apps/api/event'
 import type { CloseIssue } from './types'
+import { countScopeResource } from '@/core/resourceMonitor/metrics'
 
 /** dispose 结果：失败与超时都不抛给调用方，而是回报给调用方决定是否提示 */
 export interface ScopeDisposeResult {
@@ -77,10 +78,12 @@ type DisposeCallback = () => void | Promise<void>
  * 创建作用域。
  *
  * @param name 作用域名（建议用工具 id 或「工具 id.子模块」，失败信息里直接可见）
+ * @param owner 工具标识；默认取作用域名前缀，公共生命周期入口显式传入 toolId。
  */
-export function createScope(name: string): Scope {
+export function createScope(name: string, owner = name.split('.')[0]): Scope {
   createdScopes += 1
   liveScopes += 1
+  countScopeResource(owner, 'scopes', 1)
   let disposed = false
   const unlisteners = new Set<() => void>()
   const timers = new Set<ReturnType<typeof setTimeout>>()
@@ -93,6 +96,7 @@ export function createScope(name: string): Scope {
     for (const handle of timers) clearTimeout(handle)
     for (const handle of intervals) clearInterval(handle)
     liveTimers -= timers.size + intervals.size
+    countScopeResource(owner, 'timers', -timers.size - intervals.size)
     timers.clear()
     intervals.clear()
   }
@@ -127,6 +131,7 @@ export function createScope(name: string): Scope {
         }
         unlisteners.add(unlisten)
         liveListeners += 1
+        countScopeResource(owner, 'listeners', 1)
       } catch (error) {
         failures.push({ owner: name, message: `订阅 ${event} 失败：${describe(error)}` })
       }
@@ -139,6 +144,7 @@ export function createScope(name: string): Scope {
       const handle = setInterval(fn, ms)
       intervals.add(handle)
       liveTimers += 1
+      countScopeResource(owner, 'timers', 1)
       return true
     },
     timeout(fn, ms) {
@@ -149,10 +155,12 @@ export function createScope(name: string): Scope {
       const handle = setTimeout(() => {
         timers.delete(handle)
         liveTimers -= 1
+        countScopeResource(owner, 'timers', -1)
         fn()
       }, ms)
       timers.add(handle)
       liveTimers += 1
+      countScopeResource(owner, 'timers', 1)
       return true
     },
     onResume(fn) {
@@ -163,6 +171,7 @@ export function createScope(name: string): Scope {
       if (disposed) return { name, failures: [...failures] }
       disposed = true
       liveScopes -= 1
+      countScopeResource(owner, 'scopes', -1)
       clearTimers()
       let unbound = 0
       for (const unlisten of unlisteners) {
@@ -175,6 +184,7 @@ export function createScope(name: string): Scope {
         }
       }
       liveListeners -= unbound
+      countScopeResource(owner, 'listeners', -unbound)
       unlisteners.clear()
       // 逆序执行：后建立依赖的资源先释放（订阅→派生的轮询→状态）
       while (callbacks.length > 0) {
