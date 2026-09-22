@@ -40,6 +40,7 @@ function setup() {
     ]),
     queryStates: ref({ q: state }),
     activeTabId: ref('q'),
+    activeTabConnection: ref({ dbType: 'postgresql' }),
     tabs: ref([{ id: 'q', kind: 'query' }]),
     tableColumns: computed(() =>
       state.columns.map((label, index) => ({ key: `c${index}`, label }))
@@ -62,7 +63,41 @@ async function edit(wrapper: ReturnType<typeof mount>, text: string) {
 function button(wrapper: ReturnType<typeof mount>, name: string) {
   return wrapper.findAll('button').find((button) => button.text() === name)!
 }
+async function rowMenu(wrapper: ReturnType<typeof mount>, label: string) {
+  await wrapper.findAll('td')[2].trigger('contextmenu', { clientX: 100, clientY: 100 })
+  await flushPromises()
+  const action = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(
+    (item) => item.textContent?.trim() === label
+  )!
+  action.click()
+  await nextTick()
+}
 describe('结果单元格编辑事务', () => {
+  it('无明确来源的查询结果仍可复制 SQL，并明确提示占位表名', async () => {
+    const { wrapper, state } = setup()
+    state.editTarget = null
+    await flushPromises()
+    await rowMenu(wrapper, '复制为 SQL')
+    expect(mocks.copy).toHaveBeenLastCalledWith(
+      `INSERT INTO "result" ("id", "name") VALUES (9007199254740993, E'原始值');`,
+      '已复制 INSERT SQL，请替换占位表名 result'
+    )
+    expect(mocks.apply).not.toHaveBeenCalled()
+  })
+  it('从右键菜单复制整行与 INSERT，使用当前草稿且不触发数据库写入', async () => {
+    const { wrapper } = setup()
+    await edit(wrapper, '修改值')
+    await wrapper.get('input').trigger('blur')
+    await rowMenu(wrapper, '复制整行')
+    expect(mocks.copy).toHaveBeenLastCalledWith('9007199254740993\t修改值', '已复制整行')
+    await rowMenu(wrapper, '复制为 SQL')
+    expect(mocks.copy).toHaveBeenLastCalledWith(
+      `INSERT INTO "public"."users" ("id", "name") VALUES (9007199254740993, E'修改值');`,
+      '已复制 INSERT SQL'
+    )
+    expect(mocks.apply).not.toHaveBeenCalled()
+    expect(button(wrapper, '复制整行')).toBeUndefined()
+  })
   it('双击就地编辑，失焦不写库，手动保存保留精确主键和原值', async () => {
     const { wrapper, state } = setup()
     expect(button(wrapper, '保存并提交')).toBeUndefined()

@@ -13,7 +13,7 @@ import {
 import { useCopy } from '@/core/feedback/useCopy'
 import { queryIpc, tableIpc } from './ipc'
 import { nextRequestId } from './requestId'
-import { cellTransferText } from './resultText'
+import { cellTransferText, rowsToTsv, rowToInsertSql } from './resultText'
 import { hasGridChanges, type QueryState } from './workspace/useQueryWorkspace'
 import type { DbColumnInfo, DbValue, TableChange } from './contracts'
 import type { useDatabase } from './useDatabase'
@@ -200,6 +200,28 @@ function copyCell() {
   if (selected.value)
     void copyText(cellTransferText(valueAt(selected.value.row, selected.value.column)))
 }
+function copyRow(asSql = false) {
+  if (!selected.value) return
+  const row = props.state.columns.map((_, column) => valueAt(selected.value!.row, column))
+  if (!asSql) {
+    void copyText(rowsToTsv([row]), '已复制整行')
+    return
+  }
+  const kind = connection.value?.dbType ?? props.db.activeTabConnection.value?.dbType
+  if (!kind) {
+    patch({ gridError: '无法确认数据库类型' })
+    return
+  }
+  try {
+    const sql = rowToInsertSql(kind, props.state.columns, row, target.value)
+    void copyText(
+      sql,
+      target.value ? '已复制 INSERT SQL' : '已复制 INSERT SQL，请替换占位表名 result'
+    )
+  } catch (error) {
+    patch({ gridError: String(error) })
+  }
+}
 function context(event: CellEvent, mouse: MouseEvent) {
   mouse.preventDefault()
   selectCell(event)
@@ -218,6 +240,8 @@ const menuItems = computed(() => [
       ]
     : []),
   { label: '复制单元格', onClick: copyCell },
+  { label: '复制整行', onClick: () => copyRow() },
+  { label: '复制为 SQL', onClick: () => copyRow(true) },
   { label: '查看完整值', onClick: showDetail },
 ])
 async function save() {
