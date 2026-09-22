@@ -244,8 +244,8 @@ function openSettings(close: () => void) {
       >
         <span class="text-caption text-secondary dark:text-secondary-dark">{{
           monitor.updatedAt
-            ? `上次成功 ${new Date(monitor.updatedAt).toLocaleTimeString()}`
-            : '尚无成功样本'
+            ? `更新于 ${new Date(monitor.updatedAt).toLocaleTimeString()}`
+            : '等待更新'
         }}</span>
         <UiButton size="xs" variant="ghost" @click="openSettings(close)">监测设置</UiButton>
       </div>
