@@ -327,7 +327,7 @@ function discard() {
           "
           ref="input"
           size="xs"
-          class="w-full min-w-0 font-data"
+          class="result-cell-input w-full min-w-0"
           :aria-label="`编辑 ${column.label}`"
           :model-value="valueAt(editing.row, editing.column).value ?? ''"
           @update:model-value="change"
@@ -366,3 +366,21 @@ function discard() {
     </UiModal>
   </div>
 </template>
+
+<style scoped>
+@layer components {
+  /* 单元格自身提供边界，编辑时保持文本位置与行高。 */
+  .field-input.result-cell-input {
+    display: block;
+    height: 20px !important;
+    padding: 0 !important;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    box-shadow: none;
+    outline: none;
+  }
+}
+</style>
