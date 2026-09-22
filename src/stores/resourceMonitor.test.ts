@@ -160,14 +160,15 @@ it('关闭且无活动的工具收紧为一行，在途请求与残留资源仍�
   expect(document.querySelector('[data-tool="idle"]')?.textContent).not.toContain('请求')
   expect(document.querySelector('[data-tool="pending"]')?.textContent).toContain('在途 1')
   expect(document.querySelector('[data-tool="retained"]')?.textContent).toContain('订阅 1')
-  const toggle = document.querySelector<HTMLElement>(
-    '[role="dialog"] [role="button"][aria-controls]'
-  )!
-  const extra = document.getElementById(toggle.getAttribute('aria-controls')!)!
-  expect(extra.style.display).toBe('none')
-  toggle.click()
-  await flushPromises()
-  expect(extra.style.display).not.toBe('none')
-  expect(extra.textContent).toContain('私有提交合计')
+  const dialog = document.querySelector('[role="dialog"]')!
+  const memory = dialog.querySelector('[aria-label="内存指标"]')!
+  expect(memory.textContent).toContain('私有工作集')
+  expect(memory.textContent).toContain('1 MiB')
+  expect(memory.textContent).toContain('完整工作集')
+  expect(memory.textContent).toContain('3 MiB')
+  expect(memory.textContent).toContain('私有提交量')
+  expect(memory.textContent).toContain('不可用')
+  expect(dialog.textContent).not.toContain('更多指标')
+  expect(dialog.querySelector('[aria-label="进程明细"]')?.textContent).toContain('其他子进程')
   wrapper.unmount()
 })

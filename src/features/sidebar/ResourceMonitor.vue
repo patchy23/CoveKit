@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** 侧栏资源入口：只读详情不影响后台业务，所有读数来自应用级采样会话。 */
 import { computed } from 'vue'
-import { UiButton, UiHoverDetails, UiPanel, UiScrollArea } from '@/core/ui'
+import { UiButton, UiHoverDetails, UiScrollArea } from '@/core/ui'
 import { memoryLabel } from '@/core/resourceMonitor/sampling'
 import { useResourceMonitorStore } from '@/stores/resourceMonitor'
 import { useUiStore } from '@/stores/ui'
@@ -28,22 +28,31 @@ const overview = computed(() => [
     peak: monitor.peakCpu == null ? '—' : `${monitor.peakCpu.toFixed(1)}%`,
   },
 ])
+const memoryBasis = computed(() =>
+  monitor.snapshot?.value.memoryMetric === 'rss' ? 'RSS' : '私有工作集'
+)
+function availableMemory(bytes: number | null | undefined) {
+  return monitor.totals && bytes == null ? '不可用' : memoryLabel(bytes)
+}
 const memoryRows = computed(() => [
-  ['主进程内存', memoryLabel(monitor.totals?.main)],
+  ['私有工作集', availableMemory(monitor.totals?.privateResident)],
   [
-    '界面进程内存',
-    monitor.snapshot?.value.processes.some((p) => p.kind === 'webview')
-      ? memoryLabel(monitor.totals?.webview)
-      : '未覆盖',
+    monitor.snapshot?.value.memoryMetric === 'rss' ? '驻留内存 · RSS' : '完整工作集',
+    availableMemory(monitor.totals?.resident),
   ],
+  ['私有提交量', availableMemory(monitor.totals?.privateBytes)],
 ])
-const extraRows = computed(() => [
-  ['其他子进程内存', memoryLabel(monitor.totals?.child)],
-  ['完整工作集合计', memoryLabel(monitor.totals?.resident)],
+const processRows = computed(() => [
+  ['主进程', availableMemory(monitor.totals?.main)],
   [
-    '私有提交合计',
-    monitor.totals?.privateBytes == null ? '不可用' : memoryLabel(monitor.totals.privateBytes),
+    '界面进程',
+    !monitor.snapshot
+      ? '—'
+      : monitor.snapshot.value.processes.some((p) => p.kind === 'webview')
+        ? availableMemory(monitor.totals?.webview)
+        : '未覆盖',
   ],
+  ['其他子进程', availableMemory(monitor.totals?.child)],
 ])
 const counts = computed(() => [
   ['进程', monitor.totals?.processes ?? '—'],
@@ -123,44 +132,57 @@ function openSettings(close: () => void) {
               </p>
             </div>
           </div>
-          <dl class="select-text mt-md grid grid-cols-[1fr_auto] gap-x-md gap-y-xs">
-            <template v-for="[label, value] in memoryRows" :key="label">
-              <dt class="text-secondary dark:text-secondary-dark">{{ label }}</dt>
-              <dd class="text-right font-mono tabular-nums text-primary dark:text-primary-dark">
-                {{ value }}
-              </dd>
-            </template>
-          </dl>
-          <dl
-            class="select-text mt-sm grid grid-cols-3 gap-sm border-t border-border pt-sm dark:border-border-dark"
+          <section
+            aria-label="内存指标"
+            class="mt-md border-t border-border pt-sm dark:border-border-dark"
           >
-            <div v-for="[label, value] in counts" :key="label">
-              <dt class="text-caption text-secondary dark:text-secondary-dark">{{ label }}</dt>
-              <dd class="mt-xs font-mono tabular-nums text-primary dark:text-primary-dark">
-                {{ value }}
-              </dd>
-            </div>
-          </dl>
-          <UiPanel
-            collapsible
-            :default-open="false"
-            padding="none"
-            class="mt-sm !rounded-none !border-0 !bg-transparent"
-          >
-            <template #header
-              ><span class="text-body-sm text-secondary dark:text-secondary-dark"
-                >更多指标</span
-              ></template
-            >
-            <dl class="select-text grid grid-cols-[1fr_auto] gap-x-md gap-y-xs">
-              <template v-for="[label, value] in extraRows" :key="label">
+            <h3 class="font-semibold text-primary dark:text-primary-dark">内存指标</h3>
+            <dl class="select-text mt-sm space-y-sm">
+              <div
+                v-for="[label, value] in memoryRows"
+                :key="label"
+                class="flex items-baseline justify-between gap-md"
+              >
                 <dt class="text-secondary dark:text-secondary-dark">{{ label }}</dt>
-                <dd class="text-right font-mono tabular-nums text-primary dark:text-primary-dark">
+                <dd
+                  class="shrink-0 text-right font-mono tabular-nums text-primary dark:text-primary-dark"
+                >
                   {{ value }}
                 </dd>
-              </template>
+              </div>
             </dl>
-          </UiPanel>
+          </section>
+          <section
+            aria-label="进程明细"
+            class="mt-md border-t border-border pt-sm dark:border-border-dark"
+          >
+            <div class="flex items-baseline justify-between gap-sm">
+              <h3 class="font-semibold text-primary dark:text-primary-dark">进程明细</h3>
+              <span class="text-caption text-secondary dark:text-secondary-dark">{{
+                memoryBasis
+              }}</span>
+            </div>
+            <dl class="select-text mt-sm grid grid-cols-3 gap-sm">
+              <div v-for="[label, value] in processRows" :key="label" class="min-w-0">
+                <dt class="text-caption text-secondary dark:text-secondary-dark">{{ label }}</dt>
+                <dd
+                  class="mt-xs whitespace-nowrap font-mono tabular-nums text-primary dark:text-primary-dark"
+                >
+                  {{ value }}
+                </dd>
+              </div>
+            </dl>
+            <dl
+              class="select-text mt-sm grid grid-cols-3 gap-sm rounded-md bg-surface-muted p-sm dark:bg-surface-muted-dark"
+            >
+              <div v-for="[label, value] in counts" :key="label" class="min-w-0">
+                <dt class="text-caption text-secondary dark:text-secondary-dark">{{ label }}</dt>
+                <dd class="mt-xs font-mono tabular-nums text-primary dark:text-primary-dark">
+                  {{ value }}
+                </dd>
+              </div>
+            </dl>
+          </section>
           <p
             v-if="monitor.snapshot?.value.partial"
             class="mt-sm text-caption text-secondary dark:text-secondary-dark"
@@ -184,7 +206,12 @@ function openSettings(close: () => void) {
             >
               {{ monitor.catalogError }}
             </p>
-            <div v-for="tool in monitor.details" :key="tool.id" class="mt-sm" :data-tool="tool.id">
+            <div
+              v-for="tool in monitor.details"
+              :key="tool.id"
+              class="mt-sm border-b border-border pb-sm last:border-0 last:pb-0 dark:border-border-dark"
+              :data-tool="tool.id"
+            >
               <p class="flex justify-between gap-sm text-primary dark:text-primary-dark">
                 <span>{{
                   monitor.supportedTools.find((item) => item.id === tool.id)?.name ?? tool.id

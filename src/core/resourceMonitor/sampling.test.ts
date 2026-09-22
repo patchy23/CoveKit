@@ -40,6 +40,7 @@ describe('资源统计口径', () => {
     })
     expect(resourceTotals(current)).toMatchObject({
       memory: 200,
+      privateResident: 200,
       resident: 500,
       main: 40,
       webview: 160,
@@ -48,6 +49,7 @@ describe('资源统计口径', () => {
     current.value.processes[1]!.privateResidentBytes = null
     expect(resourceTotals(current)).toMatchObject({
       memory: null,
+      privateResident: null,
       resident: 500,
       main: 40,
       webview: null,

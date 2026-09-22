@@ -14,7 +14,7 @@ export function resourceTotals(current: TimedSnapshot, previous?: TimedSnapshot)
     group.every((p) => p[memoryKey] !== null)
       ? group.reduce((sum, p) => sum + (p[memoryKey] ?? 0), 0)
       : null
-  const sumOptional = (key: 'privateBytes' | 'threads' | 'handles') =>
+  const sumOptional = (key: 'privateResidentBytes' | 'privateBytes' | 'threads' | 'handles') =>
     processes.every((p) => p[key] !== null)
       ? processes.reduce((sum, p) => sum + (p[key] ?? 0), 0)
       : null
@@ -43,6 +43,7 @@ export function resourceTotals(current: TimedSnapshot, previous?: TimedSnapshot)
     main: memoryTotal(processes.filter((p) => p.kind === 'main')),
     webview: memoryTotal(processes.filter((p) => p.kind === 'webview')),
     child: memoryTotal(processes.filter((p) => p.kind === 'child')),
+    privateResident: sumOptional('privateResidentBytes'),
     privateBytes: sumOptional('privateBytes'),
     threads: sumOptional('threads'),
     handles: sumOptional('handles'),
