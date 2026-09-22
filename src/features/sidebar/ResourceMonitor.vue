@@ -11,7 +11,7 @@ const cpu = computed(() =>
   monitor.totals?.cpu == null ? '—' : `${monitor.totals.cpu.toFixed(1)}%`
 )
 const rows = computed(() => [
-  ['内存合计', memoryLabel(monitor.totals?.resident)],
+  ['驻留内存合计', memoryLabel(monitor.totals?.resident)],
   ['CPU', cpu.value],
   ['本次内存峰值', monitor.totals ? memoryLabel(monitor.peakMemory) : '—'],
   ['本次 CPU 峰值', monitor.peakCpu == null ? '—' : `${monitor.peakCpu.toFixed(1)}%`],
@@ -67,13 +67,8 @@ function openSettings(close: () => void) {
         >
       </span>
     </template>
-    <template #default="{ close, pinned }">
-      <div class="flex items-center justify-between gap-sm">
-        <p class="text-h2 text-primary dark:text-primary-dark">应用资源</p>
-        <span class="text-caption text-secondary dark:text-secondary-dark">{{
-          pinned ? '点击读数收起' : '点击读数保持展开'
-        }}</span>
-      </div>
+    <template #default="{ close }">
+      <p class="text-h2 text-primary dark:text-primary-dark">应用资源</p>
       <UiScrollArea class="mt-sm max-h-[min(65vh,520px)]" axis="vertical">
         <div class="pr-xs text-body-sm">
           <p
@@ -93,31 +88,28 @@ function openSettings(close: () => void) {
               </dd>
             </template>
           </dl>
-          <p class="select-text mt-sm text-caption text-secondary dark:text-secondary-dark">
-            {{ monitor.snapshot?.value.coverage }}
-          </p>
-          <p class="mt-xs text-caption text-secondary dark:text-secondary-dark">
-            CPU 以整机总能力为 100%；新进程从下一次采样计入。
+          <p
+            v-if="monitor.snapshot?.value.partial"
+            class="mt-sm text-caption text-secondary dark:text-secondary-dark"
+          >
+            部分界面进程未计入
           </p>
           <p
             v-if="monitor.snapshot?.value.missingProcesses"
             class="mt-xs text-warning-strong dark:text-warning-dark"
           >
-            {{ monitor.snapshot.value.missingProcesses }} 个进程暂不可读，合计不完整。
+            {{ monitor.snapshot.value.missingProcesses }} 个进程未计入
           </p>
-          <div class="mt-md border-t border-border pt-sm dark:border-border-dark">
+          <div
+            v-if="monitor.selected.length || monitor.catalogError"
+            class="mt-md border-t border-border pt-sm dark:border-border-dark"
+          >
             <p class="font-semibold text-primary dark:text-primary-dark">工具统计</p>
             <p
               v-if="monitor.catalogError"
               class="select-text mt-xs text-warning-strong dark:text-warning-dark"
             >
               {{ monitor.catalogError }}
-            </p>
-            <p
-              v-if="!monitor.selected.length"
-              class="mt-xs text-secondary dark:text-secondary-dark"
-            >
-              仅统计应用整体，可在设置中选择工具。
             </p>
             <div v-for="tool in monitor.details" :key="tool.id" class="mt-sm">
               <p class="flex justify-between gap-sm text-primary dark:text-primary-dark">
@@ -139,10 +131,6 @@ function openSettings(close: () => void) {
                 作用域 {{ tool.scopes }} · 订阅 {{ tool.listeners }} · 定时器 {{ tool.timers }}
               </p>
             </div>
-            <p class="mt-sm text-caption text-secondary dark:text-secondary-dark">
-              请求数从启用该工具统计起累计；仅计入公共入口的请求、订阅和定时器。响应耗时包含等待，不代表
-              CPU 耗时。
-            </p>
           </div>
         </div>
       </UiScrollArea>
