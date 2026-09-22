@@ -10,7 +10,6 @@
  * - 损坏数据先隔离备份（localStorage 下另存副本并删除原键），再返回空值让调用方用默认值，
  *   既不静默使用坏数据，也不会直接覆盖掉还能救回的内容。
  */
-import { isTauri } from '@tauri-apps/api/core'
 import { warn as logWarn } from '@tauri-apps/plugin-log'
 import { load, type Store } from '@tauri-apps/plugin-store'
 
