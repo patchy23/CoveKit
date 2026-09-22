@@ -8,17 +8,26 @@
  *
  * 页签内关闭单个连接页签（query workspace）是插件内部行为，与本模块无关。
  */
+import { hasGridChanges } from './workspace/useQueryWorkspace'
+import type { QueryState } from './workspace/useQueryWorkspace'
 import { connectionIpc } from './ipc'
 import { useToolLifecycle } from '@/core/lifecycle'
 
 export function useDatabaseToolLifecycle(workspace?: {
-  queryStates: import('vue').Ref<Record<string, { transactionActive?: boolean; status: string }>>
+  queryStates: import('vue').Ref<
+    Record<
+      string,
+      Pick<QueryState, 'transactionActive' | 'gridEdits' | 'gridSaving'> & { status: string }
+    >
+  >
   flushDrafts: () => Promise<void>
 }) {
   useToolLifecycle('database', {
     owner: 'database.connections',
     prepare: async () => {
       const states = Object.values(workspace?.queryStates.value ?? {})
+      if (states.some((state) => state.gridSaving || hasGridChanges(state)))
+        return '结果有未保存修改或正在提交，请先保存或放弃修改。'
       if (states.some((state) => state.transactionActive))
         return '数据库有未提交事务，请先提交或回滚后关闭。'
       if (states.some((state) => state.status === 'running'))

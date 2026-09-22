@@ -17,6 +17,261 @@ pub(crate) fn parser_dialect(kind: DbType) -> Box<dyn Dialect> {
     }
 }
 
+/// 保守识别可能改变会话名称解析的语句，避免临时表结果误写同名持久表。
+pub(crate) fn may_change_resolution(kind: DbType, sql: &str) -> bool {
+    let dialect = parser_dialect(kind);
+    let Ok(tokens) = Tokenizer::new(dialect.as_ref(), sql).tokenize() else {
+        return true;
+    };
+    if tokens.iter().any(|token| matches!(token, Token::Word(word) if ["TEMP", "TEMPORARY", "CALL", "DO", "EXECUTE", "EXEC"].contains(&word.value.to_uppercase().as_str()))) { return true; }
+    // 用户函数可创建临时表或改变名称解析；不猜测函数体是否纯读。
+    struct Functions;
+    impl Visitor for Functions {
+        type Break = ();
+        fn pre_visit_expr(&mut self, expr: &Expr) -> std::ops::ControlFlow<()> {
+            if matches!(expr, Expr::Function(_)) {
+                std::ops::ControlFlow::Break(())
+            } else {
+                std::ops::ControlFlow::Continue(())
+            }
+        }
+    }
+    Parser::parse_sql(dialect.as_ref(), sql).map_or(true, |statements| {
+        statements.visit(&mut Functions).is_break()
+    })
+}
+
+/// 返回无需猜测列来源的持久表候选；会话污染与完整原值由调用方继续核验。
+pub(crate) fn edit_target(
+    kind: DbType,
+    sql: &str,
+    conn_id: &str,
+    scope: &super::models::ExecutionScope,
+    default_database: &str,
+) -> Option<super::models::ResultEditTarget> {
+    use sqlparser::ast::{
+        GroupByExpr, ObjectNamePart, SelectItem, SelectItemQualifiedWildcardKind, TableFactor,
+    };
+    if !matches!(
+        kind,
+        DbType::Mysql | DbType::Polardb | DbType::Postgresql | DbType::Sqlite
+    ) {
+        return None;
+    }
+    let parsed = Parser::parse_sql(parser_dialect(kind).as_ref(), sql).ok()?;
+    let [Statement::Query(query)] = parsed.as_slice() else {
+        return None;
+    };
+    if query.with.is_some() || !query.locks.is_empty() {
+        return None;
+    }
+    let SetExpr::Select(select) = query.body.as_ref() else {
+        return None;
+    };
+    if select.distinct.is_some()
+        || select.into.is_some()
+        || select.having.is_some()
+        || select.qualify.is_some()
+        || select.exclude.is_some()
+        || !select.lateral_views.is_empty()
+        || !matches!(&select.group_by, GroupByExpr::Expressions(items, _) if items.is_empty())
+        || !select.projection.iter().all(|item| match item {
+            SelectItem::Wildcard(options) | SelectItem::QualifiedWildcard(_, options) => {
+                *options == Default::default()
+            }
+            SelectItem::UnnamedExpr(Expr::Identifier(_)) => true,
+            SelectItem::UnnamedExpr(Expr::CompoundIdentifier(parts)) => parts.len() == 2,
+            _ => false,
+        })
+    {
+        return None;
+    }
+    let [from] = select.from.as_slice() else {
+        return None;
+    };
+    if !from.joins.is_empty() {
+        return None;
+    }
+    let TableFactor::Table {
+        name,
+        alias,
+        args: None,
+        version: None,
+        with_ordinality: false,
+        ..
+    } = &from.relation
+    else {
+        return None;
+    };
+    if alias
+        .as_ref()
+        .is_some_and(|alias| !alias.columns.is_empty())
+    {
+        return None;
+    }
+    // 限定前缀必须指向当前表，不能把复合类型字段展开误当成表列。
+    let qualifier = alias
+        .as_ref()
+        .map(|alias| alias.name.to_string())
+        .or_else(|| name.0.last().map(ToString::to_string))?;
+    if select.projection.iter().any(|item| match item {
+        SelectItem::QualifiedWildcard(SelectItemQualifiedWildcardKind::ObjectName(prefix), _) => {
+            prefix.to_string() != qualifier
+        }
+        SelectItem::QualifiedWildcard(_, _) => true,
+        SelectItem::UnnamedExpr(Expr::CompoundIdentifier(parts)) => {
+            parts[0].to_string() != qualifier
+        }
+        _ => false,
+    }) {
+        return None;
+    }
+    let names: Vec<String> = name
+        .0
+        .iter()
+        .map(|part| match part {
+            ObjectNamePart::Identifier(id) => {
+                Some(if kind == DbType::Postgresql && id.quote_style.is_none() {
+                    id.value.to_lowercase()
+                } else {
+                    id.value.clone()
+                })
+            }
+            _ => None,
+        })
+        .collect::<Option<_>>()?;
+    if names.is_empty() || names.len() > 2 {
+        return None;
+    }
+    // 未显式设置 PG search_path 时默认还可能优先解析同名用户 schema。
+    if kind == DbType::Postgresql && names.len() == 1 && scope.schema.is_empty() {
+        return None;
+    }
+    let mut database = if scope.database.is_empty() {
+        default_database.to_owned()
+    } else {
+        scope.database.clone()
+    };
+    let mut schema = if kind == DbType::Postgresql {
+        if scope.schema.is_empty() {
+            "public".into()
+        } else {
+            scope.schema.clone()
+        }
+    } else {
+        database.clone()
+    };
+    if names.len() == 2 {
+        schema = names[0].clone();
+        if matches!(kind, DbType::Mysql | DbType::Polardb) {
+            database = schema.clone();
+        }
+        if kind == DbType::Sqlite && schema != "main" {
+            return None;
+        }
+    }
+    Some(super::models::ResultEditTarget {
+        conn_id: conn_id.into(),
+        database,
+        schema,
+        table: names.last()?.clone(),
+    })
+}
+
+#[cfg(test)]
+mod edit_target_tests {
+    use super::*;
+    #[test]
+    fn preserves_qualified_targets_and_rejects_unknown_search_path() {
+        let scope = super::super::models::ExecutionScope {
+            database: "app".into(),
+            schema: String::new(),
+        };
+        assert!(edit_target(DbType::Postgresql, "SELECT * FROM users", "c", &scope, "").is_none());
+        let pg = edit_target(
+            DbType::Postgresql,
+            r#"SELECT u.* FROM "Custom"."Users" u"#,
+            "c",
+            &scope,
+            "",
+        )
+        .unwrap();
+        assert_eq!((pg.schema.as_str(), pg.table.as_str()), ("Custom", "Users"));
+        let mysql = edit_target(
+            DbType::Mysql,
+            "SELECT * FROM other_db.users",
+            "c",
+            &scope,
+            "",
+        )
+        .unwrap();
+        assert_eq!(
+            (mysql.database.as_str(), mysql.schema.as_str()),
+            ("other_db", "other_db")
+        );
+        assert!(edit_target(DbType::Sqlite, "SELECT * FROM temp.users", "c", &scope, "").is_none());
+        assert!(edit_target(
+            DbType::Postgresql,
+            "SELECT * FROM public.users AS u(name, id)",
+            "c",
+            &scope,
+            ""
+        )
+        .is_none());
+    }
+    #[test]
+    fn protects_against_session_local_sources() {
+        for sql in [
+            "CREATE TEMP TABLE users(id INT)",
+            "CALL build_temp()",
+            "SELECT build_temp()",
+            "DO 'BEGIN NULL; END'",
+        ] {
+            assert!(may_change_resolution(DbType::Postgresql, sql), "{sql}");
+        }
+        assert!(!may_change_resolution(
+            DbType::Postgresql,
+            "SELECT * FROM users WHERE name='TEMP' /* CALL */"
+        ));
+    }
+    #[test]
+    fn accepts_direct_projection_and_rejects_ambiguous_sources() {
+        let scope = super::super::models::ExecutionScope {
+            database: "app".into(),
+            schema: "public".into(),
+        };
+        let target = edit_target(
+            DbType::Postgresql,
+            "SELECT id, name FROM custom.Items WHERE id > 1",
+            "c",
+            &scope,
+            "",
+        )
+        .unwrap();
+        assert_eq!(
+            (target.schema.as_str(), target.table.as_str()),
+            ("custom", "items")
+        );
+        for sql in [
+            "SELECT a.* FROM a JOIN b ON a.id=b.id",
+            "SELECT count(*) FROM a",
+            "SELECT DISTINCT * FROM a",
+            "SELECT * FROM a GROUP BY id",
+            "WITH a AS (SELECT * FROM b) SELECT * FROM a",
+            "SELECT * FROM a; SELECT * FROM b",
+            "SELECT id AS name FROM a",
+            "SELECT record.* FROM a",
+            "SELECT record.id FROM a",
+            "SELECT * FROM a UNION SELECT * FROM b",
+        ] {
+            assert!(
+                edit_target(DbType::Postgresql, sql, "c", &scope, "").is_none(),
+                "{sql}"
+            );
+        }
+    }
+}
+
 /// tokenizer 位置按顺序转换为字节偏移，每个字符最多扫描一次。
 fn offset(sql: &str, location: Location, cursor: &mut (usize, u64, u64)) -> usize {
     while cursor.0 < sql.len() && (cursor.1, cursor.2) < (location.line, location.column) {

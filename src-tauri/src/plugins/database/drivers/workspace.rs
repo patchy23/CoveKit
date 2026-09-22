@@ -28,6 +28,8 @@ pub(crate) enum WorkspaceConnection {
 
 /// 会话作用域在创建时固定；事务中不能更改目标。
 pub struct WorkspaceSession {
+    /// 临时对象或动态执行可能遮蔽持久表，禁止跨会话网格写回。
+    pub(crate) ambiguous_edit_source: bool,
     /// 创建时固定的执行目标。
     pub(crate) scope: ExecutionScope,
     /// 本工作页独占的真实连接。
@@ -130,6 +132,7 @@ pub(crate) async fn open(
         }
     };
     Ok(WorkspaceSession {
+        ambiguous_edit_source: false,
         scope,
         connection,
         transaction: false,

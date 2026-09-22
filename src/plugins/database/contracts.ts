@@ -108,6 +108,7 @@ export interface ExecutionPreview {
 
 /** SQL 执行结果 */
 export interface QueryResult {
+  editTarget?: TableTarget | null
   statementIndex?: number | null
   transactionActive?: boolean
   values?: DbValue[][]

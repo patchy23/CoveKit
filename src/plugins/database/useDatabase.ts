@@ -142,6 +142,7 @@ export function useDatabase() {
     // 查询（workspace 域）
     queryState: ws.queryState,
     queryStates: ws.queryStates,
+    patchTabQueryState: ws.patchTabQueryState,
     patchQueryState: ws.patchQueryState,
     runQuery: ws.runQuery,
     cancelQuery: ws.cancelQuery,

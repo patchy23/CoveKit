@@ -8,6 +8,7 @@ import { fileIpc, queryIpc } from './ipc'
 import { useToolLifecycle } from '@/core/lifecycle'
 import { nextRequestId } from './requestId'
 import { rowsToTsv } from './resultText'
+import { hasGridChanges } from './workspace/useQueryWorkspace'
 import { splitSqlStatements } from './sqlStatementRanges'
 import {
   UiButton,
@@ -71,7 +72,9 @@ async function changeConnection(value: string) {
     !connection ||
     scopeChanging.value ||
     queryState.value.status === 'running' ||
-    queryState.value.transactionActive
+    queryState.value.transactionActive ||
+    hasGridChanges(queryState.value) ||
+    queryState.value.gridSaving
   )
     return
   scopeChanging.value = true
@@ -430,7 +433,13 @@ async function saveSqlFile() {
       <UiSelect
         :model-value="activeTabContext.connectionId"
         :options="db.connectionOptions.value"
-        :disabled="scopeChanging || queryState.status === 'running' || queryState.transactionActive"
+        :disabled="
+          scopeChanging ||
+          queryState.status === 'running' ||
+          queryState.transactionActive ||
+          hasGridChanges(queryState) ||
+          queryState.gridSaving
+        "
         size="xs"
         class="min-w-0 flex-1 basis-[140px] max-w-[180px]"
         title="当前连接"
@@ -440,7 +449,13 @@ async function saveSqlFile() {
         v-if="db.databaseOptions.value.length"
         :model-value="activeTabContext.database"
         :options="db.databaseOptions.value"
-        :disabled="scopeChanging || queryState.status === 'running' || queryState.transactionActive"
+        :disabled="
+          scopeChanging ||
+          queryState.status === 'running' ||
+          queryState.transactionActive ||
+          hasGridChanges(queryState) ||
+          queryState.gridSaving
+        "
         size="xs"
         class="min-w-0 flex-1 basis-[110px] max-w-[160px]"
         title="数据库"
@@ -450,7 +465,13 @@ async function saveSqlFile() {
         v-if="db.schemaOptions.value.length"
         :model-value="activeTabContext.schema"
         :options="db.schemaOptions.value"
-        :disabled="scopeChanging || queryState.status === 'running' || queryState.transactionActive"
+        :disabled="
+          scopeChanging ||
+          queryState.status === 'running' ||
+          queryState.transactionActive ||
+          hasGridChanges(queryState) ||
+          queryState.gridSaving
+        "
         size="xs"
         class="min-w-0 flex-1 basis-[90px] max-w-[140px]"
         title="Schema"

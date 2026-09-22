@@ -1,15 +1,14 @@
 <script setup lang="ts">
 /**
- * 数据浏览页签：只读表格浏览（后端分页）+ 刷新 + 查看结构
+ * 数据浏览页签：可暂存修改的表格浏览（后端分页）+ 刷新 + 查看结构
  */
-import { computed, ref } from 'vue'
-import CellValueDialog from './CellValueDialog.vue'
-import type { DbValue } from './contracts'
+import { computed } from 'vue'
+import EditableResultGrid from './EditableResultGrid.vue'
+import { hasGridChanges } from './workspace/useQueryWorkspace'
 import TableTools from './TableTools.vue'
 import {
   UiBadge,
   UiButton,
-  UiDataGrid,
   UiEmptyState,
   UiIcon,
   UiIconButton,
@@ -49,18 +48,6 @@ function toStructure() {
   if (!ctx.table) return
   db.openStructureTab(ctx.connectionId, ctx.table, ctx.database, ctx.schema)
 }
-const cellDetail = ref<{ name: string; value: DbValue } | null>(null)
-function showCell(event: { row: Record<string, unknown>; column: { key: string; label: string } }) {
-  const index = Number(event.column.key.slice(1))
-  const row = Number(event.row.__row)
-  cellDetail.value = {
-    name: event.column.label,
-    value: state.value.values[row]?.[index] ?? {
-      kind: 'text',
-      value: String(event.row[event.column.key] ?? ''),
-    },
-  }
-}
 </script>
 
 <template>
@@ -68,7 +55,12 @@ function showCell(event: { row: Record<string, unknown>; column: { key: string; 
     <UiBadge tone="info" size="xs">{{
       db.activeTabConnection.value?.readonly ? '只读' : '表数据'
     }}</UiBadge>
-    <UiIconButton label="刷新" size="xs" :disabled="state.status === 'running'" @click="refresh">
+    <UiIconButton
+      label="刷新"
+      size="xs"
+      :disabled="state.status === 'running' || hasGridChanges(state) || state.gridSaving"
+      @click="refresh"
+    >
       <UiIcon name="refresh" :size="12" />
     </UiIconButton>
     <UiIconButton label="查看结构" size="xs" @click="toStructure">
@@ -85,7 +77,7 @@ function showCell(event: { row: Record<string, unknown>; column: { key: string; 
     >
   </UiToolbar>
 
-  <TableTools :db="db" />
+  <div :inert="hasGridChanges(state) || state.gridSaving"><TableTools :db="db" /></div>
   <div
     v-if="state.status === 'running'"
     role="status"
@@ -97,17 +89,7 @@ function showCell(event: { row: Record<string, unknown>; column: { key: string; 
     <UiButton size="sm" variant="secondary" @click="refresh">重试</UiButton>
   </UiEmptyState>
 
-  <UiDataGrid
-    v-else
-    :model-value="state.selectedRow"
-    class="min-h-0 flex-1"
-    :columns="db.tableColumns.value"
-    :rows="gridRows"
-    row-key="__row"
-    height="100%"
-    @cell="showCell"
-    @update:model-value="(v) => db.patchQueryState({ selectedRow: String(v) })"
-  />
+  <EditableResultGrid v-else :db="db" :state="state" class="min-h-0 flex-1" :rows="gridRows" />
   <UiToolbar density="compact" class="border-t border-border px-[6px] dark:border-border-dark">
     <span class="text-caption text-text-muted dark:text-text-muted-dark">
       {{
@@ -126,5 +108,4 @@ function showCell(event: { row: Record<string, unknown>; column: { key: string; 
         @update:model-value="db.setPage"
     /></template>
   </UiToolbar>
-  <CellValueDialog :detail="cellDetail" @close="cellDetail = null" />
 </template>

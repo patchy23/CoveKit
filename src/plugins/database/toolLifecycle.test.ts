@@ -79,3 +79,21 @@ describe('数据库工具关闭策略', () => {
     await expect(spec().dispose()).rejects.toThrow(/本地 MySQL：连接已被服务端关闭/)
   })
 })
+
+it('有结果草稿或正在提交事务时阻止工具关闭', async () => {
+  const queryStates = ref({
+    q: {
+      status: 'success',
+      gridSaving: false,
+      gridEdits: { '0': { name: { kind: 'text' as const, value: '修改' } } },
+    },
+  })
+  const flushDrafts = vi.fn().mockResolvedValue(undefined)
+  useDatabaseToolLifecycle({ queryStates, flushDrafts })
+  const prepare = useToolLifecycle.mock.calls.at(-1)![1].prepare
+  expect(await prepare()).toContain('未保存修改')
+  queryStates.value.q.gridEdits = {} as typeof queryStates.value.q.gridEdits
+  queryStates.value.q.gridSaving = true
+  expect(await prepare()).toContain('正在提交')
+  expect(flushDrafts).not.toHaveBeenCalled()
+})

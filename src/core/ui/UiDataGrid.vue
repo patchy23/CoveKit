@@ -35,6 +35,11 @@ const props = withDefaults(
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'cell', payload: { row: Record<string, unknown>; column: UiDataGridColumn }): void
+  (
+    event: 'cell-contextmenu',
+    payload: { row: Record<string, unknown>; column: UiDataGridColumn },
+    mouse: MouseEvent
+  ): void
 }>()
 
 const widths = ref<Record<string, number>>({})
@@ -99,6 +104,7 @@ function rowKeyOf(row: Record<string, unknown>, rowIndex: number): string {
 
 /** 行键盘选中（Enter/空格），与点击同语义 */
 function onRowKeydown(event: KeyboardEvent, row: Record<string, unknown>, rowIndex: number) {
+  if (event.target !== event.currentTarget) return
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.preventDefault()
   emit('update:modelValue', rowKeyOf(row, rowIndex))
@@ -182,7 +188,11 @@ onBeforeUnmount(stop)
                     : '',
                 ]"
                 :style="{ width: `${widths[column.key]}px`, minWidth: `${widths[column.key]}px` }"
+                tabindex="0"
                 @dblclick="emit('cell', { row, column })"
+                @keydown.enter.self.stop.prevent="emit('cell', { row, column })"
+                @keydown.f2.self.stop.prevent="emit('cell', { row, column })"
+                @contextmenu="emit('cell-contextmenu', { row, column }, $event)"
               >
                 <slot
                   :name="`cell-${column.key}`"
@@ -190,7 +200,9 @@ onBeforeUnmount(stop)
                   :column="column"
                   :value="row[column.key]"
                 >
-                  {{ display(row[column.key]) }}
+                  <slot name="cell" :row="row" :column="column" :value="row[column.key]">
+                    {{ display(row[column.key]) }}
+                  </slot>
                 </slot>
               </td>
             </UiTooltip>

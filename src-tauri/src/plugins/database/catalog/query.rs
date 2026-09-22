@@ -226,6 +226,7 @@ pub async fn dbc_execute(
         return Err("DB_CONNECTION_SUPERSEDED: 连接已断开或重新配置，SQL 未执行".into());
     }
     let session = slot.as_mut().ok_or("工作会话初始化失败")?;
+    session.ambiguous_edit_source |= sql_analysis::may_change_resolution(entry.config.db_type, &sql);
     match &session.connection {
         WorkspaceConnection::Mysql(conn, pool) => {
             handle.mysql_thread_id = Some(conn.id());
@@ -337,6 +338,9 @@ pub async fn dbc_execute(
             }
         }
         result.transaction_active = session.transaction;
+        if result.ok && result.is_query && result.statements.is_empty() && !session.transaction && !entry.config.readonly && !session.ambiguous_edit_source {
+            result.edit_target = sql_analysis::edit_target(entry.config.db_type, &sql, &conn_id, &session.scope, &entry.config.database);
+        }
         result.duration_ms = started.elapsed().as_millis() as u64;
         result
     });

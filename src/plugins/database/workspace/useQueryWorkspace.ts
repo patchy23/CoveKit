@@ -14,6 +14,7 @@ import type { UiDataGridColumn, UiTabItem } from '@/core/ui'
 import type { V2QueryStatus, V2Tab, V2TabKind } from '../useDatabaseMeta'
 import type {
   QueryDraft,
+  TableTarget,
   DbValue,
   TableOptions,
   QueryResult,
@@ -29,6 +30,12 @@ import { nextRequestId } from '../requestId'
 
 /** 查询页签状态（真实后端字段） */
 export interface QueryState {
+  /** 网格修改留在内存，手动保存时才提交事务。 */
+  gridEdits?: Record<string, Record<string, DbValue>>
+  gridSaving?: boolean
+  gridError?: string
+  gridMessage?: string
+  editTarget?: TableTarget | null
   selection?: { from: number; to: number }
   transactionActive?: boolean
   tableOptions?: TableOptions
@@ -66,6 +73,11 @@ export interface QueryState {
   savedId?: number
   /** 保存用的标题（首次保存确认后写入；重命名别名优先） */
   savedTitle?: string
+}
+
+/** 网格草稿独立于 SQL 文档脏标记。 */
+export function hasGridChanges(state: Pick<QueryState, 'gridEdits'>): boolean {
+  return Object.values(state.gridEdits ?? {}).some((row) => Object.keys(row).length > 0)
 }
 
 /** 提取待执行 SQL：有选区取选区文本；无选区取光标所在整行（不含行尾换行） */
@@ -153,6 +165,11 @@ export interface QueryWorkspacePorts {
 }
 
 export function useQueryWorkspace(ports: QueryWorkspacePorts) {
+  function pendingGrid(state: QueryState) {
+    if (!state.gridSaving && !hasGridChanges(state)) return false
+    ports.showError('结果有未保存修改，请先保存并提交或放弃修改')
+    return true
+  }
   // ── 页签 ────────────────────────────────────────────────────────────────
   const tabs = ref<V2Tab[]>([])
   const activeTabId = ref('')
@@ -202,7 +219,13 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       if (total <= 64 * 1024 * 1024) break
       if (id === tabId || id === activeTabId.value) continue
       const previous = queryStates.value[id]
-      if (!previous || previous.status === 'running') continue
+      if (
+        !previous ||
+        previous.status === 'running' ||
+        hasGridChanges(previous) ||
+        previous.gridSaving
+      )
+        continue
       Object.assign(previous, {
         rows: [],
         values: [],
@@ -338,10 +361,12 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     })
   }
   function selectStatement(index: number) {
+    if (pendingGrid(queryState.value)) return
     const result = queryState.value.statements[index]
     if (!result) return
     patchQueryState({
       activeStatement: index,
+      editTarget: result.editTarget,
       columns: result.columns,
       rows: result.rows,
       values: result.values ?? [],
@@ -515,15 +540,22 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
 
   function closeTab(id: string, force = false) {
     const source = queryStates.value[id]
+    if (source?.gridSaving) {
+      ports.showError('数据正在提交，请等待完成')
+      return
+    }
     if (
       !force &&
       source &&
-      (source.dirty || source.transactionActive || source.status === 'running')
+      (source.dirty ||
+        hasGridChanges(source) ||
+        source.transactionActive ||
+        source.status === 'running')
     ) {
       closeConfirmation.value = {
         id,
         label: tabs.value.find((tab) => tab.id === id)?.label ?? '页签',
-        dirty: source.dirty,
+        dirty: source.dirty || hasGridChanges(source),
         transaction: !!source.transactionActive,
         running: source.status === 'running',
       }
@@ -613,6 +645,11 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     Object.assign(state, patch)
   }
 
+  /** 按发起页签更新结果，异步保存完成后不抢占当前页。 */
+  function patchTabQueryState(id: string, patch: Partial<QueryState>) {
+    if (queryStates.value[id]) Object.assign(queryStates.value[id], patch)
+  }
+
   function patchQueryState(patch: Partial<QueryState>) {
     const id = activeTabId.value
     queryStates.value[id] ??= makeQueryState()
@@ -627,7 +664,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     const tabId = activeTabId.value
     queryStates.value[tabId] ??= makeQueryState()
     const state = queryStates.value[tabId]
-    if (state.status === 'running') return
+    if (state.status === 'running' || pendingGrid(state)) return
     const conn = activeTabConnection.value
     if (!conn || conn.status !== 'online') {
       patchQueryState({
@@ -697,6 +734,10 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         preview.confirmationToken ?? undefined
       )
       if (inFlight.get(tabId) !== requestId || !tabs.value.some((tab) => tab.id === tabId)) return
+      state.editTarget = result.editTarget
+      state.querySql = sql
+      state.gridError = ''
+      state.gridMessage = ''
       state.transactionActive = result.transactionActive ?? false
       state.statements = result.statements ?? []
       state.activeStatement = Math.max(0, state.statements.length - 1)
@@ -800,7 +841,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     queryStates.value[tabId] ??= makeQueryState()
     // 初始化后从响应式容器重新取值，避免首次异步回填写入原始对象而不触发渲染。
     const state = queryStates.value[tabId]
-    if (!ctx) return
+    if (!ctx || pendingGrid(state)) return
     const table = ctx.table ?? tabTableName(tabId)
     if (!table) return
     const conn = ports.connections.value.find((c) => c.id === ctx.connectionId)
@@ -819,6 +860,14 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         state.tableOptions
       )
       if (!tabContexts.value[tabId] || loadGeneration.get(tabId) !== generation) return
+      state.editTarget = {
+        connId: ctx.connectionId,
+        database: ctx.database,
+        schema: ipcScopeArg(conn, ctx),
+        table,
+      }
+      state.gridError = ''
+      state.gridMessage = ''
       state.querySql = page.querySql
       state.queryParams = page.queryParams
       state.hasMore = page.hasMore
@@ -845,6 +894,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
 
   function setPage(nextPage: number) {
     const state = queryState.value
+    if (activeTabKind.value === 'data' && pendingGrid(state)) return
     state.page = Math.max(1, nextPage)
     if (activeTabKind.value === 'data') {
       void loadTableData(activeTabId.value)
@@ -1090,6 +1140,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     renameActiveTab,
     saveQueryToDisk,
     // 查询命令
+    patchTabQueryState,
     patchQueryState,
     runQuery,
     cancelQuery,

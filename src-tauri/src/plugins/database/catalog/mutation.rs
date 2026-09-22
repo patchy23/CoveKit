@@ -158,6 +158,15 @@ pub async fn dbc_table_apply(
         if !state.is_current(&entry)? {
             return Err("连接已变化，写入未执行".into());
         }
+        if matches!(entry.config.db_type, DbType::Mysql | DbType::Polardb) {
+            let engine = task.query(&mut conn,
+                "SELECT ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+                &[DbValue::text("text", schema.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| entry.config.database.clone())), DbValue::text("text", table.clone())],
+            ).await?;
+            if !engine.rows.first().and_then(|row| row.first()).is_some_and(|name| name.eq_ignore_ascii_case("InnoDB")) {
+                return Err("当前表不是 InnoDB 事务表，不能保证批量回滚；请使用 SQL 明确处理".into());
+            }
+        }
         task.query(&mut conn, "BEGIN", &[]).await?;
         let started = std::time::Instant::now();
         let result = async {

@@ -2,7 +2,6 @@
 import {
   UiAlert,
   UiButton,
-  UiDataGrid,
   UiIcon,
   UiIconButton,
   UiInput,
@@ -12,12 +11,10 @@ import {
   UiTabs,
   UiToolbar,
 } from '@/core/ui'
-import { ref } from 'vue'
-import CellValueDialog from './CellValueDialog.vue'
-import type { DbValue } from './contracts'
+import EditableResultGrid from './EditableResultGrid.vue'
 import type { QueryState, useDatabase } from './useDatabase'
 
-const props = defineProps<{
+defineProps<{
   db: ReturnType<typeof useDatabase>
   queryState: QueryState
   rows: Array<{ __row: string } & Record<string, string | null>>
@@ -28,16 +25,6 @@ const emit = defineEmits<{
   export: []
   patch: [value: Partial<QueryState>]
 }>()
-const cellDetail = ref<{ name: string; value: DbValue } | null>(null)
-function showCell(event: { row: Record<string, unknown>; column: { key: string; label: string } }) {
-  const index = Number(event.column.key.slice(1))
-  const row = Number(event.row.__row)
-  const value = props.queryState.values[row]?.[index] ?? {
-    kind: 'text',
-    value: String(event.row[event.column.key] ?? ''),
-  }
-  cellDetail.value = { name: event.column.label, value }
-}
 </script>
 
 <template>
@@ -122,17 +109,7 @@ function showCell(event: { row: Record<string, unknown>; column: { key: string; 
               : `返回 ${queryState.total} 行，耗时 ${queryState.durationMs} ms。`
       }}
     </UiAlert>
-    <UiDataGrid
-      v-else
-      :model-value="queryState.selectedRow"
-      class="min-h-0 flex-1"
-      :columns="db.tableColumns.value"
-      :rows="rows"
-      row-key="__row"
-      height="100%"
-      @update:model-value="emit('patch', { selectedRow: String($event) })"
-      @cell="showCell"
-    >
+    <EditableResultGrid v-else :db="db" :state="queryState" class="min-h-0 flex-1" :rows="rows">
       <template #empty>
         <span>{{ queryState.filter ? '无匹配结果' : '当前查询未返回数据' }}</span>
         <UiButton
@@ -143,8 +120,7 @@ function showCell(event: { row: Record<string, unknown>; column: { key: string; 
           >清除过滤</UiButton
         >
       </template>
-    </UiDataGrid>
-    <CellValueDialog :detail="cellDetail" @close="cellDetail = null" />
+    </EditableResultGrid>
     <UiToolbar density="compact" class="border-t border-border px-[6px] dark:border-border-dark">
       <UiInput
         :model-value="queryState.filter"

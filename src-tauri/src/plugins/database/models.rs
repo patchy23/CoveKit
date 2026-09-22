@@ -242,6 +242,8 @@ pub struct ExecutionScope {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryResult {
+    /// 可证明为单表直接投影的结果来源；仍须校验完整列和主键才能编辑。
+    pub edit_target: Option<ResultEditTarget>,
     /// 多结果集按原 SQL 语句归属，不把 CALL 的第二结果误当成后续 SQL。
     pub statement_index: Option<usize>,
     /// 当前工作页是否处于显式事务；错误后的事务仍需回滚。
@@ -268,6 +270,20 @@ pub struct QueryResult {
     pub truncated: bool,
     /// 错误信息（ok=false 时）
     pub error: Option<String>,
+}
+
+/// 查询执行时固定的编辑目标，不从可被继续修改的编辑器正文推断。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResultEditTarget {
+    /// 原连接标识。
+    pub conn_id: String,
+    /// 执行时数据库。
+    pub database: String,
+    /// 执行时 schema，MySQL 为库名。
+    pub schema: String,
+    /// 单一来源表。
+    pub table: String,
 }
 
 /// 表数据分页结果（数据浏览页签）

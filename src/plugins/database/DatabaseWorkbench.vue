@@ -353,7 +353,7 @@ onMounted(() => {
   >
     <p class="text-body-sm">{{ db.closeConfirmation.value?.label }}</p>
     <p v-if="db.closeConfirmation.value?.dirty" class="mt-sm text-caption">
-      未保存的修改会丢失，请先保存需要保留的 SQL。
+      未保存的 SQL 或结果表格修改会丢失，请先保存需要保留的内容。
     </p>
     <p v-if="db.closeConfirmation.value?.transaction" class="mt-sm text-caption">
       此页签有活动事务，关闭会话将回滚未提交的修改。
