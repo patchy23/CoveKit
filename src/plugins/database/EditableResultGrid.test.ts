@@ -63,11 +63,11 @@ function button(wrapper: ReturnType<typeof mount>, name: string) {
   return wrapper.findAll('button').find((button) => button.text() === name)!
 }
 describe('结果单元格编辑事务', () => {
-  it('双击就地编辑，不打开详情；Enter 不写库，手动保存保留精确主键和原值', async () => {
+  it('双击就地编辑，失焦不写库，手动保存保留精确主键和原值', async () => {
     const { wrapper, state } = setup()
     await edit(wrapper, '修改值')
     expect(mocks.apply).not.toHaveBeenCalled()
-    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    await wrapper.get('input').trigger('blur')
     expect(wrapper.find('input').exists()).toBe(false)
     expect(state.gridEdits?.[0].name.value).toBe('修改值')
     await button(wrapper, '保存并提交').trigger('click')
@@ -90,14 +90,11 @@ describe('结果单元格编辑事务', () => {
     expect(wrapper.text()).toContain('已提交 1 行')
     expect(wrapper.text()).toContain('修改值')
   })
-  it('Esc 恢复本次编辑；空串不等于 NULL', async () => {
+  it('空串不等于 NULL，通过按钮设置空值', async () => {
     const { wrapper, state } = setup()
-    await edit(wrapper, '临时值')
-    await wrapper.get('input').trigger('keydown', { key: 'Escape' })
-    expect(state.gridEdits).toEqual({})
     await edit(wrapper, '')
     expect(state.gridEdits?.[0].name).toEqual({ kind: 'text', value: '' })
-    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    await wrapper.get('input').trigger('blur')
     await button(wrapper, '设为 NULL').trigger('click')
     expect(state.gridEdits?.[0].name).toEqual({ kind: 'null', value: null })
   })
@@ -105,7 +102,7 @@ describe('结果单元格编辑事务', () => {
     const { wrapper, state } = setup()
     mocks.apply.mockRejectedValueOnce(new Error('原值冲突，已回滚'))
     await edit(wrapper, '重试内容')
-    await wrapper.get('input').trigger('keydown', { key: 'Enter' })
+    await wrapper.get('input').trigger('blur')
     await button(wrapper, '保存并提交').trigger('click')
     await flushPromises()
     expect(state.gridEdits?.[0].name.value).toBe('重试内容')

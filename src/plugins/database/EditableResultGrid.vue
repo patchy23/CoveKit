@@ -40,7 +40,6 @@ const checking = ref(false)
 const selected = ref<{ row: number; column: number } | null>(null)
 const editing = ref<{ row: number; column: number } | null>(null)
 const input = ref<InstanceType<typeof UiInput> | null>(null)
-let beforeEdit: DbValue | undefined
 const detail = ref<{ name: string; value: DbValue } | null>(null)
 const menu = ref<{ x: number; y: number } | null>(null)
 const discardOpen = ref(false)
@@ -147,7 +146,6 @@ async function start(event?: CellEvent) {
     patch({ gridError: '单元格超过 1 MiB，请使用 SQL 修改' })
     return
   }
-  beforeEdit = props.state.gridEdits?.[row]?.[props.state.columns[column]]
   editing.value = { row, column }
   await nextTick()
   input.value?.focus()
@@ -186,13 +184,6 @@ function change(text: string | number) {
             ? 'boolean'
             : 'text'
   put(row, column, { kind, value: String(text) })
-}
-function cancelCell() {
-  if (editing.value) {
-    const { row, column } = editing.value
-    put(row, column, beforeEdit ?? props.state.values[row][column])
-  }
-  editing.value = null
 }
 function setNull() {
   if (reason.value || !selected.value) return
@@ -302,7 +293,7 @@ function discard() {
           >{{ connection?.label }} / {{ target.schema || target.database }}.{{ target.table }}</span
         >
         <span class="text-caption text-text-muted">{{
-          pending ? `${count} 行待保存` : '双击或 F2 编辑'
+          pending ? `${count} 行待保存` : '双击编辑'
         }}</span>
         <UiButton size="xs" variant="primary" :disabled="!pending || !!reason" @click="save">{{
           state.gridSaving ? '提交中…' : '保存并提交'
@@ -342,8 +333,6 @@ function discard() {
           :aria-label="`编辑 ${column.label}`"
           :model-value="valueAt(editing.row, editing.column).value ?? ''"
           @update:model-value="change"
-          @keydown.enter.stop.prevent="editing = null"
-          @keydown.esc.stop.prevent="cancelCell"
           @blur="editing = null"
           @dblclick.stop
         />

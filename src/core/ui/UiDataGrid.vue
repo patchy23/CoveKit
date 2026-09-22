@@ -188,10 +188,7 @@ onBeforeUnmount(stop)
                     : '',
                 ]"
                 :style="{ width: `${widths[column.key]}px`, minWidth: `${widths[column.key]}px` }"
-                tabindex="0"
                 @dblclick="emit('cell', { row, column })"
-                @keydown.enter.self.stop.prevent="emit('cell', { row, column })"
-                @keydown.f2.self.stop.prevent="emit('cell', { row, column })"
                 @contextmenu="emit('cell-contextmenu', { row, column }, $event)"
               >
                 <slot
