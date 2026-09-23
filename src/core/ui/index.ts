@@ -62,3 +62,6 @@ export type { EditorMode } from './editor/extensions'
 export type { UiContentKind, UiSize, UiTone } from './types'
 export { default as UiFloatingWindow } from './UiFloatingWindow.vue'
 export { default as UiLogViewer } from './UiLogViewer.vue'
+
+export { default as UiPopover } from './UiPopover.vue'
+export { default as UiBottomPanel } from './UiBottomPanel.vue'

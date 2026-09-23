@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AuxiliaryPanelShowcase from './AuxiliaryPanelShowcase.vue'
 import FoundationShowcase from './FoundationShowcase.vue'
 import FormShowcase from './FormShowcase.vue'
 import SelectionDialogShowcase from './SelectionDialogShowcase.vue'
@@ -26,6 +27,7 @@ import { UiBadge } from '@/core/ui'
     </header>
 
     <FoundationShowcase />
+    <AuxiliaryPanelShowcase />
     <FormShowcase />
     <SelectionDialogShowcase />
     <DataShowcase />
