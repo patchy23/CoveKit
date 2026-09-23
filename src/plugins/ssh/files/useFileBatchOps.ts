@@ -10,7 +10,7 @@ import type { RemoteFile } from '../contracts'
 /** 待确认的批量操作载荷 */
 export interface BatchConfirm {
   /** 操作类型 */
-  kind: 'download' | 'deleteRemote' | 'upload' | 'deleteLocal'
+  kind: 'deleteRemote' | 'upload' | 'deleteLocal'
   /** 目标项 */
   items: RemoteFile[]
   /** 弹窗标题 */
@@ -23,21 +23,12 @@ export interface BatchConfirm {
 
 export function useFileBatchOps(deps: {
   sessionId: () => string | undefined
-  startTransfer: (
-    kind: 'upload' | 'download',
-    localPath: string,
-    remotePath: string
-  ) => Promise<unknown>
   /** 远端当前目录（下载目的地/上传目标在弹窗里另行确认） */
   refreshRemote: () => void
   refreshLocal: () => void
   uploadLocalPaths: (paths: string[], remoteDir?: string) => Promise<void>
   /** 远端当前目录 */
   remoteDir: () => string
-  /** 本地当前目录 */
-  localDir: () => string
-  /** 本地文件是否目录探测（本地列表自带 isDir） */
-  localFiles: () => RemoteFile[]
 }) {
   const ui = useUiStore()
 
@@ -50,18 +41,6 @@ export function useFileBatchOps(deps: {
   function previewNames(items: RemoteFile[]): string {
     const names = items.slice(0, 5).map((f) => f.name)
     return names.join('、') + (items.length > 5 ? ` 等 ${items.length} 项` : '')
-  }
-
-  /* ── 远程批量下载：确认后直接落本地栏当前目录（不弹目录选择器） ── */
-  function requestBatchDownload(items: RemoteFile[]) {
-    if (!items.length) return
-    batchConfirm.value = {
-      kind: 'download',
-      items,
-      title: `批量下载 ${items.length} 项`,
-      message: `将把 ${previewNames(items)} 下载到本地目录 ${deps.localDir()}。`,
-      danger: false,
-    }
   }
 
   /* ── 远程批量删除：危险档确认 ── */
@@ -119,41 +98,12 @@ export function useFileBatchOps(deps: {
     batchRunning.value = true
     batchConfirm.value = null
     try {
-      if (job.kind === 'download') await execDownload(job.items)
-      else if (job.kind === 'deleteRemote') await execDeleteRemote(job.items)
+      if (job.kind === 'deleteRemote') await execDeleteRemote(job.items)
       else if (job.kind === 'upload') await execUpload(job.items)
       else await execDeleteLocal(job.items)
     } finally {
       batchRunning.value = false
     }
-  }
-
-  async function execDownload(items: RemoteFile[]) {
-    const connectionId = deps.sessionId()
-    if (!connectionId) return
-    // 落盘目录：本地栏当前目录（与单选下载一致，不弹选择器）
-    const targetDir = deps.localDir()
-    if (!targetDir) {
-      ui.toast('本地目录尚未就绪，无法下载')
-      return
-    }
-    const sep = targetDir.includes('\\') ? '\\' : '/'
-    let failed = 0
-    for (const item of items) {
-      const localPath = `${targetDir.replace(/[\\/]$/, '')}${sep}${item.name}`
-      try {
-        // 传输命令入队即返回（结果走传输队列面板），异常才算提交失败
-        await deps.startTransfer('download', localPath, item.path)
-      } catch {
-        failed++
-      }
-    }
-    ui.toast(
-      failed
-        ? `批量下载已提交到 ${targetDir}，${failed} 项失败`
-        : `已开始批量下载 ${items.length} 项 → ${targetDir}`
-    )
-    deps.refreshLocal()
   }
 
   async function execDeleteRemote(items: RemoteFile[]) {
@@ -194,7 +144,6 @@ export function useFileBatchOps(deps: {
   return {
     batchConfirm,
     batchRunning,
-    requestBatchDownload,
     requestBatchDeleteRemote,
     requestBatchUpload,
     requestBatchDeleteLocal,

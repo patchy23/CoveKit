@@ -35,5 +35,6 @@ const emit = defineEmits<{
       separator="/"
       @navigate="emit('navigate', $event)"
     />
+    <template #trailing><slot /></template>
   </UiToolbar>
 </template>

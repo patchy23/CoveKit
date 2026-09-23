@@ -36,6 +36,10 @@ pub async fn ssh_disconnect(
 ) -> Result<SshActionResult, String> {
     let log_started = std::time::Instant::now();
     let result: Result<SshActionResult, String> = async {
+        crate::plugins::ssh::archive::cancel_connection(
+            &app.state::<crate::plugins::ssh::archive::ArchiveState>(),
+            Some(&session_id),
+        );
         stop_session_tunnels(&tunnel_state, &session_id);
         // 先取走句柄并释放锁（std MutexGuard 非 Send，不能跨 await 持锁）
         let handle = {
@@ -219,6 +223,10 @@ pub async fn ssh_reconnect(
                 .lock()
                 .map_err(|e| e.to_string())?
                 .remove(&session_id);
+            crate::plugins::ssh::archive::cancel_connection(
+                &app.state::<crate::plugins::ssh::archive::ArchiveState>(),
+                Some(&session_id),
+            );
             crate::plugins::ssh::tunnel::stop_session_tunnels(&tunnel_state, &session_id);
             let _ = h
                 .session

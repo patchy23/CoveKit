@@ -4,7 +4,7 @@ import { ipc, onTransferProgress } from '../ipc'
 import type { FileTransferProgress } from '../contracts'
 export interface TransferItem {
   id: string
-  kind: 'upload' | 'download'
+  kind: 'upload' | 'download' | 'compress' | 'extract' | 'preview'
   label: string
   transferred: number
   total: number
@@ -19,7 +19,8 @@ export interface TransferItem {
 }
 export function useFileTransfer(
   currentConnectionId: () => string | undefined,
-  onUploadDone: () => void
+  onUploadDone: () => void,
+  onDownloadDone?: (path: string) => void
 ) {
   const transferStatus = ref(''),
     transfers = ref(new Map<string, TransferItem>())
@@ -56,7 +57,7 @@ export function useFileTransfer(
         old && now > old.updatedAt
           ? (Math.max(0, p.transferred - old.transferred) * 1000) / (now - old.updatedAt)
           : 0,
-      cancelling: old?.cancelling,
+      cancelling: p.done ? p.error === '已取消' : old?.cancelling,
     }
     const next = new Map(transfers.value)
     next.set(item.id, item)
@@ -65,6 +66,7 @@ export function useFileTransfer(
     transfers.value = next
     transferStatus.value = [...next.values()].some((v) => !v.done) ? '文件传输中' : ''
     if (p.done && !p.error && item.kind === 'upload') onUploadDone()
+    if (p.done && !p.error && item.kind === 'download') onDownloadDone?.(item.localPath)
   }
   async function startTransfer(
     kind: 'upload' | 'download',

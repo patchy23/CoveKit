@@ -3,7 +3,7 @@
 //! 目录项一律过 util::check_entry_name（防恶意服务端返回 `..` 等越界名字）。
 
 use std::path::Path;
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::plugins::ssh::conn::{get_sftp_session, invalidate_sftp_session, SshState};
 use crate::plugins::ssh::models::{FileListResult, RemoteFile, SshActionResult};
@@ -85,7 +85,7 @@ pub async fn ssh_file_list(
 }
 
 /// 本地目录列表（复用 FileListResult 结构；权限/所有者列不适用，填充占位值）
-/// path 为空 / "/" / "\\" 时返回驱动器列表——「此电脑」是 Shell 命名空间式的虚拟层，
+/// Windows 下空路径与裸分隔符返回驱动器列表；POSIX 根目录保持真实路径——「此电脑」是 Shell 命名空间式的虚拟层，
 /// 由文件系统抽象自身处理（WinSCP/FileZilla 本地侧同款），前端不做字符串手术。
 #[tauri::command(rename_all = "camelCase")]
 pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
@@ -193,6 +193,7 @@ fn local_drives_result() -> FileListResult {
 }
 
 /// 本地路径规范化（纯函数，可单测）：分隔符统一反斜杠；裸分隔符/空串 → 空（驱动器层）；盘符补尾斜杠
+#[cfg(windows)]
 fn normalize_local_path(path: &str) -> String {
     let mut normalized = path.replace('/', "\\");
     if normalized == "\\" {
@@ -205,7 +206,12 @@ fn normalize_local_path(path: &str) -> String {
     normalized
 }
 
-#[cfg(test)]
+#[cfg(not(windows))]
+fn normalize_local_path(path: &str) -> String {
+    path.to_string()
+}
+
+#[cfg(all(test, windows))]
 mod tests {
     use super::*;
 
@@ -292,5 +298,49 @@ pub fn ssh_local_rename(old_path: String, new_path: String) -> SshActionResult {
             ok: false,
             error: Some(format!("重命名失败 [{old_path}]: {e}")),
         },
+    }
+}
+
+/// 获取可读取的本机下载目录；用户指定目录失效时返回明确的回退说明。
+#[tauri::command(rename_all = "camelCase")]
+pub fn ssh_local_default_directory(
+    app: tauri::AppHandle,
+    preferred: Option<String>,
+) -> Result<(String, Option<String>), String> {
+    let preferred = preferred.filter(|p| !p.is_empty());
+    let mut candidates = Vec::new();
+    if let Some(path) = &preferred {
+        candidates.push(std::path::PathBuf::from(path));
+    }
+    for path in [
+        app.path().download_dir(),
+        app.path().document_dir(),
+        app.path().home_dir(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        candidates.push(path);
+    }
+    for path in candidates {
+        if std::fs::read_dir(&path).is_ok() {
+            let path = path.to_string_lossy().into_owned();
+            let warning = preferred
+                .as_ref()
+                .filter(|value| *value != &path)
+                .map(|_| "指定的下载目录不可用，已回退到系统目录".to_string());
+            return Ok((path, warning));
+        }
+    }
+    Err("无法找到可读取的本地下载目录，请手动选择目录".into())
+}
+
+#[cfg(all(test, not(windows)))]
+mod posix_tests {
+    use super::normalize_local_path;
+    #[test]
+    fn 保留根目录与合法反斜杠文件名() {
+        assert_eq!(normalize_local_path("/"), "/");
+        assert_eq!(normalize_local_path(r"/home/a\b"), r"/home/a\b");
     }
 }

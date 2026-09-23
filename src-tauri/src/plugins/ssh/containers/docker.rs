@@ -229,6 +229,7 @@ pub async fn ssh_docker_exec(
     state.0.lock().map_err(|e| e.to_string())?.insert(
         terminal_id.clone(),
         crate::plugins::ssh::terminal::TerminalHandle {
+            shell_pid: None,
             connection_id: connection_id.clone(),
             title: format!("docker:{container_id}"),
             cols,
@@ -249,9 +250,11 @@ pub async fn ssh_docker_exec(
         rx,
         cancel_rx,
         log,
+        None,
     );
 
     Ok(TerminalSession {
+        initial_data: String::new(),
         id: terminal_id,
         connection_id,
         title: format!("docker:{container_id}"),

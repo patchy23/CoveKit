@@ -4,6 +4,9 @@ import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { useUiStore } from '@/stores/ui'
 import type { RemoteFile } from '../contracts'
 import { useFileTransfer } from './useFileTransfer'
+import { createDownloadTargets } from './downloadTargets'
+import { join } from '@tauri-apps/api/path'
+import { ipc } from '../ipc'
 
 export function useSftpTransfers(options: {
   connectionId: () => string | undefined
@@ -12,15 +15,17 @@ export function useSftpTransfers(options: {
   selectedFile: Ref<RemoteFile | null>
   /** 下载落盘目录（本地栏当前目录） */
   localDir: () => string
+  preferredDirectory: () => string
   page: Ref<HTMLElement | null>
   refresh: () => void
+  downloadDone: (path: string) => void
 }) {
   const ui = useUiStore()
   const dragActive = ref(false)
   let disposed = false
   let stopDragDrop: (() => void) | null = null
   const { transferStatus, transfers, cancelTransfer, applyProgress, clearEnded, startTransfer } =
-    useFileTransfer(options.connectionId, options.refresh)
+    useFileTransfer(options.connectionId, options.refresh, options.downloadDone)
 
   async function uploadLocalPaths(
     localPaths: string[],
@@ -53,30 +58,28 @@ export function useSftpTransfers(options: {
     }
   }
 
-  /**
-   * 下载到本地栏当前目录（不弹保存框；目录由调用方注入）。
-   * 同名冲突保留失败记录，用户在面板确认重新传输后才覆盖。
-   */
-  async function download(file: RemoteFile | null = options.selectedFile.value) {
-    const connectionId = options.connectionId()
-    if (!file || !connectionId) {
-      if (!file) ui.toast('请先选择文件')
-      return
-    }
-    const dir = options.localDir()
-    if (!dir) {
-      ui.toast('本地目录尚未就绪，无法下载')
-      return
-    }
-    try {
-      const separator = dir.includes('\\') ? '\\' : '/'
-      const localPath = `${dir.replace(/[\\/]$/, '')}${separator}${file.name}`
-      await startTransfer('download', localPath, file.path)
-      ui.toast(`已开始下载：${file.name} → ${dir}`)
-    } catch (error) {
-      ui.toast(`下载失败：${error}`)
-    }
-  }
+  const targets = createDownloadTargets({
+    session: options.connectionId,
+    defaultDirectory: async () => {
+      const [path, warning] = await ipc.sshLocalDefaultDirectory(options.preferredDirectory())
+      if (warning) ui.toast(warning)
+      return path
+    },
+    chooseDirectory: (path) =>
+      dialogOpen({
+        directory: true,
+        multiple: false,
+        title: '下载到本地',
+        defaultPath: path || undefined,
+      }),
+    join,
+    submit: (localPath, remotePath) => startTransfer('download', localPath, remotePath),
+    notify: (message) => ui.toast(message),
+  })
+  const downloadSelection = targets.choose
+  const downloadToPane = (items: RemoteFile[]) => targets.direct(items, options.localDir())
+  const download = (file: RemoteFile | null = options.selectedFile.value) =>
+    targets.choose(file ? [file] : [])
 
   function dropIsInside(position: { x: number; y: number }) {
     const bounds = options.page.value?.getBoundingClientRect()
@@ -123,5 +126,7 @@ export function useSftpTransfers(options: {
     uploadLocalPaths,
     upload,
     download,
+    downloadSelection,
+    downloadToPane,
   }
 }

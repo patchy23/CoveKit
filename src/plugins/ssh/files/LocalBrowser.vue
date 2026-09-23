@@ -5,7 +5,7 @@ import { UiTooltip } from '@/core/ui'
  * LocalBrowser · 双栏文件管理的本地侧（目录浏览 + 选中）
  * ssh_local_list 读目录；双击进入目录；选中文件后由中间列按钮发起上传。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { RemoteFile } from '../contracts'
 import { ipc } from '../ipc'
 import { formatBytes, formatTime } from '../connection/useSsh'
@@ -28,42 +28,34 @@ const emit = defineEmits<{
   /** 行指针按下（双栏拖拽起点） */
   (e: 'rowPointerDown', mouse: PointerEvent, file: RemoteFile): void
   (e: 'error', message: string): void
+  (e: 'collapse'): void
 }>()
 
-/** 初始路径统一为反斜杠（设置里可能是 C:/ 正斜杠写法） */
-const initialDir = props.initialPath.replace(/\//g, '\\')
-const currentPath = ref(initialDir)
+const currentPath = ref(props.initialPath)
 const files = ref<RemoteFile[]>([])
 const loading = ref(false)
-
-/** 驱动器视图（currentPath 为 '' = 「此电脑」） */
+const parentPath = ref<string | null>(null)
 const atDrives = computed(() => currentPath.value === '')
-
-const parentPath = computed(() => {
-  if (atDrives.value) return null
-  const normalized = currentPath.value.replace(/[\\/]+$/, '')
-  // 盘符根（C:）再上级 = 驱动器视图
-  if (/^[A-Za-z]:$/.test(normalized)) return ''
-  const index = Math.max(normalized.lastIndexOf('\\'), normalized.lastIndexOf('/'))
-  if (index <= 0) return null
-  return normalized.slice(0, index)
-})
-
+let generation = 0
+onUnmounted(() => generation++)
 async function navigate(path: string) {
+  const request = ++generation
   loading.value = true
   try {
     // 规范化（分隔符/盘符尾斜杠/虚拟根）全在后端：''、'/'、'\' 都会得到驱动器列表
     const result = await ipc.sshLocalList(path)
+    if (request !== generation) return
     if (!result.ok) {
       emit('error', result.error ?? '读取目录失败')
       return
     }
+    parentPath.value = result.parentPath ?? null
     currentPath.value = result.path
     files.value = result.files
   } catch (error) {
-    emit('error', String(error))
+    if (request === generation) emit('error', String(error))
   } finally {
-    loading.value = false
+    if (request === generation) loading.value = false
   }
 }
 
@@ -81,7 +73,17 @@ function onRowClick(event: MouseEvent, file: RemoteFile) {
   emit('rowClick', event, file)
 }
 
-onMounted(() => void navigate(currentPath.value))
+onMounted(async () => {
+  const request = generation
+  try {
+    const [path, warning] = await ipc.sshLocalDefaultDirectory(props.initialPath)
+    if (request !== generation) return
+    if (warning) emit('error', warning)
+    await navigate(path)
+  } catch (error) {
+    if (request === generation) emit('error', String(error))
+  }
+})
 
 defineExpose({
   navigate,
@@ -98,6 +100,9 @@ defineExpose({
   <div class="flex min-h-0 flex-col border-l border-border dark:border-border-dark">
     <!-- 工具栏：上级 + 面包屑路径（与远程侧同款）+ 刷新 -->
     <UiToolbar bordered>
+      <UiIconButton size="xs" label="收起本地文件" @click="emit('collapse')"
+        ><UiIcon name="chevron-right" :size="14"
+      /></UiIconButton>
       <!-- 盘符根的上级是 ''（驱动器视图），禁用判定必须用 null 比较（'' 是假值会误禁用） -->
       <UiIconButton
         label="上级"

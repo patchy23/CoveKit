@@ -10,6 +10,7 @@ import {
   UiAlert,
   UiCheckbox,
   UiTable,
+  UiTableCell,
   UiScrollArea,
   UiToolbar,
 } from '@/core/ui'
@@ -228,28 +229,28 @@ const report = computed(() =>
           ><UiTable density="compact"
             ><thead>
               <tr>
-                <th>行</th>
-                <th>名称</th>
-                <th>主机</th>
-                <th>用户名</th>
-                <th>密码</th>
-                <th>校验 / 结果</th>
+                <UiTableCell as="th">行</UiTableCell>
+                <UiTableCell as="th">名称</UiTableCell>
+                <UiTableCell as="th">主机</UiTableCell>
+                <UiTableCell as="th">用户名</UiTableCell>
+                <UiTableCell as="th">密码</UiTableCell>
+                <UiTableCell as="th">校验 / 结果</UiTableCell>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in visibleRows" :key="row.row">
-                <td>{{ row.row }}</td>
-                <td>{{ row.name }}</td>
-                <td>{{ row.host }}:{{ row.port }}</td>
-                <td>{{ row.username }}</td>
-                <td>{{ row.password ? '已提供' : '空' }}</td>
-                <td class="select-text">
+                <UiTableCell>{{ row.row }}</UiTableCell>
+                <UiTableCell>{{ row.name }}</UiTableCell>
+                <UiTableCell>{{ row.host }}:{{ row.port }}</UiTableCell>
+                <UiTableCell>{{ row.username }}</UiTableCell>
+                <UiTableCell>{{ row.password ? '已提供' : '空' }}</UiTableCell>
+                <UiTableCell class="select-text">
                   {{
                     resultByRow.get(row.row)?.message ??
                     (row.error ||
                       (row.matches.length ? '已存在 ' + row.matches.length + ' 项' : '新增'))
                   }}
-                </td>
+                </UiTableCell>
               </tr>
             </tbody></UiTable
           ></UiScrollArea

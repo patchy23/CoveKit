@@ -8,6 +8,8 @@ use serde::Serialize;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TerminalSession {
+    /// 握手期间收到的终端输出，随打开响应补交给前端。
+    pub(crate) initial_data: String,
     /// 终端唯一 id（term-<毫秒时间戳>）
     pub(crate) id: String,
     /// 关联的连接 sessionId

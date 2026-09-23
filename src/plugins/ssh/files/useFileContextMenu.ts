@@ -5,6 +5,7 @@
 import { computed, ref } from 'vue'
 import type { UiContextMenuItem } from '@/core/ui'
 import type { RemoteFile } from '../contracts'
+import { archiveFormat } from './archiveFiles'
 import { canEditRemoteFile } from '../connection/useSsh'
 import { chmodMenuVisible, deleteMenuVisible } from '../connection/sshPolicy'
 
@@ -15,6 +16,9 @@ interface RemoteMenuActions {
   isSelected: (path: string) => boolean
   /** 右键未选中项时对齐为单选 */
   selectOnly: (file: RemoteFile) => void
+  compress?: (files: RemoteFile[]) => void
+  extract?: (file: RemoteFile) => void
+  preview?: (file: RemoteFile) => void
   refresh: () => void
   newFile: (dir: string) => void
   mkdir: (dir: string) => void
@@ -66,8 +70,9 @@ export function useFileContextMenu(actions: RemoteMenuActions) {
     if (state.multi) {
       const sel = actions.selection()
       const items: UiContextMenuItem[] = [
-        { label: `批量下载（${sel.length} 项）`, onClick: () => actions.batchDownload(sel) },
+        { label: `下载到本地（${sel.length} 项）`, onClick: () => actions.batchDownload(sel) },
       ]
+      if (actions.compress) items.push({ label: '压缩…', onClick: () => actions.compress?.(sel) })
       const deletable = sel.filter((f) => deleteMenuVisible(f.path))
       if (deletable.length === sel.length) {
         items.push({
@@ -80,8 +85,16 @@ export function useFileContextMenu(actions: RemoteMenuActions) {
     }
 
     // 单选：行操作 + 同目录新建（列表占满无空白处时仍可新建）
-    const items: UiContextMenuItem[] = [{ label: '下载', onClick: () => actions.download(target) }]
-    if (!target.isDir && canEditRemoteFile(target)) {
+    const items: UiContextMenuItem[] = [
+      { label: '下载到本地', onClick: () => actions.download(target) },
+    ]
+    if (actions.compress)
+      items.push({ label: '压缩…', onClick: () => actions.compress?.([target]) })
+    if (!target.isDir && archiveFormat(target.path)) {
+      items.push({ label: '预览压缩包', onClick: () => actions.preview?.(target) })
+      items.push({ label: '解压…', onClick: () => actions.extract?.(target) })
+    }
+    if (!target.isDir && !archiveFormat(target.path) && canEditRemoteFile(target)) {
       items.push({ label: '编辑', onClick: () => actions.edit(target) })
     }
     items.push({ label: '重命名', onClick: () => actions.rename(target) })

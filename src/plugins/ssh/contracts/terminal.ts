@@ -5,6 +5,7 @@
 /** 终端会话快照 */
 
 export interface TerminalSession {
+  initialData?: string
   /** 终端唯一 id（term-<毫秒时间戳>） */
 
   id: string

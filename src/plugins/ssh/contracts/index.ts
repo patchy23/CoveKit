@@ -1,3 +1,5 @@
+export * from './archive'
+import type { ArchiveRequest, ArchiveEvent } from './archive'
 //! SSH 契约 · 入口（重导出各域类型 + 命令清单 + 事件名 + 载荷/返回类型）
 
 export * from './common'
@@ -52,6 +54,8 @@ export interface CredentialOverride {
 }
 
 export const commands = {
+  sshArchiveRun: 'ssh_archive_run',
+  sshArchiveCancel: 'ssh_archive_cancel',
   sshServerCsvRead: 'ssh_server_csv_read',
   sshServerCsvWrite: 'ssh_server_csv_write',
   sshServerCsvExport: 'ssh_server_csv_export',
@@ -86,6 +90,7 @@ export const commands = {
   sshTunnelDelete: 'ssh_tunnel_delete',
 
   /* 终端 */
+  sshTerminalDirectory: 'ssh_terminal_directory',
   sshTerminalOpen: 'ssh_terminal_open',
   sshTerminalWrite: 'ssh_terminal_write',
   sshTerminalResize: 'ssh_terminal_resize',
@@ -100,6 +105,7 @@ export const commands = {
   sshFileDelete: 'ssh_file_delete',
   sshFileRename: 'ssh_file_rename',
   sshFileMkdir: 'ssh_file_mkdir',
+  sshLocalDefaultDirectory: 'ssh_local_default_directory',
   sshLocalList: 'ssh_local_list',
   sshLocalCreate: 'ssh_local_create',
   sshLocalDelete: 'ssh_local_delete',
@@ -143,6 +149,13 @@ export interface CredentialOverride {
 }
 
 export type Payloads = {
+  ssh_archive_run: {
+    connectionId: string
+    jobId: string
+    request: ArchiveRequest
+    progress: Channel<ArchiveEvent>
+  }
+  ssh_archive_cancel: { jobId: string }
   ssh_server_csv_read: { path: string }
   ssh_server_csv_write: { path: string; content: string }
   ssh_server_csv_export: { path: string; ids: string[]; includePassword: boolean }
@@ -189,6 +202,7 @@ export type Payloads = {
   ssh_tunnel_delete: { tunnelId: string }
 
   /* 终端 */
+  ssh_terminal_directory: { terminalId: string }
   ssh_terminal_open: { connectionId: string; cols: number; rows: number }
   ssh_terminal_write: { terminalId: string; data: string }
   ssh_terminal_resize: { terminalId: string; cols: number; rows: number }
@@ -206,6 +220,7 @@ export type Payloads = {
   ssh_file_delete: { connectionId: string; remotePath: string; recursive?: boolean }
   ssh_file_rename: { connectionId: string; oldPath: string; newPath: string }
   ssh_file_mkdir: { connectionId: string; path: string }
+  ssh_local_default_directory: { preferred?: string }
   ssh_local_list: { path: string }
   /** 本地新建文件/目录 */
   ssh_local_create: { path: string; isDir: boolean }
@@ -305,6 +320,8 @@ export type InvokePayloads = Omit<
 /* ── 命令返回 ── */
 
 export type Results = {
+  ssh_archive_run: ArchiveEvent
+  ssh_archive_cancel: void
   ssh_server_csv_read: string
   ssh_server_csv_write: void
   ssh_server_csv_export: number
@@ -335,6 +352,7 @@ export type Results = {
   ssh_tunnel_delete: void
 
   /* 终端 */
+  ssh_terminal_directory: string
   ssh_terminal_open: TerminalSession
   ssh_terminal_write: SshActionResult
   ssh_terminal_resize: SshActionResult
@@ -351,6 +369,7 @@ export type Results = {
   ssh_file_delete: SshActionResult
   ssh_file_rename: SshActionResult
   ssh_file_mkdir: SshActionResult
+  ssh_local_default_directory: [string, string | null]
   ssh_local_list: FileListResult
   ssh_local_create: SshActionResult
   ssh_local_delete: SshActionResult

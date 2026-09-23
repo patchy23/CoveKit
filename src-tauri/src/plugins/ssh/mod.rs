@@ -3,6 +3,7 @@
 //! containers/ 管容器和编排；monitor/ 管指标和系统信息；
 //! service.rs、process.rs 管服务与进程；store/ 管持久化；transfer/ 管数据导入导出。
 
+pub(crate) mod archive;
 mod close_hooks; // 关闭清理钩子（登记到 framework/lifecycle，退出时由框架协调调用）
 pub(crate) mod conn; // conn/ 目录：会话注册表 + 连接/重连（能力域下沉，引用路径经 mod.rs pub use 保持不变）
 pub(crate) mod containers;
@@ -28,6 +29,8 @@ crate::covekit_module! {
     owner: "ssh",
     feature: "ssh",
     commands: {
+        archive::ssh_archive_run => "执行可取消的远程压缩解压与预览",
+        archive::ssh_archive_cancel => "取消远程归档任务",
         containers::compose::ssh_compose_list => "查询 Docker Compose 项目",
         containers::compose::ssh_compose_action => "执行 Docker Compose 项目操作",
         containers::compose::ssh_compose_create => "新建远程 Compose 配置",
@@ -58,6 +61,7 @@ crate::covekit_module! {
         tunnel::lifecycle::ssh_tunnel_stop => "停止隧道",
         tunnel::lifecycle::ssh_tunnels => "某连接下的隧道运行时快照",
         tunnel::lifecycle::ssh_tunnel_delete => "删除隧道配置",
+        terminal::directory::ssh_terminal_directory => "读取终端当前工作目录",
         terminal::ssh_terminal_open => "打开 PTY 终端通道（xterm）",
         terminal::ssh_terminal_write => "写入终端数据（键盘输入）",
         terminal::ssh_terminal_resize => "调整终端窗口大小",
@@ -73,6 +77,7 @@ crate::covekit_module! {
         sftp::ops::ssh_file_mkdir => "新建远程目录",
         sftp::ops::ssh_file_create => "新建远程空文件",
         sftp::ops::ssh_file_chmod => "修改远程权限（含安全策略）",
+        sftp::browse::ssh_local_default_directory => "本地默认下载目录与回退信息",
         sftp::browse::ssh_local_list => "本地目录列表（双栏文件管理）",
         sftp::browse::ssh_local_create => "本地新建文件/目录",
         sftp::browse::ssh_local_delete => "本地删除文件/目录",
@@ -112,6 +117,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
             .with_dispose(close_hooks::on_dispose),
     );
     builder
+        .manage(archive::ArchiveState::default())
         .manage(SshState(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))

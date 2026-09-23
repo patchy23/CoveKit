@@ -72,3 +72,11 @@ it('准备期间可立即看到任务，准备失败保留错误用于重试', a
     error: expect.stringContaining('读取失败'),
   })
 })
+
+it('取消请求与成功完成竞态以真实完成结果为准', async () => {
+  const { transfer } = setup()
+  transfer.applyProgress(progress())
+  await transfer.cancelTransfer('up-1')
+  transfer.applyProgress(progress('up-1', true))
+  expect(transfer.transfers.value.get('up-1')).toMatchObject({ done: true, cancelling: false })
+})

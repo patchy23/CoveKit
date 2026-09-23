@@ -5,24 +5,19 @@ import {
   UiPopover,
   UiSearchInput,
   UiSortableList,
-  UiInputDialog,
-  UiContextMenu,
+  UiIconButton,
+  UiIcon,
   type UiCollectionMove,
-  type UiContextMenuItem,
 } from '@/core/ui'
-import { useCopy } from '@/core/feedback/useCopy'
 import { ipc } from '../ipc'
 import type { RemoteFile, SshBookmark } from '../contracts'
 const props = defineProps<{ profileId?: string; path: string }>()
+const open = defineModel<boolean>('open', { default: false })
 const emit = defineEmits<{ navigate: [path: string] }>()
-const { copyText } = useCopy()
-const open = ref(false),
-  query = ref(''),
+const query = ref(''),
   error = ref(''),
   busy = ref(false)
 const bookmarks = ref<SshBookmark[]>([])
-const rename = ref<SshBookmark>()
-const context = ref<{ x: number; y: number; items: UiContextMenuItem[] }>()
 let version = 0
 onUnmounted(() => version++)
 async function load() {
@@ -95,39 +90,6 @@ function move(change: UiCollectionMove) {
   rows.splice(Math.max(0, target), 0, item)
   update(rows)
 }
-function showMenu(item: { id: string }, event: MouseEvent) {
-  const b = bookmarks.value.find((b) => b.id === item.id)
-  if (!b) return
-  context.value = {
-    x: event.clientX,
-    y: event.clientY,
-    items: [
-      {
-        label: '重命名',
-        onClick: () => {
-          rename.value = b
-        },
-      },
-      {
-        label: '复制路径',
-        onClick: () => {
-          void copyText(b.path)
-        },
-      },
-      {
-        label: '移到最前',
-        onClick: () => update([b, ...bookmarks.value.filter((v) => v.id !== b.id)]),
-      },
-      { label: '移到最后', onClick: () => move({ id: b.id, targetId: null, position: 'inside' }) },
-      {
-        label: '移除书签',
-        onClick: () => {
-          void mutate(() => ipc.sshBookmarkDelete(b.id))
-        },
-      },
-    ],
-  }
-}
 function selectBookmark(item: { id: string }) {
   const bookmark = bookmarks.value.find((b) => b.id === item.id)
   if (bookmark) {
@@ -138,15 +100,15 @@ function selectBookmark(item: { id: string }) {
 defineExpose({ addBookmark: add })
 </script>
 <template>
-  <UiPopover v-model:open="open" label="目录书签" width="360px">
-    <template #trigger><UiButton size="sm" variant="ghost">目录书签</UiButton></template>
+  <UiPopover v-model:open="open" label="目录书签" width="320px" side="top">
+    <template #trigger><UiButton size="sm" variant="ghost">书签</UiButton></template>
     <div class="flex gap-sm border-b border-border p-sm dark:border-border-dark">
-      <UiSearchInput v-model="query" class="min-w-0 flex-1" placeholder="搜索名称或路径" /><UiButton
+      <UiSearchInput
+        v-model="query"
         size="sm"
-        :disabled="busy || !profileId"
-        @click="add()"
-        >收藏当前目录</UiButton
-      >
+        class="min-w-0 flex-1"
+        placeholder="搜索名称或路径"
+      /><UiButton size="sm" :disabled="busy || !profileId" @click="add()">收藏当前目录</UiButton>
     </div>
     <UiSortableList
       class="max-h-[360px]"
@@ -158,30 +120,18 @@ defineExpose({ addBookmark: add })
       @retry="load"
       @select="selectBookmark"
       @move="move"
-      @contextmenu="showMenu"
-    />
-    <p class="px-sm py-xs text-caption text-secondary dark:text-secondary-dark">
-      拖动调整顺序 · 右键重命名、复制路径或移除
-    </p>
+    >
+      <template #suffix="{ item }">
+        <UiIconButton
+          size="xs"
+          label="删除书签"
+          :disabled="busy"
+          @pointerdown.stop
+          @click.stop="mutate(() => ipc.sshBookmarkDelete(item.id))"
+        >
+          <UiIcon name="x" :size="12" />
+        </UiIconButton>
+      </template>
+    </UiSortableList>
   </UiPopover>
-  <UiContextMenu
-    v-if="context"
-    :x="context.x"
-    :y="context.y"
-    :items="context.items"
-    @close="context = undefined"
-  />
-  <UiInputDialog
-    :open="!!rename"
-    title="重命名书签"
-    label="名称"
-    :initial-value="rename?.name"
-    @close="rename = undefined"
-    @confirm="
-      (name) => {
-        update(bookmarks.map((b) => (b.id === rename?.id ? { ...b, name } : b)))
-        rename = undefined
-      }
-    "
-  />
 </template>

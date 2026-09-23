@@ -27,6 +27,9 @@ export function useFileManagerMenus(deps: {
   requestRename: (file: RemoteFile) => void
   requestDelete: (file: RemoteFile) => void
   requestBatchDeleteRemote: (files: RemoteFile[]) => void
+  compress: (files: RemoteFile[]) => void
+  extract: (file: RemoteFile) => void
+  preview: (file: RemoteFile) => void
   onChmod: (file: RemoteFile) => void
   onBookmark: (dir: RemoteFile) => void
   /* 本地上传/批量 */
@@ -54,6 +57,9 @@ export function useFileManagerMenus(deps: {
     edit: (file) => void deps.openFile(file),
     rename: deps.requestRename,
     chmod: deps.onChmod,
+    compress: deps.compress,
+    extract: deps.extract,
+    preview: deps.preview,
     addBookmark: deps.onBookmark,
     deleteFile: deps.requestDelete,
     batchDelete: (files) => deps.requestBatchDeleteRemote(files),

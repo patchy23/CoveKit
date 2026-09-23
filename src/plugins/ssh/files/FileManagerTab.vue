@@ -1,10 +1,14 @@
 <script setup lang="ts">
 /** FileManagerTab · 文件页签装配层（导航 useRemoteDirectory + 多选/批量/菜单/本地侧各 composable 组合） */
 import { UiButton, UiConfirmDialog, UiAlert } from '@/core/ui'
-import RemoteEditorWorkspace from './RemoteEditorWorkspace.vue'
-import { useRemoteEditor } from './useRemoteEditor'
 import TransferPanel from './TransferPanel.vue'
+import ArchiveDialog from './ArchiveDialog.vue'
+import ArchivePreview from './ArchivePreview.vue'
+import { useRemoteArchives } from './useRemoteArchives'
+import { archiveFormat } from './archiveFiles'
+import type { ArchiveRequest } from '../contracts'
 import type { TransferItem } from './useFileTransfer'
+import { dirname } from '@tauri-apps/api/path'
 import { computed, ref, watch } from 'vue'
 import type { ServerConnection, ServerProfile, RemoteFile } from '../contracts'
 import { useRemoteFileOps } from './useRemoteFileOps'
@@ -23,43 +27,49 @@ const props = defineProps<{
   connection?: ServerConnection
   profile?: ServerProfile
   active?: boolean
+  navigation?: { id: number; sessionId: string; path: string }
 }>()
 
 const activeSessionId = computed(() =>
   props.connection?.status === 'connected' ? props.connection.sessionId : undefined
 )
-const transfersOpen = ref(false)
+const activePopover = ref<'bookmarks' | 'transfers' | null>(null)
+const transfersOpen = computed({
+  get: () => activePopover.value === 'transfers',
+  set: (open) => {
+    activePopover.value = open ? 'transfers' : null
+  },
+})
 const retryTarget = ref<TransferItem>()
 async function retryTransfer(item: TransferItem) {
   const connectionId = activeSessionId.value
-  if (!connectionId) return
+  if (!connectionId || (item.kind !== 'upload' && item.kind !== 'download')) return
   try {
     await startTransfer(item.kind, item.localPath, item.remotePath, true)
   } catch (e) {
     ui.toast('重新传输失败：' + String(e))
   }
 }
-function locateTransfer(item: TransferItem) {
-  if (item.kind === 'upload')
-    void navigate(item.remotePath.slice(0, item.remotePath.lastIndexOf('/')) || '/')
-  else
-    void localBrowser.value?.navigate(
-      item.localPath.replaceAll(String.fromCharCode(92), '/').split('/').slice(0, -1).join('/')
-    )
+async function locateTransfer(item: TransferItem) {
+  if (item.kind !== 'download')
+    await navigate(item.remotePath.slice(0, item.remotePath.lastIndexOf('/')) || '/')
+  else {
+    try {
+      await panes.value?.locateLocal(await dirname(item.localPath))
+    } catch (error) {
+      ui.toast('定位本地目录失败：' + String(error))
+    }
+  }
 }
-const editor = useRemoteEditor(() => props.connection)
-const emit = defineEmits<{ state: [state: { dirty: boolean; busy: boolean }] }>()
-watch(
-  () => [editor.dirty.value.length, editor.busy.value],
-  () => emit('state', { dirty: !!editor.dirty.value.length, busy: editor.busy.value }),
-  { immediate: true }
-)
-function showEditor() {
-  editor.directory.value = currentPath.value
-  editor.visible.value = true
+const emit = defineEmits<{
+  openFile: [file: Pick<RemoteFile, 'path'>]
+  renamed: [oldPath: string, newPath: string]
+  directory: [path: string]
+}>()
+const openFile = async (file: Pick<RemoteFile, 'path'>) => {
+  emit('openFile', file)
 }
-const openFile = editor.openFile
-const openFileGuarded = editor.openFile
+const openFileGuarded = openFile
 const ui = useUiStore()
 const settings = useSettingsStore()
 const filePage = ref<HTMLElement | null>(null)
@@ -117,7 +127,7 @@ const {
 } = useRemoteFileOps({
   sessionId: () => activeSessionId.value,
   selectedFile,
-  onRename: editor.renamed,
+  onRename: (oldPath, newPath) => emit('renamed', oldPath, newPath),
   refresh: () => refreshCurrent(),
 })
 
@@ -131,12 +141,23 @@ const {
   uploadLocalPaths,
   upload,
   download,
+  downloadSelection: requestBatchDownload,
+  downloadToPane,
 } = useSftpTransfers({
   connectionId: () => activeSessionId.value,
   active: () => props.active,
   currentPath,
   selectedFile,
   localDir: () => localBrowser.value?.currentPath ?? '',
+  preferredDirectory: () => settings.settings.defaultDownloadDirectory || '',
+  downloadDone: async (path) => {
+    try {
+      const parent = await dirname(path)
+      if (parent === localBrowser.value?.currentPath) await localBrowser.value.refresh()
+    } catch (error) {
+      ui.toast('下载已完成，本地列表刷新失败：' + String(error))
+    }
+  },
   page: filePage,
   refresh: () => void refreshCurrent(),
 })
@@ -145,21 +166,17 @@ const {
 const {
   batchConfirm,
   batchRunning,
-  requestBatchDownload,
   requestBatchDeleteRemote,
   requestBatchUpload,
   requestBatchDeleteLocal,
   uploadSelection,
   confirmBatch,
 } = useFileBatchOps({
-  startTransfer,
   sessionId: () => activeSessionId.value,
   refreshRemote: () => void refreshCurrent(),
   refreshLocal: () => localBrowser.value?.refresh(),
   uploadLocalPaths,
   remoteDir: () => currentPath.value,
-  localDir: () => localBrowser.value?.currentPath ?? '',
-  localFiles: () => localBrowser.value?.files ?? [],
 })
 const {
   deleteTarget: localDeleteTarget,
@@ -191,7 +208,76 @@ async function onDoubleClick(file: RemoteFile) {
     navigate(file.path)
     return
   }
-  await openFileGuarded(file)
+  if (archiveFormat(file.path)) archives.openPreview(file.path)
+  else await openFileGuarded(file)
+}
+
+const archives = useRemoteArchives(
+  () => activeSessionId.value,
+  () => {
+    void refreshCurrent()
+  }
+)
+const allTasks = computed(() =>
+  [...transfers.value.values(), ...archives.tasks.value.values()].sort(
+    (a, b) => a.updatedAt - b.updatedAt
+  )
+)
+const archiveDialog = ref<{
+  mode: 'compress' | 'extract'
+  files: RemoteFile[]
+  sessionId: string
+}>()
+function requestArchive(mode: 'compress' | 'extract', files: RemoteFile[]) {
+  const sessionId = activeSessionId.value
+  if (sessionId && files.length)
+    archiveDialog.value = { mode, files: files.map((file) => ({ ...file })), sessionId }
+}
+function submitArchive(request: ArchiveRequest) {
+  if (archiveDialog.value?.sessionId !== activeSessionId.value) {
+    ui.toast('连接已变化，请重新选择文件')
+    return
+  }
+  archives.start(request)
+  archiveDialog.value = undefined
+  transfersOpen.value = true
+}
+function archiveSource(): RemoteFile | undefined {
+  const path = archives.preview.value?.path
+  if (!path) return
+  return (
+    sortedFiles.value.find((file) => file.path === path) ?? {
+      name: path.split('/').pop() || '压缩包',
+      path,
+      isDir: false,
+      size: 0,
+      modifiedAt: 0,
+      owner: '',
+      group: '',
+      permissions: '',
+    }
+  )
+}
+function extractPreview() {
+  const file = archiveSource()
+  if (file) requestArchive('extract', [file])
+}
+function downloadPreview() {
+  const file = archiveSource()
+  if (file) void download(file)
+}
+function reloadPreview() {
+  const path = archives.preview.value?.path
+  archives.closePreview()
+  if (path) archives.openPreview(path)
+}
+function cancelTask(id: string) {
+  if (id.startsWith('archive-')) void archives.cancel(id)
+  else void cancelTransfer(id)
+}
+function clearTasks() {
+  clearEnded()
+  archives.clearEnded()
 }
 
 const { menu, menuItems, openMenu, localMenu, localMenuItems, openLocalMenu } = useFileManagerMenus(
@@ -213,6 +299,9 @@ const { menu, menuItems, openMenu, localMenu, localMenuItems, openLocalMenu } = 
     requestDelete,
     requestBatchDeleteRemote,
     onChmod: requestChmod,
+    compress: (files) => requestArchive('compress', files),
+    extract: (file) => requestArchive('extract', [file]),
+    preview: (file) => archives.openPreview(file.path),
     onBookmark: (dir) => panes.value?.statusActions?.addBookmark(dir),
     uploadLocalPaths,
     requestBatchUpload,
@@ -224,12 +313,10 @@ const { menu, menuItems, openMenu, localMenu, localMenuItems, openLocalMenu } = 
   }
 )
 
-function cancelAllTransfers() {
-  for (const item of transfers.value.values()) if (!item.done) void cancelTransfer(item.id)
-}
 watch(
   () => activeSessionId.value,
   (sessionId) => {
+    archiveDialog.value = undefined
     // 换连接/断开：清空全部交互态（菜单/弹窗/选择），目录回到根
     remoteSel.clear()
     localSel.clear()
@@ -239,9 +326,19 @@ watch(
     localMenu.value = null
     mkdirTarget.value = null
     newFileTarget.value = null
-    reset(sessionId)
+    reset(
+      sessionId,
+      props.navigation && props.navigation.sessionId === sessionId ? props.navigation.path : '/'
+    )
   },
   { immediate: true }
+)
+watch(currentPath, (path) => emit('directory', path), { immediate: true })
+watch(
+  () => props.navigation,
+  (request) => {
+    if (request && request.sessionId === activeSessionId.value) void navigate(request.path)
+  }
 )
 </script>
 
@@ -262,15 +359,14 @@ watch(
       :remote-selected-paths="remoteSel.selectedPaths.value"
       :remote-selected-count="remoteSel.count.value"
       :transfer-status="transferStatus"
-      :local-initial-path="settings.settings.defaultDownloadDirectory || 'C:/'"
+      :local-initial-path="settings.settings.defaultDownloadDirectory || ''"
       :local-selected-paths="localSel.selectedPaths.value"
       :profile-id="profile?.id"
-      :transfers="[...transfers.values()]"
+      :bookmarks-open="activePopover === 'bookmarks'"
+      @update:bookmarks-open="activePopover = $event ? 'bookmarks' : null"
       @navigate="navigate"
       @back="navigateBack"
       @up="navigateUp"
-      @download="download()"
-      @batch-download-selected="requestBatchDownload"
       @remote-row-click="(e: MouseEvent, f: RemoteFile) => remoteSel.onRowClick(e, f.path)"
       @open="onDoubleClick"
       @remote-context="openMenu"
@@ -280,10 +376,7 @@ watch(
       @local-row-context="openLocalMenu"
       @local-blank-context="(e: MouseEvent) => openLocalMenu(e, null)"
       @local-error="(m: string) => ui.toast(m)"
-      @toggle-transfers="transfersOpen = !transfersOpen"
-      @cancel-transfer="cancelTransfer"
-      @cancel-all-transfers="cancelAllTransfers"
-      @drop-remote-to-local="(items: RemoteFile[]) => items.forEach((f) => void download(f))"
+      @drop-remote-to-local="downloadToPane"
       @drop-local-to-remote="
         (items: RemoteFile[]) =>
           void uploadLocalPaths(
@@ -291,28 +384,72 @@ watch(
             currentPath
           )
       "
-      ><template #editor-action
-        ><UiButton size="sm" variant="ghost" @click="showEditor"
-          >编辑器 {{ editor.documents.value.length
-          }}{{
-            editor.dirty.value.length ? ' · 未保存 ' + editor.dirty.value.length : ''
-          }}</UiButton
-        ></template
-      ></FileManagerPanes
     >
-    <RemoteEditorWorkspace
-      v-if="editor.visible.value || editor.documents.value.length > 0"
-      :editor="editor"
-      :connection="connection"
-      :title="profile?.name ?? '服务器'"
+      <template #file-actions>
+        <UiButton
+          size="xs"
+          variant="ghost"
+          :disabled="!selectedRemoteFiles.length || !activeSessionId"
+          @click="requestBatchDownload(selectedRemoteFiles)"
+          >下载到本地</UiButton
+        >
+        <UiButton
+          size="xs"
+          variant="ghost"
+          :disabled="!selectedRemoteFiles.length || !activeSessionId"
+          @click="requestArchive('compress', selectedRemoteFiles)"
+          >压缩</UiButton
+        >
+        <UiButton
+          v-if="selectedFile && !selectedFile.isDir && archiveFormat(selectedFile.path)"
+          size="xs"
+          variant="ghost"
+          @click="requestArchive('extract', [selectedFile])"
+          >解压</UiButton
+        >
+      </template>
+      <template #transfers>
+        <UiButton
+          v-if="archives.preview.value?.minimized"
+          size="sm"
+          variant="ghost"
+          @click="archives.preview.value.minimized = false"
+          >压缩包预览</UiButton
+        >
+        <TransferPanel
+          v-model:open="transfersOpen"
+          :items="allTasks"
+          @cancel="cancelTask"
+          @clear="clearTasks"
+          @retry="
+            $event.id.startsWith('archive-') ? archives.retry($event.id) : (retryTarget = $event)
+          "
+          @locate="locateTransfer"
+        />
+      </template>
+    </FileManagerPanes>
+    <ArchiveDialog
+      v-if="archiveDialog"
+      :mode="archiveDialog.mode"
+      :files="archiveDialog.files"
+      :directory="currentPath"
+      @close="archiveDialog = undefined"
+      @submit="submitArchive"
     />
-    <TransferPanel
-      v-model:open="transfersOpen"
-      :items="[...transfers.values()]"
-      @cancel="cancelTransfer"
-      @clear="clearEnded"
-      @retry="retryTarget = $event"
-      @locate="locateTransfer"
+    <ArchivePreview
+      v-if="archives.preview.value"
+      v-show="!archives.preview.value.minimized"
+      :key="archives.preview.value.id"
+      :path="archives.preview.value.path"
+      :entries="archives.preview.value.entries"
+      :busy="archives.preview.value.busy"
+      :error="archives.preview.value.error"
+      @close="archives.closePreview"
+      @minimize="archives.preview.value.minimized = true"
+      @cancel="archives.cancel(archives.preview.value.id)"
+      @reload="reloadPreview"
+      @extract="extractPreview"
+      @download="downloadPreview"
     />
     <UiConfirmDialog
       :open="!!retryTarget"

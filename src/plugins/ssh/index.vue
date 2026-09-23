@@ -34,6 +34,7 @@ function lazySection<T extends Component>(loader: () => Promise<{ default: T }>)
 }
 
 const TerminalTab = lazySection(() => import('./terminal/TerminalTab.vue'))
+const ConnectionEditor = lazySection(() => import('./files/ConnectionEditor.vue'))
 const FileManagerTab = lazySection(() => import('./files/FileManagerTab.vue'))
 const TunnelTab = lazySection(() => import('./tunnels/TunnelTab.vue'))
 const MonitorTab = lazySection(() => import('./monitor/MonitorTab.vue'))
@@ -79,6 +80,20 @@ const sectionTabs: UiTabItem[] = [
 
 const activeWorkspaceId = ref<string | null>(null)
 const closingWorkspaceId = ref<string | null>(null)
+const editorRequests = ref<Record<string, { id: number; path?: string }>>({})
+const editorRenames = ref<Record<string, { oldPath: string; newPath: string }>>({})
+const fileDirectories = ref<Record<string, string>>({})
+const fileNavigations = ref<Record<string, { id: number; sessionId: string; path: string }>>({})
+let requestId = 0
+function openEditor(id: string, path?: string) {
+  editorRequests.value[id] = { id: ++requestId, path }
+}
+function viewFiles(remote: SshConnectionWorkspace, request: { sessionId: string; path: string }) {
+  if (remote.connection.sessionId !== request.sessionId || activeWorkspaceId.value !== remote.id)
+    return
+  fileNavigations.value[remote.id] = { ...request, id: ++requestId }
+  selectSection(remote, 'files')
+}
 const fileStates = ref<Record<string, { dirty: boolean; busy: boolean }>>({})
 const composeStates = ref<Record<string, { dirty: boolean; busy: boolean }>>({})
 const composeCloseHint = computed(() => {
@@ -186,6 +201,12 @@ async function confirmCloseWorkspace(passedId?: string) {
       connectionWorkspaces.value[index + 1]?.id ?? connectionWorkspaces.value[index - 1]?.id ?? null
   }
   await workspace.closeConnectionWorkspace(id)
+  delete editorRequests.value[id]
+  delete editorRenames.value[id]
+  delete fileDirectories.value[id]
+  delete fileNavigations.value[id]
+  delete fileStates.value[id]
+  delete composeStates.value[id]
 }
 
 watch(activeWorkspaceId, (id) => {
@@ -197,6 +218,16 @@ watch(
   () => connectionWorkspaces.value.map((item) => item.id),
   (ids) => {
     connectionMenu.value = null
+    for (const record of [
+      editorRequests,
+      editorRenames,
+      fileDirectories,
+      fileNavigations,
+      fileStates,
+      composeStates,
+    ]) {
+      for (const id of Object.keys(record.value)) if (!ids.includes(id)) delete record.value[id]
+    }
     if (activeWorkspaceId.value && !ids.includes(activeWorkspaceId.value)) {
       activeWorkspaceId.value = ids[ids.length - 1] ?? null
     }
@@ -268,13 +299,25 @@ watch(
           @mousedown.capture="workspace.touchWorkspace(remote.id)"
         >
           <!-- 第二层：当前连接内部的功能页签。 -->
-          <UiTabs
-            :model-value="remote.activeSection"
-            :items="sectionTabs"
-            variant="line"
-            @update:model-value="selectSection(remote, $event)"
-          />
-          <div class="min-h-0 flex-1 overflow-hidden">
+          <div class="flex shrink-0 items-center border-b border-border dark:border-border-dark">
+            <UiTabs
+              class="min-w-0 flex-1"
+              :model-value="remote.activeSection"
+              :items="sectionTabs"
+              variant="line"
+              @update:model-value="selectSection(remote, $event)"
+            />
+            <button
+              type="button"
+              data-ssh-editor-action
+              class="mx-sm shrink-0 rounded-sm px-sm py-xs text-body-sm text-secondary hover:bg-surface-muted hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-tertiary disabled:opacity-40 dark:text-secondary-dark dark:hover:bg-surface-muted-dark dark:hover:text-primary-dark"
+              :disabled="remote.connection.status !== 'connected' && !editorRequests[remote.id]"
+              @click="openEditor(remote.id)"
+            >
+              打开编辑器
+            </button>
+          </div>
+          <div class="relative min-h-0 flex-1 overflow-hidden">
             <TerminalTab
               v-if="remote.visitedSections.includes('terminal')"
               v-show="remote.activeSection === 'terminal'"
@@ -287,6 +330,7 @@ watch(
               class="h-full"
               @reconnect="workspace.reconnectWorkspace(remote.id)"
               @link-dead="workspace.handleLinkDead(remote.id)"
+              @view-files="viewFiles(remote, $event)"
             />
             <FileManagerTab
               v-if="remote.visitedSections.includes('files')"
@@ -295,7 +339,10 @@ watch(
               :profile="profiles.find((profile) => profile.id === remote.profileId)"
               :active="activeWorkspaceId === remote.id && remote.activeSection === 'files'"
               class="h-full"
-              @state="fileStates[remote.id] = $event"
+              :navigation="fileNavigations[remote.id]"
+              @open-file="openEditor(remote.id, $event.path)"
+              @directory="fileDirectories[remote.id] = $event"
+              @renamed="(oldPath, newPath) => (editorRenames[remote.id] = { oldPath, newPath })"
             />
             <TunnelTab
               v-if="
@@ -346,6 +393,16 @@ watch(
               :workspace-id="remote.id"
               class="h-full"
               @state="composeStates[remote.id] = $event"
+            />
+            <ConnectionEditor
+              v-if="editorRequests[remote.id]"
+              :connection="remote.connection"
+              :title="remote.title"
+              :request="editorRequests[remote.id]"
+              :rename="editorRenames[remote.id]"
+              :directory="fileDirectories[remote.id]"
+              :location="activeWorkspaceId + '/' + remote.activeSection"
+              @state="fileStates[remote.id] = $event"
             />
           </div>
         </div>

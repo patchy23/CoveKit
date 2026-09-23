@@ -22,6 +22,7 @@ import { ipc, onTerminalClosed, onTerminalData } from '../ipc'
 import { createTerminalResizeController } from './useTerminalResize'
 import { bindTerminalViewport } from './terminalViewport'
 import { bannerTime, disconnectBanner, reconnectSeparator } from './useTerminalBanner'
+import { parseTerminalDirectory } from './terminalDirectory'
 import { useTerminalLog } from './useTerminalLog'
 import { useI18n } from 'vue-i18n'
 
@@ -39,6 +40,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'reconnect'): void
+  (e: 'viewFiles', request: { sessionId: string; path: string }): void
   /** 终端通道异常关闭（连接可能已死），由工作区触发自动重连 */
   (e: 'linkDead'): void
 }>()
@@ -52,6 +54,38 @@ const terminalLog = useTerminalLog(() => terminalId ?? '')
 const termHost = ref<HTMLDivElement | null>(null)
 const statusLine = ref('终端未连接')
 const terminalActive = ref(false)
+const readingDirectory = ref(false)
+let reportedDirectory: string | undefined
+let directoryHandler: { dispose: () => void } | undefined
+const openingOutput = new Map<string, string>()
+async function viewFiles() {
+  const id = terminalId,
+    sessionId = props.connection?.sessionId,
+    generation = terminalGeneration
+  if (!id || !sessionId || readingDirectory.value) return
+  readingDirectory.value = true
+  try {
+    let path: string
+    try {
+      path = await ipc.sshTerminalDirectory(id)
+    } catch (error) {
+      if (!reportedDirectory) throw error
+      path = reportedDirectory
+    }
+    if (
+      !disposed &&
+      terminalGeneration === generation &&
+      terminalId === id &&
+      props.connection?.sessionId === sessionId
+    )
+      emit('viewFiles', { sessionId, path })
+  } catch (error) {
+    if (!disposed && terminalGeneration === generation)
+      ui.toast('无法读取终端当前目录：' + String(error))
+  } finally {
+    readingDirectory.value = false
+  }
+}
 /** 状态栏展示：连接进度优先（连接中/重连中），否则显示终端状态 */
 const displayLine = computed(() => props.stageText || statusLine.value)
 
@@ -105,6 +139,8 @@ async function openTerminal(preserve = false) {
   const connectionId = props.connection?.sessionId
   if (!connectionId || !term) return
   if (terminalId || openingConnectionId === connectionId) return
+  reportedDirectory = undefined
+  openingOutput.clear()
   const generation = ++terminalGeneration
   openingConnectionId = connectionId
   openingGeneration = generation
@@ -129,6 +165,10 @@ async function openTerminal(preserve = false) {
       return
     }
     terminalId = t.id
+    if (t.initialData) term.write(t.initialData)
+    const pending = openingOutput.get(t.id)
+    if (pending) term.write(pending)
+    openingOutput.clear()
     terminalActive.value = true
     statusLine.value = `已连接 ${props.connection.host ?? ''} · ${t.cols}×${t.rows}`
     if (preserve) writeReconnectSeparator()
@@ -147,6 +187,8 @@ async function openTerminal(preserve = false) {
 
 /** 关闭终端通道（断开/组件卸载时调用）；先清 terminalId，terminal-closed 事件即不会误报断线 */
 async function closeTerminal() {
+  reportedDirectory = undefined
+  openingOutput.clear()
   terminalGeneration += 1
   openingConnectionId = null
   openingGeneration = terminalGeneration
@@ -195,7 +237,10 @@ function onSearchQuery(value: string) {
   terminalSearch.findNext()
 }
 
-onBeforeUnmount(() => terminalSearch.dispose())
+onBeforeUnmount(() => {
+  terminalSearch.dispose()
+  directoryHandler?.dispose()
+})
 
 onMounted(async () => {
   if (!termHost.value) return
@@ -218,6 +263,10 @@ onMounted(async () => {
       terminalSearch.open()
       return false
     }
+    return true
+  })
+  directoryHandler = term.parser.registerOscHandler(7, (report) => {
+    reportedDirectory = parseTerminalDirectory(report, props.connection?.host ?? '')
     return true
   })
   term.open(termHost.value)
@@ -244,6 +293,10 @@ onMounted(async () => {
     const stop = await onTerminalData((d) => {
       if (terminalId && d.terminalId === terminalId) {
         term?.write(d.data)
+      } else if (openingConnectionId && d.connectionId === openingConnectionId) {
+        const pending = openingOutput.get(d.terminalId) ?? ''
+        if (pending.length + d.data.length <= 1024 * 1024)
+          openingOutput.set(d.terminalId, pending + d.data)
       }
     })
     if (disposed) stop()
@@ -439,6 +492,15 @@ watch(
       >
         {{ t('sshLog.openDirectory') }}
       </UiButton>
+      <UiButton
+        v-if="!dockerContainerId"
+        variant="ghost"
+        size="xs"
+        :disabled="!terminalActive"
+        :loading="readingDirectory"
+        @click="viewFiles"
+        >查看文件</UiButton
+      >
     </div>
   </div>
 </template>

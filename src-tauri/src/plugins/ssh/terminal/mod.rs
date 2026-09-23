@@ -11,6 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, watch};
 
 use crate::plugins::ssh::conn::{now_ms, resource_id, SshState};
+pub(crate) mod directory;
 pub(crate) mod log;
 use crate::plugins::ssh::models::{SshActionResult, TerminalClosed, TerminalData, TerminalSession};
 use log::SharedLog;
@@ -35,6 +36,8 @@ pub(crate) struct TerminalHandle {
     pub(crate) rows: u32,
     /// 是否活跃（前端正在展示）
     pub(crate) active: bool,
+    /// 主机登录 shell 的 PID；容器终端没有主机目录能力。
+    pub(crate) shell_pid: Option<u32>,
     /// 指令通道（drop 后任务收到 None → 关闭）
     pub(crate) tx: mpsc::Sender<TerminalCmd>,
     /// 独立取消信号，不受已满的数据队列阻塞。
@@ -50,7 +53,7 @@ pub struct TerminalState(pub Mutex<HashMap<String, TerminalHandle>>);
 /// 若逐块 from_utf8_lossy 会在块边界两侧各产生一个 U+FFFD 乱码，且不可恢复。
 /// 尾部不完整字节留存待下一块补齐；真正的无效字节输出替换符并丢弃（防缓冲区卡死）。
 #[derive(Default)]
-struct Utf8ChunkDecoder {
+pub(crate) struct Utf8ChunkDecoder {
     /// 暂存的尾部不完整字节（正常至多 3 字节）
     pending: Vec<u8>,
 }
@@ -102,6 +105,7 @@ impl Utf8ChunkDecoder {
 /// 启动终端通道后台任务（terminal.rs 与 docker.rs 共用）：
 /// select 双路——取消信号 + 前端指令（write/resize/close）与通道输出（wait → emit terminal-data）；
 /// 任务退出时从 TerminalState 注册表移除并推送 terminal-closed。
+#[allow(clippy::too_many_arguments)] // 通道归属、取消、日志及启动解码尾部须同时移交后台任务。
 pub(crate) fn spawn_channel_task(
     app: AppHandle,
     terminal_id: String,
@@ -110,9 +114,10 @@ pub(crate) fn spawn_channel_task(
     mut rx: mpsc::Receiver<TerminalCmd>,
     mut cancel_rx: watch::Receiver<bool>,
     log: SharedLog,
+    initial_decoder: Option<Utf8ChunkDecoder>,
 ) {
     tauri::async_runtime::spawn(async move {
-        let mut decoder = Utf8ChunkDecoder::default();
+        let mut decoder = initial_decoder.unwrap_or_default();
         loop {
             tokio::select! {
                 changed = cancel_rx.changed() => {
@@ -218,7 +223,7 @@ pub async fn ssh_terminal_open(
             .ok_or("连接不存在或已断开")?;
 
         // 开通道 + PTY + shell（xterm 终端类型）
-        let channel = match session.channel_open_session().await {
+        let mut channel = match session.channel_open_session().await {
             Ok(channel) => channel,
             Err(e) => {
                 crate::plugins::ssh::conn::mark_session_closed(
@@ -233,12 +238,11 @@ pub async fn ssh_terminal_open(
             .request_pty(false, "xterm", cols, rows, 0, 0, &[])
             .await
             .map_err(|e| format!("PTY 请求失败: {e}"))?;
-        channel
-            .request_shell(false)
-            .await
-            .map_err(|e| format!("shell 启动失败: {e}"))?;
-
         let terminal_id = resource_id("term");
+        let (shell_pid, initial_output) =
+            directory::start_shell(&mut channel, &terminal_id).await?;
+        let mut initial_decoder = Utf8ChunkDecoder::default();
+        let initial_data = initial_decoder.feed(&initial_output);
         let (tx, rx) = mpsc::channel::<TerminalCmd>(128);
         let (cancel, cancel_rx) = watch::channel(false);
         // 会话日志共享状态（默认未录制；命令层开启后由后台任务写盘）
@@ -253,6 +257,7 @@ pub async fn ssh_terminal_open(
                 cols,
                 rows,
                 active: true,
+                shell_pid: Some(shell_pid),
                 tx,
                 cancel,
                 log: log.clone(),
@@ -267,9 +272,11 @@ pub async fn ssh_terminal_open(
             rx,
             cancel_rx,
             log,
+            Some(initial_decoder),
         );
 
         Ok(TerminalSession {
+            initial_data,
             id: terminal_id,
             connection_id,
             title: String::new(),
@@ -393,6 +400,7 @@ pub async fn ssh_terminal_list(
         .iter()
         .filter(|(_, h)| h.connection_id == connection_id)
         .map(|(id, h)| TerminalSession {
+            initial_data: String::new(),
             id: id.clone(),
             connection_id: h.connection_id.clone(),
             title: h.title.clone(),

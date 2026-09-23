@@ -26,3 +26,6 @@ pub use profile::*;
 pub use service::*;
 pub use system_info::*;
 pub use terminal::*;
+
+mod archive;
+pub use archive::*;

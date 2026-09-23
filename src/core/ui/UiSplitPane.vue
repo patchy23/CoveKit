@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 
 const props = withDefaults(
@@ -8,8 +8,9 @@ const props = withDefaults(
     min?: number
     max?: number
     label?: string
+    resizable?: boolean
   }>(),
-  { direction: 'horizontal', min: 140, max: 720, label: '调整分栏大小' }
+  { direction: 'horizontal', min: 140, max: 720, label: '调整分栏大小', resizable: true }
 )
 
 const emit = defineEmits<{ (event: 'update:modelValue', value: number): void }>()
@@ -55,6 +56,7 @@ function onDragKeydown(event: KeyboardEvent) {
 }
 
 function start(event: PointerEvent) {
+  if (!props.resizable) return
   event.preventDefault()
   dragging.value = true
   dragStartValue = primarySize.value
@@ -65,6 +67,7 @@ function start(event: PointerEvent) {
 }
 
 function onKeydown(event: KeyboardEvent) {
+  if (!props.resizable) return
   const horizontal = props.direction === 'horizontal'
   const forward = horizontal ? event.key === 'ArrowRight' : event.key === 'ArrowDown'
   const backward = horizontal ? event.key === 'ArrowLeft' : event.key === 'ArrowUp'
@@ -104,9 +107,16 @@ onBeforeUnmount(() => {
       :aria-valuemin="Math.min(min, max)"
       :aria-valuemax="Math.max(min, max)"
       :aria-valuenow="primarySize"
-      tabindex="0"
+      :tabindex="resizable ? 0 : -1"
+      :aria-disabled="!resizable"
       class="group relative z-10 touch-none bg-border/70 transition-colors hover:bg-tertiary focus-visible:bg-tertiary focus-visible:outline-none dark:bg-border-dark/70 dark:hover:bg-tertiary-dark dark:focus-visible:bg-tertiary-dark"
-      :class="direction === 'horizontal' ? 'cursor-col-resize' : 'cursor-row-resize'"
+      :class="
+        !resizable
+          ? 'pointer-events-none'
+          : direction === 'horizontal'
+            ? 'cursor-col-resize'
+            : 'cursor-row-resize'
+      "
       @pointerdown="start"
       @keydown="onKeydown"
     >

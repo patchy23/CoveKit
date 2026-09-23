@@ -26,6 +26,19 @@ const pluginVueSources = import.meta.glob('../../plugins/**/*.vue', {
 }) as Record<string, string>
 
 describe('公共 UI 组件', () => {
+  it('不可调整的分栏保留内容但退出键盘和拖拽入口', async () => {
+    const pane = mount(UiSplitPane, {
+      props: { modelValue: 300, resizable: false },
+      slots: { primary: '远程文件', secondary: '本地文件' },
+    })
+    const separator = pane.get('[role="separator"]')
+    expect(separator.attributes('tabindex')).toBe('-1')
+    expect(separator.attributes('aria-disabled')).toBe('true')
+    await separator.trigger('keydown', { key: 'ArrowRight' })
+    expect(pane.emitted('update:modelValue')).toBeUndefined()
+    expect(pane.text()).toContain('本地文件')
+  })
+
   it('文本、密码、多行和组合框统一关闭浏览器表单自动填充', () => {
     for (const type of ['text', 'number', 'password']) {
       const wrapper = mount(UiInput, { props: { type }, attrs: { autocomplete: 'on' } })
@@ -198,7 +211,17 @@ describe('公共 UI 组件', () => {
   it('工具页面不能绕过公共组件使用原生表单和表格控件', () => {
     const nativeControls = /<(?:button|input|select|textarea|table)(?:\s|>)/
     const violations = Object.entries(pluginVueSources)
-      .filter(([, source]) => nativeControls.test(source))
+      .filter(([path, source]) => {
+        // 用户明确指定 SSH 页签行编辑器入口使用原生文字按钮，仅放行这一个入口。
+        const checked =
+          path === '../../plugins/ssh/index.vue'
+            ? source.replace(
+                /<button\b(?=[^>]*\bdata-ssh-editor-action)[^>]*>[\s\S]*?<\/button>/,
+                ''
+              )
+            : source
+        return nativeControls.test(checked)
+      })
       .map(([path]) => path)
     expect(violations).toEqual([])
   })

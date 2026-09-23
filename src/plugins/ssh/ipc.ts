@@ -6,6 +6,8 @@ import { invokeCommand } from '@/core/ipc/ipc'
 import { listen } from '@tauri-apps/api/event'
 import { Channel } from '@tauri-apps/api/core'
 import type {
+  ArchiveRequest,
+  ArchiveEvent,
   ConnectStage,
   FileTransferProgress,
   HostKeyVerifyRequest,
@@ -28,6 +30,19 @@ function cmd<K extends keyof InvokePayloads & keyof Results>(
 }
 
 export const ipc = {
+  sshArchiveCancel: (jobId: string) => cmd(commands.sshArchiveCancel, { jobId }),
+  sshArchiveRun: (
+    connectionId: string,
+    jobId: string,
+    request: ArchiveRequest,
+    onProgress: (event: ArchiveEvent) => void
+  ) => {
+    const progress = new Channel<ArchiveEvent>()
+    progress.onmessage = onProgress
+    return cmd(commands.sshArchiveRun, { connectionId, jobId, request, progress }).finally(() => {
+      progress.onmessage = () => {}
+    })
+  },
   sshTreeMove: (payload: Payloads['ssh_tree_move']) => cmd(commands.sshTreeMove, payload),
   sshComposeList: (connectionId: string) => cmd(commands.sshComposeList, { connectionId }),
   sshComposeAction: (payload: Payloads['ssh_compose_action']) =>
@@ -83,6 +98,7 @@ export const ipc = {
   sshTunnelDelete: (tunnelId: string) => cmd(commands.sshTunnelDelete, { tunnelId }),
 
   /* 终端 */
+  sshTerminalDirectory: (terminalId: string) => cmd(commands.sshTerminalDirectory, { terminalId }),
   sshTerminalOpen: (p: Payloads['ssh_terminal_open']) => cmd(commands.sshTerminalOpen, p),
   sshTerminalWrite: (terminalId: string, data: string) =>
     cmd(commands.sshTerminalWrite, { terminalId, data }),
@@ -106,6 +122,8 @@ export const ipc = {
     cmd(commands.sshFileRename, { connectionId, oldPath, newPath }),
   sshFileMkdir: (connectionId: string, path: string) =>
     cmd(commands.sshFileMkdir, { connectionId, path }),
+  sshLocalDefaultDirectory: (preferred?: string) =>
+    cmd(commands.sshLocalDefaultDirectory, { preferred }),
   sshLocalList: (path: string) => cmd(commands.sshLocalList, { path }),
   sshLocalCreate: (path: string, isDir: boolean) => cmd(commands.sshLocalCreate, { path, isDir }),
   sshLocalDelete: (path: string, isDir: boolean) => cmd(commands.sshLocalDelete, { path, isDir }),
