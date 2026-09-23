@@ -5,12 +5,12 @@
  */
 import { ref } from 'vue'
 import type { RemoteFile } from '../contracts'
-import { UiIcon, UiIconButton } from '@/core/ui'
+import { UiButton, UiIcon, UiIconButton } from '@/core/ui'
 import type { TransferItem } from './useFileTransfer'
 import { computed } from 'vue'
 import { useFileDrag, type DragSide } from './useFileDrag'
 import FileBrowser from './FileBrowser.vue'
-import FileStatusActions from './FileStatusActions.vue'
+import DirectoryBookmarks from './DirectoryBookmarks.vue'
 import LocalBrowser from './LocalBrowser.vue'
 
 const props = defineProps<{
@@ -46,6 +46,7 @@ const emit = defineEmits<{
   (e: 'localRowContext', mouse: MouseEvent, file: RemoteFile): void
   (e: 'localBlankContext', mouse: MouseEvent): void
   (e: 'localError', message: string): void
+  (e: 'toggleTransfers'): void
   (e: 'cancelTransfer', id: string): void
   (e: 'cancelAllTransfers'): void
   /** 远程栏拖到本地栏（下载） */
@@ -62,7 +63,7 @@ const localPane = ref<HTMLElement | null>(null)
 /** 本地浏览器实例（父级读取 files/currentPath/refresh 用，defineExpose 转发） */
 const localBrowser = ref<InstanceType<typeof LocalBrowser> | null>(null)
 /** 状态栏动作实例（父级「添加书签」菜单经此调用） */
-const statusActions = ref<InstanceType<typeof FileStatusActions> | null>(null)
+const statusActions = ref<InstanceType<typeof DirectoryBookmarks> | null>(null)
 defineExpose({ localBrowser, statusActions })
 
 /* ── 双栏拖拽（pointer 自实现；拖拽后吞掉浏览器自动补发的 click，防误触选中） ── */
@@ -143,14 +144,16 @@ const dragLabel = computed(() => {
         @row-pointer-down="(e: PointerEvent, f: RemoteFile) => onRowPointerDownSide(e, 'remote', f)"
       >
         <template #status-actions>
-          <FileStatusActions
+          <DirectoryBookmarks
             ref="statusActions"
             :profile-id="profileId"
-            :transfers="transfers"
+            :path="currentPath"
             @navigate="(p: string) => emit('navigate', p)"
-            @cancel="(id: string) => emit('cancelTransfer', id)"
-            @cancel-all="emit('cancelAllTransfers')"
           />
+          <UiButton size="sm" variant="ghost" @click="emit('toggleTransfers')"
+            >传输 {{ transfers.filter((t) => !t.done).length || '' }}</UiButton
+          >
+          <slot name="editor-action" />
         </template>
       </FileBrowser>
     </div>

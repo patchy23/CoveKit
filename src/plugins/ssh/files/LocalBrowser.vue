@@ -84,6 +84,7 @@ function onRowClick(event: MouseEvent, file: RemoteFile) {
 onMounted(() => void navigate(currentPath.value))
 
 defineExpose({
+  navigate,
   /** 当前目录 */
   currentPath,
   /** 当前目录文件列表（父级多选模型用） */

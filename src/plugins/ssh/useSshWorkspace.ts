@@ -89,6 +89,9 @@ export function useSshWorkspace() {
     credentialRequestProfile: credentials.requestProfile,
     respondCredentials: credentials.respond,
     /* 配置与分组 */
+    reloadProfiles: async () => {
+      await Promise.all([profilesApi.loadProfiles(), profilesApi.loadGroups()])
+    },
     profiles: profilesApi.profiles,
     groups: profilesApi.groups,
     expandedIds: profilesApi.expandedIds,

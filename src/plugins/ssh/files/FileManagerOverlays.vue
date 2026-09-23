@@ -5,7 +5,6 @@
  */
 import type { UiContextMenuItem } from '@/core/ui'
 import type { RemoteFile } from '../contracts'
-import type { RemoteEditing } from './useRemoteFileOps'
 import type { BatchConfirm } from './useFileBatchOps'
 import { UiContextMenu } from '@/core/ui'
 import { UiInputDialog } from '@/core/ui'
@@ -39,8 +38,6 @@ defineProps<{
   /* chmod */
   chmodTarget: RemoteFile | null
   /* 远程编辑/重命名/删除 */
-  editing: RemoteEditing | null
-  savingEdit: boolean
   renameTarget: RemoteFile | null
   deleteTarget: RemoteFile | null
 }>()
@@ -60,10 +57,8 @@ const emit = defineEmits<{
   (e: 'localRename', name: string): void
   (e: 'closeLocalDelete'): void
   (e: 'localDelete'): void
-  (e: 'cancelEdit'): void
   (e: 'cancelRename'): void
   (e: 'cancelDelete'): void
-  (e: 'save', content: string, force?: boolean): void
   (e: 'closeChmod'): void
   (e: 'chmod', mode: number, recursive: boolean, acknowledgeRisk: boolean): void
   (e: 'rename', name: string): void
@@ -145,14 +140,10 @@ const emit = defineEmits<{
     @confirm="(m: number, r: boolean, a: boolean) => emit('chmod', m, r, a)"
   />
   <FileManagerDialogs
-    :editing="editing"
-    :saving="savingEdit"
     :rename-target="renameTarget"
     :delete-target="deleteTarget"
-    @cancel-edit="emit('cancelEdit')"
     @cancel-rename="emit('cancelRename')"
     @cancel-delete="emit('cancelDelete')"
-    @save="(c: string, f?: boolean) => emit('save', c, f)"
     @rename="(n: string) => emit('rename', n)"
     @delete="emit('delete')"
   />

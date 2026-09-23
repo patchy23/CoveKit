@@ -62,6 +62,10 @@ export const ipc = {
 
   /* 服务器配置 + 分组（配置与凭证引用持久化在后端插件库） */
   sshProfileList: () => cmd(commands.sshProfileList, {}),
+  sshServerCsvRead: (path: string) => cmd(commands.sshServerCsvRead, { path }),
+  sshServerCsvWrite: (path: string, content: string) =>
+    cmd(commands.sshServerCsvWrite, { path, content }),
+  sshServerCsvExport: (p: Payloads['ssh_server_csv_export']) => cmd(commands.sshServerCsvExport, p),
   sshProfileSave: (p: Payloads['ssh_profile_save']) => cmd(commands.sshProfileSave, { payload: p }),
   sshProfileDelete: (profileId: string) => cmd(commands.sshProfileDelete, { profileId }),
   sshGroupList: () => cmd(commands.sshGroupList, {}),
@@ -113,6 +117,8 @@ export const ipc = {
   sshBookmarkList: (profileId: string) => cmd(commands.sshBookmarkList, { profileId }),
   sshBookmarkAdd: (profileId: string, name: string, path: string) =>
     cmd(commands.sshBookmarkAdd, { profileId, name, path }),
+  sshBookmarkUpdate: (payload: Payloads['ssh_bookmark_update']) =>
+    cmd(commands.sshBookmarkUpdate, payload),
   sshBookmarkDelete: (id: string) => cmd(commands.sshBookmarkDelete, { id }),
   sshFileDownloadRecursive: (p: Payloads['ssh_file_download_recursive']) =>
     cmd(commands.sshFileDownloadRecursive, p),

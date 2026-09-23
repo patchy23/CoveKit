@@ -1,4 +1,4 @@
-//! SSH 本地明文认证。仅连接时读取，不回传秘密，不创建 Vault 条目、不使用系统密钥。
+//! SSH 本地明文认证。连接及显式 CSV 导出时读取，不向配置列表回传秘密，不创建 Vault 条目、不使用系统密钥。
 
 use super::profiles::auth_method_to_str;
 use crate::plugins::ssh::models::{AuthMethod, CredentialOverride, ServerProfile};
@@ -101,8 +101,27 @@ pub(crate) fn save(
 
 /// 普通配置序列化不携带秘密；列表只附带是否本地保存的状态。
 pub(crate) fn annotate(conn: &Connection, profile: &mut ServerProfile) -> Result<(), String> {
-    profile.has_local_auth = get(conn, profile)?.is_some();
+    profile.has_local_auth = if profile.credential_ref.is_some() {
+        false
+    } else {
+        conn.query_row("SELECT EXISTS(SELECT 1 FROM ssh_local_auth WHERE profile_id=?1 AND host=?2 AND port=?3 AND username=?4 AND auth_method=?5)",
+            params![profile.id,profile.host,profile.port,profile.username,auth_method_to_str(profile.auth_method)], |row| row.get(0))
+            .map_err(|e| format!("读取本地认证状态失败: {e}"))?
+    };
     Ok(())
+}
+
+/// 显式导出只取密码列；密钥认证和凭证引用不允许进入此分支。
+pub(crate) fn export_password(
+    conn: &Connection,
+    profile: &ServerProfile,
+) -> Result<Option<String>, String> {
+    if profile.credential_ref.is_some() || profile.auth_method != AuthMethod::Password {
+        return Ok(None);
+    }
+    conn.query_row("SELECT password FROM ssh_local_auth WHERE profile_id=?1 AND host=?2 AND port=?3 AND username=?4 AND auth_method='password'",
+        params![profile.id,profile.host,profile.port,profile.username], |row| row.get::<_,Option<String>>(0))
+        .optional().map(Option::flatten).map_err(|_| "读取导出密码失败".into())
 }
 
 #[cfg(test)]

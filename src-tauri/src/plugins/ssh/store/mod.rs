@@ -99,6 +99,7 @@ pub(crate) mod bookmarks;
 pub(crate) mod local_auth;
 pub(crate) mod ordering;
 pub(crate) mod profiles;
+pub(crate) mod server_csv;
 pub(crate) mod tunnels;
 
 pub(crate) use profiles::{get_profile, touch_last_connected};

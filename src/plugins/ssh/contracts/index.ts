@@ -52,6 +52,9 @@ export interface CredentialOverride {
 }
 
 export const commands = {
+  sshServerCsvRead: 'ssh_server_csv_read',
+  sshServerCsvWrite: 'ssh_server_csv_write',
+  sshServerCsvExport: 'ssh_server_csv_export',
   sshTreeMove: 'ssh_tree_move',
   sshComposeList: 'ssh_compose_list',
   sshComposeAction: 'ssh_compose_action',
@@ -105,6 +108,7 @@ export const commands = {
   sshFileChmod: 'ssh_file_chmod',
   sshBookmarkList: 'ssh_bookmark_list',
   sshBookmarkAdd: 'ssh_bookmark_add',
+  sshBookmarkUpdate: 'ssh_bookmark_update',
   sshBookmarkDelete: 'ssh_bookmark_delete',
   sshFileDownloadRecursive: 'ssh_file_download_recursive',
   sshTransferCancel: 'ssh_transfer_cancel',
@@ -139,6 +143,9 @@ export interface CredentialOverride {
 }
 
 export type Payloads = {
+  ssh_server_csv_read: { path: string }
+  ssh_server_csv_write: { path: string; content: string }
+  ssh_server_csv_export: { path: string; ids: string[]; includePassword: boolean }
   ssh_tree_move: {
     kind: 'profile' | 'group'
     id: string
@@ -219,6 +226,7 @@ export type Payloads = {
   /** 书签列表/新增/删除 */
   ssh_bookmark_list: { profileId: string }
   ssh_bookmark_add: { profileId: string; name: string; path: string }
+  ssh_bookmark_update: { profileId: string; bookmarks: SshBookmark[] }
   ssh_bookmark_delete: { id: string }
   ssh_file_download_recursive: {
     connectionId: string
@@ -297,6 +305,9 @@ export type InvokePayloads = Omit<
 /* ── 命令返回 ── */
 
 export type Results = {
+  ssh_server_csv_read: string
+  ssh_server_csv_write: void
+  ssh_server_csv_export: number
   ssh_tree_move: void
   /* 连接 */
   ssh_connect: SshConnectOutcome
@@ -348,6 +359,7 @@ export type Results = {
   ssh_file_chmod: SshActionResult
   ssh_bookmark_list: SshBookmark[]
   ssh_bookmark_add: SshBookmark
+  ssh_bookmark_update: void
   ssh_bookmark_delete: void
   ssh_file_download_recursive: FileTransferProgress
   ssh_transfer_cancel: SshActionResult

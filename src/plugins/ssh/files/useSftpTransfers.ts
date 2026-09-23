@@ -3,7 +3,6 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { useUiStore } from '@/stores/ui'
 import type { RemoteFile } from '../contracts'
-import { ipc } from '../ipc'
 import { useFileTransfer } from './useFileTransfer'
 
 export function useSftpTransfers(options: {
@@ -18,11 +17,10 @@ export function useSftpTransfers(options: {
 }) {
   const ui = useUiStore()
   const dragActive = ref(false)
+  let disposed = false
   let stopDragDrop: (() => void) | null = null
-  const { transferStatus, transfers, cancelTransfer } = useFileTransfer(
-    options.connectionId,
-    options.refresh
-  )
+  const { transferStatus, transfers, cancelTransfer, applyProgress, clearEnded, startTransfer } =
+    useFileTransfer(options.connectionId, options.refresh)
 
   async function uploadLocalPaths(
     localPaths: string[],
@@ -37,9 +35,8 @@ export function useSftpTransfers(options: {
         ? `${remoteDirectory}${name}`
         : `${remoteDirectory}/${name}`
       try {
-        await ipc.sshFileUpload({ connectionId, localPath, remotePath: remote })
+        await startTransfer('upload', localPath, remote)
         started += 1
-        transferStatus.value = `正在上传 ${name}`
       } catch (error) {
         ui.toast(`上传失败（${name}）：${error}`)
       }
@@ -58,7 +55,7 @@ export function useSftpTransfers(options: {
 
   /**
    * 下载到本地栏当前目录（不弹保存框；目录由调用方注入）。
-   * 同名文件直接覆盖——传输面板有进度与取消，行为与 WinSCP 落盘一致。
+   * 同名冲突保留失败记录，用户在面板确认重新传输后才覆盖。
    */
   async function download(file: RemoteFile | null = options.selectedFile.value) {
     const connectionId = options.connectionId()
@@ -74,13 +71,7 @@ export function useSftpTransfers(options: {
     try {
       const separator = dir.includes('\\') ? '\\' : '/'
       const localPath = `${dir.replace(/[\\/]$/, '')}${separator}${file.name}`
-      if (file.isDir) {
-        // 目录走递归下载（与批量下载一致），任务进传输面板
-        await ipc.sshFileDownloadRecursive({ connectionId, remotePath: file.path, localPath })
-      } else {
-        await ipc.sshFileDownload({ connectionId, remotePath: file.path, localPath })
-      }
-      transferStatus.value = `正在下载 ${file.name}`
+      await startTransfer('download', localPath, file.path)
       ui.toast(`已开始下载：${file.name} → ${dir}`)
     } catch (error) {
       ui.toast(`下载失败：${error}`)
@@ -111,13 +102,20 @@ export function useSftpTransfers(options: {
         dragActive.value = inside && payload.type !== 'drop'
         if (payload.type === 'drop' && inside) void uploadLocalPaths(payload.paths)
       })
+      if (disposed) stopDragDrop()
     } catch {
       // 浏览器预览没有 Tauri 原生文件拖放事件。
     }
   })
-  onUnmounted(() => stopDragDrop?.())
+  onUnmounted(() => {
+    disposed = true
+    stopDragDrop?.()
+  })
 
   return {
+    startTransfer,
+    clearEnded,
+    applyProgress,
     dragActive,
     transferStatus,
     transfers,

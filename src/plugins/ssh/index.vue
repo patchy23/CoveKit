@@ -5,6 +5,8 @@ import LiveLogDialog from './monitor/LiveLogDialog.vue'
 import { provideLogWindows } from './monitor/logWindows'
 import ServerList from './profiles/ServerList.vue'
 import ServerForm from './profiles/ServerForm.vue'
+import ServerImportDialog from './profiles/ServerImportDialog.vue'
+import ServerExportDialog from './profiles/ServerExportDialog.vue'
 import ConnectionCredentialsDialog from './connection/ConnectionCredentialsDialog.vue'
 import HostKeyDialog from './connection/HostKeyDialog.vue'
 import KnownHostsDialog from './connection/KnownHostsDialog.vue'
@@ -40,6 +42,7 @@ const ProcessTab = lazySection(() => import('./monitor/ProcessTab.vue'))
 const DockerTab = lazySection(() => import('./docker/DockerTab.vue'))
 const ComposeTab = lazySection(() => import('./compose/ComposeTab.vue'))
 
+const bulk = ref<{ mode: 'import' | 'export'; groupId?: string }>()
 const workspace = useSshWorkspace()
 // 工具资源生命周期：关闭页签/退出时断开会话与隧道（T10-4）
 useSshToolLifecycle()
@@ -76,10 +79,15 @@ const sectionTabs: UiTabItem[] = [
 
 const activeWorkspaceId = ref<string | null>(null)
 const closingWorkspaceId = ref<string | null>(null)
+const fileStates = ref<Record<string, { dirty: boolean; busy: boolean }>>({})
 const composeStates = ref<Record<string, { dirty: boolean; busy: boolean }>>({})
 const composeCloseHint = computed(() => {
   const state = closingWorkspaceId.value ? composeStates.value[closingWorkspaceId.value] : undefined
-  return `${state?.dirty ? '编排页有未保存的 YAML，关闭将丢失修改。' : ''}${state?.busy ? '编排操作仍在执行，关闭后远端操作不保证停止。' : ''}`
+  const file = closingWorkspaceId.value ? fileStates.value[closingWorkspaceId.value] : undefined
+  return (
+    (file?.dirty || file?.busy ? '远程文件有未保存内容或正在读写，关闭将丢失草稿。' : '') +
+    `${state?.dirty ? '编排页有未保存的 YAML，关闭将丢失修改。' : ''}${state?.busy ? '编排操作仍在执行，关闭后远端操作不保证停止。' : ''}`
+  )
 })
 const openingProfileId = ref<string | null>(null)
 /** 「关闭全部会话」确认弹窗开关 */
@@ -151,7 +159,9 @@ function requestCloseWorkspace(id: string) {
   if (
     (workspace.connection.status === 'disconnected' || workspace.connection.status === 'error') &&
     !composeStates.value[id]?.dirty &&
-    !composeStates.value[id]?.busy
+    !composeStates.value[id]?.busy &&
+    !fileStates.value[id]?.dirty &&
+    !fileStates.value[id]?.busy
   ) {
     void confirmCloseWorkspace(id)
     return
@@ -206,6 +216,8 @@ watch(
       @update:search-keyword="searchKeyword = $event"
       @open-connection="createConnection"
       @add="openAddServer"
+      @bulk-import="(groupId) => (bulk = { mode: 'import', groupId })"
+      @bulk-export="(groupId) => (bulk = { mode: 'export', groupId })"
       @known-hosts="knownHostsOpen = true"
       @edit="workspace.openEditForm"
       @delete-request="workspace.requestDelete"
@@ -277,14 +289,13 @@ watch(
               @link-dead="workspace.handleLinkDead(remote.id)"
             />
             <FileManagerTab
-              v-if="
-                remote.connection.status === 'connected' && remote.visitedSections.includes('files')
-              "
+              v-if="remote.visitedSections.includes('files')"
               v-show="remote.activeSection === 'files'"
               :connection="remote.connection"
               :profile="profiles.find((profile) => profile.id === remote.profileId)"
               :active="activeWorkspaceId === remote.id && remote.activeSection === 'files'"
               class="h-full"
+              @state="fileStates[remote.id] = $event"
             />
             <TunnelTab
               v-if="
@@ -368,6 +379,21 @@ watch(
       @confirm="workspace.respondCredentials"
       @cancel="workspace.respondCredentials()"
     />
+    <ServerImportDialog
+      v-if="bulk?.mode === 'import'"
+      :profiles="profiles"
+      :groups="groups"
+      :group-id="bulk.groupId"
+      @close="bulk = undefined"
+      @changed="workspace.reloadProfiles"
+    />
+    <ServerExportDialog
+      v-if="bulk?.mode === 'export'"
+      :profiles="profiles"
+      :groups="groups"
+      :group-id="bulk.groupId"
+      @close="bulk = undefined"
+    />
     <ServerForm
       v-if="formOpen"
       :profile="editingProfile"
@@ -404,7 +430,7 @@ watch(
     <UiConfirmDialog
       :open="cleanupAllOpen"
       title="关闭全部会话"
-      :message="`将断开并关闭全部 ${connectionWorkspaces.length} 个会话，未保存的终端内容和编排配置将丢失；正在执行的远端操作不保证停止。`"
+      :message="`将断开并关闭全部 ${connectionWorkspaces.length} 个会话，未保存的远程文件、终端内容及编排配置将丢失；正在执行的远端操作不保证停止。`"
       confirm-label="全部关闭"
       danger
       @close="cleanupAllOpen = false"

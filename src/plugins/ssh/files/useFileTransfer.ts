@@ -1,126 +1,158 @@
-/**
- * SSH 文件传输事件状态：统一处理进度、完成/失败反馈、队列展示与取消。
- * transfers 为当前连接的传输任务表（事件驱动）；done 任务保留 10 秒后自动清除。
- */
-import { onMounted, onUnmounted, ref } from 'vue'
-import { useUiStore } from '@/stores/ui'
+/** 连接内传输快照；保留最近 200 个已结束任务，活动任务不裁剪。 */
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { ipc, onTransferProgress } from '../ipc'
 import type { FileTransferProgress } from '../contracts'
-
-/** 队列中的单条传输任务展示 */
 export interface TransferItem {
   id: string
-  /** 上传 / 下载 */
   kind: 'upload' | 'download'
-  /** 展示名（当前文件名） */
   label: string
   transferred: number
   total: number
   error?: string
   done: boolean
+  localPath: string
+  remotePath: string
+  speed: number
+  updatedAt: number
+  cancelling?: boolean
+  preparing?: boolean
 }
-
-/** 已完成任务在队列中的保留时长 */
-const DONE_TTL_MS = 10_000
-
-/** 订阅文件传输事件，维护任务队列，并在上传完成后触发目录刷新。 */
 export function useFileTransfer(
   currentConnectionId: () => string | undefined,
   onUploadDone: () => void
 ) {
-  const ui = useUiStore()
-  const transferStatus = ref('')
-  /** 当前连接的传输队列（transferId → 任务） */
-  const transfers = ref<Map<string, TransferItem>>(new Map())
-  const clearTimers = new Map<string, ReturnType<typeof setTimeout>>()
-  let unlisten: (() => void) | null = null
-  let disposed = false
-
-  /** 任务完成后延迟清理（成功与失败一视同仁，toast 已给出结果） */
-  function scheduleClear(id: string) {
-    const existing = clearTimers.get(id)
-    if (existing) clearTimeout(existing)
-    clearTimers.set(
-      id,
-      setTimeout(() => {
-        const next = new Map(transfers.value)
-        next.delete(id)
-        transfers.value = next
-        clearTimers.delete(id)
-      }, DONE_TTL_MS)
-    )
+  const transferStatus = ref(''),
+    transfers = ref(new Map<string, TransferItem>())
+  let unlisten: (() => void) | undefined,
+    disposed = false
+  function trimHistory() {
+    const ended = [...transfers.value.values()].filter((v) => v.done)
+    for (const stale of ended.slice(0, Math.max(0, ended.length - 200)))
+      transfers.value.delete(stale.id)
   }
-
-  /** 取消传输（后端协作式：循环内检查并清理临时文件） */
-  async function cancelTransfer(id: string) {
+  function clearEnded() {
+    transfers.value = new Map([...transfers.value].filter(([, v]) => !v.done))
+  }
+  function applyProgress(p: FileTransferProgress) {
+    if (p.connectionId !== currentConnectionId() || disposed) return
+    const old = transfers.value.get(p.transferId),
+      now = Date.now()
+    if (old?.done || (old && !p.done && p.transferred < old.transferred)) return
+    const item: TransferItem = {
+      id: p.transferId,
+      kind: p.transferId.startsWith('up') ? 'upload' : 'download',
+      label:
+        p.remotePath.split('/').pop() ||
+        p.localPath.replaceAll(String.fromCharCode(92), '/').split('/').pop() ||
+        '文件',
+      localPath: p.localPath,
+      remotePath: p.remotePath,
+      transferred: p.transferred,
+      total: p.total,
+      done: p.done,
+      error: p.error,
+      updatedAt: now,
+      speed:
+        old && now > old.updatedAt
+          ? (Math.max(0, p.transferred - old.transferred) * 1000) / (now - old.updatedAt)
+          : 0,
+      cancelling: old?.cancelling,
+    }
+    const next = new Map(transfers.value)
+    next.set(item.id, item)
+    const ended = [...next.values()].filter((v) => v.done)
+    for (const stale of ended.slice(0, Math.max(0, ended.length - 200))) next.delete(stale.id)
+    transfers.value = next
+    transferStatus.value = [...next.values()].some((v) => !v.done) ? '文件传输中' : ''
+    if (p.done && !p.error && item.kind === 'upload') onUploadDone()
+  }
+  async function startTransfer(
+    kind: 'upload' | 'download',
+    localPath: string,
+    remotePath: string,
+    overwrite = false
+  ) {
+    const connectionId = currentConnectionId()
+    if (!connectionId) throw new Error('SSH 未连接')
+    const id = 'preparing-' + crypto.randomUUID()
+    const entry: TransferItem = {
+      id,
+      kind,
+      label: remotePath.split('/').pop() || '文件',
+      localPath,
+      remotePath,
+      transferred: 0,
+      total: 0,
+      done: false,
+      speed: 0,
+      updatedAt: Date.now(),
+      preparing: true,
+    }
+    transfers.value.set(id, entry)
+    transferStatus.value = '正在准备传输'
     try {
-      await ipc.sshTransferCancel(id)
-      ui.toast('已请求取消传输')
-    } catch (error) {
-      ui.toast(`取消失败：${error}`)
+      const result =
+        kind === 'upload'
+          ? await ipc.sshFileUpload({ connectionId, localPath, remotePath })
+          : await ipc.sshFileDownloadRecursive({ connectionId, localPath, remotePath, overwrite })
+      const cancelled = transfers.value.get(id)?.cancelling
+      transfers.value.delete(id)
+      applyProgress(result)
+      if (cancelled) await cancelTransfer(result.transferId)
+      return result
+    } catch (e) {
+      const item = transfers.value.get(id)
+      if (item) {
+        item.done = true
+        item.preparing = false
+        item.error = String(e)
+        trimHistory()
+        transferStatus.value = [...transfers.value.values()].some((v) => !v.done)
+          ? '文件传输中'
+          : ''
+      }
+      throw e
     }
   }
-
+  async function cancelTransfer(id: string) {
+    const item = transfers.value.get(id)
+    if (!item || item.done) return
+    item.cancelling = true
+    if (item.preparing) return
+    try {
+      await ipc.sshTransferCancel(id)
+    } catch (e) {
+      const latest = transfers.value.get(id)
+      if (latest) {
+        latest.cancelling = false
+        latest.error = '取消失败：' + String(e)
+      }
+    }
+  }
+  watch(currentConnectionId, () => {
+    for (const item of transfers.value.values())
+      if (!item.done) {
+        item.done = true
+        item.preparing = false
+        item.error = '连接已变化，传输状态中断'
+      }
+    trimHistory()
+    transferStatus.value = ''
+  })
   onMounted(async () => {
     try {
-      const stop = await onTransferProgress((progress) => {
-        if (progress.connectionId !== currentConnectionId()) return
-        applyProgress(progress)
+      const stop = await onTransferProgress((p) => {
+        if (p.connectionId === currentConnectionId()) applyProgress(p)
       })
       if (disposed) stop()
       else unlisten = stop
-    } catch {
-      /* 浏览器预览没有 Tauri 事件系统。 */
+    } catch (e) {
+      transferStatus.value = '无法订阅传输进度：' + String(e)
     }
   })
-
-  /** 事件 → 队列/状态（独立函数便于单测） */
-  function applyProgress(progress: FileTransferProgress) {
-    const upload = progress.transferId.startsWith('up')
-    const name =
-      progress.remotePath.split('/').pop() || progress.localPath.split(/[\\/]/).pop() || '文件'
-    if (!progress.done) {
-      const next = new Map(transfers.value)
-      next.set(progress.transferId, {
-        id: progress.transferId,
-        kind: upload ? 'upload' : 'download',
-        label: name,
-        transferred: progress.transferred,
-        total: progress.total,
-        done: false,
-      })
-      transfers.value = next
-      const percent =
-        progress.total > 0
-          ? Math.min(100, Math.round((progress.transferred / progress.total) * 100))
-          : 0
-      transferStatus.value = `${upload ? '上传' : '下载'} ${percent}%`
-      return
-    }
-
-    transferStatus.value = ''
-    scheduleClear(progress.transferId)
-    if (progress.error) {
-      const next = new Map(transfers.value)
-      const item = next.get(progress.transferId)
-      if (item) next.set(progress.transferId, { ...item, error: progress.error, done: true })
-      transfers.value = next
-      ui.toast(`文件传输失败：${progress.error}`)
-    } else {
-      const next = new Map(transfers.value)
-      const item = next.get(progress.transferId)
-      if (item) next.set(progress.transferId, { ...item, done: true })
-      transfers.value = next
-      ui.toast(`${upload ? '上传' : '下载'}完成：${name}`)
-      if (upload) onUploadDone()
-    }
-  }
-
   onUnmounted(() => {
     disposed = true
     unlisten?.()
-    for (const timer of clearTimers.values()) clearTimeout(timer)
   })
-
-  return { transferStatus, transfers, cancelTransfer, applyProgress }
+  return { transferStatus, transfers, cancelTransfer, applyProgress, clearEnded, startTransfer }
 }

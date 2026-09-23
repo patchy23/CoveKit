@@ -36,6 +36,8 @@ const emit = defineEmits<{
   (event: 'update:searchKeyword', value: string): void
   (event: 'openConnection', profileId: string): void
   (event: 'add', groupId?: string): void
+  (event: 'bulkImport', groupId?: string): void
+  (event: 'bulkExport', groupId?: string): void
   (event: 'knownHosts'): void
   (event: 'edit', profile: ServerProfile): void
   (event: 'deleteRequest', profile: ServerProfile): void
@@ -136,6 +138,8 @@ const menuItems = computed<UiContextMenuItem[]>(() => {
     return [
       { label: '添加服务器', onClick: () => emit('add') },
       { label: '新建分组', onClick: openCreate },
+      { label: '批量导入', onClick: () => emit('bulkImport') },
+      { label: '导出服务器', onClick: () => emit('bulkExport') },
     ]
   if (menu.value.kind === 'profile') {
     const profile = menu.value.profile
@@ -149,6 +153,8 @@ const menuItems = computed<UiContextMenuItem[]>(() => {
   const group = menu.value.group
   return [
     { label: '添加服务器', onClick: () => emit('add', group.id) },
+    { label: '批量导入到此分组', onClick: () => emit('bulkImport', group.id) },
+    { label: '导出此分组', onClick: () => emit('bulkExport', group.id) },
     { label: '', separator: true },
     { label: '重命名分组', onClick: () => openRename(group) },
     { label: '', separator: true },
@@ -207,6 +213,9 @@ function confirmDeleteGroup() {
         @update:model-value="emit('update:searchKeyword', $event)"
       >
         <template #actions>
+          <UiIconButton label="服务器管理菜单" size="xs" @click="openBlankMenu"
+            ><UiIcon name="dots" :size="14"
+          /></UiIconButton>
           <UiIconButton label="添加服务器" size="xs" @click="emit('add')">
             <UiIcon name="plus" :size="14" />
           </UiIconButton>

@@ -36,6 +36,14 @@ pub fn add_bookmark(
     name: &str,
     path: &str,
 ) -> Result<SshBookmark, String> {
+    if !path.starts_with('/') {
+        return Err("书签必须是远程绝对路径".into());
+    }
+    let path = if path.trim_end_matches('/').is_empty() {
+        "/"
+    } else {
+        path.trim_end_matches('/')
+    };
     // 同路径去重：已存在直接返回（右键重复添加不应产生重复行）
     if let Some(existing) = list_bookmarks(conn, profile_id)?
         .into_iter()
@@ -134,6 +142,50 @@ pub fn ssh_bookmark_delete(
     with_db(&app, &state, |conn| delete_bookmark(conn, &id))
 }
 
+/// 更新当前服务器的书签名称和排序；不允许通过此入口变更归属或路径。
+#[tauri::command(rename_all = "camelCase")]
+pub fn ssh_bookmark_update(
+    app: AppHandle,
+    state: State<'_, ProfileState>,
+    profile_id: String,
+    bookmarks: Vec<SshBookmark>,
+) -> Result<(), String> {
+    with_db(&app, &state, |conn| {
+        update_bookmarks(conn, &profile_id, &bookmarks)
+    })
+}
+
+/// 整组重排在同一事务中完成，任何非法项都回滚此前更新。
+fn update_bookmarks(
+    conn: &Connection,
+    profile_id: &str,
+    bookmarks: &[SshBookmark],
+) -> Result<(), String> {
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+    let existing = list_bookmarks(&tx, profile_id)?;
+    let ids: std::collections::HashSet<_> = bookmarks.iter().map(|b| &b.id).collect();
+    if bookmarks.len() != existing.len() || ids.len() != existing.len() {
+        return Err("书签已变化，请刷新后重试".into());
+    }
+    for (index, bookmark) in bookmarks.iter().enumerate() {
+        if bookmark.name.trim().is_empty()
+            || !existing.iter().any(|item| {
+                item.id == bookmark.id
+                    && item.path == bookmark.path
+                    && bookmark.profile_id == profile_id
+            })
+        {
+            return Err("书签无效或已变化，请刷新后重试".into());
+        }
+        tx.execute(
+            "UPDATE profile_bookmarks SET name = ?1, sort = ?2 WHERE id = ?3 AND profile_id = ?4",
+            rusqlite::params![bookmark.name.trim(), index as i64, bookmark.id, profile_id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    tx.commit().map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,5 +210,20 @@ mod tests {
         assert!(list_bookmarks(&conn, "p2").unwrap().is_empty());
         delete_bookmark(&conn, &a.id).unwrap();
         assert_eq!(list_bookmarks(&conn, "p1").unwrap().len(), 1);
+    }
+    #[test]
+    fn reorder_is_atomic_and_checks_ownership() {
+        let db = open_memory();
+        add_bookmark(&db, "p", "one", "/one").unwrap();
+        add_bookmark(&db, "p", "two", "/two").unwrap();
+        let mut rows = list_bookmarks(&db, "p").unwrap();
+        rows.reverse();
+        rows[0].name = "renamed".into();
+        update_bookmarks(&db, "p", &rows).unwrap();
+        assert_eq!(list_bookmarks(&db, "p").unwrap()[0].name, "renamed");
+        rows[0].name = "must rollback".into();
+        rows[1].profile_id = "other".into();
+        assert!(update_bookmarks(&db, "p", &rows).is_err());
+        assert_eq!(list_bookmarks(&db, "p").unwrap()[0].name, "renamed");
     }
 }

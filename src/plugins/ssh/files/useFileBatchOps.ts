@@ -23,6 +23,11 @@ export interface BatchConfirm {
 
 export function useFileBatchOps(deps: {
   sessionId: () => string | undefined
+  startTransfer: (
+    kind: 'upload' | 'download',
+    localPath: string,
+    remotePath: string
+  ) => Promise<unknown>
   /** 远端当前目录（下载目的地/上传目标在弹窗里另行确认） */
   refreshRemote: () => void
   refreshLocal: () => void
@@ -138,11 +143,7 @@ export function useFileBatchOps(deps: {
       const localPath = `${targetDir.replace(/[\\/]$/, '')}${sep}${item.name}`
       try {
         // 传输命令入队即返回（结果走传输队列面板），异常才算提交失败
-        if (item.isDir) {
-          await ipc.sshFileDownloadRecursive({ connectionId, remotePath: item.path, localPath })
-        } else {
-          await ipc.sshFileDownload({ connectionId, remotePath: item.path, localPath })
-        }
+        await deps.startTransfer('download', localPath, item.path)
       } catch {
         failed++
       }
