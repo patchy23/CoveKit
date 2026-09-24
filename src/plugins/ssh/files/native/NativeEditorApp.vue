@@ -3,6 +3,7 @@ import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { UiAlert, UiButton, UiSpinner } from '@/core/ui'
 import Toast from '@/features/ui/Toast.vue'
+import TitleBar from '@/features/ui/TitleBar.vue'
 import { useSettingsStore } from '@/stores/settings'
 import type { ServerConnection } from '../../contracts'
 import { ipc } from '../../ipc'
@@ -95,7 +96,7 @@ onMounted(async () => {
   try {
     const native = getCurrentWebviewWindow()
     if (native.label !== 'ssh-editor-' + token) throw new Error('编辑器窗口身份不匹配')
-    void settings.init().catch(error)
+    await settings.init()
     stopClose = await native.onCloseRequested((event) => {
       event.preventDefault()
       if (!ready.value) {
@@ -163,6 +164,7 @@ onUnmounted(() => {
   <div
     class="flex h-screen min-h-0 flex-col bg-surface text-primary dark:bg-surface-dark dark:text-primary-dark"
   >
+    <TitleBar standalone :title="'CoveKit · ' + title" />
     <UiAlert v-if="failure" tone="danger" class="shrink-0"
       >{{ failure }}
       <UiButton v-if="moving" size="sm" variant="ghost" @click="recoverOwnership"
@@ -177,6 +179,7 @@ onUnmounted(() => {
       :connection="connection"
       :title="title"
       standalone
+      :ready="ready"
       :moving="moving"
       @dock="finish('dock')"
       @closed="finish('closed')"

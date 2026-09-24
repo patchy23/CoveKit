@@ -1,5 +1,8 @@
 import { mount, enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createPinia } from 'pinia'
+import TitleBar from '@/features/ui/TitleBar.vue'
+import { UiTree } from '@/core/ui'
 import NativeEditorApp from './NativeEditorApp.vue'
 import RemoteEditorWorkspace from '../RemoteEditorWorkspace.vue'
 import { UiModal } from '@/core/ui'
@@ -8,6 +11,8 @@ const env = vi.hoisted(() => ({
   request: vi.fn(),
   operation: vi.fn(),
   dispose: vi.fn(),
+  list: vi.fn(),
+  windowAction: vi.fn(),
   closing: undefined as unknown as (event: { preventDefault: () => void }) => void,
 }))
 const token = '12345678-1234-1234-1234-123456789abc'
@@ -26,11 +31,16 @@ vi.mock('@/stores/settings', () => ({
 vi.mock('./channel', () => ({
   editorChannel: async () => ({ request: env.request, dispose: env.dispose }),
 }))
-vi.mock('../../ipc', () => ({ ipc: { sshEditorWindow: env.operation } }))
-vi.mock('../RemoteEditorTree.vue', () => ({ default: { template: '<div />' } }))
+vi.mock('../../ipc', () => ({ ipc: { sshEditorWindow: env.operation, sshFileList: env.list } }))
+vi.mock('@/core/platform/window', () => ({ runWindowAction: env.windowAction }))
 enableAutoUnmount(afterEach)
 beforeEach(() => {
   vi.clearAllMocks()
+  env.windowAction.mockResolvedValue({ ok: true })
+  env.list.mockResolvedValue({
+    ok: true,
+    files: [{ name: 'config.yml', path: '/config.yml', isDir: false }],
+  })
   window.history.replaceState(null, '', '/?sshEditor=' + token)
   const initial: EditorInitial = {
     title: 'host',
@@ -60,6 +70,7 @@ beforeEach(() => {
 function setup() {
   return mount(NativeEditorApp, {
     global: {
+      plugins: [createPinia()],
       stubs: {
         Toast: true,
         UiCodeEditor: true,
@@ -102,4 +113,25 @@ it('系统关闭按钮先确认未保存内容，不立即销毁窗口', async (
       ?.props('open')
   ).toBe(true)
   expect(env.operation).not.toHaveBeenCalled()
+})
+
+it('握手后加载真实目录树并使用主窗口标题栏，窗口控制只操作当前窗口', async () => {
+  const wrapper = setup()
+  await flushPromises()
+  expect(env.list).toHaveBeenCalledWith('same-session', '/')
+  expect(wrapper.getComponent(UiTree).props('items')).toEqual([
+    expect.objectContaining({ id: '/config.yml', label: 'config.yml' }),
+  ])
+  const bar = wrapper.getComponent(TitleBar)
+  expect(bar.text()).toContain('CoveKit · host')
+  expect(bar.find('[aria-label="隐藏侧栏"]').exists()).toBe(false)
+  expect(bar.find('[aria-label="关闭（最小化到托盘）"]').exists()).toBe(false)
+  for (const [label, action] of [
+    ['最小化', 'minimize'],
+    ['最大化', 'toggleMaximize'],
+    ['关闭', 'close'],
+  ]) {
+    await bar.get('[aria-label="' + label + '"]').trigger('click')
+    expect(env.windowAction).toHaveBeenLastCalledWith(action)
+  }
 })

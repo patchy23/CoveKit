@@ -47,7 +47,7 @@ pub async fn ssh_editor_window(
             .inner_size(1100.0, 760.0)
             .min_inner_size(640.0, 420.0)
             .center()
-            .decorations(true)
+            .decorations(false)
             .general_autofill_enabled(false)
             .visible(false)
             .build()

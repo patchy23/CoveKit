@@ -119,11 +119,13 @@ pub(crate) async fn replace_remote_file(
             .map_err(|e| format!("提交远程文件失败: {e}"));
     }
 
-    let metadata = tokio::fs::symlink_metadata(target_path)
+    // 远程路径必须通过同一 SFTP 会话检查，不能交给本机文件系统。
+    let metadata = fs
+        .symlink_metadata(target_path)
         .await
-        .map_err(|e| format!("读取下载目标类型失败: {e}"))?;
-    if !metadata.is_file() {
-        return Err("本地目标已存在且不是普通文件".into());
+        .map_err(|e| format!("读取远程目标类型失败: {e}"))?;
+    if !metadata.file_type().is_file() {
+        return Err("远程目标已存在且不是普通文件".into());
     }
     let backup_path = format!("{target_path}.covekit-backup-{}", resource_id("file"));
     fs.rename(target_path, &backup_path)
