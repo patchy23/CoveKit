@@ -236,9 +236,10 @@ defineExpose({
     const view = editor.view.value
     if (view)
       view.requestMeasure({
-        write: () => {
-          view.scrollDOM.scrollTop = position.top
-          view.scrollDOM.scrollLeft = position.left
+        read: () => ({ top: position.top, left: position.left }),
+        write: (scroll) => {
+          view.scrollDOM.scrollTop = scroll.top
+          view.scrollDOM.scrollLeft = scroll.left
         },
       })
   },
