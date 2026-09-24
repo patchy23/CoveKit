@@ -347,7 +347,8 @@ async function onSave() {
       <UiPanel
         :key="String(open) + form.id"
         title="更多配置"
-        padding="xs"
+        padding="none"
+        class="connection-more"
         collapsible
         :default-open="false"
       >
@@ -356,7 +357,7 @@ async function onSave() {
             >更多配置</span
           >
         </template>
-        <div class="space-y-[8px]">
+        <div class="space-y-[8px] pt-[4px]">
           <div class="grid grid-cols-2 gap-[8px]">
             <UiField label="环境" size="xs"
               ><UiInput v-model="form.env" size="xs" placeholder="开发"
@@ -404,6 +405,15 @@ async function onSave() {
 </template>
 
 <style scoped>
+.connection-more {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.connection-more :deep(header) {
+  min-height: 24px;
+  margin-bottom: 0;
+}
 .connection-port {
   appearance: textfield;
 }
