@@ -62,6 +62,8 @@ export const useUpdateStore = defineStore('update', () => {
   const canCheck = computed(
     () =>
       supported &&
+      phase.value !== 'unavailable' &&
+      phase.value !== 'unsupported' &&
       phase.value !== 'checking' &&
       phase.value !== 'downloading' &&
       phase.value !== 'installing'
@@ -74,22 +76,24 @@ export const useUpdateStore = defineStore('update', () => {
   const installNotCancellableReason = '安装阶段会替换程序文件并重启，中断可能留下装了一半的程序'
 
   /** 判定更新通道可用性（进设置页时调一次，也可主动刷新） */
-  async function ensureAvailability(): Promise<void> {
+  async function ensureAvailability(): Promise<boolean> {
     if (!supported) {
       phase.value = 'unsupported'
-      return
+      return false
     }
     try {
       const status = await ipc.updateAvailability()
       unavailableReason.value = status.available ? '' : status.reason
       if (!status.available && phase.value !== 'downloading' && phase.value !== 'installing') {
         phase.value = 'unavailable'
-      } else if (status.available && phase.value === 'unknown') {
+      } else if (status.available && (phase.value === 'unknown' || phase.value === 'unavailable')) {
         phase.value = 'idle'
       }
+      return status.available
     } catch (reason) {
       unavailableReason.value = reason instanceof Error ? reason.message : String(reason)
       phase.value = 'unavailable'
+      return false
     }
   }
 
@@ -140,6 +144,7 @@ export const useUpdateStore = defineStore('update', () => {
     errorMessage.value = ''
     errorCode.value = ''
     try {
+      if (!(await ensureAvailability())) return
       releaseNotes.value = ''
       version.value = ''
       const found = await check()

@@ -1018,7 +1018,7 @@ dependencies = [
 
 [[package]]
 name = "covekit"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 dependencies = [
  "aes-gcm 0.10.3",
  "aliyun-openapi-core-rust-sdk",

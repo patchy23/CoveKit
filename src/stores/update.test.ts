@@ -33,6 +33,14 @@ import { useUpdateStore } from '@/stores/update'
 import { listErrors } from '@/core/diagnostics'
 
 describe('更新状态', () => {
+  it('尚未加载可用性时直接检查也不能绕过停用通道', async () => {
+    updateAvailability.mockResolvedValueOnce({ available: false, reason: 'Alpha 手动下载' })
+    const store = useUpdateStore()
+    await store.checkNow()
+    expect(store.phase).toBe('unavailable')
+    expect(check).not.toHaveBeenCalled()
+  })
+
   beforeEach(() => {
     // 更新能力只在桌面环境存在：测试里显式声明，否则 store 会判定为不支持而跳过全部动作
     ;(window as unknown as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ = {}
@@ -127,5 +135,8 @@ describe('更新状态', () => {
 
     expect(store.phase).toBe('unavailable')
     expect(store.unavailableReason).toBe('公钥仍是占位值')
+    expect(store.canCheck).toBe(false)
+    await store.checkNow()
+    expect(check).not.toHaveBeenCalled()
   })
 })

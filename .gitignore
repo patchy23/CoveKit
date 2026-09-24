@@ -43,19 +43,15 @@ branding/
 /TODO.md
 /docs/batches/
 /docs/待人工验证清单.md
-/docs/plugins/vault/落地笔记.md
-/docs/plugins/ssh/设计.md
 
 # 早期设计草稿、一次性调研和本机图标试作，仅本地保留
 /IDEA.md
 /sketches/
-/docs/plugins/ssh/竞品分析.md
 /scripts/make_icon.py
 
 # 当前只构建 Windows/macOS，移动端生成图标不入库
 /src-tauri/icons/android/
 /src-tauri/icons/ios/
-
 
 # 本地环境与签名材料；示例配置和测试夹具应使用明确的非秘密文件名
 .env
@@ -70,11 +66,6 @@ branding/
 
 # 历史过程材料与非目标打包资源：取消跟踪后保留本地
 /docs/releases/v0.1.0-发布候选.md
-/docs/adr/ADR-0005-文档三层与批次号组织.md
-/docs/adr/ADR-0007-验收按变更分档与证据等级.md
-/docs/plugins/ssh/需求.md
-/docs/plugins/ssh/双栏传输UI对照.md
-/docs/plugins/ssh/终端配色与高亮.md
 /src-tauri/icons/Square107x107Logo.png
 /src-tauri/icons/Square142x142Logo.png
 /src-tauri/icons/Square150x150Logo.png
@@ -86,20 +77,7 @@ branding/
 /src-tauri/icons/Square89x89Logo.png
 /src-tauri/icons/StoreLogo.png
 
-# 已提炼进现行规范的主题调研及被替换的展示图，仅保留本地
-/docs/standards/14-编辑器主题配方.md
-/docs/images/format-tools.png
-
-# 模块专题文档仅保留本地，现行约束维护在产品说明与开发规范
-/docs/plugins/
-
-# 已合并的工作流与模板提纲，原文件仅保留本地
-/docs/guides/07-多会话与按需委派.md
-/docs/templates/03-设计提纲.md
-/docs/templates/04-后端实施提纲.md
-/docs/templates/06-待决策提纲.md
-
-# 不使用远程 CI；原工作流及专用分流脚本仅保留本地
-/.github/workflows/
+# 日常 CI 已退役；仅 tag 发布工作流入库
+/.github/workflows/ci.yml
 /scripts/ci_changes.py
 /scripts/test_ci_changes.py

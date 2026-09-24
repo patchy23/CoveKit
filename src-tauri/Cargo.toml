@@ -1,6 +1,6 @@
 [package]
 name = "covekit"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 description = "CoveKit 桌面工具箱"
 authors = ["patchyx"]
 license = "MIT"

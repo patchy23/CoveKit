@@ -15,13 +15,19 @@ export default tseslint.config(
       '.work/**',
       'playwright-report/**',
       'test-results/**',
-      '*.config.*',
     ],
   },
   {
-    // 浏览器环境全局（window/document 等）
+    files: ['src/**/*.{js,mjs,ts,mts,tsx,vue}', 'tests/**/*.{js,mjs,ts,mts,tsx,vue}'],
+    // 应用与 DOM 测试使用浏览器环境。
     languageOptions: {
       globals: { ...globals.browser },
+    },
+  },
+  {
+    files: ['*.config.{js,mjs,ts,mts}', 'scripts/**/*.{js,mjs,ts,mts}'],
+    languageOptions: {
+      globals: { ...globals.node },
     },
   },
   js.configs.recommended,
@@ -39,9 +45,15 @@ export default tseslint.config(
     rules: {
       // Vue 组件名不强制多词（App.vue 等单名组件）
       'vue/multi-word-component-names': 'off',
-      // 模板中未使用组件仅提示（Vue SFC 中 auto-registered）
-      'vue/no-unused-components': 'warn',
-      // 图标表为静态常量（iconInner），v-html 无注入风险
+      // 未使用组件阻止检查通过，与命令的零警告要求保持一致。
+      'vue/no-unused-components': 'error',
+      'vue/no-v-html': 'error',
+    },
+  },
+  {
+    files: ['src/features/ui/AppIcon.vue'],
+    rules: {
+      // 此组件仅渲染仓库内静态图标表，不接受外部 HTML。
       'vue/no-v-html': 'off',
     },
   },

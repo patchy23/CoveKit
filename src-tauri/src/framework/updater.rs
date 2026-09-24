@@ -1,8 +1,7 @@
 //! 框架 · 应用更新可用性（可靠性 T08-4）
 //!
-//! 为什么需要单独一个判定：仓库里的 `tauri.conf.json` 带着**占位公钥**，
-//! 只有正式发布流水线才会用真实公钥覆盖它（`pnpm release:config` + `tauri.release.conf.json`）。
-//! 如果不做这个区分，开发构建与普通安装包会出现「点检查更新 → 报错」，甚至把占位配置当成可用通道。
+//! Alpha 默认不配置更新通道，用户通过发布页手动下载安装。
+//! 后续启用更新时仍须校验真实公钥与地址，不能把缺省或占位配置当成可用通道。
 //!
 //! 判定口径：公钥缺失、仍是占位值、或没有下载地址，都算**不可用**，并把原因交给界面展示。
 
@@ -71,7 +70,7 @@ pub fn classify(pubkey: Option<&str>, endpoints: &[String]) -> UpdateAvailabilit
 pub fn update_availability(app: AppHandle) -> UpdateAvailability {
     let config = app.config();
     let Some(updater) = config.plugins.0.get("updater") else {
-        return UpdateAvailability::unavailable("当前构建未启用更新插件，更新检查不可用");
+        return UpdateAvailability::unavailable("此版本不提供应用内更新，请前往发布页面下载新版本");
     };
     let pubkey = updater.get("pubkey").and_then(|value| value.as_str());
     let endpoints: Vec<String> = updater

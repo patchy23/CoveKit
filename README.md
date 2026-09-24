@@ -55,9 +55,9 @@ SSH 工作区集中管理服务器连接，并提供终端、文件、隧道、�
 | 平台 | 打包形式 | 说明 |
 | --- | --- | --- |
 | Windows | NSIS 安装包（`*-setup.exe`） | 运行依赖 Microsoft Edge WebView2 Runtime |
-| macOS | DMG | 构建目标已配置，实际可用性以发布说明为准 |
+| macOS | ARM64 / x64 DMG | 分别面向 Apple Silicon / Intel，未公证，待实机验证 |
 
-自动更新已接入 Tauri updater，使用它需要正确配置并发布带签名的更新产物。普通源码构建使用占位更新公钥，不能据此认为自动更新已经可用；发布配置见[发布与更新](docs/guides/03-发布与更新.md)。
+首个公开版本准备以 `0.1.0-alpha.1` 发布，属于早期测试版。Alpha 不启用应用内更新，请手动下载新版本。Windows 安装包未配置发布者签名；macOS 使用 ad-hoc 签名、未经 Apple 公证，首次打开可能被系统拦截。安装与发布说明见[发布与更新](docs/guides/03-发布与更新.md)。
 
 ## 数据与凭证
 
@@ -155,7 +155,7 @@ git config --local core.hooksPath .githooks
 | [设计规范](DESIGN.md) | 颜色、字体、间距与公共 UI 规范 |
 | [产品范围](docs/product/01-产品需求.md#当前有效范围裁决) | 当前有效的功能范围与取舍 |
 | [平台能力矩阵](docs/product/07-平台能力矩阵.md) | 平台差异与验证状态 |
-| [发布与更新](docs/guides/03-发布与更新.md) | 打包、更新签名及发布配置 |
+| [发布与更新](docs/guides/03-发布与更新.md) | Alpha 打包、安装与发布配置 |
 
 ## 许可证
 

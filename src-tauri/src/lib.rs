@@ -16,6 +16,7 @@ use tauri_plugin_single_instance::init as single_instance_init;
 /// 应用入口：装配框架与全部插件后启动（tauri 主循环）
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let context = tauri::generate_context!();
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -27,7 +28,6 @@ pub fn run() {
         )
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -46,6 +46,12 @@ pub fn run() {
         });
 
     // ── 框架装配（命令入库与分派 handler 见 framework/mod.rs 的静态清单）──
+    // Alpha 不配置更新通道，也不注册更新插件，避免缺公钥时初始化失败。
+    let builder = if context.config().plugins.0.contains_key("updater") {
+        builder.plugin(tauri_plugin_updater::Builder::new().build())
+    } else {
+        builder
+    };
     let builder = framework::register(builder);
 
     // ── 业务插件装配：顺序由 plugins/mod.rs 的路由清单决定，新增插件不改动本文件 ──
@@ -211,7 +217,7 @@ pub fn run() {
             log::info!("应用初始化完成");
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application")
         .run(|app_handle, event| match event {
             // prepare 阶段允许业务拒绝（未保存内容、任务进行中）；清理由各模块 dispose 钩子提供。
