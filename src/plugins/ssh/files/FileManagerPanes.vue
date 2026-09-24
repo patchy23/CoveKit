@@ -217,7 +217,7 @@ const dragLabel = computed(() => {
             class="flex w-[28px] shrink-0 flex-col items-center gap-sm border-l border-border py-sm dark:border-border-dark"
           >
             <UiIconButton size="xs" label="展开本地文件" @click="toggleLocal"
-              ><UiIcon name="chevron-left" :size="14"
+              ><UiIcon name="chevrons-left" :size="14"
             /></UiIconButton>
             <span
               class="text-caption text-secondary [writing-mode:vertical-rl] dark:text-secondary-dark"
