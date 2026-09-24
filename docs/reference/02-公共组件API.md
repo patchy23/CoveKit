@@ -11,6 +11,8 @@
 
 ## 组件真实 API 备忘
 
+- **UiModal 定位**：`placement="center"` 默认垂直居中；动态表单可用 `placement="top"` 固定顶部留白，内容高度变化只向下伸缩，最大高度受视口约束。普通弹窗仅正文滚动，标题和操作栏保持可见；`size="full"` 忽略 `placement`，沿用工作台布局。
+
 - **UiPopover 点击弹层**：受控 `open` / `update:open`、必填可访问名称 `label`，可选 `side: top | bottom`、`width`。触发控件放 `trigger` 插槽，正文放默认插槽。使用 Reka Portal，默认向下、靠右对齐、边界自动避让；支持 Esc、外部点击关闭及焦点恢复。用于可交互的小面板，简短说明仍用 UiTooltip。
 - **UiBottomPanel 底部辅助区**：`open` / `update:open`、`title`，`actions` 插槽和默认正文插槽。宿主必须具有确定高度并使用纵向 flex。隐藏保留子组件实例，拖动顶部分隔条或按上下方向键调整高度，最大占宿主 60%；关闭只发出收起事件，业务自己管理任务生命周期。实验室“辅助面板”展示这两个组件。
 

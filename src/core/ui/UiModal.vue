@@ -28,9 +28,11 @@ const props = withDefaults(
      * 内容区弹性伸缩，header/#header 与 #footer 固定不滚。
      */
     size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+    /** 普通弹窗可固定在视口上方，内容变化只向下伸缩；full 档忽略此项。 */
+    placement?: 'center' | 'top'
     closeOnBackdrop?: boolean
   }>(),
-  { title: '', description: '', width: '', size: 'md', closeOnBackdrop: false }
+  { title: '', description: '', width: '', size: 'md', placement: 'center', closeOnBackdrop: false }
 )
 
 const sizeWidth: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
@@ -41,6 +43,7 @@ const sizeWidth: Record<'sm' | 'md' | 'lg' | 'xl', string> = {
 }
 
 const isFull = computed(() => props.size === 'full')
+const topAligned = computed(() => !isFull.value && props.placement === 'top')
 
 const emit = defineEmits<{ close: [] }>()
 
@@ -65,8 +68,14 @@ function onPointerDownOutside(event: Event) {
         class="ui-modal-overlay fixed inset-0 z-[180] bg-[rgba(16,20,28,0.45)] backdrop-blur-[3px]"
       />
       <div
-        class="pointer-events-none fixed inset-0 z-[180] grid place-items-center"
-        :class="isFull ? 'p-[40px]' : 'p-md'"
+        class="pointer-events-none fixed inset-0 z-[180] grid justify-items-center"
+        :class="
+          isFull
+            ? 'items-center p-[40px]'
+            : topAligned
+              ? 'items-start px-md pb-[16px] pt-[clamp(16px,8vh,64px)]'
+              : 'items-center p-md'
+        "
       >
         <!--
           非 full 档：面板本身永不滚动——header/footer 固定，只有内容区滚动。
@@ -75,7 +84,10 @@ function onPointerDownOutside(event: Event) {
         <DialogContent
           v-if="!isFull"
           class="ui-modal-panel pointer-events-auto relative flex flex-col !overflow-hidden !p-0"
-          :style="{ width: width || sizeWidth[size as 'sm' | 'md' | 'lg' | 'xl'] }"
+          :style="{
+            width: width || sizeWidth[size as 'sm' | 'md' | 'lg' | 'xl'],
+            maxHeight: topAligned ? 'calc(100dvh - clamp(16px, 8vh, 64px) - 16px)' : undefined,
+          }"
           @pointer-down-outside="onPointerDownOutside"
         >
           <!-- 右上角关闭（遮罩点击默认已禁用，所有弹窗必须有可见出口） -->

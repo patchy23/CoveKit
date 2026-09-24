@@ -142,6 +142,25 @@ describe('公共 UI 组件', () => {
     wrapper.unmount()
   })
 
+  it('UiModal 顶部定位不依赖内容高度，并保留独立滚动区与操作栏', async () => {
+    const wrapper = mount(UiModal, {
+      attachTo: document.body,
+      props: { open: true, title: '连接', placement: 'top', width: '460px' },
+      slots: { default: '<div>连接字段</div>', footer: '<button>保存</button>' },
+    })
+    await nextTick()
+    const panel = document.body.querySelector<HTMLElement>('.ui-modal-panel')!
+    expect(panel.parentElement!.classList.contains('items-start')).toBe(true)
+    expect(panel.style.width).toBe('460px')
+    expect(panel.style.maxHeight).toContain('100dvh')
+    const scroller = panel.querySelector('[data-scroll-axis="vertical"]')!
+    expect(scroller.contains(panel.querySelector('footer'))).toBe(false)
+    await wrapper.setProps({ placement: 'center' })
+    expect(panel.parentElement!.classList.contains('items-center')).toBe(true)
+    expect(panel.style.maxHeight).toBe('')
+    wrapper.unmount()
+  })
+
   it('基础控件输出统一尺寸类', () => {
     expect(
       mount(UiButton, { props: { size: 'xs' } })

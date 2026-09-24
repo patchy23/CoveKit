@@ -260,6 +260,7 @@ async function onSave() {
     :open="open"
     :title="editing ? '编辑连接' : '新建连接'"
     width="min(460px, 92vw)"
+    placement="top"
     @close="emit('close')"
   >
     <div class="space-y-[8px]">
