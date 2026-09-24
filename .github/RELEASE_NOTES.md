@@ -6,11 +6,14 @@
 
 | 你的设备 | 下载选择 |
 | --- | --- |
-| Windows 64 位电脑 | `.exe` 安装包 |
+| Windows 64 位电脑，免安装运行 | `CoveKit_版本号.exe` |
+| Windows 64 位电脑，安装到系统 | `CoveKit_版本号_setup.exe` |
 | Mac，Apple Silicon 芯片 | 文件名含 `aarch64` 的 `.dmg` |
 | Mac，Intel 处理器 | 文件名含 `x86_64` 的 `.dmg` |
 
-Windows 下载后运行安装程序；macOS 打开 DMG 后将 CoveKit 拖入“应用程序”。附件 `SHA256SUMS.txt` 用于核对下载文件完整性。
+Windows 免安装版下载后直接运行，安装版运行 setup 程序；macOS 打开 DMG 后将 CoveKit 拖入“应用程序”。附件 `SHA256SUMS.txt` 用于核对下载文件完整性。
+
+Windows 免安装版需要系统已安装 Microsoft Edge WebView2 Runtime，数据仍保存在应用的数据目录，不随 exe 文件搬移。缺少运行环境时可使用安装版。
 
 Windows 安装包尚未配置发布者签名，可能出现未知发布者提示。macOS 版本已经人工验证，但尚未通过 Apple 公证，首次打开可能被系统阻止；确认下载来源后，可按“系统设置 → 隐私与安全性”的提示允许打开。
 

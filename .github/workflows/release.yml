@@ -66,6 +66,14 @@ jobs:
           path: src-tauri/target/${{ matrix.target }}/release/bundle/${{ matrix.bundle }}/*${{ matrix.bundle == 'nsis' && '.exe' || '.dmg' }}
           if-no-files-found: error
           retention-days: 14
+      - name: Upload Windows executable
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows-executable
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/covekit.exe
+          if-no-files-found: error
+          retention-days: 14
 
   draft:
     name: Collect installers into prerelease draft
@@ -88,6 +96,7 @@ jobs:
             const path = require('node:path');
             const crypto = require('node:crypto');
             const tag = process.env.RELEASE_TAG;
+            const version = tag.replace(/^v/, '');
             const targets = {
               'x86_64-pc-windows-msvc': '.exe',
               'aarch64-apple-darwin': '.dmg',
@@ -98,8 +107,12 @@ jobs:
               const dir = path.join('release-assets', `installer-${target}`);
               const files = fs.readdirSync(dir).filter(f => f.endsWith(ext));
               if (files.length !== 1) throw new Error(`Expected one installer for ${target}, got ${files.length}`);
-              assets.push({name: `CoveKit_${tag}_${target}${ext}`, data: fs.readFileSync(path.join(dir, files[0]))});
+              const name = target === 'x86_64-pc-windows-msvc'
+                ? `CoveKit_${version}_setup.exe`
+                : `CoveKit_${tag}_${target}${ext}`;
+              assets.push({name, data: fs.readFileSync(path.join(dir, files[0]))});
             }
+            assets.push({name: `CoveKit_${version}.exe`, data: fs.readFileSync('release-assets/installer-windows-executable/covekit.exe')});
             const sums = assets.map(a => `${crypto.createHash('sha256').update(a.data).digest('hex')}  ${a.name}`).join('\n') + '\n';
             assets.push({name: 'SHA256SUMS.txt', data: Buffer.from(sums)});
             const releases = await github.paginate(github.rest.repos.listReleases, {...context.repo, per_page: 100});
@@ -120,4 +133,7 @@ jobs:
               if (old) await github.rest.repos.deleteReleaseAsset({...context.repo, asset_id: old.id});
               await github.rest.repos.uploadReleaseAsset({...context.repo, release_id: release.id, ...asset});
             }
+            // 全部新附件上传成功后，移除本版本旧命名的安装程序。
+            const legacy = previous.find(a => a.name === `CoveKit_${tag}_x86_64-pc-windows-msvc.exe`);
+            if (legacy) await github.rest.repos.deleteReleaseAsset({...context.repo, asset_id: legacy.id});
             core.notice(`Prerelease draft ready: ${release.html_url}`);

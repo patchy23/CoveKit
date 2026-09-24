@@ -54,7 +54,7 @@ SSH 工作区集中管理服务器连接，并提供终端、文件、隧道、�
 
 | 平台 | 打包形式 | 说明 |
 | --- | --- | --- |
-| Windows | NSIS 安装包（`*-setup.exe`） | 运行依赖 Microsoft Edge WebView2 Runtime |
+| Windows | 免安装版 `CoveKit_版本号.exe`；安装版 `CoveKit_版本号_setup.exe` | x64，运行依赖 Microsoft Edge WebView2 Runtime；免安装版沿用应用数据目录 |
 | macOS | ARM64 / x64 DMG | 分别面向 Apple Silicon / Intel，尚未通过 Apple 公证 |
 
 首个公开版本准备以 `0.1.0-alpha.1` 发布，属于早期测试版。Alpha 不启用应用内更新，请手动下载新版本。Windows 安装包未配置发布者签名；macOS 使用 ad-hoc 签名、未经 Apple 公证，首次打开可能被系统拦截。安装与发布说明见[发布与更新](docs/guides/03-发布与更新.md)。
