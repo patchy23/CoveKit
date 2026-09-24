@@ -85,3 +85,21 @@ branding/
 /src-tauri/icons/Square71x71Logo.png
 /src-tauri/icons/Square89x89Logo.png
 /src-tauri/icons/StoreLogo.png
+
+# 已提炼进现行规范的主题调研及被替换的展示图，仅保留本地
+/docs/standards/14-编辑器主题配方.md
+/docs/images/format-tools.png
+
+# 模块专题文档仅保留本地，现行约束维护在产品说明与开发规范
+/docs/plugins/
+
+# 已合并的工作流与模板提纲，原文件仅保留本地
+/docs/guides/07-多会话与按需委派.md
+/docs/templates/03-设计提纲.md
+/docs/templates/04-后端实施提纲.md
+/docs/templates/06-待决策提纲.md
+
+# 不使用远程 CI；原工作流及专用分流脚本仅保留本地
+/.github/workflows/
+/scripts/ci_changes.py
+/scripts/test_ci_changes.py

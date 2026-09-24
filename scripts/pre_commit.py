@@ -57,7 +57,7 @@ def main(root: Path = ROOT) -> int:
         print(f'{name}：' + ('通过' if result.returncode == 0 else '失败'))
         failed |= result.returncode != 0
     if any(p.endswith('.rs') for p in paths):
-        print('Rust fmt、AST 规则和行为测试由 CI 或用户执行，本地钩子未运行 Cargo。')
+        print('Rust fmt、AST 规则和行为测试由维护者手动执行，本地钩子未运行 Cargo。')
     return int(failed)
 
 

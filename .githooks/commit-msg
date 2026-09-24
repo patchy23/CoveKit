@@ -1,5 +1,5 @@
 #!/bin/sh
-# 提交标题门禁（规则见 docs/standards/21-Git提交规范.md）。
+# 提交标题门禁（规则见 docs/standards/08-Git提交规范.md）。
 #
 # 由 git 在提交落盘前调用：退出码非 0 即中止本次提交，标题写不进历史。
 # 逻辑在 scripts/check_commit_msg.py（可测、可读）；本文件只是入口。

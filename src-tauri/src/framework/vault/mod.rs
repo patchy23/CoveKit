@@ -1,5 +1,5 @@
-//! Vault 凭证管理 · 门面（框架级能力，不是插件；落地 docs/standards/02-架构.md 预留的 secrets 抽象）
-//! - 设计书：docs/plugins/vault/设计.md（唯一事实源）
+//! Vault 凭证管理 · 门面（框架级能力，不是插件；落地 docs/architecture/02-架构.md 预留的 secrets 抽象）
+//! - 凭证与数据边界：docs/product/06-数据空间与导入导出.md
 //! - 职责：7 个框架命令薄层（参数校验 → store/export 服务层）+ ipc_registry 入库 + register
 //! - 引用模型：插件 profile 只存 credentialId；后端解析走 crate 内 API `resolve()`（store.rs，
 //!   不做成 Tauri 命令，明文不过 IPC）；前端仅 vault_reveal 例外路径取明文

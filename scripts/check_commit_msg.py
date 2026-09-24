@@ -1,4 +1,4 @@
-"""提交标题检查：把 `docs/standards/21-Git提交规范.md` 的标题条款变成可执行门禁。
+"""提交标题检查：把 `docs/standards/08-Git提交规范.md` 的标题条款变成可执行门禁。
 
 用法：
     python scripts/check_commit_msg.py <提交信息文件>     # 由 .githooks/commit-msg 调用
@@ -38,7 +38,7 @@ EXEMPT_PREFIXES = ("Merge ", "Revert \"", "fixup!", "squash!", "amend!", "Initia
 
 CUT_MARKER = "------------------------ >8 ------------------------"
 
-RULES_DOC = "docs/standards/21-Git提交规范.md"
+RULES_DOC = "docs/standards/08-Git提交规范.md"
 
 
 def subject_of(message: str) -> str:

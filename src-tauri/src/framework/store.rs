@@ -1,4 +1,4 @@
-//! 插件数据管理 · 统一规则（docs/standards/03-模块开发规则.md §3）
+//! 插件数据管理 · 统一规则（docs/standards/01-模块开发规则.md §3）
 //! - 数据文件约定：经 `framework::paths` 解析到数据分区（`<storageRoot>/data/<plugin-id>.db`），
 //!   禁止插件手拼路径；`storageRoot` 缺省为平台 app_data_dir
 //! - 迁移规则：PRAGMA user_version 版本号 + 顺序迁移数组（只追加不改写），

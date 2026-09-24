@@ -8,7 +8,7 @@ AR02 起规范检查的实现下沉到 Rust 侧（`src-tauri/tests/source_rules.
 2. 校验 cargo 输出里确实 running 1 test、该测试 ok、test result ok；
 3. 原样透传 cargo 输出（其中含报告：规则数 / 源范围 / 例外命中 / 未覆盖项）。
 
-退出码语义（两个 wrapper 与 CI 共用）：
+退出码语义（两个 wrapper 共用）：
   0 = 检查通过；1 = 检查未通过或 cargo 失败；2 = 调用/环境错误（如 cargo 缺失、目录不存在）
 """
 from __future__ import annotations

@@ -467,7 +467,7 @@ mod tests {
         assert!(rows::<MIB_TCPROW_OWNER_PID>(&table, 4).unwrap().is_empty());
     }
 
-    // Windows CI：只绑定系统分配的本机临时端口，句柄随测试退出释放。
+    // Windows 测试：只绑定系统分配的本机临时端口，句柄随测试退出释放。
     #[test]
     fn finds_isolated_tcp_listener_and_udp_binding() {
         let tcp = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

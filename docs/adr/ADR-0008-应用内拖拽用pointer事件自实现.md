@@ -15,3 +15,7 @@ Tauri 的 `dragDropEnabled` 默认开启，而 OS 文件拖入窗口正依赖它
 ## 代价与边界
 
 拖动阈值、幽灵元素、落点高亮、自动滚动都要自己写，比 HTML5 拖放多做一层。禁用 `dragDropEnabled` 不是选项——那会牺牲 OS 文件拖入。若将来 Tauri 提供两者并存的能力，再评估是否回到原生 API。
+
+## 当前实现入口
+
+原决定中的 `src/plugins/ssh/useServerGroups.ts` 是采纳时的历史位置，已不再存在。当前公共集合拖拽入口为 `src/core/ui/collection/useCollectionDrag.ts`；应用内使用 pointer 事件的决定不变。

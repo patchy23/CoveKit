@@ -11,7 +11,7 @@
 - **本地优先**：无需注册 CoveKit 账户；配置与工作数据保存在本机，可管理数据空间、存储位置及导入导出。
 - **原生桌面集成**：基于 Tauri 2 与 Rust，使用系统 WebView；支持系统托盘、单实例唤起和中英文核心界面切换。
 
-项目仍在持续开发中。以下列出当前源码中的能力；平台与外部服务的验证范围见[平台能力矩阵](docs/standards/09-平台能力矩阵.md)。
+项目仍在持续开发中。以下列出当前源码中的能力；平台与外部服务的验证范围见[平台能力矩阵](docs/product/07-平台能力矩阵.md)。
 
 ## 产品展示
 
@@ -19,11 +19,11 @@
 
 ![CoveKit 工具库](docs/images/tool-library.png)
 
-格式转换支持输入与结果并排查看，使用统一的代码编辑器：
+SSH 工作区集中管理服务器连接，并提供终端、文件、隧道、监控、服务与容器等功能：
 
-![JSON 格式转换](docs/images/format-tools.png)
+![SSH 远程管理工作区](docs/images/ssh-workspace.png)
 
-以上截图来自开发模式的前端预览，使用示例数据；组件实验室仅在开发构建显示。SSH、数据库及系统操作等原生能力需运行桌面应用，截图不代表这些能力已完成实机验证。
+工具库截图来自前端开发预览；SSH 截图来自桌面应用，连接地址已遮挡。组件实验室仅在开发构建显示。各平台的验证范围见[平台能力矩阵](docs/product/07-平台能力矩阵.md)。
 
 ## 内置工具
 
@@ -43,7 +43,7 @@
 
 ### 使用边界
 
-- **数据库**：MySQL、PostgreSQL、SQLite、Redis 与 MySQL 兼容的 PolarDB 已接入原生驱动；Oracle、Vastbase、Kingbase 走外部 agent 适配，需要兼容的驱动程序和对应数据库环境。达梦驱动尚未实现。各类型的功能并不完全一致，详见[数据库说明](docs/plugins/database/设计.md)。
+- **数据库**：MySQL、PostgreSQL、SQLite、Redis 与 MySQL 兼容的 PolarDB 已接入原生驱动；Oracle、Vastbase、Kingbase 走外部 agent 适配，需要兼容的驱动程序和对应数据库环境。达梦驱动尚未实现。各类型的功能并不完全一致，详见[数据库说明](docs/product/05-数据与媒体工具.md#数据库实现契约)。
 - **SSH**：监控、systemd、Docker 与 Compose 能力依赖远端系统和已安装的服务。远端归档创建、解压与预览需要 Python 3.8+ 及 POSIX 进程监督能力，不会自动安装这些依赖。
 - **FRP**：管理本机 frpc 客户端，需要自行准备 frps 服务端；当前不提供 frps 管理和关闭应用后后台常驻能力。
 - **平台**：Windows 是当前主要开发与验证平台；macOS 已有适配与构建配置，尚未完成实机验证。Linux 暂不在应用支持与发布范围内。
@@ -57,7 +57,7 @@
 | Windows | NSIS 安装包（`*-setup.exe`） | 运行依赖 Microsoft Edge WebView2 Runtime |
 | macOS | DMG | 构建目标已配置，实际可用性以发布说明为准 |
 
-自动更新已接入 Tauri updater，使用它需要正确配置并发布带签名的更新产物。普通源码构建使用占位更新公钥，不能据此认为自动更新已经可用；发布配置见[发布与更新](docs/standards/06-发布与更新.md)。
+自动更新已接入 Tauri updater，使用它需要正确配置并发布带签名的更新产物。普通源码构建使用占位更新公钥，不能据此认为自动更新已经可用；发布配置见[发布与更新](docs/guides/03-发布与更新.md)。
 
 ## 数据与凭证
 
@@ -65,7 +65,7 @@
 
 凭证库使用 AES-256-GCM 加密保存凭证，优先通过系统密钥库存放主密钥。SSH 手工认证可选择本地保存、不保存或保存到凭证库；其中**本地保存会将密码或私钥以明文写入本机 SSH 数据库**，新建手工认证默认使用此方式，可在连接配置中调整。
 
-数据导入导出与完整数据目录备份的内容不同，不应将配置导出视为完整凭证备份。各工具的导出范围与恢复方式见[数据空间与导入导出](docs/standards/07e-数据空间与导入导出.md)。
+数据导入导出与完整数据目录备份的内容不同，不应将配置导出视为完整凭证备份。各工具的导出范围与恢复方式见[数据空间与导入导出](docs/product/06-数据空间与导入导出.md)。
 
 ## 从源码运行
 
@@ -73,10 +73,10 @@
 
 | 依赖 | 要求 |
 | --- | --- |
-| Node.js | 22 系列，与仓库 CI 保持一致 |
+| Node.js | 22 系列 |
 | pnpm | 使用 [package.json](package.json) 中 `packageManager` 指定的版本 |
 | Rust | stable 工具链，包含 Cargo；Windows 使用 MSVC 工具链 |
-| Python | 3.12，用于仓库文档与工程检查脚本，与 CI 保持一致 |
+| Python | 3.12，用于本地文档与工程检查脚本 |
 | Windows 开发依赖 | Microsoft C++ Build Tools 的“使用 C++ 的桌面开发”工作负载、WebView2 Runtime |
 | macOS 开发依赖 | Xcode Command Line Tools |
 
@@ -123,7 +123,7 @@ src-tauri/
   tauri.conf.json       应用与打包配置
 docs/                   现行规范、架构、工具说明与决策
 scripts/                工程检查与发布辅助脚本
-.github/workflows/      CI 与发布工作流
+.githooks/              本地提交检查钩子
 ```
 
 前端使用 Vue 3、TypeScript、Vite、Tailwind CSS 4 与 Pinia；后端使用 Tauri 2 与 Rust。公共代码编辑器基于 CodeMirror 6，SSH 终端基于 xterm.js。
@@ -137,7 +137,7 @@ scripts/                工程检查与发布辅助脚本
 - 报告问题时提供应用版本、操作系统、复现步骤、预期与实际结果；附上脱敏后的截图或日志，不提交密码、私钥、访问令牌与业务数据。
 - 较大的新功能先在 Issue 中说明使用场景和范围，便于与现有产品定位对齐。
 - 开发前阅读 [AGENTS.md](AGENTS.md) 与[文档地图](docs/README.md)，涉及界面时遵循 [DESIGN.md](DESIGN.md)。文档与注释使用中文，代码标识符使用英文。
-- 按改动范围完成[验证矩阵](docs/standards/20-验证矩阵.md)中的相关检查，并在 PR 中说明改动与实际验证结果。提交信息遵循[Git 提交规范](docs/standards/21-Git提交规范.md)。
+- 按改动范围完成[验证矩阵](docs/guides/02-验证矩阵.md)中的相关检查，并在 PR 中说明改动与实际验证结果。提交信息遵循[Git 提交规范](docs/standards/08-Git提交规范.md)。
 
 新克隆可启用仓库提供的提交钩子：
 
@@ -150,13 +150,13 @@ git config --local core.hooksPath .githooks
 | 文档 | 内容 |
 | --- | --- |
 | [文档地图](docs/README.md) | 按主题查找开发与维护资料 |
-| [架构设计](docs/standards/02-架构.md) | 模块边界、框架能力与 IPC 契约 |
-| [模块开发规则](docs/standards/03-模块开发规则.md) | 新增与维护内置工具 |
+| [架构设计](docs/architecture/02-架构.md) | 模块边界、框架能力与 IPC 契约 |
+| [模块开发规则](docs/standards/01-模块开发规则.md) | 新增与维护内置工具 |
 | [设计规范](DESIGN.md) | 颜色、字体、间距与公共 UI 规范 |
-| [产品范围](docs/standards/07-产品需求.md#当前有效范围裁决) | 当前有效的功能范围与取舍 |
-| [平台能力矩阵](docs/standards/09-平台能力矩阵.md) | 平台差异与验证状态 |
-| [发布与更新](docs/standards/06-发布与更新.md) | 打包、更新签名及发布配置 |
+| [产品范围](docs/product/01-产品需求.md#当前有效范围裁决) | 当前有效的功能范围与取舍 |
+| [平台能力矩阵](docs/product/07-平台能力矩阵.md) | 平台差异与验证状态 |
+| [发布与更新](docs/guides/03-发布与更新.md) | 打包、更新签名及发布配置 |
 
 ## 许可证
 
-CoveKit 项目代码采用 [MIT 许可证](LICENSE)。第三方依赖与资源遵循各自的许可证，不因项目许可证变更而重新授权。
+CoveKit 项目代码采用 [MIT 许可证](LICENSE)。

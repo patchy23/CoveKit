@@ -7,7 +7,7 @@
 //! - `scan_rust_rules`：代码级规则（panic 候选 / 生命周期逃逸 / unsafe 论证 / 层级越界）
 //! - `scan_docs`：文档级规则（`//!` 模块职责、pub API、DTO 字段语义）
 //!
-//! 两者与全部夹具同属 source_rules target，因此 CI 跑整个 target 即可覆盖两类扫描与夹具。
+//! 两者与全部夹具同属 source_rules target，因此执行整个 target 即可覆盖两类扫描与夹具。
 //! 报告会原样打印覆盖边界（见 `rule_engine::COVERAGE_LIMITS`），不输出「语义全覆盖」结论。
 
 mod fixtures;

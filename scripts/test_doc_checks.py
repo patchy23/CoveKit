@@ -126,7 +126,9 @@ class MarkdownTests(unittest.TestCase):
             self.assertFalse(markdown.check_file(page, root))
 
     def test_template_paths_are_current(self):
-        for path in (Path(__file__).resolve().parent.parent / "docs/standards/templates").glob("*.md"):
+        templates = list((Path(__file__).resolve().parent.parent / "docs/templates").glob("*.md"))
+        self.assertTrue(templates, "模板目录不得为空，迁移目录时同步更新检查入口")
+        for path in templates:
             self.assertNotIn("docs/03-plugin-development.md", path.read_text(encoding="utf-8"))
 
 

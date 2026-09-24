@@ -2,13 +2,13 @@
 """发布配置校验（T08-4）
 
 正式发布用的 `src-tauri/tauri.release.conf.json` 由 `pnpm release:config` 生成，
-把 CI 变量里的真实更新公钥覆盖进配置。这个脚本在打包前确认：
+把 环境变量里的真实更新公钥覆盖进配置。这个脚本在打包前确认：
 
 1. 覆盖文件存在（否则发布会带着仓库里的占位公钥）；
 2. 公钥不是占位值、也不是空值；
 3. 更新下载地址至少有一个。
 
-校验失败即让发布流水线失败，避免把「更新不可用」的安装包当成正式版本发出去。
+校验失败返回非零退出码，发布前须修正，避免把「更新不可用」的安装包当成正式版本发出去。
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def main() -> int:
     if not pubkey:
         errors.append("更新公钥为空")
     elif pubkey == PLACEHOLDER_PUBKEY:
-        errors.append("更新公钥仍是占位值，CI 变量 TAURI_UPDATER_PUBLIC_KEY 未配置")
+        errors.append("更新公钥仍是占位值，环境变量 TAURI_UPDATER_PUBLIC_KEY 未配置")
     if not endpoints:
         errors.append("更新下载地址为空")
     if not config.get("bundle", {}).get("createUpdaterArtifacts"):

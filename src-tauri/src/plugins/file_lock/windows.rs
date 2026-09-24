@@ -300,7 +300,7 @@ mod tests {
         assert!(QueryPermit::acquire().is_ok());
     }
 
-    // Windows CI 使用隔离的临时文件验证原生调用链，不接触用户文件或关闭任何进程。
+    // Windows 测试使用隔离的临时文件验证原生调用链，不接触用户文件或关闭任何进程。
     #[test]
     fn finds_a_locked_file_and_refreshes_after_release() {
         use std::os::windows::fs::OpenOptionsExt;

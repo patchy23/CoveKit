@@ -1,6 +1,6 @@
 //! HTTP/WS 插件 · 接口库持久化（AR07 §10.1：原 plugins/api 模块归入 http_ws 门面）
 //! 数据层走框架统一骨架 PluginDb（framework::store）：路径约定 + 迁移 + 锁内访问，
-//! 本模块只写业务 SQL（规则见 docs/standards/03-模块开发规则.md §3）。
+//! 本模块只写业务 SQL（规则见 docs/standards/01-模块开发规则.md §3）。
 //! 命令（api_save/api_list/api_delete/api_clear）与分派 handler 由 http_ws 的静态模块清单声明，
 //! 本文件不再自建 handler 与 IPC 登记表。
 

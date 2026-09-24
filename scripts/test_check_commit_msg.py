@@ -118,7 +118,7 @@ class EntryTests(unittest.TestCase):
         code, output = self.run_main(["--subject", "feat(sync): 落 L2 导出链路"])
         self.assertEqual(code, 1)
         self.assertIn("L2", output)
-        self.assertIn("21-Git提交规范", output)
+        self.assertIn(ccm.RULES_DOC, output)
 
     def test_subject_flag_passes(self):
         code, output = self.run_main(["--subject", "feat(sync): 支持勾选数据集导出加密数据包"])
