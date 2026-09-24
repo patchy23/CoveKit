@@ -151,7 +151,11 @@ async function chooseDownloadDirectory() {
       />
     </div>
     <div class="flex min-h-0 flex-1">
-      <UiScrollArea ref="scrollArea" axis="vertical" class="min-h-0 min-w-0 flex-1 px-md py-md">
+      <UiScrollArea
+        ref="scrollArea"
+        axis="vertical"
+        class="settings-scroll min-h-0 min-w-0 flex-1 px-md py-md"
+      >
         <div class="mx-auto w-full max-w-[760px]">
           <!-- 页头 -->
           <div class="flex items-center gap-[12px]">
@@ -381,7 +385,7 @@ async function chooseDownloadDirectory() {
       </UiScrollArea>
       <UiScrollArea as-child axis="vertical">
         <nav
-          class="settings-desktop-nav w-[160px] shrink-0 border-l border-border px-sm py-lg dark:border-border-dark"
+          class="settings-scroll settings-desktop-nav w-[160px] shrink-0 px-sm py-lg"
           :aria-label="t('settings.sectionNavigation')"
         >
           <UiButton
@@ -406,6 +410,13 @@ async function chooseDownloadDirectory() {
 </template>
 
 <style scoped>
+/* 仅隐藏设置正文与目录的滚动条，保留原生滚动和目录定位。 */
+.settings-scroll[data-scroll-axis] {
+  scrollbar-width: none;
+}
+.settings-scroll[data-scroll-axis]::-webkit-scrollbar {
+  display: none;
+}
 .settings-layout {
   container-type: inline-size;
 }
