@@ -46,7 +46,7 @@ SSH 工作区集中管理服务器连接，并提供终端、文件、隧道、�
 - **数据库**：MySQL、PostgreSQL、SQLite、Redis 与 MySQL 兼容的 PolarDB 已接入原生驱动；Oracle、Vastbase、Kingbase 走外部 agent 适配，需要兼容的驱动程序和对应数据库环境。达梦驱动尚未实现。各类型的功能并不完全一致，详见[数据库说明](docs/product/05-数据与媒体工具.md#数据库实现契约)。
 - **SSH**：监控、systemd、Docker 与 Compose 能力依赖远端系统和已安装的服务。远端归档创建、解压与预览需要 Python 3.8+ 及 POSIX 进程监督能力，不会自动安装这些依赖。
 - **FRP**：管理本机 frpc 客户端，需要自行准备 frps 服务端；当前不提供 frps 管理和关闭应用后后台常驻能力。
-- **平台**：Windows 是当前主要开发与验证平台；macOS 已有适配与构建配置，尚未完成实机验证。Linux 暂不在应用支持与发布范围内。
+- **平台**：支持 Windows 与 macOS，macOS Alpha 已经维护者人工验证。Linux 暂不在应用支持与发布范围内。
 
 ## 下载与安装
 
@@ -55,7 +55,7 @@ SSH 工作区集中管理服务器连接，并提供终端、文件、隧道、�
 | 平台 | 打包形式 | 说明 |
 | --- | --- | --- |
 | Windows | NSIS 安装包（`*-setup.exe`） | 运行依赖 Microsoft Edge WebView2 Runtime |
-| macOS | ARM64 / x64 DMG | 分别面向 Apple Silicon / Intel，未公证，待实机验证 |
+| macOS | ARM64 / x64 DMG | 分别面向 Apple Silicon / Intel，尚未通过 Apple 公证 |
 
 首个公开版本准备以 `0.1.0-alpha.1` 发布，属于早期测试版。Alpha 不启用应用内更新，请手动下载新版本。Windows 安装包未配置发布者签名；macOS 使用 ad-hoc 签名、未经 Apple 公证，首次打开可能被系统拦截。安装与发布说明见[发布与更新](docs/guides/03-发布与更新.md)。
 
