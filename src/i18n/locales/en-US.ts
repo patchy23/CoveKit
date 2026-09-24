@@ -247,6 +247,18 @@ export default {
     writeFailed: 'Log write failed, recording stopped: {message}',
   },
   settings: {
+    about: 'About CoveKit',
+    resources: 'Resource monitor',
+    sectionNavigation: 'Jump to settings section',
+    openGitHub: 'Open GitHub repository',
+    openLinkFailed: 'Could not open the link. Please try again.',
+    currentVersion: 'Current version {version}',
+    versionFailed: 'Could not read the current version',
+    releaseNotes: 'Release notes',
+    releaseHistory: 'Release history',
+    newReleaseNotes: 'What’s new in {version}',
+    noReleaseNotes: 'No release notes were provided.',
+
     subtitle: 'Appearance, startup, credentials, and tool preferences',
     dataManagement: {
       title: 'Data management',

@@ -238,6 +238,18 @@ export default {
     writeFailed: '日志写入失败，已停止记录：{message}',
   },
   settings: {
+    about: '关于 CoveKit',
+    resources: '资源监测',
+    sectionNavigation: '跳转到设置分区',
+    openGitHub: '打开 GitHub 仓库',
+    openLinkFailed: '无法打开链接，请重试',
+    currentVersion: '当前版本 {version}',
+    versionFailed: '无法读取当前版本',
+    releaseNotes: '版本说明',
+    releaseHistory: '历史版本',
+    newReleaseNotes: '版本 {version} 更新说明',
+    noReleaseNotes: '此版本未提供更新说明。',
+
     subtitle: '外观、启动项、凭证与工具级配置',
     dataManagement: {
       title: '数据管理',

@@ -6,6 +6,8 @@
 defineProps<{ name: string; size?: number | string }>()
 
 const inner: Record<string, string> = {
+  github:
+    '<path d="M9 19c-4.3 1.3-4.3-2.2-6-2.7M15 22v-3.9a3.4 3.4 0 0 0-.9-2.7c3-.3 6.2-1.5 6.2-6.9A5.4 5.4 0 0 0 18.8 5a5 5 0 0 0-.1-3.5S17.5 1.2 15 2.8a13.4 13.4 0 0 0-7 0C5.5 1.2 4.3 1.5 4.3 1.5A5 5 0 0 0 4.2 5a5.4 5.4 0 0 0-1.5 3.8c0 5.4 3.2 6.6 6.2 6.9a3.4 3.4 0 0 0-.9 2.6V22"/>',
   // 导航
   all: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/>',
   dev: '<path d="M8.5 6 4 12l4.5 6M15.5 6 20 12l-4.5 6"/>',

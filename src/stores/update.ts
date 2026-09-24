@@ -40,6 +40,7 @@ export const useUpdateStore = defineStore('update', () => {
   /** 当前更新句柄（未检查到更新时为空） */
   let handle: Update | null = null
   const version = ref('')
+  const releaseNotes = ref('')
   const downloaded = ref(0)
   const total = ref<number | undefined>()
   /** 面向用户的错误说明 */
@@ -139,6 +140,8 @@ export const useUpdateStore = defineStore('update', () => {
     errorMessage.value = ''
     errorCode.value = ''
     try {
+      releaseNotes.value = ''
+      version.value = ''
       const found = await check()
       handle = found
       if (!found) {
@@ -147,6 +150,7 @@ export const useUpdateStore = defineStore('update', () => {
         return
       }
       version.value = found.version
+      releaseNotes.value = found.body ?? ''
       phase.value = 'available'
       if (supported) {
         void logInfo('更新阶段 phase=available').catch(() => {
@@ -201,6 +205,7 @@ export const useUpdateStore = defineStore('update', () => {
     downloaded.value = 0
     total.value = undefined
     version.value = ''
+    releaseNotes.value = ''
     phase.value = 'idle'
     if (supported) {
       void logInfo('更新操作已取消').catch(() => {
@@ -229,6 +234,7 @@ export const useUpdateStore = defineStore('update', () => {
   return {
     phase,
     version,
+    releaseNotes,
     downloaded,
     total,
     percent,

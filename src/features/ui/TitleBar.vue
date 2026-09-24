@@ -11,9 +11,20 @@ import { runWindowAction, type WindowAction } from '@/core/platform/window'
 import { useUiStore } from '@/stores/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import covekitIcon from '@/assets/covekit-icon-color.png'
+import { useI18n } from 'vue-i18n'
+import { ipc } from '@/core/ipc/ipc'
+import { PROJECT_URL } from '@/core/project'
 
 withDefaults(defineProps<{ standalone?: boolean; title?: string }>(), { title: 'CoveKit' })
 const ui = useUiStore()
+const { t } = useI18n()
+async function openGitHub() {
+  try {
+    await ipc.openExternal(PROJECT_URL)
+  } catch {
+    ui.toast(t('settings.openLinkFailed'))
+  }
+}
 
 /** 窗口动作统一入口：桌面环境下失败必须可见，浏览器预览的不可用属预期缺失不打扰 */
 function onWindow(action: WindowAction) {
@@ -45,6 +56,16 @@ function onDblClick() {
     </div>
     <div class="flex-1" data-tauri-drag-region />
     <div class="flex h-full shrink-0 items-center">
+      <UiTooltip v-if="!standalone" :content="t('settings.openGitHub')">
+        <button
+          class="mr-sm grid h-full w-[40px] place-items-center text-text-muted transition-colors duration-100 hover:bg-border hover:text-primary dark:text-text-muted-dark dark:hover:bg-border-dark dark:hover:text-primary-dark"
+          :aria-label="t('settings.openGitHub')"
+          @dblclick.stop
+          @click="openGitHub"
+        >
+          <AppIcon name="github" :size="16" />
+        </button>
+      </UiTooltip>
       <UiTooltip
         v-if="!standalone && !ui.immersive"
         :content="ui.sidebarCollapsed ? '展开侧栏' : '隐藏侧栏'"

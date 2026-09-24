@@ -10,6 +10,7 @@ import { createPinia, setActivePinia } from 'pinia'
 /** 可控的更新句柄替身 */
 const updateHandle = {
   version: '0.2.0',
+  body: '修复连接恢复问题',
   close: vi.fn(async () => {}),
   download: vi.fn(async (onEvent: (event: unknown) => void) => {
     onEvent({ event: 'Started', data: { contentLength: 1000 } })
@@ -51,6 +52,7 @@ describe('更新状态', () => {
 
     expect(store.phase).toBe('available')
     expect(store.version).toBe('0.2.0')
+    expect(store.releaseNotes).toBe('修复连接恢复问题')
   })
 
   it('进行中重复点击不会起第二次检查', async () => {
@@ -61,6 +63,16 @@ describe('更新状态', () => {
     await Promise.all([first, second])
 
     expect(check).toHaveBeenCalledTimes(1)
+  })
+
+  it('重新检查失败时不残留上一版本的更新说明', async () => {
+    const store = useUpdateStore()
+    await store.checkNow()
+    check.mockRejectedValueOnce(new Error('网络不可达'))
+    await store.checkNow()
+    expect(store.phase).toBe('error')
+    expect(store.version).toBe('')
+    expect(store.releaseNotes).toBe('')
   })
 
   it('下载累计进度，完成后进入 ready；取消会释放句柄并丢弃进度', async () => {
@@ -76,6 +88,7 @@ describe('更新状态', () => {
     expect(updateHandle.close).toHaveBeenCalledTimes(1)
     expect(store.phase).toBe('idle')
     expect(store.downloaded).toBe(0)
+    expect(store.releaseNotes).toBe('')
   })
 
   it('安装阶段不可取消，取消调用被忽略', async () => {
