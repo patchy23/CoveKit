@@ -55,3 +55,33 @@ branding/
 # 当前只构建 Windows/macOS，移动端生成图标不入库
 /src-tauri/icons/android/
 /src-tauri/icons/ios/
+
+
+# 本地环境与签名材料；示例配置和测试夹具应使用明确的非秘密文件名
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.p12
+*.pfx
+*.key
+*.pem
+/src-tauri/%SystemDrive%/
+
+# 历史过程材料与非目标打包资源：取消跟踪后保留本地
+/docs/releases/v0.1.0-发布候选.md
+/docs/adr/ADR-0005-文档三层与批次号组织.md
+/docs/adr/ADR-0007-验收按变更分档与证据等级.md
+/docs/plugins/ssh/需求.md
+/docs/plugins/ssh/双栏传输UI对照.md
+/docs/plugins/ssh/终端配色与高亮.md
+/src-tauri/icons/Square107x107Logo.png
+/src-tauri/icons/Square142x142Logo.png
+/src-tauri/icons/Square150x150Logo.png
+/src-tauri/icons/Square284x284Logo.png
+/src-tauri/icons/Square30x30Logo.png
+/src-tauri/icons/Square310x310Logo.png
+/src-tauri/icons/Square44x44Logo.png
+/src-tauri/icons/Square71x71Logo.png
+/src-tauri/icons/Square89x89Logo.png
+/src-tauri/icons/StoreLogo.png

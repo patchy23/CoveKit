@@ -8,10 +8,13 @@ permissions:
   contents: write
 
 jobs:
-  # 标签发布前先跑与 CI 同口径的门禁：main 之前绿过不代表这个标签安全（T08-5）
+  # 发布门禁针对标签对应的提交执行，不复用其他提交的检查结果。
   gates:
     name: 发布前质量门禁
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -44,10 +47,9 @@ jobs:
         working-directory: src-tauri
         run: |
           cargo fmt --all -- --check
-          cargo clippy --no-default-features --all-targets -- -D warnings
-          cargo test --no-default-features
-      - name: Rust 规范检查
-        run: python scripts/check_rust_rules.py
+          cargo clippy --locked --no-default-features --all-targets -- -D warnings
+          cargo test --locked --no-default-features --lib
+          cargo test --locked --no-default-features --test source_rules -- --nocapture
 
   publish:
     name: Build ${{ matrix.platform }}
@@ -95,7 +97,7 @@ jobs:
         with:
           tagName: v__VERSION__
           releaseName: CoveKit v__VERSION__
-          releaseBody: See CHANGELOG.md for release details.
+          releaseBody: 请查看 [更新记录](https://github.com/patchy23/CoveKit/blob/main/CHANGELOG.md) 和本版本的已知限制。
           releaseDraft: true
           prerelease: false
           uploadUpdaterJson: true

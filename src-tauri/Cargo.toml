@@ -3,6 +3,7 @@ name = "covekit"
 version = "0.1.0"
 description = "CoveKit 桌面工具箱"
 authors = ["patchyx"]
+license = "MIT"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
