@@ -13,14 +13,12 @@ const MAX_BYTES: usize = 2 * 1024 * 1024;
 const MIGRATIONS: &[&str] =
     &["CREATE TABLE news_state (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL);"];
 
-/// 两份源文档原样传输；第三方字段校验和归一化由前端本模块负责。
+/// AIHOT 完整快照原样传输；第三方字段校验和归一化由前端本模块负责。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewsFeeds {
-    /// 当前动态、事件详情及数据新鲜度。
-    status: Value,
-    /// 已发布消息的历史索引。
-    timeline: Value,
+    /// 重置事件、中文来源帖子与监控新鲜度。
+    resets: Value,
 }
 
 async fn fetch_json(client: &reqwest::Client, url: &str) -> Result<Value, String> {
@@ -45,7 +43,7 @@ async fn fetch_json(client: &reqwest::Client, url: &str) -> Result<Value, String
     serde_json::from_slice(&bytes).map_err(|e| format!("消息源 JSON 无效：{e}"))
 }
 
-/// 只请求两个固定 HTTPS 地址；限制重定向、请求时间及体积，无后台常驻任务。
+/// 只请求固定 HTTPS 地址；限制重定向、请求时间及体积，无后台常驻任务。
 #[tauri::command]
 pub async fn codex_news_fetch() -> Result<NewsFeeds, String> {
     let log_started = std::time::Instant::now();
@@ -56,11 +54,8 @@ pub async fn codex_news_fetch() -> Result<NewsFeeds, String> {
             .user_agent("CoveKit Codex news")
             .build()
             .map_err(|e| e.to_string())?;
-        let (status, timeline) = tokio::try_join!(
-            fetch_json(&client, "https://savemetibo.com/status.json"),
-            fetch_json(&client, "https://savemetibo.com/timeline.json"),
-        )?;
-        Ok(NewsFeeds { status, timeline })
+        let resets = fetch_json(&client, "https://aihot.news/api/v1/codex-resets").await?;
+        Ok(NewsFeeds { resets })
     }
     .await;
     match &result {

@@ -38,7 +38,7 @@ it('首次历史已读，后台检查暂存新增消息，用户应用后可标�
   await flushPromises()
   expect(api.unread(api.snapshot.value!.events[0]!)).toBe(false)
   mock.fetch.mockResolvedValue(
-    feeds([rawEvent('new', 'landed', '2026-09-18T12:00:00Z'), rawEvent()])
+    feeds([rawEvent('new', 'confirmed', '2026-09-18T12:00:00Z'), rawEvent()])
   )
   await api.refresh(false)
   expect(api.pendingCount.value).toBe(1)
@@ -116,15 +116,15 @@ it('保存失败可见且后续写入可恢复，关闭再打开前先等待旧�
 it('源只有时间元数据变化时保留行顺序，断网后仍能显示过期提示', async () => {
   vi.setSystemTime(new Date('2026-09-18T00:00:00Z'))
   mock.fetch.mockResolvedValue(
-    feeds([rawEvent('old'), rawEvent('new', 'landed', '2026-09-18T00:00:00Z')])
+    feeds([rawEvent('old'), rawEvent('new', 'confirmed', '2026-09-18T00:00:00Z')])
   )
   const { api } = setup()
   await flushPromises()
   expect(api.stale.value).toBe(false)
   mock.fetch.mockResolvedValue(
     feeds([
-      { ...rawEvent('old'), updated_at: '2026-09-19T00:00:00Z' },
-      rawEvent('new', 'landed', '2026-09-18T00:00:00Z'),
+      { ...rawEvent('old'), updatedAt: '2026-09-19T00:00:00Z' },
+      rawEvent('new', 'confirmed', '2026-09-18T00:00:00Z'),
     ])
   )
   await api.refresh(false)
@@ -157,4 +157,36 @@ it('读取已读缓存，失败保留列表，损坏缓存不被覆盖', async (
   await flushPromises()
   expect(second.api.saveError.value).toContain('缓存读取失败')
   expect(mock.save).not.toHaveBeenCalled()
+})
+
+it('全量快照移除撤回事件，包括同时出现待应用新消息的情况', async () => {
+  const { api } = setup()
+  await flushPromises()
+  mock.fetch.mockResolvedValue(feeds([]))
+  await api.refresh(false)
+  expect(api.snapshot.value!.events).toEqual([])
+  expect(mock.save.mock.lastCall![0].read).toEqual({})
+  mock.fetch.mockResolvedValue(feeds([rawEvent('two')]))
+  await api.refresh()
+  mock.fetch.mockResolvedValue(feeds([rawEvent('three')]))
+  await api.refresh(false)
+  expect(api.snapshot.value!.events).toEqual([])
+  expect(api.pendingCount.value).toBe(1)
+  api.applyPending()
+  expect(api.snapshot.value!.events.map((item) => item.id)).toEqual(['three'])
+})
+
+it('旧来源缓存保留到新源成功后整体替换并建立已读基线', async () => {
+  const old = parseFeeds(feeds([rawEvent('legacy')]))
+  delete old.source
+  mock.load.mockResolvedValue({ version: 1, snapshot: old, read: {}, auto: false, checkedAt: '' })
+  mock.fetch.mockRejectedValueOnce(new Error('offline'))
+  const { api } = setup()
+  await flushPromises()
+  expect(api.snapshot.value!.events[0]!.id).toBe('legacy')
+  mock.fetch.mockResolvedValue(feeds())
+  await api.refresh(false)
+  expect(api.snapshot.value!.source).toBe('aihot')
+  expect(api.snapshot.value!.events.map((item) => item.id)).toEqual(['one'])
+  expect(api.unread(api.snapshot.value!.events[0]!)).toBe(false)
 })

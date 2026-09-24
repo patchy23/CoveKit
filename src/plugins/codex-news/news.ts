@@ -25,60 +25,56 @@ export function safeUrl(value: unknown): string {
 }
 function event(value: unknown): NewsEvent {
   const row = object(value)
-  if (!text(row.event_id) || !text(row.headline) || !text(row.state))
+  if (!text(row.id) || !text(row.title) || !['announced', 'confirmed'].includes(text(row.status)))
     throw new Error('消息缺少必要字段')
+  if (!Array.isArray(row.posts)) throw new Error('消息来源帖子格式无效')
+  const posts = row.posts.map(object)
+  const presentation = row.presentation == null ? null : object(row.presentation)
+  const schedule = row.schedule == null ? null : object(row.schedule)
   return {
-    id: text(row.event_id),
-    headline: text(row.headline),
-    state: text(row.state),
-    kind: text(row.kind),
-    outcome: text(row.outcome),
-    publishedAt: date(row.first_published_at),
-    updatedAt: date(row.updated_at),
-    url: safeUrl(row.event_url),
-    sources: Array.isArray(row.receipt_urls)
-      ? [...new Set(row.receipt_urls.map(safeUrl).filter(Boolean))]
-      : [],
-    updates: Array.isArray(row.lifecycle)
-      ? row.lifecycle.slice(-20).map((item) => {
-          const update = object(item)
-          return {
-            headline: text(update.headline),
-            state: text(update.state),
-            at: date(update.published_at),
-          }
-        })
-      : [],
+    id: text(row.id),
+    headline: text(row.title),
+    state: text(presentation?.status) || text(row.status),
+    kind: text(row.displayLabel) || '重置形式未明确',
+    outcome: [
+      text(presentation?.scopeLabel) || text(row.scope) || '适用范围未明确',
+      schedule ? `原预告：${text(schedule.label)}` : '',
+      presentation?.timeInferred === true ? '预告时间包含推定' : '',
+    ]
+      .filter(Boolean)
+      .join('；'),
+    publishedAt: date(row.createdAt),
+    updatedAt: date(row.updatedAt),
+    url: safeUrl(row.url),
+    sources: [...new Set(posts.map((post) => safeUrl(post.url)).filter(Boolean))],
+    updates: posts.map((post) => ({
+      headline: text(post.fullText) || text(post.text) || text(post.originalText),
+      state: text(post.stage),
+      at: date(post.publishedAt),
+    })),
   }
 }
 
 export function parseFeeds(feeds: NewsFeeds): NewsSnapshot {
-  const status = object(feeds.status),
-    timeline = object(feeds.timeline)
-  const current = object(object(status.providers).codex)
-  const history = object(object(timeline.providers).codex)
-  const freshness = object(status.freshness)
-  if (!Array.isArray(history.published) || !Array.isArray(status.events))
+  const response = object(feeds.resets)
+  if (response.schemaVersion !== 1 || !Array.isArray(response.events))
     throw new Error('消息列表格式无效')
-  const events = new Map<string, NewsEvent>()
-  for (const raw of [
-    ...history.published,
-    ...status.events.filter((item) => object(item).provider === 'codex'),
-  ]) {
-    const next = event(raw),
-      previous = events.get(next.id)
-    if (!previous || Date.parse(next.updatedAt) >= Date.parse(previous.updatedAt))
-      events.set(next.id, next)
-  }
+  const events = response.events
+    .map(event)
+    .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+  if (new Set(events.map((item) => item.id)).size !== events.length)
+    throw new Error('消息事件 ID 重复')
+  // 未核验不能拿请求时间冒充；空串保留“未知”语义，旧缓存仍兼容。
+  const checkedAt = response.checkedAt === null ? '' : date(response.checkedAt)
+  const monitor = response.monitor == null ? null : object(response.monitor)
   return {
-    events: [...events.values()]
-      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
-      .slice(0, 200),
-    state: text(current.state),
-    summary: text(current.what_changed),
-    generatedAt: date(status.generated_at),
-    freshUntil: date(freshness.fresh_until),
-    stale: freshness.stale === true || freshness.outage === true || current.stale === true,
+    source: 'aihot',
+    events,
+    state: events[0]?.state ?? 'quiet',
+    summary: checkedAt ? `来源最近核验：${localTime(checkedAt)}` : '来源尚无成功核验时间',
+    generatedAt: checkedAt,
+    freshUntil: checkedAt ? new Date(Date.parse(checkedAt) + 5 * 60_000).toISOString() : '',
+    stale: !checkedAt || (monitor !== null && monitor.status !== 'healthy'),
   }
 }
 
@@ -90,6 +86,7 @@ export function revision(item: NewsEvent): string {
     item.kind,
     item.outcome,
     item.sources,
+    item.url,
     item.updates,
   ])
 }
@@ -99,6 +96,12 @@ export function changedEvents(previous: NewsSnapshot, next: NewsSnapshot): NewsE
 }
 export function statusLabel(state: string): { label: string; tone: UiTone } {
   switch (state) {
+    case 'announced':
+      return { label: '已预告', tone: 'warning' }
+    case 'in_progress':
+      return { label: '发放中', tone: 'warning' }
+    case 'expired_unconfirmed':
+      return { label: '预告已过期，未确认', tone: 'warning' }
     case 'landed':
       return { label: '已生效', tone: 'success' }
     case 'confirmed':
@@ -129,8 +132,10 @@ export function validateCache(value: unknown): NewsCache {
   if (cache.checkedAt !== '') date(cache.checkedAt)
   if (cache.snapshot !== null) {
     const snapshot = object(cache.snapshot)
-    date(snapshot.generatedAt)
-    date(snapshot.freshUntil)
+    if (snapshot.source !== undefined && snapshot.source !== 'aihot')
+      throw new Error('消息缓存来源无效')
+    if (snapshot.source !== 'aihot' || snapshot.generatedAt !== '') date(snapshot.generatedAt)
+    if (snapshot.source !== 'aihot' || snapshot.freshUntil !== '') date(snapshot.freshUntil)
     if (
       !Array.isArray(snapshot.events) ||
       typeof snapshot.state !== 'string' ||

@@ -22,7 +22,7 @@ beforeEach(() => {
     checkedAt: '',
   })
   mocks.fetch.mockResolvedValue(
-    feeds([rawEvent('new', 'landed', '2026-09-18T12:00:00Z'), rawEvent()])
+    feeds([rawEvent('new', 'confirmed', '2026-09-18T12:00:00Z'), rawEvent()])
   )
   mocks.save.mockResolvedValue(undefined)
   mocks.openUrl.mockResolvedValue(undefined)
@@ -31,11 +31,11 @@ it('新消息由用户应用，展开标为已读，原文入口打开来源，�
   const wrapper = mount(NewsPage)
   await flushPromises()
   expect(wrapper.text()).toContain('有 1 条新消息或更新')
-  expect(wrapper.text()).not.toContain('Message new')
+  expect(wrapper.text()).not.toContain('消息 new')
   const button = (text: string) =>
     wrapper.findAllComponents(UiButton).find((item) => item.text().includes(text))!
   await button('点击查看').get('button').trigger('click')
-  expect(wrapper.text()).toContain('Message new')
+  expect(wrapper.text()).toContain('消息 new')
   expect(wrapper.text()).toContain('未读 1')
   const row = wrapper.findAllComponents(UiTableExpandableRow)[0]!
   await row.get('button').trigger('click')

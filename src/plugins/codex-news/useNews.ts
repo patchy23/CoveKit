@@ -97,16 +97,27 @@ export function useNews() {
       try {
         const next = parseFeeds(await ipc.fetch())
         if (!alive) return
-        const first = snapshot.value === null
+        const first = snapshot.value === null || snapshot.value.source !== next.source
         if (first)
           read.value = Object.fromEntries(next.events.map((item) => [item.id, revision(item)]))
         if (first || applyOnFinish) {
           snapshot.value = next
           pending.value = null
-        } else if (changedEvents(snapshot.value!, next).length) pending.value = next
-        else {
+        } else if (changedEvents(snapshot.value!, next).length) {
+          // 全量快照中消失的事件已撤回，即使新增内容待用户查看也立即移除。
+          const ids = new Set(next.events.map((item) => item.id))
+          snapshot.value = {
+            ...snapshot.value!,
+            events: snapshot.value!.events.filter((item) => ids.has(item.id)),
+          }
+          pending.value = next
+        } else {
           // 仅更新时间变化时保留当前行次序，避免自动检查打断阅读。
-          snapshot.value = { ...next, events: snapshot.value!.events }
+          const events = new Map(next.events.map((item) => [item.id, item]))
+          snapshot.value = {
+            ...next,
+            events: snapshot.value!.events.flatMap((item) => events.get(item.id) ?? []),
+          }
           pending.value = null
         }
         checkedAt.value = new Date().toISOString()

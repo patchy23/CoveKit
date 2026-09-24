@@ -93,7 +93,9 @@ async function open(url: string) {
       <span v-if="stale" class="text-warning-strong dark:text-warning-dark"
         >数据源已过期，当前显示历史信息</span
       >
-      <span class="ml-auto">来源：SaveMeTibo · 原文保留</span>
+      <span class="ml-auto"
+        >来源：{{ snapshot && snapshot.source !== 'aihot' ? 'SaveMeTibo · 旧缓存' : 'AIHOT' }}</span
+      >
     </div>
     <p
       v-if="snapshot?.summary"
@@ -188,13 +190,16 @@ async function open(url: string) {
                 class="space-y-sm p-md font-sans text-body-sm text-secondary dark:text-secondary-dark"
               >
                 <p class="select-text whitespace-pre-wrap break-words">{{ item.headline }}</p>
+                <p v-if="snapshot?.source === 'aihot'" class="select-text break-words">
+                  {{ item.kind }} · {{ item.outcome }}
+                </p>
                 <p class="text-caption text-text-muted dark:text-text-muted-dark">
                   首次发布：{{ localTime(item.publishedAt) }} · 最近更新：{{
                     localTime(item.updatedAt)
                   }}
                 </p>
                 <ol
-                  v-if="item.updates.length > 1"
+                  v-if="item.updates.length"
                   class="space-y-sm border-l border-border pl-md dark:border-border-dark"
                 >
                   <li v-for="(update, index) in item.updates" :key="index">
