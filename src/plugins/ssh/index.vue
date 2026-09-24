@@ -397,21 +397,24 @@ watch(
               class="h-full"
               @state="composeStates[remote.id] = $event"
             />
-            <ConnectionEditor
-              v-if="editorRequests[remote.id]"
-              :connection="remote.connection"
-              :title="remote.title"
-              :request="editorRequests[remote.id]"
-              :rename="editorRenames[remote.id]"
-              :directory="fileDirectories[remote.id]"
-              :location="activeWorkspaceId + '/' + remote.activeSection"
-              @state="fileStates[remote.id] = $event"
-              @minimized="editorMinimized[remote.id] = $event"
-            />
           </div>
         </div>
       </template>
     </div>
+
+    <!-- 与日志窗口共用 SSH 工具根宿主，不受功能页的裁剪与连接页签隐藏影响。 -->
+    <template v-for="remote in connectionWorkspaces" :key="'editor-' + remote.id">
+      <ConnectionEditor
+        v-if="editorRequests[remote.id]"
+        :connection="remote.connection"
+        :title="remote.title"
+        :request="editorRequests[remote.id]"
+        :rename="editorRenames[remote.id]"
+        :directory="fileDirectories[remote.id]"
+        @state="fileStates[remote.id] = $event"
+        @minimized="editorMinimized[remote.id] = $event"
+      />
+    </template>
 
     <LiveLogDialog
       v-for="log in logWindows"

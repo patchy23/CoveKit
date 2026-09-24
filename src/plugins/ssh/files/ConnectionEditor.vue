@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 编辑器属于连接；首次使用才加载，收起和功能切换保留文档。 */
+/** 编辑状态属于连接；窗口挂载于工具层，功能页和连接切换不隐式最小化。 */
 import { ref, watch } from 'vue'
 import type { ServerConnection } from '../contracts'
 import { ipc } from '../ipc'
@@ -11,7 +11,6 @@ const props = defineProps<{
   request: { id: number; path?: string }
   rename?: { oldPath: string; newPath: string }
   directory?: string
-  location: string
 }>()
 const emit = defineEmits<{
   state: [value: { dirty: boolean; busy: boolean }]
@@ -23,15 +22,6 @@ watch(
   () => [editor.dirty.value.length, editor.busy.value],
   () => emit('state', { dirty: !!editor.dirty.value.length, busy: editor.busy.value }),
   { immediate: true }
-)
-watch(
-  () => props.location,
-  () => {
-    if (editor.visible.value) {
-      editor.hide()
-      emit('minimized', true)
-    }
-  }
 )
 watch(
   () => props.rename,
