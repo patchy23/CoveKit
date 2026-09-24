@@ -278,13 +278,15 @@ async function onSave() {
             ><UiInput v-model="form.host" size="xs" placeholder="127.0.0.1"
           /></UiField>
           <UiField label="端口" size="xs" required
-            ><UiInput v-model.number="form.port" size="xs" type="number"
+            ><UiInput v-model.number="form.port" size="xs" type="number" class="connection-port"
           /></UiField>
         </div>
         <UiField
           label="凭证"
           size="xs"
-          description="选择公共凭证，或在下方输入；保存后密码统一进入凭证库。"
+          :description="
+            form.credentialId ? undefined : '选择公共凭证，或在下方输入；保存后密码统一进入凭证库。'
+          "
         >
           <CredentialPicker
             v-model="form.credentialId"
@@ -293,29 +295,15 @@ async function onSave() {
             :disabled="clearPassword"
           />
         </UiField>
-        <div class="grid grid-cols-2 gap-[8px]">
+        <div v-if="!form.credentialId || clearPassword" class="grid grid-cols-2 gap-[8px]">
           <UiField label="用户名" size="xs"
-            ><UiInput
-              v-model="form.username"
-              size="xs"
-              :disabled="!!form.credentialId && !clearPassword"
-              :placeholder="form.credentialId ? '使用所选凭证的用户名' : '例如：db_user'"
+            ><UiInput v-model="form.username" size="xs" placeholder="例如：db_user"
           /></UiField>
           <UiField
             label="密码"
             size="xs"
-            :description="
-              form.credentialId
-                ? '由所选公共凭证提供'
-                : editing && !clearPassword
-                  ? '留空保留已保存的密码'
-                  : undefined
-            "
-            ><UiInput
-              v-model="form.password"
-              size="xs"
-              type="password"
-              :disabled="clearPassword || !!form.credentialId"
+            :description="editing && !clearPassword ? '留空保留已保存的密码' : undefined"
+            ><UiInput v-model="form.password" size="xs" type="password" :disabled="clearPassword"
           /></UiField>
         </div>
         <UiCheckbox
@@ -363,6 +351,11 @@ async function onSave() {
         collapsible
         :default-open="false"
       >
+        <template #header>
+          <span class="text-caption font-medium text-secondary dark:text-secondary-dark"
+            >更多配置</span
+          >
+        </template>
         <div class="space-y-[8px]">
           <div class="grid grid-cols-2 gap-[8px]">
             <UiField label="环境" size="xs"
@@ -409,3 +402,14 @@ async function onSave() {
     </template>
   </UiModal>
 </template>
+
+<style scoped>
+.connection-port {
+  appearance: textfield;
+}
+.connection-port::-webkit-inner-spin-button,
+.connection-port::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+</style>
