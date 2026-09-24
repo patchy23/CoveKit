@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import {
   UiButton,
   UiSpinner,
@@ -18,6 +18,7 @@ import {
   type UiContextMenuItem,
 } from '@/core/ui'
 import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
+import type { EditorLayout } from './native/protocol'
 import RemoteEditorTree from './RemoteEditorTree.vue'
 import type { useRemoteEditor } from './useRemoteEditor'
 import type { ServerConnection } from '../contracts'
@@ -27,8 +28,10 @@ const props = defineProps<{
   title: string
   ready?: boolean
   activation?: number
+  standalone?: boolean
+  moving?: boolean
 }>()
-const emit = defineEmits<{ minimize: []; closed: [] }>()
+const emit = defineEmits<{ minimize: []; closed: []; detach: []; dock: [] }>()
 function hide() {
   props.editor.hide()
   emit('minimize')
@@ -61,6 +64,30 @@ const { visibleItems, hiddenItems } = useTabsOverflow(tabContainer, tabs, props.
 })
 const closingWindow = ref(false)
 const current = computed(() => props.editor.current.value)
+const editorInstances = new Map<string, InstanceType<typeof UiCodeEditor>>()
+function rememberEditor(id: string, instance: unknown) {
+  if (instance) editorInstances.set(id, instance as InstanceType<typeof UiCodeEditor>)
+  else editorInstances.delete(id)
+}
+function captureLayout(): EditorLayout {
+  const documents: EditorLayout['documents'] = {}
+  for (const [id, instance] of editorInstances) {
+    const position = instance.getViewport?.()
+    if (position) documents[id] = position
+  }
+  return { sidebar: sidebar.value, width: size.value, documents }
+}
+async function restoreLayout(layout?: EditorLayout) {
+  await nextTick()
+  if (!layout) return
+  sidebar.value = layout.sidebar
+  size.value = layout.width
+  await nextTick()
+  for (const [id, position] of Object.entries(layout.documents))
+    editorInstances.get(id)?.restoreViewport?.(position)
+}
+defineExpose({ captureLayout, restoreLayout, requestClose: closeAll })
+
 function close(paths: string[]) {
   const targets = docs.value.filter((d) => paths.includes(d.path))
   if (props.editor.busy.value) return
@@ -87,6 +114,7 @@ async function saveClose() {
   discard()
 }
 function closeAll() {
+  if (props.editor.busy.value) return
   close(docs.value.map((d) => d.path))
   closingWindow.value = true
   if (!docs.value.length) hideClosed()
@@ -110,13 +138,15 @@ function context(path: string, event: MouseEvent) {
 }
 </script>
 <template>
-  <UiFloatingWindow
+  <component
+    :is="standalone ? 'section' : UiFloatingWindow"
     v-show="editor.visible.value"
-    :title="'远程编辑 · ' + title"
-    :activation="activation"
-    :width="1000"
-    :height="660"
-    minimizable
+    v-bind="
+      standalone
+        ? { class: 'flex min-h-0 flex-1 flex-col' }
+        : { title: '远程编辑 · ' + title, activation, width: 1000, height: 660, minimizable: true }
+    "
+    :inert="moving || undefined"
     @minimize="hide"
     @close="closeAll"
   >
@@ -124,6 +154,17 @@ function context(path: string, event: MouseEvent) {
       <UiIconButton :label="sidebar ? '收起目录' : '展开目录'" size="sm" @click="sidebar = !sidebar"
         ><UiIcon :name="sidebar ? 'chevrons-left' : 'chevrons-right'" :size="14"
       /></UiIconButton>
+      <template #trailing>
+        <span v-if="standalone" class="min-w-0 truncate text-caption">{{ title }}</span>
+        <UiButton
+          size="sm"
+          variant="ghost"
+          :disabled="editor.busy.value || moving"
+          @click="standalone ? emit('dock') : emit('detach')"
+        >
+          {{ standalone ? '移回主窗口' : '在独立窗口打开' }}
+        </UiButton>
+      </template>
     </UiToolbar>
     <UiAlert v-if="connection?.status !== 'connected'" tone="warning" size="sm"
       >SSH 已断开，编辑内容保留；恢复连接后可保存。</UiAlert
@@ -197,6 +238,7 @@ function context(path: string, event: MouseEvent) {
             v-for="doc in docs"
             v-show="editor.active.value === doc.path"
             :key="doc.id"
+            :ref="(instance) => rememberEditor(doc.id, instance)"
             v-model="doc.content"
             :filename="doc.path"
             height="100%"
@@ -220,7 +262,7 @@ function context(path: string, event: MouseEvent) {
         </div>
       </template>
     </UiSplitPane>
-  </UiFloatingWindow>
+  </component>
   <UiContextMenu
     v-if="menu"
     :x="menu.x"

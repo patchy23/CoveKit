@@ -219,6 +219,29 @@ watch(
 )
 
 defineExpose({
+  /** 跨窗口迁移只保存可序列化视图位置，不导出编辑器内部实例。 */
+  getViewport: () => {
+    const view = editor.view.value
+    return view
+      ? {
+          from: view.state.selection.main.anchor,
+          to: view.state.selection.main.head,
+          top: view.scrollDOM.scrollTop,
+          left: view.scrollDOM.scrollLeft,
+        }
+      : undefined
+  },
+  restoreViewport: (position: { from: number; to: number; top: number; left: number }) => {
+    editor.setCursor(position.from, position.to)
+    const view = editor.view.value
+    if (view)
+      view.requestMeasure({
+        write: () => {
+          view.scrollDOM.scrollTop = position.top
+          view.scrollDOM.scrollLeft = position.left
+        },
+      })
+  },
   /** 聚焦 */
   focus: () => editor.focus(),
   /** 失焦 */

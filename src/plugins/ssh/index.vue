@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** SSH 工具主容器：服务器配置列表 + 多连接页签；每条连接拥有完整运维功能区。 */
 import { computed, defineAsyncComponent, h, ref, watch, type Component } from 'vue'
+import { useUiStore } from '@/stores/ui'
 import LiveLogDialog from './monitor/LiveLogDialog.vue'
 import { provideLogWindows } from './monitor/logWindows'
 import ServerList from './profiles/ServerList.vue'
@@ -45,6 +46,7 @@ const ComposeTab = lazySection(() => import('./compose/ComposeTab.vue'))
 
 const bulk = ref<{ mode: 'import' | 'export'; groupId?: string }>()
 const workspace = useSshWorkspace()
+const ui = useUiStore()
 // 工具资源生命周期：关闭页签/退出时断开会话与隧道（T10-4）
 useSshToolLifecycle()
 const {
@@ -86,6 +88,10 @@ const editorRenames = ref<Record<string, { oldPath: string; newPath: string }>>(
 const fileDirectories = ref<Record<string, string>>({})
 const fileNavigations = ref<Record<string, { id: number; sessionId: string; path: string }>>({})
 let requestId = 0
+function returnEditor(id: string) {
+  ui.openTool('ssh')
+  activeWorkspaceId.value = id
+}
 function openEditor(id: string, path?: string) {
   editorRequests.value[id] = { id: ++requestId, path }
 }
@@ -413,6 +419,7 @@ watch(
         :directory="fileDirectories[remote.id]"
         @state="fileStates[remote.id] = $event"
         @minimized="editorMinimized[remote.id] = $event"
+        @returned="returnEditor(remote.id)"
       />
     </template>
 

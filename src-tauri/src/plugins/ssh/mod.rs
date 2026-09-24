@@ -29,6 +29,7 @@ crate::covekit_module! {
     owner: "ssh",
     feature: "ssh",
     commands: {
+        sftp::editor_window::ssh_editor_window => "管理 SSH 文件编辑器独立窗口",
         archive::ssh_archive_run => "执行可取消的远程压缩解压与预览",
         archive::ssh_archive_cancel => "取消远程归档任务",
         containers::compose::ssh_compose_list => "查询 Docker Compose 项目",

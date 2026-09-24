@@ -23,6 +23,7 @@ const ui = useUiStore()
 
 /** 完整档编辑器引用（命令式 API 演示：格式化） */
 const fullEditor = ref<InstanceType<typeof UiCodeEditor> | null>(null)
+const savedViewport = ref<ReturnType<InstanceType<typeof UiCodeEditor>['getViewport']>>()
 
 /** 主编辑器语言选择：auto 表示按 filename='config.json' 自动识别 */
 const language = ref('auto')
@@ -169,6 +170,16 @@ function onFormat(): void {
       <template #actions>
         <UiSelect v-model="language" :options="languageOptions" size="sm" />
         <UiButton size="sm" @click="onFormat">格式化</UiButton>
+        <UiButton size="sm" variant="ghost" @click="savedViewport = fullEditor?.getViewport()"
+          >记录视图位置</UiButton
+        >
+        <UiButton
+          size="sm"
+          variant="ghost"
+          :disabled="!savedViewport"
+          @click="savedViewport && fullEditor?.restoreViewport(savedViewport)"
+          >恢复视图位置</UiButton
+        >
       </template>
 
       <UiCodeEditor

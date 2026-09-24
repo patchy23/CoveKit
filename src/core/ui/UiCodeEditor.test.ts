@@ -395,3 +395,23 @@ describe('独立文档的编辑状态', () => {
     }
   })
 })
+
+it('可序列化视图保留选区方向并可恢复光标', async () => {
+  const wrapper = mount(UiCodeEditor, {
+    props: { modelValue: 'abcdef', language: 'text' },
+    attachTo: document.body,
+  })
+  try {
+    await settle()
+    wrapper.vm.setCursor(4, 1)
+    const position = wrapper.vm.getViewport()!
+    expect(position).toMatchObject({ from: 4, to: 1 })
+    expect(JSON.parse(JSON.stringify(position))).toEqual(position)
+    wrapper.vm.setCursor(0, 0)
+    wrapper.vm.restoreViewport(position)
+    expect(wrapper.vm.getCursor().head).toBe(1)
+    expect(wrapper.vm.getSelection()).toBe('bcd')
+  } finally {
+    wrapper.unmount()
+  }
+})

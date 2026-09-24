@@ -138,3 +138,31 @@ it('工作区保持多个编辑实例，收起不卸载，关闭未保存文件�
       .props('open')
   ).toBe(true)
 })
+
+it('首个文件读取期间关闭窗口不隐藏空白编辑区', async () => {
+  const busy = ref(true),
+    visible = ref(true)
+  const editor = {
+    documents: ref([]),
+    active: ref(''),
+    directory: ref('/'),
+    error: ref(''),
+    visible,
+    busy,
+    current: computed(() => undefined),
+    hide: () => {
+      visible.value = false
+    },
+  } as unknown as ReturnType<typeof useRemoteEditor>
+  const wrapper = mount(RemoteEditorWorkspace, {
+    props: { editor, title: 'server', standalone: true },
+    global: { stubs: { UiCodeEditor: true, UiModal: true, UiContextMenu: true } },
+  })
+  wrapper.vm.requestClose()
+  expect(visible.value).toBe(true)
+  expect(wrapper.emitted('closed')).toBeUndefined()
+  busy.value = false
+  wrapper.vm.requestClose()
+  expect(visible.value).toBe(false)
+  expect(wrapper.emitted('closed')).toHaveLength(1)
+})

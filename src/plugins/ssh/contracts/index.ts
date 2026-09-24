@@ -54,6 +54,7 @@ export interface CredentialOverride {
 }
 
 export const commands = {
+  sshEditorWindow: 'ssh_editor_window',
   sshArchiveRun: 'ssh_archive_run',
   sshArchiveCancel: 'ssh_archive_cancel',
   sshServerCsvRead: 'ssh_server_csv_read',
@@ -220,6 +221,7 @@ export type Payloads = {
   ssh_file_delete: { connectionId: string; remotePath: string; recursive?: boolean }
   ssh_file_rename: { connectionId: string; oldPath: string; newPath: string }
   ssh_file_mkdir: { connectionId: string; path: string }
+  ssh_editor_window: { token: string; action: 'open' | 'focus' | 'show' | 'close' | 'return' }
   ssh_local_default_directory: { preferred?: string }
   ssh_local_list: { path: string }
   /** 本地新建文件/目录 */
@@ -369,6 +371,7 @@ export type Results = {
   ssh_file_delete: SshActionResult
   ssh_file_rename: SshActionResult
   ssh_file_mkdir: SshActionResult
+  ssh_editor_window: null
   ssh_local_default_directory: [string, string | null]
   ssh_local_list: FileListResult
   ssh_local_create: SshActionResult

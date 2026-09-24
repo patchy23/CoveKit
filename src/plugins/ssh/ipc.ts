@@ -30,6 +30,8 @@ function cmd<K extends keyof InvokePayloads & keyof Results>(
 }
 
 export const ipc = {
+  sshEditorWindow: (token: string, action: 'open' | 'focus' | 'show' | 'close' | 'return') =>
+    cmd(commands.sshEditorWindow, { token, action }),
   sshArchiveCancel: (jobId: string) => cmd(commands.sshArchiveCancel, { jobId }),
   sshArchiveRun: (
     connectionId: string,

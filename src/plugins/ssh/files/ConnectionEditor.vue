@@ -4,6 +4,8 @@ import { ref, watch } from 'vue'
 import type { ServerConnection } from '../contracts'
 import { ipc } from '../ipc'
 import { useRemoteEditor } from './useRemoteEditor'
+import { useNativeEditor } from './native/useNativeEditor'
+import type { EditorViewHandle } from './native/snapshot'
 import RemoteEditorWorkspace from './RemoteEditorWorkspace.vue'
 const props = defineProps<{
   connection: ServerConnection
@@ -15,24 +17,39 @@ const props = defineProps<{
 const emit = defineEmits<{
   state: [value: { dirty: boolean; busy: boolean }]
   minimized: [value: boolean]
+  returned: []
 }>()
 const initialized = ref(false)
 const editor = useRemoteEditor(() => props.connection)
+const view = ref<EditorViewHandle>()
+const native = useNativeEditor(
+  editor,
+  view,
+  () => props.connection,
+  () => props.title,
+  () => emit('returned')
+)
 watch(
-  () => [editor.dirty.value.length, editor.busy.value],
-  () => emit('state', { dirty: !!editor.dirty.value.length, busy: editor.busy.value }),
+  () => [editor.dirty.value.length, editor.busy.value, native.detached.value, native.moving.value],
+  () =>
+    emit('state', {
+      dirty: !!editor.dirty.value.length,
+      busy: editor.busy.value || native.detached.value || native.moving.value,
+    }),
   { immediate: true }
 )
 watch(
   () => props.rename,
-  (value) => {
-    if (value) editor.renamed(value.oldPath, value.newPath)
+  async (value) => {
+    if (value && !(await native.rename(value.oldPath, value.newPath)))
+      editor.renamed(value.oldPath, value.newPath)
   }
 )
 watch(
   () => props.request,
   async (request) => {
     emit('minimized', false)
+    if (await native.openFile(request.path)) return
     if (request.path) {
       initialized.value = true
       await editor.openFile({ path: request.path })
@@ -70,11 +87,14 @@ watch(
 </script>
 <template>
   <RemoteEditorWorkspace
+    ref="view"
+    :moving="native.moving.value"
     :ready="initialized"
     :activation="request.id"
     :editor="editor"
     :connection="connection"
     :title="title"
+    @detach="native.detach"
     @minimize="emit('minimized', true)"
     @closed="emit('minimized', false)"
   />

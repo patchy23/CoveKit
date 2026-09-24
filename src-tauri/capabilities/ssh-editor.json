@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "ssh-editor",
+  "description": "SSH 文件编辑器独立窗口；不授予通用窗口创建或销毁能力",
+  "windows": ["ssh-editor-*"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-theme",
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-read-text",
+    "log:allow-log"
+  ]
+}

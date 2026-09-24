@@ -11,3 +11,5 @@ pub(crate) mod util;
 pub use ops::TransferState;
 
 pub(crate) mod edit;
+
+pub(crate) mod editor_window;
