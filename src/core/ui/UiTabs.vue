@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import UiTabStatusDot from './UiTabStatusDot.vue'
 import UiIcon from './UiIcon.vue'
+import UiTooltip from './UiTooltip.vue'
 import { TabsList, TabsRoot, TabsTrigger } from 'reka-ui'
 import type { UiSize } from './types'
 
 export interface UiTabItem {
   value: string
   label: string
+  title?: string
   disabled?: boolean
   badge?: string | number
   closable?: boolean
@@ -51,7 +53,9 @@ const emit = defineEmits<{
         @contextmenu="emit('contextmenu', item.value, $event)"
       >
         <UiTabStatusDot v-if="item.status" :status="item.status" :title="item.statusTitle" />
-        <span class="ui-tab-label">{{ item.label }}</span>
+        <UiTooltip :content="item.title || item.label"
+          ><span class="ui-tab-label">{{ item.label }}</span></UiTooltip
+        >
         <span v-if="item.badge !== undefined" class="ui-tab-badge">{{ item.badge }}</span>
         <button
           v-if="item.closable"

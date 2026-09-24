@@ -7,6 +7,7 @@
 import { computed } from 'vue'
 import UiDropdownMenu from './UiDropdownMenu.vue'
 import UiIcon from './UiIcon.vue'
+import UiTooltip from './UiTooltip.vue'
 import UiTabStatusDot from './UiTabStatusDot.vue'
 import type { UiTabItem } from './UiTabs.vue'
 
@@ -42,7 +43,12 @@ const itemByValue = computed(() => new Map(props.items.map((item) => [item.value
         :status="itemByValue.get(item.value)!.status!"
         :title="itemByValue.get(item.value)!.statusTitle"
       />
-      <span class="min-w-0 flex-1 truncate">{{ item.label }}</span>
+      <UiTooltip :content="itemByValue.get(item.value)?.title || item.label"
+        ><span class="min-w-0 flex-1 truncate">{{ item.label }}</span></UiTooltip
+      >
+      <span v-if="itemByValue.get(item.value)?.badge !== undefined" class="text-caption">{{
+        itemByValue.get(item.value)?.badge
+      }}</span>
       <span
         v-if="item.value === modelValue"
         class="ml-auto h-[6px] w-[6px] shrink-0 rounded-full bg-accent"

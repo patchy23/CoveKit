@@ -1,6 +1,6 @@
-import { mount, enableAutoUnmount } from '@vue/test-utils'
+import { mount, enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { defineComponent, ref } from 'vue'
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useFileTransfer } from './useFileTransfer'
 import type { FileTransferProgress } from '../contracts'
 const env = vi.hoisted(() => ({
@@ -18,6 +18,7 @@ vi.mock('../ipc', () => ({
   onTransferProgress: vi.fn(async () => env.stop),
 }))
 enableAutoUnmount(afterEach)
+beforeEach(() => vi.clearAllMocks())
 function setup() {
   let transfer!: ReturnType<typeof useFileTransfer>
   const connection = ref('s'),
@@ -65,7 +66,8 @@ it('准备期间可立即看到任务，准备失败保留错误用于重试', a
   const pending = transfer.startTransfer('upload', '/local', '/remote')
   expect([...transfer.transfers.value.values()][0].preparing).toBe(true)
   fail(new Error('读取失败'))
-  await expect(pending).rejects.toThrow('读取失败')
+  await pending
+  await flushPromises()
   expect([...transfer.transfers.value.values()][0]).toMatchObject({
     done: true,
     preparing: false,
@@ -79,4 +81,58 @@ it('取消请求与成功完成竞态以真实完成结果为准', async () => {
   await transfer.cancelTransfer('up-1')
   transfer.applyProgress(progress('up-1', true))
   expect(transfer.transfers.value.get('up-1')).toMatchObject({ done: true, cancelling: false })
+})
+
+it('全部预入队，两项并发，取消全部后不会启动排队项', async () => {
+  const { transfer } = setup()
+  let sequence = 0
+  env.download.mockImplementation(async ({ localPath, remotePath }) => ({
+    ...progress('down-' + ++sequence),
+    localPath,
+    remotePath,
+  }))
+  for (let i = 0; i < 6; i++)
+    await transfer.startTransfer('download', '/local/' + i, '/remote/' + i)
+  await flushPromises()
+  expect(transfer.transfers.value.size).toBe(6)
+  expect(env.download).toHaveBeenCalledTimes(2)
+  expect([...transfer.transfers.value.values()].filter((v) => v.queued)).toHaveLength(4)
+  transfer.cancelAll()
+  expect([...transfer.transfers.value.values()].filter((v) => v.done && v.cancelling)).toHaveLength(
+    4
+  )
+  transfer.applyProgress({ ...progress('down-1', true), error: '已取消' })
+  transfer.applyProgress({ ...progress('down-2', true), error: '已取消' })
+  await flushPromises()
+  expect(env.download).toHaveBeenCalledTimes(2)
+  expect(env.cancel).toHaveBeenCalledWith('down-1')
+  expect(env.cancel).toHaveBeenCalledWith('down-2')
+})
+it('同目录及子路径串行，完成后继续排队并默认覆盖', async () => {
+  const { transfer } = setup()
+  let sequence = 0
+  env.download.mockImplementation(async ({ localPath, remotePath }) => ({
+    ...progress('down-' + ++sequence),
+    localPath,
+    remotePath,
+  }))
+  await transfer.startTransfer('download', '/local/dir', '/remote/dir')
+  await transfer.startTransfer('download', '/local/dir/file', '/remote/file')
+  await flushPromises()
+  expect(env.download).toHaveBeenCalledTimes(1)
+  expect(env.download).toHaveBeenCalledWith(expect.objectContaining({ overwrite: true }))
+  transfer.applyProgress(progress('down-1', true))
+  await flushPromises()
+  expect(env.download).toHaveBeenCalledTimes(2)
+})
+it('取消准备中的任务，在后端返回标识后补发取消', async () => {
+  const { transfer } = setup()
+  let finish!: (p: FileTransferProgress) => void
+  env.download.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+  await transfer.startTransfer('download', '/local', '/remote')
+  transfer.cancelAll()
+  finish(progress('down-late'))
+  await flushPromises()
+  expect(env.cancel).toHaveBeenCalledWith('down-late')
+  expect(transfer.transfers.value.get('down-late')?.cancelling).toBe(true)
 })

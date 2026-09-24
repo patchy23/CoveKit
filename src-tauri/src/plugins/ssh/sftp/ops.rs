@@ -153,6 +153,13 @@ pub struct TransferState(
 pub(crate) struct CancelFlag(Arc<std::sync::atomic::AtomicBool>);
 
 impl CancelFlag {
+    /// 等待协作取消，供目录扫描和阻塞网络读取退出。
+    pub(crate) async fn cancelled(&self) {
+        while !self.is_cancelled() {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
     /// 是否已被请求取消
     pub(crate) fn is_cancelled(&self) -> bool {
         self.0.load(std::sync::atomic::Ordering::Relaxed)

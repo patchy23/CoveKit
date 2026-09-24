@@ -119,6 +119,12 @@ pub(crate) async fn replace_remote_file(
             .map_err(|e| format!("提交远程文件失败: {e}"));
     }
 
+    let metadata = tokio::fs::symlink_metadata(target_path)
+        .await
+        .map_err(|e| format!("读取下载目标类型失败: {e}"))?;
+    if !metadata.is_file() {
+        return Err("本地目标已存在且不是普通文件".into());
+    }
     let backup_path = format!("{target_path}.covekit-backup-{}", resource_id("file"));
     fs.rename(target_path, &backup_path)
         .await
@@ -152,6 +158,12 @@ pub(crate) async fn replace_local_file(temp_path: &str, target_path: &str) -> Re
         return tokio::fs::rename(temp_path, target_path)
             .await
             .map_err(|e| format!("提交下载文件失败: {e}"));
+    }
+    let metadata = tokio::fs::symlink_metadata(target_path)
+        .await
+        .map_err(|e| format!("读取下载目标类型失败: {e}"))?;
+    if !metadata.is_file() {
+        return Err("本地目标已存在且不是普通文件".into());
     }
     let backup_path = format!("{target_path}.covekit-backup-{}", resource_id("file"));
     tokio::fs::rename(target_path, &backup_path)
@@ -369,5 +381,42 @@ mod policy_tests {
         for bad in ["", ".", "..", "../x", "a/b", "a\\b", "..\\win"] {
             assert!(check_entry_name(bad).is_err(), "应拦截: {bad:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod download_commit_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn replacement_preserves_old_file_on_failure_and_rejects_directories() {
+        let root = std::env::temp_dir().join(resource_id("covekit-download-test"));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let target = root.join("target");
+        let staged = root.join("staged");
+        tokio::fs::write(&target, b"old").await.unwrap();
+        // 缺失的临时产物不能导致旧文件丢失。
+        assert!(
+            replace_local_file(staged.to_str().unwrap(), target.to_str().unwrap())
+                .await
+                .is_err()
+        );
+        assert_eq!(tokio::fs::read(&target).await.unwrap(), b"old");
+        tokio::fs::write(&staged, b"new").await.unwrap();
+        replace_local_file(staged.to_str().unwrap(), target.to_str().unwrap())
+            .await
+            .unwrap();
+        assert_eq!(tokio::fs::read(&target).await.unwrap(), b"new");
+        let directory = root.join("directory");
+        tokio::fs::create_dir(&directory).await.unwrap();
+        tokio::fs::write(&staged, b"keep").await.unwrap();
+        assert!(
+            replace_local_file(staged.to_str().unwrap(), directory.to_str().unwrap())
+                .await
+                .is_err()
+        );
+        assert!(directory.is_dir());
+        assert_eq!(tokio::fs::read(&staged).await.unwrap(), b"keep");
+        tokio::fs::remove_dir_all(&root).await.unwrap();
     }
 }

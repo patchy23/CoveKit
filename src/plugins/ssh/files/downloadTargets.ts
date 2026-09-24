@@ -4,6 +4,8 @@ import type { RemoteFile } from '../contracts'
 export function createDownloadTargets(deps: {
   session: () => string | undefined
   defaultDirectory: () => Promise<string>
+  chooseFile?: (path: string) => Promise<string | null>
+  parent?: (path: string) => Promise<string>
   chooseDirectory: (path: string) => Promise<string | string[] | null>
   join: (directory: string, name: string) => Promise<string>
   submit: (local: string, remote: string) => Promise<unknown>
@@ -12,13 +14,15 @@ export function createDownloadTargets(deps: {
   let choosing = false
   let lastDirectory = ''
   async function submit(items: RemoteFile[], directory: string, session: string) {
+    const paths = await Promise.all(items.map((item) => deps.join(directory, item.name)))
+    if (deps.session() !== session) return
     let count = 0
-    for (const item of items) {
+    for (const [index, item] of items.entries()) {
       if (deps.session() !== session) break
       try {
-        const path = await deps.join(directory, item.name)
+        const path = paths[index]
         if (deps.session() !== session) break
-        await deps.submit(path, item.path)
+        void deps.submit(path, item.path).catch((error) => deps.notify(String(error)))
         count++
       } catch (error) {
         deps.notify('下载失败：' + item.name + '：' + String(error))
@@ -45,6 +49,14 @@ export function createDownloadTargets(deps: {
         }
       }
       if (deps.session() !== session) return
+      if (snapshot.length === 1 && !snapshot[0].isDir && deps.chooseFile) {
+        const path = await deps.chooseFile(await deps.join(initial, snapshot[0].name))
+        if (!path || deps.session() !== session) return
+        if (deps.parent) lastDirectory = await deps.parent(path)
+        if (deps.session() !== session) return
+        await deps.submit(path, snapshot[0].path)
+        return
+      }
       const directory = await deps.chooseDirectory(initial)
       if (typeof directory !== 'string' || deps.session() !== session) return
       lastDirectory = directory

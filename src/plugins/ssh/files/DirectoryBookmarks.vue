@@ -2,6 +2,7 @@
 import { computed, onUnmounted, ref, watch } from 'vue'
 import {
   UiButton,
+  UiTooltip,
   UiPopover,
   UiSearchInput,
   UiSortableList,
@@ -121,6 +122,16 @@ defineExpose({ addBookmark: add })
       @select="selectBookmark"
       @move="move"
     >
+      <template #row="{ item }">
+        <UiTooltip :content="item.description"
+          ><div class="min-w-0 flex-1">
+            <span class="block truncate text-body-sm">{{ item.label }}</span>
+            <span class="block truncate text-caption text-secondary dark:text-secondary-dark">{{
+              item.description
+            }}</span>
+          </div></UiTooltip
+        >
+      </template>
       <template #suffix="{ item }">
         <UiIconButton
           size="xs"

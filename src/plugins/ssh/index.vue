@@ -80,6 +80,7 @@ const sectionTabs: UiTabItem[] = [
 
 const activeWorkspaceId = ref<string | null>(null)
 const closingWorkspaceId = ref<string | null>(null)
+const editorMinimized = ref<Record<string, boolean>>({})
 const editorRequests = ref<Record<string, { id: number; path?: string }>>({})
 const editorRenames = ref<Record<string, { oldPath: string; newPath: string }>>({})
 const fileDirectories = ref<Record<string, string>>({})
@@ -202,6 +203,7 @@ async function confirmCloseWorkspace(passedId?: string) {
   }
   await workspace.closeConnectionWorkspace(id)
   delete editorRequests.value[id]
+  delete editorMinimized.value[id]
   delete editorRenames.value[id]
   delete fileDirectories.value[id]
   delete fileNavigations.value[id]
@@ -220,6 +222,7 @@ watch(
     connectionMenu.value = null
     for (const record of [
       editorRequests,
+      editorMinimized,
       editorRenames,
       fileDirectories,
       fileNavigations,
@@ -314,7 +317,7 @@ watch(
               :disabled="remote.connection.status !== 'connected' && !editorRequests[remote.id]"
               @click="openEditor(remote.id)"
             >
-              打开编辑器
+              {{ editorMinimized[remote.id] ? '恢复编辑器' : '打开编辑器' }}
             </button>
           </div>
           <div class="relative min-h-0 flex-1 overflow-hidden">
@@ -403,6 +406,7 @@ watch(
               :directory="fileDirectories[remote.id]"
               :location="activeWorkspaceId + '/' + remote.activeSection"
               @state="fileStates[remote.id] = $event"
+              @minimized="editorMinimized[remote.id] = $event"
             />
           </div>
         </div>

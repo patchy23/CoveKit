@@ -6,7 +6,8 @@ import {
   UiIcon,
   UiIconButton,
   UiTabs,
-  UiScrollArea,
+  UiFloatingWindow,
+  UiTabsOverflowMenu,
   UiCodeEditor,
   UiCodeDiff,
   UiModal,
@@ -16,6 +17,7 @@ import {
   UiContextMenu,
   type UiContextMenuItem,
 } from '@/core/ui'
+import { useTabsOverflow } from '@/core/ui/useTabsOverflow'
 import RemoteEditorTree from './RemoteEditorTree.vue'
 import type { useRemoteEditor } from './useRemoteEditor'
 import type { ServerConnection } from '../contracts'
@@ -23,9 +25,17 @@ const props = defineProps<{
   editor: ReturnType<typeof useRemoteEditor>
   connection?: ServerConnection
   title: string
+  ready?: boolean
+  activation?: number
 }>()
+const emit = defineEmits<{ minimize: []; closed: [] }>()
 function hide() {
   props.editor.hide()
+  emit('minimize')
+}
+function hideClosed() {
+  props.editor.hide()
+  emit('closed')
 }
 function activate(path: string) {
   props.editor.activate(path)
@@ -39,15 +49,22 @@ const docs = computed(() => props.editor.documents.value)
 const tabs = computed(() =>
   docs.value.map((d) => ({
     value: d.path,
+    title: d.path,
     label: d.path.split('/').pop() ?? d.path,
     badge: d.content !== d.saved ? '●' : undefined,
     closable: !d.saving,
   }))
 )
+const tabContainer = ref<HTMLElement | null>(null)
+const { visibleItems, hiddenItems } = useTabsOverflow(tabContainer, tabs, props.editor.active, 40, {
+  extra: 72,
+})
+const closingWindow = ref(false)
 const current = computed(() => props.editor.current.value)
 function close(paths: string[]) {
   const targets = docs.value.filter((d) => paths.includes(d.path))
   if (props.editor.busy.value) return
+  closingWindow.value = false
   if (targets.some((d) => d.content !== d.saved)) {
     pending.value = paths
     return
@@ -58,6 +75,8 @@ function discard() {
   if (props.editor.busy.value) return
   for (const path of pending.value) props.editor.remove(path)
   pending.value = []
+  if (closingWindow.value && !docs.value.length) hideClosed()
+  closingWindow.value = false
 }
 async function saveClose() {
   for (const path of pending.value) {
@@ -69,7 +88,8 @@ async function saveClose() {
 }
 function closeAll() {
   close(docs.value.map((d) => d.path))
-  if (!docs.value.length) hide()
+  closingWindow.value = true
+  if (!docs.value.length) hideClosed()
 }
 function context(path: string, event: MouseEvent) {
   menu.value = {
@@ -90,19 +110,20 @@ function context(path: string, event: MouseEvent) {
 }
 </script>
 <template>
-  <section
+  <UiFloatingWindow
     v-show="editor.visible.value"
-    class="absolute inset-0 z-[100] flex min-h-0 flex-col bg-surface dark:bg-surface-dark"
-    aria-label="远程文件编辑工作台"
+    :title="'远程编辑 · ' + title"
+    :activation="activation"
+    :width="1000"
+    :height="660"
+    minimizable
+    @minimize="hide"
+    @close="closeAll"
   >
-    <UiToolbar bordered :title="'远程编辑 · ' + title">
+    <UiToolbar bordered>
       <UiIconButton :label="sidebar ? '收起目录' : '展开目录'" size="sm" @click="sidebar = !sidebar"
         ><UiIcon :name="sidebar ? 'chevrons-left' : 'chevrons-right'" :size="14"
       /></UiIconButton>
-      <template #trailing
-        ><UiButton size="sm" variant="ghost" @click="hide">收起</UiButton
-        ><UiButton size="sm" variant="ghost" @click="closeAll">关闭文件</UiButton></template
-      >
     </UiToolbar>
     <UiAlert v-if="connection?.status !== 'connected'" tone="warning" size="sm"
       >SSH 已断开，编辑内容保留；恢复连接后可保存。</UiAlert
@@ -116,6 +137,7 @@ function context(path: string, event: MouseEvent) {
     >
       <template #primary
         ><RemoteEditorTree
+          v-if="ready !== false"
           v-show="sidebar"
           class="h-full"
           :connection-id="connection?.sessionId"
@@ -126,16 +148,25 @@ function context(path: string, event: MouseEvent) {
           @renamed="editor.renamed"
       /></template>
       <template #secondary>
-        <div class="flex h-full min-h-0 flex-col">
-          <UiScrollArea axis="horizontal" class="shrink-0"
-            ><UiTabs
+        <div class="flex h-full min-h-0 min-w-0 flex-col">
+          <div ref="tabContainer" class="flex min-w-0 shrink-0 items-center overflow-hidden">
+            <UiTabs
+              class="editor-tabs min-w-0 flex-1 overflow-hidden"
               :model-value="editor.active.value"
-              :items="tabs"
+              :items="visibleItems"
               variant="line"
               @update:model-value="activate"
               @close="close([$event])"
               @contextmenu="context"
-          /></UiScrollArea>
+            /><UiTabsOverflowMenu
+              v-if="hiddenItems.length"
+              class="shrink-0"
+              :items="hiddenItems"
+              :model-value="editor.active.value"
+              @select="activate"
+              @close="close([$event])"
+            />
+          </div>
           <UiToolbar v-if="current" bordered>
             <span class="min-w-0 flex-1 select-text break-all font-mono text-caption">{{
               current.path
@@ -174,9 +205,14 @@ function context(path: string, event: MouseEvent) {
             @save="editor.save(doc)"
             @error="doc.error = $event"
           />
-          <UiSpinner v-if="editor.busy.value && !docs.length" label="正在读取文件" class="p-md" />
+          <UiSpinner v-if="ready === false" label="正在打开编辑器" class="p-md" />
+          <UiSpinner
+            v-if="ready !== false && editor.busy.value && !docs.length"
+            label="正在读取文件"
+            class="p-md"
+          />
           <p
-            v-if="!docs.length && !editor.busy.value"
+            v-if="ready !== false && !docs.length && !editor.busy.value"
             class="p-md text-body-sm text-secondary dark:text-secondary-dark"
           >
             从左侧打开文件，或收起后从文件列表选择。
@@ -184,7 +220,7 @@ function context(path: string, event: MouseEvent) {
         </div>
       </template>
     </UiSplitPane>
-  </section>
+  </UiFloatingWindow>
   <UiContextMenu
     v-if="menu"
     :x="menu.x"
@@ -234,3 +270,16 @@ function context(path: string, event: MouseEvent) {
     >
   </UiModal>
 </template>
+
+<style scoped>
+.editor-tabs :deep(.ui-tab) {
+  min-width: 0;
+  max-width: 100%;
+}
+.editor-tabs :deep(.ui-tab-label) {
+  min-width: 0;
+}
+.editor-tabs :deep(.ui-tab > button) {
+  flex-shrink: 0;
+}
+</style>

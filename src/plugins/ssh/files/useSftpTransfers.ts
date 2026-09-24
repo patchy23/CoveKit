@@ -1,11 +1,11 @@
 import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 import { getCurrentWebview } from '@tauri-apps/api/webview'
-import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
+import { open as dialogOpen, save as dialogSave } from '@tauri-apps/plugin-dialog'
 import { useUiStore } from '@/stores/ui'
 import type { RemoteFile } from '../contracts'
 import { useFileTransfer } from './useFileTransfer'
 import { createDownloadTargets } from './downloadTargets'
-import { join } from '@tauri-apps/api/path'
+import { join, dirname } from '@tauri-apps/api/path'
 import { ipc } from '../ipc'
 
 export function useSftpTransfers(options: {
@@ -24,8 +24,15 @@ export function useSftpTransfers(options: {
   const dragActive = ref(false)
   let disposed = false
   let stopDragDrop: (() => void) | null = null
-  const { transferStatus, transfers, cancelTransfer, applyProgress, clearEnded, startTransfer } =
-    useFileTransfer(options.connectionId, options.refresh, options.downloadDone)
+  const {
+    transferStatus,
+    transfers,
+    cancelTransfer,
+    cancelAll,
+    applyProgress,
+    clearEnded,
+    startTransfer,
+  } = useFileTransfer(options.connectionId, options.refresh, options.downloadDone)
 
   async function uploadLocalPaths(
     localPaths: string[],
@@ -65,6 +72,8 @@ export function useSftpTransfers(options: {
       if (warning) ui.toast(warning)
       return path
     },
+    chooseFile: (path) => dialogSave({ title: '下载到本地', defaultPath: path }),
+    parent: dirname,
     chooseDirectory: (path) =>
       dialogOpen({
         directory: true,
@@ -123,6 +132,7 @@ export function useSftpTransfers(options: {
     transferStatus,
     transfers,
     cancelTransfer,
+    cancelAll,
     uploadLocalPaths,
     upload,
     download,

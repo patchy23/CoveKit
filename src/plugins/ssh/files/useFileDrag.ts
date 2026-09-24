@@ -46,9 +46,6 @@ export function resolveDragSide(
 export function useFileDrag(deps: {
   remotePane: Ref<HTMLElement | null>
   localPane: Ref<HTMLElement | null>
-  /** 按下行的路径是否在选中集内（决定拖选中集还是只拖单行） */
-  isSelected: (source: DragSide, path: string) => boolean
-  rows: (source: DragSide) => RemoteFile[]
   /** 跨栏投放：source→target 的 items */
   onDrop: (source: DragSide, target: DragSide, items: RemoteFile[]) => void
 }) {
@@ -66,8 +63,8 @@ export function useFileDrag(deps: {
   /** 行按下：记录候选（点击/拖拽共用同一入口，拖拽不吞单击） */
   function onRowPointerDown(event: PointerEvent, source: DragSide, file: RemoteFile) {
     if (event.button !== 0) return
-    // 拖选中集：按下的行在选中集内且选中 ≥2 项；否则只拖当前行
-    const items = deps.isSelected(source, file.path) ? deps.rows(source) : [file]
+    // 拖拽只携带起点行；批量传输使用选中后的显式操作。
+    const items = [file]
     drag.value = {
       source,
       items,

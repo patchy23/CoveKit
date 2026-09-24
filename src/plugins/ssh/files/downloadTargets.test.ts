@@ -50,3 +50,22 @@ describe('下载目标', () => {
     expect(deps.defaultDirectory).not.toHaveBeenCalled()
   })
 })
+
+it('单文件另存为携带原名，改名提交；取消不入队', async () => {
+  const { deps } = setup()
+  const chooseFile = vi.fn().mockResolvedValue('/downloads/renamed.txt')
+  const targets = createDownloadTargets({ ...deps, chooseFile })
+  await targets.choose([file])
+  expect(chooseFile).toHaveBeenCalledWith('/default/a')
+  expect(deps.submit).toHaveBeenCalledWith('/downloads/renamed.txt', '/srv/a')
+  expect(deps.chooseDirectory).not.toHaveBeenCalled()
+  chooseFile.mockResolvedValueOnce(null)
+  await targets.choose([file])
+  expect(deps.submit).toHaveBeenCalledTimes(1)
+})
+it('批量提交不等待前一项后端准备完成', async () => {
+  const { deps, targets } = setup()
+  deps.submit.mockReturnValue(new Promise(() => {}))
+  await targets.direct([file, { ...file, path: '/srv/b', name: 'b' }], '/target')
+  expect(deps.submit).toHaveBeenCalledTimes(2)
+})

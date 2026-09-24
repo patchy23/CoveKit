@@ -41,3 +41,19 @@ it('点击弹层使用 Portal，外部关闭后可以再次打开', async () => 
   await flushPromises()
   expect(document.querySelector('[role="dialog"][aria-label="可交互弹层"]')).toBeNull()
 })
+
+it('窗口最小化不卸载输入内容，恢复后可继续编辑', async () => {
+  const wrapper = mount(AuxiliaryPanelShowcase, { attachTo: document.body })
+  const panel = wrapper.findAllComponents({ name: 'UiFloatingWindow' })[0]
+  const input = panel.get('input')
+  await input.setValue('草稿仍然存在')
+  await panel.get('[aria-label="最小化窗口"]').trigger('click')
+  expect(panel.isVisible()).toBe(false)
+  await wrapper
+    .findAll('button')
+    .find((b) => b.text() === '恢复窗口')!
+    .trigger('click')
+  expect(panel.isVisible()).toBe(true)
+  expect(panel.get('input').element).toBe(input.element)
+  expect((input.element as HTMLInputElement).value).toBe('草稿仍然存在')
+})

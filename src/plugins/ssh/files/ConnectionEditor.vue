@@ -1,7 +1,6 @@
 <script setup lang="ts">
 /** 编辑器属于连接；首次使用才加载，收起和功能切换保留文档。 */
 import { ref, watch } from 'vue'
-import { UiSpinner } from '@/core/ui'
 import type { ServerConnection } from '../contracts'
 import { ipc } from '../ipc'
 import { useRemoteEditor } from './useRemoteEditor'
@@ -14,7 +13,10 @@ const props = defineProps<{
   directory?: string
   location: string
 }>()
-const emit = defineEmits<{ state: [value: { dirty: boolean; busy: boolean }] }>()
+const emit = defineEmits<{
+  state: [value: { dirty: boolean; busy: boolean }]
+  minimized: [value: boolean]
+}>()
 const initialized = ref(false)
 const editor = useRemoteEditor(() => props.connection)
 watch(
@@ -24,7 +26,12 @@ watch(
 )
 watch(
   () => props.location,
-  () => editor.hide()
+  () => {
+    if (editor.visible.value) {
+      editor.hide()
+      emit('minimized', true)
+    }
+  }
 )
 watch(
   () => props.rename,
@@ -35,6 +42,7 @@ watch(
 watch(
   () => props.request,
   async (request) => {
+    emit('minimized', false)
     if (request.path) {
       initialized.value = true
       await editor.openFile({ path: request.path })
@@ -71,16 +79,13 @@ watch(
 )
 </script>
 <template>
-  <div
-    v-if="!initialized && editor.visible.value"
-    class="absolute inset-0 z-[100] grid place-items-center bg-surface dark:bg-surface-dark"
-  >
-    <UiSpinner label="正在打开编辑器" />
-  </div>
   <RemoteEditorWorkspace
-    v-if="initialized"
+    :ready="initialized"
+    :activation="request.id"
     :editor="editor"
     :connection="connection"
     :title="title"
+    @minimize="emit('minimized', true)"
+    @closed="emit('minimized', false)"
   />
 </template>

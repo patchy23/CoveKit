@@ -16,8 +16,6 @@ it.each(['pointerup', 'Escape', 'dispose'])(
       useFileDrag({
         remotePane: ref(null),
         localPane: ref(null),
-        isSelected: () => false,
-        rows: () => [],
         onDrop: vi.fn(),
       })
     )!
@@ -69,4 +67,29 @@ describe('resolveDragSide 双栏命中判定', () => {
     expect(resolveDragSide(1000, 0, REMOTE, LOCAL)).toBe('local')
     expect(resolveDragSide(1400, 600, REMOTE, LOCAL)).toBe('local')
   })
+})
+
+it('即使起点已选中也只传拖拽行，不携带目录或其他选中项', () => {
+  const scope = effectScope()
+  const remote = document.createElement('div'),
+    local = document.createElement('div')
+  remote.getBoundingClientRect = () => REMOTE as DOMRect
+  local.getBoundingClientRect = () => LOCAL as DOMRect
+  const file = { path: '/picked' } as RemoteFile
+  const onDrop = vi.fn()
+  const drag = scope.run(() =>
+    useFileDrag({
+      remotePane: ref(remote),
+      localPane: ref(local),
+      onDrop,
+    })
+  )!
+  drag.onRowPointerDown(
+    new PointerEvent('pointerdown', { button: 0, clientX: 20, clientY: 20 }),
+    'remote',
+    file
+  )
+  window.dispatchEvent(new PointerEvent('pointerup', { clientX: 1100, clientY: 20 }))
+  expect(onDrop).toHaveBeenCalledWith('remote', 'local', [file])
+  scope.stop()
 })

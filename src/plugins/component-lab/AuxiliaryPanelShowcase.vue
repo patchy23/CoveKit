@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import {
   UiPopover,
+  UiFloatingWindow,
   UiBottomPanel,
   UiButton,
   UiInput,
@@ -13,6 +14,12 @@ import {
   UiIcon,
   UiSplitPane,
 } from '@/core/ui'
+const floating = ref(true),
+  minimized = ref(false)
+function openFloating() {
+  floating.value = true
+  minimized.value = false
+}
 const splitWidth = ref(180),
   resizable = ref(true)
 const footerOpen = ref(false),
@@ -23,6 +30,23 @@ const popover = ref(false),
   draft = ref('收起后保留这段输入')
 </script>
 <template>
+  <UiPanel title="可最小化工作窗口">
+    <div class="relative isolate h-[360px] overflow-hidden">
+      <UiButton @click="openFloating">{{ minimized ? '恢复窗口' : '打开窗口' }}</UiButton>
+      <UiFloatingWindow
+        v-if="floating"
+        v-show="!minimized"
+        title="编辑窗口"
+        :width="560"
+        :height="280"
+        minimizable
+        @minimize="minimized = true"
+        @close="floating = false"
+      >
+        <div class="p-md"><UiInput v-model="draft" /></div>
+      </UiFloatingWindow>
+    </div>
+  </UiPanel>
   <UiPanel title="辅助面板 · 点击弹层与底部任务区">
     <div class="flex h-[400px] min-h-0 flex-col">
       <div class="flex flex-1 items-start gap-sm p-md">

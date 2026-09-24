@@ -8,6 +8,7 @@ import { useFloatingWindowOrder } from './floatingWindows'
 const props = withDefaults(
   defineProps<{
     title: string
+    minimizable?: boolean
     width?: number
     height?: number
     /** 递增以激活已有窗口，不重建内容。 */
@@ -15,7 +16,7 @@ const props = withDefaults(
   }>(),
   { width: 820, height: 520, activation: 0 }
 )
-defineEmits<{ close: [] }>()
+defineEmits<{ close: []; minimize: [] }>()
 const panel = ref<HTMLElement>()
 const titleId = useId()
 const { activate, active, index, zIndex } = useFloatingWindowOrder()
@@ -137,6 +138,9 @@ onUnmounted(() => {
       @dblclick.self="maximized = !maximized"
     >
       <h2 :id="titleId" class="min-w-0 flex-1 truncate text-body-sm font-semibold">{{ title }}</h2>
+      <UiIconButton v-if="minimizable" size="sm" label="最小化窗口" @click="$emit('minimize')">
+        <UiIcon name="minus" :size="14" />
+      </UiIconButton>
       <UiIconButton
         size="sm"
         :label="maximized ? '还原窗口' : '最大化窗口'"

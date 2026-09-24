@@ -439,7 +439,11 @@ pub async fn ssh_file_download_recursive(
             let sftp = russh_sftp::client::SftpSession::new(stream)
                 .await
                 .map_err(|e| e.to_string())?;
-            let entries = collect_remote_entries(&sftp, &rpath, Path::new(&lpath)).await?;
+            let entries = tokio::select! {
+                biased;
+                _ = cancel.cancelled() => return Err("已取消".into()),
+                result = collect_remote_entries(&sftp, &rpath, Path::new(&lpath)) => result?,
+            };
             total = entries.iter().map(|e| e.size).sum();
             for entry in entries {
                 if cancel.is_cancelled() {
@@ -482,7 +486,11 @@ pub async fn ssh_file_download_recursive(
                         if cancel.is_cancelled() {
                             return Err("已取消".into());
                         }
-                        let n = remote.read(&mut buf).await.map_err(|e| e.to_string())?;
+                        let n = tokio::select! {
+                            biased;
+                            _ = cancel.cancelled() => return Err("已取消".into()),
+                            result = remote.read(&mut buf) => result.map_err(|e| e.to_string())?,
+                        };
                         if n == 0 {
                             break;
                         }
@@ -509,6 +517,7 @@ pub async fn ssh_file_download_recursive(
                     }
                     local.flush().await.map_err(|e| e.to_string())?;
                     local.shutdown().await.map_err(|e| e.to_string())?;
+                    if cancel.is_cancelled() { return Err("已取消".into()); }
                     Ok(())
                 }
                 .await;
@@ -517,7 +526,10 @@ pub async fn ssh_file_download_recursive(
                     let _ = tokio::fs::remove_file(&temp_path).await;
                 }
                 write_result?;
-                replace_local_file(&temp_path, entry.local_path.to_string_lossy().as_ref()).await?;
+                if let Err(error) = replace_local_file(&temp_path, entry.local_path.to_string_lossy().as_ref()).await {
+                    let _ = tokio::fs::remove_file(&temp_path).await;
+                    return Err(error);
+                }
             }
             Ok(())
         }

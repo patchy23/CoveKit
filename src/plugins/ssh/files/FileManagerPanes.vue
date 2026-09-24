@@ -90,10 +90,6 @@ defineExpose({ localBrowser, statusActions, locateLocal })
 const { drag, dragTarget, onRowPointerDown } = useFileDrag({
   remotePane,
   localPane,
-  isSelected: (side, path) =>
-    side === 'remote' ? props.remoteSelectedPaths.has(path) : props.localSelectedPaths.has(path),
-  rows: (side) =>
-    side === 'remote' ? props.files : ((localBrowser.value?.files ?? []) as RemoteFile[]),
   onDrop: (source, _target, items) => {
     if (source === 'remote') emit('dropRemoteToLocal', items)
     else emit('dropLocalToRemote', items)

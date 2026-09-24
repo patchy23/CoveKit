@@ -138,6 +138,7 @@ const {
   transferStatus,
   transfers,
   cancelTransfer,
+  cancelAll,
   uploadLocalPaths,
   upload,
   download,
@@ -270,6 +271,11 @@ function reloadPreview() {
   const path = archives.preview.value?.path
   archives.closePreview()
   if (path) archives.openPreview(path)
+}
+function cancelAllTasks() {
+  cancelAll()
+  for (const task of allTasks.value)
+    if (task.id.startsWith('archive-') && !task.done) cancelTask(task.id)
 }
 function cancelTask(id: string) {
   if (id.startsWith('archive-')) void archives.cancel(id)
@@ -420,6 +426,7 @@ watch(
           v-model:open="transfersOpen"
           :items="allTasks"
           @cancel="cancelTask"
+          @cancel-all="cancelAllTasks"
           @clear="clearTasks"
           @retry="
             $event.id.startsWith('archive-') ? archives.retry($event.id) : (retryTarget = $event)

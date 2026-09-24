@@ -15,6 +15,7 @@ export interface TransferItem {
   speed: number
   updatedAt: number
   cancelling?: boolean
+  queued?: boolean
   preparing?: boolean
 }
 export function useFileTransfer(
@@ -43,11 +44,12 @@ export function useFileTransfer(
       id: p.transferId,
       kind: p.transferId.startsWith('up') ? 'upload' : 'download',
       label:
+        old?.label ||
         p.remotePath.split('/').pop() ||
         p.localPath.replaceAll(String.fromCharCode(92), '/').split('/').pop() ||
         '文件',
-      localPath: p.localPath,
-      remotePath: p.remotePath,
+      localPath: old?.localPath ?? p.localPath,
+      remotePath: old?.remotePath ?? p.remotePath,
       transferred: p.transferred,
       total: p.total,
       done: p.done,
@@ -68,15 +70,16 @@ export function useFileTransfer(
     if (p.done && !p.error && item.kind === 'upload') onUploadDone()
     if (p.done && !p.error && item.kind === 'download') onDownloadDone?.(item.localPath)
   }
-  async function startTransfer(
+  async function launchTransfer(
     kind: 'upload' | 'download',
     localPath: string,
     remotePath: string,
-    overwrite = false
+    overwrite: boolean,
+    id: string
   ) {
     const connectionId = currentConnectionId()
     if (!connectionId) throw new Error('SSH 未连接')
-    const id = 'preparing-' + crypto.randomUUID()
+    if (transfers.value.get(id)?.done) return
     const entry: TransferItem = {
       id,
       kind,
@@ -97,8 +100,20 @@ export function useFileTransfer(
         kind === 'upload'
           ? await ipc.sshFileUpload({ connectionId, localPath, remotePath })
           : await ipc.sshFileDownloadRecursive({ connectionId, localPath, remotePath, overwrite })
+      if (disposed || connectionId !== currentConnectionId()) {
+        await ipc.sshTransferCancel(result.transferId)
+        return
+      }
       const cancelled = transfers.value.get(id)?.cancelling
       transfers.value.delete(id)
+      const early = transfers.value.get(result.transferId)
+      if (early) Object.assign(early, { label: entry.label, localPath, remotePath })
+      else
+        transfers.value.set(result.transferId, {
+          ...entry,
+          id: result.transferId,
+          preparing: false,
+        })
       applyProgress(result)
       if (cancelled) await cancelTransfer(result.transferId)
       return result
@@ -116,10 +131,129 @@ export function useFileTransfer(
       throw e
     }
   }
+
+  // 所有任务先入队，最多两项执行；相同或相互包含的目标串行。
+  const queue: {
+    id: string
+    kind: 'upload' | 'download'
+    localPath: string
+    remotePath: string
+    overwrite: boolean
+    session: string
+  }[] = []
+  const active = new Map<string, { kind: string; path: string }>()
+  let stopping = false
+  function targetPath(path: string) {
+    const normalized = path.replaceAll(String.fromCharCode(92), '/').replace(/\/$/, '')
+    return /^[A-Za-z]:/.test(normalized) || normalized.startsWith('//')
+      ? normalized.toLowerCase()
+      : normalized
+  }
+  function pump() {
+    if (stopping || disposed) return
+    while (active.size < 2) {
+      const index = queue.findIndex(
+        (job) =>
+          ![...active.values()].some((v) => {
+            const path = targetPath(job.kind === 'download' ? job.localPath : job.remotePath)
+            return (
+              v.kind === job.kind &&
+              (v.path === path || v.path.startsWith(path + '/') || path.startsWith(v.path + '/'))
+            )
+          })
+      )
+      if (index < 0) return
+      const job = queue.splice(index, 1)[0]
+      if (transfers.value.get(job.id)?.done || job.session !== currentConnectionId()) continue
+      active.set(job.id, {
+        kind: job.kind,
+        path: targetPath(job.kind === 'download' ? job.localPath : job.remotePath),
+      })
+      void (async () => {
+        try {
+          const result = await launchTransfer(
+            job.kind,
+            job.localPath,
+            job.remotePath,
+            job.overwrite,
+            job.id
+          )
+          if (result && !transfers.value.get(result.transferId)?.done) {
+            await new Promise<void>((resolve) => {
+              const stop = watch(
+                () =>
+                  !transfers.value.has(result.transferId) ||
+                  transfers.value.get(result.transferId)?.done,
+                (done) => {
+                  if (done) {
+                    stop()
+                    resolve()
+                  }
+                },
+                { flush: 'sync' }
+              )
+              if (disposed || job.session !== currentConnectionId()) {
+                stop()
+                resolve()
+              }
+            })
+          }
+        } catch {
+          // launchTransfer 已将错误保留在可重试任务行。
+        } finally {
+          active.delete(job.id)
+          pump()
+        }
+      })()
+    }
+  }
+  async function startTransfer(
+    kind: 'upload' | 'download',
+    localPath: string,
+    remotePath: string,
+    overwrite = true
+  ) {
+    const session = currentConnectionId()
+    if (!session || disposed) throw new Error('SSH 未连接')
+    const id = 'queued-' + crypto.randomUUID()
+    transfers.value.set(id, {
+      id,
+      kind,
+      label: remotePath.split('/').pop() || '文件',
+      localPath,
+      remotePath,
+      transferred: 0,
+      total: 0,
+      done: false,
+      speed: 0,
+      updatedAt: Date.now(),
+      queued: true,
+    })
+    queue.push({ id, kind, localPath, remotePath, overwrite, session })
+    transferStatus.value = '文件传输中'
+    pump()
+  }
+  function cancelAll() {
+    stopping = true
+    for (const item of transfers.value.values()) if (!item.done) void cancelTransfer(item.id)
+    stopping = false
+    pump()
+  }
+
   async function cancelTransfer(id: string) {
     const item = transfers.value.get(id)
     if (!item || item.done) return
     item.cancelling = true
+    if (item.queued) {
+      item.done = true
+      item.queued = false
+      item.error = '已取消'
+      const index = queue.findIndex((job) => job.id === id)
+      if (index >= 0) queue.splice(index, 1)
+      trimHistory()
+      transferStatus.value = [...transfers.value.values()].some((v) => !v.done) ? '文件传输中' : ''
+      return
+    }
     if (item.preparing) return
     try {
       await ipc.sshTransferCancel(id)
@@ -132,6 +266,7 @@ export function useFileTransfer(
     }
   }
   watch(currentConnectionId, () => {
+    queue.splice(0)
     for (const item of transfers.value.values())
       if (!item.done) {
         item.done = true
@@ -153,8 +288,18 @@ export function useFileTransfer(
     }
   })
   onUnmounted(() => {
+    cancelAll()
     disposed = true
+    for (const item of transfers.value.values()) if (!item.done) item.done = true
     unlisten?.()
   })
-  return { transferStatus, transfers, cancelTransfer, applyProgress, clearEnded, startTransfer }
+  return {
+    transferStatus,
+    transfers,
+    cancelTransfer,
+    applyProgress,
+    clearEnded,
+    startTransfer,
+    cancelAll,
+  }
 }
