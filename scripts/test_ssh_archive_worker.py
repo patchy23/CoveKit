@@ -104,6 +104,28 @@ class ArchiveWorkerTests(unittest.TestCase):
         entries = [entry for line in output.getvalue().splitlines() for entry in json.loads(line).get("entries", [])]
         self.assertIsNone(entries[0]["size"])
 
+    def test_长路径预览按协议分批且不丢条目或改变顺序(self):
+        entries = [dict(path=("中文目录/" * 300) + str(i), size=i, isDir=False, modifiedAt=0) for i in range(200)]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            worker.emit("entries", entries=entries)
+        lines = output.getvalue().splitlines()
+        self.assertGreater(len(lines), 1)
+        self.assertTrue(all(len(line.encode("utf-8")) <= worker.MAX_MESSAGE_BYTES for line in lines))
+        restored = [entry for line in lines for entry in json.loads(line)["entries"]]
+        self.assertEqual(restored, entries)
+
+    def test_普通预览批次不拆分且单条超限明确失败(self):
+        output = io.StringIO()
+        entries = [dict(path=str(i), size=0, isDir=False, modifiedAt=0) for i in range(200)]
+        with contextlib.redirect_stdout(output):
+            worker.emit("entries", entries=entries)
+        self.assertEqual(len(output.getvalue().splitlines()), 1)
+        output = io.StringIO()
+        with self.assertRaisesRegex(ValueError, "消息上限"), contextlib.redirect_stdout(output):
+            worker.emit("entries", entries=[dict(path="x" * worker.MAX_MESSAGE_BYTES)])
+        self.assertEqual(output.getvalue(), "")
+
 
 if __name__ == "__main__":
     unittest.main()

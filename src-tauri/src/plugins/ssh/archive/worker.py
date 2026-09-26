@@ -16,10 +16,23 @@ import zipfile
 
 LIMIT = 100000
 CHUNK = 256 * 1024
+# 与 stream.rs 的 JSON 行契约一致；分批不减少预览条目或路径内容。
+MAX_MESSAGE_BYTES = 1024 * 1024
 
 
 def emit(kind, **values):
-    print(json.dumps(dict(kind=kind, **values), ensure_ascii=True), flush=True)
+    encoded = json.dumps(dict(kind=kind, **values), ensure_ascii=True)
+    if kind == "entries" and len(encoded) > MAX_MESSAGE_BYTES:
+        entries = values["entries"]
+        if len(entries) < 2:
+            raise ValueError("单条归档元数据超过 1 MiB 消息上限")
+        # 普通批次仍只编码一次；长路径使批次超限时拆分，先释放旧编码再递归。
+        del encoded
+        middle = len(entries) // 2
+        emit(kind, **dict(values, entries=entries[:middle]))
+        emit(kind, **dict(values, entries=entries[middle:]))
+        return
+    print(encoded, flush=True)
 
 
 def safe_name(name):
@@ -175,7 +188,7 @@ def read_archive(request, stage):
         if preview:
             batch.append(dict(path=name, size=size, isDir=directory, modifiedAt=modified))
             if len(batch) >= 200:
-                emit("entries", entries=batch[:])
+                emit("entries", entries=batch)
                 batch.clear()
         return os.path.join(stage, *name.split("/")) if stage else None
 
