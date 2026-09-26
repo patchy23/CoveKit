@@ -2,6 +2,7 @@
 /** 每条消息独立拥有展开状态与格式化结果；移除消息时随组件回收。 */
 import { computed, ref } from 'vue'
 import { UiButton } from '@/core/ui'
+import { useJsonPreview } from '@/core/format/useJsonPreview'
 import type { StreamEntry } from './useRequestSession'
 
 const props = defineProps<{ entry: StreamEntry; kind: 'sse' | 'ws' }>()
@@ -9,13 +10,14 @@ defineEmits<{ copy: [text: string]; fill: [text: string] }>()
 const open = ref(false)
 // 快照可能重建消息对象；正文未变化时不使格式化结果失效。
 const content = computed(() => props.entry.content)
-const formatted = computed(() => {
-  try {
-    return JSON.stringify(JSON.parse(content.value), null, 2)
-  } catch {
-    return content.value
-  }
-})
+const {
+  content: formatted,
+  error: formatError,
+  pending: formatting,
+} = useJsonPreview(
+  () => content.value,
+  () => open.value
+)
 function onToggle(event: Event) {
   open.value = (event.currentTarget as HTMLDetailsElement).open
 }
@@ -51,6 +53,9 @@ function onToggle(event: Event) {
       <pre class="select-text whitespace-pre-wrap break-all font-mono text-body-sm">{{
         formatted
       }}</pre>
+      <span v-if="formatError || formatting" class="text-caption text-text-muted">{{
+        formatError || '正在格式化…'
+      }}</span>
     </div>
   </details>
 </template>

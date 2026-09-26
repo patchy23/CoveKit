@@ -170,7 +170,7 @@ export interface CodeEditorHandle {
   /** 清空查找条件与高亮 */
   clearSearch: () => void
   /** 按语言格式化（成功后写入并进撤销历史） */
-  format: () => { ok: boolean; error?: string }
+  format: () => Promise<{ ok: boolean; error?: string }>
   /** 记录当前内容为「已保存」基线 */
   markSaved: () => void
   /** 相对基线是否有未保存修改 */

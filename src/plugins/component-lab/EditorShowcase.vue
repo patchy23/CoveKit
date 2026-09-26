@@ -155,8 +155,8 @@ function buildLargeSample(): string {
 }
 
 /** 格式化：成功与失败都有可见反馈（失败走 error 事件语义，这里直接提示） */
-function onFormat(): void {
-  const ok = fullEditor.value?.format() ?? false
+async function onFormat(): Promise<void> {
+  const ok = (await fullEditor.value?.format()) ?? false
   ui.toast(ok ? '已格式化（可 Ctrl+Z 撤回）' : '格式化失败：内容不是合法 JSON')
 }
 </script>

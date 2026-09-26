@@ -13,7 +13,7 @@ import { onBeforeUnmount, shallowRef, watch } from 'vue'
 import { Compartment, EditorState, Prec, Transaction, type Extension } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { indentUnit } from '@codemirror/language'
-import { redo as redoCommand, undo as undoCommand } from '@codemirror/commands'
+import { isolateHistory, redo as redoCommand, undo as undoCommand } from '@codemirror/commands'
 import { search as searchExtension } from '@codemirror/search'
 import {
   buildBaseExtensions,
@@ -25,7 +25,8 @@ import {
 import { buildEditorKeymap } from './keymap'
 import { buildCompletion } from './completion'
 import { linterForLanguage } from './lint'
-import { formatDocument } from './format'
+import { formatDocument, jsonFormatResult } from './format'
+import { createJsonFormatter } from '@/core/format/asyncJson'
 import { createDocStatsTracker } from './docStats'
 import { createSearchController } from './searchController'
 import { createDocumentTextReader } from './documentText'
@@ -64,6 +65,8 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   /** 「已保存」基线内容（未保存标记用） */
   let savedSnapshot = ''
   const documentText = createDocumentTextReader()
+  const jsonFormatter = createJsonFormatter()
+  let formatRequest = 0
 
   let degradeScheduled = false
   const docStats = createDocStatsTracker(() => {
@@ -221,7 +224,11 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
           if (update.docChanged && !applyingExternal) {
             options.onChange(documentText(update.state.doc))
           }
-          if (update.docChanged) docStats.update(update.state)
+          if (update.docChanged) {
+            docStats.update(update.state)
+            formatRequest++
+            jsonFormatter.cancel()
+          }
           // 文档或选区变化都会影响「当前是第几个匹配」，条件为空时 refresh 内部直接返回
           if (update.docChanged || update.selectionSet || update.viewportChanged)
             search.refresh(update.viewportChanged)
@@ -257,6 +264,8 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   /** 销毁 EditorView */
   function destroy(): void {
     destroyed = true
+    formatRequest++
+    jsonFormatter.destroy()
     search.clear()
     documents.clear()
     view.value?.destroy()
@@ -273,7 +282,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     try {
       current.dispatch({
         changes,
-        annotations: addHistory ? undefined : Transaction.addToHistory.of(false),
+        annotations: addHistory ? isolateHistory.of('full') : Transaction.addToHistory.of(false),
       })
     } finally {
       applyingExternal = false
@@ -356,17 +365,38 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   }
 
   /** 按当前语言格式化：成功后写入并进撤销历史（可一次 Ctrl+Z 撤回） */
-  function format(): { ok: boolean; error?: string } {
+  async function format(): Promise<{ ok: boolean; error?: string }> {
     const current = view.value
     if (!current) return { ok: false, error: '编辑器尚未就绪' }
-    const result = formatDocument(
-      documentText(current.state.doc),
-      languageInfo.value.id,
-      options.tabSize()
-    )
-    if (!result.ok) return { ok: false, error: result.error }
-    writeValue(result.output, true)
-    return { ok: true }
+    const request = ++formatRequest
+    const document = current.state.doc
+    const text = documentText(document)
+    const language = languageInfo.value.id
+    const indent = options.tabSize()
+    try {
+      const result =
+        text.trim() && (language === 'json' || language === 'jsonc')
+          ? jsonFormatResult(text, await jsonFormatter.run(text, indent))
+          : formatDocument(text, language, indent)
+      if (
+        request !== formatRequest ||
+        view.value !== current ||
+        current.state.doc !== document ||
+        languageInfo.value.id !== language ||
+        options.tabSize() !== indent
+      )
+        return { ok: false }
+      if (!result.ok) return { ok: false, error: result.error }
+      writeValue(result.output, true)
+      return { ok: true }
+    } catch (error) {
+      if (
+        request !== formatRequest ||
+        (error instanceof DOMException && error.name === 'AbortError')
+      )
+        return { ok: false }
+      return { ok: false, error: `格式化失败：${String(error)}` }
+    }
   }
 
   /** 记录「已保存」基线 */
@@ -389,6 +419,8 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     const current = view.value
     if (!current) return
     if (key !== activeDocument) {
+      formatRequest++
+      jsonFormatter.cancel()
       if (
         activeDocument &&
         (!options.documentKeys?.() || options.documentKeys().includes(activeDocument))

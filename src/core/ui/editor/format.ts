@@ -7,7 +7,7 @@
  * - SQL：`formatSql`（自研词法格式化，无第三方依赖）
  * 不支持的语言返回 `ok: false` 并带中文原因，由上层 toast 提示，禁止静默失败。
  */
-import { formatJson } from '@/core/format/json'
+import { formatJson, type FormatResult } from '@/core/format/json'
 import { formatSql } from '@/core/format/sql'
 import { formatXml } from '@/core/format/xml'
 
@@ -30,17 +30,19 @@ export function canFormat(languageId: string): boolean {
   return JSON_LANGUAGES.has(languageId) || XML_LANGUAGES.has(languageId) || languageId === 'sql'
 }
 
+/** 同步与异步 JSON 格式化共用错误位置及原文回退契约。 */
+export function jsonFormatResult(text: string, result: FormatResult): EditorFormatResult {
+  if (result.ok) return { ok: true, output: result.output }
+  const location = result.error ? `第 ${result.error.line} 行第 ${result.error.col} 列` : '位置未知'
+  return { ok: false, output: text, error: `JSON 语法错误（${location}）` }
+}
+
 /** 格式化文本；失败时原样返回输入并给出中文原因 */
 export function formatDocument(text: string, languageId: string, indent = 2): EditorFormatResult {
   if (!text.trim()) return { ok: false, output: text, error: '内容为空，无法格式化' }
 
   if (JSON_LANGUAGES.has(languageId)) {
-    const result = formatJson(text, indent)
-    if (result.ok) return { ok: true, output: result.output }
-    const location = result.error
-      ? `第 ${result.error.line} 行第 ${result.error.col} 列`
-      : '位置未知'
-    return { ok: false, output: text, error: `JSON 语法错误（${location}）` }
+    return jsonFormatResult(text, formatJson(text, indent))
   }
 
   if (XML_LANGUAGES.has(languageId)) {

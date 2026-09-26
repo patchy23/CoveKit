@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /** 响应查看：状态码与失败上下文常显，格式化不改变原文。 */
 import { computed, ref } from 'vue'
-import { UiButton, UiCodeEditor, UiTabs } from '@/core/ui'
+import { UiAlert, UiButton, UiCodeEditor, UiTabs } from '@/core/ui'
+import { useJsonPreview } from '@/core/format/useJsonPreview'
 import { writeClipboardText } from '@/core/platform/clipboard'
 import { useUiStore } from '@/stores/ui'
 import type { HttpResponseResult } from './contracts'
@@ -10,13 +11,14 @@ const props = defineProps<{ response: HttpResponseResult; respondedAt: string }>
 defineEmits<{ save: [] }>()
 const tab = ref('pretty')
 const ui = useUiStore()
-const pretty = computed(() => {
-  try {
-    return JSON.stringify(JSON.parse(props.response.body), null, 2)
-  } catch {
-    return props.response.body
-  }
-})
+const {
+  content: pretty,
+  error: formatError,
+  pending: formatting,
+} = useJsonPreview(
+  () => props.response.body,
+  () => tab.value === 'pretty'
+)
 const content = computed(() =>
   tab.value === 'headers'
     ? formatHeaders(props.response.headers)
@@ -71,5 +73,7 @@ async function copy() {
       :line-wrapping="true"
       @save="$emit('save')"
     />
+    <UiAlert v-if="formatError" tone="danger">{{ formatError }}</UiAlert>
+    <span v-else-if="formatting" class="text-caption text-text-muted">正在格式化…</span>
   </section>
 </template>

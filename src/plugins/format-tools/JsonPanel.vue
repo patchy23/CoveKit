@@ -4,8 +4,8 @@
  * 布局：输入/输出左右分栏，占满高度；文本框内部滚动。缩进固定 2 空格（2026-09-14 起不再做成设置项）。
  * 免按钮交互（2026-09-18）：输入停顿 300ms 自动转换，模式切换立即重算（参考 DevToys / IT Tools）。
  */
-import { ref, watch } from 'vue'
-import { formatJson, minifyJson } from './useFormat'
+import { onScopeDispose, ref, watch } from 'vue'
+import { createJsonFormatter } from '@/core/format/asyncJson'
 import { useAutoConvert } from './useAutoConvert'
 import { useCopy } from '@/core/feedback/useCopy'
 import { UiAlert, UiButton, UiCodeEditor, UiRadioGroup, UiToolbar } from '@/core/ui'
@@ -18,6 +18,22 @@ const input = ref('{\n  "name": "CoveKit",\n  "tools": 8\n}')
 const output = ref('')
 const errorMsg = ref('')
 const mode = ref<JsonMode>('format')
+const formatter = createJsonFormatter()
+const pending = ref(false)
+let revision = 0
+watch(
+  [input, mode],
+  () => {
+    revision++
+    formatter.cancel()
+    pending.value = false
+  },
+  { flush: 'sync' }
+)
+onScopeDispose(() => {
+  revision++
+  formatter.destroy()
+})
 
 const modeOptions = [
   { value: 'format', label: '格式化' },
@@ -25,7 +41,8 @@ const modeOptions = [
 ]
 
 /** 按当前模式执行转换；空输入清空结果，不报错 */
-function run() {
+async function run() {
+  const request = ++revision
   const text = input.value
   if (!text.trim()) {
     output.value = ''
@@ -34,11 +51,20 @@ function run() {
   }
   // 缩进固定 2 空格：输出缩进是格式化结果的一部分，但为它长期占一个配置项不划算，
   // 2 空格在 JSON 场景是压倒性默认；真需要 4 空格 / Tab 时再考虑做进面板工具条
-  const r = mode.value === 'format' ? formatJson(text, 2) : minifyJson(text)
-  errorMsg.value = r.error
-    ? `${r.error.message}（第 ${r.error.line} 行，第 ${r.error.col} 列）`
-    : ''
-  output.value = r.output
+  pending.value = true
+  try {
+    const work = formatter.run(text, mode.value === 'format' ? 2 : 0)
+    const r = work instanceof Promise ? await work : work
+    if (request !== revision) return
+    errorMsg.value = r.error
+      ? `${r.error.message}（第 ${r.error.line} 行，第 ${r.error.col} 列）`
+      : ''
+    output.value = r.output
+  } catch (error) {
+    if (request === revision) errorMsg.value = `格式化失败：${String(error)}`
+  } finally {
+    if (request === revision) pending.value = false
+  }
 }
 
 const { watchInput, runNow } = useAutoConvert(run)
@@ -73,6 +99,7 @@ function clearAll() {
     </UiToolbar>
 
     <UiAlert v-if="errorMsg" tone="danger" class="shrink-0">{{ errorMsg }}</UiAlert>
+    <span v-else-if="pending" class="text-caption text-text-muted">正在转换…</span>
 
     <div class="grid min-h-0 flex-1 grid-cols-2 gap-[12px]">
       <div class="flex min-h-0 flex-col">

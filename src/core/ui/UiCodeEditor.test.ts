@@ -16,6 +16,7 @@ import { currentCompletions, startCompletion, closeCompletion } from '@codemirro
 import { MySQL, sql } from '@codemirror/lang-sql'
 import { language } from '@codemirror/language'
 import * as languages from './editor/languages'
+import { formatJson } from '@/core/format/json'
 
 beforeEach(() => vi.stubGlobal('Worker', RegexTestWorker))
 afterEach(() => vi.unstubAllGlobals())
@@ -216,7 +217,7 @@ describe('UiCodeEditor', () => {
 /** 命令式接口（批 2 能力） */
 interface EditorApi {
   find: (replace?: boolean) => void
-  format: () => boolean
+  format: () => Promise<boolean>
   getValue: () => string
   setValue: (value: string, options?: { addToHistory?: boolean }) => void
   markSaved: () => void
@@ -336,7 +337,7 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
     })
     await settle()
     const okApi = ok.vm as unknown as EditorApi
-    expect(okApi.format()).toBe(true)
+    expect(await okApi.format()).toBe(true)
     await settle()
     expect(okApi.getValue()).toContain('\n  "a": 1')
     ok.unmount()
@@ -347,7 +348,7 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
     })
     await settle()
     const badApi = bad.vm as unknown as EditorApi
-    expect(badApi.format()).toBe(false)
+    expect(await badApi.format()).toBe(false)
     expect(bad.emitted('error')?.[0]?.[0]).toContain('JSON')
     bad.unmount()
   })
@@ -369,6 +370,51 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
     api.markSaved()
     expect(api.isDirty()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('大 JSON 格式化期间继续编辑会取消旧结果，成功格式化可一次撤销', async () => {
+    const workers: {
+      onmessage?: (event: { data: unknown }) => void
+      postMessage: ReturnType<typeof vi.fn>
+      terminate: ReturnType<typeof vi.fn>
+    }[] = []
+    vi.stubGlobal(
+      'Worker',
+      class {
+        postMessage = vi.fn()
+        terminate = vi.fn()
+        constructor() {
+          workers.push(this)
+        }
+      }
+    )
+    const original = JSON.stringify({ value: 'x'.repeat(70000) })
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: original, language: 'json' },
+      attachTo: document.body,
+    })
+    try {
+      await settle()
+      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+      const api = wrapper.vm as unknown as EditorApi
+      const first = api.format()
+      view.dispatch({ changes: { from: view.state.doc.length, insert: ' ' } })
+      expect(await first).toBe(false)
+      expect(workers[0].terminate).toHaveBeenCalledOnce()
+      expect(api.getValue() === original + ' ').toBe(true)
+      expect(wrapper.emitted('error')).toBeUndefined()
+      const next = api.format()
+      const request = workers[1].postMessage.mock.lastCall![0]
+      workers[1].onmessage?.({
+        data: { id: request.id, result: formatJson(request.text, request.indent) },
+      })
+      expect(await next).toBe(true)
+      expect(api.getValue()).toContain('\n  "value":')
+      expect(undo(view)).toBe(true)
+      expect(api.getValue() === original + ' ').toBe(true)
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('状态栏：渲染行列、语言与编码', async () => {

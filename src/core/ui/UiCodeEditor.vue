@@ -201,8 +201,8 @@ function onGoToLine(line: number): void {
 }
 
 /** 格式化：失败以 `error` 事件暴露（调用方决定 toast 文案） */
-function format(): boolean {
-  const result = editor.format()
+async function format(): Promise<boolean> {
+  const result = await editor.format()
   if (!result.ok && result.error) emit('error', result.error)
   return result.ok
 }
