@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /** 纯显示组件：输入完整快照，暂停不发出停止采集信号；复制交给宿主平台适配。 */
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { tailLogText } from './logText'
 import UiButton from './UiButton.vue'
 import UiIcon from './UiIcon.vue'
 import UiScrollArea from './UiScrollArea.vue'
@@ -21,26 +22,21 @@ const limit = ref('300')
 const paused = ref(false)
 const following = ref(true)
 const displayed = ref('')
+const displayedLines = ref(0)
 const output = ref<HTMLElement>()
 const selectionText = ref('')
-let latest = ''
-function tail(content: string) {
-  return content
-    .replace(/\r?\n$/, '')
-    .split('\n')
-    .slice(-Number(limit.value))
-    .join('\n')
-}
+// 暂停期间只保留宿主最新快照，不为每轮后台更新派生另一份展示正文。
+const latest = computed(() => tailLogText(props.content, Number(limit.value)))
 async function showLatest() {
   if (paused.value) return
-  displayed.value = latest
+  displayed.value = latest.value.text
+  displayedLines.value = latest.value.lines
   await nextTick()
   if (following.value && !paused.value) output.value?.scrollTo({ top: output.value.scrollHeight })
 }
 watch(
   () => props.content,
-  (value) => {
-    latest = tail(value)
+  () => {
     void showLatest()
   },
   { immediate: true }
@@ -54,7 +50,6 @@ watch(following, () => {
 function changeLimit(value: string) {
   if (!options.some((option) => option.value === value) || value === limit.value) return
   limit.value = value
-  latest = tail(props.content)
   void showLatest()
   emit('limit-change', Number(value))
 }
@@ -146,7 +141,7 @@ onUnmounted(() => document.removeEventListener('selectionchange', captureSelecti
               ? '实时显示'
               : '没有日志输出'
       }}</span>
-      <span class="ml-auto">{{ displayed ? displayed.split('\n').length : 0 }} 行</span>
+      <span class="ml-auto">{{ displayedLines }} 行</span>
     </div>
   </div>
 </template>
