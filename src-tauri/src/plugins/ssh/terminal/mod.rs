@@ -67,11 +67,13 @@ impl Utf8ChunkDecoder {
         let mut offset = 0;
         while self.pending_len > 0 && offset < data.len() {
             // 暂存区只能是合法字符的未完成前缀；只补该字符，避免把后续正文复制进暂存。
-            let width = match self.pending[0] {
-                0xC2..=0xDF => 2,
-                0xE0..=0xEF => 3,
-                0xF0..=0xF4 => 4,
-                _ => unreachable!("UTF-8 暂存必须为未完成字符前缀"),
+            // decode 仅在 error_len 为 None 时保留前缀，首字节必在 C2..=F4。
+            let width = if self.pending[0] < 0xE0 {
+                2
+            } else if self.pending[0] < 0xF0 {
+                3
+            } else {
+                4
             };
             let take = (width - self.pending_len).min(data.len() - offset);
             self.pending[self.pending_len..self.pending_len + take]
