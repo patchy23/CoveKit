@@ -31,11 +31,20 @@ pub(crate) struct LogSink {
 }
 
 /// 终端日志共享状态（TerminalHandle 持有，后台任务与命令层共享同一份）
-pub(crate) type SharedLog = Arc<Mutex<Option<LogSink>>>;
+pub(crate) type SharedLog = Arc<Mutex<LogState>>;
+
+/// 创建文件不占用输出锁；停止/关闭通过代际使尚未完成的启动失效。
+#[derive(Default)]
+pub(crate) struct LogState {
+    active: Option<LogSink>,
+    closed: bool,
+    generation: u64,
+    start: Arc<Mutex<()>>,
+}
 
 /// 新建一个「未录制」的共享状态
 pub(crate) fn new_shared() -> SharedLog {
-    Arc::new(Mutex::new(None))
+    Arc::new(Mutex::new(LogState::default()))
 }
 
 /// ANSI 只保留解析状态，不积攒未结束的控制序列正文。
@@ -160,8 +169,8 @@ fn sanitize_title(title: &str) -> String {
         .to_string()
 }
 
-/// 生成日志文件路径：`<标题>-<yyyyMMdd-HHmmss>.log`，同秒重名追加 `-2`、`-3`
-fn build_file_path(dir: &Path, title: &str) -> PathBuf {
+/// 原子创建日志：重名时重试编号，不在异步线程同步检查文件，也不覆盖别的终端日志。
+async fn create_file(dir: &Path, title: &str) -> Result<(tokio::fs::File, PathBuf), String> {
     let stem = sanitize_title(title);
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
     let base = if stem.is_empty() {
@@ -169,30 +178,49 @@ fn build_file_path(dir: &Path, title: &str) -> PathBuf {
     } else {
         format!("{stem}-{stamp}")
     };
-    let mut candidate = dir.join(format!("{base}.log"));
-    let mut index = 1u32;
-    while candidate.exists() && index < 100 {
-        index += 1;
-        candidate = dir.join(format!("{base}-{index}.log"));
+    for index in 1u64.. {
+        let name = if index == 1 {
+            format!("{base}.log")
+        } else {
+            format!("{base}-{index}.log")
+        };
+        let path = dir.join(name);
+        match tokio::fs::OpenOptions::new()
+            .create_new(true)
+            .append(true)
+            .open(&path)
+            .await
+        {
+            Ok(file) => return Ok((file, path)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(format!("创建日志文件失败（{}）：{error}", path.display())),
+        }
     }
-    candidate
+    Err("日志文件编号已耗尽".into())
 }
 
 /// 追加一块终端输出（剥离 ANSI 后写盘并 flush；失败由调用方决定停录与提示）
 pub(crate) async fn append(sink: &SharedLog, data: &[u8]) -> Result<(), String> {
     let mut guard = sink.lock().await;
-    let Some(log) = guard.as_mut() else {
+    let Some(log) = guard.active.as_mut() else {
         return Ok(());
     };
     // 未录制时不做 UTF-8 解码或 ANSI 清洗；同一把锁保证检查到写入之间不会换录制文件。
     let text = log.decoder.feed(data);
-    log.write_text(text).await
+    let result = log.write_text(text).await;
+    if result.is_err() {
+        // 在原写入锁内停录，防止旧写入失败清掉用户随后开始的新文件。
+        guard.active = None;
+    }
+    result
 }
 
 /// 收尾：flush 并释放句柄（终端关闭、连接断开、任务退出时调用）
 pub(crate) async fn finish(sink: &SharedLog) -> Result<(), String> {
     let mut guard = sink.lock().await;
-    if let Some(mut log) = guard.take() {
+    guard.closed = true;
+    guard.generation = guard.generation.wrapping_add(1);
+    if let Some(mut log) = guard.active.take() {
         log.finish().await?;
     }
     Ok(())
@@ -212,25 +240,49 @@ pub async fn ssh_terminal_log_start(
         let handle = map.get(&terminal_id).ok_or("终端不存在或已关闭")?;
         (handle.log.clone(), handle.title.clone())
     };
+    start_recording(&sink, async {
+        let target_dir = resolve_dir(&app, dir.as_deref()).await?;
+        create_file(&target_dir, &title).await
+    })
+    .await
+}
+
+async fn start_recording(
+    sink: &SharedLog,
+    prepare: impl std::future::Future<Output = Result<(tokio::fs::File, PathBuf), String>>,
+) -> Result<LogActionResult, String> {
+    let (start, generation) = {
+        let guard = sink.lock().await;
+        if guard.closed {
+            return Err("终端不存在或已关闭".into());
+        }
+        (guard.start.clone(), guard.generation)
+    };
+    // 同一终端的并发开始只创建一个文件；不同终端及正常输出不等待创建 IO。
+    let _starting = start.lock().await;
     {
         let guard = sink.lock().await;
-        if let Some(existing) = guard.as_ref() {
+        if guard.closed || guard.generation != generation {
+            return Err("日志录制启动已取消".into());
+        }
+        if let Some(existing) = guard.active.as_ref() {
             return Ok(LogActionResult {
                 path: existing.path.display().to_string(),
                 bytes: existing.bytes,
             });
         }
     }
-    let target_dir = resolve_dir(&app, dir.as_deref()).await?;
-    let path = build_file_path(&target_dir, &title);
-    let file = tokio::fs::OpenOptions::new()
-        .create_new(true)
-        .append(true)
-        .open(&path)
-        .await
-        .map_err(|e| format!("创建日志文件失败（{}）：{e}", path.display()))?;
+    let (file, path) = prepare.await?;
     let mut guard = sink.lock().await;
-    *guard = Some(LogSink {
+    if guard.closed || guard.generation != generation {
+        drop(guard);
+        drop(file);
+        tokio::fs::remove_file(&path)
+            .await
+            .map_err(|e| format!("录制已取消，清理空日志失败（{}）：{e}", path.display()))?;
+        return Err("日志录制启动已取消".into());
+    }
+    guard.active = Some(LogSink {
         file,
         path: path.clone(),
         bytes: 0,
@@ -256,8 +308,13 @@ pub async fn ssh_terminal_log_stop(
             .log
             .clone()
     };
+    stop_recording(&sink).await
+}
+
+async fn stop_recording(sink: &SharedLog) -> Result<LogActionResult, String> {
     let mut guard = sink.lock().await;
-    match guard.take() {
+    guard.generation = guard.generation.wrapping_add(1);
+    match guard.active.take() {
         Some(mut log) => {
             log.finish().await?;
             Ok(LogActionResult {
@@ -280,6 +337,65 @@ pub(crate) fn error_payload(terminal_id: &str, message: String) -> TerminalLogEr
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 停止与退出在创建 IO 期间到达时，迟到的文件必须删除且不能重新挂接。
+    #[tokio::test]
+    async fn pending_start_cannot_outlive_stop_or_close() {
+        for close in [false, true] {
+            let sink = new_shared();
+            let path = std::env::temp_dir().join(format!("covekit-log-{}.txt", uuid::Uuid::new_v4()));
+            let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            let task_sink = sink.clone();
+            let task_path = path.clone();
+            let task = tokio::spawn(async move {
+                start_recording(&task_sink, async {
+                    let file = tokio::fs::File::create(&task_path).await.unwrap();
+                    ready_tx.send(()).unwrap();
+                    release_rx.await.unwrap();
+                    Ok((file, task_path))
+                })
+                .await
+            });
+            ready_rx.await.unwrap();
+            // 创建 IO 不能占着输出锁。
+            append(&sink, b"terminal output").await.unwrap();
+            if close {
+                finish(&sink).await.unwrap();
+            } else {
+                assert!(stop_recording(&sink).await.is_err());
+            }
+            release_tx.send(()).unwrap();
+            assert!(task.await.unwrap().is_err());
+            assert!(sink.lock().await.active.is_none());
+            assert!(!tokio::fs::try_exists(&path).await.unwrap());
+        }
+    }
+
+    /// 已有录制器时不再创建文件，停止后允许在同一终端重新开始。
+    #[tokio::test]
+    async fn repeated_start_reuses_file_and_stop_allows_restart() {
+        let sink = new_shared();
+        let dir = std::env::temp_dir().join(format!("covekit-log-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir(&dir).await.unwrap();
+        let first = start_recording(&sink, create_file(&dir, "terminal"))
+            .await
+            .unwrap();
+        let second = start_recording(&sink, async { panic!("不应重复创建文件") })
+            .await
+            .unwrap();
+        assert_eq!(first.path, second.path);
+        stop_recording(&sink).await.unwrap();
+        let third = start_recording(&sink, create_file(&dir, "terminal"))
+            .await
+            .unwrap();
+        assert_ne!(first.path, third.path);
+        finish(&sink).await.unwrap();
+        assert!(start_recording(&sink, async { panic!("关闭后不应创建文件") })
+            .await
+            .is_err());
+        tokio::fs::remove_dir_all(dir).await.unwrap();
+    }
 
     /// 颜色与重置序列应被完整剥离，正文保留
     #[test]
@@ -369,7 +485,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("covekit-log-{}.txt", uuid::Uuid::new_v4()));
         let file = tokio::fs::File::create(&path).await.unwrap();
         let sink = new_shared();
-        *sink.lock().await = Some(LogSink {
+        sink.lock().await.active = Some(LogSink {
             file,
             path: path.clone(),
             bytes: 0,
@@ -377,8 +493,8 @@ mod tests {
             ansi: AnsiFilter::default(),
         });
         append(&sink, &[b'a', 0xe4, 0xb8]).await.unwrap();
-        assert_eq!(sink.lock().await.as_ref().unwrap().bytes, 1);
-        let mut log = sink.lock().await.take().unwrap();
+        assert_eq!(sink.lock().await.active.as_ref().unwrap().bytes, 1);
+        let mut log = sink.lock().await.active.take().unwrap();
         log.finish().await.unwrap();
         assert_eq!(log.bytes, 4);
         drop(log);
@@ -391,10 +507,10 @@ mod tests {
     async fn appends_only_while_recording() {
         let sink = new_shared();
         append(&sink, b"before recording").await.unwrap();
-        assert!(sink.lock().await.is_none());
+        assert!(sink.lock().await.active.is_none());
         let path = std::env::temp_dir().join(format!("covekit-log-{}.txt", uuid::Uuid::new_v4()));
         let file = tokio::fs::File::create(&path).await.unwrap();
-        *sink.lock().await = Some(LogSink {
+        sink.lock().await.active = Some(LogSink {
             file,
             path: path.clone(),
             bytes: 0,
@@ -405,7 +521,7 @@ mod tests {
             .await
             .unwrap();
         append(&sink, b"\x1b[0m").await.unwrap();
-        assert_eq!(sink.lock().await.as_ref().unwrap().bytes, 11);
+        assert_eq!(sink.lock().await.active.as_ref().unwrap().bytes, 11);
         finish(&sink).await.unwrap();
         append(&sink, b"after recording").await.unwrap();
         assert_eq!(tokio::fs::read_to_string(&path).await.unwrap(), "中文🙂\n");

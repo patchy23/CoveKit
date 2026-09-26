@@ -195,8 +195,7 @@ pub(crate) fn spawn_channel_task(
                             // 旁路写盘；失败则停录并通知前端（不静默）
                             if let Err(message) = log::append(&log, &data).await {
                                 ::log::error!("终端录制写入失败 terminal={terminal_id} session={connection_id}");
-                                // 当前写入已失败，释放录制器；该错误在下面统一通知。
-                                log.lock().await.take();
+                                // append 已在原写入锁内释放失败的录制器，此处只通知。
                                 let _ = app.emit(
                                     "ssh://terminal-log-error",
                                     &log::error_payload(&terminal_id, message),
