@@ -39,6 +39,21 @@ const lastBytes = ref(0)
 const audioElement = ref<HTMLAudioElement | null>(null)
 let disposed = false
 let generation = 0
+let activeJob: string | undefined
+
+async function cancelJob(jobId: string) {
+  try {
+    await ipc.ttsCancel(jobId)
+  } catch (error) {
+    ui.toast(`取消语音合成失败：${error}`)
+  }
+}
+
+function cancelActiveJob() {
+  const job = activeJob
+  activeJob = undefined
+  if (job) void cancelJob(job)
+}
 
 /** 移除 DOM 本身不会立即停止媒体；清空和关闭时主动释放播放与解码缓冲。 */
 function releaseAudio() {
@@ -71,12 +86,18 @@ async function generate() {
   }
   generating.value = true
   const request = ++generation
+  const input = { text: text.value, voice: voiceName.value, rate: rate.value, pitch: pitch.value }
+  let jobId: string | undefined
   try {
+    jobId = await ipc.ttsPrepare()
+    if (disposed || request !== generation) {
+      await cancelJob(jobId)
+      return
+    }
+    activeJob = jobId
     const r = await ipc.ttsSynthesize({
-      text: text.value,
-      voice: voiceName.value,
-      rate: rate.value,
-      pitch: pitch.value,
+      ...input,
+      jobId,
     })
     if (disposed || request !== generation) return
     if (r.ok && r.filePath) {
@@ -88,14 +109,19 @@ async function generate() {
       ui.toast(`合成失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
+    // IPC 本身失败时后端可能尚未领用登记，仍按归属回收，不留下空请求。
+    if (jobId && activeJob === jobId) await cancelJob(jobId)
     if (!disposed && request === generation) ui.toast(`合成失败：${e}`)
   } finally {
-    if (!disposed) generating.value = false
+    if (activeJob === jobId) activeJob = undefined
+    if (!disposed && request === generation) generating.value = false
   }
 }
 
 function reset() {
   generation++
+  cancelActiveJob()
+  generating.value = false
   releaseAudio()
   text.value = ''
   audioUrl.value = ''
@@ -115,6 +141,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   disposed = true
   generation++
+  cancelActiveJob()
   releaseAudio()
 })
 </script>

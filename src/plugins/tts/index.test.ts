@@ -3,8 +3,21 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import Tts from './index.vue'
 import type { TtsResult } from './contracts'
 
-const mocks = vi.hoisted(() => ({ synthesize: vi.fn(), voices: vi.fn(), toast: vi.fn() }))
-vi.mock('./ipc', () => ({ ipc: { ttsSynthesize: mocks.synthesize, ttsVoices: mocks.voices } }))
+const mocks = vi.hoisted(() => ({
+  synthesize: vi.fn(),
+  voices: vi.fn(),
+  toast: vi.fn(),
+  prepare: vi.fn(),
+  cancel: vi.fn(),
+}))
+vi.mock('./ipc', () => ({
+  ipc: {
+    ttsSynthesize: mocks.synthesize,
+    ttsVoices: mocks.voices,
+    ttsPrepare: mocks.prepare,
+    ttsCancel: mocks.cancel,
+  },
+}))
 vi.mock('@tauri-apps/api/core', () => ({ convertFileSrc: (path: string) => `asset:${path}` }))
 vi.mock('@/stores/ui', () => ({ useUiStore: () => ({ toast: mocks.toast }) }))
 vi.mock('@/features/ui/AppIcon.vue', () => ({ default: { template: '<i />' } }))
@@ -15,12 +28,19 @@ vi.mock('@/core/ui', () => ({
   UiToolbar: { template: '<header><slot /></header>' },
   UiSlider: { template: '<input />' },
   UiSelect: { template: '<select />' },
-  UiTextarea: { template: '<textarea />' },
+  UiTextarea: {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template:
+      '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />',
+  },
 }))
 enableAutoUnmount(afterEach)
 beforeEach(() => {
   vi.clearAllMocks()
   mocks.voices.mockResolvedValue([])
+  mocks.prepare.mockResolvedValue('job')
+  mocks.cancel.mockResolvedValue(undefined)
   mocks.synthesize.mockResolvedValue({ ok: true, filePath: '/test.mp3', bytes: 123 })
 })
 afterEach(() => vi.restoreAllMocks())
@@ -56,4 +76,67 @@ it.each(['clear', 'close'])('%s 后迟到的合成结果不恢复播放器或弹
   await flushPromises()
   expect(wrapper.find('audio').exists()).toBe(false)
   expect(mocks.toast).not.toHaveBeenCalled()
+  expect(mocks.cancel).toHaveBeenCalledWith('job')
+})
+
+it.each(['clear', 'close'])('%s 早于请求登记完成时取消登记结果，不启动合成', async (action) => {
+  let prepare!: (id: string) => void
+  mocks.prepare.mockReturnValueOnce(
+    new Promise<string>((resolve) => {
+      prepare = resolve
+    })
+  )
+  const wrapper = mount(Tts)
+  await button(wrapper, '合成语音').trigger('click')
+  if (action === 'clear') await button(wrapper, '清空').trigger('click')
+  else wrapper.unmount()
+  prepare('late-registration')
+  await flushPromises()
+  expect(mocks.synthesize).not.toHaveBeenCalled()
+  expect(mocks.cancel).toHaveBeenCalledWith('late-registration')
+})
+
+it('合成 IPC 失败也回收登记并允许重试', async () => {
+  mocks.synthesize.mockRejectedValueOnce(new Error('invoke failed'))
+  const wrapper = mount(Tts)
+  await button(wrapper, '合成语音').trigger('click')
+  await flushPromises()
+  expect(mocks.cancel).toHaveBeenCalledWith('job')
+  expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('invoke failed'))
+  expect(button(wrapper, '合成语音').exists()).toBe(true)
+})
+
+it('清空后可以立即新建合成，旧请求结束不解除新请求的忙碌状态', async () => {
+  let first!: (result: TtsResult) => void
+  let second!: (result: TtsResult) => void
+  mocks.prepare.mockResolvedValueOnce('first').mockResolvedValueOnce('second')
+  mocks.synthesize
+    .mockReturnValueOnce(
+      new Promise<TtsResult>((resolve) => {
+        first = resolve
+      })
+    )
+    .mockReturnValueOnce(
+      new Promise<TtsResult>((resolve) => {
+        second = resolve
+      })
+    )
+  const wrapper = mount(Tts)
+  await button(wrapper, '合成语音').trigger('click')
+  await flushPromises()
+  await button(wrapper, '清空').trigger('click')
+  await wrapper.get('textarea').setValue('新的合成')
+  await button(wrapper, '合成语音').trigger('click')
+  await flushPromises()
+  expect(mocks.cancel).toHaveBeenCalledWith('first')
+  expect(mocks.synthesize).toHaveBeenLastCalledWith(
+    expect.objectContaining({ jobId: 'second', text: '新的合成' })
+  )
+  first({ ok: false, bytes: 0, error: '已取消' })
+  await flushPromises()
+  expect(button(wrapper, '合成中…').exists()).toBe(true)
+  expect(mocks.toast).not.toHaveBeenCalled()
+  second({ ok: false, bytes: 0, error: '第二次失败' })
+  await flushPromises()
+  expect(button(wrapper, '合成语音').exists()).toBe(true)
 })

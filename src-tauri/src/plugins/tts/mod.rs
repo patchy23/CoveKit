@@ -1,9 +1,12 @@
 //! TTS 插件 · 文字转语音（微软 Edge TTS 免费服务）命令门面
 //! 模块结构：mod.rs（命令薄层 + 注册）+ models.rs（serde 契约）+ synth.rs（合成能力）
 
+mod jobs;
 mod models;
 mod synth;
 
+use jobs::{TtsJobs, CANCELLED};
+use tauri::Manager;
 use tokio::io::AsyncWriteExt;
 
 pub(crate) use models::{TtsResult, TtsVoice};
@@ -14,15 +17,30 @@ pub fn tts_voices() -> Vec<TtsVoice> {
     synth::builtin_voices()
 }
 
+/// 先取得请求归属，避免清空先于合成命令登记而丢失取消信号。
+#[tauri::command]
+pub fn tts_prepare(state: tauri::State<'_, TtsJobs>) -> Result<String, String> {
+    state.prepare()
+}
+
+/// 幂等取消；已经完成或取消的请求无需再次处理。
+#[tauri::command(rename_all = "camelCase")]
+pub fn tts_cancel(state: tauri::State<'_, TtsJobs>, job_id: String) -> Result<(), String> {
+    state.cancel(&job_id)
+}
+
 /// 合成语音：文本 + 语音 + 语速/音调 → mp3 文件
 #[tauri::command(rename_all = "camelCase")]
 pub async fn tts_synthesize(
     app: tauri::AppHandle,
+    state: tauri::State<'_, TtsJobs>,
+    job_id: String,
     text: String,
     voice: String,
     rate: Option<i32>,
     pitch: Option<i32>,
 ) -> Result<TtsResult, String> {
+    let (_job, mut cancelled) = state.claim(&job_id)?;
     log::info!("语音合成开始");
     let log_started = std::time::Instant::now();
     let mut log_stage = "synthesize";
@@ -43,21 +61,41 @@ pub async fn tts_synthesize(
             .await
             .map_err(|e| format!("创建音频文件失败: {e}"))?;
         log_stage = "synthesize";
+        // 取消只中断网络合成；文件已经提交的异步写入先收尾，再删除私有文件。
+        let mut writer = tokio::io::BufWriter::with_capacity(64 * 1024, file);
+        let synthesis = tokio::select! {
+            biased;
+            _ = cancelled.wait_for(|value| *value) => Err(CANCELLED.to_string()),
+            result = synth::synth_to_writer(&text, &voice, rate, pitch, &mut writer) => result,
+        };
         let written: Result<u64, String> = async {
-            // 缓冲合并小音频帧的磁盘写入，不限制音频长度。
-            let mut writer = tokio::io::BufWriter::with_capacity(64 * 1024, file);
-            let bytes = synth::synth_to_writer(&text, &voice, rate, pitch, &mut writer).await?;
+            let bytes = synthesis?;
             writer
                 .flush()
                 .await
                 .map_err(|e| format!("写入音频失败: {e}"))?;
-            drop(writer);
-            tokio::fs::rename(&temporary, &path)
-                .await
-                .map_err(|e| format!("保存音频失败: {e}"))?;
+            if *cancelled.borrow() {
+                return Err(CANCELLED.to_string());
+            }
             Ok(bytes)
         }
         .await;
+        // 错误/取消时不把 BufWriter 的剩余缓冲写盘，只等待已开始的文件操作完成。
+        let settled = writer.get_mut().flush().await;
+        drop(writer);
+        let written = match (written, settled) {
+            (Ok(bytes), Ok(())) => Ok(bytes),
+            (Err(error), Ok(())) => Err(error),
+            (Ok(_), Err(error)) => Err(format!("音频文件收尾失败: {error}")),
+            (Err(error), Err(cleanup)) => Err(format!("{error}；音频文件收尾失败: {cleanup}")),
+        };
+        let written = match written {
+            Ok(bytes) => tokio::fs::rename(&temporary, &path)
+                .await
+                .map(|_| bytes)
+                .map_err(|e| format!("保存音频失败: {e}")),
+            Err(error) => Err(error),
+        };
         let bytes = match written {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -86,6 +124,7 @@ pub async fn tts_synthesize(
             "操作未完成 operation=tts_synthesize elapsed_ms={}",
             log_started.elapsed().as_millis()
         ),
+        Err(error) if error == CANCELLED => log::debug!("语音合成已取消"),
         Err(error) if error == "请输入要合成的文字" || error == "文本过长（最多 2000 字）" =>
         {
             log::debug!("语音合成输入校验未通过");
@@ -104,14 +143,30 @@ crate::covekit_module! {
     feature: "tts",
     commands: {
         tts_voices => "获取文字转语音可选语音列表",
+        tts_prepare => "登记可取消的语音合成请求",
+        tts_cancel => "取消语音合成请求",
         tts_synthesize => "合成语音（文本 + 语音 + 语速/音调 → mp3 文件）",
     },
 }
 
-/// 插件注册：命令入库（无 State，纯函数式）
+/// 工具关闭、退出与空间切换统一取消在途合成。
+fn on_dispose(
+    app: Option<&tauri::AppHandle>,
+    _reason: crate::framework::lifecycle::CloseReason,
+) -> Vec<String> {
+    let Some(app) = app else {
+        return Vec::new();
+    };
+    app.state::<TtsJobs>().cancel_all().err().into_iter().collect()
+}
+
+/// 插件注册：命令、取消状态与关闭责任同时装配。
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
-    // 关闭清理：本插件无状态表、无子进程（请求在后端跑完即结束），故不登记关闭钩子
-    // （AR06 方案 §5；新增常驻资源时必须回来补登记）
-    builder
+    crate::framework::lifecycle::register(
+        crate::framework::lifecycle::ModuleLifecycle::for_tool(IPC_OWNER, "tts")
+            .with_tab_scope()
+            .with_dispose(on_dispose),
+    );
+    builder.manage(TtsJobs::default())
 }

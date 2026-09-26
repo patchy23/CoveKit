@@ -525,6 +525,8 @@ mod tests {
         ("ssh", "ssh_tunnel_start", "启动隧道（绑定到指定连接）"),
         ("ssh", "ssh_tunnel_stop", "停止隧道"),
         ("ssh", "ssh_tunnels", "某连接下的隧道运行时快照"),
+        ("tts", "tts_cancel", "取消语音合成请求"),
+        ("tts", "tts_prepare", "登记可取消的语音合成请求"),
         (
             "tts",
             "tts_synthesize",
