@@ -23,7 +23,7 @@ function onToggle(event: Event) {
 }
 </script>
 <template>
-  <details class="border-t border-border dark:border-border-dark" @toggle="onToggle">
+  <details class="stream-message border-t border-border dark:border-border-dark" @toggle="onToggle">
     <summary class="flex cursor-pointer items-center gap-[8px] px-[10px] py-[6px] text-body-sm">
       <span class="shrink-0 font-mono text-caption text-secondary dark:text-secondary-dark">{{
         new Date(entry.time).toLocaleTimeString()
@@ -59,3 +59,11 @@ function onToggle(event: Event) {
     </div>
   </details>
 </template>
+
+<style scoped>
+/* 离屏行交给浏览器跳过布局/绘制，保留 DOM、展开状态、全文复制与原生文本选择。 */
+.stream-message {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 36px;
+}
+</style>

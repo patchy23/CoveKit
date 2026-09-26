@@ -6,6 +6,7 @@ import { writeClipboardText } from '@/core/platform/clipboard'
 import { useUiStore } from '@/stores/ui'
 import type { RequestSession } from './useRequestSession'
 import StreamMessage from './StreamMessage.vue'
+import { createStreamFilter } from './streamFilter'
 const props = defineProps<{ kind: 'sse' | 'ws'; session: RequestSession; active: boolean }>()
 defineEmits<{ save: [] }>()
 const state = computed(() => props.session.state)
@@ -15,15 +16,8 @@ const search = ref(''),
   showHeaders = ref(false)
 const bottom = ref<HTMLElement | null>(null)
 const ui = useUiStore()
-const visible = computed(() => {
-  const query = search.value.toLowerCase()
-  if (!query && direction.value === 'all') return state.value.entries
-  return state.value.entries.filter(
-    (m) =>
-      (direction.value === 'all' || m.direction === direction.value) &&
-      (!query || `${m.kind} ${m.eventId} ${m.content}`.toLowerCase().includes(query))
-  )
-})
+const filter = createStreamFilter()
+const visible = computed(() => filter(state.value.entries, search.value, direction.value))
 watch(
   () => [state.value.entries.at(-1)?.seq, props.active],
   async () => {
