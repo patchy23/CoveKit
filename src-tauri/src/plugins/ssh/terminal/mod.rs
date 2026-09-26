@@ -55,49 +55,76 @@ pub struct TerminalState(pub Mutex<HashMap<String, TerminalHandle>>);
 #[derive(Default)]
 pub(crate) struct Utf8ChunkDecoder {
     /// 暂存的尾部不完整字节（正常至多 3 字节）
-    pending: Vec<u8>,
+    pending: [u8; 4],
+    /// 当前未完成前缀长度；feed 返回后不超过 3 字节。
+    pending_len: usize,
 }
 
 impl Utf8ChunkDecoder {
     /// 喂入一块通道数据，返回当前可完整解码的文本（可能为空串——等下一块补齐）
     fn feed(&mut self, data: &[u8]) -> String {
-        self.pending.extend_from_slice(data);
-        let mut out = String::new();
+        let mut out = String::with_capacity(data.len() + self.pending_len);
+        let mut offset = 0;
+        while self.pending_len > 0 && offset < data.len() {
+            // 暂存区只能是合法字符的未完成前缀；只补该字符，避免把后续正文复制进暂存。
+            let width = match self.pending[0] {
+                0xC2..=0xDF => 2,
+                0xE0..=0xEF => 3,
+                0xF0..=0xF4 => 4,
+                _ => unreachable!("UTF-8 暂存必须为未完成字符前缀"),
+            };
+            let take = (width - self.pending_len).min(data.len() - offset);
+            self.pending[self.pending_len..self.pending_len + take]
+                .copy_from_slice(&data[offset..offset + take]);
+            self.pending_len += take;
+            offset += take;
+            let tail_len = Self::decode(&self.pending[..self.pending_len], &mut out).len();
+            self.pending
+                .copy_within(self.pending_len - tail_len..self.pending_len, 0);
+            self.pending_len = tail_len;
+        }
+        if offset < data.len() {
+            let tail = Self::decode(&data[offset..], &mut out);
+            self.pending[..tail.len()].copy_from_slice(tail);
+            self.pending_len = tail.len();
+        }
+        out
+    }
+
+    /// 只前移借用切片；非法字节不触发 Vec::drain 的反复整块搬移。
+    fn decode<'a>(mut data: &'a [u8], out: &mut String) -> &'a [u8] {
         loop {
-            match std::str::from_utf8(&self.pending) {
+            match std::str::from_utf8(data) {
                 Ok(s) => {
                     out.push_str(s);
-                    self.pending.clear();
-                    break;
+                    return &[];
                 }
                 Err(e) => {
                     let valid = e.valid_up_to();
                     // valid_up_to 之前必为合法 UTF-8（str::from_utf8 契约）
-                    if let Ok(s) = std::str::from_utf8(&self.pending[..valid]) {
+                    if let Ok(s) = std::str::from_utf8(&data[..valid]) {
                         out.push_str(s);
                     }
                     match e.error_len() {
                         // 真无效字节：替换符 + 丢弃后继续解码剩余部分
                         Some(len) => {
                             out.push('\u{FFFD}');
-                            self.pending.drain(..valid + len);
+                            data = &data[valid + len..];
                         }
                         // 尾部不完整的多字节字符：留存等下一块
                         None => {
-                            self.pending.drain(..valid);
-                            break;
+                            return &data[valid..];
                         }
                     }
                 }
             }
         }
-        out
     }
 
     /// 收尾冲刷残留字节（正常连接不会有；坏字节按替换符输出，不丢失尾部文本）
     fn finish(&mut self) -> String {
-        let tail = String::from_utf8_lossy(&self.pending).into_owned();
-        self.pending.clear();
+        let tail = String::from_utf8_lossy(&self.pending[..self.pending_len]).into_owned();
+        self.pending_len = 0;
         tail
     }
 }
@@ -456,5 +483,33 @@ mod tests {
         assert_eq!(decoder.feed(&bytes[..2]), "");
         // 连接中断：残留半截字符按替换符输出，不丢也不等
         assert_eq!(decoder.finish(), "\u{FFFD}");
+    }
+
+    #[test]
+    fn 任意切分与整块有损解码一致且仅保留字符尾部() {
+        let mut bytes = "中文🙂ASCII".as_bytes().to_vec();
+        bytes.extend_from_slice(&[0xe4, 0xff, 0xf0, 0x90, 0x80, b'a', 0xed, 0xa0, 0x80]);
+        bytes.extend_from_slice("尾部中".as_bytes());
+        bytes.extend_from_slice(&[0xe4, 0xb8]);
+        let expected = String::from_utf8_lossy(&bytes);
+        for chunk_size in 1..=bytes.len() {
+            let mut decoder = Utf8ChunkDecoder::default();
+            let mut output = String::new();
+            for chunk in bytes.chunks(chunk_size) {
+                output.push_str(&decoder.feed(chunk));
+                assert!(decoder.pending_len <= 3);
+            }
+            output.push_str(&decoder.finish());
+            assert_eq!(output, expected, "chunk_size={chunk_size}");
+        }
+    }
+
+    #[test]
+    fn 大块非法字节和后续合法数据不残留整块缓冲() {
+        let mut decoder = Utf8ChunkDecoder::default();
+        assert_eq!(decoder.feed(&vec![0xff; 100_000]), "\u{FFFD}".repeat(100_000));
+        assert_eq!(decoder.pending_len, 0);
+        assert_eq!(decoder.feed("正常🙂".as_bytes()), "正常🙂");
+        assert!(decoder.finish().is_empty());
     }
 }
