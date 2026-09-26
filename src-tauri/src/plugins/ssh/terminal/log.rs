@@ -37,55 +37,46 @@ pub(crate) fn new_shared() -> SharedLog {
 
 /// 剥离 ANSI 转义序列（CSI / OSC / 单字符转义）并丢弃 `\r`
 ///
-/// 规则：`\r` 丢弃（进度条覆盖类输出只保留最终态）；保留 `\n` 与 `\t`；
-/// 未闭合的转义序列按普通文本原样保留，避免吃掉正常内容。
+/// 规则：丢弃 `\r`，按到达顺序保留正文、`\n` 与 `\t`；
+/// 沿用逐块清洗语义，未闭合的转义序列丢弃至块末。
 pub(crate) fn strip_ansi(input: &str) -> String {
-    let chars: Vec<char> = input.chars().collect();
+    let mut chars = input.chars().peekable();
     let mut out = String::with_capacity(input.len());
-    let mut i = 0usize;
-    while i < chars.len() {
-        let ch = chars[i];
+    while let Some(ch) = chars.next() {
         match ch {
-            // 回车丢弃：进度条覆盖类输出只保留最终态
-            '\r' => i += 1,
+            '\r' => {}
             '\x1b' => {
-                i += 1;
-                match chars.get(i) {
+                match chars.next() {
                     // CSI：ESC [ ... 终止字节落在 0x40..=0x7E
                     Some('[') => {
-                        i += 1;
-                        while i < chars.len() && !('\u{40}'..='\u{7e}').contains(&chars[i]) {
-                            i += 1;
-                        }
-                        if i < chars.len() {
-                            i += 1;
+                        for ch in chars.by_ref() {
+                            if ('\u{40}'..='\u{7e}').contains(&ch) {
+                                break;
+                            }
                         }
                     }
                     // OSC：ESC ] ... BEL 或 ESC \
                     Some(']') => {
-                        i += 1;
-                        while i < chars.len() {
-                            if chars[i] == '\u{7}' {
-                                i += 1;
+                        while let Some(ch) = chars.next() {
+                            if ch == '\u{7}' {
                                 break;
                             }
-                            if chars[i] == '\x1b' && chars.get(i + 1) == Some(&'\\') {
-                                i += 2;
+                            if ch == '\x1b' && chars.peek() == Some(&'\\') {
+                                let _ = chars.next();
                                 break;
                             }
-                            i += 1;
                         }
                     }
                     // 字符集指定：ESC ( X / ESC ) X / ESC * X / ESC + X / ESC # X
-                    Some('(') | Some(')') | Some('*') | Some('+') | Some('#') => i += 2,
+                    Some('(') | Some(')') | Some('*') | Some('+') | Some('#') => {
+                        let _ = chars.next();
+                    }
                     // 其他单字符转义：ESC 后一字符即结束
-                    Some(_) => i += 1,
-                    None => {}
+                    Some(_) | None => {}
                 }
             }
             _ => {
                 out.push(ch);
-                i += 1;
             }
         }
     }
@@ -158,14 +149,15 @@ fn build_file_path(dir: &Path, title: &str) -> PathBuf {
 
 /// 追加一块终端输出（剥离 ANSI 后写盘并 flush；失败由调用方决定停录与提示）
 pub(crate) async fn append(sink: &SharedLog, data: &[u8]) -> Result<(), String> {
-    let text = strip_ansi(&String::from_utf8_lossy(data));
-    if text.is_empty() {
-        return Ok(());
-    }
     let mut guard = sink.lock().await;
     let Some(log) = guard.as_mut() else {
         return Ok(());
     };
+    // 未录制时不做 UTF-8 解码或 ANSI 清洗；同一把锁保证检查到写入之间不会换录制文件。
+    let text = strip_ansi(&String::from_utf8_lossy(data));
+    if text.is_empty() {
+        return Ok(());
+    }
     log.file
         .write_all(text.as_bytes())
         .await
@@ -296,18 +288,51 @@ mod tests {
         assert_eq!(strip_ansi("a\nb\tc"), "a\nb\tc");
     }
 
-    /// `\r` 丢弃，只保留覆盖后的最终态
+    /// 丢弃 `\r`，仍保留按到达顺序写入的全部正文
     #[test]
     fn drops_carriage_return() {
         assert_eq!(strip_ansi("10%\r50%\r100%\ndone"), "10%50%100%\ndone");
         assert_eq!(strip_ansi("progress\rline"), "progressline");
     }
 
-    /// 未闭合的转义序列不应吃掉后续正文
+    /// 未闭合序列沿用丢弃至块末的语义
     #[test]
     fn keeps_text_after_unclosed_sequence() {
         assert_eq!(strip_ansi("\x1b[31"), "");
         assert_eq!(strip_ansi("ok\x1b"), "ok");
+    }
+
+    /// 字符迭代不应截断多字节正文或改变 OSC 内嵌 ESC 的边界。
+    #[test]
+    fn keeps_unicode_around_escape_sequences() {
+        assert_eq!(strip_ansi("中文\x1b[31m🙂\x1b[0m\n"), "中文🙂\n");
+        assert_eq!(strip_ansi("前\x1b]标题\x1bX内容\x1b\\后"), "前后");
+        assert_eq!(strip_ansi("前\x1b(中后"), "前后");
+        assert_eq!(strip_ansi("\x1b("), "");
+    }
+
+    /// 开关录制不改变正文与字节统计，停止后不再追加。
+    #[tokio::test]
+    async fn appends_only_while_recording() {
+        let sink = new_shared();
+        append(&sink, b"before recording").await.unwrap();
+        assert!(sink.lock().await.is_none());
+        let path = std::env::temp_dir().join(format!("covekit-log-{}.txt", uuid::Uuid::new_v4()));
+        let file = tokio::fs::File::create(&path).await.unwrap();
+        *sink.lock().await = Some(LogSink {
+            file,
+            path: path.clone(),
+            bytes: 0,
+        });
+        append(&sink, "\x1b[31m中文🙂\x1b[0m\r\n".as_bytes())
+            .await
+            .unwrap();
+        append(&sink, b"\x1b[0m").await.unwrap();
+        assert_eq!(sink.lock().await.as_ref().unwrap().bytes, 11);
+        finish(&sink).await;
+        append(&sink, b"after recording").await.unwrap();
+        assert_eq!(tokio::fs::read_to_string(&path).await.unwrap(), "中文🙂\n");
+        tokio::fs::remove_file(path).await.unwrap();
     }
 
     /// 标题清洗：Windows 非法字符与控制字符替换为下划线
