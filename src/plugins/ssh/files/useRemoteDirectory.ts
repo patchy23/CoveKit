@@ -1,11 +1,14 @@
 /**
- * 远程目录导航状态（从 FileManagerTab 拆出，300 行红线）
- * 目录缓存（LRU 100）、后退历史（20）、排序、快速切换竞态守卫（请求序号只认最后一次）。
+ * 远程目录导航：目录快照缓存、后退历史、排序与快速切换竞态守卫。
+ * 快照整批替换，作用域关闭清空缓存并使在途响应失效。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, shallowRef, onScopeDispose } from 'vue'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '../ipc'
 import type { RemoteFile } from '../contracts'
+
+// 排序规则固定；复用 Collator，避免每次比较都解析 localeCompare 的区域与选项。
+const nameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
 
 export function useRemoteDirectory(deps: {
   sessionId: () => string | undefined
@@ -17,7 +20,8 @@ export function useRemoteDirectory(deps: {
   const currentPath = ref('/')
   const directoryHistory = ref<string[]>([])
   const DIRECTORY_HISTORY_LIMIT = 20
-  const files = ref<RemoteFile[]>([])
+  // 列表由 IPC/缓存整批替换，文件操作后刷新；不在快照上原地修改单个文件。
+  const files = shallowRef<RemoteFile[]>([])
   const sortKey = ref<'name' | 'modifiedAt'>('name')
   const sortDirection = ref<'asc' | 'desc'>('asc')
   const directoryCache = new Map<string, RemoteFile[]>()
@@ -25,6 +29,14 @@ export function useRemoteDirectory(deps: {
   const DIRECTORY_CACHE_LIMIT = 100
   /** 目录请求序号：快速连续切换时只认最后一次请求的目录（竞态守卫） */
   let navigateSeq = 0
+  let disposed = false
+  onScopeDispose(() => {
+    disposed = true
+    navigateSeq++
+    directoryCache.clear()
+    files.value = []
+    directoryHistory.value = []
+  })
 
   /** 写入目录缓存（带淘汰：同 key 刷新位置，超限删最旧） */
   function cacheDirectory(key: string, list: RemoteFile[]) {
@@ -43,22 +55,25 @@ export function useRemoteDirectory(deps: {
     return idx <= 0 ? '/' : p.slice(0, idx)
   })
 
-  const sortedFiles = computed(() =>
-    [...files.value].sort((left, right) => {
+  const sortedFiles = computed(() => {
+    const key = sortKey.value
+    const direction = sortDirection.value
+    return [...files.value].sort((left, right) => {
       if (left.isDir !== right.isDir) return left.isDir ? -1 : 1
       const comparison =
-        sortKey.value === 'name'
-          ? left.name.localeCompare(right.name, 'zh-CN', { numeric: true, sensitivity: 'base' })
+        key === 'name'
+          ? nameCollator.compare(left.name, right.name)
           : left.modifiedAt - right.modifiedAt
-      return sortDirection.value === 'asc' ? comparison : -comparison
+      return direction === 'asc' ? comparison : -comparison
     })
-  )
+  })
 
   function cacheKey(connectionId: string, path: string) {
     return `${connectionId}\u0000${path}`
   }
 
   async function navigate(path: string, force = false, recordHistory = true) {
+    if (disposed) return
     const connectionId = deps.sessionId()
     if (!connectionId) return
     // 竞态守卫：序号单调递增，慢返回的旧目录请求直接丢弃（不再回写 files/缓存）

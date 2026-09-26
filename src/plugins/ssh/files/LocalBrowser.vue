@@ -5,7 +5,7 @@ import { UiTooltip } from '@/core/ui'
  * LocalBrowser · 双栏文件管理的本地侧（目录浏览 + 选中）
  * ssh_local_list 读目录；双击进入目录；选中文件后由中间列按钮发起上传。
  */
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import type { RemoteFile } from '../contracts'
 import { ipc } from '../ipc'
 import { useLocalDirectory } from './useLocalDirectory'
@@ -34,7 +34,8 @@ const emit = defineEmits<{
 
 const currentPath = ref(props.initialPath)
 const directory = useLocalDirectory((error) => emit('error', `取消目录读取失败：${String(error)}`))
-const files = ref<RemoteFile[]>([])
+// 操作完成后重新读取整个目录；文件快照不需要逐项建立深层响应式代理。
+const files = shallowRef<RemoteFile[]>([])
 const loading = ref(false)
 const parentPath = ref<string | null>(null)
 const atDrives = computed(() => currentPath.value === '')
