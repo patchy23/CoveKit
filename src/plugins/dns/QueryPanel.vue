@@ -4,7 +4,7 @@ import { UiScrollArea } from '@/core/ui'
  * DNS 查询 · 多类型 + 多服务器对比（dig 风格）
  * 预设服务器勾选 + 自定义服务器追加；每台服务器独立结果卡片。
  */
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import type { ServerQueryResult } from './contracts'
@@ -34,6 +34,10 @@ const customServer = ref('')
 const customServers = ref<string[]>([])
 const busy = ref(false)
 const results = ref<ServerQueryResult[]>([])
+let disposed = false
+onBeforeUnmount(() => {
+  disposed = true
+})
 
 /** 有效服务器列表（预设勾选 + 自定义） */
 const servers = computed(() => [
@@ -66,6 +70,8 @@ function removeCustom(addr: string) {
 
 /** 执行查询（Enter 与按钮均触发） */
 async function run() {
+  // Enter 与处于 loading 的查询按钮遵循相同防重入规则。
+  if (busy.value || disposed) return
   if (!isValidDomain(domain.value)) {
     ui.toast('请输入合法域名（如 example.com）')
     return
@@ -76,11 +82,12 @@ async function run() {
   }
   busy.value = true
   try {
-    results.value = await ipc.dnsQuery(domain.value.trim(), rtype.value, servers.value)
+    const result = await ipc.dnsQuery(domain.value.trim(), rtype.value, servers.value)
+    if (!disposed) results.value = result
   } catch (e) {
-    ui.toast('查询失败：' + (e instanceof Error ? e.message : String(e)))
+    if (!disposed) ui.toast('查询失败：' + (e instanceof Error ? e.message : String(e)))
   } finally {
-    busy.value = false
+    if (!disposed) busy.value = false
   }
 }
 </script>

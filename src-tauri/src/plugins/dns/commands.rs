@@ -7,6 +7,7 @@ use crate::plugins::dns::cloudflare;
 use crate::plugins::dns::dnspod;
 use crate::plugins::dns::models;
 use crate::plugins::dns::query;
+use futures_util::future::join_all;
 use models::DomainList;
 use models::RecordList;
 use models::ServerQueryResult;
@@ -15,7 +16,7 @@ use tauri::State;
 
 /* ── DNS 查询命令 ── */
 
-/// DNS 查询：对每台服务器依次查询（单台失败不影响其它，包装为 ok=false 结果）
+/// DNS 查询：独立服务器并发执行，按选择顺序返回；单台失败包装为 ok=false 结果。
 #[tauri::command]
 pub async fn dns_query(
     domain: String,
@@ -30,10 +31,10 @@ pub async fn dns_query(
     if servers.is_empty() {
         return Err("请至少选择一台 DNS 服务器".into());
     }
-    // 逐台串行查询：超时由 hickory 内部兜底（默认 ~5s），单台失败包装为结果
-    let mut results = Vec::with_capacity(servers.len());
-    for server in &servers {
-        let result = query::query_server(&domain, rtype, server)
+    // Future 归当前命令所有，不产生脱离命令的后台任务；沿用每台 resolver 的超时策略。
+    let domain_ref = &domain;
+    let queries = servers.iter().map(|server| async move {
+        let result = query::query_server(domain_ref, rtype, server)
             .await
             .unwrap_or_else(|e| ServerQueryResult {
                 server: server.clone(),
@@ -48,9 +49,9 @@ pub async fn dns_query(
                 result.elapsed_ms
             );
         }
-        results.push(result);
-    }
-    Ok(results)
+        result
+    });
+    Ok(join_all(queries).await)
 }
 
 /* ── 云解析命令 ── */
