@@ -265,20 +265,34 @@ pub(crate) async fn exec_collect(
 ) -> Result<String, String> {
     // 整体兜底超时：仅靠 keepalive 时协议层 stall 会无限挂起（轮询类命令全是快路径）
     const EXEC_TIMEOUT: Duration = Duration::from_secs(30);
-    tokio::time::timeout(EXEC_TIMEOUT, exec_collect_inner(session, command))
+    let deadline = tokio::time::Instant::now() + EXEC_TIMEOUT;
+    let mut channel = tokio::time::timeout_at(deadline, session.channel_open_session())
         .await
         .map_err(|_| format!("命令执行超时（{} 秒）", EXEC_TIMEOUT.as_secs()))?
+        .map_err(|e| format!("打开通道失败: {e}"))?;
+    // 超时只丢弃借用通道的执行过程，所有权保留到显式关闭，不扩大原有执行期限。
+    let result = tokio::time::timeout_at(deadline, exec_collect_inner(&mut channel, command))
+        .await
+        .map_err(|_| format!("命令执行超时（{} 秒）", EXEC_TIMEOUT.as_secs()))
+        .and_then(|result| result);
+    close_channel(&channel).await;
+    result
 }
 
-/// exec_collect 本体（超时由外层包裹）
+/// 原始通道的统一收尾：有界发送关闭请求，不将入队成功声称为远端进程已退出。
+pub(crate) async fn close_channel(channel: &russh::Channel<client::Msg>) {
+    match tokio::time::timeout(Duration::from_secs(2), channel.close()).await {
+        Ok(Ok(())) => {}
+        Ok(Err(_)) => log::warn!("SSH 通道关闭请求未发送，通道或会话可能已结束"),
+        Err(_) => log::warn!("SSH 通道关闭请求超时"),
+    }
+}
+
+/// exec_collect 本体只借用通道；错误、输出超限和超时均由外层统一关闭。
 async fn exec_collect_inner(
-    session: &client::Handle<SshHandler>,
+    channel: &mut russh::Channel<client::Msg>,
     command: &str,
 ) -> Result<String, String> {
-    let mut channel = session
-        .channel_open_session()
-        .await
-        .map_err(|e| format!("打开通道失败: {e}"))?;
     channel
         .exec(false, command)
         .await

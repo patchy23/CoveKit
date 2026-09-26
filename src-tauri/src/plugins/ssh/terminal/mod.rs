@@ -10,7 +10,7 @@ use russh::{client, ChannelMsg};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::{mpsc, watch};
 
-use crate::plugins::ssh::conn::{now_ms, resource_id, SshState};
+use crate::plugins::ssh::conn::{close_channel, now_ms, resource_id, SshState};
 pub(crate) mod directory;
 pub(crate) mod log;
 use crate::plugins::ssh::models::{SshActionResult, TerminalClosed, TerminalData, TerminalSession};
@@ -119,6 +119,9 @@ pub(crate) fn spawn_channel_task(
     tauri::async_runtime::spawn(async move {
         let mut decoder = initial_decoder.unwrap_or_default();
         loop {
+            if *cancel_rx.borrow() {
+                break;
+            }
             tokio::select! {
                 changed = cancel_rx.changed() => {
                     if changed.is_err() || *cancel_rx.borrow() { break; }
@@ -127,13 +130,20 @@ pub(crate) fn spawn_channel_task(
                 cmd = rx.recv() => {
                     match cmd {
                         Some(TerminalCmd::Write(data)) => {
-                            if channel.data_bytes(data).await.is_err() {
+                            let result = tokio::select! {
+                                _ = cancel_rx.changed() => break,
+                                result = channel.data_bytes(data) => result,
+                            };
+                            if result.is_err() {
                                 ::log::warn!("终端写入失败 terminal={terminal_id} session={connection_id}");
                                 break;
                             }
                         }
                         Some(TerminalCmd::Resize(c, r)) => {
-                            let _ = channel.window_change(c, r, 0, 0).await;
+                            tokio::select! {
+                                _ = cancel_rx.changed() => break,
+                                _ = channel.window_change(c, r, 0, 0) => {}
+                            }
                         }
                         None => break,
                     }
@@ -169,6 +179,8 @@ pub(crate) fn spawn_channel_task(
                 }
             }
         }
+        // EOF、取消、指令通道关闭和写失败均收尾；只关闭此终端，不断开共享 SSH 会话。
+        close_channel(&channel).await;
         // 收尾：冲刷解码器残留（连接中断时尾部不完整字节按替换符输出，不丢文本）
         let tail = decoder.finish();
         if !tail.is_empty() {
