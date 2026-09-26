@@ -1,15 +1,15 @@
 /**
  * 编辑器查找替换控制器
  *
- * 把「面板条件」翻译成 CM6 的 `SearchQuery`（负责跳转与匹配高亮），同时用 `search.ts`
- * 的纯函数扫描文档得出匹配总数与当前序号——两者语义同源（literal / regexp、大小写、全词），
- * 所以面板显示的 `3/17` 与实际跳转到的位置始终一致。
+ * 普通文本走 CM6 同步查询和当前修订的统计缓存；正则的统计、跳转、高亮和替换
+ * 统一交给可终止的 Worker，避免主线程再次执行同一个慢正则。
  *
  * 文档变化后统计会过期，调用方需在 content 变化时调用 `refresh()`（宿主已接好）。
  */
 import { ref, type Ref } from 'vue'
 import type { EditorView } from '@codemirror/view'
 import type { Text } from '@codemirror/state'
+import { createRegexController } from './regexSearchController'
 import {
   findNext,
   findPrevious,
@@ -34,6 +34,8 @@ export interface EditorSearchState {
   current: number
   /** 查询条件是否有效（正则非法时为错误文案） */
   error?: string
+  /** 后台计算中；条件变化或关闭可立即取消。 */
+  pending?: boolean
 }
 
 /** 查找控制器对外能力 */
@@ -53,7 +55,7 @@ export interface EditorSearchController {
   /** 清空查询与高亮 */
   clear: () => void
   /** 文档变化后重算统计（不改查询条件） */
-  refresh: () => void
+  refresh: (viewport?: boolean) => void
   /** 当前查询条件（关闭面板后仍需用于「继续查找」） */
   current: Ref<{ query: string; replacement: string; options: SearchOptions }>
 }
@@ -81,6 +83,14 @@ export function createSearchController(
   })
   // 文档不可变身份即修订；只保留最近一次扫描，弱引用不延长已关闭文档的生命周期。
   let scans: WeakMap<Text, SearchOptions & { query: string; scan: MatchScan }> | undefined
+  const regex = createRegexController(
+    getView,
+    readText,
+    (value) => {
+      state.value = value
+    },
+    afterReplace
+  )
 
   /** 按当前条件重算 total / current（不改文档） */
   function recount(): void {
@@ -122,7 +132,9 @@ export function createSearchController(
     const { query, replacement, options } = current.value
     view.dispatch({
       effects: setSearchQuery.of(
-        query ? toSearchQuery(query, replacement, options) : new SearchQuery({ search: '' })
+        query && !options.regexp
+          ? toSearchQuery(query, replacement, options)
+          : new SearchQuery({ search: '' })
       ),
     })
   }
@@ -133,6 +145,12 @@ export function createSearchController(
     const queryChanged = query !== current.value.query
     current.value = { query, replacement, options }
     pushQuery()
+    if (query && options.regexp) {
+      scans = undefined
+      regex.apply({ query, replacement, options }, queryChanged)
+      return
+    }
+    regex.clear()
     if (!query) {
       scans = undefined
       state.value = { total: 0, current: 0 }
@@ -144,6 +162,10 @@ export function createSearchController(
   }
 
   function next(): void {
+    if (current.value.options.regexp) {
+      regex.request('next')
+      return
+    }
     const view = getView()
     if (!view) return
     findNext(view)
@@ -151,6 +173,10 @@ export function createSearchController(
   }
 
   function previous(): void {
+    if (current.value.options.regexp) {
+      regex.request('previous')
+      return
+    }
     const view = getView()
     if (!view) return
     findPrevious(view)
@@ -158,6 +184,10 @@ export function createSearchController(
   }
 
   function replaceCurrent(): void {
+    if (current.value.options.regexp) {
+      regex.request('replace')
+      return
+    }
     const view = getView()
     if (!view) return
     replaceNext(view)
@@ -166,6 +196,10 @@ export function createSearchController(
   }
 
   function replaceAllMatches(): void {
+    if (current.value.options.regexp) {
+      regex.request('replaceAll')
+      return
+    }
     const view = getView()
     if (!view) return
     replaceAll(view)
@@ -174,6 +208,7 @@ export function createSearchController(
   }
 
   function clear(): void {
+    regex.clear()
     scans = undefined
     current.value = { query: '', replacement: '', options: { ...DEFAULT_OPTIONS } }
     state.value = { total: 0, current: 0 }
@@ -185,8 +220,12 @@ export function createSearchController(
    *
    * 无查询条件时直接返回：否则每次输入都会扫一遍全文（大文档上是可观的浪费）。
    */
-  function refresh(): void {
+  function refresh(viewport = false): void {
     if (!current.value.query) return
+    if (current.value.options.regexp) {
+      regex.refresh(viewport)
+      return
+    }
     recount()
   }
 

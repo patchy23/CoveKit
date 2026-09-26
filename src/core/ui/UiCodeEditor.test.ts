@@ -5,7 +5,8 @@
  * 布局像素与真实浏览器行为不在单测范围（在组件实验室人工验收）。
  */
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { RegexTestWorker } from './editor/regexSearch.test.worker'
 import { defineComponent, h, nextTick, ref } from 'vue'
 import UiCodeEditor from './UiCodeEditor.vue'
 import EditorSearchBar from './editor/EditorSearchBar.vue'
@@ -13,6 +14,9 @@ import { EditorView } from '@codemirror/view'
 import { redo, undo } from '@codemirror/commands'
 import { currentCompletions, startCompletion, closeCompletion } from '@codemirror/autocomplete'
 import { MySQL, sql } from '@codemirror/lang-sql'
+
+beforeEach(() => vi.stubGlobal('Worker', RegexTestWorker))
+afterEach(() => vi.unstubAllGlobals())
 
 /** 等待编辑器挂载与异步语言加载 */
 async function settle(): Promise<void> {
@@ -219,6 +223,35 @@ interface EditorApi {
 }
 
 describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
+  it('正则查找的 F3 沿异步控制器跳转，关闭面板清理后台状态', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'foo 123 foo', filename: 'a.txt' },
+      attachTo: document.body,
+    })
+    try {
+      await settle()
+      const api = wrapper.vm as unknown as EditorApi
+      api.find()
+      await settle()
+      const bar = wrapper.findComponent(EditorSearchBar)
+      bar.vm.$emit('search', {
+        query: 'f.o',
+        replacement: '',
+        options: { caseSensitive: false, regexp: true, wholeWord: false },
+      })
+      await settle()
+      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+      expect(view.state.selection.main.from).toBe(0)
+      view.contentDOM.dispatchEvent(new KeyboardEvent('keydown', { key: 'F3', bubbles: true }))
+      await settle()
+      expect(view.state.selection.main.from).toBe(8)
+      bar.vm.$emit('close')
+      await settle()
+      expect(api.getSearchState().total).toBe(0)
+    } finally {
+      wrapper.unmount()
+    }
+  })
   it('查找：统计匹配总数与当前序号', async () => {
     const wrapper = mount(UiCodeEditor, {
       props: { modelValue: 'foo\nbar\nfoo baz', filename: 'a.txt' },

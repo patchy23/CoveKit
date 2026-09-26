@@ -34,6 +34,8 @@ export interface EditorKeymapHandlers {
   save: () => void
   /** `Mod-G` 跳转行（打开面板并聚焦输入框） */
   openGoToLine: () => void
+  nextSearch?: () => void
+  previousSearch?: () => void
 }
 
 /** 组装编辑器键位：宿主回调在前，其后是编辑命令 */
@@ -82,7 +84,21 @@ export function buildEditorKeymap(handlers: EditorKeymapHandlers): readonly KeyB
     { key: 'Mod-z', run: undo, preventDefault: true },
     { key: 'Mod-y', run: redo, preventDefault: true },
     { key: 'Mod-Shift-z', run: redo, preventDefault: true },
-    { key: 'F3', run: findNext, shift: findPrevious },
+    {
+      key: 'F3',
+      run: handlers.nextSearch
+        ? () => {
+            handlers.nextSearch!()
+            return true
+          }
+        : findNext,
+      shift: handlers.previousSearch
+        ? () => {
+            handlers.previousSearch!()
+            return true
+          }
+        : findPrevious,
+    },
   ]
 }
 

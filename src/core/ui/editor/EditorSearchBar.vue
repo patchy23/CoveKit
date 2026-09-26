@@ -18,6 +18,7 @@ const props = withDefaults(
     current?: number
     /** 正则无效时的中文提示（面板内红字，不弹 toast） */
     error?: string
+    pending?: boolean
     /** 初始是否展开替换行 */
     replaceMode?: boolean
     /** 只读编辑器隐藏替换入口 */
@@ -48,6 +49,7 @@ const queryInput = ref<{ focus?: () => void; select?: () => void } | null>(null)
 /** 计数文案：无查询条件时留空，出错时显示 0/0 */
 const counter = computed(() => {
   if (!query.value) return ''
+  if (props.pending) return '查找中…'
   if (props.error) return '0/0'
   return `${props.current}/${props.total}`
 })

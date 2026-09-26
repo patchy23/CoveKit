@@ -296,6 +296,7 @@ defineExpose({
           :total="editor.searchState.value.total"
           :current="editor.searchState.value.current"
           :error="editor.searchState.value.error"
+          :pending="editor.searchState.value.pending"
           :replace-mode="replaceMode"
           :readonly="readonly"
           @search="onSearch"

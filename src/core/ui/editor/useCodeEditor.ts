@@ -179,6 +179,8 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
               closeSearch: () => options.onRequestClosePanel?.() ?? false,
               save: () => options.onSave?.(),
               openGoToLine: () => options.onRequestGoToLine?.(),
+              nextSearch: search.next,
+              previousSearch: search.previous,
             })
           )
         ),
@@ -202,7 +204,8 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
           }
           if (update.docChanged) docStats.update(update.state)
           // 文档或选区变化都会影响「当前是第几个匹配」，条件为空时 refresh 内部直接返回
-          if (update.docChanged || update.selectionSet) search.refresh()
+          if (update.docChanged || update.selectionSet || update.viewportChanged)
+            search.refresh(update.viewportChanged)
           if (!options.onCursor || !(update.selectionSet || update.docChanged)) return
           const range = update.state.selection.main
           const line = update.state.doc.lineAt(range.head)
@@ -235,6 +238,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   /** 销毁 EditorView */
   function destroy(): void {
     destroyed = true
+    search.clear()
     documents.clear()
     view.value?.destroy()
     view.value = null
