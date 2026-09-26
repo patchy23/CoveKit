@@ -506,6 +506,20 @@ pub struct CsvMapping {
     pub column: String,
 }
 
+/// 已保存草稿的轻量选区与活动状态，不携带 SQL 正文。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryDraftPosition {
+    /// 已完整保存过的文档标识。
+    pub id: String,
+    /// CodeMirror 选区起点，UTF-16 偏移。
+    pub from: usize,
+    /// CodeMirror 选区终点，UTF-16 偏移。
+    pub to: usize,
+    /// 是否优先恢复为当前编辑页。
+    pub active: bool,
+}
+
 /// 可恢复 SQL 文档；结果和事务不属于持久化草稿。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

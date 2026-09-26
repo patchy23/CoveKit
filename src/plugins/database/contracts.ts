@@ -271,7 +271,7 @@ export type Payloads = {
   dbc_disconnect: { id: string }
   dbc_test: { config: ConnConfig; password: string; clearPassword?: boolean }
   dbc_drafts: Record<string, never>
-  dbc_drafts_save: { drafts: QueryDraft[]; order?: string[] }
+  dbc_drafts_save: { drafts: QueryDraft[]; order?: string[]; positions?: QueryDraftPosition[] }
   dbc_history: Record<string, never>
   dbc_history_add: {
     connId: string
@@ -459,3 +459,6 @@ export interface QueryDraft {
   savedTitle?: string | null
   filePath?: string | null
 }
+
+/** 正文及其它元数据不变时只提交选区与活动状态。 */
+export type QueryDraftPosition = Pick<QueryDraft, 'from' | 'to' | 'active'> & { id: string }

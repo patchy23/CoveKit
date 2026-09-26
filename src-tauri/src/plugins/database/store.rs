@@ -59,6 +59,13 @@ pub(super) const MIGRATIONS: &[&str] = &[
         position INTEGER NOT NULL,
         content TEXT NOT NULL
     );",
+    "CREATE TABLE query_draft_positions (
+        id TEXT PRIMARY KEY,
+        selection_from INTEGER NOT NULL,
+        selection_to INTEGER NOT NULL,
+        active INTEGER NOT NULL,
+        base_bytes INTEGER NOT NULL
+    );",
 ];
 
 /// 本地库 State（惰性打开；锁内同步访问）

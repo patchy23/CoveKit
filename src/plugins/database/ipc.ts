@@ -207,6 +207,14 @@ export const csvIpc = {
 
 export const draftIpc = {
   list: () => call('dbc_drafts', {}),
-  save: (drafts: import('./contracts').QueryDraft[], order?: string[]) =>
-    call('dbc_drafts_save', { drafts, ...(order ? { order } : {}) }),
+  save: (
+    drafts: import('./contracts').QueryDraft[],
+    order?: string[],
+    positions?: import('./contracts').QueryDraftPosition[]
+  ) =>
+    call('dbc_drafts_save', {
+      drafts,
+      ...(order ? { order } : {}),
+      ...(positions?.length ? { positions } : {}),
+    }),
 }

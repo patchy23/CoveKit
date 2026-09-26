@@ -14,6 +14,7 @@ import type { UiDataGridColumn, UiTabItem } from '@/core/ui'
 import type { V2QueryStatus, V2Tab, V2TabKind } from '../useDatabaseMeta'
 import type {
   QueryDraft,
+  QueryDraftPosition,
   TableTarget,
   DbValue,
   TableOptions,
@@ -303,17 +304,28 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
           draftPending = false
           const current = draftSnapshot.value
           const previous = new Map(savedDrafts.map((draft) => [draft.id, draft]))
+          const positions: QueryDraftPosition[] = []
           const changed = current.filter((draft) => {
             const old = previous.get(draft.id)
-            return (
-              !old ||
-              (Object.keys(draft) as (keyof QueryDraft)[]).some((key) => draft[key] !== old[key])
+            if (!old) return true
+            const keys = Object.keys(draft) as (keyof QueryDraft)[]
+            if (
+              keys.some((key) => !['from', 'to', 'active'].includes(key) && draft[key] !== old[key])
             )
+              return true
+            if (draft.from !== old.from || draft.to !== old.to || draft.active !== old.active) {
+              positions.push({
+                id: draft.id!,
+                from: draft.from,
+                to: draft.to,
+                active: draft.active,
+              })
+            }
+            return false
           })
-          await draftIpc.save(
-            changed,
-            current.map((draft) => draft.id!)
-          )
+          const order = current.map((draft) => draft.id!)
+          if (positions.length) await draftIpc.save(changed, order, positions)
+          else await draftIpc.save(changed, order)
           savedDrafts = current
         } while (draftPending)
       } finally {

@@ -16,6 +16,13 @@ it('草稿增量通过原命令携带完整顺序，空顺序用于原子清空'
   expect(invokeCommand).toHaveBeenLastCalledWith('dbc_drafts_save', { drafts: [], order: [] })
   await draftIpc.save([])
   expect(invokeCommand).toHaveBeenLastCalledWith('dbc_drafts_save', { drafts: [] })
+  const positions = [{ id: 'a', from: 1, to: 3, active: true }]
+  await draftIpc.save([], ['a'], positions)
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_drafts_save', {
+    drafts: [],
+    order: ['a'],
+    positions,
+  })
 })
 
 function result(overrides: Partial<QueryResult> = {}): QueryResult {
