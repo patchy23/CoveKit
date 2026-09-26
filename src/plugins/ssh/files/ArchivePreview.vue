@@ -14,6 +14,7 @@ import {
 } from '@/core/ui'
 import type { ArchiveEntry } from '../contracts'
 import { formatBytes, formatTime } from '../connection/useSsh'
+import { createArchiveRows } from './archiveRows'
 const props = defineProps<{ path: string; entries: ArchiveEntry[]; busy: boolean; error: string }>()
 defineEmits<{ close: []; minimize: []; cancel: []; reload: []; extract: []; download: [] }>()
 const directory = ref(''),
@@ -22,26 +23,8 @@ const directory = ref(''),
 watch([directory, query], () => {
   page.value = 1
 })
-const rows = computed(() => {
-  if (query.value)
-    return props.entries.filter((entry) =>
-      entry.path.toLowerCase().includes(query.value.toLowerCase())
-    )
-  const result = new Map<string, ArchiveEntry>()
-  for (const entry of props.entries) {
-    if (!entry.path.startsWith(directory.value)) continue
-    const relative = entry.path.slice(directory.value.length)
-    if (!relative) continue
-    const segment = relative.split('/')[0],
-      path = directory.value + segment
-    if (relative.includes('/')) {
-      if (!result.has(path)) result.set(path, { path, isDir: true, size: null, modifiedAt: 0 })
-    } else result.set(path, entry)
-  }
-  return [...result.values()].sort(
-    (a, b) => Number(b.isDir) - Number(a.isDir) || a.path.localeCompare(b.path)
-  )
-})
+const projectRows = createArchiveRows()
+const rows = computed(() => projectRows(props.entries, directory.value, query.value))
 const pages = computed(() => Math.max(1, Math.ceil(rows.value.length / 200)))
 const visibleRows = computed(() => rows.value.slice((page.value - 1) * 200, page.value * 200))
 function enter(path: string) {
