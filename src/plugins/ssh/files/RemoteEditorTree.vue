@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, markRaw, onUnmounted, ref, watch } from 'vue'
 import {
   UiTree,
   UiToolbar,
@@ -30,7 +30,7 @@ const root = ref('/'),
   path = ref('/'),
   query = ref(''),
   error = ref('')
-const cache = ref<Record<string, RemoteFile[]>>({}),
+const cache = ref<Record<string, readonly RemoteFile[]>>({}),
   expanded = ref(new Set<string>()),
   loading = ref(new Set<string>())
 const menu = ref<{ x: number; y: number; items: UiContextMenuItem[] }>()
@@ -47,7 +47,10 @@ async function load(dir: string) {
     const r = await ipc.sshFileList(id, dir)
     if (seq !== version) return
     if (!r.ok) throw new Error(r.error ?? '读取失败')
-    cache.value[dir] = r.files
+    // 目录快照只整体替换：排序一次，避免每次筛选/展开复制排序以及逐条响应式代理。
+    cache.value[dir] = markRaw(
+      r.files.sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name))
+    )
     error.value = ''
   } catch (e) {
     if (seq === version) error.value = String(e)
@@ -82,16 +85,10 @@ watch(
 )
 const rows = computed(() => {
   const result: UiTreeItem[] = []
+  const keyword = query.value.toLowerCase()
   function visit(dir: string, depth: number) {
-    for (const file of [...(cache.value[dir] ?? [])].sort(
-      (a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name)
-    )) {
-      if (
-        query.value &&
-        !file.name.toLowerCase().includes(query.value.toLowerCase()) &&
-        !file.isDir
-      )
-        continue
+    for (const file of cache.value[dir] ?? []) {
+      if (keyword && !file.name.toLowerCase().includes(keyword) && !file.isDir) continue
       result.push({
         id: file.path,
         label: file.name,
@@ -108,9 +105,10 @@ const rows = computed(() => {
   return result
 })
 function fileOf(id: string) {
-  return Object.values(cache.value)
-    .flat()
-    .find((f) => f.path === id)
+  for (const files of Object.values(cache.value)) {
+    const file = files.find((entry) => entry.path === id)
+    if (file) return file
+  }
 }
 function toggle(item: UiTreeItem) {
   if (expanded.value.has(item.id)) expanded.value.delete(item.id)
