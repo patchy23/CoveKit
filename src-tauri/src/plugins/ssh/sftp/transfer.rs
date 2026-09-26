@@ -5,7 +5,7 @@
 use russh_sftp::protocol::FileAttributes;
 
 use std::path::Path;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use super::ops::{collect_remote_entries, register_cancel, unregister_cancel, TransferState};
@@ -56,14 +56,7 @@ pub async fn ssh_file_upload(
     let transfer_id = resource_id("up");
     // 失效连接不启动大目录扫描；扫描后仍重新取句柄，以使用当前连接代次。
     get_session(&ssh_state, &connection_id)?;
-    // 本地目录递归遍历是同步阻塞 IO，移到 spawn_blocking 不卡 tokio worker
-    let (scan_local, scan_remote) = (local_path.clone(), remote_path.clone());
-    let entries = tokio::task::spawn_blocking(move || collect_upload_entries(&scan_local, &scan_remote))
-        .await
-        .map_err(|e| format!("遍历本地目录任务失败: {e}"))??;
-    let total = entries.iter().map(|entry| entry.size).sum();
-    let session = get_session(&ssh_state, &connection_id)?;
-    // 注册取消位放在所有可失败步骤之后：前置失败不会产生永久残留的注册表项
+    // 先返回任务标识，目录扫描也由后台任务负责，用户可在准备阶段取消。
     log::info!("文件传输开始 task={transfer_id} session={connection_id}");
     let cancel = register_cancel(&transfer_state, &transfer_id);
     let cancel_registry = transfer_state.0.clone();
@@ -76,8 +69,21 @@ pub async fn ssh_file_upload(
     tauri::async_runtime::spawn(async move {
         // 提升到闭包层：结束事件要携带失败时的实际已传字节数
         let mut transferred: u64 = 0;
+        let mut total: u64 = 0;
         let mut throttle = ProgressThrottle::new();
         let result: Result<(), String> = async {
+            let (scan_local, scan_remote) = (lpath.clone(), rpath.clone());
+            let scan_cancel = cancel.clone();
+            let entries = tokio::task::spawn_blocking(move || {
+                collect_upload_entries(&scan_local, &scan_remote, || scan_cancel.is_cancelled())
+            })
+            .await
+            .map_err(|e| format!("遍历本地目录任务失败: {e}"))??;
+            if cancel.is_cancelled() {
+                return Err("已取消".into());
+            }
+            total = entries.iter().map(|entry| entry.size).sum();
+            let session = get_session(&app2.state::<SshState>(), &event_connection_id)?;
             let channel = session
                 .channel_open_session()
                 .await
@@ -233,7 +239,7 @@ pub async fn ssh_file_upload(
         local_path,
         remote_path,
         transferred: 0,
-        total,
+        total: 0,
         done: false,
         error: None,
     })

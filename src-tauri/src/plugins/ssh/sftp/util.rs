@@ -26,7 +26,11 @@ pub(crate) struct LocalUploadEntry {
 pub(crate) fn collect_upload_entries(
     local_path: &str,
     remote_path: &str,
+    mut cancelled: impl FnMut() -> bool,
 ) -> Result<Vec<LocalUploadEntry>, String> {
+    if cancelled() {
+        return Err("已取消".into());
+    }
     let root = PathBuf::from(local_path);
     let root_meta = std::fs::symlink_metadata(&root).map_err(|e| format!("本地路径不可读: {e}"))?;
     if root_meta.file_type().is_symlink() {
@@ -52,9 +56,15 @@ pub(crate) fn collect_upload_entries(
     }];
     let mut pending = vec![root.clone()];
     while let Some(directory) = pending.pop() {
+        if cancelled() {
+            return Err("已取消".into());
+        }
         let children = std::fs::read_dir(&directory)
             .map_err(|e| format!("无法读取目录 {}: {e}", directory.display()))?;
         for child in children {
+            if cancelled() {
+                return Err("已取消".into());
+            }
             let child = child.map_err(|e| format!("读取目录项失败: {e}"))?;
             let path = child.path();
             let file_type = child
@@ -389,6 +399,32 @@ mod policy_tests {
 #[cfg(test)]
 mod download_commit_tests {
     use super::*;
+
+    /// 准备阶段取消在元数据访问前生效，遍历过程中也逐条复查。
+    #[test]
+    fn upload_scan_can_cancel_before_and_during_enumeration() {
+        assert_eq!(
+            collect_upload_entries("missing-path", "/remote", || true).err().as_deref(),
+            Some("已取消")
+        );
+        let root = std::env::temp_dir().join(resource_id("covekit-upload-scan-test"));
+        std::fs::create_dir(&root).unwrap();
+        for index in 0..20 {
+            std::fs::write(root.join(format!("{index}.txt")), b"data").unwrap();
+        }
+        let complete = collect_upload_entries(root.to_str().unwrap(), "/remote", || false).unwrap();
+        assert_eq!(complete.len(), 21);
+        assert_eq!(complete.iter().map(|entry| entry.size).sum::<u64>(), 80);
+        assert!(complete[0].is_dir);
+        let mut checks = 0;
+        let cancelled = collect_upload_entries(root.to_str().unwrap(), "/remote", || {
+            checks += 1;
+            checks >= 5
+        });
+        assert_eq!(cancelled.err().as_deref(), Some("已取消"));
+        assert_eq!(checks, 5);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[tokio::test]
     async fn replacement_preserves_old_file_on_failure_and_rejects_directories() {

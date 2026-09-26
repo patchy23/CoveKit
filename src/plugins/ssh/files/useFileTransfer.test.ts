@@ -136,3 +136,23 @@ it('取消准备中的任务，在后端返回标识后补发取消', async () =
   expect(env.cancel).toHaveBeenCalledWith('down-late')
   expect(transfer.transfers.value.get('down-late')?.cancelling).toBe(true)
 })
+
+it('上传扫描总量未知时也可以取消，扫描错误通过结束事件保留', async () => {
+  const { transfer } = setup()
+  env.upload.mockResolvedValue({ ...progress('up-scan'), total: 0 })
+  await transfer.startTransfer('upload', '/local', '/remote')
+  await flushPromises()
+  await transfer.cancelTransfer('up-scan')
+  expect(env.cancel).toHaveBeenCalledWith('up-scan')
+  transfer.applyProgress({
+    ...progress('up-scan', true),
+    total: 0,
+    transferred: 0,
+    error: '已取消',
+  })
+  expect(transfer.transfers.value.get('up-scan')).toMatchObject({
+    done: true,
+    error: '已取消',
+    total: 0,
+  })
+})

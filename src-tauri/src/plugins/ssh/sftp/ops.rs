@@ -150,6 +150,7 @@ pub struct TransferState(
 );
 
 /// 传输任务的取消位句柄：任务持有共享位，取消命令置 true
+#[derive(Clone)]
 pub(crate) struct CancelFlag(Arc<std::sync::atomic::AtomicBool>);
 
 impl CancelFlag {
