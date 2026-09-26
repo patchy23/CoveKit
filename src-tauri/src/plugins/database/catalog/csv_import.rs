@@ -16,7 +16,10 @@ use std::collections::HashMap;
 use tauri::State;
 
 /// 文件上限与行上限在分配和解析阶段都检查；所有文本按 UTF-8 处理。
-async fn read_csv(path: &str) -> Result<(Vec<String>, Vec<Vec<String>>, String), String> {
+async fn read_csv(
+    path: &str,
+    retained_rows: usize,
+) -> Result<(Vec<String>, Vec<Vec<String>>, String, u64), String> {
     use tokio::io::AsyncReadExt;
     let file = tokio::fs::File::open(path)
         .await
@@ -45,14 +48,19 @@ async fn read_csv(path: &str) -> Result<(Vec<String>, Vec<Vec<String>>, String),
             return Err("CSV 列数须为 1 至 512".into());
         }
         let mut rows = Vec::new();
+        let mut total = 0;
         for (index, record) in reader.records().enumerate() {
             if index >= 10_000 {
                 return Err("一次导入最多 10000 行，请拆分文件".into());
             }
             let record = record.map_err(|e| format!("CSV 第 {} 条记录格式错误：{e}", index + 1))?;
-            rows.push(record.iter().map(str::to_string).collect());
+            // 预览仍验证完整文件，但仅为最终展示的行创建逐单元格字符串。
+            if index < retained_rows {
+                rows.push(record.iter().map(str::to_string).collect());
+            }
+            total += 1;
         }
-        Ok((headers, rows, fingerprint))
+        Ok((headers, rows, fingerprint, total))
     })
     .await
     .map_err(|e| e.to_string())?
@@ -60,9 +68,7 @@ async fn read_csv(path: &str) -> Result<(Vec<String>, Vec<Vec<String>>, String),
 #[tauri::command(rename_all = "camelCase")]
 /// 读取受限 CSV，返回列映射预览与内容指纹，不写入目标数据库。
 pub async fn dbc_csv_preview(path: String) -> Result<CsvPreview, String> {
-    let (columns, mut rows, fingerprint) = read_csv(&path).await?;
-    let total = rows.len() as u64;
-    rows.truncate(20);
+    let (columns, rows, fingerprint, total) = read_csv(&path, 20).await?;
     Ok(CsvPreview {
         columns,
         rows,
@@ -119,7 +125,7 @@ pub async fn dbc_csv_import(
             return Err("DB_READ_ONLY: 当前连接只读".into());
         }
         let mut task = BoundTask::register(&cancel_state, request_id, &conn_id)?;
-        let (headers, rows, current) = read_csv(&path).await?;
+        let (headers, rows, current, _) = read_csv(&path, 10_000).await?;
         if fingerprint != current {
             return Err("CSV 文件在预览后已变化，请重新预览确认".into());
         }
@@ -232,6 +238,30 @@ pub async fn dbc_csv_import(
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// 只保留展示行，但计数、指纹和后续记录校验仍覆盖完整文件。
+    #[tokio::test]
+    async fn preview_keeps_twenty_rows_and_validates_the_tail() {
+        let path = std::env::temp_dir().join(format!("covekit-preview-{}.csv", uuid::Uuid::new_v4()));
+        let mut text = String::from("id,text\n");
+        for index in 0..100 {
+            text.push_str(&format!("{index},value\n"));
+        }
+        tokio::fs::write(&path, &text).await.unwrap();
+        let name = path.to_str().unwrap();
+        let preview = dbc_csv_preview(name.into()).await.unwrap();
+        assert_eq!(preview.total, 100);
+        assert_eq!(preview.rows.len(), 20);
+        assert_eq!(preview.rows[19][0], "19");
+        let (_, imported, fingerprint, total) = read_csv(name, 10_000).await.unwrap();
+        assert_eq!(imported.len(), 100);
+        assert_eq!(total, preview.total);
+        assert_eq!(fingerprint, preview.fingerprint);
+        text.push_str("bad,extra,column\n");
+        tokio::fs::write(&path, text).await.unwrap();
+        let error = dbc_csv_preview(name.into()).await.unwrap_err();
+        assert!(error.contains("第 101 条"));
+        tokio::fs::remove_file(path).await.unwrap();
+    }
     #[tokio::test]
     async fn preview_preserves_quoted_newlines_null_escape_and_file_fingerprint() {
         let path =
