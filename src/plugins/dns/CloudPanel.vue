@@ -6,6 +6,7 @@ import { UiScrollArea } from '@/core/ui'
  */
 import { onMounted, ref } from 'vue'
 import { ipc } from './ipc'
+import { useDnsRead } from './useDnsRead'
 import { useUiStore } from '@/stores/ui'
 import type { CloudDomain, DnsPlatform } from './contracts'
 import { platformLabel } from './useDns'
@@ -16,7 +17,8 @@ const ui = useUiStore()
 
 const platform = ref<DnsPlatform>('aliyun')
 const domains = ref<CloudDomain[]>([])
-const busy = ref(false)
+const read = useDnsRead((error) => ui.toast('取消域名加载失败：' + String(error)))
+const busy = read.busy
 const configured = ref(true)
 
 /** 当前选中的域名（非空 = 记录视图） */
@@ -27,43 +29,40 @@ async function switchPlatform(p: DnsPlatform) {
   if (platform.value === p) return
   platform.value = p
   activeDomain.value = null
+  domains.value = []
+  configured.value = true
   await loadDomains()
 }
 
 /** 检查当前平台是否已配置密钥（未配置则静默显示引导条，不请求域名列表） */
-async function ensureConfigured(): Promise<boolean> {
-  try {
-    const cfg = await ipc.dnsConfigGet()
-    const c = cfg[platform.value]
-    const ok =
-      platform.value === 'cloudflare'
-        ? Boolean(cfg.cloudflare.credentialRef || cfg.cloudflare.token.trim())
-        : Boolean(c.credentialRef || ('id' in c && c.id.trim() && c.key.trim()))
-    configured.value = ok
-    return ok
-  } catch {
-    // 读配置失败按未配置处理（引导条兜底，不弹错误）
-    configured.value = false
-    return false
-  }
+async function ensureConfigured(target: DnsPlatform): Promise<boolean> {
+  const cfg = await ipc.dnsConfigGet()
+  const c = cfg[target]
+  const ok =
+    target === 'cloudflare'
+      ? Boolean(cfg.cloudflare.credentialRef || cfg.cloudflare.token.trim())
+      : Boolean(c.credentialRef || ('id' in c && c.id.trim() && c.key.trim()))
+  return ok
 }
 
 /** 拉取域名列表（未配置密钥时直接显示引导条，不发起请求） */
 async function loadDomains() {
-  if (!(await ensureConfigured())) {
-    domains.value = []
-    return
-  }
-  busy.value = true
+  const target = platform.value
   try {
-    const r = await ipc.dnsDomains(platform.value)
-    domains.value = r.list
-    configured.value = true
+    const r = await read.run(async (id) => {
+      const ok = await ensureConfigured(target)
+      if (!ok) return { configured: false, list: [] }
+      // 旧登记已取消时后端不会启动 HTTP；结果仍由请求代际核对。
+      const result = await ipc.dnsDomains(target, id)
+      return { configured: true, list: result.list }
+    })
+    if (r) {
+      domains.value = r.list
+      configured.value = r.configured
+    }
   } catch (e) {
     // 已配置但请求失败（网络/密钥无效）：明确提示
     ui.toast('加载域名失败：' + (e instanceof Error ? e.message : String(e)))
-  } finally {
-    busy.value = false
   }
 }
 

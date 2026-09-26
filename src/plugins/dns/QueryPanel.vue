@@ -6,6 +6,7 @@ import { UiScrollArea } from '@/core/ui'
  */
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { ipc } from './ipc'
+import { useDnsRead } from './useDnsRead'
 import { useUiStore } from '@/stores/ui'
 import type { ServerQueryResult } from './contracts'
 import {
@@ -32,7 +33,8 @@ const rtype = ref<string>('A')
 const selected = ref<string[]>(['system', '223.5.5.5', '119.29.29.29'])
 const customServer = ref('')
 const customServers = ref<string[]>([])
-const busy = ref(false)
+const read = useDnsRead((error) => ui.toast('取消 DNS 查询失败：' + String(error)))
+const busy = read.busy
 const results = ref<ServerQueryResult[]>([])
 let disposed = false
 onBeforeUnmount(() => {
@@ -80,14 +82,14 @@ async function run() {
     ui.toast('请至少选择一台 DNS 服务器')
     return
   }
-  busy.value = true
+  const queryDomain = domain.value.trim(),
+    queryType = rtype.value,
+    queryServers = [...servers.value]
   try {
-    const result = await ipc.dnsQuery(domain.value.trim(), rtype.value, servers.value)
-    if (!disposed) results.value = result
+    const result = await read.run((id) => ipc.dnsQuery(queryDomain, queryType, queryServers, id))
+    if (!disposed && result) results.value = result
   } catch (e) {
     if (!disposed) ui.toast('查询失败：' + (e instanceof Error ? e.message : String(e)))
-  } finally {
-    if (!disposed) busy.value = false
   }
 }
 </script>

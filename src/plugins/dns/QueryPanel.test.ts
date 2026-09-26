@@ -3,8 +3,15 @@ import { afterEach, expect, it, vi } from 'vitest'
 import QueryPanel from './QueryPanel.vue'
 import type { ServerQueryResult } from './contracts'
 
-const mock = vi.hoisted(() => ({ query: vi.fn(), toast: vi.fn() }))
-vi.mock('./ipc', () => ({ ipc: { dnsQuery: mock.query } }))
+const mock = vi.hoisted(() => ({
+  query: vi.fn(),
+  toast: vi.fn(),
+  prepare: vi.fn(async () => 'read-id'),
+  cancel: vi.fn(async () => {}),
+}))
+vi.mock('./ipc', () => ({
+  ipc: { dnsQuery: mock.query, dnsReadPrepare: mock.prepare, dnsReadCancel: mock.cancel },
+}))
 vi.mock('@/stores/ui', () => ({ useUiStore: () => ({ toast: mock.toast }) }))
 vi.mock('@/core/ui', () => ({
   UiInput: {
@@ -62,7 +69,9 @@ it('查询失败可见且可重试，关闭后的迟到失败不打扰其它工�
   await flushPromises()
   expect(mock.toast).toHaveBeenCalledWith('查询失败：首次失败')
   await wrapper.get('input').trigger('keyup', { key: 'Enter' })
+  await flushPromises()
   wrapper.unmount()
+  expect(mock.cancel).toHaveBeenCalledWith('read-id')
   reject(new Error('迟到失败'))
   await flushPromises()
   expect(mock.toast).toHaveBeenCalledTimes(1)

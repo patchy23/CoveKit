@@ -5,16 +5,27 @@ import { invokeCommand } from '@/core/ipc/ipc'
 import type { DnsConfig, DomainList, RecordList, ServerQueryResult } from './contracts'
 
 export const ipc = {
-  dnsQuery: (domain: string, rtype: string, servers: string[]): Promise<ServerQueryResult[]> =>
-    invokeCommand('dns_query', { domain, rtype, servers }),
-  dnsDomains: (platform: string): Promise<DomainList> => invokeCommand('dns_domains', { platform }),
+  dnsReadPrepare: (): Promise<string> => invokeCommand('dns_read_prepare', {}),
+  dnsReadCancel: (requestId: string): Promise<void> =>
+    invokeCommand('dns_read_cancel', { requestId }),
+  dnsQuery: (
+    domain: string,
+    rtype: string,
+    servers: string[],
+    requestId?: string
+  ): Promise<ServerQueryResult[]> =>
+    invokeCommand('dns_query', { domain, rtype, servers, requestId }),
+  dnsDomains: (platform: string, requestId?: string): Promise<DomainList> =>
+    invokeCommand('dns_domains', { platform, requestId }),
   dnsRecords: (
     platform: string,
     domain: string,
     page: number,
     size: number,
-    keyword: string
-  ): Promise<RecordList> => invokeCommand('dns_records', { platform, domain, page, size, keyword }),
+    keyword: string,
+    requestId?: string
+  ): Promise<RecordList> =>
+    invokeCommand('dns_records', { platform, domain, page, size, keyword, requestId }),
   dnsAddRecord: (
     platform: string,
     domain: string,

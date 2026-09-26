@@ -6,6 +6,7 @@ mod credential_refs;
 mod dnspod;
 mod models;
 mod query;
+mod requests;
 mod transfer;
 
 pub(crate) mod commands;
@@ -14,6 +15,22 @@ pub(crate) mod config;
 mod tests;
 use self::config::DnsState;
 use std::sync::{Mutex, OnceLock};
+use tauri::Manager;
+
+/// 页面按请求精确取消；应用退出、空间维护再统一释放全部读请求。
+fn on_dispose(
+    app: Option<&tauri::AppHandle>,
+    _reason: crate::framework::lifecycle::CloseReason,
+) -> Vec<String> {
+    let Some(app) = app else {
+        return Vec::new();
+    };
+    app.state::<requests::DnsRequests>()
+        .cancel_all()
+        .err()
+        .into_iter()
+        .collect()
+}
 
 /// 仅复用无凭证的传输连接池；授权头和签名仍由每次调用的有效配置生成。
 fn http_client() -> reqwest::Client {
@@ -25,17 +42,23 @@ fn http_client() -> reqwest::Client {
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
     transfer::register();
-    // 关闭清理：无业务会话或子进程；无凭证 HTTP 池的空闲连接由 reqwest 回收，
-    // 故不登记关闭钩子（AR06 方案 §5；新增常驻资源时必须回来补登记）
+    crate::framework::lifecycle::register(
+        crate::framework::lifecycle::ModuleLifecycle::for_tool(IPC_OWNER, "dns")
+            .with_dispose(on_dispose),
+    );
     // 凭证引用自报：框架删除凭证前据此判断还有哪些平台配置在用
     credential_refs::register_provider();
-    builder.manage(DnsState(Mutex::new(None)))
+    builder
+        .manage(DnsState(Mutex::new(None)))
+        .manage(requests::DnsRequests::default())
 }
 
 crate::covekit_module! {
     owner: "dns",
     feature: "dns",
     commands: {
+        commands::dns_read_prepare => "登记可取消的 DNS 只读请求",
+        commands::dns_read_cancel => "取消 DNS 只读请求",
         commands::dns_query => "DNS 查询（指定服务器/多服务器对比）",
         commands::dns_domains => "云解析域名列表（aliyun/dnspod/cloudflare）",
         commands::dns_records => "云解析记录列表（分页）",

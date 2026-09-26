@@ -2,6 +2,7 @@
 
 use super::config::load_effective_config;
 use super::config::DnsState;
+use super::requests::DnsRequests;
 use crate::plugins::dns::alidns;
 use crate::plugins::dns::cloudflare;
 use crate::plugins::dns::dnspod;
@@ -12,13 +13,28 @@ use models::DomainList;
 use models::RecordList;
 use models::ServerQueryResult;
 use tauri::AppHandle;
+use tauri::Manager;
 use tauri::State;
+
+/// 登记只读请求，确保立即关闭时也可取消尚未启动的查询。
+#[tauri::command]
+pub fn dns_read_prepare(requests: State<'_, DnsRequests>) -> Result<String, String> {
+    requests.prepare()
+}
+
+/// 取消一项 DNS 只读请求；不会取消增删改记录等云端写操作。
+#[tauri::command]
+pub fn dns_read_cancel(requests: State<'_, DnsRequests>, request_id: String) -> Result<(), String> {
+    requests.cancel(&request_id)
+}
 
 /* ── DNS 查询命令 ── */
 
 /// DNS 查询：独立服务器并发执行，按选择顺序返回；单台失败包装为 ok=false 结果。
 #[tauri::command]
 pub async fn dns_query(
+    requests: State<'_, DnsRequests>,
+    request_id: Option<String>,
     domain: String,
     rtype: String,
     servers: Vec<String>,
@@ -51,7 +67,9 @@ pub async fn dns_query(
         }
         result
     });
-    Ok(join_all(queries).await)
+    requests
+        .run(request_id.as_deref(), async { Ok(join_all(queries).await) })
+        .await
 }
 
 /* ── 云解析命令 ── */
@@ -59,12 +77,14 @@ pub async fn dns_query(
 /// 云解析域名列表（platform: aliyun / dnspod / cloudflare）
 #[tauri::command]
 pub async fn dns_domains(
+    request_id: Option<String>,
     app: AppHandle,
-    state: State<'_, DnsState>,
     platform: String,
 ) -> Result<DomainList, String> {
+    let requests = app.state::<DnsRequests>();
+    let state = app.state::<DnsState>();
     let log_started = std::time::Instant::now();
-    let result: Result<DomainList, String> = async {
+    let result: Result<DomainList, String> = requests.run(request_id.as_deref(), async {
         let cfg = load_effective_config(&app, &state)?;
         match platform.as_str() {
             models::PLATFORM_ALIYUN => alidns::AliyunDns::new(&cfg.aliyun)?.get_domains().await,
@@ -76,7 +96,7 @@ pub async fn dns_domains(
             }
             _ => Err(format!("不支持的平台: {platform}")),
         }
-    }
+    })
     .await;
     match &result {
         Ok(_value) => log::debug!(
@@ -84,7 +104,8 @@ pub async fn dns_domains(
             log_started.elapsed().as_millis()
         ),
         Err(error)
-            if error.starts_with("请先在")
+            if error == super::requests::CANCELLED
+                || error.starts_with("请先在")
                 || error.starts_with("不支持的平台:")
                 || error == "主机记录与记录值不能为空" =>
         {
@@ -101,16 +122,18 @@ pub async fn dns_domains(
 /// 云解析记录列表（分页；keyword 非空时服务端按主机记录/记录值模糊搜索）
 #[tauri::command]
 pub async fn dns_records(
+    request_id: Option<String>,
     app: AppHandle,
-    state: State<'_, DnsState>,
     platform: String,
     domain: String,
     page: u32,
     size: u32,
     keyword: String,
 ) -> Result<RecordList, String> {
+    let requests = app.state::<DnsRequests>();
+    let state = app.state::<DnsState>();
     let log_started = std::time::Instant::now();
-    let result: Result<RecordList, String> = async {
+    let result: Result<RecordList, String> = requests.run(request_id.as_deref(), async {
         let cfg = load_effective_config(&app, &state)?;
         match platform.as_str() {
             models::PLATFORM_ALIYUN => {
@@ -130,7 +153,7 @@ pub async fn dns_records(
             }
             _ => Err(format!("不支持的平台: {platform}")),
         }
-    }
+    })
     .await;
     match &result {
         Ok(_value) => log::debug!(
@@ -138,7 +161,8 @@ pub async fn dns_records(
             log_started.elapsed().as_millis()
         ),
         Err(error)
-            if error.starts_with("请先在")
+            if error == super::requests::CANCELLED
+                || error.starts_with("请先在")
                 || error.starts_with("不支持的平台:")
                 || error == "主机记录与记录值不能为空" =>
         {

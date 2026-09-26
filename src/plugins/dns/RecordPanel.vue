@@ -2,6 +2,7 @@
 import { UiScrollArea } from '@/core/ui'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ipc } from './ipc'
+import { useDnsRead } from './useDnsRead'
 import { useUiStore } from '@/stores/ui'
 import type { CloudDomain, CloudRecord, DnsPlatform } from './contracts'
 import { recordTypeBadgeClass } from './useDns'
@@ -21,12 +22,16 @@ const records = ref<CloudRecord[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 50
-const busy = ref(false)
+const read = useDnsRead((error) => ui.toast('取消记录加载失败：' + String(error)))
+const busy = read.busy
 const searchQuery = ref('')
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let disposed = false
+let deleteTimer: ReturnType<typeof setTimeout> | null = null
 
 /** 输入防抖后搜索：重置到第一页并携带关键词重新拉取 */
 watch(searchQuery, () => {
+  read.cancel()
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => {
     loadRecords(1)
@@ -34,7 +39,9 @@ watch(searchQuery, () => {
 })
 
 onUnmounted(() => {
+  disposed = true
   if (searchTimer) clearTimeout(searchTimer)
+  if (deleteTimer) clearTimeout(deleteTimer)
 })
 
 /** 表单模式：null=关闭，add=新增，CloudRecord=编辑 */
@@ -53,24 +60,30 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize))
 
 /** 拉取记录列表（分页；携带搜索关键词走服务端过滤） */
 async function loadRecords(p = page.value) {
-  busy.value = true
+  if (disposed) return
+  const target = props.platform,
+    domain = props.domain.domainName,
+    keyword = searchQuery.value.trim()
   try {
-    const r = await ipc.dnsRecords(
-      props.platform,
-      props.domain.domainName,
-      p,
-      pageSize,
-      searchQuery.value.trim()
-    )
+    const r = await read.run((id) => ipc.dnsRecords(target, domain, p, pageSize, keyword, id))
+    if (!r) return
     records.value = r.list
     total.value = r.total
     page.value = p
   } catch (e) {
     ui.toast('加载记录失败：' + (e instanceof Error ? e.message : String(e)))
-  } finally {
-    busy.value = false
   }
 }
+
+watch(
+  () => [props.platform, props.domain.domainName],
+  () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    records.value = []
+    total.value = 0
+    void loadRecords(1)
+  }
+)
 
 /** 打开新增表单（清空并聚焦） */
 function openAdd() {
@@ -138,7 +151,8 @@ async function deleteRecord(r: CloudRecord) {
   if (confirmDeleteId.value !== r.recordId) {
     confirmDeleteId.value = r.recordId
     // 3 秒未确认自动复原
-    setTimeout(() => {
+    if (deleteTimer) clearTimeout(deleteTimer)
+    deleteTimer = setTimeout(() => {
       if (confirmDeleteId.value === r.recordId) confirmDeleteId.value = null
     }, 3000)
     return
