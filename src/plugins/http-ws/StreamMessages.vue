@@ -5,6 +5,7 @@ import { UiButton, UiCheckbox, UiCodeEditor, UiInput, UiScrollArea, UiSelect } f
 import { writeClipboardText } from '@/core/platform/clipboard'
 import { useUiStore } from '@/stores/ui'
 import type { RequestSession } from './useRequestSession'
+import StreamMessage from './StreamMessage.vue'
 const props = defineProps<{ kind: 'sse' | 'ws'; session: RequestSession; active: boolean }>()
 defineEmits<{ save: [] }>()
 const state = computed(() => props.session.state)
@@ -14,13 +15,15 @@ const search = ref(''),
   showHeaders = ref(false)
 const bottom = ref<HTMLElement | null>(null)
 const ui = useUiStore()
-const visible = computed(() =>
-  state.value.entries.filter(
+const visible = computed(() => {
+  const query = search.value.toLowerCase()
+  if (!query && direction.value === 'all') return state.value.entries
+  return state.value.entries.filter(
     (m) =>
       (direction.value === 'all' || m.direction === direction.value) &&
-      `${m.kind} ${m.eventId} ${m.content}`.toLowerCase().includes(search.value.toLowerCase())
+      (!query || `${m.kind} ${m.eventId} ${m.content}`.toLowerCase().includes(query))
   )
-)
+})
 watch(
   () => [state.value.entries.at(-1)?.seq, props.active],
   async () => {
@@ -33,13 +36,6 @@ watch(
 async function copy(text: string) {
   const result = await writeClipboardText(text)
   ui.toast(result.ok ? '已复制' : result.reason === 'empty' ? '暂无内容可复制' : '复制失败')
-}
-function pretty(text: string) {
-  try {
-    return JSON.stringify(JSON.parse(text), null, 2)
-  } catch {
-    return text
-  }
 }
 </script>
 <template>
@@ -107,42 +103,14 @@ function pretty(text: string) {
       ><UiCheckbox v-model="follow" size="xs" label="跟随最新" />
     </div>
     <UiScrollArea class="min-h-0 flex-1" axis="vertical">
-      <details
+      <StreamMessage
         v-for="entry in visible"
         :key="entry.seq"
-        class="border-t border-border dark:border-border-dark"
-      >
-        <summary class="flex cursor-pointer items-center gap-[8px] px-[10px] py-[6px] text-body-sm">
-          <span class="shrink-0 font-mono text-caption text-secondary dark:text-secondary-dark">{{
-            new Date(entry.time).toLocaleTimeString()
-          }}</span
-          ><span class="max-w-[130px] truncate text-success-strong dark:text-success-dark">{{
-            entry.kind
-          }}</span
-          ><span v-if="entry.eventId" class="max-w-[90px] truncate text-caption"
-            >#{{ entry.eventId }}</span
-          ><span class="min-w-0 flex-1 truncate font-mono">{{ entry.content }}</span>
-        </summary>
-        <div class="px-[10px] pb-[8px]">
-          <div class="mb-[4px] flex gap-[6px]">
-            <UiButton size="xs" variant="ghost" @click="copy(entry.content)">复制内容</UiButton
-            ><UiButton
-              v-if="kind === 'ws'"
-              size="xs"
-              variant="ghost"
-              @click="state.message = entry.content"
-              >填入发送框</UiButton
-            ><span
-              v-if="entry.retry != null"
-              class="text-caption text-secondary dark:text-secondary-dark"
-              >retry: {{ entry.retry }} ms</span
-            >
-          </div>
-          <pre class="select-text whitespace-pre-wrap break-all font-mono text-body-sm">{{
-            pretty(entry.content)
-          }}</pre>
-        </div>
-      </details>
+        :entry="entry"
+        :kind="kind"
+        @copy="copy"
+        @fill="state.message = $event"
+      />
       <p
         v-if="!visible.length"
         class="p-[16px] text-body-sm text-text-muted dark:text-text-muted-dark"
