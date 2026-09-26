@@ -66,10 +66,12 @@ const DEFAULT_OPTIONS: SearchOptions = { caseSensitive: false, regexp: false, wh
  *
  * @param getView 读取当前 EditorView（未挂载返回 null）
  * @param afterReplace 替换成功后的回调（宿主用于恢复焦点）
+ * @param readText 与宿主共享当前修订的序列化结果，避免查找再次生成全文
  */
 export function createSearchController(
   getView: () => EditorView | null,
-  afterReplace?: () => void
+  afterReplace?: () => void,
+  readText: (document: Text) => string = (document) => document.toString()
 ): EditorSearchController {
   const state = ref<EditorSearchState>({ total: 0, current: 0 })
   const current = ref<{ query: string; replacement: string; options: SearchOptions }>({
@@ -98,7 +100,7 @@ export function createSearchController(
       cached.regexp !== options.regexp ||
       cached.wholeWord !== options.wholeWord
     ) {
-      cached = { query, ...options, scan: scanMatches(doc.toString(), query, options) }
+      cached = { query, ...options, scan: scanMatches(readText(doc), query, options) }
       scans = new WeakMap([[doc, cached]])
     }
     const scan = cached.scan

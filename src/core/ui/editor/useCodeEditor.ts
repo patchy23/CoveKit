@@ -28,6 +28,7 @@ import { linterForLanguage } from './lint'
 import { formatDocument } from './format'
 import { createDocStatsTracker } from './docStats'
 import { createSearchController } from './searchController'
+import { createDocumentTextReader } from './documentText'
 import { detectLanguage, loadLanguage, PLAIN_TEXT, type LanguageInfo } from './languages'
 import type { EditorDegradeLevel } from './status'
 import type { CodeEditorHandle, EditorCursorRange, UseCodeEditorOptions } from './types'
@@ -61,11 +62,13 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   let languageRequest = 0
   /** 「已保存」基线内容（未保存标记用） */
   let savedSnapshot = ''
+  const documentText = createDocumentTextReader()
 
   const docStats = createDocStatsTracker((level) => applyDegrade(level))
   const search = createSearchController(
     () => view.value,
-    () => view.value?.focus()
+    () => view.value?.focus(),
+    documentText
   )
 
   /** 解析当前应使用的语言：显式 id 优先，'auto' 按文件名识别 */
@@ -194,7 +197,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
         EditorView.domEventHandlers({ contextmenu: handleContextMenu }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged && !applyingExternal) {
-            options.onChange(update.state.doc.toString())
+            options.onChange(documentText(update.state.doc))
           }
           if (update.docChanged) docStats.update(update.state)
           // 文档或选区变化都会影响「当前是第几个匹配」，条件为空时 refresh 内部直接返回
@@ -222,7 +225,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     const state = createState(options.modelValue())
 
     view.value = new EditorView({ parent, state })
-    savedSnapshot = state.doc.toString()
+    savedSnapshot = documentText(state.doc)
     docStats.init(state)
     view.value.dispatch({ effects: auxCompartment.reconfigure(auxExtensions()) })
     void applyLanguage()
@@ -239,7 +242,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   /** 全量写入文档（统一入口）：addHistory=true 时进撤销历史（用户级替换） */
   function writeValue(value: string, addHistory: boolean): void {
     const current = view.value
-    if (!current || current.state.doc.toString() === value) return
+    if (!current || documentText(current.state.doc) === value) return
     applyingExternal = true
     try {
       current.dispatch({
@@ -258,7 +261,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
 
   /** 读取内容（未挂载时回落到 props 值） */
   function getValue(): string {
-    return view.value?.state.doc.toString() ?? options.modelValue()
+    return view.value ? documentText(view.value.state.doc) : options.modelValue()
   }
 
   /** 聚焦编辑器 */
@@ -331,7 +334,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     const current = view.value
     if (!current) return { ok: false, error: '编辑器尚未就绪' }
     const result = formatDocument(
-      current.state.doc.toString(),
+      documentText(current.state.doc),
       languageInfo.value.id,
       options.tabSize()
     )
@@ -342,7 +345,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
 
   /** 记录「已保存」基线 */
   function markSaved(): void {
-    savedSnapshot = view.value?.state.doc.toString() ?? options.modelValue()
+    savedSnapshot = getValue()
   }
 
   /** 相对基线是否有未保存修改 */
