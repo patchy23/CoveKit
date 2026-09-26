@@ -13,13 +13,13 @@ export function encodeBase64(input: string): Base64Result {
   if (!input) return { ok: false, output: '', error: '请输入要编码的文本' }
   try {
     const bytes = new TextEncoder().encode(input)
-    // 分块转二进制字符串，避免大文本 String.fromCharCode(...bytes) 爆栈
-    let bin = ''
-    const CHUNK = 0x8000
+    // 每块为 3 字节的倍数，仅末块产生 padding；不拼出整份二进制字符串。
+    let output = ''
+    const CHUNK = 0x7ffe
     for (let i = 0; i < bytes.length; i += CHUNK) {
-      bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+      output += btoa(String.fromCharCode(...bytes.subarray(i, i + CHUNK)))
     }
-    return { ok: true, output: btoa(bin) }
+    return { ok: true, output }
   } catch (e) {
     return { ok: false, output: '', error: e instanceof Error ? e.message : String(e) }
   }
@@ -33,10 +33,19 @@ export function decodeBase64(input: string): Base64Result {
     return { ok: false, output: '', error: '包含非法字符，不是有效的 Base64' }
   }
   try {
-    const bin = atob(cleaned)
-    const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0))
     // fatal: 非法 UTF-8 字节序列（多半是二进制文件内容）直接报错而不是乱码
-    return { ok: true, output: new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+    const decoder = new TextDecoder('utf-8', { fatal: true })
+    let output = ''
+    // 4 字符对齐保持 Base64 字节边界；UTF-8 跨块字符由同一 decoder 保留尾部。
+    const CHUNK = 0x8000
+    for (let i = 0; i < cleaned.length; i += CHUNK) {
+      const bin = atob(cleaned.slice(i, i + CHUNK))
+      const bytes = new Uint8Array(bin.length)
+      for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j)
+      output += decoder.decode(bytes, { stream: true })
+    }
+    output += decoder.decode()
+    return { ok: true, output }
   } catch (e) {
     return { ok: false, output: '', error: e instanceof Error ? e.message : String(e) }
   }
