@@ -59,7 +59,25 @@ export const queryIpc = {
     scope?: ExecutionScope,
     confirmationToken?: string
   ): Promise<QueryResult> =>
-    call('dbc_execute', { connId, sql, maxRows, requestId, workspaceId, scope, confirmationToken }),
+    call('dbc_execute', {
+      connId,
+      sql,
+      maxRows,
+      requestId,
+      workspaceId,
+      scope,
+      confirmationToken,
+    }).then((result) => {
+      if (result.displayStatement !== undefined && result.displayStatement !== null) {
+        const display = result.statements?.[result.displayStatement]
+        if (!display) throw new Error('查询结果缺少对应语句的数据')
+        result.columns = display.columns
+        result.rows = display.rows
+        result.values = display.values
+        result.columnTypes = display.columnTypes
+      }
+      return result
+    }),
   prepare: (connId: string, sql: string, requestId: string, scope: ExecutionScope) =>
     call('dbc_prepare_execution', { connId, sql, requestId, scope }),
   closeWorkspace: (connId: string, workspaceId: string) =>

@@ -210,9 +210,21 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
           sum + row.reduce((bytes, value) => bytes + (value.value?.length ?? 0) * 2 + 128, 0),
         0
       )
+    // 根展示与活动语句可能共享同一数组；按对象身份计数，不把内容相同的独立副本当共享。
+    const seenRows = new Set<string[][]>()
+    const seenValues = new Set<DbValue[][]>()
+    const uniqueSize = (rows: string[][], values: DbValue[][]) => {
+      const bytes = size(seenRows.has(rows) ? [] : rows, seenValues.has(values) ? [] : values)
+      seenRows.add(rows)
+      seenValues.add(values)
+      return bytes
+    }
     const bytes =
-      size(state.rows, state.values) +
-      state.statements.reduce((sum, result) => sum + size(result.rows, result.values ?? []), 0)
+      uniqueSize(state.rows, state.values) +
+      state.statements.reduce(
+        (sum, result) => sum + uniqueSize(result.rows, result.values ?? []),
+        0
+      )
     resultBytes.delete(tabId)
     resultBytes.set(tabId, bytes)
     let total = [...resultBytes.values()].reduce((sum, bytes) => sum + bytes, 0)

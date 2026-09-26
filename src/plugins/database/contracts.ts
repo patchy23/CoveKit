@@ -114,6 +114,8 @@ export interface QueryResult {
   values?: DbValue[][]
   columnTypes?: string[]
   statements?: QueryResult[]
+  /** 多语句根数据来源；IPC 层将根级数组复用为对应语句的引用。 */
+  displayStatement?: number | null
   ok: boolean
   columns: string[]
   rows: string[][]

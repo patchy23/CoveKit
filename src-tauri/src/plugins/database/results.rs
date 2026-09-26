@@ -83,16 +83,35 @@ impl QueryResult {
         if statements.len() <= 1 {
             return statements.pop().unwrap_or_else(Self::empty);
         }
-        let mut result = statements.last().cloned().unwrap_or_else(Self::empty);
-        result.ok = statements.iter().all(|s| s.ok);
-        result.truncated = statements.iter().any(|s| s.truncated);
-        if !result.is_query {
-            result.rows_affected = statements.iter().map(|s| s.rows_affected).sum();
-        }
-        if statements.len() > 1 {
-            result.statements = std::mem::take(&mut statements);
-        }
+        let last = statements.pop().unwrap_or_else(Self::empty);
+        // 多语句只传一份行和原值；根级保留脚本汇总，最后结果仍完整保存在语句列表。
+        let mut result = Self {
+            ok: last.ok && statements.iter().all(|s| s.ok),
+            truncated: last.truncated || statements.iter().any(|s| s.truncated),
+            rows_affected: if last.is_query {
+                last.rows_affected
+            } else {
+                last.rows_affected + statements.iter().map(|s| s.rows_affected).sum::<u64>()
+            },
+            is_query: last.is_query,
+            error: last.error.clone(),
+            duration_ms: last.duration_ms,
+            transaction_active: last.transaction_active,
+            statement_index: last.statement_index,
+            edit_target: last.edit_target.clone(),
+            display_statement: Some(statements.len()),
+            ..Self::default()
+        };
+        statements.push(last);
+        result.statements = statements;
         result
+    }
+    /// 测试读取展示数据，覆盖单语句与多语句的同一用户结果语义。
+    #[cfg(test)]
+    pub(crate) fn display_result(&self) -> &Self {
+        self.display_statement
+            .and_then(|index| self.statements.get(index))
+            .unwrap_or(self)
     }
     /// 将驱动错误归属于当前语句；上层仍可展示之前已经完成的结果。
     pub(crate) fn failed(message: String) -> Self {
@@ -107,6 +126,22 @@ impl QueryResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn script_transfers_final_rows_once_and_points_to_the_full_statement() {
+        let mut last = QueryResult::empty();
+        last.is_query = true;
+        last.rows = vec![vec!["large cell".repeat(100_000)]];
+        last.values = vec![vec![DbValue::text("text", "exact value".into())]];
+        let rows = last.rows.as_ptr();
+        let result = QueryResult::script(vec![QueryResult::empty(), last]);
+        assert_eq!(result.display_statement, Some(1));
+        assert!(result.rows.is_empty() && result.values.is_empty());
+        assert_eq!(result.display_result().rows.as_ptr(), rows);
+        let wire = serde_json::to_value(&result).unwrap();
+        assert_eq!(wire["rows"], serde_json::json!([]));
+        assert_eq!(wire["statements"][1]["values"][0][0]["value"], "exact value");
+    }
 
     #[test]
     fn single_statement_moves_result_buffers_without_copying() {

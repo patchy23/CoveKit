@@ -122,17 +122,17 @@ mod tests {
                 .await
                 .unwrap();
             assert!(fixture.ok, "{:?}", fixture.error);
-            assert_eq!(fixture.rows.len(), 10);
+            assert_eq!(fixture.display_result().rows.len(), 10);
         }
         let script = drivers::mysql::execute_mysql_conn(&mut conn,
             "CREATE TABLE t(id BIGINT PRIMARY KEY, value DECIMAL(38,12), text_value TEXT); INSERT INTO t VALUES(1,12345678901234567890.123456789012,NULL); SELECT id,value,text_value,'NULL', '' FROM t", 100).await.unwrap();
         assert!(script.ok, "{:?}", script.error);
         assert_eq!(script.statements.len(), 3);
         assert_eq!(
-            script.values[0][1].value.as_deref(),
+            script.display_result().values[0][1].value.as_deref(),
             Some("12345678901234567890.123456789012")
         );
-        assert_eq!(script.values[0][2].kind, "null");
+        assert_eq!(script.display_result().values[0][2].kind, "null");
         assert!(
             drivers::mysql::execute_mysql_conn(
                 &mut conn,
@@ -239,19 +239,19 @@ mod tests {
                 .await
                 .unwrap();
             assert!(fixture.ok, "{:?}", fixture.error);
-            assert_eq!(fixture.rows.len(), 10);
+            assert_eq!(fixture.display_result().rows.len(), 10);
         }
         let script = drivers::postgres::execute_postgres_client(&client,
             "CREATE TABLE t(id INTEGER PRIMARY KEY, value NUMERIC, text_value TEXT); INSERT INTO t VALUES(1,12345678901234567890.123456789012,NULL) RETURNING id; SELECT id,value,text_value,'NULL', '' FROM t", 100).await.unwrap();
         assert!(script.ok, "{:?}", script.error);
         assert_eq!(script.statements.len(), 3);
         assert_eq!(script.statements[1].rows[0][0], "1");
-        assert_eq!(script.values[0][0].kind, "integer");
+        assert_eq!(script.display_result().values[0][0].kind, "integer");
         assert_eq!(
-            script.values[0][1].value.as_deref(),
+            script.display_result().values[0][1].value.as_deref(),
             Some("12345678901234567890.123456789012")
         );
-        assert_eq!(script.values[0][2].kind, "null");
+        assert_eq!(script.display_result().values[0][2].kind, "null");
         let empty = drivers::postgres::execute_postgres_client(
             &client,
             "SELECT id FROM t WHERE false",
@@ -314,7 +314,7 @@ mod tests {
             let connection = drivers::sqlite::sqlite_conn(&local).unwrap();
             let fixture = drivers::sqlite::execute_sqlite(&connection, sql, 100).unwrap();
             assert!(fixture.ok, "{:?}", fixture.error);
-            assert_eq!(fixture.rows.len(), 10);
+            assert_eq!(fixture.display_result().rows.len(), 10);
             drop(connection);
             std::fs::remove_file(path).unwrap();
         }

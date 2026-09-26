@@ -254,6 +254,9 @@ pub struct QueryResult {
     pub column_types: Vec<String>,
     /// 多语句执行按顺序保留各结果及失败，单语句为空。
     pub statements: Vec<QueryResult>,
+    /// 多语句根结果的数据位于 statements 的此索引；根级行数组为空，前端复用同一引用。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_statement: Option<usize>,
     /// 是否成功
     pub ok: bool,
     /// 列名（查询语句）
