@@ -126,7 +126,10 @@ export const ipc = {
     cmd(commands.sshFileMkdir, { connectionId, path }),
   sshLocalDefaultDirectory: (preferred?: string) =>
     cmd(commands.sshLocalDefaultDirectory, { preferred }),
-  sshLocalList: (path: string) => cmd(commands.sshLocalList, { path }),
+  sshLocalList: (path: string, requestId?: string) =>
+    cmd(commands.sshLocalList, { path, ...(requestId ? { requestId } : {}) }),
+  sshLocalListPrepare: () => cmd(commands.sshLocalListPrepare, {}),
+  sshLocalListCancel: (requestId: string) => cmd(commands.sshLocalListCancel, { requestId }),
   sshLocalCreate: (path: string, isDir: boolean) => cmd(commands.sshLocalCreate, { path, isDir }),
   sshLocalDelete: (path: string, isDir: boolean) => cmd(commands.sshLocalDelete, { path, isDir }),
   sshLocalRename: (oldPath: string, newPath: string) =>

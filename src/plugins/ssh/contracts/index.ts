@@ -109,6 +109,8 @@ export const commands = {
   sshFileMkdir: 'ssh_file_mkdir',
   sshLocalDefaultDirectory: 'ssh_local_default_directory',
   sshLocalList: 'ssh_local_list',
+  sshLocalListPrepare: 'ssh_local_list_prepare',
+  sshLocalListCancel: 'ssh_local_list_cancel',
   sshLocalCreate: 'ssh_local_create',
   sshLocalDelete: 'ssh_local_delete',
   sshLocalRename: 'ssh_local_rename',
@@ -224,7 +226,9 @@ export type Payloads = {
   ssh_file_mkdir: { connectionId: string; path: string }
   ssh_editor_window: { token: string; action: 'open' | 'focus' | 'show' | 'close' | 'return' }
   ssh_local_default_directory: { preferred?: string }
-  ssh_local_list: { path: string }
+  ssh_local_list: { path: string; requestId?: string }
+  ssh_local_list_prepare: Record<string, never>
+  ssh_local_list_cancel: { requestId: string }
   /** 本地新建文件/目录 */
   ssh_local_create: { path: string; isDir: boolean }
   /** 本地删除文件/目录（目录递归） */
@@ -385,6 +389,8 @@ export type Results = {
   ssh_editor_window: null
   ssh_local_default_directory: [string, string | null]
   ssh_local_list: FileListResult
+  ssh_local_list_prepare: string
+  ssh_local_list_cancel: void
   ssh_local_create: SshActionResult
   ssh_local_delete: SshActionResult
   ssh_local_rename: SshActionResult

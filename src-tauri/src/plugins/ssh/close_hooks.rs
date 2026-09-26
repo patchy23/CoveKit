@@ -32,6 +32,9 @@ pub(crate) fn on_dispose(app: Option<&tauri::AppHandle>, _reason: CloseReason) -
         return Vec::new();
     };
     let mut failures = Vec::new();
+    if let Err(error) = app.state::<super::sftp::local_browse::LocalBrowseState>().cancel_all() {
+        failures.push(format!("{OWNER}.local-browse: {error}"));
+    }
     super::archive::cancel_connection(&app.state::<super::archive::ArchiveState>(), None);
 
     // 1) 进行中的 SFTP 传输：置取消标志，让传输任务收尾并清理临时文件

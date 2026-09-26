@@ -88,22 +88,38 @@ pub async fn ssh_file_list(
 /// Windows 下空路径与裸分隔符返回驱动器列表；POSIX 根目录保持真实路径——「此电脑」是 Shell 命名空间式的虚拟层，
 /// 由文件系统抽象自身处理（WinSCP/FileZilla 本地侧同款），前端不做字符串手术。
 #[tauri::command(rename_all = "camelCase")]
-pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
+pub async fn ssh_local_list(
+    state: State<'_, super::local_browse::LocalBrowseState>,
+    path: String,
+    request_id: Option<String>,
+) -> Result<FileListResult, String> {
+    let guard = state.claim(request_id)?;
+    tokio::task::spawn_blocking(move || read_local_directory(path, &guard))
+        .await.map_err(|e| format!("读取本地目录任务失败: {e}"))?
+}
+
+fn read_local_directory(path: String, guard: &super::local_browse::ReadGuard) -> Result<FileListResult, String> {
+    guard.check()?;
     // 规范化：分隔符统一；盘符 'C:' 补尾斜杠（裸盘符是「该盘当前目录」而非根）
     let normalized = normalize_local_path(&path);
     // 虚拟根：返回驱动器列表
     if normalized.is_empty() {
-        return Ok(local_drives_result());
+        return local_drives_result(guard);
     }
-    let entries =
+    let mut entries =
         std::fs::read_dir(&normalized).map_err(|e| format!("读取目录失败 [{normalized}]: {e}"))?;
     let mut files = Vec::new();
-    for entry in entries {
+    loop {
+        // 先检查再调用迭代器，避免取消后还进入下一次可能阻塞的目录读取。
+        guard.check()?;
+        let Some(entry) = entries.next() else { break };
+        guard.check()?;
         let entry = entry.map_err(|e| format!("读取目录项失败: {e}"))?;
         let meta = match entry.metadata() {
             Ok(meta) => meta,
             Err(_) => continue, // 系统文件可能拒绝访问，跳过不阻断
         };
+        guard.check()?;
         let full = entry.path().to_string_lossy().to_string();
         let name = entry.file_name().to_string_lossy().to_string();
         files.push(RemoteFile {
@@ -122,11 +138,13 @@ pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
             group: "-".into(),
         });
     }
+    guard.check()?;
     files.sort_by(|a, b| {
         b.is_dir
             .cmp(&a.is_dir)
-            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| compare_local_names(&a.name, &b.name))
     });
+    guard.check()?;
     // 盘符根的上级 = 驱动器层（空串哨兵）；其余走 Path::parent
     let parent_path = if is_drive_root(&normalized) {
         Some(String::new())
@@ -145,6 +163,15 @@ pub fn ssh_local_list(path: String) -> Result<FileListResult, String> {
     })
 }
 
+fn compare_local_names(a: &str, b: &str) -> std::cmp::Ordering {
+    if a.is_ascii() && b.is_ascii() {
+        a.bytes().map(|byte| byte.to_ascii_lowercase())
+            .cmp(b.bytes().map(|byte| byte.to_ascii_lowercase()))
+    } else {
+        a.to_lowercase().cmp(&b.to_lowercase())
+    }
+}
+
 /* ── 远程新建目录 ── */
 
 /// 是否盘符根（'C:\\'）
@@ -154,10 +181,11 @@ fn is_drive_root(path: &str) -> bool {
 }
 
 /// 驱动器列表的 FileListResult（「此电脑」虚拟层；Windows 枚举存在的盘符，其余平台给根目录）
-fn local_drives_result() -> FileListResult {
+fn local_drives_result(guard: &super::local_browse::ReadGuard) -> Result<FileListResult, String> {
     let mut drives = Vec::new();
     #[cfg(windows)]
     for letter in b'A'..=b'Z' {
+        guard.check()?;
         let root = format!("{}:\\", letter as char);
         if std::path::Path::new(&root).exists() {
             drives.push(RemoteFile {
@@ -183,13 +211,14 @@ fn local_drives_result() -> FileListResult {
         owner: "-".into(),
         group: "-".into(),
     });
-    FileListResult {
+    guard.check()?;
+    Ok(FileListResult {
         ok: true,
         path: String::new(),
         parent_path: None,
         files: drives,
         error: None,
-    }
+    })
 }
 
 /// 本地路径规范化（纯函数，可单测）：分隔符统一反斜杠；裸分隔符/空串 → 空（驱动器层）；盘符补尾斜杠
@@ -303,10 +332,15 @@ pub fn ssh_local_rename(old_path: String, new_path: String) -> SshActionResult {
 
 /// 获取可读取的本机下载目录；用户指定目录失效时返回明确的回退说明。
 #[tauri::command(rename_all = "camelCase")]
-pub fn ssh_local_default_directory(
+pub async fn ssh_local_default_directory(
     app: tauri::AppHandle,
     preferred: Option<String>,
 ) -> Result<(String, Option<String>), String> {
+    tokio::task::spawn_blocking(move || local_default_directory(&app, preferred))
+        .await.map_err(|e| format!("检查默认本地目录任务失败: {e}"))?
+}
+
+fn local_default_directory(app: &tauri::AppHandle, preferred: Option<String>) -> Result<(String, Option<String>), String> {
     let preferred = preferred.filter(|p| !p.is_empty());
     let mut candidates = Vec::new();
     if let Some(path) = &preferred {
@@ -333,6 +367,29 @@ pub fn ssh_local_default_directory(
         }
     }
     Err("无法找到可读取的本地下载目录，请手动选择目录".into())
+}
+
+#[cfg(test)]
+mod local_scan_tests {
+    use super::*;
+
+    #[test]
+    fn cancelled_scan_does_not_start_filesystem_access() {
+        let state = super::super::local_browse::LocalBrowseState::default();
+        let guard = state.claim(None).unwrap();
+        state.cancel_all().unwrap();
+        assert_eq!(read_local_directory("not-an-existing-directory".into(), &guard).err().as_deref(), Some("SSH_LOCAL_LIST_CANCELLED"));
+    }
+
+    #[test]
+    fn allocation_free_ascii_order_matches_original_unicode_sorting() {
+        let names = ["A", "a", "B.txt", "b.TXT", "file10", "file2", "", "_x", "ΣΟΣ", "σος", "İ", "中文"];
+        for a in names {
+            for b in names {
+                assert_eq!(compare_local_names(a, b), a.to_lowercase().cmp(&b.to_lowercase()));
+            }
+        }
+    }
 }
 
 #[cfg(all(test, not(windows)))]

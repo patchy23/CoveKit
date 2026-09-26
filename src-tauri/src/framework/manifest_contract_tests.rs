@@ -481,6 +481,8 @@ mod tests {
         ("ssh", "ssh_local_create", "本地新建文件/目录"),
         ("ssh", "ssh_local_delete", "本地删除文件/目录"),
         ("ssh", "ssh_local_list", "本地目录列表（双栏文件管理）"),
+        ("ssh", "ssh_local_list_prepare", "登记本地目录读取"),
+        ("ssh", "ssh_local_list_cancel", "取消本地目录读取"),
         ("ssh", "ssh_local_rename", "本地重命名/移动"),
         (
             "ssh",

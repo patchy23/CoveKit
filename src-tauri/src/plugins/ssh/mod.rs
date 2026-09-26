@@ -80,6 +80,8 @@ crate::covekit_module! {
         sftp::ops::ssh_file_chmod => "修改远程权限（含安全策略）",
         sftp::browse::ssh_local_default_directory => "本地默认下载目录与回退信息",
         sftp::browse::ssh_local_list => "本地目录列表（双栏文件管理）",
+        sftp::local_browse::ssh_local_list_prepare => "登记本地目录读取",
+        sftp::local_browse::ssh_local_list_cancel => "取消本地目录读取",
         sftp::browse::ssh_local_create => "本地新建文件/目录",
         sftp::browse::ssh_local_delete => "本地删除文件/目录",
         sftp::browse::ssh_local_rename => "本地重命名/移动",
@@ -118,6 +120,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
             .with_dispose(close_hooks::on_dispose),
     );
     builder
+        .manage(sftp::local_browse::LocalBrowseState::default())
         .manage(archive::ArchiveState::default())
         .manage(SshState(std::sync::Mutex::new(
             std::collections::HashMap::new(),

@@ -4,6 +4,7 @@
 //! 模块划分：browse = 目录浏览；transfer = 传输与文件操作 + 共享工具。
 
 pub(crate) mod browse;
+pub(crate) mod local_browse;
 pub(crate) mod ops;
 pub(crate) mod transfer;
 pub(crate) mod util;

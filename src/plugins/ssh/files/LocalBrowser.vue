@@ -8,6 +8,7 @@ import { UiTooltip } from '@/core/ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import type { RemoteFile } from '../contracts'
 import { ipc } from '../ipc'
+import { useLocalDirectory } from './useLocalDirectory'
 import { formatBytes, formatTime } from '../connection/useSsh'
 import PathBreadcrumbs from './PathBreadcrumbs.vue'
 import { UiIcon, UiIconButton, UiStatusBar, UiTable, UiTableCell, UiToolbar } from '@/core/ui'
@@ -32,6 +33,7 @@ const emit = defineEmits<{
 }>()
 
 const currentPath = ref(props.initialPath)
+const directory = useLocalDirectory((error) => emit('error', `取消目录读取失败：${String(error)}`))
 const files = ref<RemoteFile[]>([])
 const loading = ref(false)
 const parentPath = ref<string | null>(null)
@@ -43,8 +45,8 @@ async function navigate(path: string) {
   loading.value = true
   try {
     // 规范化（分隔符/盘符尾斜杠/虚拟根）全在后端：''、'/'、'\' 都会得到驱动器列表
-    const result = await ipc.sshLocalList(path)
-    if (request !== generation) return
+    const result = await directory.read(path)
+    if (request !== generation || !result) return
     if (!result.ok) {
       emit('error', result.error ?? '读取目录失败')
       return
