@@ -804,7 +804,8 @@ describe('SSH 工作区 · 订阅与清理', () => {
     env.releasePending()
     await settle(14)
 
-    expect(env.subscriptions).toHaveLength(5)
+    // 已关闭的工作区不再创建后续订阅，只释放已发起的这一条。
+    expect(env.subscriptions).toHaveLength(1)
     for (const sub of env.subscriptions) expect(sub.unsubscribe).toHaveBeenCalledTimes(1)
   })
 

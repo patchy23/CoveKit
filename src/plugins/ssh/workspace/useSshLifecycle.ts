@@ -8,8 +8,10 @@
  * 卸载标记由本域唯一写入（{@link useSshLifecycle} 返回的 isDisposed），连接域只读，
  * 用于丢弃卸载后晚到的连接结果。
  */
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
+import { isTauri } from '@tauri-apps/api/core'
 import { useSettingsStore } from '@/stores/settings'
+import { useUiStore } from '@/stores/ui'
 import {
   onConnectionStatus,
   onConnectStage,
@@ -49,18 +51,48 @@ const IDLE_SCAN_INTERVAL_MS = 30_000
 
 export function useSshLifecycle(ports: SshLifecyclePorts) {
   const settings = useSettingsStore()
-  let unlistenConnection: (() => void) | null = null
-  let unlistenActivity: (() => void) | null = null
-  let unlistenTransfer: (() => void) | null = null
-  let unlistenStage: (() => void) | null = null
-  let unlistenHostKey: (() => void) | null = null
+  const ui = useUiStore()
+  const unlisteners = new Set<() => void>()
   let idleTimer: ReturnType<typeof setInterval> | null = null
   let disposed = false
   /** 后台活动节流表（connectionId → 上次活动时间戳） */
   const lastActivityTouch = new Map<string, number>()
+  let connectionIds = new Set<string>()
+  // 只观察会话身份，输出刷新活跃时间不会触发全表重建；关闭后晚到事件不能重新填回。
+  watch(
+    () => ports.listWorkspaces().map((workspace) => workspace.connection.sessionId),
+    (ids) => {
+      connectionIds = new Set(ids)
+      for (const id of lastActivityTouch.keys()) {
+        if (!connectionIds.has(id)) lastActivityTouch.delete(id)
+      }
+    },
+    { immediate: true, flush: 'sync' }
+  )
+
+  function release(stop: () => void) {
+    try {
+      stop()
+    } catch (error) {
+      ui.toast(`SSH 事件退订失败：${String(error)}`)
+    }
+  }
+
+  /** 每条订阅独立取得并立即接管，下一条失败不会丢失此前的释放责任。 */
+  async function subscribe(label: string, register: () => Promise<() => void>) {
+    if (disposed) return
+    try {
+      const stop = await register()
+      if (disposed) release(stop)
+      else unlisteners.add(stop)
+    } catch (error) {
+      if (!disposed && isTauri()) ui.toast(`SSH ${label}订阅失败：${String(error)}`)
+    }
+  }
 
   /** 后台活动也算会话活跃——防止长任务、看日志、传文件时被空闲断开误杀 */
   function touchByConnectionId(connectionId: string) {
+    if (disposed || !connectionIds.has(connectionId)) return
     const now = Date.now()
     if (now - (lastActivityTouch.get(connectionId) ?? 0) < ACTIVITY_TOUCH_THROTTLE) return
     lastActivityTouch.set(connectionId, now)
@@ -77,43 +109,27 @@ export function useSshLifecycle(ports: SshLifecyclePorts) {
         /* 设置持久化失败不应阻断 SSH 会话初始化，本次仍使用 10 分钟回退值。 */
       }
     }
-    try {
-      const stop = await onConnectionStatus((connection) =>
-        ports.onConnectionStatusEvent(connection)
-      )
-      if (disposed) stop()
-      else unlistenConnection = stop
-    } catch {
-      /* 浏览器预览没有 Tauri 事件系统。 */
-    }
+    await subscribe('连接状态', () =>
+      onConnectionStatus((connection) => {
+        if (!disposed) ports.onConnectionStatusEvent(connection)
+      })
+    )
     // 通道关闭由 TerminalTab 按终端 ID 与用途判断并上报 linkDead；不能据连接 ID 将容器退出视为断线。
     // 后台活动监听：终端有输出（含打字回显）/ 传输在进行 → 刷新对应工作区活跃时间
-    try {
-      const stopData = await onTerminalData((d) => touchByConnectionId(d.connectionId))
-      const stopTransfer = await onTransferProgress((p) => touchByConnectionId(p.connectionId))
-      if (disposed) {
-        stopData()
-        stopTransfer()
-      } else {
-        unlistenActivity = stopData
-        unlistenTransfer = stopTransfer
-      }
-    } catch {
-      /* 浏览器预览没有 Tauri 事件系统。 */
-    }
-    try {
-      const stopStage = await onConnectStage((stage) => ports.onConnectStageEvent(stage))
-      const stopHostKey = await onHostKeyVerify((request) => ports.onHostKeyEnqueue(request))
-      if (disposed) {
-        stopStage()
-        stopHostKey()
-      } else {
-        unlistenStage = stopStage
-        unlistenHostKey = stopHostKey
-      }
-    } catch {
-      /* 浏览器预览没有 Tauri 事件系统。 */
-    }
+    await subscribe('终端活动', () => onTerminalData((d) => touchByConnectionId(d.connectionId)))
+    await subscribe('传输活动', () =>
+      onTransferProgress((p) => touchByConnectionId(p.connectionId))
+    )
+    await subscribe('连接阶段', () =>
+      onConnectStage((stage) => {
+        if (!disposed) ports.onConnectStageEvent(stage)
+      })
+    )
+    await subscribe('主机密钥', () =>
+      onHostKeyVerify((request) => {
+        if (!disposed) ports.onHostKeyEnqueue(request)
+      })
+    )
 
     if (disposed) return
     idleTimer = setInterval(() => {
@@ -132,11 +148,10 @@ export function useSshLifecycle(ports: SshLifecyclePorts) {
 
   onUnmounted(() => {
     disposed = true
-    unlistenConnection?.()
-    unlistenActivity?.()
-    unlistenTransfer?.()
-    unlistenStage?.()
-    unlistenHostKey?.()
+    for (const stop of unlisteners) release(stop)
+    unlisteners.clear()
+    lastActivityTouch.clear()
+    connectionIds.clear()
     if (idleTimer) clearInterval(idleTimer)
     ports.onDispose()
   })

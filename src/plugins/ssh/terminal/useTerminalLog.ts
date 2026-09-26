@@ -7,6 +7,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { isTauri } from '@tauri-apps/api/core'
 import { useUiStore } from '@/stores/ui'
 import { ipc } from '../ipc'
 
@@ -99,15 +100,33 @@ export function useTerminalLog(terminalId: () => string) {
   }
 
   let unlisten: UnlistenFn | null = null
+  let disposed = false
+  function release(stop: UnlistenFn) {
+    try {
+      stop()
+    } catch (error) {
+      ui.toast(`终端录制事件退订失败：${String(error)}`)
+    }
+  }
 
   onMounted(async () => {
-    unlisten = await listen<TerminalLogErrorPayload>('ssh://terminal-log-error', (event) => {
-      if (event.payload.terminalId !== terminalId()) return
-      state.value = 'idle'
-      ui.toast(t('sshLog.writeFailed', { message: event.payload.message }))
-    })
+    try {
+      const stop = await listen<TerminalLogErrorPayload>('ssh://terminal-log-error', (event) => {
+        if (disposed || event.payload.terminalId !== terminalId()) return
+        state.value = 'idle'
+        ui.toast(t('sshLog.writeFailed', { message: event.payload.message }))
+      })
+      if (disposed) release(stop)
+      else unlisten = stop
+    } catch (error) {
+      if (!disposed && isTauri()) ui.toast(`终端录制错误订阅失败：${String(error)}`)
+    }
   })
-  onBeforeUnmount(() => unlisten?.())
+  onBeforeUnmount(() => {
+    disposed = true
+    if (unlisten) release(unlisten)
+    unlisten = null
+  })
 
   return { state, path, bytes, isRecording, start, stop, toggle, openingDirectory, openDirectory }
 }
