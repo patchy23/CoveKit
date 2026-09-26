@@ -37,4 +37,20 @@ describe('useFormat', () => {
     expect(positionToLineCol('ab\ncd', 4)).toEqual({ line: 2, col: 2 })
     expect(positionToLineCol('abc', 0)).toEqual({ line: 1, col: 1 })
   })
+
+  it('错误定位保留 UTF-16、换行边界与越界偏移语义', () => {
+    const input = '😀\r\n中文\nlast'
+    for (const position of [-1, 0, 1, 2, 3, 4, 6, 7, 7.8, 99, Infinity, NaN]) {
+      const prefix = input.slice(0, Math.max(0, position))
+      const lines = prefix.split('\n')
+      expect(positionToLineCol(input, position)).toEqual({
+        line: lines.length,
+        col: lines[lines.length - 1].length + 1,
+      })
+    }
+    expect(positionToLineCol('x\n'.repeat(100_000) + 'end', 200_003)).toEqual({
+      line: 100_001,
+      col: 4,
+    })
+  })
 })

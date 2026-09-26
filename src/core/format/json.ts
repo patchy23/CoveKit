@@ -15,9 +15,17 @@ export interface FormatResult {
 
 /** position → 行/列（1 起始） */
 export function positionToLineCol(input: string, position: number): { line: number; col: number } {
-  const before = input.slice(0, Math.max(0, position))
-  const lines = before.split('\n')
-  return { line: lines.length, col: lines[lines.length - 1].length + 1 }
+  // 与 slice 的 UTF-16 偏移语义一致，只扫描换行，不复制错误位置之前的正文和行数组。
+  const end = Math.min(input.length, Math.max(0, Math.trunc(position) || 0))
+  if (end === 0) return { line: 1, col: 1 }
+  const lastNewline = input.lastIndexOf('\n', end - 1)
+  let line = 1
+  let start = 0
+  while (start <= lastNewline) {
+    start = input.indexOf('\n', start) + 1
+    line++
+  }
+  return { line, col: end - lastNewline }
 }
 
 function toError(err: unknown, input: string): FormatError {
