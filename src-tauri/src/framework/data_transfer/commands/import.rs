@@ -47,7 +47,7 @@ pub async fn data_import_inspect(
             let raw = package::read_package(&target)?;
             cancel.check()?;
             let digest = package::file_digest(&raw);
-            let manifest = package::open_package(&password, &raw)?;
+            let manifest = package::open_package(&password, raw)?;
             cancel.check()?;
             let descriptors = catalog::collect_descriptors(&inspect_app)?;
             let summary = package_summary(&manifest, &descriptors);
@@ -227,7 +227,7 @@ pub async fn data_import_commit(
             if package::file_digest(&raw) != file_digest {
                 return Err("数据包内容已改变，请重新预览后再提交".into());
             }
-            let manifest = package::open_package(&password, &raw)?;
+            let manifest = package::open_package(&password, raw)?;
             cancel.check()?;
             if manifest.package_id != plan.package_id {
                 return Err("数据包与预览的不是同一份，请重新预览后再提交".into());

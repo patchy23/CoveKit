@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use super::json_writer::LimitedWriter;
 use crate::framework::data_transfer::types::{validate_manifest, PackageManifest};
 use crate::framework::secure_store::{
-    decrypt_with_aad_nonce, derive_key_argon2id, encrypt_with_aad_nonce,
+    decrypt_in_place_with_aad_nonce, derive_key_argon2id, encrypt_in_place_with_aad_nonce,
 };
 
 /// 包魔数（8 字节；尾字节 0 便于文本工具识别边界）
@@ -165,18 +165,21 @@ pub(crate) fn validate_password(password: &str) -> Result<(), String> {
 /// 导出：口令 + 清单 → 完整包字节。
 ///
 /// 口令过短、清单自相矛盾或超限都在这里被拒（先校验再加密，不生成半成品）。
-pub(crate) fn seal_package(password: &str, manifest: &PackageManifest) -> Result<Vec<u8>, String> {
+pub(crate) fn seal_package(password: &str, manifest: PackageManifest) -> Result<Vec<u8>, String> {
     validate_password(password)?;
-    validate_manifest(manifest)?;
-    let mut writer = LimitedWriter::new(Vec::new(), MAX_PLAINTEXT_BYTES as usize);
-    if let Err(error) = serde_json::to_writer(&mut writer, manifest) {
+    validate_manifest(&manifest)?;
+    // 先预留固定头，序列化和加密始终使用同一正文缓冲；既有上限只计明文。
+    let mut writer = LimitedWriter::new(vec![0u8; HEADER_LEN], MAX_PLAINTEXT_BYTES as usize);
+    if let Err(error) = serde_json::to_writer(&mut writer, &manifest) {
         return Err(if writer.exceeded() {
             format!("数据包明文超过上限（{MAX_PLAINTEXT_BYTES} 字节），请缩小导出范围")
         } else {
             format!("数据包清单序列化失败: {error}")
         });
     }
-    let plain = writer.into_inner();
+    drop(manifest);
+    let mut out = writer.into_inner();
+    out.reserve_exact(GCM_TAG_LEN as usize);
     let mut salt = [0u8; SALT_LEN];
     rand::rngs::OsRng.fill_bytes(&mut salt);
     let mut nonce = [0u8; NONCE_LEN];
@@ -196,26 +199,25 @@ pub(crate) fn seal_package(password: &str, manifest: &PackageManifest) -> Result
         p_cost,
         salt,
         nonce,
-        cipher_len: plain.len() as u64 + GCM_TAG_LEN,
+        cipher_len: (out.len() - HEADER_LEN) as u64 + GCM_TAG_LEN,
     };
     let head = header.encode();
-    let ciphertext = encrypt_with_aad_nonce(&key, &plain, &head, &nonce)?;
-    drop(plain);
-    let mut out = Vec::with_capacity(HEADER_LEN + ciphertext.len());
-    out.extend_from_slice(&head);
-    out.extend_from_slice(&ciphertext);
+    out[..HEADER_LEN].copy_from_slice(&head);
+    let tag = encrypt_in_place_with_aad_nonce(&key, &mut out[HEADER_LEN..], &head, &nonce)?;
+    out.extend_from_slice(&tag);
     Ok(out)
 }
 
 /// 导入：口令 + 完整包字节 → 清单。
 ///
 /// 口令错误、头部被改、密文被改、参数越界、清单不自洽都返回 Err，不产生部分解析结果。
-pub(crate) fn open_package(password: &str, raw: &[u8]) -> Result<PackageManifest, String> {
-    let head = raw
+pub(crate) fn open_package(password: &str, mut raw: Vec<u8>) -> Result<PackageManifest, String> {
+    let head: [u8; HEADER_LEN] = raw
         .get(..HEADER_LEN)
+        .and_then(|bytes| bytes.try_into().ok())
         .ok_or_else(|| format!("数据包损坏（不足 {HEADER_LEN} 字节头部）"))?;
-    let header = PackageHeader::parse(head)?;
-    let ciphertext = &raw[HEADER_LEN..];
+    let header = PackageHeader::parse(&head)?;
+    let ciphertext = &mut raw[HEADER_LEN..];
     if ciphertext.len() as u64 != header.cipher_len {
         return Err(format!(
             "数据包损坏（密文长度 {} 与头部声明 {} 不一致）",
@@ -231,10 +233,10 @@ pub(crate) fn open_package(password: &str, raw: &[u8]) -> Result<PackageManifest
         u32::from(header.p_cost),
     )
     .map_err(|e| format!("数据包口令派生失败: {e}"))?;
-    let plain = decrypt_with_aad_nonce(&key, ciphertext, head, &header.nonce)
+    let length = decrypt_in_place_with_aad_nonce(&key, ciphertext, &head, &header.nonce)
         .map_err(|_| "数据包解密失败（口令错误、文件损坏或头部被改动）".to_string())?;
-    let manifest: PackageManifest =
-        serde_json::from_slice(&plain).map_err(|e| format!("数据包清单解析失败: {e}"))?;
+    let manifest: PackageManifest = serde_json::from_slice(&ciphertext[..length])
+        .map_err(|e| format!("数据包清单解析失败: {e}"))?;
     validate_manifest(&manifest)?;
     Ok(manifest)
 }
@@ -297,6 +299,11 @@ pub(crate) fn write_package(path: &Path, content: &[u8]) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // 损坏夹具常复用同一原包；仅测试复制输入，生产调用把文件缓冲所有权交给解包。
+    fn open_package(password: &str, raw: &[u8]) -> Result<PackageManifest, String> {
+        super::open_package(password, raw.to_vec())
+    }
     use crate::framework::data_transfer::types::{
         DatasetBlock, TransportPolicy, MAX_RECORDS_PER_PACKAGE,
     };
@@ -325,7 +332,7 @@ mod tests {
     #[test]
     fn seal_open_roundtrip_and_no_plaintext_leak() {
         let manifest = manifest_with("srv-秘密主机.example.com");
-        let raw = seal_package(PW, &manifest).unwrap_or_default();
+        let raw = seal_package(PW, manifest.clone()).unwrap_or_default();
         assert_eq!(
             raw.len() as u64,
             HEADER_LEN as u64 + manifest_plain_len(&raw)
@@ -353,18 +360,18 @@ mod tests {
     /// 口令错误 / 空口令 / 过短口令都被拒，且不 panic
     #[test]
     fn wrong_password_rejected() {
-        let raw = seal_package(PW, &manifest_with("h1")).unwrap_or_default();
+        let raw = seal_package(PW, manifest_with("h1")).unwrap_or_default();
         assert!(open_package("transfer-pw-2", &raw).is_err());
-        assert!(seal_package("", &manifest_with("h1")).is_err());
-        assert!(seal_package("short", &manifest_with("h1")).is_err());
+        assert!(seal_package("", manifest_with("h1")).is_err());
+        assert!(seal_package("short", manifest_with("h1")).is_err());
     }
 
     /// 每次导出的 salt 与 nonce 都不同（同明文两次导出密文不同）
     #[test]
     fn salt_and_nonce_randomized() {
         let manifest = manifest_with("h1");
-        let a = seal_package(PW, &manifest).unwrap_or_default();
-        let b = seal_package(PW, &manifest).unwrap_or_default();
+        let a = seal_package(PW, manifest.clone()).unwrap_or_default();
+        let b = seal_package(PW, manifest).unwrap_or_default();
         assert_ne!(a[20..36], b[20..36]); // salt
         assert_ne!(a[36..48], b[36..48]); // nonce
         assert_ne!(a[HEADER_LEN..], b[HEADER_LEN..]);
@@ -373,7 +380,7 @@ mod tests {
     /// 改头部任一字段即解密失败（头是 AAD）；改密文同样失败
     #[test]
     fn tampered_header_and_ciphertext_rejected() {
-        let raw = seal_package(PW, &manifest_with("h1")).unwrap_or_default();
+        let raw = seal_package(PW, manifest_with("h1")).unwrap_or_default();
 
         // 改 KDF 迭代次数（白名单内，只可能靠 AAD 认证拦住）
         let mut tampered = raw.clone();
@@ -405,7 +412,7 @@ mod tests {
     /// 魔数 / 容器版本 / KDF 标识不符都给出明确错误
     #[test]
     fn bad_magic_and_version_rejected() {
-        let raw = seal_package(PW, &manifest_with("h1")).unwrap_or_default();
+        let raw = seal_package(PW, manifest_with("h1")).unwrap_or_default();
 
         let mut bad_magic = raw.clone();
         bad_magic[0] = b'X';
@@ -426,7 +433,7 @@ mod tests {
     /// KDF 参数越界在**派生之前**就被拒（否则等于按包内声明分配内存）
     #[test]
     fn kdf_params_out_of_whitelist_rejected_before_derive() {
-        let raw = seal_package(PW, &manifest_with("h1")).unwrap_or_default();
+        let raw = seal_package(PW, manifest_with("h1")).unwrap_or_default();
 
         // 内存成本拉到 4 GiB：必须在派生之前拒绝，否则本用例会尝试分配巨额内存
         let mut huge_m = raw.clone();
@@ -455,9 +462,9 @@ mod tests {
     fn invalid_manifest_rejected_on_seal() {
         let mut manifest = manifest_with("h1");
         manifest.datasets[0].record_count = MAX_RECORDS_PER_PACKAGE + 1;
-        assert!(seal_package(PW, &manifest).is_err());
+        assert!(seal_package(PW, manifest).is_err());
         let empty = PackageManifest::new("default", "默认空间");
-        assert!(seal_package(PW, &empty).is_err());
+        assert!(seal_package(PW, empty).is_err());
     }
 
     /// 文件级往返：临时目录写包再读回，且不留临时文件
@@ -466,7 +473,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("pbdata-test-{}", uuid::Uuid::new_v4()));
         let path = dir.join("export.pbdata");
         let manifest = manifest_with("h1");
-        let raw = seal_package(PW, &manifest).unwrap_or_default();
+        let raw = seal_package(PW, manifest.clone()).unwrap_or_default();
         write_package(&path, &raw).unwrap_or_else(|e| panic!("写包失败: {e}"));
 
         // 目录里只应有目标文件，没有 .tmp- 残留
@@ -487,7 +494,7 @@ mod tests {
         );
 
         // 覆盖写：内容替换且仍无临时残留
-        let raw2 = seal_package(PW, &manifest_with("h2")).unwrap_or_default();
+        let raw2 = seal_package(PW, manifest_with("h2")).unwrap_or_default();
         write_package(&path, &raw2).unwrap_or_else(|e| panic!("覆盖写失败: {e}"));
         assert_eq!(read_package(&path).unwrap_or_default(), raw2);
 
@@ -504,7 +511,7 @@ mod tests {
         std::fs::create_dir_all(&dir).ok();
         let path = dir.join("big.pbdata");
         // 写一个「头部 + 声明超限长度」的短文件：open 报明文长度超限，read 不因此失败
-        let mut raw = seal_package(PW, &manifest_with("h1")).unwrap_or_default();
+        let mut raw = seal_package(PW, manifest_with("h1")).unwrap_or_default();
         raw.truncate(HEADER_LEN);
         raw[48..56].copy_from_slice(&(MAX_PLAINTEXT_BYTES + GCM_TAG_LEN + 1).to_le_bytes());
         write_package(&path, &raw).unwrap_or_else(|e| panic!("写包失败: {e}"));

@@ -68,7 +68,7 @@ pub async fn data_export_start(
             excluded,
             secret_included,
         };
-        let content = package::seal_package(&password, &manifest)?;
+        let content = package::seal_package(&password, manifest)?;
         cancel.check()?;
         package::write_package(&target, &content)?;
         Ok(ExportReport {

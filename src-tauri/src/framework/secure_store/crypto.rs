@@ -5,8 +5,8 @@
 //! - Argon2id 口令派生（`derive_key_argon2id`）同样只此一份：Vault 备份导出与数据包容器共用
 
 use aes_gcm::{
-    aead::{Aead, KeyInit},
-    Aes256Gcm, Nonce,
+    aead::{Aead, AeadInPlace, KeyInit},
+    Aes256Gcm, Nonce, Tag,
 };
 use argon2::{Algorithm, Argon2, Params, Version};
 use rand::RngCore;
@@ -66,6 +66,23 @@ pub(crate) fn encrypt_with_aad_nonce(
         .map_err(|_| "加密失败".into())
 }
 
+/// 在调用方缓冲中加密并返回认证标签，避免大容器同时持有明文与密文副本。
+/// 调用方必须每次生成唯一 nonce，并把返回的完整标签追加到密文末尾。
+pub(crate) fn encrypt_in_place_with_aad_nonce(
+    key: &[u8; 32],
+    plain: &mut [u8],
+    aad: &[u8],
+    nonce: &[u8; NONCE_LEN],
+) -> Result<[u8; GCM_TAG_LEN], String> {
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
+    let tag = cipher
+        .encrypt_in_place_detached(Nonce::from_slice(nonce), aad, plain)
+        .map_err(|_| "加密失败".to_string())?;
+    let mut bytes = [0u8; GCM_TAG_LEN];
+    bytes.copy_from_slice(&tag);
+    Ok(bytes)
+}
+
 /// 指定 nonce 的解密，入参为**裸密文**（与 `encrypt_with_aad_nonce` 对应）。
 pub(crate) fn decrypt_with_aad_nonce(
     key: &[u8; 32],
@@ -83,6 +100,25 @@ pub(crate) fn decrypt_with_aad_nonce(
             aes_gcm::aead::Payload { msg: data, aad },
         )
         .map_err(|_| "解密失败（密钥不匹配或数据损坏）".into())
+}
+
+/// 在原密文缓冲中认证解密，成功返回明文长度；失败时调用方必须丢弃整个缓冲。
+pub(crate) fn decrypt_in_place_with_aad_nonce(
+    key: &[u8; 32],
+    data: &mut [u8],
+    aad: &[u8],
+    nonce: &[u8; NONCE_LEN],
+) -> Result<usize, String> {
+    if data.len() < GCM_TAG_LEN {
+        return Err("密文长度不足".into());
+    }
+    let length = data.len() - GCM_TAG_LEN;
+    let (body, tag) = data.split_at_mut(length);
+    let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
+    cipher
+        .decrypt_in_place_detached(Nonce::from_slice(nonce), aad, body, Tag::from_slice(tag))
+        .map_err(|_| "解密失败（密钥不匹配或数据损坏）".to_string())?;
+    Ok(length)
 }
 
 /// 带 AAD 的认证校验（空间 uid 绑定版）：密钥与 AAD 同时匹配才为真
@@ -185,6 +221,39 @@ mod tests {
         assert!(decrypt_with_aad_nonce(&key, &raw, b"other", &nonce).is_err());
         assert!(decrypt_with_aad_nonce(&key, &raw, b"hdr", &[4u8; 12]).is_err());
         assert!(decrypt_with_aad_nonce(&key, b"short", b"hdr", &nonce).is_err());
+    }
+
+    #[test]
+    fn in_place_encryption_matches_existing_container_ciphertext_and_tag() {
+        let key = [9u8; 32];
+        let nonce = [3u8; 12];
+        for plain in [Vec::new(), b"body".to_vec(), vec![0x8f; 1024 * 1024]] {
+            let expected = encrypt_with_aad_nonce(&key, &plain, b"header", &nonce).unwrap();
+            let mut buffer = plain.clone();
+            let address = buffer.as_ptr();
+            let tag =
+                encrypt_in_place_with_aad_nonce(&key, &mut buffer, b"header", &nonce).unwrap();
+            assert_eq!(buffer.as_ptr(), address);
+            buffer.extend_from_slice(&tag);
+            assert_eq!(buffer, expected);
+            assert_eq!(
+                decrypt_with_aad_nonce(&key, &buffer, b"header", &nonce).unwrap(),
+                plain
+            );
+            assert!(decrypt_with_aad_nonce(&key, &buffer, b"changed", &nonce).is_err());
+            let mut corrupted = buffer.clone();
+            let last = corrupted.len() - 1;
+            corrupted[last] ^= 1;
+            assert!(decrypt_in_place_with_aad_nonce(&key, &mut corrupted, b"header", &nonce).is_err());
+            let mut wrong_aad = buffer.clone();
+            assert!(decrypt_in_place_with_aad_nonce(&key, &mut wrong_aad, b"changed", &nonce).is_err());
+            let address = buffer.as_ptr();
+            let length =
+                decrypt_in_place_with_aad_nonce(&key, &mut buffer, b"header", &nonce).unwrap();
+            assert_eq!(buffer.as_ptr(), address);
+            assert_eq!(&buffer[..length], plain);
+        }
+        assert!(decrypt_in_place_with_aad_nonce(&key, &mut [0; 15], b"header", &nonce).is_err());
     }
 
     /// Argon2id 口令派生可复现：同口令同盐同参数结果一致，换盐即变
