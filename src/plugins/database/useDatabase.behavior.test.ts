@@ -1235,6 +1235,58 @@ describe('执行准备和持久化竞态', () => {
 })
 
 describe('SQL 草稿恢复', () => {
+  it('慢保存期间合并中间 SQL，关闭等待最终快照保存完成', async () => {
+    env.commands.dbcDrafts.mockResolvedValue([])
+    const first = deferred<void>()
+    const last = deferred<void>()
+    env.commands.dbcDraftsSave.mockReturnValueOnce(first.promise).mockReturnValueOnce(last.promise)
+    const api = mountWorkbench()
+    await api.restoreDrafts()
+    openEditor(api, 'conn-a', 'SELECT 0')
+    const pending = [api.flushDrafts()]
+    for (let i = 1; i <= 100; i++) {
+      api.patchQueryState({ sql: `SELECT ${i}`, dirty: true })
+      pending.push(api.flushDrafts())
+    }
+    expect(env.commands.dbcDraftsSave).toHaveBeenCalledTimes(1)
+    first.resolve()
+    await flush()
+    expect(env.commands.dbcDraftsSave).toHaveBeenCalledTimes(2)
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([
+      expect.objectContaining({ sql: 'SELECT 100', dirty: true }),
+    ])
+    let finished = false
+    const closing = Promise.all(pending).then(() => {
+      finished = true
+    })
+    await flush()
+    expect(finished).toBe(false)
+    last.resolve()
+    await closing
+    expect(finished).toBe(true)
+  })
+
+  it('合并保存失败传给全部等待者，重试保存仍保留的最新草稿', async () => {
+    env.commands.dbcDrafts.mockResolvedValue([])
+    const failed = deferred<void>()
+    env.commands.dbcDraftsSave.mockReturnValueOnce(failed.promise).mockResolvedValue(undefined)
+    const api = mountWorkbench()
+    await api.restoreDrafts()
+    openEditor(api, 'conn-a', 'SELECT 1')
+    const first = api.flushDrafts()
+    api.patchQueryState({ sql: 'SELECT 2', dirty: true })
+    const second = api.flushDrafts()
+    const results = Promise.allSettled([first, second])
+    failed.reject(new Error('磁盘已满'))
+    expect((await results).map((result) => result.status)).toEqual(['rejected', 'rejected'])
+    expect(api.queryState.value.sql).toBe('SELECT 2')
+    expect(api.queryState.value.dirty).toBe(true)
+    await api.flushDrafts()
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([
+      expect.objectContaining({ sql: 'SELECT 2', dirty: true }),
+    ])
+  })
+
   it('恢复目标和选区，保持离线且不会执行 SQL 或恢复事务', async () => {
     env.commands.dbcDrafts.mockResolvedValue([
       {

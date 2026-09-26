@@ -243,6 +243,8 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   let draftRestoreError = ''
   let draftTimer: ReturnType<typeof setTimeout> | undefined
   let draftSaving: Promise<void> = Promise.resolve()
+  let draftActive = false
+  let draftPending = false
   const draftSnapshot = computed<QueryDraft[]>(() =>
     tabs.value
       .filter((tab) => tab.kind === 'query')
@@ -274,22 +276,35 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
             new Error('旧草稿读取失败，已保留原记录；请先另存当前 SQL 文件：' + draftRestoreError)
           )
         : draftSaving
-    const snapshot = draftSnapshot.value
-    const next = draftSaving.catch(() => undefined).then(() => draftIpc.save(snapshot))
-    draftSaving = next
-    return next
+    if (draftActive) {
+      draftPending = true
+      return draftSaving
+    }
+    draftActive = true
+    // 慢写期间只记一次补写意图，真正写入时读取最新状态，不排队持有中间 SQL 快照。
+    draftSaving = (async () => {
+      try {
+        do {
+          draftPending = false
+          await draftIpc.save(draftSnapshot.value)
+        } while (draftPending)
+      } finally {
+        draftActive = false
+      }
+    })()
+    return draftSaving
   }
-  watch(
-    draftSnapshot,
-    () => {
-      if (!draftsReady) return
-      if (draftTimer) clearTimeout(draftTimer)
-      draftTimer = setTimeout(() => {
-        void flushDrafts().catch(ports.showError)
-      }, 500)
-    },
-    { deep: true }
-  )
+  watch(draftSnapshot, () => {
+    if (!draftsReady) return
+    if (draftTimer) clearTimeout(draftTimer)
+    draftTimer = setTimeout(() => {
+      if (draftActive) {
+        draftPending = true
+        return
+      }
+      void flushDrafts().catch(ports.showError)
+    }, 500)
+  })
   onScopeDispose(() => {
     if (draftTimer) clearTimeout(draftTimer)
   })
