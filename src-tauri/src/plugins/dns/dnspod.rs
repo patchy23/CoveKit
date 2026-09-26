@@ -106,7 +106,7 @@ impl TencentDns {
             return Err("请先在「设置」页配置腾讯云 DNSPod 密钥（SecretId / SecretKey）".into());
         }
         Ok(Self {
-            client: reqwest::Client::new(),
+            client: super::http_client(),
             secret_id: cfg.id.clone(),
             secret_key: cfg.key.clone(),
         })

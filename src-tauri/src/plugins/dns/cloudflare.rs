@@ -25,7 +25,7 @@ impl CloudflareDns {
             return Err("请先在「密钥设置」页配置 Cloudflare API Token".into());
         }
         Ok(Self {
-            client: Client::new(),
+            client: super::http_client(),
             token: token.to_string(),
         })
     }
@@ -320,6 +320,36 @@ fn name_to_rr(name: &str, domain: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// 共享传输不共享凭证，账号切换后仍使用本次授权。
+    #[test]
+    fn pooled_transport_keeps_authorization_per_request() {
+        let first = super::CloudflareDns::new(&super::CloudflareConfig {
+            token: "test-first".into(),
+            credential_ref: None,
+        })
+        .unwrap();
+        let second = super::CloudflareDns::new(&super::CloudflareConfig {
+            token: "test-second".into(),
+            credential_ref: None,
+        })
+        .unwrap();
+        let request = |dns: &super::CloudflareDns| {
+            dns.authorized(dns.client.get(super::API_BASE))
+                .build()
+                .unwrap()
+        };
+        assert_eq!(request(&first).headers()["authorization"], "Bearer test-first");
+        assert_eq!(request(&second).headers()["authorization"], "Bearer test-second");
+        assert_eq!(request(&first).headers()["authorization"], "Bearer test-first");
+        assert!(super::super::http_client()
+            .get(super::API_BASE)
+            .build()
+            .unwrap()
+            .headers()
+            .get("authorization")
+            .is_none());
+    }
+
     use super::{name_to_rr, rr_to_name, ApiEnvelope};
 
     #[test]

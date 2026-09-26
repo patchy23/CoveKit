@@ -13,13 +13,19 @@ pub(crate) mod config;
 #[cfg(test)]
 mod tests;
 use self::config::DnsState;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
+
+/// 仅复用无凭证的传输连接池；授权头和签名仍由每次调用的有效配置生成。
+fn http_client() -> reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new).clone()
+}
 
 /// 插件注册：命令入库 + State
 pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     register_ipc_or_fail();
     transfer::register();
-    // 关闭清理：本插件只有 `DnsState` 里的 PluginDb 句柄，没有会话或子进程需要回收，
+    // 关闭清理：无业务会话或子进程；无凭证 HTTP 池的空闲连接由 reqwest 回收，
     // 故不登记关闭钩子（AR06 方案 §5；新增常驻资源时必须回来补登记）
     // 凭证引用自报：框架删除凭证前据此判断还有哪些平台配置在用
     credential_refs::register_provider();
