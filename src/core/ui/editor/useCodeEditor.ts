@@ -31,7 +31,7 @@ import { createSearchController } from './searchController'
 import { createDocumentTextReader } from './documentText'
 import { documentChange } from './documentChange'
 import { detectLanguage, loadLanguage, PLAIN_TEXT, type LanguageInfo } from './languages'
-import type { EditorDegradeLevel } from './status'
+import { degradeLevelFor, type EditorDegradeLevel } from './status'
 import type { CodeEditorHandle, EditorCursorRange, UseCodeEditorOptions } from './types'
 
 /** 创建编辑器实例管理（须在 setup 作用域内调用） */
@@ -65,7 +65,16 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   let savedSnapshot = ''
   const documentText = createDocumentTextReader()
 
-  const docStats = createDocStatsTracker((level) => applyDegrade(level))
+  let degradeScheduled = false
+  const docStats = createDocStatsTracker(() => {
+    // updateListener 内不可嵌套 dispatch；连续变化只应用当前文档的最终级别。
+    if (degradeScheduled) return
+    degradeScheduled = true
+    queueMicrotask(() => {
+      degradeScheduled = false
+      if (!destroyed) applyDegrade(docStats.level.value)
+    })
+  })
   const search = createSearchController(
     () => view.value,
     () => view.value?.focus(),
@@ -83,6 +92,10 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     const info = resolveLanguage()
     languageInfo.value = info
     const request = ++languageRequest
+    if (!highlightEnabled(docStats.level.value)) {
+      view.value?.dispatch({ effects: languageCompartment.reconfigure([]) })
+      return
+    }
     const injected = options.languageExtension?.()
     // 空数组等价于「未注入」（调用方默认传 []），避免把空语言扩展当成有效配置
     const hasInjected = Array.isArray(injected) ? injected.length > 0 : Boolean(injected)
@@ -94,7 +107,13 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     }
     const extension = await loadLanguage(info, options.filename())
     const current = view.value
-    if (destroyed || !current || request !== languageRequest) return
+    if (
+      destroyed ||
+      !current ||
+      request !== languageRequest ||
+      !highlightEnabled(docStats.level.value)
+    )
+      return
     current.dispatch({ effects: languageCompartment.reconfigure(extension) })
   }
 
@@ -145,8 +164,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
         editableCompartment.reconfigure(editableExtension(readOnlyNow())),
       ],
     })
-    if (highlightEnabled(level)) void applyLanguage()
-    else current.dispatch({ effects: languageCompartment.reconfigure([]) })
+    void applyLanguage()
     if (level === 'huge') options.onError?.('文件超过 5MB，已强制只读')
   }
 
@@ -169,6 +187,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
 
   /** 同一个编辑器内创建新文档的独立 state，复用公共扩展契约。 */
   function createState(document: string): EditorState {
+    const level = degradeLevelFor(document.length)
     return EditorState.create({
       doc: document,
       extensions: [
@@ -190,11 +209,11 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
           placeholder: options.placeholder(),
         }),
         searchExtension(),
-        heavyCompartment.of(heavyExtensionsFor('none', options.mode(), options.foldGutter())),
+        heavyCompartment.of(heavyExtensionsFor(level, options.mode(), options.foldGutter())),
         languageCompartment.of([]),
         auxCompartment.of([]),
         extraCompartment.of(options.extraExtensions?.() ?? []),
-        editableCompartment.of(editableExtension(options.readonly())),
+        editableCompartment.of(editableExtension(options.readonly() || level === 'huge')),
         tabSizeCompartment.of(indentExtension(options.tabSize())),
         wrappingCompartment.of(wrappingExtension(options.lineWrapping())),
         EditorView.domEventHandlers({ contextmenu: handleContextMenu }),

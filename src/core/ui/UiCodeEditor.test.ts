@@ -7,13 +7,15 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RegexTestWorker } from './editor/regexSearch.test.worker'
-import { defineComponent, h, nextTick, ref } from 'vue'
+import { defineComponent, h, nextTick, ref, toRaw } from 'vue'
 import UiCodeEditor from './UiCodeEditor.vue'
 import EditorSearchBar from './editor/EditorSearchBar.vue'
 import { EditorView } from '@codemirror/view'
 import { redo, undo } from '@codemirror/commands'
 import { currentCompletions, startCompletion, closeCompletion } from '@codemirror/autocomplete'
 import { MySQL, sql } from '@codemirror/lang-sql'
+import { language } from '@codemirror/language'
+import * as languages from './editor/languages'
 
 beforeEach(() => vi.stubGlobal('Worker', RegexTestWorker))
 afterEach(() => vi.unstubAllGlobals())
@@ -393,6 +395,53 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
     expect(wrapper.find('.cm-foldGutter').exists()).toBe(false)
     expect(wrapper.text()).toContain('512KB')
     wrapper.unmount()
+  })
+
+  it('大文档首开及缩小沿用既有高亮策略，保持同一个编辑器', async () => {
+    const extension = sql({ dialect: MySQL })
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'x'.repeat(600000), language: 'sql', languageExtension: extension },
+      attachTo: document.body,
+    })
+    try {
+      await settle()
+      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+      expect(view.state.facet(language)).toBeNull()
+      await wrapper.setProps({ modelValue: 'select 1' })
+      await settle()
+      expect(toRaw(view.state.facet(language))).toBe(extension.language)
+      expect(wrapper.find('.cm-foldGutter').exists()).toBe(true)
+      expect(EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)).toBe(view)
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('文档增大后，迟到的语言包不得重新装上高亮', async () => {
+    const extension = sql({ dialect: MySQL })
+    let resolve!: (value: typeof extension) => void
+    const loader = vi.spyOn(languages, 'loadLanguage').mockImplementation(
+      () =>
+        new Promise((done) => {
+          resolve = done
+        })
+    )
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'select 1', language: 'sql' },
+      attachTo: document.body,
+    })
+    try {
+      await settle()
+      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+      await wrapper.setProps({ modelValue: 'x'.repeat(600000) })
+      resolve(extension)
+      await settle()
+      expect(view.state.facet(language)).toBeNull()
+      expect(wrapper.find('.cm-foldGutter').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      loader.mockRestore()
+    }
   })
 })
 
