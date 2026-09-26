@@ -113,6 +113,62 @@ it('保存失败可见且后续写入可恢复，关闭再打开前先等待旧�
   expect(second.api.saveError.value).toBe('')
 })
 
+it('慢保存期间合并中间状态，关闭重开等待最后一次补写', async () => {
+  const first = setup()
+  await flushPromises()
+  mock.save.mockClear()
+  let finishFirst!: () => void
+  let finishLast!: () => void
+  mock.save
+    .mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishFirst = resolve
+      })
+    )
+    .mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        finishLast = resolve
+      })
+    )
+  first.api.setAuto(false)
+  await flushPromises()
+  for (let i = 0; i < 100; i++) first.api.setAuto(i % 2 === 0)
+  expect(mock.save).toHaveBeenCalledTimes(1)
+  first.wrapper.unmount()
+  mock.load.mockClear()
+  setup()
+  await flushPromises()
+  expect(mock.load).not.toHaveBeenCalled()
+  finishFirst()
+  await flushPromises()
+  expect(mock.save).toHaveBeenCalledTimes(2)
+  expect(mock.save.mock.lastCall![0].auto).toBe(false)
+  expect(mock.load).not.toHaveBeenCalled()
+  finishLast()
+  await flushPromises()
+  expect(mock.load).toHaveBeenCalledTimes(1)
+})
+
+it('中间写入失败后仍保存已请求的最新状态，不丢补写意图', async () => {
+  const { api } = setup()
+  await flushPromises()
+  mock.save.mockClear()
+  let reject!: (reason: Error) => void
+  mock.save.mockReturnValueOnce(
+    new Promise<void>((_, no) => {
+      reject = no
+    })
+  )
+  api.setAuto(false)
+  await flushPromises()
+  api.setAuto(true)
+  reject(new Error('临时写入失败'))
+  await flushPromises()
+  expect(mock.save).toHaveBeenCalledTimes(2)
+  expect(mock.save.mock.lastCall![0].auto).toBe(true)
+  expect(api.saveError.value).toBe('')
+})
+
 it('源只有时间元数据变化时保留行顺序，断网后仍能显示过期提示', async () => {
   vi.setSystemTime(new Date('2026-09-18T00:00:00Z'))
   mock.fetch.mockResolvedValue(

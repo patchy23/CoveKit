@@ -25,6 +25,8 @@ export function useNews() {
     timer: ReturnType<typeof setTimeout> | undefined
   let writes = Promise.resolve(),
     request: Promise<void> | undefined
+  let writing = false,
+    writePending = false
   let applyOnFinish = false
   const visible = computed(
     () => visibility.value.active && !visibility.value.covered && !visibility.value.hidden
@@ -40,19 +42,34 @@ export function useNews() {
 
   function persist() {
     if (!allowSave) return Promise.resolve()
-    const current = pending.value ?? snapshot.value
-    const ids = new Set(current?.events.map((item) => item.id))
-    const value: NewsCache = {
-      version: 1,
-      snapshot: current,
-      auto: auto.value,
-      checkedAt: checkedAt.value,
-      read: Object.fromEntries(Object.entries(read.value).filter(([id]) => ids.has(id))),
-    }
+    writePending = true
+    if (writing) return writes
+    writing = true
     writes = cacheWrites
-      .then(() => ipc.save(value))
-      .then(() => {
-        if (alive) saveError.value = ''
+      .then(async () => {
+        try {
+          do {
+            writePending = false
+            // 真正取得写入机会时读取最新状态，慢盘期间不捕获一队完整新闻快照。
+            const current = pending.value ?? snapshot.value
+            const ids = new Set(current?.events.map((item) => item.id))
+            const value: NewsCache = {
+              version: 1,
+              snapshot: current,
+              auto: auto.value,
+              checkedAt: checkedAt.value,
+              read: Object.fromEntries(Object.entries(read.value).filter(([id]) => ids.has(id))),
+            }
+            try {
+              await ipc.save(value)
+              if (alive) saveError.value = ''
+            } catch (e) {
+              if (alive) saveError.value = `保存失败：${String(e)}`
+            }
+          } while (writePending)
+        } finally {
+          writing = false
+        }
       })
       .catch((e) => {
         if (alive) saveError.value = `保存失败：${String(e)}`
