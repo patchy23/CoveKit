@@ -5,14 +5,14 @@ import UiScrollArea from './UiScrollArea.vue'
  *
  * - `mode="split"`：左右两栏对照（只读），变更行高亮 + 中缝连接线；
  * - `mode="unified"`：单栏内联展示变更块，`readonly=false` 时块上出现接受/拒绝控件；
- * - 顶部给出变更统计（新增/删除行数），与 diff 视图同一套算法（`diff.ts`）。
+ * - 顶部按行内容计数给出新增/删除统计（`diff.ts`），视图负责具体变更块的对齐。
  *
- * 语言按文件名识别后异步加载，两份文本共用同一个语言扩展；文本或模式变化时重建视图
- * （diff 视图不是高频输入场景，重建比热重配置更简单可靠）。
+ * 两份文本共用异步加载的语言扩展；语言与左右对照的控件配置就地更新，保留阅读现场。
+ * 文本、形态或内联控件变化仍重建视图，待独立处理增量文档更新。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { MergeView, unifiedMergeView } from '@codemirror/merge'
-import { EditorState, type Extension } from '@codemirror/state'
+import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
 import { syntaxHighlighting } from '@codemirror/language'
 import { codeEditorTheme, codeHighlightStyle } from './editor/theme'
@@ -54,7 +54,7 @@ const props = withDefaults(
 )
 
 const host = ref<HTMLDivElement | null>(null)
-/** 差异统计（纯函数，与视图同源） */
+/** 按行内容计数的差异统计，不代替视图的变更块对齐。 */
 const stats = computed(() => diffStats(props.original, props.modified))
 /** 形态文案 */
 const modeLabel = computed(() => (props.mode === 'unified' ? '内联对比' : '左右对照'))
@@ -63,6 +63,20 @@ let mergeView: MergeView | null = null
 let unifiedView: EditorView | null = null
 /** 创建请求序号：快速切换 props 时只接受最后一次 create 的结果，防止异步交错叠出双视图 */
 let createRequest = 0
+const languageCompartment = new Compartment()
+let languageExtensions: Extension = []
+let rendered: ReturnType<typeof configuration> | null = null
+
+function configuration() {
+  return {
+    original: props.original,
+    modified: props.modified,
+    mode: props.mode,
+    filename: props.filename,
+    language: props.language,
+    readonly: props.readonly,
+  }
+}
 
 /** 卸载视图 */
 function destroy(): void {
@@ -72,37 +86,64 @@ function destroy(): void {
   unifiedView = null
 }
 
-/** 建立视图（语言扩展异步加载完成后再创建，避免闪烁） */
+/** 最新配置就绪后更新视图；加载期间保持现有内容可读。 */
 async function create(): Promise<void> {
   const request = ++createRequest
   const parent = host.value
   if (!parent) return
-  destroy()
-
-  const info = detectLanguage(props.filename ?? '', props.language)
-  const loaded = await loadLanguage(info, props.filename ?? '')
+  const config = configuration()
+  const languageChanged =
+    !rendered || config.filename !== rendered.filename || config.language !== rendered.language
+  const loaded = languageChanged
+    ? await loadLanguage(
+        detectLanguage(config.filename ?? '', config.language),
+        config.filename ?? ''
+      )
+    : languageExtensions
   // 等待期间又来了新请求或组件已卸载：丢弃本次结果，视图归属最新一次请求
   if (request !== createRequest || !host.value) return
-  const languageExtensions: Extension[] = Array.isArray(loaded) ? loaded : [loaded]
+  const rebuild =
+    !rendered ||
+    config.original !== rendered.original ||
+    config.modified !== rendered.modified ||
+    config.mode !== rendered.mode ||
+    (config.mode === 'unified' && config.readonly !== rendered.readonly)
+  if (!rebuild) {
+    if (languageChanged) {
+      const effects = languageCompartment.reconfigure(loaded)
+      mergeView?.a.dispatch({ effects })
+      mergeView?.b.dispatch({ effects })
+      unifiedView?.dispatch({ effects })
+    }
+    if (mergeView && config.readonly !== rendered?.readonly) {
+      mergeView.reconfigure({ revertControls: config.readonly ? undefined : 'a-to-b' })
+    }
+    languageExtensions = loaded
+    rendered = config
+    return
+  }
+  destroy()
+  languageExtensions = loaded
   const shared: Extension[] = [
     codeEditorTheme,
     syntaxHighlighting(codeHighlightStyle),
     EditorView.editable.of(false),
-    ...languageExtensions,
+    languageCompartment.of(loaded),
   ]
   // 视图可能在建好之前就被卸载（快速切换 props）
   if (request !== createRequest || !host.value) return
 
-  if (props.mode === 'unified') {
+  rendered = config
+  if (config.mode === 'unified') {
     unifiedView = new EditorView({
       parent,
       state: EditorState.create({
-        doc: props.modified,
+        doc: config.modified,
         extensions: [
           ...shared,
           unifiedMergeView({
-            original: props.original,
-            mergeControls: !props.readonly,
+            original: config.original,
+            mergeControls: !config.readonly,
             collapseUnchanged: { margin: 3, minSize: 4 },
           }),
         ],
@@ -113,17 +154,22 @@ async function create(): Promise<void> {
 
   mergeView = new MergeView({
     parent,
-    a: { doc: props.original, extensions: [...shared, lineNumbers()] },
-    b: { doc: props.modified, extensions: [...shared, lineNumbers()] },
+    a: { doc: config.original, extensions: [...shared, lineNumbers()] },
+    b: { doc: config.modified, extensions: [...shared, lineNumbers()] },
     highlightChanges: true,
     gutter: true,
     collapseUnchanged: { margin: 3, minSize: 4 },
-    revertControls: props.readonly ? undefined : 'a-to-b',
+    revertControls: config.readonly ? undefined : 'a-to-b',
   })
 }
 
 onMounted(() => void create())
-onBeforeUnmount(destroy)
+onBeforeUnmount(() => {
+  createRequest++
+  destroy()
+  rendered = null
+  languageExtensions = []
+})
 
 watch(
   () => [
