@@ -7,7 +7,6 @@
 //! 首连不再静默记录 TOFU，指纹变更必须经用户明确决定（仅本次 / 保存 / 替换 / 取消）。
 
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use tokio::io::copy_bidirectional;
 
@@ -18,6 +17,7 @@ use tokio::sync::oneshot;
 use crate::plugins::ssh::conn::HostKeyState;
 use crate::plugins::ssh::host_keys;
 use crate::plugins::ssh::models::{HostKeyDecision, HostKeyVerifyRequest, SshConnectError};
+use crate::plugins::ssh::tunnel::forward::ConnectionGuard;
 use crate::plugins::ssh::tunnel::ForwardTargets;
 
 /// 校验阶段存储失败的错误码常量
@@ -222,26 +222,47 @@ impl client::Handler for SshHandler {
     ) -> Result<(), Self::Error> {
         let target = self.forward_targets.lock().ok().and_then(|map| {
             map.get(&(connected_address.to_string(), connected_port as u16))
-                .map(|t| (t.host.clone(), t.port, t.counter.clone()))
+                .filter(|t| !*t.cancel.borrow())
+                .map(|t| {
+                    (
+                        t.host.clone(),
+                        t.port,
+                        ConnectionGuard::new(Arc::clone(&t.counter)),
+                        t.cancel.clone(),
+                    )
+                })
         });
-        let Some((host, port, counter)) = target else {
+        let Some((host, port, connection, mut cancel)) = target else {
             return Ok(());
         };
-        reply.accept().await;
-        counter.fetch_add(1, Ordering::Relaxed);
         let mut stream = channel.into_stream();
+        reply.accept().await;
         tauri::async_runtime::spawn(async move {
+            let _connection = connection;
+            if *cancel.borrow() {
+                return;
+            }
             let pipe = async {
-                let mut tcp = tokio::net::TcpStream::connect((host.as_str(), port))
-                    .await
-                    .map_err(|e| e.to_string())?;
+                let mut tcp = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    tokio::net::TcpStream::connect((host.as_str(), port)),
+                )
+                .await
+                .map_err(|_| "反向转发连接目标超时".to_string())?
+                .map_err(|e| e.to_string())?;
                 copy_bidirectional(&mut stream, &mut tcp)
                     .await
                     .map_err(|e| e.to_string())?;
                 Ok::<(), String>(())
             };
-            let _ = pipe.await;
-            counter.fetch_sub(1, Ordering::Relaxed);
+            tokio::select! {
+                _ = cancel.changed() => {}
+                result = pipe => {
+                    if result.is_err() {
+                        log::debug!("反向转发连接结束或建立失败");
+                    }
+                }
+            }
         });
         Ok(())
     }

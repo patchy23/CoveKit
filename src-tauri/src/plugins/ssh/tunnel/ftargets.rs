@@ -13,6 +13,8 @@ pub struct ForwardTarget {
     pub(crate) port: u16,
     /// 活动连接数（与 TunnelHandle 共享同一计数器）
     pub(crate) counter: Arc<AtomicU64>,
+    /// 与隧道共享停止信号，覆盖已接受的反向连接。
+    pub(crate) cancel: tokio::sync::watch::Receiver<bool>,
 }
 
 /// -R 目标表：(监听 host, 监听 port) → 目标

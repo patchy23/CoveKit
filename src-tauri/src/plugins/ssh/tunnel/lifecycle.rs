@@ -232,8 +232,13 @@ async fn ssh_tunnel_start_inner(
                 )
             })?;
             handle.set_status(app, TunnelStatus::Running, None);
-            let task =
-                spawn_dynamic_forward(handle.clone(), conn.session.clone(), listener, cancel_rx);
+            let task = spawn_dynamic_forward(
+                app.clone(),
+                handle.clone(),
+                conn.session.clone(),
+                listener,
+                cancel_rx,
+            );
             if let Ok(mut slot) = handle.listener.lock() {
                 *slot = Some(task);
             }
@@ -267,6 +272,7 @@ async fn ssh_tunnel_start_inner(
                         host: target_host,
                         port: target_port,
                         counter: handle.connections.clone(),
+                        cancel: cancel_rx,
                     },
                 );
             }
@@ -331,7 +337,7 @@ fn session_for_handle(ssh_state: &SshState, handle: &Arc<TunnelHandle>) -> Optio
     })
 }
 
-/// 停止单条隧道（cancel 信号 + 远程转发注销 + abort 监听任务）
+/// 停止单条隧道：先取消，再有界等待监听与子连接；远端注销未确认时保留错误状态。
 async fn stop_handle_with_session(
     app: &AppHandle,
     session_info: Option<StopSession>,
@@ -342,26 +348,54 @@ async fn stop_handle_with_session(
             let _ = tx.send(true);
         }
     }
-    if let Ok(mut slot) = handle.listener.lock() {
-        if let Some(task) = slot.take() {
+    let listener = handle.listener.lock().ok().and_then(|mut slot| slot.take());
+    if let Some(mut task) = listener {
+        if tokio::time::timeout(std::time::Duration::from_secs(2), &mut task)
+            .await
+            .is_err()
+        {
             task.abort();
+            log::warn!("隧道监听退出超时，已请求取消");
         }
     }
     if handle.config.tunnel_type == TunnelType::Remote {
         if let Some(info) = session_info {
-            let _ = info
-                .session
-                .cancel_tcpip_forward(
-                    handle.config.listen_host.as_str(),
-                    u32::from(handle.config.listen_port),
-                )
-                .await;
             if let Ok(mut targets) = info.forward_targets.lock() {
                 targets.remove(&(handle.config.listen_host.clone(), handle.config.listen_port));
             }
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                info.session.cancel_tcpip_forward(
+                    handle.config.listen_host.as_str(),
+                    u32::from(handle.config.listen_port),
+                ),
+            )
+            .await;
+            if !matches!(result, Ok(Ok(_))) {
+                handle.set_status(
+                    app,
+                    TunnelStatus::Error,
+                    Some("远端取消监听未确认，本地转发已停止".into()),
+                );
+                return;
+            }
         }
     }
-    handle.set_status(app, TunnelStatus::Stopped, None);
+    let drained = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while handle.connections.load(Ordering::Relaxed) != 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await;
+    if drained.is_err() {
+        handle.set_status(
+            app,
+            TunnelStatus::Error,
+            Some("隧道子连接尚未完成清理".into()),
+        );
+    } else {
+        handle.set_status(app, TunnelStatus::Stopped, None);
+    }
 }
 
 /* ── 生命周期联动（conn.rs 调用） ── */
