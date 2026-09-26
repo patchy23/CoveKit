@@ -54,6 +54,8 @@ pub async fn ssh_file_upload(
     let log_started = std::time::Instant::now();
     let result: Result<FileTransferProgress, String> = async {
     let transfer_id = resource_id("up");
+    // 失效连接不启动大目录扫描；扫描后仍重新取句柄，以使用当前连接代次。
+    get_session(&ssh_state, &connection_id)?;
     // 本地目录递归遍历是同步阻塞 IO，移到 spawn_blocking 不卡 tokio worker
     let (scan_local, scan_remote) = (local_path.clone(), remote_path.clone());
     let entries = tokio::task::spawn_blocking(move || collect_upload_entries(&scan_local, &scan_remote))
@@ -88,6 +90,8 @@ pub async fn ssh_file_upload(
             let sftp = russh_sftp::client::SftpSession::new(stream)
                 .await
                 .map_err(|e| e.to_string())?;
+            // 同一任务逐文件传输，缓冲复用；只发送本轮读到的前 n 字节。
+            let mut buf = vec![0u8; 64 * 1024];
             for entry in entries {
                 if cancel.is_cancelled() {
                     return Err("已取消".into());
@@ -138,7 +142,6 @@ pub async fn ssh_file_upload(
                     let mut local = tokio::fs::File::open(&entry.local_path)
                         .await
                         .map_err(|e| e.to_string())?;
-                    let mut buf = vec![0u8; 64 * 1024];
                     loop {
                         if cancel.is_cancelled() {
                             return Err("已取消".into());
@@ -445,6 +448,7 @@ pub async fn ssh_file_download_recursive(
                 result = collect_remote_entries(&sftp, &rpath, Path::new(&lpath)) => result?,
             };
             total = entries.iter().map(|e| e.size).sum();
+            let mut buf = vec![0u8; 64 * 1024];
             for entry in entries {
                 if cancel.is_cancelled() {
                     return Err("已取消".into());
@@ -481,7 +485,6 @@ pub async fn ssh_file_download_recursive(
                     let mut local = tokio::fs::File::create(&temp_path)
                         .await
                         .map_err(|e| e.to_string())?;
-                    let mut buf = vec![0u8; 64 * 1024];
                     loop {
                         if cancel.is_cancelled() {
                             return Err("已取消".into());

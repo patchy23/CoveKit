@@ -24,20 +24,25 @@ pub async fn ssh_edit_open(
         .metadata(&remote_path)
         .await
         .map_err(|e| format!("读取元数据失败: {e}"))?;
+    if meta.size.unwrap_or(0) > MAX_EDIT_BYTES {
+        return Err("远程编辑仅支持不超过 10 MiB 的文件".into());
+    }
     let file = sftp
         .open(&remote_path)
         .await
         .map_err(|e| format!("打开文件失败: {e}"))?;
-    if meta.size.unwrap_or(0) > MAX_EDIT_BYTES {
-        return Err("远程编辑仅支持不超过 10 MiB 的文件".into());
-    }
-    let mut buf = Vec::new();
+    // 已验证的长度用于减少扩容搬移，实际读取仍复核上限；额外一字节用于越界探测。
+    let mut buf = Vec::with_capacity(meta.size.unwrap_or(0) as usize + 1);
     file.take(MAX_EDIT_BYTES + 1)
         .read_to_end(&mut buf)
         .await
         .map_err(|e| format!("读取内容失败: {e}"))?;
     if buf.len() as u64 > MAX_EDIT_BYTES {
         return Err("远程编辑仅支持不超过 10 MiB 的文件".into());
+    }
+    // 文件可能在 stat 后缩短；不让返回的短文本长期持有虚高元数据预留的容量。
+    if buf.capacity() > buf.len().saturating_mul(2) {
+        buf.shrink_to_fit();
     }
     let size = meta.size.unwrap_or(buf.len() as u64);
     // 编辑器仅支持 UTF-8；拒绝有损解码，避免保存时静默破坏原文件字节。
@@ -151,13 +156,16 @@ async fn read_remote_text(
         .open(path)
         .await
         .map_err(|e| format!("打开文件失败: {e}"))?;
-    let mut buf = Vec::new();
+    let mut buf = Vec::with_capacity(meta.size.unwrap_or(0) as usize + 1);
     file.take(MAX_EDIT_BYTES + 1)
         .read_to_end(&mut buf)
         .await
         .map_err(|e| format!("读取内容失败: {e}"))?;
     if buf.len() as u64 > MAX_EDIT_BYTES {
         return Err("文件超过对比上限".into());
+    }
+    if buf.capacity() > buf.len().saturating_mul(2) {
+        buf.shrink_to_fit();
     }
     String::from_utf8(buf).map_err(|_| "远端内容不是有效 UTF-8 文本".to_string())
 }
