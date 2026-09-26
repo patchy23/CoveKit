@@ -58,21 +58,23 @@ pub(crate) fn execute_sqlite(
                 let mut count = 0;
                 while let Some(row) = rows.next().map_err(|e| format!("读取结果失败: {e}"))? {
                     count += 1;
-                    let mut values = Vec::with_capacity(result.columns.len());
+                    let mut values = budget.row();
                     for i in 0..result.columns.len() {
                         use rusqlite::types::ValueRef;
-                        values.push(match row.get_ref(i).map_err(|e| e.to_string())? {
-                            ValueRef::Null => DbValue::null(),
-                            ValueRef::Integer(v) => DbValue::text("integer", v.to_string()),
-                            ValueRef::Real(v) => DbValue::text("float", v.to_string()),
+                        match row.get_ref(i).map_err(|e| e.to_string())? {
+                            ValueRef::Null => values.value(DbValue::null()),
+                            ValueRef::Integer(v) => {
+                                values.value(DbValue::text("integer", v.to_string()));
+                            }
+                            ValueRef::Real(v) => values.value(DbValue::text("float", v.to_string())),
                             ValueRef::Text(v) => match std::str::from_utf8(v) {
-                                Ok(text) => DbValue::text("text", text.to_string()),
-                                Err(_) => DbValue::binary(v),
+                                Ok(text) => values.text("text", text),
+                                Err(_) => values.binary(v),
                             },
-                            ValueRef::Blob(v) => DbValue::binary(v),
-                        });
+                            ValueRef::Blob(v) => values.binary(v),
+                        }
                     }
-                    budget.push(&mut result, values);
+                    budget.finish_row(&mut result, values);
                 }
                 result.rows_affected = if readonly { count } else { guard.changes() };
             }

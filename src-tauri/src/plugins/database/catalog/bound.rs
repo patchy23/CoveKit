@@ -102,18 +102,17 @@ impl BoundConnection {
                     .collect();
                 result.is_query = !result.columns.is_empty();
                 while let Some(row) = query.next().await.map_err(|e| e.to_string())? {
-                    let mut cells = Vec::with_capacity(row.len());
-                    for i in 0..row.len() {
-                        let value = row
-                            .get::<mysql_async::Value, usize>(i)
-                            .ok_or("结果缺少单元格")?;
-                        cells.push(crate::plugins::database::drivers::mysql::mysql_value(
+                    let mut cells = budget.row();
+                    for (i, value) in row.unwrap_raw().into_iter().enumerate() {
+                        let value = value.ok_or("结果缺少单元格")?;
+                        crate::plugins::database::drivers::mysql::append_mysql_value(
+                            &mut cells,
                             value,
                             binary[i],
                             &result.column_types[i],
-                        ));
+                        );
                     }
-                    budget.push(&mut result, cells);
+                    budget.finish_row(&mut result, cells);
                 }
                 result.rows_affected = query.affected_rows();
                 query.drop_result().await.map_err(|e| e.to_string())?;
@@ -137,19 +136,17 @@ impl BoundConnection {
                         .map_err(|e| e.to_string())?;
                     futures_util::pin_mut!(stream);
                     while let Some(row) = stream.try_next().await.map_err(|e| e.to_string())? {
-                        let mut cells = Vec::new();
+                        let mut cells = budget.row();
                         for i in 0..row.len() {
-                            cells.push(
-                                match row
-                                    .try_get::<_, Option<String>>(i)
-                                    .map_err(|e| e.to_string())?
-                                {
-                                    Some(value) => DbValue::text("text", value),
-                                    None => DbValue::null(),
-                                },
-                            );
+                            match row
+                                .try_get::<_, Option<&str>>(i)
+                                .map_err(|e| e.to_string())?
+                            {
+                                Some(value) => cells.text("text", value),
+                                None => cells.value(DbValue::null()),
+                            }
                         }
-                        budget.push(&mut result, cells);
+                        budget.finish_row(&mut result, cells);
                     }
                 } else {
                     result.rows_affected = client
@@ -180,23 +177,26 @@ impl BoundConnection {
                             .query(rusqlite::params_from_iter(values))
                             .map_err(|e| e.to_string())?;
                         while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-                            let mut cells = Vec::new();
+                            let mut cells = budget.row();
                             for i in 0..result.columns.len() {
                                 use rusqlite::types::ValueRef;
-                                cells.push(match row.get_ref(i).map_err(|e| e.to_string())? {
-                                    ValueRef::Null => DbValue::null(),
-                                    ValueRef::Integer(n) => DbValue::text("integer", n.to_string()),
-                                    ValueRef::Real(n) => DbValue::text("float", n.to_string()),
-                                    ValueRef::Text(s) => DbValue::text(
+                                match row.get_ref(i).map_err(|e| e.to_string())? {
+                                    ValueRef::Null => cells.value(DbValue::null()),
+                                    ValueRef::Integer(n) => {
+                                        cells.value(DbValue::text("integer", n.to_string()));
+                                    }
+                                    ValueRef::Real(n) => {
+                                        cells.value(DbValue::text("float", n.to_string()));
+                                    }
+                                    ValueRef::Text(s) => cells.text(
                                         "text",
                                         std::str::from_utf8(s)
-                                            .map_err(|e| e.to_string())?
-                                            .to_string(),
+                                            .map_err(|e| e.to_string())?,
                                     ),
-                                    ValueRef::Blob(s) => DbValue::binary(s),
-                                });
+                                    ValueRef::Blob(s) => cells.binary(s),
+                                }
                             }
-                            budget.push(&mut result, cells);
+                            budget.finish_row(&mut result, cells);
                         }
                     } else {
                         result.rows_affected = statement

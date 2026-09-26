@@ -105,7 +105,7 @@ pub(crate) async fn execute_postgres_client(
                         result.is_query = true;
                     }
                     tokio_postgres::SimpleQueryMessage::Row(row) => {
-                        let mut values = Vec::with_capacity(row.len());
+                        let mut values = budget.row();
                         for i in 0..row.len() {
                             let value = row.try_get(i).map_err(pg_error)?;
                             let native = result
@@ -113,8 +113,8 @@ pub(crate) async fn execute_postgres_client(
                                 .get(i)
                                 .map(String::as_str)
                                 .unwrap_or("text");
-                            values.push(match value {
-                                None => DbValue::null(),
+                            match value {
+                                None => values.value(DbValue::null()),
                                 Some(value) => {
                                     let kind = match native {
                                         "int2" | "int4" | "int8" | "oid" => "integer",
@@ -128,17 +128,21 @@ pub(crate) async fn execute_postgres_client(
                                         _ => "text",
                                     };
                                     let text = if kind == "binary" {
-                                        value.strip_prefix("\\x").unwrap_or(value).to_string()
+                                        value.strip_prefix("\\x").unwrap_or(value)
                                     } else if kind == "boolean" {
-                                        (value == "t").to_string()
+                                        if value == "t" {
+                                            "true"
+                                        } else {
+                                            "false"
+                                        }
                                     } else {
-                                        value.to_string()
+                                        value
                                     };
-                                    DbValue::text(kind, text)
+                                    values.text(kind, text);
                                 }
-                            });
+                            }
                         }
-                        budget.push(&mut result, values);
+                        budget.finish_row(&mut result, values);
                     }
                     tokio_postgres::SimpleQueryMessage::CommandComplete(count) => {
                         result.rows_affected = count

@@ -73,24 +73,24 @@ fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryRe
         if row.len() != result.columns.len() {
             return Err("DB_AGENT_PROTOCOL: 行列数不一致".into());
         }
-        let mut cells = Vec::with_capacity(row.len());
+        let mut cells = budget.row();
         for (i, value) in row.iter().enumerate() {
             let native = result
                 .column_types
                 .get(i)
                 .map(|s| s.to_uppercase())
                 .unwrap_or_default();
-            let cell = match value {
-                serde_json::Value::Null => DbValue::null(),
-                serde_json::Value::Bool(v) => DbValue::text("boolean", v.to_string()),
-                serde_json::Value::Number(v) => DbValue::text(
+            match value {
+                serde_json::Value::Null => cells.value(DbValue::null()),
+                serde_json::Value::Bool(v) => cells.value(DbValue::text("boolean", v.to_string())),
+                serde_json::Value::Number(v) => cells.value(DbValue::text(
                     if v.is_i64() || v.is_u64() {
                         "integer"
                     } else {
                         "decimal"
                     },
                     v.to_string(),
-                ),
+                )),
                 serde_json::Value::String(text) => {
                     let kind = if ["RAW", "VARRAW", "LONG RAW", "LONGRAW", "BLOB", "BFILE"]
                         .contains(&native.as_str())
@@ -108,24 +108,37 @@ fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryRe
                     };
                     let text = if kind == "binary" {
                         let hex = text.strip_prefix("0x").unwrap_or(text);
-                        hex::decode(hex).map_err(|_| "DB_AGENT_PROTOCOL: 二进制值不是十六进制")?;
-                        hex.to_string()
+                        // 验证原有十六进制语义，不为验证临时解码整块二进制。
+                        if hex.len() % 2 != 0 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                            return Err("DB_AGENT_PROTOCOL: 二进制值不是十六进制".into());
+                        }
+                        hex
                     } else {
-                        text.clone()
+                        text.as_str()
                     };
-                    DbValue::text(kind, text)
+                    cells.text(kind, text);
                 }
-                other => DbValue::text("json", other.to_string()),
-            };
-            cells.push(cell);
+                other => cells.value(DbValue::text("json", other.to_string())),
+            }
         }
-        budget.push(&mut result, cells);
+        budget.finish_row(&mut result, cells);
     }
     Ok(result)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn raw_validation_still_rejects_invalid_fields_after_budget_exhaustion() {
+        for invalid in ["0x0", "0xgg", "0x你好"] {
+            let mut budget = ResultBudget::new(1);
+            let result = decode(serde_json::json!({
+                "columns": ["raw"], "column_types": ["RAW"],
+                "rows": [["0x00"], [invalid]]
+            }), &mut budget);
+            assert!(result.is_err());
+        }
+    }
     #[test]
     fn agent_contract_preserves_empty_headers_null_and_raw() {
         let mut budget = ResultBudget::new(10);

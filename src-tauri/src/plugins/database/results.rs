@@ -8,7 +8,55 @@ pub(crate) struct ResultBudget {
     max_rows: u64,
 }
 
+/// 行转换沿用结果预算，超出后释放已转换列，避免先复制或十六进制展开整行再丢弃。
+pub(crate) struct ResultRow {
+    remaining: usize,
+    values: Option<Vec<DbValue>>,
+}
+
+impl ResultRow {
+    fn append(&mut self, length: usize, convert: impl FnOnce() -> DbValue) {
+        let cost = length.saturating_mul(2).saturating_add(128);
+        if cost > self.remaining {
+            self.values = None;
+        } else if let Some(values) = &mut self.values {
+            self.remaining -= cost;
+            values.push(convert());
+        }
+    }
+
+    /// 借用驱动的文本，确认可保存后才复制。
+    pub(crate) fn text(&mut self, kind: &str, text: &str) {
+        self.append(text.len(), || DbValue::text(kind, text.to_string()));
+    }
+
+    /// 二进制预算按原有十六进制传输长度计算，不分配被丢弃的编码缓冲。
+    pub(crate) fn binary(&mut self, bytes: &[u8]) {
+        self.append(bytes.len().saturating_mul(2), || DbValue::binary(bytes));
+    }
+
+    /// 已拥有的小标量直接移动；大字段必须使用借用入口或预先核对长度。
+    pub(crate) fn value(&mut self, value: DbValue) {
+        self.append(value.value.as_ref().map_or(0, String::len), || value);
+    }
+}
+
 impl ResultBudget {
+    /// 行被拒绝不消耗预算，后续较小行仍按原有语义尝试保存。
+    pub(crate) fn row(&self) -> ResultRow {
+        ResultRow {
+            remaining: (8 * 1024 * 1024usize).saturating_sub(self.bytes),
+            values: (self.rows < self.max_rows).then(Vec::new),
+        }
+    }
+
+    /// 消费惰性转换结果；拒绝的行仍由驱动继续读取协议和影响行数。
+    pub(crate) fn finish_row(&mut self, result: &mut QueryResult, row: ResultRow) {
+        match row.values {
+            Some(values) => self.push(result, values),
+            None => result.truncated = true,
+        }
+    }
     /// 行数限制同时作用于整个脚本，防止多结果规避预算。
     pub(crate) fn new(max_rows: u64) -> Self {
         Self {
@@ -29,7 +77,7 @@ impl ResultBudget {
                     .saturating_mul(2)
                     .saturating_add(128)
             })
-            .sum::<usize>();
+            .fold(0usize, usize::saturating_add);
         if self.rows >= self.max_rows || self.bytes.saturating_add(bytes) > 8 * 1024 * 1024 {
             result.truncated = true;
             return;
@@ -126,6 +174,39 @@ impl QueryResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rejected_rows_never_convert_and_do_not_exhaust_later_small_rows() {
+        let mut budget = ResultBudget::new(2);
+        let mut result = QueryResult::empty();
+        let mut row = budget.row();
+        row.append(usize::MAX, || panic!("超预算列不应转换"));
+        row.append(1, || panic!("被拒绝行的后续列不应转换"));
+        budget.finish_row(&mut result, row);
+        assert!(result.truncated);
+        assert!(result.values.is_empty());
+        let mut row = budget.row();
+        row.text("text", "仍可保存");
+        row.binary(&[0x00, 0xff]);
+        budget.finish_row(&mut result, row);
+        assert_eq!(result.rows, [vec!["仍可保存", "0x00ff"]]);
+    }
+
+    #[test]
+    fn exact_budget_and_row_limit_keep_original_boundary() {
+        let mut budget = ResultBudget::new(1);
+        let mut result = QueryResult::empty();
+        let mut row = budget.row();
+        row.text("text", &"x".repeat((8 * 1024 * 1024 - 128) / 2));
+        budget.finish_row(&mut result, row);
+        assert_eq!(result.values.len(), 1);
+        assert!(!result.truncated);
+        let mut row = budget.row();
+        row.append(0, || panic!("行数耗尽后不应转换"));
+        budget.finish_row(&mut result, row);
+        assert!(result.truncated);
+        assert_eq!(result.values.len(), 1);
+    }
 
     #[test]
     fn script_transfers_final_rows_once_and_points_to_the_full_statement() {

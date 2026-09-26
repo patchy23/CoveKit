@@ -100,17 +100,17 @@ pub(crate) async fn execute_mysql_conn(
                     .map_err(|e| format!("MySQL 读取结果: {e}"))?
                 {
                     count += 1;
-                    let values = (0..row.len())
-                        .map(|i| {
-                            let value = row.get::<MysqlValue, usize>(i).unwrap_or(MysqlValue::NULL);
-                            mysql_value(
-                                value,
-                                binary.get(i).copied().unwrap_or(false),
-                                result.column_types.get(i).map(String::as_str).unwrap_or(""),
-                            )
-                        })
-                        .collect();
-                    budget.push(&mut result, values);
+                    let mut values = budget.row();
+                    for (i, value) in row.unwrap_raw().into_iter().enumerate() {
+                        let value = value.ok_or("MySQL 结果缺少单元格")?;
+                        append_mysql_value(
+                            &mut values,
+                            value,
+                            binary.get(i).copied().unwrap_or(false),
+                            result.column_types.get(i).map(String::as_str).unwrap_or(""),
+                        );
+                    }
+                    budget.finish_row(&mut result, values);
                 }
                 result.rows_affected = if result.is_query { count } else { affected };
                 if outcomes.len() >= 500 {
@@ -157,24 +157,10 @@ pub(crate) fn mysql_value(
         MysqlValue::Double(v) => DbValue::text("float", v.to_string()),
         MysqlValue::Bytes(bytes) => {
             // 文本协议将数值也编码为 Bytes；先看类型，再判断 binary charset。
-            let kind = if native.contains("DECIMAL") {
-                "decimal"
-            } else if ["TINY", "SHORT", "LONG", "INT24", "YEAR"]
-                .iter()
-                .any(|t| native.contains(t))
-            {
-                "integer"
-            } else if native.contains("FLOAT") || native.contains("DOUBLE") {
-                "float"
-            } else if native.contains("JSON") {
-                "json"
-            } else if ["DATE", "TIME"].iter().any(|t| native.contains(t)) {
-                "temporal"
-            } else if binary {
+            let kind = mysql_bytes_kind(binary, native);
+            if kind == "binary" {
                 return DbValue::binary(&bytes);
-            } else {
-                "text"
-            };
+            }
             match String::from_utf8(bytes) {
                 Ok(text) => DbValue::text(kind, text),
                 Err(error) => DbValue::binary(error.as_bytes()),
@@ -184,6 +170,52 @@ pub(crate) fn mysql_value(
             "temporal",
             temporal.as_sql(false).trim_matches('\'').to_string(),
         ),
+    }
+}
+
+fn mysql_bytes_kind(binary: bool, native: &str) -> &'static str {
+    if native.contains("DECIMAL") {
+        "decimal"
+    } else if ["TINY", "SHORT", "LONG", "INT24", "YEAR"]
+        .iter()
+        .any(|t| native.contains(t))
+    {
+        "integer"
+    } else if native.contains("FLOAT") || native.contains("DOUBLE") {
+        "float"
+    } else if native.contains("JSON") {
+        "json"
+    } else if ["DATE", "TIME"].iter().any(|t| native.contains(t)) {
+        "temporal"
+    } else if binary {
+        "binary"
+    } else {
+        "text"
+    }
+}
+
+/// 查询路径移动驱动字段；仅在预算允许时展开二进制，导出路径仍使用完整值转换。
+pub(crate) fn append_mysql_value(
+    row: &mut crate::plugins::database::results::ResultRow,
+    value: MysqlValue,
+    binary: bool,
+    native: &str,
+) {
+    match value {
+        MysqlValue::Bytes(bytes) => {
+            let kind = mysql_bytes_kind(binary, native);
+            if kind == "binary" {
+                row.binary(&bytes);
+            } else {
+                match String::from_utf8(bytes) {
+                    Ok(text) => {
+                        row.value(crate::plugins::database::models::DbValue::text(kind, text));
+                    }
+                    Err(error) => row.binary(error.as_bytes()),
+                }
+            }
+        }
+        scalar => row.value(mysql_value(scalar, binary, native)),
     }
 }
 
@@ -215,4 +247,32 @@ pub(crate) async fn query_strings_mysql(
     conn.query::<String, _>(sql)
         .await
         .map_err(|e| format!("查询失败: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plugins::database::results::ResultBudget;
+
+    #[test]
+    fn budget_conversion_matches_full_conversion_without_losing_precision() {
+        for (value, binary, native) in [
+            (MysqlValue::Bytes(b"12345678901234567890.01".to_vec()), true, "NEWDECIMAL"),
+            (MysqlValue::Bytes(vec![0, 255]), true, "BLOB"),
+            (MysqlValue::Bytes(vec![255]), false, "VAR_STRING"),
+            (MysqlValue::Bytes("中文".as_bytes().to_vec()), false, "VAR_STRING"),
+            (MysqlValue::UInt(u64::MAX), true, "LONGLONG"),
+            (MysqlValue::NULL, false, "VAR_STRING"),
+        ] {
+            let expected = mysql_value(value.clone(), binary, native);
+            let mut budget = ResultBudget::new(1);
+            let mut row = budget.row();
+            append_mysql_value(&mut row, value, binary, native);
+            let mut result = QueryResult::empty();
+            budget.finish_row(&mut result, row);
+            assert_eq!(result.values[0][0].kind, expected.kind);
+            assert_eq!(result.values[0][0].value, expected.value);
+            assert_eq!(result.rows[0][0], expected.display());
+        }
+    }
 }
