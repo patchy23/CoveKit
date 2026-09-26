@@ -3,7 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { computed, defineComponent, ref } from 'vue'
 import { useNativeEditor } from './useNativeEditor'
 import { collectToolBlockers, resetToolOwnersForTest } from '@/core/lifecycle'
-import type { RemoteEditor, EditorViewHandle } from './snapshot'
+import { editorUpdate, type RemoteEditor, type EditorViewHandle } from './snapshot'
 import type { EditorInitial, EditorSnapshot } from './protocol'
 const env = vi.hoisted(() => ({
   operation: vi.fn(),
@@ -125,4 +125,27 @@ it('关闭协商先读取子窗口最后草稿；意外销毁恢复影子内容'
   await flushPromises()
   expect(editor.visible.value).toBe(true)
   expect(editor.error.value).toContain('意外关闭')
+})
+
+it('主窗口拒绝失配字段增量，完整恢复后忽略过期消息', async () => {
+  const { editor, native } = setup()
+  await native.detach()
+  const { snapshot: initial } = (await env.receive('ready')) as EditorInitial
+  const next: EditorSnapshot = {
+    ...initial,
+    sequence: initial.sequence + 1,
+    documents: initial.documents.map((doc) => ({ ...doc, content: '新草稿', saving: true })),
+  }
+  await env.receive('patch', editorUpdate(next, initial))
+  expect(editor.documents.value[0]).toMatchObject({
+    content: '新草稿',
+    saved: 'original',
+    saving: true,
+  })
+  const latest = { ...next, sequence: next.sequence + 1, documents: initial.documents }
+  await expect(env.receive('patch', editorUpdate(latest, initial))).rejects.toThrow('基线')
+  expect(editor.documents.value[0].content).toBe('新草稿')
+  await env.receive('patch', editorUpdate(latest))
+  await env.receive('patch', editorUpdate(next, initial))
+  expect(editor.documents.value[0].content).toBe('draft')
 })

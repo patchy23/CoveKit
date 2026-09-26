@@ -34,8 +34,8 @@ let sequence = 0,
 function error(value: unknown) {
   failure.value = String(value)
 }
-function snapshot() {
-  return captureEditor(editor, ++sequence, view.value?.captureLayout())
+function snapshot(withLayout = true) {
+  return captureEditor(editor, ++sequence, withLayout ? view.value?.captureLayout() : undefined)
 }
 function schedule() {
   changed = true
@@ -45,9 +45,15 @@ function schedule() {
     if (!channel || moving.value || disposed) return
     sending = true
     changed = false
-    const current = snapshot()
+    const current = snapshot(false)
     void channel
       .request('patch', editorUpdate(current, acknowledged))
+      .catch(async (failure) => {
+        acknowledged = undefined
+        if (!channel || disposed || moving.value) throw failure
+        // 回执丢失也可能已应用，使用相同序号的完整快照恢复；最多补发一次。
+        await channel.request('patch', editorUpdate(current))
+      })
       .then(() => {
         acknowledged = current
       })

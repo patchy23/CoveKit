@@ -32,11 +32,18 @@ export interface EditorEnvelope {
   error?: string
 }
 /** 过期定时同步不能覆盖移回时的最终快照。 */
-export function acceptSnapshot(current: number, next: EditorSnapshot) {
+export function acceptSnapshot(current: number, next: Pick<EditorSnapshot, 'sequence'>) {
   return Number.isSafeInteger(next.sequence) && next.sequence > current
 }
 
-/** 平时只同步改变的文档；完整快照仅用于握手与交接。 */
-export interface EditorUpdate extends Omit<EditorSnapshot, 'layout'> {
+type DocumentFields = Omit<RemoteDocument, 'id'>
+export type EditorDocumentUpdate =
+  | { id: string; document: RemoteDocument }
+  | { id: string; changes: Partial<DocumentFields>; cleared: (keyof DocumentFields)[] }
+
+/** 平时只同步变化字段；新文档、失步恢复和交接保留完整快照。 */
+export interface EditorUpdate extends Omit<EditorSnapshot, 'layout' | 'documents'> {
+  baseSequence?: number
+  documents: EditorDocumentUpdate[]
   ids: string[]
 }

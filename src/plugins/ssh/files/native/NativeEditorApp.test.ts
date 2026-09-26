@@ -1,12 +1,13 @@
 import { mount, enableAutoUnmount, flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createPinia } from 'pinia'
+import { i18n } from '@/i18n'
 import TitleBar from '@/features/ui/TitleBar.vue'
 import { UiTree } from '@/core/ui'
 import NativeEditorApp from './NativeEditorApp.vue'
 import RemoteEditorWorkspace from '../RemoteEditorWorkspace.vue'
 import { UiModal } from '@/core/ui'
-import type { EditorInitial } from './protocol'
+import type { EditorInitial, EditorUpdate } from './protocol'
 const env = vi.hoisted(() => ({
   request: vi.fn(),
   operation: vi.fn(),
@@ -34,6 +35,7 @@ vi.mock('./channel', () => ({
 vi.mock('../../ipc', () => ({ ipc: { sshEditorWindow: env.operation, sshFileList: env.list } }))
 vi.mock('@/core/platform/window', () => ({ runWindowAction: env.windowAction }))
 enableAutoUnmount(afterEach)
+afterEach(() => vi.useRealTimers())
 beforeEach(() => {
   vi.clearAllMocks()
   env.windowAction.mockResolvedValue({ ok: true })
@@ -70,7 +72,7 @@ beforeEach(() => {
 function setup() {
   return mount(NativeEditorApp, {
     global: {
-      plugins: [createPinia()],
+      plugins: [createPinia(), i18n],
       stubs: {
         Toast: true,
         UiCodeEditor: true,
@@ -134,4 +136,45 @@ it('握手后加载真实目录树并使用主窗口标题栏，窗口控制只�
     await bar.get('[aria-label="' + label + '"]').trigger('click')
     expect(env.windowAction).toHaveBeenLastCalledWith(action)
   }
+})
+
+it('增量失败只补发一次完整快照，恢复后继续使用已确认基线', async () => {
+  vi.useFakeTimers()
+  const wrapper = setup()
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(80)
+  const editor = wrapper.getComponent(RemoteEditorWorkspace).props('editor')
+  const patches = () =>
+    env.request.mock.calls
+      .filter(([type]) => type === 'patch')
+      .map(([, value]) => value as EditorUpdate)
+  expect(patches()).toHaveLength(1)
+  const first = patches()[0]
+  env.request.mockRejectedValueOnce(new Error('回执丢失'))
+  editor.documents.value[0].saving = true
+  await wrapper.vm.$nextTick()
+  await vi.advanceTimersByTimeAsync(80)
+  expect(patches()).toHaveLength(3)
+  const [, delta, recovered] = patches()
+  expect(delta.baseSequence).toBe(first.sequence)
+  expect(delta.documents).toEqual([{ id: 'd', changes: { saving: true }, cleared: [] }])
+  expect(recovered.baseSequence).toBeUndefined()
+  expect(recovered.sequence).toBe(delta.sequence)
+  expect(recovered.documents[0]).toMatchObject({
+    document: { content: 'draft', saved: 'old', saving: true },
+  })
+  editor.documents.value[0].saving = false
+  await wrapper.vm.$nextTick()
+  await vi.advanceTimersByTimeAsync(80)
+  expect(patches().at(-1)?.baseSequence).toBe(recovered.sequence)
+  env.request
+    .mockRejectedValueOnce(new Error('连接失败'))
+    .mockRejectedValueOnce(new Error('仍失败'))
+  editor.documents.value[0].error = '保存失败'
+  await wrapper.vm.$nextTick()
+  await vi.advanceTimersByTimeAsync(80)
+  const count = patches().length
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(patches()).toHaveLength(count)
+  expect(wrapper.text()).toContain('仍失败')
 })

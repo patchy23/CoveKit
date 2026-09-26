@@ -107,7 +107,7 @@ export function useNativeEditor(
           if (type === 'ownership') return detached.value ? 'child' : 'main'
           if (type === 'patch') {
             const update = value as EditorUpdate
-            if (acceptSnapshot(sequence, update)) apply(mergeEditorUpdate(editor, update))
+            if (acceptSnapshot(sequence, update)) apply(mergeEditorUpdate(editor, update, sequence))
             return
           }
           if (type === 'state') {
