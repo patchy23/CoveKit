@@ -8,6 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use futures_util::{SinkExt, StreamExt};
 use sha2::Digest;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 /// Edge TTS 公开客户端令牌（微软 readaloud 服务固定常量）
 const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
@@ -100,13 +101,14 @@ pub(crate) fn builtin_voices() -> Vec<super::TtsVoice> {
     ]
 }
 
-/// 合成语音（纯网络部分，可独立测试）：文本 + 语音 + 语速/音调 → mp3 字节
-pub(crate) async fn synth_bytes(
+/// 合成语音并逐片写入接收端，不随音频总长度累积内存；返回实际写入字节数。
+pub(crate) async fn synth_to_writer<W: AsyncWrite + Unpin>(
     text: &str,
     voice: &str,
     rate: Option<i32>,
     pitch: Option<i32>,
-) -> Result<Vec<u8>, String> {
+    output: &mut W,
+) -> Result<u64, String> {
     // rustls 进程级 CryptoProvider（ring 后端，与 russh 一致；幂等）
     let _ = rustls::crypto::ring::default_provider().install_default();
 
@@ -220,7 +222,7 @@ pub(crate) async fn synth_bytes(
     .map_err(|e| format!("发送文本失败: {e}"))?;
 
     // 3) 收音频分片，直到 TurnEnd（消息 = 2 字节前缀 + 头部行 + MP3 数据）
-    let mut audio: Vec<u8> = Vec::new();
+    let mut bytes = 0u64;
     loop {
         let Some(msg) = ws.next().await else {
             break;
@@ -228,20 +230,7 @@ pub(crate) async fn synth_bytes(
         let msg = msg.map_err(|e| format!("接收音频失败: {e}"))?;
         match msg {
             tokio_tungstenite::tungstenite::Message::Binary(data) => {
-                // 头部行以 Path:audio 标记行为结尾，其后为 MP3 数据（[13,10] = CRLF）
-                if let Some(p) = data.windows(10).position(|w| w == b"Path:audio") {
-                    let mut s = p + 10;
-                    if data.get(s) == Some(&13) {
-                        s += 1;
-                    }
-                    if data.get(s) == Some(&10) {
-                        s += 1;
-                    }
-                    audio.extend_from_slice(&data[s..]);
-                } else {
-                    // 无 Path:audio 标记：按纯数据块追加（理论上不会出现）
-                    audio.extend_from_slice(&data);
-                }
+                bytes += write_audio_chunk(output, &data).await?;
             }
             tokio_tungstenite::tungstenite::Message::Text(t) => {
                 if t.contains("Path:turn.end") {
@@ -253,7 +242,31 @@ pub(crate) async fn synth_bytes(
         }
     }
 
-    Ok(audio)
+    Ok(bytes)
+}
+
+/// 保留既有音频帧解析规则，正文借用原消息，不为写入再复制一份。
+async fn write_audio_chunk<W: AsyncWrite + Unpin>(
+    output: &mut W,
+    data: &[u8],
+) -> Result<u64, String> {
+    let audio = if let Some(p) = data.windows(10).position(|w| w == b"Path:audio") {
+        let mut start = p + 10;
+        if data.get(start) == Some(&13) {
+            start += 1;
+        }
+        if data.get(start) == Some(&10) {
+            start += 1;
+        }
+        &data[start..]
+    } else {
+        data
+    };
+    output
+        .write_all(audio)
+        .await
+        .map_err(|e| format!("写入音频失败: {e}"))?;
+    Ok(audio.len() as u64)
 }
 
 /// 当前时间（RFC 3339 格式，用于 X-Timestamp 头）
@@ -301,6 +314,35 @@ fn xml_escape(s: &str) -> String {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn audio_chunks_preserve_bytes_across_partial_writes() {
+        use tokio::io::AsyncReadExt;
+        let (mut output, mut input) = tokio::io::duplex(2);
+        let reader = tokio::spawn(async move {
+            let mut result = Vec::new();
+            input.read_to_end(&mut result).await.unwrap();
+            result
+        });
+        assert_eq!(
+            write_audio_chunk(&mut output, b"Path:audio\r\nID3abc")
+                .await
+                .unwrap(),
+            6
+        );
+        assert_eq!(write_audio_chunk(&mut output, b"def").await.unwrap(), 3);
+        drop(output);
+        assert_eq!(reader.await.unwrap(), b"ID3abcdef");
+    }
+
+    #[tokio::test]
+    async fn audio_write_failure_is_not_reported_as_success() {
+        let (mut output, input) = tokio::io::duplex(2);
+        drop(input);
+        assert!(write_audio_chunk(&mut output, b"Path:audio\r\nID3")
+            .await
+            .is_err());
+    }
+
     #[test]
     fn sec_ms_gec_format() {
         let gec = sec_ms_gec();
@@ -329,14 +371,17 @@ mod tests {
     #[ignore = "需要网络（Edge TTS 服务）"]
     async fn live_synth_chinese() {
         // 真实合成：中文文本 + 晓晓语音 → mp3 字节（验证协议与鉴权）
-        let audio = synth_bytes(
+        let mut audio = Vec::new();
+        let bytes = synth_to_writer(
             "你好，这是 CoveKit 的文字转语音测试。",
             "zh-CN-XiaoxiaoNeural",
             None,
             None,
+            &mut audio,
         )
         .await
         .expect("合成失败");
+        assert_eq!(bytes, audio.len() as u64);
         assert!(!audio.is_empty(), "音频为空");
         // MP3 帧头（0xFF 0xFB）或 ID3 头（"ID3"）
         let is_mp3 = audio.starts_with(b"ID3") || (audio[0] == 0xFF && audio[1] & 0xE0 == 0xE0);

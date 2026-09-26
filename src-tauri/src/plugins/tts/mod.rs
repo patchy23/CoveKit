@@ -4,6 +4,8 @@
 mod models;
 mod synth;
 
+use tokio::io::AsyncWriteExt;
+
 pub(crate) use models::{TtsResult, TtsVoice};
 
 /// 语音列表
@@ -25,24 +27,51 @@ pub async fn tts_synthesize(
     let log_started = std::time::Instant::now();
     let mut log_stage = "synthesize";
     let result: Result<TtsResult, String> = async {
-        let audio = synth::synth_bytes(&text, &voice, rate, pitch).await?;
-
-        // 落盘缓存分区 <root>/cache/tts/<ts>.mp3
+        // 分片写入私有临时文件；完成并 flush 后才发布可播放的路径。
         log_stage = "cache_directory";
         let dir = crate::framework::paths::cache_dir(&app, "tts")?;
-        std::fs::create_dir_all(&dir).map_err(|e| format!("创建 tts 目录失败: {e}"))?;
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let path = dir.join(format!("{ts}.mp3"));
-        log_stage = "cache_write";
-        std::fs::write(&path, &audio).map_err(|e| format!("写入音频失败: {e}"))?;
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .map_err(|e| format!("创建 tts 目录失败: {e}"))?;
+        let id = uuid::Uuid::new_v4();
+        let path = dir.join(format!("{id}.mp3"));
+        let temporary = dir.join(format!("{id}.part"));
+        let file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .await
+            .map_err(|e| format!("创建音频文件失败: {e}"))?;
+        log_stage = "synthesize";
+        let written: Result<u64, String> = async {
+            // 缓冲合并小音频帧的磁盘写入，不限制音频长度。
+            let mut writer = tokio::io::BufWriter::with_capacity(64 * 1024, file);
+            let bytes = synth::synth_to_writer(&text, &voice, rate, pitch, &mut writer).await?;
+            writer
+                .flush()
+                .await
+                .map_err(|e| format!("写入音频失败: {e}"))?;
+            drop(writer);
+            tokio::fs::rename(&temporary, &path)
+                .await
+                .map_err(|e| format!("保存音频失败: {e}"))?;
+            Ok(bytes)
+        }
+        .await;
+        let bytes = match written {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                if let Err(cleanup) = tokio::fs::remove_file(&temporary).await {
+                    return Err(format!("{error}；临时音频清理失败: {cleanup}"));
+                }
+                return Err(error);
+            }
+        };
 
         Ok(TtsResult {
             ok: true,
             file_path: Some(path.to_string_lossy().to_string()),
-            bytes: audio.len() as u64,
+            bytes,
             error: None,
         })
     }
