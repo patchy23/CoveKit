@@ -284,10 +284,46 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers()
   while (hosts.length) hosts.pop()?.()
+  vi.unstubAllGlobals()
 })
 
 /* ────────────────────────────────────────────────────────────────────── */
 describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
+  it('大 SQL 格式化在改写或切页时取消，不覆盖其它页签', async () => {
+    const workers: {
+      onmessage?: (event: { data: unknown }) => void
+      postMessage: ReturnType<typeof vi.fn>
+      terminate: ReturnType<typeof vi.fn>
+    }[] = []
+    vi.stubGlobal(
+      'Worker',
+      class {
+        postMessage = vi.fn()
+        terminate = vi.fn()
+        constructor() {
+          workers.push(this)
+        }
+      }
+    )
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const large = `select '${'x'.repeat(70000)}';`
+    openEditor(api, 'conn-a', large)
+    const first = api.onFormatSql()
+    api.patchQueryState({ sql: 'SELECT edited' })
+    await first
+    expect(workers[0].terminate).toHaveBeenCalledOnce()
+    expect(api.queryState.value.sql).toBe('SELECT edited')
+    api.patchQueryState({ sql: large })
+    const next = api.onFormatSql()
+    openEditor(api, 'conn-b', 'SELECT other')
+    await next
+    const request = workers[1].postMessage.mock.lastCall![0]
+    workers[1].onmessage?.({ data: { id: request.id, result: 'STALE' } })
+    await nextTick()
+    expect(workers[1].terminate).toHaveBeenCalledOnce()
+    expect(api.queryState.value.sql).toBe('SELECT other')
+  })
   it('查询结果表格按页显示，过滤会回到第一页且无匹配时显示空态', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()

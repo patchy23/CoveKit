@@ -27,6 +27,7 @@ import { buildCompletion } from './completion'
 import { linterForLanguage } from './lint'
 import { formatDocument, jsonFormatResult } from './format'
 import { createJsonFormatter } from '@/core/format/asyncJson'
+import { createSqlFormatter } from '@/core/format/asyncSql'
 import { createDocStatsTracker } from './docStats'
 import { createSearchController } from './searchController'
 import { createDocumentTextReader } from './documentText'
@@ -66,6 +67,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   let savedSnapshot = ''
   const documentText = createDocumentTextReader()
   const jsonFormatter = createJsonFormatter()
+  const sqlFormatter = createSqlFormatter()
   let formatRequest = 0
 
   let degradeScheduled = false
@@ -228,6 +230,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
             docStats.update(update.state)
             formatRequest++
             jsonFormatter.cancel()
+            sqlFormatter.cancel()
           }
           // 文档或选区变化都会影响「当前是第几个匹配」，条件为空时 refresh 内部直接返回
           if (update.docChanged || update.selectionSet || update.viewportChanged)
@@ -266,6 +269,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     destroyed = true
     formatRequest++
     jsonFormatter.destroy()
+    sqlFormatter.destroy()
     search.clear()
     documents.clear()
     view.value?.destroy()
@@ -377,7 +381,9 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
       const result =
         text.trim() && (language === 'json' || language === 'jsonc')
           ? jsonFormatResult(text, await jsonFormatter.run(text, indent))
-          : formatDocument(text, language, indent)
+          : language === 'sql' && text.trim()
+            ? { ok: true, output: await sqlFormatter.run(text) }
+            : formatDocument(text, language, indent)
       if (
         request !== formatRequest ||
         view.value !== current ||
@@ -425,6 +431,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
       if (deferred) {
         formatRequest++
         jsonFormatter.cancel()
+        sqlFormatter.cancel()
         return
       }
       const current = view.value
@@ -432,6 +439,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
       if (key !== activeDocument) {
         formatRequest++
         jsonFormatter.cancel()
+        sqlFormatter.cancel()
         if (
           activeDocument &&
           (!options.documentKeys?.() || options.documentKeys().includes(activeDocument))

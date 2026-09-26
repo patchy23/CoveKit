@@ -12,7 +12,7 @@ interface Token {
 }
 
 /** 主子句关键字（换行点）；两词组合优先匹配 */
-const CLAUSES: string[] = [
+const CLAUSES = [
   'GROUP BY',
   'ORDER BY',
   'UNION ALL',
@@ -36,7 +36,7 @@ const CLAUSES: string[] = [
   'SET',
   'VALUES',
   'UPDATE',
-]
+].map((clause) => clause.split(' '))
 /** WHERE 内的条件连接词（多行模式下换行 + 一级缩进） */
 const CONDITIONS = new Set(['AND', 'OR'])
 /** 单行模式的最大长度（超过则按子句换行） */
@@ -123,8 +123,7 @@ function tokenize(input: string): Token[] {
 /** 词序列在 pos 处是否命中子句关键字（两词组合优先），返回匹配词数 */
 function matchClause(tokens: Token[], pos: number): number {
   const wordAt = (k: number) => (tokens[k]?.kind === 'word' ? tokens[k].text.toUpperCase() : '')
-  for (const clause of CLAUSES) {
-    const parts = clause.split(' ')
+  for (const parts of CLAUSES) {
     let ok = true
     for (let p = 0; p < parts.length; p++) {
       if (wordAt(pos + p) !== parts[p]) {

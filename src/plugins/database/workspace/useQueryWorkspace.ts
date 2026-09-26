@@ -25,7 +25,7 @@ import type {
   SavedEntry,
 } from '../contracts'
 import { adminIpc, queryIpc, draftIpc } from '../ipc'
-import { formatSql } from '../sqlFormat'
+import { createSqlFormatter } from '@/core/format/asyncSql'
 import { nextRequestId } from '../requestId'
 import { useResultFilter } from './useResultFilter'
 
@@ -869,9 +869,39 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     }
   }
 
-  function onFormatSql() {
-    const sql = queryState.value.sql
-    patchQueryState({ sql: formatSql(sql), dirty: true })
+  const sqlFormatter = createSqlFormatter()
+  let formatRevision = 0
+  watch(
+    () => [activeTabId.value, queryState.value.sql],
+    () => {
+      formatRevision++
+      sqlFormatter.cancel()
+    },
+    { flush: 'sync' }
+  )
+  onScopeDispose(() => {
+    formatRevision++
+    sqlFormatter.destroy()
+  })
+  async function onFormatSql() {
+    const state = queryState.value,
+      tabId = activeTabId.value,
+      sql = state.sql
+    const revision = ++formatRevision
+    try {
+      const result = sqlFormatter.run(sql)
+      const output = typeof result === 'string' ? result : await result
+      if (
+        revision !== formatRevision ||
+        activeTabId.value !== tabId ||
+        queryStates.value[tabId] !== state ||
+        state.sql !== sql
+      )
+        return
+      patchQueryState({ sql: output, dirty: true })
+    } catch (error) {
+      if (revision === formatRevision) ports.showError(error)
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────

@@ -17,6 +17,7 @@ import { MySQL, sql } from '@codemirror/lang-sql'
 import { language } from '@codemirror/language'
 import * as languages from './editor/languages'
 import { formatJson } from '@/core/format/json'
+import { formatSql } from '@/core/format/sql'
 
 beforeEach(() => vi.stubGlobal('Worker', RegexTestWorker))
 afterEach(() => vi.unstubAllGlobals())
@@ -405,50 +406,64 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
     wrapper.unmount()
   })
 
-  it('大 JSON 格式化期间继续编辑会取消旧结果，成功格式化可一次撤销', async () => {
-    const workers: {
-      onmessage?: (event: { data: unknown }) => void
-      postMessage: ReturnType<typeof vi.fn>
-      terminate: ReturnType<typeof vi.fn>
-    }[] = []
-    vi.stubGlobal(
-      'Worker',
-      class {
-        postMessage = vi.fn()
-        terminate = vi.fn()
-        constructor() {
-          workers.push(this)
+  it.each(['json', 'sql'])(
+    '大 %s 格式化期间继续编辑会取消旧结果，成功格式化可一次撤销',
+    async (language) => {
+      const workers: {
+        onmessage?: (event: { data: unknown }) => void
+        postMessage: ReturnType<typeof vi.fn>
+        terminate: ReturnType<typeof vi.fn>
+      }[] = []
+      vi.stubGlobal(
+        'Worker',
+        class {
+          postMessage = vi.fn()
+          terminate = vi.fn()
+          constructor() {
+            workers.push(this)
+          }
         }
-      }
-    )
-    const original = JSON.stringify({ value: 'x'.repeat(70000) })
-    const wrapper = mount(UiCodeEditor, {
-      props: { modelValue: original, language: 'json' },
-      attachTo: document.body,
-    })
-    try {
-      await settle()
-      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
-      const api = wrapper.vm as unknown as EditorApi
-      const first = api.format()
-      view.dispatch({ changes: { from: view.state.doc.length, insert: ' ' } })
-      expect(await first).toBe(false)
-      expect(workers[0].terminate).toHaveBeenCalledOnce()
-      expect(api.getValue() === original + ' ').toBe(true)
-      expect(wrapper.emitted('error')).toBeUndefined()
-      const next = api.format()
-      const request = workers[1].postMessage.mock.lastCall![0]
-      workers[1].onmessage?.({
-        data: { id: request.id, result: formatJson(request.text, request.indent) },
+      )
+      const original =
+        language === 'json'
+          ? JSON.stringify({ value: 'x'.repeat(70000) })
+          : `select '${'x'.repeat(70000)}' from t;`
+      const wrapper = mount(UiCodeEditor, {
+        props: { modelValue: original, language },
+        attachTo: document.body,
       })
-      expect(await next).toBe(true)
-      expect(api.getValue()).toContain('\n  "value":')
-      expect(undo(view)).toBe(true)
-      expect(api.getValue() === original + ' ').toBe(true)
-    } finally {
-      wrapper.unmount()
+      try {
+        await settle()
+        const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+        const api = wrapper.vm as unknown as EditorApi
+        const first = api.format()
+        view.dispatch({ changes: { from: view.state.doc.length, insert: ' ' } })
+        expect(await first).toBe(false)
+        expect(workers[0].terminate).toHaveBeenCalledOnce()
+        expect(api.getValue() === original + ' ').toBe(true)
+        expect(wrapper.emitted('error')).toBeUndefined()
+        const next = api.format()
+        const request = workers[1].postMessage.mock.lastCall![0]
+        workers[1].onmessage?.({
+          data: {
+            id: request.id,
+            result:
+              language === 'json'
+                ? formatJson(request.text, request.indent)
+                : formatSql(request.text),
+          },
+        })
+        expect(await next).toBe(true)
+        expect(api.getValue()).toBe(
+          language === 'json' ? formatJson(original, 2).output : formatSql(original)
+        )
+        expect(undo(view)).toBe(true)
+        expect(api.getValue() === original + ' ').toBe(true)
+      } finally {
+        wrapper.unmount()
+      }
     }
-  })
+  )
 
   it('状态栏：渲染行列、语言与编码', async () => {
     const wrapper = mount(UiCodeEditor, {
