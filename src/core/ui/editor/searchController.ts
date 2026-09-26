@@ -9,6 +9,7 @@
  */
 import { ref, type Ref } from 'vue'
 import type { EditorView } from '@codemirror/view'
+import type { Text } from '@codemirror/state'
 import {
   findNext,
   findPrevious,
@@ -17,7 +18,13 @@ import {
   SearchQuery,
   setSearchQuery,
 } from '@codemirror/search'
-import { matchIndexOf, scanMatches, toSearchQuery, type SearchOptions } from './search'
+import {
+  matchIndexOf,
+  scanMatches,
+  toSearchQuery,
+  type SearchOptions,
+  type MatchScan,
+} from './search'
 
 /** 面板可见的查找状态 */
 export interface EditorSearchState {
@@ -70,16 +77,31 @@ export function createSearchController(
     replacement: '',
     options: { ...DEFAULT_OPTIONS },
   })
+  // 文档不可变身份即修订；只保留最近一次扫描，弱引用不延长已关闭文档的生命周期。
+  let scans: WeakMap<Text, SearchOptions & { query: string; scan: MatchScan }> | undefined
 
   /** 按当前条件重算 total / current（不改文档） */
   function recount(): void {
     const view = getView()
     const { query, options } = current.value
     if (!view || !query) {
+      scans = undefined
       state.value = { total: 0, current: 0 }
       return
     }
-    const scan = scanMatches(view.state.doc.toString(), query, options)
+    const doc = view.state.doc
+    let cached = scans?.get(doc)
+    if (
+      !cached ||
+      cached.query !== query ||
+      cached.caseSensitive !== options.caseSensitive ||
+      cached.regexp !== options.regexp ||
+      cached.wholeWord !== options.wholeWord
+    ) {
+      cached = { query, ...options, scan: scanMatches(doc.toString(), query, options) }
+      scans = new WeakMap([[doc, cached]])
+    }
+    const scan = cached.scan
     if (scan.error) {
       state.value = { total: 0, current: 0, error: scan.error }
       return
@@ -110,6 +132,7 @@ export function createSearchController(
     current.value = { query, replacement, options }
     pushQuery()
     if (!query) {
+      scans = undefined
       state.value = { total: 0, current: 0 }
       return
     }
@@ -149,13 +172,14 @@ export function createSearchController(
   }
 
   function clear(): void {
+    scans = undefined
     current.value = { query: '', replacement: '', options: { ...DEFAULT_OPTIONS } }
     state.value = { total: 0, current: 0 }
     pushQuery()
   }
 
   /**
-   * 文档或选区变化后重算统计
+   * 文档或条件变化重新扫描；仅选区变化复用位置索引。
    *
    * 无查询条件时直接返回：否则每次输入都会扫一遍全文（大文档上是可观的浪费）。
    */
