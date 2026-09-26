@@ -29,6 +29,39 @@ async function settle(): Promise<void> {
 }
 
 describe('UiCodeEditor', () => {
+  it('隐藏镜像不处理每次外部正文，恢复时保留视图和已有撤销记录', async () => {
+    let changes = 0
+    const wrapper = mount(UiCodeEditor, {
+      props: {
+        modelValue: 'abc',
+        language: 'text',
+        extraExtensions: [
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) changes++
+          }),
+        ],
+      },
+      attachTo: document.body,
+    })
+    try {
+      await settle()
+      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+      view.dispatch({ changes: { from: 3, insert: '!' } })
+      await wrapper.setProps({ modelValue: 'abc!', deferExternalUpdates: true })
+      const before = changes
+      for (let i = 0; i < 20; i++) await wrapper.setProps({ modelValue: `prefix ${i} abc!` })
+      expect(view.state.doc.toString()).toBe('abc!')
+      expect(changes).toBe(before)
+      await wrapper.setProps({ deferExternalUpdates: false })
+      expect(view.state.doc.toString()).toBe('prefix 19 abc!')
+      expect(changes).toBe(before + 1)
+      expect(EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)).toBe(view)
+      expect(undo(view)).toBe(true)
+      expect(view.state.doc.toString()).toBe('prefix 19 abc')
+    } finally {
+      wrapper.unmount()
+    }
+  })
   it('首次挂载即装载补全，异步替换候选后无需重建编辑器', async () => {
     const wrapper = mount(UiCodeEditor, {
       props: {

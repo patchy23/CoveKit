@@ -415,43 +415,55 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     { state: EditorState; top: number; left: number; saved: string }
   >()
   let activeDocument = options.documentKey?.() ?? ''
-  watch([() => options.documentKey?.() ?? '', options.modelValue], ([key, value]) => {
-    const current = view.value
-    if (!current) return
-    if (key !== activeDocument) {
-      formatRequest++
-      jsonFormatter.cancel()
-      if (
-        activeDocument &&
-        (!options.documentKeys?.() || options.documentKeys().includes(activeDocument))
-      )
-        documents.set(activeDocument, {
-          state: current.state,
-          top: current.scrollDOM.scrollTop,
-          left: current.scrollDOM.scrollLeft,
-          saved: savedSnapshot,
+  watch(
+    [
+      () => options.documentKey?.() ?? '',
+      options.modelValue,
+      () => options.deferExternalUpdates?.() ?? false,
+    ],
+    ([key, value, deferred]) => {
+      if (deferred) {
+        formatRequest++
+        jsonFormatter.cancel()
+        return
+      }
+      const current = view.value
+      if (!current) return
+      if (key !== activeDocument) {
+        formatRequest++
+        jsonFormatter.cancel()
+        if (
+          activeDocument &&
+          (!options.documentKeys?.() || options.documentKeys().includes(activeDocument))
+        )
+          documents.set(activeDocument, {
+            state: current.state,
+            top: current.scrollDOM.scrollTop,
+            left: current.scrollDOM.scrollLeft,
+            saved: savedSnapshot,
+          })
+        const cached = documents.get(key)
+        current.setState(cached?.state ?? createState(value))
+        activeDocument = key
+        savedSnapshot = cached?.saved ?? value
+        current.scrollDOM.scrollTop = cached?.top ?? 0
+        current.scrollDOM.scrollLeft = cached?.left ?? 0
+        docStats.init(current.state)
+        current.dispatch({
+          effects: [
+            extraCompartment.reconfigure(options.extraExtensions?.() ?? []),
+            auxCompartment.reconfigure(auxExtensions()),
+            editableCompartment.reconfigure(editableExtension(readOnlyNow())),
+            tabSizeCompartment.reconfigure(indentExtension(options.tabSize())),
+            wrappingCompartment.reconfigure(wrappingExtension(options.lineWrapping())),
+          ],
         })
-      const cached = documents.get(key)
-      current.setState(cached?.state ?? createState(value))
-      activeDocument = key
-      savedSnapshot = cached?.saved ?? value
-      current.scrollDOM.scrollTop = cached?.top ?? 0
-      current.scrollDOM.scrollLeft = cached?.left ?? 0
-      docStats.init(current.state)
-      current.dispatch({
-        effects: [
-          extraCompartment.reconfigure(options.extraExtensions?.() ?? []),
-          auxCompartment.reconfigure(auxExtensions()),
-          editableCompartment.reconfigure(editableExtension(readOnlyNow())),
-          tabSizeCompartment.reconfigure(indentExtension(options.tabSize())),
-          wrappingCompartment.reconfigure(wrappingExtension(options.lineWrapping())),
-        ],
-      })
-      void applyLanguage()
-      search.refresh()
+        void applyLanguage()
+        search.refresh()
+      }
+      writeValue(value, false)
     }
-    writeValue(value, false)
-  })
+  )
   watch(
     () => options.documentKeys?.(),
     (keys) => {

@@ -89,6 +89,7 @@ watch(
   <RemoteEditorWorkspace
     ref="view"
     :moving="native.moving.value"
+    :mirror-suspended="native.detached.value"
     :ready="initialized"
     :activation="request.id"
     :editor="editor"

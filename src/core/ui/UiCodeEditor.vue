@@ -29,6 +29,8 @@ const props = withDefaults(
     documentKeys?: string[]
     /** 编辑内容（v-model） */
     modelValue?: string
+    /** 隐藏镜像视图暂缓外部正文同步，恢复时一次应用最新内容。 */
+    deferExternalUpdates?: boolean
     /** 语言 id；默认 'auto' 表示按 filename 识别 */
     language?: string
     /** 直接注入语言扩展（优先于识别；用于 SQL 方言这类参数化语言） */
@@ -68,6 +70,7 @@ const props = withDefaults(
     documentKey: undefined,
     documentKeys: undefined,
     modelValue: '',
+    deferExternalUpdates: false,
     language: 'auto',
     languageExtension: undefined,
     filename: undefined,
@@ -114,6 +117,7 @@ const editor = useCodeEditor({
   documentKey: () => props.documentKey ?? '',
   documentKeys: () => props.documentKeys ?? [],
   modelValue: () => props.modelValue ?? '',
+  deferExternalUpdates: () => props.deferExternalUpdates,
   filename: () => props.filename,
   language: () => props.language,
   languageExtension: () => props.languageExtension ?? [],

@@ -30,6 +30,7 @@ const props = defineProps<{
   activation?: number
   standalone?: boolean
   moving?: boolean
+  mirrorSuspended?: boolean
 }>()
 const emit = defineEmits<{ minimize: []; closed: []; detach: []; dock: [] }>()
 function hide() {
@@ -240,6 +241,7 @@ function context(path: string, event: MouseEvent) {
             :key="doc.id"
             :ref="(instance) => rememberEditor(doc.id, instance)"
             v-model="doc.content"
+            :defer-external-updates="mirrorSuspended"
             :filename="doc.path"
             height="100%"
             class="min-h-0 flex-1 !rounded-none !border-0"

@@ -61,6 +61,8 @@ export interface UseCodeEditorOptions {
   documentKeys?: () => string[]
   /** 当前值 */
   modelValue: () => string
+  /** 宿主已隐藏镜像视图时暂缓外部文本同步；恢复后应用最新值，保留同一视图和撤销栈。 */
+  deferExternalUpdates?: () => boolean
   /** 文件名（language='auto' 时用于识别） */
   filename: () => string | undefined
   /** 语言 id 或 'auto' */
