@@ -132,6 +132,7 @@ function addRow() {
         <div
           v-for="e in editable"
           :key="e.id"
+          v-memo="[e.ip, e.hosts, e.comment, e.enabled, e.valid, e.error]"
           class="mb-[8px] grid grid-cols-[40px_170px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
           :class="
             e.valid

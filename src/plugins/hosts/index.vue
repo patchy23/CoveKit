@@ -6,7 +6,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ipc } from './ipc'
 import { useUiStore } from '@/stores/ui'
 import HostsList from './HostsList.vue'
-import { countErrors, countMappings, parseHostsLines } from './useHosts'
+import { countErrors, countMappings, createHostsLineParser } from './useHosts'
 import { UiButton, UiCodeEditor, UiTabs } from '@/core/ui'
 
 const ui = useUiStore()
@@ -21,7 +21,8 @@ const modeTabs = [
   { value: 'file', label: '源文件' },
 ]
 
-const lines = computed(() => parseHostsLines(content.value))
+const parseLines = createHostsLineParser()
+const lines = computed(() => parseLines(content.value))
 const errors = computed(() => countErrors(lines.value))
 const mappings = computed(() => countMappings(lines.value))
 

@@ -42,44 +42,76 @@ export function isValidHostname(h: string): boolean {
 
 /** 解析 hosts 内容为行记录（空行/注释行 = valid） */
 export function parseHostsLines(content: string): HostsLine[] {
-  return content.split('\n').map((raw) => {
-    const line = raw.trim()
-    if (!line || line.startsWith('#')) {
-      return { raw, comment: line, valid: true, hosts: [] }
+  return content.split('\n').map(parseHostsLine)
+}
+
+/** 单行解析与全量/增量入口共用，原始换行前正文保持不变。 */
+function parseHostsLine(raw: string): HostsLine {
+  const line = raw.trim()
+  if (!line || line.startsWith('#')) {
+    return { raw, comment: line, valid: true, hosts: [] }
+  }
+  let body = line
+  let comment = ''
+  const ci = line.indexOf('#')
+  if (ci >= 0) {
+    body = line.slice(0, ci).trim()
+    comment = line.slice(ci)
+  }
+  const parts = body.split(/\s+/).filter(Boolean)
+  const ip = parts[0]
+  const hosts = parts.slice(1)
+  if (!isValidIp(ip ?? '')) {
+    return { raw, comment, ip, hosts, valid: false, error: 'IP 地址格式无效' }
+  }
+  if (hosts.length === 0) {
+    return { raw, comment, ip, hosts, valid: false, error: '缺少主机名' }
+  }
+  const bad = hosts.find((h) => !isValidHostname(h))
+  if (bad) {
+    return { raw, comment, ip, hosts, valid: false, error: `主机名格式无效: ${bad}` }
+  }
+  return { raw, comment, ip, hosts, valid: true }
+}
+
+/** 只保留当前只读行快照；单行修改、插入和删除复用未改变的前后段解析结果。 */
+export function createHostsLineParser(): (content: string) => HostsLine[] {
+  let previous: HostsLine[] = []
+  return (content) => {
+    const raw = content.split('\n')
+    let start = 0
+    while (start < raw.length && start < previous.length && raw[start] === previous[start].raw) {
+      start++
     }
-    // 去行尾注释
-    let body = line
-    let comment = ''
-    const ci = line.indexOf('#')
-    if (ci >= 0) {
-      body = line.slice(0, ci).trim()
-      comment = line.slice(ci)
+    if (start === raw.length && start === previous.length) return previous
+    let end = raw.length
+    let previousEnd = previous.length
+    while (end > start && previousEnd > start && raw[end - 1] === previous[previousEnd - 1].raw) {
+      end--
+      previousEnd--
     }
-    const parts = body.split(/\s+/).filter(Boolean)
-    const ip = parts[0]
-    const hosts = parts.slice(1)
-    if (!isValidIp(ip ?? '')) {
-      return { raw, comment, ip, hosts, valid: false, error: 'IP 地址格式无效' }
-    }
-    if (hosts.length === 0) {
-      return { raw, comment, ip, hosts, valid: false, error: '缺少主机名' }
-    }
-    const bad = hosts.find((h) => !isValidHostname(h))
-    if (bad) {
-      return { raw, comment, ip, hosts, valid: false, error: `主机名格式无效: ${bad}` }
-    }
-    return { raw, comment, ip, hosts, valid: true }
-  })
+    const next = raw.map((line, index) => {
+      if (index < start) return previous[index]
+      if (index >= end) return previous[previousEnd + index - end]
+      return parseHostsLine(line)
+    })
+    previous = next
+    return next
+  }
 }
 
 /** 错误行数 */
 export function countErrors(lines: HostsLine[]): number {
-  return lines.filter((l) => !l.valid).length
+  let count = 0
+  for (const line of lines) if (!line.valid) count++
+  return count
 }
 
 /** 有效的映射条数（非注释行） */
 export function countMappings(lines: HostsLine[]): number {
-  return lines.filter((l) => l.valid && l.ip !== undefined).length
+  let count = 0
+  for (const line of lines) if (line.valid && line.ip !== undefined) count++
+  return count
 }
 
 /* ── 列表模式：条目解析 / 重组 ── */

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   countErrors,
   countMappings,
+  createHostsLineParser,
   entriesToText,
   isValidHostname,
   isValidIp,
@@ -11,6 +12,24 @@ import {
 } from './useHosts'
 
 describe('useHosts', () => {
+  it('增量解析保留未修改行身份，删除的行不会跨版本留在缓存', () => {
+    const parse = createHostsLineParser()
+    const first = parse('# 注释\r\n127.0.0.1 first.test\n0.0.0.0 last.test\n')
+    const edited = parse('# 注释\r\n999.0.0.0 bad.test\n0.0.0.0 last.test\n')
+    expect(edited).toEqual(parseHostsLines('# 注释\r\n999.0.0.0 bad.test\n0.0.0.0 last.test\n'))
+    expect(edited[0]).toBe(first[0])
+    expect(edited[2]).toBe(first[2])
+    expect(edited[1]).not.toBe(first[1])
+    const inserted = parse('# 注释\r\n127.0.0.1 new.test\n999.0.0.0 bad.test\n0.0.0.0 last.test\n')
+    expect(inserted[2]).toBe(edited[1])
+    expect(inserted[3]).toBe(edited[2])
+    expect(parse('# 注释\r\n0.0.0.0 last.test\n')[1]).toBe(first[2])
+    const restored = parse('# 注释\r\n127.0.0.1 first.test\n0.0.0.0 last.test\n')
+    expect(restored[1]).not.toBe(first[1])
+    expect(parse('# 注释\r\n127.0.0.1 first.test\n0.0.0.0 last.test\n')).toBe(restored)
+    expect(parse('')).toEqual(parseHostsLines(''))
+  })
+
   it('IP 校验', () => {
     expect(isValidIp('127.0.0.1')).toBe(true)
     expect(isValidIp('255.255.255.255')).toBe(true)
