@@ -179,6 +179,9 @@ export interface FrpLogPayload {
   /** 时间戳（Unix 毫秒） */
   ts: number
   stream: FrpLogStream
+  /** 新事件与日志同批交付状态；兼容旧事件缺省。lastLine 复用外层 line。 */
+  state?: FrpRuntimeState
+  lastErrorFromLine?: boolean
 }
 
 /** 事件 `frp://download` 负载 */

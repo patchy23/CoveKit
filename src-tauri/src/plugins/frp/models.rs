@@ -309,6 +309,10 @@ pub struct FrpLogPayload {
     pub ts: i64,
     /// 来源流
     pub stream: FrpLogStream,
+    /// 同一行处理后的运行状态，last_line 由外层 line 恢复，避免正文重复序列化。
+    pub state: FrpRuntimeState,
+    /// 当前错误正文与日志相同，接收方复用 line；否则使用 state.last_error。
+    pub last_error_from_line: bool,
 }
 
 /// 事件 `frp://download` 负载（下载进度）

@@ -187,8 +187,8 @@ pub fn stopped_state(file_name: &str) -> FrpRuntimeState {
     }
 }
 
-/// 更新条目并在字段有变化时推送 `frp://state`；条目不存在时静默跳过
-async fn update<F>(app: &AppHandle, file_name: &str, mutate: F)
+/// 日志与其运行状态合并交付；其它状态变化仍推送 `frp://state`。
+async fn update<F>(app: &AppHandle, file_name: &str, log_stream: Option<FrpLogStream>, mutate: F)
 where
     F: FnOnce(&mut FrpRun),
 {
@@ -200,7 +200,7 @@ where
     let before = (
         run.state,
         run.pid,
-        run.last_line.clone(),
+        if log_stream.is_none() { run.last_line.clone() } else { None },
         run.last_error.clone(),
         run.exit_code,
     );
@@ -210,9 +210,9 @@ where
         || before.2.as_ref() != run.last_line.as_ref()
         || before.3.as_ref() != run.last_error.as_ref()
         || before.4 != run.exit_code;
-    let snapshot = changed.then(|| run.snapshot(file_name));
+    let snapshot = (changed || log_stream.is_some()).then(|| run.snapshot(file_name));
     drop(map);
-    if let Some(snapshot) = snapshot {
+    if let Some(mut snapshot) = snapshot {
         // 状态错误不一定伴随子进程输出（异常退出、启动超时），后台也必须保留原因。
         // 仅状态/错误发生变化时打印，逐行日志更新及状态轮询不重复刷屏。
         if snapshot.state == FrpStateName::Error
@@ -227,7 +227,35 @@ where
         {
             log::info!("进程已停止，退出码 {:?}", snapshot.exit_code);
         }
-        let _ = app.emit("frp://state", snapshot);
+        if let Some(stream) = log_stream {
+            // record_line 在同一临界区设置 last_line；空字符串仍是合法日志行。
+            if let Some(line) = snapshot.last_line.take() {
+                let payload = log_payload(snapshot, line, stream);
+                if app.emit("frp://log", payload).is_err() {
+                    log::warn!("FRP 日志事件发送失败");
+                }
+            } else {
+                log::error!("FRP 日志事件缺少对应正文");
+            }
+        } else {
+            let _ = app.emit("frp://state", snapshot);
+        }
+    }
+}
+
+fn log_payload(mut state: FrpRuntimeState, line: String, stream: FrpLogStream) -> FrpLogPayload {
+    state.last_line = None;
+    let last_error_from_line = state.last_error.as_deref() == Some(line.as_str());
+    if last_error_from_line {
+        state.last_error = None;
+    }
+    FrpLogPayload {
+        file_name: state.file_name.clone(),
+        line,
+        ts: chrono::Utc::now().timestamp_millis(),
+        stream,
+        state,
+        last_error_from_line,
     }
 }
 
@@ -254,17 +282,8 @@ fn spawn_reader<R>(
                 }
             };
             let line = config.redact(&raw);
-            // 原始行只供业务日志展示，不复制进应用诊断文件。
-            let _ = app.emit(
-                "frp://log",
-                FrpLogPayload {
-                    file_name: file_name.clone(),
-                    line: line.clone(),
-                    ts: chrono::Utc::now().timestamp_millis(),
-                    stream,
-                },
-            );
-            update(&app, &file_name, |run| {
+            // 日志与状态一次交付，正文不复制进应用诊断文件。
+            update(&app, &file_name, Some(stream), |run| {
                 run.record_line(line);
             })
             .await;
@@ -317,7 +336,7 @@ async fn monitor(
             // starting 超时：只判一次，判定后失活避免忙轮询
             _ = &mut timeout, if timeout_armed => {
                 timeout_armed = false;
-                update(&app, &file_name, |run| {
+                update(&app, &file_name, None, |run| {
                     let (next, error) = next_state(run.state, &FrpEvent::StartupTimeout);
                     run.state = next;
                     if let Some(error) = error {
@@ -342,7 +361,7 @@ async fn monitor(
             log::error!("FRP 日志读取任务异常结束：{error}");
         }
     }
-    update(&app, &file_name, |run| {
+    update(&app, &file_name, None, |run| {
         let event = if stopped_by_user {
             FrpEvent::ExitedByStop
         } else {
@@ -561,6 +580,27 @@ pub(crate) async fn shutdown_all(app: &AppHandle) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn log_event_carries_body_once_and_preserves_state_and_error() {
+        let mut run = FrpRun::new(Some(7));
+        let line = "start error: ".to_string() + &"x".repeat(70000);
+        run.record_line(line.clone());
+        let payload = log_payload(run.snapshot("a.toml"), line.clone(), FrpLogStream::Stderr);
+        let encoded = serde_json::to_value(&payload).unwrap();
+        assert_eq!(encoded["line"], line);
+        assert_eq!(encoded["state"]["state"], "error");
+        assert_eq!(encoded["state"]["pid"], 7);
+        assert!(encoded["state"].get("lastLine").is_none());
+        assert!(encoded["state"].get("lastError").is_none());
+        assert!(payload.last_error_from_line);
+        assert_eq!(run.last_line.as_deref(), Some(line.as_str()));
+        run.record_line("login to server success".into());
+        let recovered = log_payload(run.snapshot("a.toml"), "login to server success".into(), FrpLogStream::Stdout);
+        assert_eq!(recovered.state.state, FrpStateName::Running);
+        assert!(recovered.state.last_error.is_none());
+        assert!(!recovered.last_error_from_line);
+    }
 
     /// 多个停止等待者共享完成状态，某个等待超时不取走任务句柄。
     #[tokio::test]

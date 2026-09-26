@@ -3,7 +3,7 @@ import { defineComponent, onUnmounted, ref } from 'vue'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createScope, scopeStats } from '@/core/lifecycle/scope'
 import { useFrpRuntime } from './useFrpRuntime'
-import type { FrpRuntimeState } from '../contracts'
+import type { FrpLogPayload, FrpRuntimeState } from '../contracts'
 
 const mocks = vi.hoisted(() => ({
   status: vi.fn(),
@@ -52,6 +52,51 @@ beforeEach(() => {
   visibility.value = { active: true, covered: false, hidden: false }
 })
 afterEach(() => vi.restoreAllMocks())
+
+it('单次日志事件同步状态和完整错误，重复行不丢弃，恢复立即清错误，兼容旧事件', async () => {
+  const { wrapper, runtime } = setup()
+  await flushPromises()
+  const receive = mocks.listen.mock.calls.find(([name]) => name === 'frp://log')![1] as (event: {
+    payload: FrpLogPayload
+  }) => void
+  const line = 'start error: ' + 'x'.repeat(70000)
+  try {
+    const payload: FrpLogPayload = {
+      fileName: 'test.toml',
+      line,
+      stream: 'stderr',
+      ts: 1,
+      state: { fileName: 'test.toml', state: 'error', pid: 7 },
+      lastErrorFromLine: true,
+    }
+    receive({ payload })
+    receive({ payload })
+    expect(runtime.logsOf('test.toml')).toHaveLength(2)
+    expect(runtime.logsOf('test.toml')[0].line).toBe(line)
+    expect(runtime.stateOf('test.toml')).toMatchObject({
+      state: 'error',
+      pid: 7,
+      lastLine: line,
+      lastError: line,
+    })
+    receive({
+      payload: {
+        fileName: 'test.toml',
+        line: 'login to server success',
+        stream: 'stdout',
+        ts: 2,
+        state: { fileName: 'test.toml', state: 'running', pid: 7 },
+      },
+    })
+    expect(runtime.stateOf('test.toml')).toMatchObject({ state: 'running', lastError: undefined })
+    receive({ payload: { fileName: 'test.toml', line: 'legacy', stream: 'stdout', ts: 3 } })
+    expect(runtime.logsOf('test.toml')).toHaveLength(4)
+  } finally {
+    wrapper.unmount()
+  }
+  receive({ payload: { fileName: 'test.toml', line, stream: 'stderr', ts: 4 } })
+  expect(runtime.logsOf('test.toml')).toEqual([])
+})
 
 it('首个订阅未完成就关闭时立即解绑迟到订阅，不启动查询和后续监听', async () => {
   const baseline = scopeStats()

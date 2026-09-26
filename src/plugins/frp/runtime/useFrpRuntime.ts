@@ -66,6 +66,14 @@ export function useFrpRuntime() {
   /** 追加一行日志（环形缓冲按设置上限裁剪） */
   function applyLog(payload: FrpLogPayload): void {
     if (scope.disposed) return
+    if (payload.state) {
+      applyState({
+        ...payload.state,
+        fileName: payload.fileName,
+        lastLine: payload.line,
+        lastError: payload.lastErrorFromLine ? payload.line : payload.state.lastError,
+      })
+    }
     const current = logs.value[payload.fileName] ?? []
     const line: FrpLogLine = {
       ts: payload.ts,
