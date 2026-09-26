@@ -46,9 +46,11 @@ pub async fn data_export_start(
     if handle.is_rejected() {
         return Err("同时进行的任务过多，请稍后再试".into());
     }
-    let cancel = session::begin_transfer();
+    let transfer = session::begin_transfer();
+    let cancel = transfer.token();
     let build_app = app.clone();
     let work = tauri::async_runtime::spawn_blocking(move || -> Result<ExportReport, String> {
+        cancel.check()?;
         let manifest = catalog::build_manifest(&build_app, &selection)?;
         cancel.check()?;
         let counts = dataset_counts(&manifest);
@@ -76,7 +78,6 @@ pub async fn data_export_start(
     })
     .await
     .map_err(|e| format!("导出任务失败: {e}"))?;
-    session::end_transfer();
     match work {
         Ok(report) => {
             handle.succeed(Some(&app));

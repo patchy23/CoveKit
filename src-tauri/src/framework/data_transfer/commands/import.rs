@@ -38,14 +38,17 @@ pub async fn data_import_inspect(
     if target.as_os_str().is_empty() {
         return Err("请选择数据包文件".into());
     }
-    let cancel = session::begin_transfer();
+    let transfer = session::begin_transfer();
+    let cancel = transfer.token();
     let inspect_app = app.clone();
     let work =
         tauri::async_runtime::spawn_blocking(move || -> Result<ImportInspectResult, String> {
+            cancel.check()?;
             let raw = package::read_package(&target)?;
             cancel.check()?;
             let digest = package::file_digest(&raw);
             let manifest = package::open_package(&password, &raw)?;
+            cancel.check()?;
             let descriptors = catalog::collect_descriptors(&inspect_app)?;
             let summary = package_summary(&manifest, &descriptors);
             let defaults = default_import_selection(&manifest, &descriptors);
@@ -59,6 +62,7 @@ pub async fn data_import_inspect(
                 None,
             )?;
             let duplicate = find_duplicate(&inspect_app, &manifest.package_id)?;
+            cancel.check()?;
             let inspect_id = session::put_inspect(target.clone(), digest, manifest)?;
             // 先取走借用 `probe` 的派生数据，再移动 items（避免部分移动后被借用）
             let pending = probe.pending_notes();
@@ -75,7 +79,6 @@ pub async fn data_import_inspect(
         })
         .await
         .map_err(|e| format!("校验任务失败: {e}"))?;
-    session::end_transfer();
     work
 }
 
@@ -211,7 +214,8 @@ pub async fn data_import_commit(
     if handle.is_rejected() {
         return Err("同时进行的任务过多，请稍后再试".into());
     }
-    let cancel = session::begin_transfer();
+    let transfer = session::begin_transfer();
+    let cancel = transfer.token();
     let commit_app = app.clone();
     let work = {
         // 维护互斥：导入提交与根迁移、空间切换互斥
@@ -224,6 +228,7 @@ pub async fn data_import_commit(
                 return Err("数据包内容已改变，请重新预览后再提交".into());
             }
             let manifest = package::open_package(&password, &raw)?;
+            cancel.check()?;
             if manifest.package_id != plan.package_id {
                 return Err("数据包与预览的不是同一份，请重新预览后再提交".into());
             }
@@ -250,7 +255,6 @@ pub async fn data_import_commit(
         .await
         .map_err(|e| format!("导入任务失败: {e}"))?
     };
-    session::end_transfer();
     match work {
         Ok(report) => {
             session::drop_plan(&plan_id);

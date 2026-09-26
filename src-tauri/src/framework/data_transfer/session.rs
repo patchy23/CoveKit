@@ -9,7 +9,7 @@
 //! 提交前会用这里存的路径与摘要**重新读一遍文件**：文件被换过就是另一份包，
 //! 不能拿旧预览的结论去写数据（这是「密码再次提供」之外真正起作用的那道校验）。
 //!
-//! 取消标志是进程内单例：导出与导入都受维护互斥保护，同一时刻只有一次传输在跑。
+//! 当前取消入口指向最近登记的任务；它不是并发闸门。旧任务结束不得清除新任务的令牌。
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -184,15 +184,42 @@ fn current() -> &'static Mutex<Option<CancelToken>> {
     CURRENT.get_or_init(|| Mutex::new(None))
 }
 
-/// 开始一次传输：登记新令牌（上一次的令牌随之作废）
-pub(crate) fn begin_transfer() -> CancelToken {
+/// 传输调用的所有权守卫：正常返回、异常和 future 被丢弃时统一清理自己的登记。
+pub(crate) struct TransferGuard {
+    token: CancelToken,
+}
+
+impl TransferGuard {
+    /// 工作线程只持有协作取消令牌，登记的释放责任留在调用方。
+    pub(crate) fn token(&self) -> CancelToken {
+        self.token.clone()
+    }
+}
+
+impl Drop for TransferGuard {
+    fn drop(&mut self) {
+        // spawn_blocking 无法被 drop 强行中止；通知仍在执行的工作在检查点退出。
+        self.token.flag.store(true, Ordering::SeqCst);
+        if let Ok(mut guard) = current().lock() {
+            if guard
+                .as_ref()
+                .is_some_and(|token| Arc::ptr_eq(&token.flag, &self.token.flag))
+            {
+                *guard = None;
+            }
+        }
+    }
+}
+
+/// 开始一次传输：登记最近令牌；不取消或串行化先前仍有所有者的任务。
+pub(crate) fn begin_transfer() -> TransferGuard {
     let token = CancelToken {
         flag: Arc::new(AtomicBool::new(false)),
     };
     if let Ok(mut guard) = current().lock() {
         *guard = Some(token.clone());
     }
-    token
+    TransferGuard { token }
 }
 
 /// 请求取消当前传输（返回是否确有在跑的传输）
@@ -209,9 +236,22 @@ pub(crate) fn cancel_current() -> bool {
     }
 }
 
-/// 结束一次传输（清掉令牌，避免取消命令作用到已结束的传输上）
-pub(crate) fn end_transfer() {
-    if let Ok(mut guard) = current().lock() {
-        *guard = None;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn finishing_old_transfer_preserves_new_cancellation_and_drop_notifies_worker() {
+        let old = begin_transfer();
+        let old_worker = old.token();
+        let new = begin_transfer();
+        let new_worker = new.token();
+        drop(old);
+        assert!(old_worker.check().is_err());
+        assert!(new_worker.check().is_ok());
+        assert!(cancel_current());
+        assert!(new_worker.check().is_err());
+        drop(new);
+        assert!(!cancel_current());
     }
 }
