@@ -10,7 +10,7 @@ import { defineComponent, h, nextTick, ref } from 'vue'
 import UiCodeEditor from './UiCodeEditor.vue'
 import EditorSearchBar from './editor/EditorSearchBar.vue'
 import { EditorView } from '@codemirror/view'
-import { undo } from '@codemirror/commands'
+import { redo, undo } from '@codemirror/commands'
 import { currentCompletions, startCompletion, closeCompletion } from '@codemirror/autocomplete'
 import { MySQL, sql } from '@codemirror/lang-sql'
 
@@ -364,6 +364,60 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
 })
 
 describe('独立文档的编辑状态', () => {
+  it('外部局部更新映射选区，保留未受影响的用户撤销历史', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'header\nbody', language: 'text' },
+      attachTo: document.body,
+    })
+    try {
+      await settle()
+      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+      view.dispatch({ changes: { from: 11, insert: '!' }, selection: { anchor: 12 } })
+      await wrapper.setProps({ modelValue: 'header\nbody!' })
+      const emitted = wrapper.emitted('change')?.length
+      view.dispatch({ selection: { anchor: 7, head: 11 } })
+      await wrapper.setProps({ modelValue: 'prefix\nheader\nbody!' })
+      expect(EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)).toBe(view)
+      expect(
+        view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to)
+      ).toBe('body')
+      expect(view.state.selection.main.anchor).toBe(14)
+      expect(view.state.selection.main.head).toBe(18)
+      expect(wrapper.emitted('change')?.length).toBe(emitted)
+      expect(undo(view)).toBe(true)
+      expect(view.state.doc.toString()).toBe('prefix\nheader\nbody')
+      expect(redo(view)).toBe(true)
+      expect(view.state.doc.toString()).toBe('prefix\nheader\nbody!')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
+  it('完整赋值仍可撤销重做，换行等价回写保留原文档', async () => {
+    const wrapper = mount(UiCodeEditor, {
+      props: { modelValue: 'same\nold\ntail', language: 'text' },
+      attachTo: document.body,
+    })
+    try {
+      await settle()
+      const view = EditorView.findFromDOM(wrapper.get('.cm-editor').element as HTMLElement)!
+      const api = wrapper.vm as unknown as EditorApi
+      const initial = view.state.doc
+      api.setValue('same\r\nold\r\ntail')
+      expect(view.state.doc).toBe(initial)
+      api.setValue('same\nnew\ntail', { addToHistory: true })
+      expect(api.isDirty()).toBe(true)
+      expect(api.getValue()).toBe('same\nnew\ntail')
+      expect(undo(view)).toBe(true)
+      expect(api.getValue()).toBe('same\nold\ntail')
+      expect(api.isDirty()).toBe(false)
+      expect(redo(view)).toBe(true)
+      expect(api.getValue()).toBe('same\nnew\ntail')
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('切换保留各自撤销和光标，关闭文档释放旧历史', async () => {
     const wrapper = mount(UiCodeEditor, {
       props: { modelValue: 'A', language: 'text', documentKey: 'a', documentKeys: ['a', 'b'] },

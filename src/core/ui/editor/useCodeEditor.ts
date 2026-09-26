@@ -29,6 +29,7 @@ import { formatDocument } from './format'
 import { createDocStatsTracker } from './docStats'
 import { createSearchController } from './searchController'
 import { createDocumentTextReader } from './documentText'
+import { documentChange } from './documentChange'
 import { detectLanguage, loadLanguage, PLAIN_TEXT, type LanguageInfo } from './languages'
 import type { EditorDegradeLevel } from './status'
 import type { CodeEditorHandle, EditorCursorRange, UseCodeEditorOptions } from './types'
@@ -239,14 +240,16 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     view.value = null
   }
 
-  /** 全量写入文档（统一入口）：addHistory=true 时进撤销历史（用户级替换） */
+  /** 同步完整内容，仅提交变化区间；addHistory=true 时进撤销历史（用户级替换）。 */
   function writeValue(value: string, addHistory: boolean): void {
     const current = view.value
     if (!current || documentText(current.state.doc) === value) return
+    const changes = documentChange(current.state.doc, current.state.toText(value))
+    if (!changes) return
     applyingExternal = true
     try {
       current.dispatch({
-        changes: { from: 0, to: current.state.doc.length, insert: value },
+        changes,
         annotations: addHistory ? undefined : Transaction.addToHistory.of(false),
       })
     } finally {
