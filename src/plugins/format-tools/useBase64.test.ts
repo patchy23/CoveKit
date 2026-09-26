@@ -29,6 +29,15 @@ describe('encodeBase64', () => {
     expect(encode.mock.calls.length).toBeGreaterThan(1)
     expect(encode.mock.calls.every(([chunk]) => chunk.length <= 0x7ffe)).toBe(true)
   })
+
+  it('UTF-8 编码不物化整份字节数组，跨代理对和非法代理项仍字节保真', () => {
+    const encode = vi.spyOn(TextEncoder.prototype, 'encode')
+    for (const prefix of [8190, 8191, 8192]) {
+      const text = 'a'.repeat(prefix) + '😀中\ud800X\udc00' + '中文'.repeat(20000)
+      expect(encodeBase64(text).output === Buffer.from(text).toString('base64')).toBe(true)
+    }
+    expect(encode.mock.calls.every(([input]) => (input?.length ?? 0) <= 8192)).toBe(true)
+  })
 })
 
 describe('decodeBase64', () => {

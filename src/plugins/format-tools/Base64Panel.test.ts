@@ -1,7 +1,9 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import Base64Panel from './Base64Panel.vue'
+
+afterEach(() => vi.unstubAllGlobals())
 
 vi.mock('@/core/feedback/useCopy', () => ({ useCopy: () => ({ copyText: vi.fn() }) }))
 // 仅替换重型编辑器与展示壳，测试真实面板的输入调度和编码输出。
@@ -22,6 +24,42 @@ vi.mock('@/core/ui', () => {
 })
 
 describe('Base64 面板自动编码', () => {
+  it('大文本进入后台计算，改写输入立即取消且迟到结果不回填', async () => {
+    vi.useFakeTimers()
+    const workers: {
+      onmessage?: (event: { data: unknown }) => void
+      postMessage: ReturnType<typeof vi.fn>
+      terminate: ReturnType<typeof vi.fn>
+    }[] = []
+    vi.stubGlobal(
+      'Worker',
+      class {
+        postMessage = vi.fn()
+        terminate = vi.fn()
+        constructor() {
+          workers.push(this)
+        }
+      }
+    )
+    const wrapper = mount(Base64Panel)
+    try {
+      const [input, output] = wrapper.findAll('textarea')
+      await input.setValue('x'.repeat(70000))
+      await vi.advanceTimersByTimeAsync(300)
+      const worker = workers[0]
+      const request = worker.postMessage.mock.lastCall![0]
+      expect(request.direction).toBe('encode')
+      await input.setValue('small')
+      expect(worker.terminate).toHaveBeenCalledOnce()
+      worker.onmessage?.({ data: { id: request.id, result: { ok: true, output: 'STALE' } } })
+      await vi.advanceTimersByTimeAsync(300)
+      await nextTick()
+      expect((output.element as HTMLTextAreaElement).value).toBe('c21hbGw=')
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
+  })
   it.each([
     [' ', 'IA=='],
     ['\n', 'Cg=='],

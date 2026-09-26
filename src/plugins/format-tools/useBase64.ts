@@ -12,13 +12,45 @@ export interface Base64Result {
 export function encodeBase64(input: string): Base64Result {
   if (!input) return { ok: false, output: '', error: '请输入要编码的文本' }
   try {
-    const bytes = new TextEncoder().encode(input)
-    // 每块为 3 字节的倍数，仅末块产生 padding；不拼出整份二进制字符串。
+    const encoder = new TextEncoder()
+    const CHARS = 0x2000
+    // 小文本保持直接路径；大文本同时限制 UTF-8 临时缓冲和 btoa 的参数块。
+    if (input.length <= CHARS)
+      return { ok: true, output: btoa(String.fromCharCode(...encoder.encode(input))) }
+    // 每个 UTF-16 码元至多编码为 3 字节，再预留 2 字节 Base64 尾部，encodeInto 总能读完整块。
+    const bytes = new Uint8Array(CHARS * 3 + 2)
+    let position = 0,
+      carry = 0
     let output = ''
-    const CHUNK = 0x7ffe
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      output += btoa(String.fromCharCode(...bytes.subarray(i, i + CHUNK)))
+    while (position < input.length) {
+      let end = Math.min(position + CHARS, input.length)
+      // 不拆 UTF-16 代理对；独立的非法代理项仍交给 TextEncoder 按原语义替换。
+      const last = input.charCodeAt(end - 1),
+        next = input.charCodeAt(end)
+      if (
+        end < input.length &&
+        last >= 0xd800 &&
+        last <= 0xdbff &&
+        next >= 0xdc00 &&
+        next <= 0xdfff
+      )
+        end--
+      const chunk = input.slice(position, end)
+      let written: number
+      if (encoder.encodeInto) written = encoder.encodeInto(chunk, bytes.subarray(carry)).written
+      else {
+        const encoded = encoder.encode(chunk)
+        bytes.set(encoded, carry)
+        written = encoded.length
+      }
+      const length = carry + written
+      const complete = length - (length % 3)
+      output += btoa(String.fromCharCode(...bytes.subarray(0, complete)))
+      carry = length - complete
+      bytes.copyWithin(0, complete, length)
+      position = end
     }
+    if (carry) output += btoa(String.fromCharCode(...bytes.subarray(0, carry)))
     return { ok: true, output }
   } catch (e) {
     return { ok: false, output: '', error: e instanceof Error ? e.message : String(e) }
