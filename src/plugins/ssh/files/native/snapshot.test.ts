@@ -103,3 +103,39 @@ it('失步增量被拒绝且不污染草稿，完整补发可从任意基线恢�
   expect(editor.documents.value[0].content).toBe(before.documents[0].content)
   expect(mergeEditorUpdate(editor, editorUpdate(current), 2).documents[0].content).toBe('更新草稿')
 })
+
+it('大文档局部输入仅同步差量，正文和保存基线经 JSON 往返完整恢复', () => {
+  const { editor, before } = fixture()
+  const original = before.documents[0].content
+  const next = original.slice(0, 300) + '🙂\r\n修改' + original.slice(303)
+  editor.documents.value[0].content = next
+  editor.documents.value[0].saved += '保存'
+  const update = JSON.parse(JSON.stringify(editorUpdate(captureEditor(editor, 2), before)))
+  expect(JSON.stringify(update).length).toBeLessThan(600)
+  editor.documents.value = before.documents
+  const merged = mergeEditorUpdate(editor, update, 1)
+  expect(merged.documents[0].content).toBe(next)
+  expect(merged.documents[0].saved).toBe(before.documents[0].saved + '保存')
+  expect(editor.documents.value[0].content).toBe(original)
+  update.documents[0].textChanges.content.to = original.length + 1
+  expect(() => mergeEditorUpdate(editor, update, 1)).toThrow('基线')
+  expect(editor.documents.value[0].content).toBe(original)
+})
+
+it('代理对边界、删除和整文替换均能精确恢复', () => {
+  for (const replacement of ['😀', '', '替换整篇']) {
+    const { editor, before } = fixture()
+    editor.documents.value[0].content =
+      replacement === '替换整篇'
+        ? replacement
+        : before.documents[0].content.slice(0, 80) +
+          replacement +
+          before.documents[0].content.slice(90)
+    const current = captureEditor(editor, 2)
+    const update = JSON.parse(JSON.stringify(editorUpdate(current, before)))
+    editor.documents.value = before.documents
+    expect(mergeEditorUpdate(editor, update, 1).documents[0].content).toBe(
+      current.documents[0].content
+    )
+  }
+})

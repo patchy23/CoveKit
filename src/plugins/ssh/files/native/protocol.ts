@@ -37,9 +37,20 @@ export function acceptSnapshot(current: number, next: Pick<EditorSnapshot, 'sequ
 }
 
 type DocumentFields = Omit<RemoteDocument, 'id'>
+export interface EditorTextChange {
+  baseLength: number
+  from: number
+  to: number
+  insert: string
+}
 export type EditorDocumentUpdate =
   | { id: string; document: RemoteDocument }
-  | { id: string; changes: Partial<DocumentFields>; cleared: (keyof DocumentFields)[] }
+  | {
+      id: string
+      changes: Partial<DocumentFields>
+      cleared: (keyof DocumentFields)[]
+      textChanges?: Partial<Record<'content' | 'saved' | 'remoteContent', EditorTextChange>>
+    }
 
 /** 平时只同步变化字段；新文档、失步恢复和交接保留完整快照。 */
 export interface EditorUpdate extends Omit<EditorSnapshot, 'layout' | 'documents'> {
