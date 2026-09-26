@@ -42,3 +42,10 @@ it('保存和 WS 握手字段平铺传入，持久化包含分组和无秘密设
   await ipc.wsConnect(handshake)
   expect(invoke).toHaveBeenLastCalledWith('ws_connect', handshake)
 })
+
+it('WS 增量游标以顶层 camelCase 传入，省略游标仍支持完整快照', async () => {
+  await ipc.wsRecv('ws-test', 42)
+  expect(invoke).toHaveBeenLastCalledWith('ws_recv', { id: 'ws-test', afterSeq: 42 })
+  await ipc.wsRecv('ws-test')
+  expect(JSON.parse(JSON.stringify(invoke.mock.calls.at(-1)?.[1]))).toEqual({ id: 'ws-test' })
+})

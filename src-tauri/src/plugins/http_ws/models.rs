@@ -128,8 +128,12 @@ pub struct WsSession {
     pub(crate) connected_at: u64,
     /// 是否仍处于连接状态
     pub(crate) open: bool,
-    /// 消息队列快照（上限 500 条，最旧的被丢弃）
+    /// 本次交付的消息；带游标读取时仅含新增条目。
     pub(crate) messages: Vec<WsMessage>,
+    /// 后台仍保留的第一条序号，空队列为最后序号加一。
+    pub(crate) first_seq: u64,
+    /// 当前已产生的最后序号，未产生消息为零。
+    pub(crate) last_seq: u64,
     /// 超过队列容量后丢弃的历史消息数。
     pub(crate) dropped: u64,
     /// 后台读写失败原因。

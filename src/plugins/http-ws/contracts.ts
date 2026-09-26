@@ -45,6 +45,8 @@ export interface WsSession {
   connectedAt: number
   open: boolean
   messages: WsMessage[]
+  firstSeq: number
+  lastSeq: number
   dropped: number
   error?: string | null
 }
@@ -130,7 +132,7 @@ export type Payloads = {
   api_delete: { id: number }
   ws_connect: WsConnectPayload
   ws_send: { id: string; message: string }
-  ws_recv: { id: string }
+  ws_recv: { id: string; afterSeq?: number }
   ws_close: { id: string }
   ws_sessions: Record<string, never>
   sse_start: {

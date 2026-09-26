@@ -37,6 +37,8 @@ const socket = (id = 'ws-1', open = true): WsSession => ({
   connectedAt: 1,
   open,
   messages: [],
+  firstSeq: 1,
+  lastSeq: 0,
   dropped: 0,
 })
 const flush = async () => {
@@ -99,6 +101,7 @@ describe('每个页签的请求与连接所有权', () => {
     expect(mock.wsRecv).toHaveBeenCalledTimes(1)
     const snapshot = {
       ...socket(),
+      lastSeq: 1,
       messages: [{ seq: 1, time: 1, direction: 'received' as const, content: 'old' }],
     }
     pending.resolve(snapshot)
@@ -151,5 +154,94 @@ describe('每个页签的请求与连接所有权', () => {
     await expect(session.stop()).rejects.toThrow('清理失败')
     await session.dispose()
     expect(mock.wsClose).toHaveBeenCalledTimes(2)
+  })
+
+  it('空增量保持历史对象，新增消息只追加且同步后台淘汰和终态', async () => {
+    mock.wsConnect.mockResolvedValue(socket())
+    const message = (seq: number) => ({
+      seq,
+      time: seq,
+      direction: 'received' as const,
+      content: `正文 ${seq}`,
+    })
+    mock.wsRecv.mockResolvedValueOnce({
+      ...socket(),
+      lastSeq: 2,
+      messages: [message(1), message(2)],
+    })
+    const draft = newDraft('ws')
+    draft.url = 'ws://example.invalid'
+    const session = useRequestSession(() => draft, vi.fn())
+    await session.run()
+    await flush()
+    const entries = session.state.entries
+    const second = entries[1]
+    expect(mock.wsRecv).toHaveBeenLastCalledWith('ws-1', 0)
+    mock.wsRecv.mockResolvedValue({ ...socket(), lastSeq: 2 })
+    await vi.advanceTimersByTimeAsync(3500)
+    expect(mock.wsRecv).toHaveBeenLastCalledWith('ws-1', 2)
+    expect(session.state.entries).toBe(entries)
+    expect(session.state.entries[1]).toBe(second)
+    mock.wsRecv.mockResolvedValueOnce({
+      ...socket(),
+      firstSeq: 2,
+      lastSeq: 3,
+      dropped: 1,
+      messages: [message(3)],
+    })
+    await vi.advanceTimersByTimeAsync(350)
+    expect(session.state.entries.map((entry) => entry.seq)).toEqual([2, 3])
+    expect(session.state.entries[0]).toBe(second)
+    expect(session.state.dropped).toBe(1)
+    mock.wsRecv.mockResolvedValueOnce({
+      ...socket('ws-1', false),
+      firstSeq: 2,
+      lastSeq: 4,
+      dropped: 1,
+      messages: [message(4)],
+      error: '远端断开',
+    })
+    await vi.advanceTimersByTimeAsync(350)
+    expect(session.state.entries.map((entry) => entry.seq)).toEqual([2, 3, 4])
+    expect(session.state.connected).toBe(false)
+    expect(session.state.error).toBe('远端断开')
+    const count = mock.wsRecv.mock.calls.length
+    await vi.advanceTimersByTimeAsync(3500)
+    expect(mock.wsRecv).toHaveBeenCalledTimes(count)
+    await session.dispose()
+  })
+
+  it('轮询中清空仍接收新消息，失步完整快照与重连重置游标', async () => {
+    mock.wsConnect.mockResolvedValue(socket())
+    const message = (seq: number) => ({
+      seq,
+      time: seq,
+      direction: 'sent' as const,
+      content: String(seq),
+    })
+    mock.wsRecv.mockResolvedValueOnce({ ...socket(), lastSeq: 1, messages: [message(1)] })
+    const draft = newDraft('ws')
+    draft.url = 'ws://example.invalid'
+    const session = useRequestSession(() => draft, vi.fn())
+    await session.run()
+    await flush()
+    const pending = deferred<WsSession>()
+    mock.wsRecv.mockReturnValueOnce(pending.promise)
+    await vi.advanceTimersByTimeAsync(350)
+    session.clear()
+    pending.resolve({ ...socket(), lastSeq: 2, messages: [message(1), message(2)] })
+    await flush()
+    expect(session.state.entries.map((entry) => entry.seq)).toEqual([2])
+    mock.wsRecv.mockResolvedValueOnce({ ...socket(), lastSeq: 1, messages: [message(1)] })
+    await vi.advanceTimersByTimeAsync(350)
+    expect(session.state.entries.map((entry) => entry.seq)).toEqual([1])
+    await session.stop()
+    mock.wsConnect.mockResolvedValue(socket('ws-new'))
+    mock.wsRecv.mockResolvedValueOnce({ ...socket('ws-new'), lastSeq: 1, messages: [message(1)] })
+    await session.run()
+    await flush()
+    expect(mock.wsRecv).toHaveBeenLastCalledWith('ws-new', 0)
+    expect(session.state.entries.map((entry) => entry.seq)).toEqual([1])
+    await session.dispose()
   })
 })

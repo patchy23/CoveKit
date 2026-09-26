@@ -58,13 +58,28 @@ impl WsSessionHandle {
             self.dropped += 1;
         }
     }
-    fn snapshot(&self, id: &str) -> WsSession {
+    fn snapshot(&self, id: &str, after_seq: Option<u64>) -> WsSession {
+        // 无游标或游标超前时返回完整保留窗口，供初始化和失步恢复。
+        let after_seq = after_seq.filter(|seq| *seq <= self.seq);
+        let start = after_seq.map_or(0, |seq| {
+            self.queue.partition_point(|message| message.seq <= seq)
+        });
         WsSession {
             id: id.into(),
             url: self.url.clone(),
             connected_at: self.connected_at,
             open: self.open,
-            messages: self.queue.iter().cloned().collect(),
+            messages: self
+                .queue
+                .iter()
+                .skip(start)
+                .cloned()
+                .collect(),
+            first_seq: self
+                .queue
+                .front()
+                .map_or(self.seq.saturating_add(1), |message| message.seq),
+            last_seq: self.seq,
             dropped: self.dropped,
             error: self.error.clone(),
         }
@@ -186,7 +201,7 @@ pub async fn ws_connect(
         tx,
         task,
     };
-    let snapshot = handle.snapshot(&id);
+    let snapshot = handle.snapshot(&id, None);
     map.insert(id, handle);
     Ok(snapshot)
     }.await;
@@ -252,15 +267,19 @@ pub async fn ws_send(
     result
 }
 
-/// 快照读取不跨 await 持锁。
+/// 按消息序号交付增量；缺省游标保留完整快照契约，读取不跨 await 持锁。
 #[tauri::command]
-pub async fn ws_recv(state: State<'_, WsState>, id: String) -> Result<WsSession, String> {
+pub async fn ws_recv(
+    state: State<'_, WsState>,
+    id: String,
+    after_seq: Option<u64>,
+) -> Result<WsSession, String> {
     state
         .0
         .lock()
         .map_err(|e| e.to_string())?
         .get(&id)
-        .map(|h| h.snapshot(&id))
+        .map(|h| h.snapshot(&id, after_seq))
         .ok_or_else(|| "会话不存在".into())
 }
 
@@ -307,6 +326,50 @@ pub async fn ws_sessions(state: State<'_, WsState>) -> Result<Vec<WsSession>, St
         .lock()
         .map_err(|e| e.to_string())?
         .iter()
-        .map(|(id, h)| h.snapshot(id))
+        .map(|(id, h)| h.snapshot(id, None))
         .collect())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn incremental_snapshot_keeps_window_bounds_and_full_snapshot_fallback() {
+        let (tx, _rx) = mpsc::channel(1);
+        let task = tauri::async_runtime::spawn(async {});
+        task.abort();
+        let mut handle = WsSessionHandle {
+            url: "ws://example.invalid".into(),
+            connected_at: 1,
+            open: true,
+            queue: VecDeque::new(),
+            queue_bytes: 0,
+            seq: 0,
+            dropped: 0,
+            error: None,
+            tx,
+            task,
+        };
+        let empty = handle.snapshot("test", Some(0));
+        assert_eq!((empty.first_seq, empty.last_seq), (1, 0));
+        for index in 1..=501 {
+            handle.push("received", format!("message {index}"));
+        }
+        let full = handle.snapshot("test", None);
+        assert_eq!(full.messages.len(), 500);
+        assert_eq!((full.first_seq, full.last_seq, full.dropped), (2, 501, 1));
+        let incremental = handle.snapshot("test", Some(500));
+        assert_eq!(incremental.messages.len(), 1);
+        assert_eq!(incremental.messages[0].seq, 501);
+        assert!(handle.snapshot("test", Some(501)).messages.is_empty());
+        assert_eq!(handle.snapshot("test", Some(999)).messages.len(), 500);
+        handle.open = false;
+        handle.error = Some("closed".into());
+        let closed = handle.snapshot("test", Some(501));
+        assert!(!closed.open);
+        assert_eq!(closed.error.as_deref(), Some("closed"));
+        assert_eq!(closed.dropped, 1);
+        assert!(closed.messages.is_empty());
+    }
 }

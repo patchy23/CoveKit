@@ -37,6 +37,7 @@ export function useRequestSession(
   let sseId: string | null = null
   let timer: ReturnType<typeof setTimeout> | undefined
   let clearedSeq = 0
+  let receivedSeq = 0
   let nextSeq = 0
   let streamChars = 0
   function fail(error: unknown) {
@@ -77,19 +78,34 @@ export function useRequestSession(
   }
   async function poll(token: number, id: string) {
     try {
-      const snapshot = await ipc.wsRecv(id)
+      const snapshot = await ipc.wsRecv(id, receivedSeq)
       if (disposed || token !== epoch || wsId !== id) return
       state.connected = snapshot.open
-      state.entries = snapshot.messages
-        .filter((m) => m.seq > clearedSeq)
-        .map((m) => ({
+      if (snapshot.lastSeq < receivedSeq) {
+        state.entries = []
+        receivedSeq = 0
+        clearedSeq = 0
+      }
+      // 跟随后台原有保留窗口淘汰；空增量不重建历史行或其详情派生状态。
+      let expired = 0
+      while (
+        expired < state.entries.length &&
+        (state.entries[expired].seq < snapshot.firstSeq || state.entries[expired].seq <= clearedSeq)
+      )
+        expired++
+      if (expired) state.entries.splice(0, expired)
+      for (const m of snapshot.messages) {
+        if (m.seq <= receivedSeq || m.seq <= clearedSeq) continue
+        state.entries.push({
           seq: m.seq,
           time: m.time,
           direction: m.direction,
           kind: m.direction === 'sent' ? '发送' : '接收',
           eventId: '',
           content: m.content,
-        }))
+        })
+      }
+      receivedSeq = snapshot.lastSeq
       state.dropped = snapshot.dropped
       if (snapshot.error) state.error = snapshot.error
     } catch (error) {
@@ -168,6 +184,7 @@ export function useRequestSession(
         }
         wsId = session.id
         clearedSeq = 0
+        receivedSeq = 0
         state.entries = []
         state.dropped = 0
         state.connected = session.open

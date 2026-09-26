@@ -26,7 +26,7 @@ export const ipc = {
   apiDelete: (id: number) => call('api_delete', { id }),
   wsConnect: (payload: WsConnectPayload) => call('ws_connect', payload),
   wsSend: (id: string, message: string) => call('ws_send', { id, message }),
-  wsRecv: (id: string) => call('ws_recv', { id }),
+  wsRecv: (id: string, afterSeq?: number) => call('ws_recv', { id, afterSeq }),
   wsClose: (id: string) => call('ws_close', { id }),
   wsSessions: () => call('ws_sessions', {}),
   sseStart: (id: string, payload: HttpRequestPayload, receive: (update: SseUpdate) => void) => {
