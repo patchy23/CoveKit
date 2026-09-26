@@ -195,7 +195,8 @@ pub(crate) fn spawn_channel_task(
                             // 旁路写盘；失败则停录并通知前端（不静默）
                             if let Err(message) = log::append(&log, &data).await {
                                 ::log::error!("终端录制写入失败 terminal={terminal_id} session={connection_id}");
-                                log::finish(&log).await;
+                                // 当前写入已失败，释放录制器；该错误在下面统一通知。
+                                log.lock().await.take();
                                 let _ = app.emit(
                                     "ssh://terminal-log-error",
                                     &log::error_payload(&terminal_id, message),
@@ -225,7 +226,13 @@ pub(crate) fn spawn_channel_task(
         }
         ::log::info!("终端通道已结束 terminal={terminal_id} session={connection_id}");
         // 任务退出：先收尾日志（flush 落盘），再从注册表移除
-        log::finish(&log).await;
+        if let Err(message) = log::finish(&log).await {
+            ::log::error!("终端录制收尾失败 terminal={terminal_id} session={connection_id}");
+            let _ = app.emit(
+                "ssh://terminal-log-error",
+                &log::error_payload(&terminal_id, message),
+            );
+        }
         if let Ok(mut m) = app.state::<TerminalState>().0.lock() {
             m.remove(&terminal_id);
         }

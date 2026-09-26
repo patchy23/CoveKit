@@ -25,6 +25,9 @@ pub(crate) struct LogSink {
     path: PathBuf,
     /// 已写入字节数
     bytes: u64,
+    /// UTF-8 尾部与 ANSI 状态随录制文件持有，不随 SSH 数据块重置。
+    decoder: super::Utf8ChunkDecoder,
+    ansi: AnsiFilter,
 }
 
 /// 终端日志共享状态（TerminalHandle 持有，后台任务与命令层共享同一份）
@@ -35,52 +38,80 @@ pub(crate) fn new_shared() -> SharedLog {
     Arc::new(Mutex::new(None))
 }
 
-/// 剥离 ANSI 转义序列（CSI / OSC / 单字符转义）并丢弃 `\r`
-///
-/// 规则：丢弃 `\r`，按到达顺序保留正文、`\n` 与 `\t`；
-/// 沿用逐块清洗语义，未闭合的转义序列丢弃至块末。
-pub(crate) fn strip_ansi(input: &str) -> String {
-    let mut chars = input.chars().peekable();
-    let mut out = String::with_capacity(input.len());
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\r' => {}
-            '\x1b' => {
-                match chars.next() {
-                    // CSI：ESC [ ... 终止字节落在 0x40..=0x7E
-                    Some('[') => {
-                        for ch in chars.by_ref() {
-                            if ('\u{40}'..='\u{7e}').contains(&ch) {
-                                break;
-                            }
-                        }
-                    }
-                    // OSC：ESC ] ... BEL 或 ESC \
-                    Some(']') => {
-                        while let Some(ch) = chars.next() {
-                            if ch == '\u{7}' {
-                                break;
-                            }
-                            if ch == '\x1b' && chars.peek() == Some(&'\\') {
-                                let _ = chars.next();
-                                break;
-                            }
-                        }
-                    }
-                    // 字符集指定：ESC ( X / ESC ) X / ESC * X / ESC + X / ESC # X
-                    Some('(') | Some(')') | Some('*') | Some('+') | Some('#') => {
-                        let _ = chars.next();
-                    }
-                    // 其他单字符转义：ESC 后一字符即结束
-                    Some(_) | None => {}
-                }
-            }
-            _ => {
-                out.push(ch);
-            }
-        }
+/// ANSI 只保留解析状态，不积攒未结束的控制序列正文。
+#[derive(Default)]
+enum AnsiFilter {
+    #[default]
+    Text,
+    Escape,
+    Csi,
+    Osc,
+    OscEscape,
+    Charset,
+}
+
+impl AnsiFilter {
+    /// 原地压缩 UTF-8 字符串，不为清洗再分配一份整块文本。
+    fn retain_text(&mut self, text: &mut String) {
+        text.retain(|ch| {
+            *self = match *self {
+                Self::Text => match ch {
+                    '\x1b' => Self::Escape,
+                    '\r' => Self::Text,
+                    _ => return true,
+                },
+                Self::Escape => match ch {
+                    '[' => Self::Csi,
+                    ']' => Self::Osc,
+                    '(' | ')' | '*' | '+' | '#' => Self::Charset,
+                    _ => Self::Text,
+                },
+                Self::Csi if ('\u{40}'..='\u{7e}').contains(&ch) => Self::Text,
+                Self::Csi => Self::Csi,
+                Self::Osc | Self::OscEscape if ch == '\x07' => Self::Text,
+                Self::OscEscape if ch == '\\' => Self::Text,
+                Self::Osc | Self::OscEscape if ch == '\x1b' => Self::OscEscape,
+                Self::Osc | Self::OscEscape => Self::Osc,
+                Self::Charset => Self::Text,
+            };
+            false
+        });
     }
-    out
+}
+
+#[cfg(test)]
+fn strip_ansi(input: &str) -> String {
+    let mut text = input.to_string();
+    AnsiFilter::default().retain_text(&mut text);
+    text
+}
+
+impl LogSink {
+    async fn write_text(&mut self, mut text: String) -> Result<(), String> {
+        self.ansi.retain_text(&mut text);
+        if text.is_empty() {
+            return Ok(());
+        }
+        self.file
+            .write_all(text.as_bytes())
+            .await
+            .map_err(|e| format!("写入日志失败（{}）：{e}", self.path.display()))?;
+        self.file
+            .flush()
+            .await
+            .map_err(|e| format!("刷新日志失败（{}）：{e}", self.path.display()))?;
+        self.bytes += text.len() as u64;
+        Ok(())
+    }
+
+    async fn finish(&mut self) -> Result<(), String> {
+        let tail = self.decoder.finish();
+        self.write_text(tail).await?;
+        self.file
+            .flush()
+            .await
+            .map_err(|e| format!("刷新日志失败（{}）：{e}", self.path.display()))
+    }
 }
 
 /// SSH 会话日志根目录（**唯一**的日志路径解析入口）
@@ -154,28 +185,17 @@ pub(crate) async fn append(sink: &SharedLog, data: &[u8]) -> Result<(), String> 
         return Ok(());
     };
     // 未录制时不做 UTF-8 解码或 ANSI 清洗；同一把锁保证检查到写入之间不会换录制文件。
-    let text = strip_ansi(&String::from_utf8_lossy(data));
-    if text.is_empty() {
-        return Ok(());
-    }
-    log.file
-        .write_all(text.as_bytes())
-        .await
-        .map_err(|e| format!("写入日志失败（{}）：{e}", log.path.display()))?;
-    log.file
-        .flush()
-        .await
-        .map_err(|e| format!("刷新日志失败（{}）：{e}", log.path.display()))?;
-    log.bytes += text.len() as u64;
-    Ok(())
+    let text = log.decoder.feed(data);
+    log.write_text(text).await
 }
 
 /// 收尾：flush 并释放句柄（终端关闭、连接断开、任务退出时调用）
-pub(crate) async fn finish(sink: &SharedLog) {
+pub(crate) async fn finish(sink: &SharedLog) -> Result<(), String> {
     let mut guard = sink.lock().await;
     if let Some(mut log) = guard.take() {
-        let _ = log.file.flush().await;
+        log.finish().await?;
     }
+    Ok(())
 }
 
 /// 开始录制：创建日志文件并接管后续输出（幂等，已在录制时直接返回当前文件）
@@ -214,6 +234,8 @@ pub async fn ssh_terminal_log_start(
         file,
         path: path.clone(),
         bytes: 0,
+        decoder: super::Utf8ChunkDecoder::default(),
+        ansi: AnsiFilter::default(),
     });
     Ok(LogActionResult {
         path: path.display().to_string(),
@@ -237,7 +259,7 @@ pub async fn ssh_terminal_log_stop(
     let mut guard = sink.lock().await;
     match guard.take() {
         Some(mut log) => {
-            let _ = log.file.flush().await;
+            log.finish().await?;
             Ok(LogActionResult {
                 path: log.path.display().to_string(),
                 bytes: log.bytes,
@@ -311,6 +333,59 @@ mod tests {
         assert_eq!(strip_ansi("\x1b("), "");
     }
 
+    /// 任意 SSH 字节边界都不拆坏 Unicode，也不会将转义序列尾部写入正文。
+    #[test]
+    fn stream_filter_preserves_text_at_every_byte_boundary() {
+        let input = "中文\x1b[31m🙂\x1b[0m\r\n前\x1b]标题\x1bX内容\x1b\\后\x1b(中末";
+        let expected = "中文🙂\n前后末";
+        for split in 0..=input.len() {
+            let mut decoder = super::super::Utf8ChunkDecoder::default();
+            let mut ansi = AnsiFilter::default();
+            let mut output = String::new();
+            for bytes in [&input.as_bytes()[..split], &input.as_bytes()[split..]] {
+                let mut text = decoder.feed(bytes);
+                ansi.retain_text(&mut text);
+                output.push_str(&text);
+            }
+            let mut tail = decoder.finish();
+            ansi.retain_text(&mut tail);
+            output.push_str(&tail);
+            assert_eq!(output, expected, "split={split}");
+        }
+        let mut decoder = super::super::Utf8ChunkDecoder::default();
+        let mut ansi = AnsiFilter::default();
+        let mut output = String::new();
+        for bytes in input.as_bytes().chunks(1) {
+            let mut text = decoder.feed(bytes);
+            ansi.retain_text(&mut text);
+            output.push_str(&text);
+        }
+        assert_eq!(output, expected);
+    }
+
+    /// 结束录制才将未完成的 UTF-8 尾部转为替换符，文件内容和字节统计保持一致。
+    #[tokio::test]
+    async fn recording_flushes_incomplete_utf8_on_finish() {
+        let path = std::env::temp_dir().join(format!("covekit-log-{}.txt", uuid::Uuid::new_v4()));
+        let file = tokio::fs::File::create(&path).await.unwrap();
+        let sink = new_shared();
+        *sink.lock().await = Some(LogSink {
+            file,
+            path: path.clone(),
+            bytes: 0,
+            decoder: super::super::Utf8ChunkDecoder::default(),
+            ansi: AnsiFilter::default(),
+        });
+        append(&sink, &[b'a', 0xe4, 0xb8]).await.unwrap();
+        assert_eq!(sink.lock().await.as_ref().unwrap().bytes, 1);
+        let mut log = sink.lock().await.take().unwrap();
+        log.finish().await.unwrap();
+        assert_eq!(log.bytes, 4);
+        drop(log);
+        assert_eq!(tokio::fs::read_to_string(&path).await.unwrap(), "a\u{fffd}");
+        tokio::fs::remove_file(path).await.unwrap();
+    }
+
     /// 开关录制不改变正文与字节统计，停止后不再追加。
     #[tokio::test]
     async fn appends_only_while_recording() {
@@ -323,13 +398,15 @@ mod tests {
             file,
             path: path.clone(),
             bytes: 0,
+            decoder: super::super::Utf8ChunkDecoder::default(),
+            ansi: AnsiFilter::default(),
         });
         append(&sink, "\x1b[31m中文🙂\x1b[0m\r\n".as_bytes())
             .await
             .unwrap();
         append(&sink, b"\x1b[0m").await.unwrap();
         assert_eq!(sink.lock().await.as_ref().unwrap().bytes, 11);
-        finish(&sink).await;
+        finish(&sink).await.unwrap();
         append(&sink, b"after recording").await.unwrap();
         assert_eq!(tokio::fs::read_to_string(&path).await.unwrap(), "中文🙂\n");
         tokio::fs::remove_file(path).await.unwrap();
