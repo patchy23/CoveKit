@@ -271,7 +271,7 @@ export type Payloads = {
   dbc_disconnect: { id: string }
   dbc_test: { config: ConnConfig; password: string; clearPassword?: boolean }
   dbc_drafts: Record<string, never>
-  dbc_drafts_save: { drafts: QueryDraft[] }
+  dbc_drafts_save: { drafts: QueryDraft[]; order?: string[] }
   dbc_history: Record<string, never>
   dbc_history_add: {
     connId: string
@@ -444,6 +444,8 @@ export interface CsvMapping {
 
 /** 可恢复文档；不包含查询结果或活动事务。 */
 export interface QueryDraft {
+  /** 旧版记录缺省；增量保存使用当前文档标识。 */
+  id?: string | null
   label: string
   sql: string
   connectionId: string

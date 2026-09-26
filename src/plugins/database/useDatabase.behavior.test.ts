@@ -1252,9 +1252,10 @@ describe('SQL 草稿恢复', () => {
     first.resolve()
     await flush()
     expect(env.commands.dbcDraftsSave).toHaveBeenCalledTimes(2)
-    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([
-      expect.objectContaining({ sql: 'SELECT 100', dirty: true }),
-    ])
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith(
+      [expect.objectContaining({ sql: 'SELECT 100', dirty: true })],
+      [api.activeTabId.value]
+    )
     let finished = false
     const closing = Promise.all(pending).then(() => {
       finished = true
@@ -1282,9 +1283,10 @@ describe('SQL 草稿恢复', () => {
     expect(api.queryState.value.sql).toBe('SELECT 2')
     expect(api.queryState.value.dirty).toBe(true)
     await api.flushDrafts()
-    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([
-      expect.objectContaining({ sql: 'SELECT 2', dirty: true }),
-    ])
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith(
+      [expect.objectContaining({ sql: 'SELECT 2', dirty: true })],
+      [api.activeTabId.value]
+    )
   })
 
   it('恢复目标和选区，保持离线且不会执行 SQL 或恢复事务', async () => {
@@ -1316,12 +1318,32 @@ describe('SQL 草稿恢复', () => {
     expect(env.commands.dbcConnect).not.toHaveBeenCalled()
     api.patchQueryState({ sql: 'SELECT 2' })
     await api.flushDrafts()
-    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([
-      expect.objectContaining({ sql: 'SELECT 2' }),
-    ])
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith(
+      [expect.objectContaining({ sql: 'SELECT 2' })],
+      [api.activeTabId.value]
+    )
     await api.closeTab(api.activeTabId.value, true)
     await api.flushDrafts()
-    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([])
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([], [])
+  })
+  it('只传修改文档，未变正文不因另一个页签编辑而重复发送', async () => {
+    env.commands.dbcDrafts.mockResolvedValue([])
+    env.commands.dbcDraftsSave.mockResolvedValue(undefined)
+    const api = mountWorkbench()
+    await api.restoreDrafts()
+    openEditor(api, 'conn-a', 'SELECT large_text_1')
+    const first = api.activeTabId.value
+    openEditor(api, 'conn-a', 'SELECT large_text_2')
+    const second = api.activeTabId.value
+    await api.flushDrafts()
+    api.patchQueryState({ sql: 'SELECT changed' })
+    await api.flushDrafts()
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith(
+      [expect.objectContaining({ id: second, sql: 'SELECT changed' })],
+      [first, second]
+    )
+    await api.flushDrafts()
+    expect(env.commands.dbcDraftsSave).toHaveBeenLastCalledWith([], [first, second])
   })
   it('恢复失败不覆盖唯一草稿，保存失败传给关闭流程', async () => {
     env.commands.dbcDrafts.mockRejectedValue(new Error('磁盘读取失败'))

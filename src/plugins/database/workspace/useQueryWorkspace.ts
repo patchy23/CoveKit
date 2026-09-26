@@ -258,6 +258,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   let draftSaving: Promise<void> = Promise.resolve()
   let draftActive = false
   let draftPending = false
+  let savedDrafts: QueryDraft[] = []
   const draftSnapshot = computed<QueryDraft[]>(() =>
     tabs.value
       .filter((tab) => tab.kind === 'query')
@@ -265,6 +266,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         const state = queryStates.value[tab.id]
         const context = tabContexts.value[tab.id]
         return {
+          id: tab.id,
           label: tab.label,
           sql: state.sql,
           connectionId: context.connectionId,
@@ -299,7 +301,20 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       try {
         do {
           draftPending = false
-          await draftIpc.save(draftSnapshot.value)
+          const current = draftSnapshot.value
+          const previous = new Map(savedDrafts.map((draft) => [draft.id, draft]))
+          const changed = current.filter((draft) => {
+            const old = previous.get(draft.id)
+            return (
+              !old ||
+              (Object.keys(draft) as (keyof QueryDraft)[]).some((key) => draft[key] !== old[key])
+            )
+          })
+          await draftIpc.save(
+            changed,
+            current.map((draft) => draft.id!)
+          )
+          savedDrafts = current
         } while (draftPending)
       } finally {
         draftActive = false

@@ -510,6 +510,9 @@ pub struct CsvMapping {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryDraft {
+    /// 文档持久化标识；旧版草稿缺省，首次增量保存时建立。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     /// 恢复后的页签标题。
     pub label: String,
     /// 未执行的 SQL 原文。

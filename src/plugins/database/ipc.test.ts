@@ -1,10 +1,22 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { invokeCommand } from '@/core/ipc/ipc'
-import { queryIpc } from './ipc'
+import { draftIpc, queryIpc } from './ipc'
 import type { QueryResult } from './contracts'
 
 vi.mock('@/core/ipc/ipc', () => ({ invokeCommand: vi.fn() }))
 afterEach(() => vi.clearAllMocks())
+
+it('草稿增量通过原命令携带完整顺序，空顺序用于原子清空', async () => {
+  await draftIpc.save([], ['a', 'b'])
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_drafts_save', {
+    drafts: [],
+    order: ['a', 'b'],
+  })
+  await draftIpc.save([], [])
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_drafts_save', { drafts: [], order: [] })
+  await draftIpc.save([])
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_drafts_save', { drafts: [] })
+})
 
 function result(overrides: Partial<QueryResult> = {}): QueryResult {
   return {

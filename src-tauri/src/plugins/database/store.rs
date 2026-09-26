@@ -54,6 +54,11 @@ pub(super) const MIGRATIONS: &[&str] = &[
     "ALTER TABLE history ADD COLUMN database_name TEXT NOT NULL DEFAULT '';
      ALTER TABLE history ADD COLUMN schema_name TEXT NOT NULL DEFAULT '';",
     "ALTER TABLE connections ADD COLUMN credential_ref TEXT;",
+    "CREATE TABLE query_draft_entries (
+        id TEXT PRIMARY KEY,
+        position INTEGER NOT NULL,
+        content TEXT NOT NULL
+    );",
 ];
 
 /// 本地库 State（惰性打开；锁内同步访问）
