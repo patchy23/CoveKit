@@ -23,7 +23,7 @@ pub async fn ssh_file_list(
         Ok(entries) => entries,
         Err(e) => {
             // 长驻会话可能已失效（服务器重启/通道被回收）：清缓存，下次操作自动重建
-            invalidate_sftp_session(&ssh_state, &connection_id);
+            invalidate_sftp_session(&ssh_state, &connection_id, &sftp);
             return Err(format!("读取目录失败: {e}"));
         }
     };

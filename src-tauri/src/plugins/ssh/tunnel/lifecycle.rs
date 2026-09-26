@@ -313,7 +313,7 @@ fn conn_handle(state: &SshState, connection_id: &str) -> Result<Arc<SshSessionHa
         open,
         connected_at,
         session,
-        sftp: Mutex::new(None),
+        sftp: Mutex::default(),
         forward_targets,
         id_names: Mutex::new(None),
     }))

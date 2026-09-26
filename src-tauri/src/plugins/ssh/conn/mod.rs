@@ -25,7 +25,7 @@ use std::{
 
 use russh::client;
 use tauri::{AppHandle, Emitter, State};
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, OnceCell};
 
 use crate::plugins::ssh::host_keys;
 use crate::plugins::ssh::models::{
@@ -54,11 +54,9 @@ pub(crate) struct SshSessionHandle {
     pub(crate) connected_at: u64,
     /// russh 会话句柄（终端/文件通道从此开启）
     pub(crate) session: std::sync::Arc<client::Handle<SshHandler>>,
-    /// SFTP 长驻会话（惰性创建 + 全连接期复用，句柄销毁时随之回收）。
-    /// 每次新建需 channel open + 子系统握手（约 2~3 次 RTT）——
-    /// 逐操作新建是文件页签切目录卡顿与内存飙升的根因；
-    /// SftpSession 设计为长生命周期且支持并发请求，标准做法即每连接复用一个。
-    pub(crate) sftp: Mutex<Option<Arc<russh_sftp::client::SftpSession>>>,
+    /// 每代缓存只初始化一次；失效时替换整代，旧请求不能回填到新缓存。
+    /// 只合并握手，初始化后的目录/编辑请求仍可并发。
+    pub(crate) sftp: Mutex<Arc<OnceCell<Arc<russh_sftp::client::SftpSession>>>>,
     /// -R 远程转发目标表（与 handler 共享；tunnel 模块注册/注销）
     pub(crate) forward_targets: ForwardTargets,
     /// uid/gid → 用户名/组名缓存（None = 尚未解析；文件列表展示用，解析失败回退数字）
@@ -192,66 +190,79 @@ pub(crate) fn mark_session_closed(
             }
             h.open = false;
             if let Ok(mut slot) = h.sftp.lock() {
-                *slot = None;
+                *slot = Arc::new(OnceCell::new());
             }
         }
     }
 }
 
-/// 取该连接的 SFTP 长驻会话（惰性创建，之后复用；并发首访时后者覆盖前者，
-/// 被覆盖的会话随 Arc 释放自动关通道，无害）。文件浏览/编辑等高频操作走此入口；
+/// 取该连接的 SFTP 长驻会话（并发首访共用一次握手，失败后允许重试）。
+/// 文件浏览/编辑等高频操作走此入口；
 /// 大文件传输仍用独立通道（不占用交互会话的请求窗口）。
 pub(crate) async fn get_sftp_session(
     state: &tauri::State<'_, SshState>,
     connection_id: &str,
 ) -> Result<Arc<russh_sftp::client::SftpSession>, String> {
-    // 先查缓存（两把锁都只在小作用域内持有，不跨 await）
-    let cached = {
+    // 同时取得连接与缓存代次；两把同步锁都不跨 await。
+    let (session, slot) = {
         let map = state.0.lock().map_err(|e| e.to_string())?;
-        let handle = map.get(connection_id).ok_or("连接不存在或已断开")?;
-        // 先落局部变量再作为块尾值：避免 MutexGuard 临时量的析构顺序借用问题
-        let cached_slot = handle.sftp.lock().map_err(|e| e.to_string())?.clone();
-        cached_slot
+        let handle = map
+            .get(connection_id)
+            .filter(|h| h.open)
+            .ok_or("连接不存在或已断开")?;
+        let slot = handle.sftp.lock().map_err(|e| e.to_string())?;
+        (Arc::clone(&handle.session), Arc::clone(&slot))
     };
-    if let Some(sftp) = cached {
-        return Ok(sftp);
-    }
-    // 缓存未命中：新建 channel + SFTP 子系统握手
-    let session = get_session(state, connection_id)?;
-    let channel = match session.channel_open_session().await {
-        Ok(channel) => channel,
-        Err(e) => {
-            mark_session_closed(state.inner(), connection_id, &session);
-            return Err(format!("打开通道失败: {e}"));
-        }
-    };
-    channel
-        .request_subsystem(false, "sftp")
-        .await
-        .map_err(|e| format!("SFTP 子系统请求失败: {e}"))?;
-    let stream = channel.into_stream();
-    let sftp = Arc::new(
-        russh_sftp::client::SftpSession::new(stream)
-            .await
-            .map_err(|e| format!("SFTP 初始化失败: {e}"))?,
-    );
-    // 回存（连接可能已断开，存不进去就直接返回新建的这个）
-    if let Ok(map) = state.0.lock() {
-        if let Some(handle) = map.get(connection_id) {
-            if let Ok(mut slot) = handle.sftp.lock() {
-                *slot = Some(sftp.clone());
+    let sftp = slot
+        .get_or_try_init(|| async {
+            let channel = match session.channel_open_session().await {
+                Ok(channel) => channel,
+                Err(e) => {
+                    mark_session_closed(state.inner(), connection_id, &session);
+                    return Err(format!("打开通道失败: {e}"));
+                }
+            };
+            if let Err(e) = channel.request_subsystem(false, "sftp").await {
+                close_channel(&channel).await;
+                return Err(format!("SFTP 子系统请求失败: {e}"));
             }
+            russh_sftp::client::SftpSession::new(channel.into_stream())
+                .await
+                .map(Arc::new)
+                .map_err(|e| format!("SFTP 初始化失败: {e}"))
+        })
+        .await
+        .map(Arc::clone)?;
+    // 等待握手期间可能断开、重连或失效；迟到结果不得交给新操作。
+    let current = {
+        let map = state.0.lock().map_err(|e| e.to_string())?;
+        match map.get(connection_id) {
+            Some(handle) if handle.open && Arc::ptr_eq(&handle.session, &session) => {
+                let current_slot = handle.sftp.lock().map_err(|e| e.to_string())?;
+                Arc::ptr_eq(&current_slot, &slot)
+            }
+            _ => false,
         }
+    };
+    if !current {
+        // 旧代可能仍有已开始的请求，由其持有的 Arc 负责释放，不能关闭它们的通道。
+        return Err("连接已断开或 SFTP 会话已更新，请重试".into());
     }
     Ok(sftp)
 }
 
 /// 使缓存的 SFTP 会话失效（操作报通道/协议错误时调用，下次操作自动重建）
-pub(crate) fn invalidate_sftp_session(state: &tauri::State<'_, SshState>, connection_id: &str) {
+pub(crate) fn invalidate_sftp_session(
+    state: &tauri::State<'_, SshState>,
+    connection_id: &str,
+    failed: &Arc<russh_sftp::client::SftpSession>,
+) {
     if let Ok(map) = state.0.lock() {
         if let Some(handle) = map.get(connection_id) {
             if let Ok(mut slot) = handle.sftp.lock() {
-                *slot = None;
+                if slot.get().is_some_and(|cached| Arc::ptr_eq(cached, failed)) {
+                    *slot = Arc::new(OnceCell::new());
+                }
             }
         }
     }
@@ -375,7 +386,7 @@ fn register_session(
         open: true,
         connected_at: now_ms(),
         session,
-        sftp: Mutex::new(None),
+        sftp: Mutex::default(),
         forward_targets,
         id_names: Mutex::new(None),
     };

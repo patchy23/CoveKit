@@ -199,7 +199,7 @@ pub async fn ssh_reconnect(
                     open: true,
                     connected_at,
                     session,
-                    sftp: Mutex::new(None),
+                    sftp: Mutex::default(),
                     forward_targets,
                     id_names: Mutex::new(None),
                 },
