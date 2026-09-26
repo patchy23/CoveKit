@@ -4,6 +4,7 @@ import UiTree from '../UiTree.vue'
 import UiSortableList from '../UiSortableList.vue'
 import UiIcon from '../UiIcon.vue'
 import { validMove } from './types'
+import { nextTick } from 'vue'
 enableAutoUnmount(afterEach)
 afterEach(() => {
   vi.restoreAllMocks()
@@ -15,6 +16,53 @@ const rows = [
   { id: 'empty', label: '空目录', depth: 0, expandable: true, expanded: false },
   { id: 'locked', label: '不可用', depth: 0, disabled: true },
 ]
+
+it('固定行树只渲染视口，Home/End 覆盖完整数据并保留离屏焦点', async () => {
+  const items = Array.from({ length: 3000 }, (_, index) => ({
+    id: String(index),
+    label: `文件 ${index}`,
+    depth: 0,
+  }))
+  const tree = mount(UiTree, { props: { items, virtual: true }, attachTo: document.body })
+  await nextTick()
+  expect(tree.findAll('[role="treeitem"]').length).toBeLessThan(150)
+  const first = tree.get('[data-collection-id="0"]')
+  ;(first.element as HTMLElement).focus()
+  await first.trigger('keydown', { key: 'End' })
+  await nextTick()
+  const last = tree.get('[data-collection-id="2999"]')
+  expect(document.activeElement).toBe(last.element)
+  expect(last.attributes('aria-posinset')).toBe('3000')
+  expect(last.attributes('aria-setsize')).toBe('3000')
+  expect(tree.findAll('[role="treeitem"]').length).toBeLessThan(150)
+  const viewport = tree.get('[role="tree"]')
+  ;(viewport.element as HTMLElement).scrollTop = 0
+  await viewport.trigger('scroll')
+  expect(document.activeElement).toBe(last.element)
+  await last.trigger('keydown', { key: 'Home' })
+  await nextTick()
+  expect(document.activeElement).toBe(tree.get('[data-collection-id="0"]').element)
+  await tree.get('[data-collection-id="0"]').trigger('keydown', { key: 'End' })
+  await tree.setProps({ items: items.slice(0, 3) })
+  await nextTick()
+  await nextTick()
+  expect(tree.findAll('[role="treeitem"]')).toHaveLength(3)
+  expect(document.activeElement).toBe(tree.get('[data-collection-id="0"]').element)
+})
+
+it('带拖放或多行说明时保留完整行布局', () => {
+  const items = Array.from({ length: 120 }, (_, index) => ({
+    id: String(index),
+    label: `文件 ${index}`,
+    depth: 0,
+  }))
+  const dragging = mount(UiTree, { props: { items, virtual: true, draggable: true } })
+  expect(dragging.findAll('[role="treeitem"]')).toHaveLength(120)
+  const described = mount(UiTree, {
+    props: { items: items.map((item) => ({ ...item, description: '第二行' })), virtual: true },
+  })
+  expect(described.findAll('[role="treeitem"]')).toHaveLength(120)
+})
 it('叶子默认无图标，分支保留文件夹且业务可显式提供叶子图标', () => {
   const tree = mount(UiTree, { props: { items: rows } })
   expect(tree.get('[data-collection-id="child"]').findComponent(UiIcon).exists()).toBe(false)

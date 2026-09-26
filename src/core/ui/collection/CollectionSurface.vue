@@ -1,12 +1,13 @@
 <script setup lang="ts">
 /** 列表与树共用的行、焦点与落点视图；数据和持久化完全受控。 */
-import { computed, nextTick, ref, useId, watch } from 'vue'
+import { computed, nextTick, ref, useId, useSlots, watch } from 'vue'
 import UiScrollArea from '../UiScrollArea.vue'
 import UiIcon from '../UiIcon.vue'
 import UiSpinner from '../UiSpinner.vue'
 import UiButton from '../UiButton.vue'
 import { parentOf, type UiCollectionMove, type UiDropGuard, type UiTreeItem } from './types'
 import { useCollectionDrag } from './useCollectionDrag'
+import { useRowWindow } from './useRowWindow'
 
 const props = withDefaults(
   defineProps<{
@@ -14,6 +15,7 @@ const props = withDefaults(
     tree?: boolean
     modelValue?: string
     rowHeight?: 22 | 24 | 28 | 32
+    virtual?: boolean
     draggable?: boolean
     dragHandle?: boolean
     disabled?: boolean
@@ -45,6 +47,25 @@ const emit = defineEmits<{
   retry: []
 }>()
 const root = ref<HTMLElement | null>(null)
+const rowsRoot = ref<HTMLElement | null>(null)
+const slots = useSlots()
+// 多行插槽与拖放继续沿用原完整布局；当前窗口化契约只覆盖固定单行节点。
+const windowed = computed(
+  () =>
+    props.virtual &&
+    !props.draggable &&
+    !slots.row &&
+    !slots.label &&
+    !slots.suffix &&
+    !props.items.some((item) => item.description)
+)
+const virtualRoot = computed(() => (windowed.value ? root.value : null))
+const viewport = useRowWindow(
+  virtualRoot,
+  () => props.items.length,
+  () => props.rowHeight,
+  () => rowsRoot.value?.offsetTop ?? 4
+)
 const focusedId = ref('')
 const instanceId = useId()
 const locked = computed(() => props.disabled || props.busy || props.loading)
@@ -66,6 +87,37 @@ const tabId = computed(() => {
       ? props.modelValue
       : ids[0]
 })
+const rowIndexes = computed(() =>
+  windowed.value
+    ? new Map(props.items.map((item, index) => [item.id, index]))
+    : new Map<string, number>()
+)
+const visibleItems = computed(() => {
+  if (!windowed.value) return props.items
+  const result = props.items.slice(viewport.start.value, viewport.end.value)
+  // 滚动离开视口时仍保留当前 roving-tabindex 节点，避免原生焦点被卸载丢失。
+  const focused = rowIndexes.value.get(tabId.value ?? '')
+  if (focused !== undefined && focused < viewport.start.value) result.unshift(props.items[focused])
+  else if (focused !== undefined && focused >= viewport.end.value) result.push(props.items[focused])
+  return result
+})
+const positions = computed(() => {
+  const result = new Map<string, { position: number; size: number }>()
+  if (!windowed.value) return result
+  const parents: string[] = [],
+    groups = new Map<string, string[]>()
+  for (const item of props.items) {
+    const parent = props.tree && item.depth > 0 ? (parents[item.depth - 1] ?? '') : ''
+    const group = groups.get(parent) ?? []
+    group.push(item.id)
+    groups.set(parent, group)
+    parents[item.depth] = item.id
+    parents.length = item.depth + 1
+  }
+  for (const group of groups.values())
+    group.forEach((id, index) => result.set(id, { position: index + 1, size: group.length }))
+  return result
+})
 watch(
   () => props.items,
   () => {
@@ -77,7 +129,7 @@ watch(
       root.value?.contains(active)
     ) {
       const id = active.dataset.collectionId
-      void nextTick(() => focus(props.items.find((item) => item.id === id)))
+      void nextTick(() => focus(props.items.find((item) => item.id === id) ?? focusable.value[0]))
     }
   }
 )
@@ -87,9 +139,15 @@ function domId(item: UiTreeItem) {
 function focus(item?: UiTreeItem) {
   if (!item || item.disabled) return
   focusedId.value = item.id
-  const element = root.value?.querySelector<HTMLElement>(`[id="${domId(item)}"]`)
-  element?.focus({ preventScroll: true })
-  element?.scrollIntoView?.({ block: 'nearest' })
+  const apply = () => {
+    const element = root.value?.querySelector<HTMLElement>(`[id="${domId(item)}"]`)
+    element?.focus({ preventScroll: true })
+    element?.scrollIntoView?.({ block: 'nearest' })
+  }
+  if (windowed.value) {
+    viewport.ensureVisible(rowIndexes.value.get(item.id) ?? -1)
+    void nextTick(apply)
+  } else apply()
 }
 function select(item: UiTreeItem) {
   if (locked.value || item.disabled) return
@@ -221,108 +279,134 @@ const insertion = computed(() => {
         <slot name="empty">{{ emptyText }}</slot>
       </div>
       <div
-        v-for="item in items"
-        :id="domId(item)"
-        :key="item.id"
-        :role="tree ? 'treeitem' : 'option'"
-        :data-collection-id="item.id"
-        :data-depth="item.depth"
-        :tabindex="!locked && tabId === item.id ? 0 : -1"
-        :aria-selected="modelValue === item.id"
-        :aria-disabled="locked || item.disabled"
-        :aria-expanded="tree && item.expandable ? !!item.expanded : undefined"
-        :aria-level="tree ? item.depth + 1 : undefined"
-        :aria-keyshortcuts="draggable ? 'Alt+ArrowUp Alt+ArrowDown' : undefined"
-        class="group relative flex w-full items-center gap-[5px] rounded-sm pr-[6px] text-secondary outline-none transition-colors focus-visible:ring-1 focus-visible:ring-tertiary-strong dark:text-secondary-dark dark:focus-visible:ring-tertiary-dark"
-        :class="[
-          locked || item.disabled ? 'opacity-50' : 'hover:bg-border dark:hover:bg-border-dark',
-          modelValue === item.id
-            ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
-            : '',
-          item.muted ? 'opacity-60' : '',
-          target?.targetId === item.id && target.position === 'inside'
-            ? 'ring-1 ring-inset ring-tertiary-strong bg-tertiary-soft dark:ring-tertiary-dark dark:bg-tertiary-soft-dark'
-            : '',
-          enabled() && item.draggable !== false ? 'cursor-grab' : 'cursor-default',
-          drag?.active && drag.id === item.id ? 'opacity-40' : '',
-        ]"
-        :style="{ minHeight: `${rowHeight}px`, paddingLeft: `${item.depth * 18 + 5}px` }"
-        @click="click($event, item)"
-        @dblclick="open($event, item)"
-        @focus="focusedId = item.id"
-        @keydown="keydown($event, item)"
-        @contextmenu="context($event, item)"
-        @pointerdown="!dragHandle && start($event, item)"
+        ref="rowsRoot"
+        :style="
+          windowed
+            ? {
+                position: 'relative',
+                height: `${items.length * rowHeight}px`,
+                overflowAnchor: 'none',
+              }
+            : undefined
+        "
+        @contextmenu.self="context($event)"
       >
-        <span
-          v-if="insertion?.id === item.id"
-          data-drop-line
-          aria-hidden="true"
-          class="pointer-events-none absolute right-0 z-10 h-[2px] rounded-full bg-tertiary-strong dark:bg-tertiary-dark"
-          :class="insertion.position === 'before' ? 'top-0' : 'bottom-0'"
-          :style="{ left: `${insertion.depth * 18 + 5}px` }"
-        />
-        <button
-          v-if="dragHandle && draggable"
-          type="button"
-          data-drag-handle
-          :disabled="locked || item.disabled || item.draggable === false"
-          :aria-label="`拖动 ${item.label}；也可聚焦行后按 Alt 加方向键排序`"
-          class="shrink-0 cursor-grab text-text-muted dark:text-text-muted-dark"
-          @pointerdown.stop="start($event, item)"
-        >
-          <UiIcon name="grip-vertical" :size="12" />
-        </button>
-        <button
-          v-if="tree && item.expandable"
-          type="button"
-          :disabled="locked || item.disabled || item.loading"
-          :aria-label="`${item.expanded ? '收起' : '展开'} ${item.label}`"
-          :aria-expanded="!!item.expanded"
-          class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[4px] hover:bg-border dark:hover:bg-border-dark"
-          @click.stop="emit('toggle', item)"
-        >
-          <UiSpinner v-if="item.loading" size="sm" /><UiIcon
-            v-else
-            name="chevron-right"
-            :size="12"
-            class="transition-transform duration-150"
-            :class="{ 'rotate-90': item.expanded }"
-          />
-        </button>
-        <span v-else-if="tree" class="w-[16px] shrink-0" />
-        <slot name="row" :item="item" :selected="modelValue === item.id">
-          <slot v-if="item.showIcon !== false" name="icon" :item="item"
-            ><UiIcon
-              v-if="item.expandable"
-              name="folder"
-              :size="12"
-              class="shrink-0 text-text-muted dark:text-text-muted-dark"
-          /></slot>
-          <div class="min-w-0 flex-1">
-            <slot name="label" :item="item"
-              ><span class="block truncate">{{ item.label }}</span></slot
-            >
-            <span
-              v-if="item.description"
-              class="block truncate text-caption text-text-muted dark:text-text-muted-dark"
-              >{{ item.description }}</span
-            >
-          </div>
-          <span
-            v-if="item.badge !== undefined"
-            class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
-            >{{ item.badge }}</span
-          >
-        </slot>
         <div
-          v-if="$slots.suffix"
-          data-no-drag
-          class="flex shrink-0 items-center"
-          @click.stop
-          @dblclick.stop
+          v-for="item in visibleItems"
+          :id="domId(item)"
+          :key="item.id"
+          :role="tree ? 'treeitem' : 'option'"
+          :data-collection-id="item.id"
+          :data-depth="item.depth"
+          :tabindex="!locked && tabId === item.id ? 0 : -1"
+          :aria-selected="modelValue === item.id"
+          :aria-disabled="locked || item.disabled"
+          :aria-expanded="tree && item.expandable ? !!item.expanded : undefined"
+          :aria-level="tree ? item.depth + 1 : undefined"
+          :aria-posinset="positions.get(item.id)?.position"
+          :aria-setsize="positions.get(item.id)?.size"
+          :aria-keyshortcuts="draggable ? 'Alt+ArrowUp Alt+ArrowDown' : undefined"
+          class="group relative flex w-full items-center gap-[5px] rounded-sm pr-[6px] text-secondary outline-none transition-colors focus-visible:ring-1 focus-visible:ring-tertiary-strong dark:text-secondary-dark dark:focus-visible:ring-tertiary-dark"
+          :class="[
+            locked || item.disabled ? 'opacity-50' : 'hover:bg-border dark:hover:bg-border-dark',
+            modelValue === item.id
+              ? 'bg-tertiary-soft text-tertiary-strong dark:bg-tertiary-soft-dark dark:text-tertiary-dark'
+              : '',
+            item.muted ? 'opacity-60' : '',
+            target?.targetId === item.id && target.position === 'inside'
+              ? 'ring-1 ring-inset ring-tertiary-strong bg-tertiary-soft dark:ring-tertiary-dark dark:bg-tertiary-soft-dark'
+              : '',
+            enabled() && item.draggable !== false ? 'cursor-grab' : 'cursor-default',
+            drag?.active && drag.id === item.id ? 'opacity-40' : '',
+          ]"
+          :style="{
+            minHeight: `${rowHeight}px`,
+            paddingLeft: `${item.depth * 18 + 5}px`,
+            ...(windowed
+              ? {
+                  position: 'absolute',
+                  top: `${(rowIndexes.get(item.id) ?? 0) * rowHeight}px`,
+                  height: `${rowHeight}px`,
+                }
+              : {}),
+          }"
+          @click="click($event, item)"
+          @dblclick="open($event, item)"
+          @focus="focusedId = item.id"
+          @keydown="keydown($event, item)"
+          @contextmenu="context($event, item)"
+          @pointerdown="!dragHandle && start($event, item)"
         >
-          <slot name="suffix" :item="item" />
+          <span
+            v-if="insertion?.id === item.id"
+            data-drop-line
+            aria-hidden="true"
+            class="pointer-events-none absolute right-0 z-10 h-[2px] rounded-full bg-tertiary-strong dark:bg-tertiary-dark"
+            :class="insertion.position === 'before' ? 'top-0' : 'bottom-0'"
+            :style="{ left: `${insertion.depth * 18 + 5}px` }"
+          />
+          <button
+            v-if="dragHandle && draggable"
+            type="button"
+            data-drag-handle
+            :disabled="locked || item.disabled || item.draggable === false"
+            :aria-label="`拖动 ${item.label}；也可聚焦行后按 Alt 加方向键排序`"
+            class="shrink-0 cursor-grab text-text-muted dark:text-text-muted-dark"
+            @pointerdown.stop="start($event, item)"
+          >
+            <UiIcon name="grip-vertical" :size="12" />
+          </button>
+          <button
+            v-if="tree && item.expandable"
+            type="button"
+            :disabled="locked || item.disabled || item.loading"
+            :aria-label="`${item.expanded ? '收起' : '展开'} ${item.label}`"
+            :aria-expanded="!!item.expanded"
+            class="grid h-[16px] w-[16px] shrink-0 place-items-center rounded-[4px] hover:bg-border dark:hover:bg-border-dark"
+            @click.stop="emit('toggle', item)"
+          >
+            <UiSpinner v-if="item.loading" size="sm" /><UiIcon
+              v-else
+              name="chevron-right"
+              :size="12"
+              class="transition-transform duration-150"
+              :class="{ 'rotate-90': item.expanded }"
+            />
+          </button>
+          <span v-else-if="tree" class="w-[16px] shrink-0" />
+          <slot name="row" :item="item" :selected="modelValue === item.id">
+            <slot v-if="item.showIcon !== false" name="icon" :item="item"
+              ><UiIcon
+                v-if="item.expandable"
+                name="folder"
+                :size="12"
+                class="shrink-0 text-text-muted dark:text-text-muted-dark"
+            /></slot>
+            <div class="min-w-0 flex-1">
+              <slot name="label" :item="item"
+                ><span class="block truncate">{{ item.label }}</span></slot
+              >
+              <span
+                v-if="item.description"
+                class="block truncate text-caption text-text-muted dark:text-text-muted-dark"
+                >{{ item.description }}</span
+              >
+            </div>
+            <span
+              v-if="item.badge !== undefined"
+              class="shrink-0 text-caption text-text-muted dark:text-text-muted-dark"
+              >{{ item.badge }}</span
+            >
+          </slot>
+          <div
+            v-if="$slots.suffix"
+            data-no-drag
+            class="flex shrink-0 items-center"
+            @click.stop
+            @dblclick.stop
+          >
+            <slot name="suffix" :item="item" />
+          </div>
         </div>
       </div>
       <div

@@ -7,6 +7,8 @@ withDefaults(
     items: UiTreeItem[]
     modelValue?: string
     rowHeight?: 22 | 24 | 28 | 32
+    /** 固定单行节点的视口渲染，完整键盘导航仍覆盖全部 items。 */
+    virtual?: boolean
     draggable?: boolean
     dragHandle?: boolean
     disabled?: boolean

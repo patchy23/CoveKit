@@ -208,6 +208,7 @@ async function confirm(name: string) {
     <UiAlert v-if="error" tone="danger" size="xs">{{ error }}</UiAlert>
     <UiTree
       :items="rows"
+      virtual
       :draggable="false"
       :loading="loading.has(root)"
       @toggle="toggle"
