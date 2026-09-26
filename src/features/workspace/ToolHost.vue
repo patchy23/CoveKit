@@ -10,7 +10,15 @@ import { warn as logWarn } from '@tauri-apps/plugin-log'
  * 为什么要有加载态：工具组件是 `defineAsyncComponent`（按需分包），
  * 首次打开要读一次分包，没有加载态就是一段无从判断的白屏。
  */
-import { computed, defineAsyncComponent, h, onErrorCaptured, ref, type Component } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  h,
+  onBeforeUnmount,
+  onErrorCaptured,
+  ref,
+  type Component,
+} from 'vue'
 import UiSpinner from '@/core/ui/UiSpinner.vue'
 
 const props = defineProps<{
@@ -39,6 +47,10 @@ const generation = ref(0)
 const renderError = ref<string | null>(null)
 /** 组件加载失败原因（异步组件错误面板展示） */
 const loadError = ref<string | null>(null)
+let disposed = false
+onBeforeUnmount(() => {
+  disposed = true
+})
 
 /** 加载失败面板（带重试；重试重建实例） */
 function createLoadErrorView(): Component {
@@ -82,16 +94,20 @@ const frame = computed<Component>(() => {
     errorComponent: createLoadErrorView(),
     delay: 120,
     timeout: 30000,
-    onError: (error, retryLoad, fail) => {
+    onError: (error, retryLoad, fail, attempts) => {
+      if (disposed || current !== generation.value) {
+        fail()
+        return
+      }
       loadError.value = describe(error)
       if (isTauri()) {
         void logWarn('工具加载或渲染失败 source=ToolHost').catch(() => {
           console.warn('[diagnostics] 日志发送失败')
         })
       }
-      console.error(`[tool:${props.toolId}] 组件加载失败（第 ${current + 1} 次）`, error)
+      console.error(`[tool:${props.toolId}] 组件加载失败（第 ${attempts} 次）`, error)
       // 第一次失败自动重试一次（分包读取偶发失败很常见），再失败就交给错误面板
-      if (current === 0) retryLoad()
+      if (attempts === 1) retryLoad()
       else fail()
     },
   })
