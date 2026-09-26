@@ -1,6 +1,6 @@
 //! 长任务 SSH 通道：结构化输入、心跳和有界 JSON 消息解码。
 use crate::plugins::ssh::{
-    conn::{close_channel, shell_quote, SshHandler},
+    conn::{close_channel_writer, shell_quote, SshHandler},
     models::{ArchiveEvent, ArchiveRequest},
 };
 use russh::{client, ChannelMsg};
@@ -51,51 +51,45 @@ pub(super) async fn execute(
         return Err("归档请求超过 1 MiB".into());
     }
     input.push(b'\n');
-    let mut channel = tokio::time::timeout(Duration::from_secs(15), session.channel_open_session())
+    let channel = tokio::time::timeout(Duration::from_secs(15), session.channel_open_session())
         .await
         .map_err(|_| "打开归档通道超时")?
         .map_err(|e| e.to_string())?;
-    let result = execute_channel(&mut channel, input, progress, cancelled).await;
-    close_channel(&channel).await;
+    let (mut reader, writer) = channel.split();
+    let result = execute_channel(&mut reader, &writer, input, progress, cancelled).await;
+    close_channel_writer(&writer).await;
     result
 }
 
 async fn execute_channel(
-    channel: &mut russh::Channel<client::Msg>,
+    reader: &mut russh::ChannelReadHalf,
+    writer: &russh::ChannelWriteHalf<client::Msg>,
     input: Vec<u8>,
     progress: Channel<ArchiveEvent>,
-    mut cancelled: watch::Receiver<bool>,
+    cancelled: watch::Receiver<bool>,
 ) -> Result<ArchiveEvent, String> {
-    let command = format!("python3 -u -c {}", shell_quote(include_str!("worker.py")));
-    channel
-        .exec(true, command)
-        .await
-        .map_err(|e| format!("启动归档工作器失败：{e}"))?;
-    channel.data_bytes(input).await.map_err(|e| e.to_string())?;
-    let mut heartbeat = tokio::time::interval(Duration::from_secs(2));
+    if *cancelled.borrow() {
+        return Ok(super::cancelled_event());
+    }
+    // 两个借用 future 归当前调用持有，不创建脱离生命周期的发送任务或消息队列。
+    let sending = send_input(writer, input, cancelled.clone());
+    let deadline = cancellation_deadline(cancelled, Duration::from_secs(15));
+    tokio::pin!(sending, deadline);
+    let mut sending_done = false;
     let mut pending = Vec::new();
     let mut stderr = Vec::new();
     let mut outcome = None;
     let mut failure = None;
-    let mut cancel_started = None;
     loop {
         tokio::select! {
-            _ = cancelled.changed(), if cancel_started.is_none() => {
-                channel.data_bytes(b"cancel\n".to_vec()).await.map_err(|e| e.to_string())?;
-                cancel_started = Some(std::time::Instant::now());
+            _ = &mut deadline => {
+                return Err("未收到远端停止确认，任务结果未知；请核对服务器临时目录".into());
             }
-            _ = heartbeat.tick() => {
-                if cancel_started.is_none() && *cancelled.borrow() {
-                    channel.data_bytes(b"cancel\n".to_vec()).await.map_err(|e| e.to_string())?;
-                    cancel_started = Some(std::time::Instant::now());
-                }
-                if cancel_started.is_some_and(|start| start.elapsed() > Duration::from_secs(15)) {
-                    let _ = channel.eof().await;
-                    return Err("未收到远端停止确认，任务结果未知；请核对服务器临时目录".into());
-                }
-                channel.data_bytes(b"ping\n".to_vec()).await.map_err(|e| format!("归档连接中断，结果未知：{e}"))?;
+            result = &mut sending, if !sending_done => {
+                result?;
+                sending_done = true;
             }
-            message = channel.wait() => {
+            message = reader.wait() => {
                 match message {
                     Some(ChannelMsg::Data { data }) => {
                         decode_lines(&mut pending, &data, |line| {
@@ -136,9 +130,54 @@ async fn execute_channel(
     Ok(result)
 }
 
+/// 取消期限独立于所有 exec/data 写入，慢远端不会让期限停在发送分支内部。
+async fn cancellation_deadline(mut cancelled: watch::Receiver<bool>, grace: Duration) {
+    let _ = cancelled.wait_for(|value| *value).await;
+    tokio::time::sleep(grace).await;
+}
+
+async fn send_input(
+    writer: &russh::ChannelWriteHalf<client::Msg>,
+    input: Vec<u8>,
+    mut cancelled: watch::Receiver<bool>,
+) -> Result<(), String> {
+    let command = format!("python3 -u -c {}", shell_quote(include_str!("worker.py")));
+    writer.exec(true, command).await.map_err(|e| format!("启动归档工作器失败：{e}"))?;
+    writer.data_bytes(input).await.map_err(|e| e.to_string())?;
+    let mut heartbeat = tokio::time::interval(Duration::from_secs(2));
+    loop {
+        tokio::select! {
+            biased;
+            _ = cancelled.wait_for(|value| *value) => {
+                writer.data_bytes(b"cancel\n".to_vec()).await.map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            _ = heartbeat.tick() => {
+                writer.data_bytes(b"ping\n".to_vec()).await
+                    .map_err(|e| format!("归档连接中断，结果未知：{e}"))?;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn cancellation_deadline_remains_live_while_sender_is_stalled() {
+        let (cancel, receiver) = watch::channel(false);
+        let deadline = cancellation_deadline(receiver, Duration::ZERO);
+        tokio::pin!(deadline);
+        assert!(tokio::time::timeout(Duration::from_millis(1), &mut deadline).await.is_err());
+        cancel.send_replace(true);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::select! {
+                _ = std::future::pending::<()>() => panic!("模拟发送不会完成"),
+                _ = &mut deadline => {}
+            }
+        }).await.unwrap();
+    }
 
     #[test]
     fn line_decoder_preserves_every_utf8_split_and_multiple_lines() {

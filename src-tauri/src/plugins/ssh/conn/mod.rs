@@ -302,7 +302,16 @@ pub(crate) async fn exec_collect(
 
 /// 原始通道的统一收尾：有界发送关闭请求，不将入队成功声称为远端进程已退出。
 pub(crate) async fn close_channel(channel: &russh::Channel<client::Msg>) {
-    match tokio::time::timeout(Duration::from_secs(2), channel.close()).await {
+    close_request(channel.close()).await;
+}
+
+/// 分离读写半部的长任务仍复用同一关闭期限与结果语义。
+pub(crate) async fn close_channel_writer(channel: &russh::ChannelWriteHalf<client::Msg>) {
+    close_request(channel.close()).await;
+}
+
+async fn close_request(request: impl std::future::Future<Output = Result<(), russh::Error>>) {
+    match tokio::time::timeout(Duration::from_secs(2), request).await {
         Ok(Ok(())) => {}
         Ok(Err(_)) => log::warn!("SSH 通道关闭请求未发送，通道或会话可能已结束"),
         Err(_) => log::warn!("SSH 通道关闭请求超时"),
