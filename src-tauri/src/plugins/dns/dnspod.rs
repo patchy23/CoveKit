@@ -25,13 +25,19 @@ const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// 响应体预览（诊断用：截断到 200 字符，换行折叠）
 fn preview(text: &str) -> String {
-    let flat = text.replace(['\n', '\r'], " ");
-    let cut: String = flat.chars().take(200).collect();
-    if flat.chars().count() > 200 {
-        format!("{cut}…")
-    } else {
-        cut
+    let mut chars = text
+        .chars()
+        .map(|c| if matches!(c, '\n' | '\r') { ' ' } else { c });
+    let mut cut: String = chars.by_ref().take(200).collect();
+    if chars.next().is_some() {
+        cut.push('…');
     }
+    cut
+}
+
+/// 转移业务响应的所有权，避免解包时复制完整记录列表与大字段。
+fn unwrap_response(mut json: Value) -> Value {
+    json.get_mut("Response").map(Value::take).unwrap_or(json)
 }
 
 /// SHA256 十六进制（TC3 签名两处使用）
@@ -167,7 +173,7 @@ impl TencentDns {
             return Err(format!("腾讯云 DNSPod 错误({code}): {msg}"));
         }
         // API 3.0 成功响应统一包在 Response 里，解包后返回业务数据层
-        Ok(json.get("Response").cloned().unwrap_or(json))
+        Ok(unwrap_response(json))
     }
 
     /// 域名列表（一次拉取前 100 条）
@@ -379,6 +385,28 @@ struct TencentRecord {
 mod tests {
     use super::*;
 
+    #[test]
+    fn response_unwrap_moves_payload_and_preserves_unwrapped_values() {
+        let payload = "中文记录".repeat(4096);
+        let allocation = payload.as_ptr();
+        let mut envelope = json!({ "Response": null, "Other": "ignored" });
+        envelope["Response"] = Value::String(payload);
+        let response = unwrap_response(envelope);
+        assert_eq!(response.as_str().unwrap().as_ptr(), allocation);
+        for value in [json!(null), json!([1, 2]), json!({ "RecordList": [] })] {
+            assert_eq!(unwrap_response(value.clone()), value);
+        }
+        assert_eq!(unwrap_response(json!({ "Response": null })), Value::Null);
+    }
+
+    #[test]
+    fn error_preview_keeps_unicode_and_existing_length_semantics() {
+        assert_eq!(preview("错误\r\n信息"), "错误  信息");
+        assert_eq!(preview(&"中".repeat(200)), "中".repeat(200));
+        assert_eq!(preview(&"中".repeat(100_000)), format!("{}…", "中".repeat(200)));
+        assert_eq!(preview(""), "");
+    }
+
     /// 与官方 Python SDK（tencentcloud-sdk-python sign_tc3）交叉验证：
     /// 固定密钥/时间戳/请求体，期望值由 SDK 生成（2026-08-08 实测）
     #[test]
@@ -469,7 +497,7 @@ mod tests {
         )
         .unwrap();
         let resp: DescribeDomainListResp =
-            serde_json::from_value(json.get("Response").cloned().unwrap_or(json)).unwrap();
+            serde_json::from_value(unwrap_response(json)).unwrap();
         assert_eq!(resp.domain_list.len(), 1);
         assert_eq!(resp.domain_list[0].name, "example.com");
         assert_eq!(resp.domain_list[0].record_count, 5);
@@ -499,7 +527,7 @@ mod tests {
         )
         .unwrap();
         let resp: DescribeRecordListResp =
-            serde_json::from_value(json.get("Response").cloned().unwrap_or(json)).unwrap();
+            serde_json::from_value(unwrap_response(json)).unwrap();
         assert_eq!(resp.record_list.len(), 1);
         assert_eq!(resp.record_list[0].record_id, 100);
         assert_eq!(resp.record_list[0].type_field, "A");
