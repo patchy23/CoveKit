@@ -71,8 +71,7 @@ fn on_dispose(
     let Some(app) = app else {
         return Vec::new();
     };
-    tauri::async_runtime::block_on(runtime::shutdown_all(app));
-    Vec::new()
+    tauri::async_runtime::block_on(runtime::shutdown_all(app))
 }
 
 /// 注册插件命令与状态（入 ipc_registry；命令体挂全局 handler；退出清理登记到统一关闭入口）

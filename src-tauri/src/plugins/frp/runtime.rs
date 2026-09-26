@@ -12,7 +12,8 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tokio::process::{Child, Command};
-use tokio::sync::{oneshot, Mutex as AsyncMutex};
+use tokio::sync::{oneshot, watch, Mutex as AsyncMutex};
+use tokio::task::JoinSet;
 
 use crate::plugins::frp::models::{FrpLogPayload, FrpLogStream, FrpRuntimeState, FrpStateName};
 use crate::plugins::frp::{clients, profile};
@@ -104,8 +105,27 @@ pub struct FrpRun {
     pub exit_code: Option<i32>,
     /// 停止信号发送端（发送即请求监控任务结束子进程）
     stop_tx: Option<oneshot::Sender<()>>,
-    /// 监控任务句柄（停止时 await 它，确保状态收尾完成）
+    /// 监控任务句柄（一直归运行条目所有，停止请求通过完成信号等待收尾）
     handle: Option<tokio::task::JoinHandle<()>>,
+    /// 停止等待者只订阅完成信号，不提前取走监控任务的所有权。
+    completion: watch::Sender<bool>,
+}
+
+/// 监控退出、取消或 panic 均唤醒停止等待者。
+struct RunCompletion(watch::Sender<bool>);
+
+impl Drop for RunCompletion {
+    fn drop(&mut self) {
+        self.0.send_replace(true);
+    }
+}
+
+impl Drop for FrpRun {
+    fn drop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            handle.abort();
+        }
+    }
 }
 
 impl FrpRun {
@@ -132,6 +152,7 @@ impl FrpRun {
             exit_code: None,
             stop_tx: None,
             handle: None,
+            completion: watch::channel(false).0,
         }
     }
 
@@ -184,14 +205,11 @@ where
         run.exit_code,
     );
     mutate(run);
-    let changed = before
-        != (
-            run.state,
-            run.pid,
-            run.last_line.clone(),
-            run.last_error.clone(),
-            run.exit_code,
-        );
+    let changed = before.0 != run.state
+        || before.1 != run.pid
+        || before.2.as_ref() != run.last_line.as_ref()
+        || before.3.as_ref() != run.last_error.as_ref()
+        || before.4 != run.exit_code;
     let snapshot = changed.then(|| run.snapshot(file_name));
     drop(map);
     if let Some(snapshot) = snapshot {
@@ -215,6 +233,7 @@ where
 
 /// 按行读取一个流：每行推送 `frp://log` 并喂给状态机（流关闭即结束）
 fn spawn_reader<R>(
+    tasks: &mut JoinSet<()>,
     app: AppHandle,
     file_name: String,
     reader: R,
@@ -223,7 +242,7 @@ fn spawn_reader<R>(
 ) where
     R: AsyncRead + Unpin + Send + 'static,
 {
-    tokio::spawn(async move {
+    tasks.spawn(async move {
         let mut lines = BufReader::new(reader).lines();
         loop {
             let raw = match lines.next_line().await {
@@ -260,9 +279,13 @@ async fn monitor(
     mut child: Child,
     mut stop_rx: oneshot::Receiver<()>,
     config: Arc<super::auth::PreparedConfig>,
+    _completion: RunCompletion,
 ) {
+    // 监控任务取消时同时取消读流；正常退出先读完管道尾部，再发布最终状态。
+    let mut readers = JoinSet::new();
     if let Some(stdout) = child.stdout.take() {
         spawn_reader(
+            &mut readers,
             app.clone(),
             file_name.clone(),
             stdout,
@@ -272,6 +295,7 @@ async fn monitor(
     }
     if let Some(stderr) = child.stderr.take() {
         spawn_reader(
+            &mut readers,
             app.clone(),
             file_name.clone(),
             stderr,
@@ -313,6 +337,11 @@ async fn monitor(
             }
         }
     };
+    while let Some(result) = readers.join_next().await {
+        if let Err(error) = result {
+            log::error!("FRP 日志读取任务异常结束：{error}");
+        }
+    }
     update(&app, &file_name, |run| {
         let event = if stopped_by_user {
             FrpEvent::ExitedByStop
@@ -347,7 +376,7 @@ pub(crate) async fn start(
     {
         let map = state.0.lock().await;
         if let Some(run) = map.get(file_name) {
-            if run.handle.is_some() {
+            if run.handle.as_ref().is_some_and(|handle| !handle.is_finished()) {
                 return Ok(run.snapshot(file_name));
             }
         }
@@ -368,16 +397,23 @@ pub(crate) async fn start(
         .kill_on_drop(true);
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000);
-    let child = cmd
-        .spawn()
-        .map_err(|e| format!("启动 frpc 失败：{e}（路径 {}）", exe.display()))?;
-    let pid = child.id();
-    let (stop_tx, stop_rx) = oneshot::channel();
     // 同一临界区完成：建条目 → 起快照 → spawn 监控（spawn 同步，不引入等待）
     let snapshot = {
         let mut map = state.0.lock().await;
+        // 配置准备有 await，必须在真正 spawn 前复核，避免两个启动各建一个进程。
+        if let Some(run) = map.get(file_name) {
+            if run.handle.as_ref().is_some_and(|handle| !handle.is_finished()) {
+                return Ok(run.snapshot(file_name));
+            }
+        }
+        let child = cmd
+            .spawn()
+            .map_err(|e| format!("启动 frpc 失败：{e}（路径 {}）", exe.display()))?;
+        let pid = child.id();
+        let (stop_tx, stop_rx) = oneshot::channel();
         let mut run = FrpRun::new(pid);
         run.stop_tx = Some(stop_tx);
+        let completion = RunCompletion(run.completion.clone());
         let snapshot = run.snapshot(file_name);
         map.insert(file_name.to_string(), run);
         let handle = tokio::spawn(monitor(
@@ -386,6 +422,7 @@ pub(crate) async fn start(
             child,
             stop_rx,
             config,
+            completion,
         ));
         if let Some(run) = map.get_mut(file_name) {
             run.handle = Some(handle);
@@ -393,7 +430,7 @@ pub(crate) async fn start(
         snapshot
     };
     // starting 立即外推：前端状态点变黄
-    log::info!("frpc 进程已创建，PID {pid:?}，等待连接服务端");
+    log::info!("frpc 进程已创建，PID {:?}，等待连接服务端", snapshot.pid);
     let _ = app.emit("frp://state", snapshot.clone());
     Ok(snapshot)
 }
@@ -405,10 +442,14 @@ pub(crate) async fn stop(
     file_name: &str,
 ) -> Result<FrpRuntimeState, String> {
     profile::validate_file_name(file_name)?;
-    let (sender, handle, existed) = {
+    let (sender, completion, existed) = {
         let mut map = state.0.lock().await;
         match map.get_mut(file_name) {
-            Some(run) => (run.stop_tx.take(), run.handle.take(), true),
+            Some(run) => (
+                run.stop_tx.take(),
+                run.handle.as_ref().map(|_| run.completion.subscribe()),
+                true,
+            ),
             None => (None, None, false),
         }
     };
@@ -418,11 +459,20 @@ pub(crate) async fn stop(
     if let Some(sender) = sender {
         let _ = sender.send(());
     }
-    if let Some(handle) = handle {
-        // 有界等待：监控任务收尾失败也不阻塞命令返回
-        let _ = tokio::time::timeout(Duration::from_secs(STOP_WAIT_SECS), handle).await;
+    if let Some(mut completion) = completion {
+        tokio::time::timeout(
+            Duration::from_secs(STOP_WAIT_SECS),
+            completion.wait_for(|finished| *finished),
+        )
+        .await
+        .map_err(|_| "frpc 停止仍在收尾，请稍后重试".to_string())?
+        .map_err(|_| "frpc 停止状态通知已中断".to_string())?;
     }
-    Ok(state_of(state, file_name).await)
+    let snapshot = state_of(state, file_name).await;
+    if snapshot.pid.is_some() {
+        return Err("frpc 监控已结束但未完成状态收尾，请重新检查运行状态".to_string());
+    }
+    Ok(snapshot)
 }
 
 /// 重启 = 停 + 启（未运行时等价于启动）
@@ -475,33 +525,96 @@ pub(crate) async fn status_all(
 }
 
 /// 应用退出兜底：向全部档案发停止信号并等收尾（best-effort，防残留 frpc）
-pub(crate) async fn shutdown_all(app: &AppHandle) {
-    let (senders, handles) = {
+pub(crate) async fn shutdown_all(app: &AppHandle) -> Vec<String> {
+    let (senders, completions) = {
         let frp_state = app.state::<FrpState>();
         let mut map = frp_state.0.lock().await;
         let mut senders = Vec::new();
-        let mut handles = Vec::new();
-        for run in map.values_mut() {
+        let mut completions = Vec::new();
+        for (file_name, run) in map.iter_mut() {
             if let Some(sender) = run.stop_tx.take() {
                 senders.push(sender);
             }
-            if let Some(handle) = run.handle.take() {
-                handles.push(handle);
+            if run.handle.is_some() {
+                completions.push((file_name.clone(), run.completion.subscribe()));
             }
         }
-        (senders, handles)
+        (senders, completions)
     };
     for sender in senders {
         let _ = sender.send(());
     }
-    for handle in handles {
-        let _ = tokio::time::timeout(Duration::from_secs(STOP_WAIT_SECS), handle).await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(STOP_WAIT_SECS);
+    let mut issues = Vec::new();
+    for (file_name, mut completion) in completions {
+        if !matches!(
+            tokio::time::timeout_at(deadline, completion.wait_for(|finished| *finished)).await,
+            Ok(Ok(_))
+        ) {
+            log::error!("关闭 FRP 工具时进程尚未完成停止收尾");
+            issues.push(format!("FRP 档案 {file_name} 尚未完成停止收尾"));
+        }
     }
+    issues
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 多个停止等待者共享完成状态，某个等待超时不取走任务句柄。
+    #[tokio::test]
+    async fn stop_waiters_keep_monitor_owned_until_completion() {
+        let mut run = FrpRun::new(Some(1));
+        let mut first = run.completion.subscribe();
+        let mut second = run.completion.subscribe();
+        let completion = RunCompletion(run.completion.clone());
+        let (release, ready) = oneshot::channel();
+        run.handle = Some(tokio::spawn(async move {
+            let _completion = completion;
+            let _ = ready.await;
+        }));
+        assert!(tokio::time::timeout(
+            Duration::ZERO,
+            first.wait_for(|finished| *finished),
+        )
+        .await
+        .is_err());
+        assert!(!run.handle.as_ref().unwrap().is_finished());
+        release.send(()).unwrap();
+        assert!(*second.wait_for(|finished| *finished).await.unwrap());
+        assert!(*first.wait_for(|finished| *finished).await.unwrap());
+        run.handle.take().unwrap().await.unwrap();
+    }
+
+    /// 运行条目释放会取消监控，监控拥有的读流任务也随之释放。
+    #[tokio::test]
+    async fn dropping_run_cancels_monitor_and_owned_readers() {
+        let mut run = FrpRun::new(Some(1));
+        let mut finished = run.completion.subscribe();
+        let completion = RunCompletion(run.completion.clone());
+        let (started_tx, started_rx) = oneshot::channel();
+        let (reader_done, mut reader_finished) = watch::channel(false);
+        run.handle = Some(tokio::spawn(async move {
+            let _completion = completion;
+            let mut readers = JoinSet::new();
+            let reader_completion = RunCompletion(reader_done);
+            readers.spawn(async move {
+                let _completion = reader_completion;
+                std::future::pending::<()>().await;
+            });
+            let _ = started_tx.send(());
+            std::future::pending::<()>().await;
+        }));
+        started_rx.await.unwrap();
+        drop(run);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            assert!(*finished.wait_for(|value| *value).await.unwrap());
+            assert!(*reader_finished.wait_for(|value| *value).await.unwrap());
+        })
+        .await
+        .unwrap();
+    }
 
     /// 普通日志保留失败原因，明确成功后才清除，后续失败仍能重新报告。
     #[test]
