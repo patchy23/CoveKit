@@ -1,7 +1,7 @@
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { UiCodeEditor, UiSearchInput, UiSelect, UiSwitch } from '@/core/ui'
+import { UiButton, UiCodeEditor, UiSearchInput, UiSelect, UiSwitch } from '@/core/ui'
 import type { ServerConnection, SystemdService } from '../contracts'
 import ServiceTab from './ServiceTab.vue'
 import ServiceConfigDialog from './ServiceConfigDialog.vue'
@@ -37,6 +37,43 @@ const globalOptions = { plugins: [createPinia()], renderStubDefaultSlot: true }
 beforeEach(() => {
   vi.clearAllMocks()
   mock.sshServiceList.mockResolvedValue(services)
+})
+
+it('重复刷新不并发堆积，连接切换不等待旧请求，关闭后不再追补', async () => {
+  let completeFirst!: (value: SystemdService[]) => void
+  let completeTail!: (value: SystemdService[]) => void
+  mock.sshServiceList
+    .mockReturnValueOnce(
+      new Promise((resolve) => {
+        completeFirst = resolve
+      })
+    )
+    .mockReturnValueOnce(
+      new Promise((resolve) => {
+        completeTail = resolve
+      })
+    )
+  const wrapper = shallowMount(ServiceTab, {
+    props: { connection: connection('one') },
+    global: { ...globalOptions, stubs: { UiToolbar: false } },
+  })
+  const refresh = wrapper
+    .findAllComponents(UiButton)
+    .find((b) => b.props('title') === '刷新服务列表')!
+  for (let i = 0; i < 10; i++) refresh.vm.$emit('click')
+  expect(mock.sshServiceList).toHaveBeenCalledTimes(1)
+  completeFirst(services)
+  await flushPromises()
+  expect(wrapper.find('tbody').text()).toContain('nginx.service')
+  expect(mock.sshServiceList).toHaveBeenCalledTimes(2)
+  refresh.vm.$emit('click')
+  await wrapper.setProps({ connection: connection('two') })
+  await flushPromises()
+  expect(mock.sshServiceList).toHaveBeenCalledTimes(3)
+  wrapper.unmount()
+  completeTail([])
+  await flushPromises()
+  expect(mock.sshServiceList).toHaveBeenCalledTimes(3)
 })
 
 it('服务名称和描述搜索与状态组合，状态恢复不会缺失其他服务', async () => {

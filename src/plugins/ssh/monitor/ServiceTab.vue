@@ -37,6 +37,8 @@ const services = ref<SystemdService[]>([])
 const query = ref('')
 const configTarget = ref<SystemdService | null>(null)
 let refreshSequence = 0
+let disposed = false
+let refreshJob: { pending: boolean; promise: Promise<void> } | undefined
 const loading = ref(false)
 const openLog = useLogWindows()
 const pendingAction = ref<{ service: SystemdService; action: 'stop' | 'restart' } | null>(null)
@@ -53,37 +55,48 @@ const filtered = computed(() => {
   )
 })
 
-async function refresh() {
+function refresh(): Promise<void> {
   const connectionId = props.connection?.sessionId
-  if (!connectionId) return
-  const sequence = ++refreshSequence
-  loading.value = true
-  try {
-    const result = await ipc.sshServiceList({
-      connectionId,
-      filter: 'all',
-    })
-    if (sequence === refreshSequence && props.connection?.sessionId === connectionId)
-      services.value = result
-  } catch (e) {
-    if (sequence === refreshSequence && props.connection?.sessionId === connectionId)
-      ui.toast(`服务列表加载失败：${e}`)
-  } finally {
-    if (sequence === refreshSequence && props.connection?.sessionId === connectionId)
-      loading.value = false
+  if (!connectionId || disposed) return Promise.resolve()
+  if (refreshJob) {
+    refreshJob.pending = true
+    return refreshJob.promise
   }
+  const sequence = refreshSequence
+  const isCurrent = () => !disposed && sequence === refreshSequence
+  const job = { pending: false, promise: Promise.resolve() }
+  refreshJob = job
+  loading.value = true
+  job.promise = (async () => {
+    try {
+      do {
+        job.pending = false
+        try {
+          const result = await ipc.sshServiceList({ connectionId, filter: 'all' })
+          if (isCurrent()) services.value = result
+        } catch (e) {
+          if (isCurrent()) ui.toast(`服务列表加载失败：${e}`)
+        }
+      } while (isCurrent() && job.pending)
+    } finally {
+      if (refreshJob === job) refreshJob = undefined
+      if (isCurrent()) loading.value = false
+    }
+  })()
+  return job.promise
 }
 
 async function action(svc: SystemdService, act: 'start' | 'stop' | 'restart') {
   const connectionId = props.connection?.sessionId
-  if (!connectionId) return
+  if (!connectionId || disposed) return
+  const sequence = refreshSequence
   try {
     const r = await ipc.sshServiceAction({
       connectionId,
       serviceName: svc.name,
       action: act,
     })
-    if (props.connection?.sessionId !== connectionId) return
+    if (disposed || sequence !== refreshSequence) return
     if (r.ok) {
       ui.toast(`${act === 'start' ? '启动' : act === 'stop' ? '停止' : '重启'} ${svc.name} 成功`)
       refresh()
@@ -91,7 +104,7 @@ async function action(svc: SystemdService, act: 'start' | 'stop' | 'restart') {
       ui.toast(`${act} ${svc.name} 失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
-    if (props.connection?.sessionId === connectionId) ui.toast(`操作失败：${e}`)
+    if (!disposed && sequence === refreshSequence) ui.toast(`操作失败：${e}`)
   }
 }
 
@@ -120,16 +133,19 @@ watch(
   () => props.connection?.sessionId,
   (sessionId) => {
     refreshSequence += 1
+    refreshJob = undefined
     configTarget.value = null
     pendingAction.value = null
     services.value = []
     loading.value = false
     if (sessionId) void refresh()
   },
-  { immediate: true }
+  { immediate: true, flush: 'sync' }
 )
 onBeforeUnmount(() => {
+  disposed = true
   refreshSequence += 1
+  refreshJob = undefined
 })
 </script>
 

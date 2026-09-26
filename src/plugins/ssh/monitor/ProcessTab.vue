@@ -4,7 +4,7 @@ import { UiTooltip } from '@/core/ui'
 /**
  * ProcessTab · 进程管理子页签（后端 ps 真实数据）
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { ProcessDetail, ServerConnection, ServerProfile, ProcessInfo } from '../contracts'
 import { formatBytes } from '../connection/useSsh'
 import { useUiStore } from '@/stores/ui'
@@ -41,6 +41,10 @@ const pendingKill = ref<{ pid: number; force: boolean } | null>(null)
 const detailPid = ref<number | null>(null)
 const detail = ref<ProcessDetail | null>(null)
 const detailLoading = ref(false)
+let generation = 0
+let disposed = false
+let detailSequence = 0
+let refreshJob: { pending: boolean; promise: Promise<void> } | undefined
 
 const filtered = computed(() => {
   let list = processes.value.filter((process) => !hideSystem.value || !isSystemProcess(process))
@@ -61,24 +65,43 @@ const filtered = computed(() => {
   return list
 })
 
-async function refresh() {
+function refresh(): Promise<void> {
   const connectionId = props.connection?.sessionId
-  if (!connectionId) return
-  try {
-    const result = await ipc.sshProcessList({
-      connectionId,
-      sortBy: sortBy.value,
-    })
-    if (props.connection?.sessionId === connectionId) processes.value = result
-  } catch (e) {
-    if (props.connection?.sessionId === connectionId) ui.toast(`进程列表加载失败：${e}`)
+  if (!connectionId || disposed) return Promise.resolve()
+  if (refreshJob) {
+    refreshJob.pending = true
+    return refreshJob.promise
   }
+  const currentGeneration = generation
+  const isCurrent = () => !disposed && generation === currentGeneration
+  const job = { pending: false, promise: Promise.resolve() }
+  refreshJob = job
+  job.promise = (async () => {
+    try {
+      do {
+        job.pending = false
+        try {
+          const result = await ipc.sshProcessList({ connectionId, sortBy: sortBy.value })
+          if (isCurrent()) processes.value = result
+        } catch (e) {
+          if (isCurrent()) ui.toast(`进程列表加载失败：${e}`)
+        }
+        // 重复刷新只保留一次追补请求，首份有效快照立即展示。
+      } while (isCurrent() && job.pending)
+    } finally {
+      if (refreshJob === job) refreshJob = undefined
+    }
+  })()
+  return job.promise
 }
 
 async function kill(pid: number, force = false) {
-  if (!props.connection?.sessionId) return
+  const connectionId = props.connection?.sessionId
+  if (!connectionId || disposed) return
+  const currentGeneration = generation
   try {
-    const r = await ipc.sshProcessKill(props.connection.sessionId, pid, force)
+    const r = await ipc.sshProcessKill(connectionId, pid, force)
+    if (disposed || generation !== currentGeneration) return
     if (r.ok) {
       ui.toast(`${force ? '强制结束' : '结束'}进程 ${pid} 成功`)
       refresh()
@@ -86,7 +109,7 @@ async function kill(pid: number, force = false) {
       ui.toast(`结束进程失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
-    ui.toast(`操作失败：${e}`)
+    if (!disposed && generation === currentGeneration) ui.toast(`操作失败：${e}`)
   }
 }
 
@@ -115,17 +138,18 @@ const detailRows = computed(() => {
 
 async function loadDetail(pid: number) {
   const connectionId = props.connection?.sessionId
-  if (!connectionId) return
+  if (!connectionId || disposed) return
+  const sequence = ++detailSequence
   detailLoading.value = true
   try {
     const result = await ipc.sshProcessDetail(connectionId, pid)
     // 期间切了连接或换了进程则丢弃本次结果
-    if (detailPid.value === pid && props.connection?.sessionId === connectionId) {
+    if (!disposed && sequence === detailSequence) {
       detail.value = result
       detailLoading.value = false
     }
   } catch (e) {
-    if (detailPid.value === pid) {
+    if (!disposed && sequence === detailSequence) {
       closeDetail()
       ui.toast(`进程详情加载失败：${e}`)
     }
@@ -140,6 +164,7 @@ function openDetail(pid: number) {
 }
 
 function closeDetail() {
+  detailSequence += 1
   detailPid.value = null
   detail.value = null
   detailLoading.value = false
@@ -159,12 +184,21 @@ function killFromDetail() {
 watch(
   () => props.connection?.sessionId,
   (sessionId) => {
+    generation += 1
+    refreshJob = undefined
+    pendingKill.value = null
     closeDetail()
     processes.value = []
     if (sessionId) void refresh()
   },
-  { immediate: true }
+  { immediate: true, flush: 'sync' }
 )
+onBeforeUnmount(() => {
+  disposed = true
+  generation += 1
+  refreshJob = undefined
+  closeDetail()
+})
 </script>
 
 <template>

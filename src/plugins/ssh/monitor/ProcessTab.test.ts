@@ -227,4 +227,62 @@ describe('ProcessTab 进程详情', () => {
     expect(bodyText()).not.toContain('完整命令行')
     expect(toast).toHaveBeenCalledWith(expect.stringContaining('进程详情加载失败'))
   })
+
+  it('连续刷新合并为一次追补，切换连接立即加载且旧请求不追补', async () => {
+    const first = deferred<ReturnType<typeof processRow>[]>()
+    const tail = deferred<ReturnType<typeof processRow>[]>()
+    ipcMock.sshProcessList.mockReturnValueOnce(first.promise).mockReturnValueOnce(tail.promise)
+    const wrapper = await mountTab()
+    const refresh = wrapper
+      .findAllComponents(UiButton)
+      .find((b) => b.props('title') === '刷新进程列表')!
+    for (let i = 0; i < 10; i++) refresh.vm.$emit('click')
+    expect(ipcMock.sshProcessList).toHaveBeenCalledTimes(1)
+    first.resolve([processRow(300)])
+    await settle()
+    expect(wrapper.text()).toContain('proc-300')
+    expect(ipcMock.sshProcessList).toHaveBeenCalledTimes(2)
+    refresh.vm.$emit('click')
+    await wrapper.setProps({ connection: connection('s2') })
+    await settle()
+    expect(ipcMock.sshProcessList).toHaveBeenCalledTimes(3)
+    tail.resolve([processRow(400)])
+    await settle()
+    expect(wrapper.text()).not.toContain('proc-400')
+    expect(ipcMock.sshProcessList).toHaveBeenCalledTimes(3)
+  })
+
+  it('切换连接后打开相同 PID，旧详情失败不关闭新弹窗或报错', async () => {
+    const old = deferred<ProcessDetail>()
+    ipcMock.sshProcessDetail
+      .mockReturnValueOnce(old.promise)
+      .mockResolvedValueOnce(processDetail(100, 'current-process'))
+    const wrapper = await mountTab()
+    const toast = vi.spyOn(useUiStore(), 'toast')
+    await clickDetail(wrapper, 0)
+    await wrapper.setProps({ connection: connection('s2') })
+    await settle()
+    await clickDetail(wrapper, 0)
+    old.reject(new Error('old failure'))
+    await settle()
+    expect(bodyText()).toContain('current-process')
+    expect(toast).not.toHaveBeenCalled()
+  })
+
+  it('关闭页签后刷新失败不提示也不发送已排队的追补', async () => {
+    const pending = deferred<ReturnType<typeof processRow>[]>()
+    ipcMock.sshProcessList.mockReturnValueOnce(pending.promise)
+    const wrapper = await mountTab()
+    const toast = vi.spyOn(useUiStore(), 'toast')
+    wrapper
+      .findAllComponents(UiButton)
+      .find((b) => b.props('title') === '刷新进程列表')!
+      .vm.$emit('click')
+    mountedWrappers.splice(mountedWrappers.indexOf(wrapper), 1)
+    wrapper.unmount()
+    pending.reject(new Error('closed'))
+    await settle()
+    expect(toast).not.toHaveBeenCalled()
+    expect(ipcMock.sshProcessList).toHaveBeenCalledTimes(1)
+  })
 })
