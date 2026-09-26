@@ -2,7 +2,7 @@
  * frp 运行状态与日志（事件驱动为主，5s 轮询兜底）
  * 状态机判定在 Rust 侧（runtime.rs），这里只维护展示态与调用命令。
  */
-import { onMounted, ref, watch } from 'vue'
+import { onMounted, ref, shallowRef, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { throttledInterval, useToolLifecycle } from '@/core/lifecycle'
 import { useUiStore } from '@/stores/ui'
@@ -28,7 +28,8 @@ export function useFrpRuntime() {
   /** 各档案的运行状态（key = fileName） */
   const states = ref<Record<string, FrpRuntimeState>>({})
   /** 各档案的日志环形缓冲（key = fileName） */
-  const logs = ref<Record<string, FrpLogLine[]>>({})
+  // 日志行创建后不修改；追加/清空替换快照，不为每行建立深层响应式代理。
+  const logs = shallowRef<Record<string, FrpLogLine[]>>({})
   /** 正在执行启停操作的档案（按钮禁用以防连点） */
   const busy = ref<Record<string, boolean>>({})
 

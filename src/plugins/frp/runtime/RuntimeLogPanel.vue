@@ -26,6 +26,22 @@ const keyword = ref('')
 const autoScroll = ref(true)
 /** 滚动容器 */
 const scroller = ref<HTMLElement | null>(null)
+/** 对象身份跨追加、裁剪与过滤保持稳定；弱引用不延长已移除日志的寿命。 */
+const rowViews = new WeakMap<FrpLogLine, { id: number; ts: number; time: string }>()
+const timeFormatter = new Intl.DateTimeFormat('en-GB', { hour12: false, timeStyle: 'medium' })
+let nextRowId = 0
+
+function rowView(item: FrpLogLine) {
+  const cached = rowViews.get(item)
+  if (cached?.ts === item.ts) return cached
+  const view = {
+    id: cached?.id ?? nextRowId++,
+    ts: item.ts,
+    time: timeFormatter.format(item.ts),
+  }
+  rowViews.set(item, view)
+  return view
+}
 
 /** 过滤后的日志行 */
 const visible = computed(() => {
@@ -33,11 +49,6 @@ const visible = computed(() => {
   if (needle === '') return props.lines
   return props.lines.filter((item) => item.line.toLowerCase().includes(needle))
 })
-
-/** 时间戳 → 时分秒（同日日志只看时间，跨天信息在 frpc 自身日志里） */
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString('en-GB', { hour12: false })
-}
 
 /** 滚到底部（仅在自动滚动开启时执行） */
 function scrollToBottom(): void {
@@ -55,14 +66,7 @@ function onScroll(): void {
 }
 
 watch(
-  () => props.lines.length,
-  () => {
-    void nextTick(scrollToBottom)
-  }
-)
-
-watch(
-  () => props.lines,
+  () => [props.lines, props.lines.length, props.lines.at(-1)],
   () => {
     void nextTick(scrollToBottom)
   }
@@ -109,12 +113,13 @@ watch(
           {{ props.running ? t('frp.logEmptyRunning') : t('frp.logEmptyStopped') }}
         </p>
         <div
-          v-for="(item, index) in visible"
-          :key="`${item.ts}-${index}`"
+          v-for="item in visible"
+          :key="rowView(item).id"
+          v-memo="[item, item.ts, item.line, item.level]"
           class="flex select-text items-start gap-[8px] whitespace-pre font-mono text-body-sm leading-[1.5]"
         >
           <span class="shrink-0 text-text-muted dark:text-text-muted-dark">{{
-            formatTime(item.ts)
+            rowView(item).time
           }}</span>
           <span class="min-w-0 flex-1 break-all" :class="logLevelClass(item.level)">{{
             item.line
