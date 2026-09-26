@@ -18,6 +18,7 @@ import { language } from '@codemirror/language'
 import * as languages from './editor/languages'
 import { formatJson } from '@/core/format/json'
 import { formatSql } from '@/core/format/sql'
+import { formatXml, prettyPrintXml } from '@/core/format/xml'
 
 beforeEach(() => vi.stubGlobal('Worker', RegexTestWorker))
 afterEach(() => vi.unstubAllGlobals())
@@ -406,7 +407,7 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
     wrapper.unmount()
   })
 
-  it.each(['json', 'sql'])(
+  it.each(['json', 'sql', 'xml', 'svg', 'plist'])(
     '大 %s 格式化期间继续编辑会取消旧结果，成功格式化可一次撤销',
     async (language) => {
       const workers: {
@@ -427,7 +428,9 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
       const original =
         language === 'json'
           ? JSON.stringify({ value: 'x'.repeat(70000) })
-          : `select '${'x'.repeat(70000)}' from t;`
+          : language === 'sql'
+            ? `select '${'x'.repeat(70000)}' from t;`
+            : `<a><b>${'x'.repeat(70000)}</b></a>`
       const wrapper = mount(UiCodeEditor, {
         props: { modelValue: original, language },
         attachTo: document.body,
@@ -450,12 +453,18 @@ describe('UiCodeEditor · 查找 / 格式化 / 状态栏 / 降级', () => {
             result:
               language === 'json'
                 ? formatJson(request.text, request.indent)
-                : formatSql(request.text),
+                : language === 'sql'
+                  ? formatSql(request.text)
+                  : { ok: true, output: prettyPrintXml(request.text, request.indent) },
           },
         })
         expect(await next).toBe(true)
         expect(api.getValue()).toBe(
-          language === 'json' ? formatJson(original, 2).output : formatSql(original)
+          language === 'json'
+            ? formatJson(original, 2).output
+            : language === 'sql'
+              ? formatSql(original)
+              : formatXml(original, 2).output
         )
         expect(undo(view)).toBe(true)
         expect(api.getValue() === original + ' ').toBe(true)

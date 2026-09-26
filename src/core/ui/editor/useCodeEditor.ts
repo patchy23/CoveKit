@@ -28,6 +28,7 @@ import { linterForLanguage } from './lint'
 import { formatDocument, jsonFormatResult } from './format'
 import { createJsonFormatter } from '@/core/format/asyncJson'
 import { createSqlFormatter } from '@/core/format/asyncSql'
+import { createXmlFormatter } from '@/core/format/asyncXml'
 import { createDocStatsTracker } from './docStats'
 import { createSearchController } from './searchController'
 import { createDocumentTextReader } from './documentText'
@@ -68,6 +69,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
   const documentText = createDocumentTextReader()
   const jsonFormatter = createJsonFormatter()
   const sqlFormatter = createSqlFormatter()
+  const xmlFormatter = createXmlFormatter()
   let formatRequest = 0
 
   let degradeScheduled = false
@@ -231,6 +233,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
             formatRequest++
             jsonFormatter.cancel()
             sqlFormatter.cancel()
+            xmlFormatter.cancel()
           }
           // 文档或选区变化都会影响「当前是第几个匹配」，条件为空时 refresh 内部直接返回
           if (update.docChanged || update.selectionSet || update.viewportChanged)
@@ -270,6 +273,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
     formatRequest++
     jsonFormatter.destroy()
     sqlFormatter.destroy()
+    xmlFormatter.destroy()
     search.clear()
     documents.clear()
     view.value?.destroy()
@@ -383,7 +387,9 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
           ? jsonFormatResult(text, await jsonFormatter.run(text, indent))
           : language === 'sql' && text.trim()
             ? { ok: true, output: await sqlFormatter.run(text) }
-            : formatDocument(text, language, indent)
+            : ['xml', 'svg', 'plist'].includes(language) && text.trim()
+              ? await xmlFormatter.run(text, indent)
+              : formatDocument(text, language, indent)
       if (
         request !== formatRequest ||
         view.value !== current ||
@@ -393,7 +399,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
       )
         return { ok: false }
       if (!result.ok) return { ok: false, error: result.error }
-      writeValue(result.output, true)
+      writeValue(result.output ?? text, true)
       return { ok: true }
     } catch (error) {
       if (
@@ -432,6 +438,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
         formatRequest++
         jsonFormatter.cancel()
         sqlFormatter.cancel()
+        xmlFormatter.cancel()
         return
       }
       const current = view.value
@@ -440,6 +447,7 @@ export function useCodeEditor(options: UseCodeEditorOptions): CodeEditorHandle {
         formatRequest++
         jsonFormatter.cancel()
         sqlFormatter.cancel()
+        xmlFormatter.cancel()
         if (
           activeDocument &&
           (!options.documentKeys?.() || options.documentKeys().includes(activeDocument))
