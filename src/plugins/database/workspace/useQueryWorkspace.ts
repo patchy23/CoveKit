@@ -27,6 +27,7 @@ import type {
 import { adminIpc, queryIpc, draftIpc } from '../ipc'
 import { formatSql } from '../sqlFormat'
 import { nextRequestId } from '../requestId'
+import { useResultFilter } from './useResultFilter'
 
 /** 查询页签状态（真实后端字段） */
 export interface QueryState {
@@ -1064,12 +1065,10 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   // 结果派生
   // ──────────────────────────────────────────────────────────────────────
 
-  const filteredRows = computed(() => {
-    const state = queryState.value
-    const filter = state.filter.trim().toLowerCase()
-    if (!filter) return state.rows
-    return state.rows.filter((row) => row.some((cell) => cell.toLowerCase().includes(filter)))
-  })
+  const filteredRows = useResultFilter(
+    () => queryState.value.rows,
+    () => queryState.value.filter
+  )
 
   const totalPages = computed(() => {
     const state = queryState.value
