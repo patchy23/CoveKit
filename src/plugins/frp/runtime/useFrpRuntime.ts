@@ -59,11 +59,13 @@ export function useFrpRuntime() {
 
   /** 合并单个档案状态（整体替换对象触发响应式） */
   function applyState(state: FrpRuntimeState): void {
+    if (scope.disposed) return
     states.value = { ...states.value, [state.fileName]: state }
   }
 
   /** 追加一行日志（环形缓冲按设置上限裁剪） */
   function applyLog(payload: FrpLogPayload): void {
+    if (scope.disposed) return
     const current = logs.value[payload.fileName] ?? []
     const line: FrpLogLine = {
       ts: payload.ts,
@@ -81,8 +83,10 @@ export function useFrpRuntime() {
 
   /** 全量拉取状态（进入工具时 + 轮询兜底） */
   async function refresh(): Promise<void> {
+    if (scope.disposed) return
     try {
       const list = await ipc.status()
+      if (scope.disposed) return
       const next: Record<string, FrpRuntimeState> = {}
       for (const item of list) next[item.fileName] = item
       states.value = next
@@ -99,16 +103,23 @@ export function useFrpRuntime() {
     task: () => Promise<FrpRuntimeState>,
     successKey: string
   ): Promise<void> {
+    if (scope.disposed || isBusy(fileName)) return
     busy.value = { ...busy.value, [fileName]: true }
     try {
       const state = await task()
+      if (scope.disposed) return
       applyState(state)
       ui.toast(t(successKey, { name: fileName }))
     } catch (reason) {
+      if (scope.disposed) return
       const message = reason instanceof Error ? reason.message : String(reason)
       ui.toast(t('frp.opFailed', { message }))
     } finally {
-      busy.value = { ...busy.value, [fileName]: false }
+      if (!scope.disposed) {
+        const next = { ...busy.value }
+        delete next[fileName]
+        busy.value = next
+      }
     }
   }
 
@@ -129,6 +140,7 @@ export function useFrpRuntime() {
 
   /** 兜底轮询：间隔随可见性变化，重新可见时立刻刷新一次（不丢状态） */
   function schedulePoll(): void {
+    if (scope.disposed) return
     const delay = throttledInterval(POLL_INTERVAL_MS, HIDDEN_POLL_INTERVAL_MS, !engaged())
     scope.timeout(() => {
       void refresh().finally(schedulePoll)
@@ -137,23 +149,32 @@ export function useFrpRuntime() {
 
   onMounted(async () => {
     await scope.listenEvent<FrpRuntimeState>('frp://state', (payload) => applyState(payload))
+    if (scope.disposed) return
     await scope.listenEvent<FrpLogPayload>('frp://log', (payload) => applyLog(payload))
+    if (scope.disposed) return
     await refresh()
     schedulePoll()
-    // 从隐藏/被覆盖回到可见时立即补一次刷新，不等下一个轮询周期
-    watch(visibility, (next, previous) => {
-      if (
-        next.active &&
-        !next.covered &&
-        !next.hidden &&
-        !(previous.active && !previous.covered && !previous.hidden)
-      ) {
-        void refresh()
-      }
-    })
-    scope.onResume(() => {
+  })
+
+  // 在 setup 同步注册，避免 await 之后新建的 watcher 脱离组件作用域。
+  const stopVisibility = watch(visibility, (next, previous) => {
+    if (
+      next.active &&
+      !next.covered &&
+      !next.hidden &&
+      !(previous.active && !previous.covered && !previous.hidden)
+    ) {
       void refresh()
-    })
+    }
+  })
+  scope.onResume(() => {
+    void refresh()
+  })
+  scope.addDispose(() => {
+    stopVisibility()
+    states.value = {}
+    logs.value = {}
+    busy.value = {}
   })
 
   return { states, logs, busy, stateOf, logsOf, isBusy, clearLogs, refresh, start, stop, restart }
