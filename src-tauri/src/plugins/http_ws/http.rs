@@ -56,6 +56,14 @@ pub(super) fn response_headers(response: &reqwest::Response) -> Vec<(String, Str
         .collect()
 }
 
+/// 正常 UTF-8 响应直接接管接收缓冲；仅非法编码沿用有损替换语义。
+fn decode_body(bytes: Vec<u8>) -> String {
+    match String::from_utf8(bytes) {
+        Ok(body) => body,
+        Err(error) => String::from_utf8_lossy(error.as_bytes()).into_owned(),
+    }
+}
+
 /// 返回完整状态与响应原文；传输中断和过大响应均可感知。
 #[tauri::command]
 pub async fn http_request(
@@ -88,13 +96,15 @@ pub async fn http_request(
             }
             bytes.extend_from_slice(&chunk);
         }
+        let body_size = bytes.len();
+        let body = decode_body(bytes);
         Ok(HttpResponseResult {
             ok: status < 400,
             status,
             status_text,
             headers,
-            body_size: bytes.len(),
-            body: String::from_utf8_lossy(&bytes).into_owned(),
+            body_size,
+            body,
             duration_ms: start.elapsed().as_millis() as u64,
             error: None,
         })
@@ -114,4 +124,32 @@ pub async fn http_request(
         ),
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::decode_body;
+
+    #[test]
+    fn valid_utf8_reuses_received_allocation_without_changing_content() {
+        let text = "响应正文🙂\r\n".repeat(4096);
+        let bytes = text.as_bytes().to_vec();
+        let allocation = bytes.as_ptr();
+        let decoded = decode_body(bytes);
+        assert_eq!(decoded, text);
+        assert_eq!(decoded.as_ptr(), allocation);
+    }
+
+    #[test]
+    fn invalid_utf8_empty_and_bom_keep_previous_decode_semantics() {
+        for bytes in [
+            vec![],
+            vec![0xff, b'a', 0xe4, 0xb8],
+            vec![0xef, 0xbb, 0xbf, b'a'],
+            vec![0xc0, 0x80, 0x00, b'b'],
+        ] {
+            let expected = String::from_utf8_lossy(&bytes).into_owned();
+            assert_eq!(decode_body(bytes), expected);
+        }
+    }
 }
