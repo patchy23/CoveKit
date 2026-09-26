@@ -26,23 +26,27 @@ pub async fn dbc_drafts(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
 ) -> Result<Vec<QueryDraft>, String> {
-    store::db(&app, &store_state)?.with_conn(|conn| {
-        use rusqlite::OptionalExtension;
-        let content: Option<String> = conn
-            .query_row("SELECT content FROM query_drafts WHERE id=1", [], |row| {
-                row.get(0)
-            })
-            .optional()
-            .map_err(|e| e.to_string())?;
-        let drafts = match content {
-            Some(value) => {
-                serde_json::from_str(&value).map_err(|e| format!("草稿损坏，原记录已保留：{e}"))?
-            }
-            None => Vec::new(),
-        };
-        encode(&drafts)?;
-        Ok(drafts)
+    let db = store::db(&app, &store_state)?;
+    tokio::task::spawn_blocking(move || {
+        db.with_conn(|conn| {
+            use rusqlite::OptionalExtension;
+            let content: Option<String> = conn
+                .query_row("SELECT content FROM query_drafts WHERE id=1", [], |row| {
+                    row.get(0)
+                })
+                .optional()
+                .map_err(|e| e.to_string())?;
+            let drafts = match content {
+                Some(value) => serde_json::from_str(&value)
+                    .map_err(|e| format!("草稿损坏，原记录已保留：{e}"))?,
+                None => Vec::new(),
+            };
+            encode(&drafts)?;
+            Ok(drafts)
+        })
     })
+    .await
+    .map_err(|e| format!("读取 SQL 草稿任务失败：{e}"))?
 }
 #[tauri::command(rename_all = "camelCase")]
 /// 验证草稿预算后原子替换当前草稿集合。
@@ -53,12 +57,22 @@ pub async fn dbc_drafts_save(
 ) -> Result<(), String> {
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
-    let content = encode(&drafts)?;
-    store::db(&app, &store_state)?.with_conn(|conn| {
-        conn.execute("INSERT INTO query_drafts(id,content) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET content=excluded.content", [&content]).map_err(|e|e.to_string())?;
-        Ok(())
-    })
-    }.await;
+        let db = store::db(&app, &store_state)?;
+        tokio::task::spawn_blocking(move || {
+            let content = encode(&drafts)?;
+            db.with_conn(|conn| {
+                conn.execute(
+                    "INSERT INTO query_drafts(id,content) VALUES(1,?1) ON CONFLICT(id) DO UPDATE SET content=excluded.content",
+                    [&content],
+                )
+                .map_err(|e| e.to_string())?;
+                Ok(())
+            })
+        })
+        .await
+        .map_err(|e| format!("保存 SQL 草稿任务失败：{e}"))?
+    }
+    .await;
     match &result {
         Ok(_value) => log::debug!(
             "操作完成 operation=dbc_drafts_save elapsed_ms={}",
