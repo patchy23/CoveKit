@@ -3,7 +3,7 @@
  * DockerTab · Docker 容器管理子页签（后端 docker 命令真实数据）
  * 搜索（名称/ID/镜像）+ 状态筛选。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import type { ServerConnection, ServerProfile, DockerContainer } from '../contracts'
 import { useUiStore } from '@/stores/ui'
 import { UiConfirmDialog } from '@/core/ui'
@@ -19,6 +19,7 @@ import TerminalTab from '../terminal/TerminalTab.vue'
 import { useLogWindows } from '../monitor/logWindows'
 import DockerTable from './DockerTable.vue'
 import { ipc } from '../ipc'
+import { useDockerContainers } from './useDockerContainers'
 
 const props = defineProps<{
   connection?: ServerConnection
@@ -27,7 +28,10 @@ const props = defineProps<{
 
 const ui = useUiStore()
 
-const containers = ref<DockerContainer[]>([])
+const { containers, refresh } = useDockerContainers(
+  () => props.connection?.sessionId,
+  (message) => ui.toast(message)
+)
 const keyword = ref('')
 const statusFilter = ref<'all' | 'running' | 'exited'>('all')
 const terminalContainer = ref<DockerContainer | null>(null)
@@ -56,17 +60,6 @@ const filtered = computed(() => {
   return list
 })
 
-async function refresh() {
-  const connectionId = props.connection?.sessionId
-  if (!connectionId) return
-  try {
-    const result = await ipc.sshDockerList(connectionId)
-    if (props.connection?.sessionId === connectionId) containers.value = result
-  } catch (e) {
-    if (props.connection?.sessionId === connectionId) ui.toast(`容器列表加载失败：${e}`)
-  }
-}
-
 async function action(c: DockerContainer, act: 'start' | 'stop' | 'restart' | 'remove') {
   const connectionId = props.connection?.sessionId
   if (!connectionId || busyContainerId.value) return
@@ -81,7 +74,7 @@ async function action(c: DockerContainer, act: 'start' | 'stop' | 'restart' | 'r
       ui.toast(
         `${act === 'start' ? '启动' : act === 'stop' ? '停止' : act === 'restart' ? '重启' : '删除'}容器 ${c.name} 成功`
       )
-      await refresh()
+      if (props.connection?.sessionId === connectionId) await refresh()
     } else {
       ui.toast(`操作失败：${r.error ?? '未知错误'}`)
     }
@@ -133,15 +126,6 @@ function exec(c: DockerContainer) {
   if (!props.connection?.sessionId) return
   terminalContainer.value = c
 }
-
-watch(
-  () => props.connection?.sessionId,
-  (sessionId) => {
-    containers.value = []
-    if (sessionId) void refresh()
-  },
-  { immediate: true }
-)
 </script>
 
 <template>
