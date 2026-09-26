@@ -50,9 +50,11 @@ let resizeStartWidth = 0
 watch(
   () => props.columns,
   (columns) => {
-    const next = { ...widths.value }
-    for (const column of columns) next[column.key] ??= column.width ?? 140
+    // 只持有当前列的宽度；连续查询产生的新别名不能在网格存活期间无限积累。
+    const next: Record<string, number> = {}
+    for (const column of columns) next[column.key] = widths.value[column.key] ?? column.width ?? 140
     widths.value = next
+    if (resizeKey && !columns.some((column) => column.key === resizeKey)) stop()
   },
   { immediate: true, deep: true }
 )
@@ -76,6 +78,7 @@ function stop() {
   resizeKey = ''
   window.removeEventListener('pointermove', move)
   window.removeEventListener('pointerup', stop)
+  window.removeEventListener('pointercancel', stop)
   window.removeEventListener('blur', stop)
 }
 
@@ -87,6 +90,7 @@ function startResize(event: PointerEvent, column: UiDataGridColumn) {
   resizeStartWidth = widths.value[column.key]
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', stop)
+  window.addEventListener('pointercancel', stop)
   // 拖拽中窗口失焦也要收尾，否则监听器残留
   window.addEventListener('blur', stop)
 }
