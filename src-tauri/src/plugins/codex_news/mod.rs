@@ -2,7 +2,6 @@
 
 use std::time::Duration;
 
-use rusqlite::OptionalExtension;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::AppHandle;
@@ -10,8 +9,11 @@ use tauri::AppHandle;
 use crate::framework::store::PluginDb;
 
 const MAX_BYTES: usize = 2 * 1024 * 1024;
-const MIGRATIONS: &[&str] =
-    &["CREATE TABLE news_state (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL);"];
+const MIGRATIONS: &[&str] = &[
+    "CREATE TABLE news_state (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL);",
+    "CREATE TABLE news_preferences (id INTEGER PRIMARY KEY CHECK (id = 1), value TEXT NOT NULL);",
+];
+mod storage;
 
 /// AIHOT 完整快照原样传输；第三方字段校验和归一化由前端本模块负责。
 #[derive(Serialize)]
@@ -76,16 +78,7 @@ pub async fn codex_news_fetch() -> Result<NewsFeeds, String> {
 pub fn codex_news_load(app: AppHandle) -> Result<Option<Value>, String> {
     let log_started = std::time::Instant::now();
     let result: Result<Option<Value>, String> = (|| {
-        PluginDb::open(&app, "codex_news", MIGRATIONS)?.with_conn(|conn| {
-            let raw: Option<String> = conn
-                .query_row("SELECT value FROM news_state WHERE id = 1", [], |row| {
-                    row.get(0)
-                })
-                .optional()
-                .map_err(|e| e.to_string())?;
-            raw.map(|value| serde_json::from_str(&value).map_err(|e| format!("消息缓存损坏：{e}")))
-                .transpose()
-        })
+        PluginDb::open(&app, "codex_news", MIGRATIONS)?.with_conn(storage::load)
     })();
     match &result {
         Ok(_value) => log::debug!(
@@ -100,20 +93,13 @@ pub fn codex_news_load(app: AppHandle) -> Result<Option<Value>, String> {
     result
 }
 
-/// 保存有界 JSON 快照；数据库路径和维护访问守卫均走框架。
+/// 保存完整快照或仅阅读状态；正文与状态分开落盘，合计沿用原缓存预算。
 #[tauri::command(rename_all = "camelCase")]
 pub fn codex_news_save(app: AppHandle, value: Value) -> Result<(), String> {
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = (|| {
-        let raw = serde_json::to_string(&value).map_err(|e| e.to_string())?;
-        if !value.is_object() || raw.len() > MAX_BYTES {
-            return Err("消息缓存格式无效或过大".into());
-        }
-        PluginDb::open(&app, "codex_news", MIGRATIONS)?.with_conn(|conn| {
-        conn.execute("INSERT INTO news_state (id, value) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET value = excluded.value", [raw])
-            .map_err(|e| e.to_string())?;
-        Ok(())
-    })
+        PluginDb::open(&app, "codex_news", MIGRATIONS)?
+            .with_transaction(|conn| storage::save(conn, value))
     })();
     match &result {
         Ok(_value) => log::debug!(

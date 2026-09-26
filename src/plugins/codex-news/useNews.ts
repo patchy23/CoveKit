@@ -28,6 +28,7 @@ export function useNews() {
   let writing = false,
     writePending = false
   let applyOnFinish = false
+  let storedSnapshot: NewsSnapshot | null | undefined
   const visible = computed(
     () => visibility.value.active && !visibility.value.covered && !visibility.value.hidden
   )
@@ -61,7 +62,11 @@ export function useNews() {
               read: Object.fromEntries(Object.entries(read.value).filter(([id]) => ids.has(id))),
             }
             try {
-              await ipc.save(value)
+              if (current === storedSnapshot) {
+                const { read, auto, checkedAt } = value
+                await ipc.save({ read, auto, checkedAt })
+              } else await ipc.save(value)
+              storedSnapshot = current
               if (alive) saveError.value = ''
             } catch (e) {
               if (alive) saveError.value = `保存失败：${String(e)}`
@@ -162,6 +167,7 @@ export function useNews() {
       if (raw !== null) {
         const cache = validateCache(raw)
         snapshot.value = cache.snapshot
+        storedSnapshot = snapshot.value
         read.value = cache.read
         auto.value = cache.auto
         checkedAt.value = cache.checkedAt

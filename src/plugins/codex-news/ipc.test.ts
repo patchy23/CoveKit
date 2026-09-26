@@ -10,4 +10,7 @@ it('与 Rust 命令清单保持名称和载荷一致', async () => {
   const value = { version: 1 as const, snapshot: null, read: {}, auto: true, checkedAt: '' }
   await ipc.save(value)
   expect(invoke).toHaveBeenLastCalledWith('codex_news_save', { value })
+  const preferences = { read: { one: 'revision' }, auto: false, checkedAt: 'today' }
+  await ipc.save(preferences)
+  expect(invoke).toHaveBeenLastCalledWith('codex_news_save', { value: preferences })
 })

@@ -49,6 +49,22 @@ it('首次历史已读，后台检查暂存新增消息，用户应用后可标�
   api.markRead(item)
   await flushPromises()
   expect(mock.save.mock.lastCall![0].read.new).toBe(revision(item))
+  expect(mock.save.mock.lastCall![0]).not.toHaveProperty('snapshot')
+})
+
+it('读取旧缓存后仅修改阅读状态不再传新闻正文，刷新仍完整保存', async () => {
+  const snapshot = parseFeeds(feeds())
+  mock.load.mockResolvedValue({ version: 1, snapshot, read: {}, auto: true, checkedAt: '' })
+  mock.fetch.mockRejectedValue(new Error('offline'))
+  const { api } = setup()
+  await flushPromises()
+  api.markAllRead()
+  await flushPromises()
+  expect(mock.save.mock.lastCall![0]).not.toHaveProperty('snapshot')
+  expect(mock.save.mock.lastCall![0].read.one).toBe(revision(snapshot.events[0]!))
+  mock.fetch.mockResolvedValue(feeds())
+  await api.refresh()
+  expect(mock.save.mock.lastCall![0]).toHaveProperty('snapshot')
 })
 it('可见时轮询，关闭自动更新或隐藏页面停止定时，返回页面补查', async () => {
   const { api, wrapper } = setup()

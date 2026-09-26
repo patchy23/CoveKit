@@ -31,3 +31,6 @@ export interface NewsCache {
   auto: boolean
   checkedAt: string
 }
+
+/** 仅阅读状态变化时不携带新闻正文；后端与完整缓存原子合并。 */
+export type NewsPreferences = Pick<NewsCache, 'read' | 'auto' | 'checkedAt'>
