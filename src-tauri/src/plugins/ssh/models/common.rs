@@ -15,6 +15,21 @@ pub struct SshActionResult {
     pub(crate) error: Option<String>,
 }
 
+/// 日志轮询快照；正文不变时只确认指纹，缺省基线始终返回完整正文。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogSnapshot {
+    /// 读取是否成功；失败由命令 Result 返回。
+    pub(crate) ok: bool,
+    /// 当前完整正文的 SHA-256 指纹。
+    pub(crate) fingerprint: String,
+    /// 与请求基线相同，前端保持现有正文。
+    pub(crate) unchanged: bool,
+    /// 变化后的完整日志；空日志仍为 Some 空字符串。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) logs: Option<String>,
+}
+
 /// 认证方式（密码 / 私钥 / 私钥+passphrase）
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "camelCase")]

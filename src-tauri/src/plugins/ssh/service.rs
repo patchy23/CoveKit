@@ -4,7 +4,7 @@
 use tauri::State;
 
 use crate::plugins::ssh::conn::{exec_collect, get_session, shell_quote, SshState};
-use crate::plugins::ssh::models::{SshActionResult, SystemdService};
+use crate::plugins::ssh::models::{LogSnapshot, SshActionResult, SystemdService};
 
 /// 限定属性减少传输量；glob 由 systemctl 展开，覆盖已加载的运行和停止服务。
 const SERVICE_LIST_COMMAND: &str = "systemctl show '*.service' --all --no-pager --property=Id,Description,LoadState,ActiveState,SubState,UnitFileState,FragmentPath,DropInPaths";
@@ -121,7 +121,8 @@ pub async fn ssh_service_logs(
     connection_id: String,
     service_name: String,
     lines: Option<u32>,
-) -> Result<serde_json::Value, String> {
+    previous_fingerprint: Option<String>,
+) -> Result<LogSnapshot, String> {
     let session = get_session(&ssh_state, &connection_id)?;
     let n = lines.unwrap_or(100).clamp(1, 2_000);
     let out = exec_collect(
@@ -132,7 +133,7 @@ pub async fn ssh_service_logs(
         ),
     )
     .await?;
-    Ok(serde_json::json!({ "ok": true, "logs": out }))
+    super::monitor::logs::snapshot(out, previous_fingerprint).await
 }
 
 fn service_config_command(name: &str) -> Result<String, String> {

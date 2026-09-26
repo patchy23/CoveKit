@@ -9,6 +9,8 @@ use tauri::State;
 use crate::plugins::ssh::conn::{exec_collect, get_session, SshState};
 use crate::plugins::ssh::models::MonitorData;
 
+pub(crate) mod logs;
+
 /// 每个连接上一次网络累计计数与采样时间，用于换算字节/秒。
 pub struct MonitorState(pub(crate) Mutex<HashMap<String, (u64, u64, u64)>>);
 

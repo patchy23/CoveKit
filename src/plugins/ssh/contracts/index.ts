@@ -26,6 +26,7 @@ import type {
   HostKeyVerifyRequest,
   KnownHostEntry,
   LogActionResult,
+  LogSnapshot,
   MonitorData,
   ProcessDetail,
   ProcessInfo,
@@ -273,7 +274,12 @@ export type Payloads = {
     serviceName: string
     action: 'start' | 'stop' | 'restart'
   }
-  ssh_service_logs: { connectionId: string; serviceName: string; lines?: number }
+  ssh_service_logs: {
+    connectionId: string
+    serviceName: string
+    lines?: number
+    previousFingerprint?: string
+  }
   ssh_service_config: { connectionId: string; serviceName: string }
 
   /* 进程 */
@@ -299,7 +305,12 @@ export type Payloads = {
     containerId: string
     action: 'start' | 'stop' | 'restart' | 'remove'
   }
-  ssh_docker_logs: { connectionId: string; containerId: string; lines?: number }
+  ssh_docker_logs: {
+    connectionId: string
+    containerId: string
+    lines?: number
+    previousFingerprint?: string
+  }
   ssh_docker_exec: {
     connectionId: string
     containerId: string
@@ -397,7 +408,7 @@ export type Results = {
   /* 服务 */
   ssh_service_list: SystemdService[]
   ssh_service_action: SshActionResult
-  ssh_service_logs: { ok: boolean; logs: string; error?: string }
+  ssh_service_logs: LogSnapshot
   ssh_service_config: string
 
   /* 进程 */
@@ -412,7 +423,7 @@ export type Results = {
   ssh_compose_create: void
   ssh_compose_home: string
   ssh_docker_action: SshActionResult
-  ssh_docker_logs: { ok: boolean; logs: string; error?: string }
+  ssh_docker_logs: LogSnapshot
   ssh_docker_exec: TerminalSession
 }
 

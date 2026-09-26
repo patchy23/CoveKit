@@ -6,6 +6,15 @@ export interface SshActionResult {
   error?: string
 }
 
+/** 日志正文与已确认的 SHA-256 基线；可选字段兼容旧完整快照响应。 */
+export interface LogSnapshot {
+  ok: boolean
+  logs?: string
+  fingerprint?: string
+  unchanged?: boolean
+  error?: string
+}
+
 /** 认证方式 */
 
 export type AuthMethod = 'password' | 'privateKey' | 'privateKeyWithPassphrase'

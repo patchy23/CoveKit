@@ -21,6 +21,39 @@ function mountLog(kind: 'docker' | 'service' = 'docker') {
   })
 }
 
+it('无变化确认保留完整正文并继续两秒轮询，档位变化不用旧基线', async () => {
+  vi.mocked(ipc.sshDockerLogs)
+    .mockResolvedValueOnce({ ok: true, logs: '原始正文\n', fingerprint: 'first', unchanged: false })
+    .mockResolvedValueOnce({ ok: true, fingerprint: 'first', unchanged: true })
+  const wrapper = mountLog()
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(ipc.sshDockerLogs).toHaveBeenCalledTimes(2)
+  expect(ipc.sshDockerLogs).toHaveBeenLastCalledWith(
+    expect.objectContaining({ previousFingerprint: 'first', lines: 300 })
+  )
+  expect(wrapper.getComponent(UiLogViewer).props('content')).toBe('原始正文\n')
+  wrapper.getComponent(UiLogViewer).vm.$emit('limit-change', 2000)
+  await flushPromises()
+  expect(vi.mocked(ipc.sshDockerLogs).mock.lastCall![0]).not.toHaveProperty('previousFingerprint')
+})
+
+it('错误的无变化确认不会清空正文，随后请求重新读取完整内容', async () => {
+  vi.mocked(ipc.sshDockerLogs)
+    .mockResolvedValueOnce({ ok: true, logs: 'kept', fingerprint: 'first' })
+    .mockResolvedValueOnce({ ok: true, fingerprint: 'wrong', unchanged: true })
+    .mockResolvedValueOnce({ ok: true, logs: '', fingerprint: 'empty' })
+  const wrapper = mountLog()
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(wrapper.getComponent(UiLogViewer).props('content')).toBe('kept')
+  expect(wrapper.getComponent(UiLogViewer).props('error')).toContain('基线不一致')
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(vi.mocked(ipc.sshDockerLogs).mock.lastCall![0]).not.toHaveProperty('previousFingerprint')
+  expect(wrapper.getComponent(UiLogViewer).props('content')).toBe('')
+  expect(wrapper.getComponent(UiLogViewer).props('error')).toBe('')
+})
+
 it.each(['docker', 'service'] as const)(
   '%s 日志请求使用所选上限，定时刷新沿用选择',
   async (kind) => {

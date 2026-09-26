@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** 服务与容器日志查看器：定时拉取尾部日志，并在跟随模式下自动滚动到底部。 */
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { UiFloatingWindow, UiLogViewer } from '@/core/ui'
 import { useCopy } from '@/core/feedback/useCopy'
 import { ipc } from '../ipc'
@@ -21,6 +21,20 @@ const { copyText } = useCopy()
 const lineLimit = ref(300)
 let timer: number | null = null
 let disposed = false
+let fingerprint: string | undefined
+let fingerprintKey = ''
+const sourceKey = () =>
+  JSON.stringify([props.connectionId, props.kind, props.targetId, lineLimit.value])
+watch(
+  () => [props.connectionId, props.kind, props.targetId],
+  () => {
+    fingerprint = undefined
+    fingerprintKey = ''
+    content.value = ''
+    errorMessage.value = ''
+    void refresh()
+  }
+)
 
 function changeLineLimit(value: number) {
   lineLimit.value = value
@@ -30,6 +44,8 @@ function changeLineLimit(value: number) {
 async function refresh() {
   if (loading.value || disposed) return
   const lines = lineLimit.value
+  const key = sourceKey()
+  const previousFingerprint = fingerprintKey === key ? fingerprint : undefined
   loading.value = true
   try {
     const result =
@@ -38,22 +54,35 @@ async function refresh() {
             connectionId: props.connectionId,
             serviceName: props.targetId,
             lines,
+            ...(previousFingerprint ? { previousFingerprint } : {}),
           })
         : await ipc.sshDockerLogs({
             connectionId: props.connectionId,
             containerId: props.targetId,
             lines,
+            ...(previousFingerprint ? { previousFingerprint } : {}),
           })
-    if (disposed || lines !== lineLimit.value) return
+    if (disposed || key !== sourceKey()) return
     if (!result.ok) throw new Error(result.error ?? '日志读取失败')
-    content.value = result.logs
+    if (result.unchanged) {
+      if (!previousFingerprint || result.fingerprint !== previousFingerprint) {
+        fingerprint = undefined
+        throw new Error('日志响应基线不一致，下次刷新将重新读取完整内容')
+      }
+    } else if (typeof result.logs === 'string') content.value = result.logs
+    else {
+      fingerprint = undefined
+      throw new Error('日志响应缺少正文，下次刷新将重新读取完整内容')
+    }
+    fingerprint = result.fingerprint
+    fingerprintKey = key
     errorMessage.value = ''
   } catch (error) {
-    if (!disposed && lines === lineLimit.value) errorMessage.value = String(error)
+    if (!disposed && key === sourceKey()) errorMessage.value = String(error)
   } finally {
     loading.value = false
     // 请求过程中切换档位：忽略旧结果，串行补拉最新档位，避免并发覆盖。
-    if (!disposed && lines !== lineLimit.value) void refresh()
+    if (!disposed && key !== sourceKey()) void refresh()
   }
 }
 
