@@ -351,6 +351,7 @@ mod tests {
             "data_transfer_cancel",
             "取消正在进行的导出/导入（清理半成品）",
         ),
+        ("framework", "data_transfer_prepare", "登记可取消的数据包请求"),
         ("framework", "window_hide", "隐藏主窗口（最小化到托盘）"),
         (
             "framework",

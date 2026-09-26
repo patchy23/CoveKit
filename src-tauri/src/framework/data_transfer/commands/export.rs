@@ -30,12 +30,14 @@ pub async fn data_export_start(
     selection: ExportSelection,
     password: String,
     path: String,
+    request_id: Option<String>,
 ) -> Result<TransferStart, String> {
     package::validate_password(&password)?;
     let target = PathBuf::from(path.trim());
     if target.as_os_str().is_empty() {
         return Err("请选择数据包保存位置".into());
     }
+    let transfer = session::begin_transfer(request_id.as_deref())?;
     let handle = tasks::begin(
         Some(&app),
         "framework",
@@ -46,7 +48,6 @@ pub async fn data_export_start(
     if handle.is_rejected() {
         return Err("同时进行的任务过多，请稍后再试".into());
     }
-    let transfer = session::begin_transfer();
     let cancel = transfer.token();
     let build_app = app.clone();
     let work = tauri::async_runtime::spawn_blocking(move || -> Result<ExportReport, String> {

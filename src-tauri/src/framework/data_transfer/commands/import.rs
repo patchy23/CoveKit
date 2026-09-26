@@ -33,12 +33,13 @@ pub async fn data_import_inspect(
     app: AppHandle,
     path: String,
     password: String,
+    request_id: Option<String>,
 ) -> Result<ImportInspectResult, String> {
     let target = PathBuf::from(path.trim());
     if target.as_os_str().is_empty() {
         return Err("请选择数据包文件".into());
     }
-    let transfer = session::begin_transfer();
+    let transfer = session::begin_transfer(request_id.as_deref())?;
     let cancel = transfer.token();
     let inspect_app = app.clone();
     let work =
@@ -201,9 +202,11 @@ pub async fn data_import_commit(
     app: AppHandle,
     plan_id: String,
     password: String,
+    request_id: Option<String>,
 ) -> Result<ImportCommitResult, String> {
     package::validate_password(&password)?;
     let (plan, file_path, file_digest) = session::plan(&plan_id)?;
+    let transfer = session::begin_transfer(request_id.as_deref())?;
     let handle = tasks::begin(
         Some(&app),
         "framework",
@@ -214,7 +217,6 @@ pub async fn data_import_commit(
     if handle.is_rejected() {
         return Err("同时进行的任务过多，请稍后再试".into());
     }
-    let transfer = session::begin_transfer();
     let cancel = transfer.token();
     let commit_app = app.clone();
     let work = {

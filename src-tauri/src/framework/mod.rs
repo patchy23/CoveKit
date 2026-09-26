@@ -49,6 +49,7 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 pub(crate) fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
     // 框架自有数据集适配登记（凭证 / 收藏 / 最近使用）：导入导出目录要先知道框架自己有什么
     data_transfer::datasets::register_all();
+    data_transfer::register_lifecycle();
     register_ipc_or_fail();
     crate::framework::settings::register(builder)
 }
@@ -97,6 +98,7 @@ crate::covekit_module! {
         data_transfer::commands::spaces::data_backup_list => "列出当前空间的导入前快照（设置页还原入口）",
         data_transfer::commands::spaces::data_backup_restore => "还原到导入前：快照写回当前空间并广播刷新",
         data_transfer::commands::data_transfer_cancel => "取消正在进行的导出/导入（清理半成品）",
+        data_transfer::commands::data_transfer_prepare => "登记可取消的数据包请求",
     },
 }
 

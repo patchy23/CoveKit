@@ -89,10 +89,14 @@ export const ipc = {
   dataSpaceSwitch: (spaceId: string, revision?: number) =>
     call('data_space_switch', { spaceId, revision }),
   dataExportCatalog: () => call('data_export_catalog', {}),
-  dataExportStart: (selection: ExportSelection, password: string, path: string) =>
-    call('data_export_start', { selection, password, path }),
-  dataImportInspect: (path: string, password: string) =>
-    call('data_import_inspect', { path, password }),
+  dataExportStart: (
+    selection: ExportSelection,
+    password: string,
+    path: string,
+    requestId?: string
+  ) => call('data_export_start', { selection, password, path, requestId }),
+  dataImportInspect: (path: string, password: string, requestId?: string) =>
+    call('data_import_inspect', { path, password, requestId }),
   dataImportPlan: (
     inspectId: string,
     selection: ImportSelection,
@@ -109,10 +113,11 @@ export const ipc = {
       mode,
       conflicts,
     }),
-  dataImportCommit: (planId: string, password: string) =>
-    call('data_import_commit', { planId, password }),
+  dataImportCommit: (planId: string, password: string, requestId?: string) =>
+    call('data_import_commit', { planId, password, requestId }),
   dataBackupList: () => call('data_backup_list', {}),
   dataBackupRestore: (dir: string) => call('data_backup_restore', { dir }),
-  dataTransferCancel: (taskId?: string | null) =>
-    call('data_transfer_cancel', { taskId: taskId ?? null }),
+  dataTransferCancel: (requestId?: string | null) =>
+    call('data_transfer_cancel', { requestId: requestId ?? null }),
+  dataTransferPrepare: () => call('data_transfer_prepare', {}),
 }

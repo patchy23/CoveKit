@@ -20,6 +20,7 @@ const { recordError, toast, ipcMock } = vi.hoisted(() => ({
     dataImportPlan: vi.fn(),
     dataImportCommit: vi.fn(),
     dataTransferCancel: vi.fn(async () => ({ cancelled: false })),
+    dataTransferPrepare: vi.fn(async () => 'request-1'),
     dataSpaceSwitch: vi.fn(),
   },
 }))
@@ -65,6 +66,52 @@ describe('dataTransfer store', () => {
     for (const fn of Object.values(ipcMock)) fn.mockClear()
     ipcMock.dataSpacesList.mockResolvedValue([])
     ipcMock.dataTransferCancel.mockResolvedValue({ cancelled: false })
+    ipcMock.dataTransferPrepare.mockResolvedValue('request-1')
+  })
+
+  it('登记尚未完成就取消，不启动导出，也不取消旧报告的任务', async () => {
+    ipcMock.dataExportCatalog.mockResolvedValue(catalogFixture())
+    let resolve!: (id: string) => void
+    ipcMock.dataTransferPrepare.mockReturnValueOnce(
+      new Promise<string>((yes) => {
+        resolve = yes
+      })
+    )
+    const store = useDataTransferStore()
+    await store.loadCatalog()
+    store.taskId = 'previous-report-task'
+    const operation = store.exportPack('secret-pass', 'local.pbdata')
+    expect(await store.cancelTransfer()).toBe(true)
+    resolve('late-request')
+    expect(await operation).toBe(false)
+    expect(ipcMock.dataExportStart).not.toHaveBeenCalled()
+    expect(ipcMock.dataTransferCancel).toHaveBeenCalledWith('late-request')
+    expect(ipcMock.dataTransferCancel).not.toHaveBeenCalledWith('previous-report-task')
+    expect(recordError).not.toHaveBeenCalled()
+  })
+
+  it('进行中的请求用自己的登记取消，完成后不再发无标识的全局取消', async () => {
+    ipcMock.dataExportCatalog.mockResolvedValue(catalogFixture())
+    let finish!: (value: { taskId: string; report: ReturnType<typeof reportFixture> }) => void
+    ipcMock.dataExportStart.mockReturnValueOnce(
+      new Promise((yes) => {
+        finish = yes
+      })
+    )
+    ipcMock.dataTransferCancel.mockResolvedValue({ cancelled: true })
+    const store = useDataTransferStore()
+    await store.loadCatalog()
+    const operation = store.exportPack('secret-pass', 'local.pbdata')
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(await store.cancelTransfer()).toBe(true)
+    expect(ipcMock.dataTransferCancel).toHaveBeenCalledWith('request-1')
+    finish({ taskId: 'finished-task', report: reportFixture() })
+    // 写入可能已在取消前完成；仍如实报告成功，不能伪装回滚。
+    expect(await operation).toBe(true)
+    ipcMock.dataTransferCancel.mockClear()
+    expect(await store.cancelTransfer()).toBe(false)
+    expect(ipcMock.dataTransferCancel).not.toHaveBeenCalled()
   })
 
   it('读目录成功：填目录并按默认值重置勾选', async () => {

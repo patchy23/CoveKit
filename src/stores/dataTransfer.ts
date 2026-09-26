@@ -8,7 +8,7 @@
  * 密码不进 store：它只作为动作参数从组件传入、随调用结束即丢弃（Rust 侧同样不缓存）。
  * 失败一律：记录到诊断 + toast 可见原因，并返回 false 让向导留在原步（不静默、不假装成功）。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, onScopeDispose } from 'vue'
 import { defineStore } from 'pinia'
 import { ipc } from '@/core/ipc/ipc'
 import { recordError } from '@/core/diagnostics/errors'
@@ -33,6 +33,7 @@ import type {
 
 /** 出错时的统一处理：诊断留痕 + 用户可见提示，返回 false 供调用方留在原步 */
 function failed(scope: string, error: unknown): false {
+  if (error instanceof DOMException && error.name === 'AbortError') return false
   const message = error instanceof Error ? error.message : String(error)
   recordError({ code: `data.${scope}.failed`, message, source: 'data' })
   useUiStore().toast(message)
@@ -70,6 +71,37 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
   const taskId = ref('')
   /** 命令进行中标记（按钮禁用 + 转圈，避免重复提交） */
   const busy = ref('')
+  type TransferRequest = { id?: string; cancelled: boolean }
+  let activeRequest: TransferRequest | undefined
+  async function withTransfer<T>(operation: (id: string) => Promise<T>): Promise<T> {
+    const request: TransferRequest = { cancelled: false }
+    activeRequest = request
+    try {
+      request.id = await ipc.dataTransferPrepare()
+      if (request.cancelled) throw new DOMException('已取消', 'AbortError')
+      return await operation(request.id)
+    } catch (error) {
+      if (request.cancelled && String(error).includes('已取消'))
+        throw new DOMException('已取消', 'AbortError')
+      throw error
+    } finally {
+      if (request.id) {
+        try {
+          await ipc.dataTransferCancel(request.id)
+        } catch (error) {
+          failed('release', error)
+        }
+      }
+      if (activeRequest === request) activeRequest = undefined
+    }
+  }
+  onScopeDispose(() => {
+    if (activeRequest) {
+      activeRequest.cancelled = true
+      if (activeRequest.id)
+        void ipc.dataTransferCancel(activeRequest.id).catch((error) => failed('cancel', error))
+    }
+  })
 
   const sourceSpaceName = computed(() => catalog.value?.sourceSpaceName ?? '')
   const canExport = computed(
@@ -112,11 +144,8 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     if (!catalog.value) return failed('export', new Error('导出目录尚未加载，请重新打开向导'))
     busy.value = 'export'
     try {
-      const started = await ipc.dataExportStart(
-        buildSelection(catalog.value, choice.value),
-        password,
-        path
-      )
+      const selection = buildSelection(catalog.value, choice.value)
+      const started = await withTransfer((id) => ipc.dataExportStart(selection, password, path, id))
       taskId.value = started.taskId
       exportReport.value = started.report
       useUiStore().toast(
@@ -134,7 +163,7 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
   async function inspectPack(path: string, password: string): Promise<boolean> {
     busy.value = 'inspect'
     try {
-      const result = await ipc.dataImportInspect(path, password)
+      const result = await withTransfer((id) => ipc.dataImportInspect(path, password, id))
       inspected.value = result
       planned.value = null
       importDatasets.value = [...result.defaults.datasets]
@@ -180,7 +209,8 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     if (!planned.value) return failed('commit', new Error('请先生成导入计划'))
     busy.value = 'commit'
     try {
-      const result = await ipc.dataImportCommit(planned.value.planId, password)
+      const planId = planned.value.planId
+      const result = await withTransfer((id) => ipc.dataImportCommit(planId, password, id))
       taskId.value = result.taskId
       importReport.value = result.report
       await loadSpaces()
@@ -194,8 +224,11 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
 
   /** 请求取消当前传输（无传输时后端返回 false，不作为错误） */
   async function cancelTransfer(): Promise<boolean> {
+    const request = activeRequest
+    if (!request) return false
+    request.cancelled = true
     try {
-      const result = await ipc.dataTransferCancel(taskId.value || null)
+      const result = request.id ? await ipc.dataTransferCancel(request.id) : { cancelled: true }
       if (result.cancelled) useUiStore().toast('已请求取消，会在安全点停止')
       return result.cancelled
     } catch (error) {

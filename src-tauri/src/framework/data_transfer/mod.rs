@@ -35,6 +35,14 @@ mod session;
 mod storage_files;
 pub(crate) mod types;
 
+/// 数据包请求只在应用退出或空间维护时统一取消，页面按请求标识自行取消。
+pub(crate) fn register_lifecycle() {
+    crate::framework::lifecycle::register(
+        crate::framework::lifecycle::ModuleLifecycle::exit_only("framework.data-transfer")
+            .with_dispose(|_, _| session::cancel_all_transfers().err().into_iter().collect()),
+    );
+}
+
 /// 提交成功后广播受影响数据集（前端订阅后定点重拉，合并/覆盖导入不重启生效的落点）
 pub(crate) fn emit_space_data_changed(app: &tauri::AppHandle, datasets: &[String]) {
     let _ = app.emit(

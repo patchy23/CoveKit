@@ -9,7 +9,7 @@
 //! 提交前会用这里存的路径与摘要**重新读一遍文件**：文件被换过就是另一份包，
 //! 不能拿旧预览的结论去写数据（这是「密码再次提供」之外真正起作用的那道校验）。
 //!
-//! 当前取消入口指向最近登记的任务；它不是并发闸门。旧任务结束不得清除新任务的令牌。
+//! 每项传输按请求标识取消，不限制合法并发；旧调用缺省标识时兼容最近任务入口。
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -178,14 +178,40 @@ impl CancelToken {
     }
 }
 
-/// 当前传输的取消标志（进程内单例）
-fn current() -> &'static Mutex<Option<CancelToken>> {
-    static CURRENT: OnceLock<Mutex<Option<CancelToken>>> = OnceLock::new();
-    CURRENT.get_or_init(|| Mutex::new(None))
+struct TransferRegistration {
+    token: CancelToken,
+    claimed: bool,
+}
+
+#[derive(Default)]
+struct Transfers {
+    jobs: BTreeMap<String, TransferRegistration>,
+    latest: Option<String>,
+}
+
+fn transfers() -> &'static Mutex<Transfers> {
+    static TRANSFERS: OnceLock<Mutex<Transfers>> = OnceLock::new();
+    TRANSFERS.get_or_init(|| Mutex::new(Transfers::default()))
+}
+
+/// 先登记再传正文，取消早于执行命令抵达时不会漏掉。
+pub(crate) fn prepare_transfer() -> Result<String, String> {
+    let id = uuid::Uuid::new_v4().to_string();
+    transfers().lock().map_err(|e| e.to_string())?.jobs.insert(
+        id.clone(),
+        TransferRegistration {
+            token: CancelToken {
+                flag: Arc::new(AtomicBool::new(false)),
+            },
+            claimed: false,
+        },
+    );
+    Ok(id)
 }
 
 /// 传输调用的所有权守卫：正常返回、异常和 future 被丢弃时统一清理自己的登记。
 pub(crate) struct TransferGuard {
+    id: String,
     token: CancelToken,
 }
 
@@ -200,40 +226,62 @@ impl Drop for TransferGuard {
     fn drop(&mut self) {
         // spawn_blocking 无法被 drop 强行中止；通知仍在执行的工作在检查点退出。
         self.token.flag.store(true, Ordering::SeqCst);
-        if let Ok(mut guard) = current().lock() {
-            if guard
-                .as_ref()
-                .is_some_and(|token| Arc::ptr_eq(&token.flag, &self.token.flag))
-            {
-                *guard = None;
+        match transfers().lock() {
+            Ok(mut guard) => {
+                guard.jobs.remove(&self.id);
+                if guard.latest.as_deref() == Some(self.id.as_str()) {
+                    guard.latest = None;
+                }
             }
+            Err(error) => log::error!("释放数据传输登记失败: {error}"),
         }
     }
 }
 
-/// 开始一次传输：登记最近令牌；不取消或串行化先前仍有所有者的任务。
-pub(crate) fn begin_transfer() -> TransferGuard {
-    let token = CancelToken {
-        flag: Arc::new(AtomicBool::new(false)),
+/// 领取一次登记；同一标识不能重入，独立请求仍可并发。
+pub(crate) fn begin_transfer(request_id: Option<&str>) -> Result<TransferGuard, String> {
+    let id = match request_id {
+        Some(id) => id.to_string(),
+        None => prepare_transfer()?,
     };
-    if let Ok(mut guard) = current().lock() {
-        *guard = Some(token.clone());
+    let mut guard = transfers().lock().map_err(|e| e.to_string())?;
+    let request = guard.jobs.get_mut(&id).ok_or("已取消或传输登记不存在")?;
+    if request.claimed {
+        return Err("传输请求已经开始".into());
     }
-    TransferGuard { token }
+    request.claimed = true;
+    let token = request.token.clone();
+    guard.latest = Some(id.clone());
+    Ok(TransferGuard { id, token })
 }
 
-/// 请求取消当前传输（返回是否确有在跑的传输）
-pub(crate) fn cancel_current() -> bool {
-    match current().lock() {
-        Ok(guard) => match guard.as_ref() {
-            Some(token) => {
-                token.flag.store(true, Ordering::SeqCst);
-                true
-            }
-            None => false,
-        },
-        Err(_) => false,
+/// 按标识取消；只有旧调用没有提供标识时才使用最近领取的任务。
+pub(crate) fn cancel_transfer(request_id: Option<&str>) -> Result<bool, String> {
+    let mut guard = transfers().lock().map_err(|e| e.to_string())?;
+    let id = request_id
+        .map(str::to_string)
+        .or_else(|| guard.latest.clone());
+    let Some(id) = id else {
+        return Ok(false);
+    };
+    if let Some(request) = guard.jobs.remove(&id) {
+        request.token.flag.store(true, Ordering::SeqCst);
+        if guard.latest.as_deref() == Some(id.as_str()) {
+            guard.latest = None;
+        }
+        return Ok(true);
     }
+    Ok(false)
+}
+
+/// 退出或空间维护时通知全部在途任务在原有安全点停止。
+pub(crate) fn cancel_all_transfers() -> Result<(), String> {
+    let mut guard = transfers().lock().map_err(|e| e.to_string())?;
+    for (_, request) in std::mem::take(&mut guard.jobs) {
+        request.token.flag.store(true, Ordering::SeqCst);
+    }
+    guard.latest = None;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -242,16 +290,20 @@ mod tests {
 
     #[test]
     fn finishing_old_transfer_preserves_new_cancellation_and_drop_notifies_worker() {
-        let old = begin_transfer();
+        let early = prepare_transfer().unwrap();
+        assert!(cancel_transfer(Some(&early)).unwrap());
+        assert!(begin_transfer(Some(&early)).is_err());
+        let old = begin_transfer(None).unwrap();
         let old_worker = old.token();
-        let new = begin_transfer();
+        let new = begin_transfer(None).unwrap();
         let new_worker = new.token();
-        drop(old);
+        assert!(cancel_transfer(Some(&old.id)).unwrap());
         assert!(old_worker.check().is_err());
         assert!(new_worker.check().is_ok());
-        assert!(cancel_current());
+        drop(old);
+        assert!(cancel_transfer(Some(&new.id)).unwrap());
         assert!(new_worker.check().is_err());
         drop(new);
-        assert!(!cancel_current());
+        assert!(!cancel_transfer(None).unwrap());
     }
 }

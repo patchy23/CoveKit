@@ -659,6 +659,7 @@ export const frameworkCommands = {
   dataBackupList: 'data_backup_list',
   dataBackupRestore: 'data_backup_restore',
   dataTransferCancel: 'data_transfer_cancel',
+  dataTransferPrepare: 'data_transfer_prepare',
 } as const
 
 /** 框架命令入参（Record<string, never> = 无参命令） */
@@ -696,8 +697,13 @@ export type FrameworkPayloads = {
   data_spaces_list: Record<string, never>
   data_space_switch: { spaceId: string; revision?: number }
   data_export_catalog: Record<string, never>
-  data_export_start: { selection: ExportSelection; password: string; path: string }
-  data_import_inspect: { path: string; password: string }
+  data_export_start: {
+    selection: ExportSelection
+    password: string
+    path: string
+    requestId?: string
+  }
+  data_import_inspect: { path: string; password: string; requestId?: string }
   data_import_plan: {
     inspectId: string
     selection: ImportSelection
@@ -706,10 +712,11 @@ export type FrameworkPayloads = {
     mode?: ImportMode
     conflicts?: ConflictChoice[]
   }
-  data_import_commit: { planId: string; password: string }
+  data_import_commit: { planId: string; password: string; requestId?: string }
   data_backup_list: Record<string, never>
   data_backup_restore: { dir: string }
-  data_transfer_cancel: { taskId?: string | null }
+  data_transfer_cancel: { requestId?: string | null }
+  data_transfer_prepare: Record<string, never>
 }
 
 /** 框架命令返回 */
@@ -754,4 +761,5 @@ export type FrameworkResults = {
   data_backup_list: BackupSummary[]
   data_backup_restore: void
   data_transfer_cancel: CancelResult
+  data_transfer_prepare: string
 }
