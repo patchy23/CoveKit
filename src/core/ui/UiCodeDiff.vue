@@ -7,17 +7,23 @@ import UiScrollArea from './UiScrollArea.vue'
  * - `mode="unified"`：单栏内联展示变更块，`readonly=false` 时块上出现接受/拒绝控件；
  * - 顶部按行内容计数给出新增/删除统计（`diff.ts`），视图负责具体变更块的对齐。
  *
- * 两份文本共用异步加载的语言扩展；语言与左右对照的控件配置就地更新，保留阅读现场。
- * 文本、形态或内联控件变化仍重建视图，待独立处理增量文档更新。
+ * 两份文本共用异步加载的语言扩展；正文按变化区间更新，配置尽量就地更新，保留阅读现场。
+ * 形态或内联控件变化仍重建视图。
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { MergeView, unifiedMergeView } from '@codemirror/merge'
-import { Compartment, EditorState, type Extension } from '@codemirror/state'
+import {
+  getOriginalDoc,
+  MergeView,
+  originalDocChangeEffect,
+  unifiedMergeView,
+} from '@codemirror/merge'
+import { ChangeSet, Compartment, EditorState, type Extension } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
 import { syntaxHighlighting } from '@codemirror/language'
 import { codeEditorTheme, codeHighlightStyle } from './editor/theme'
 import { detectLanguage, loadLanguage } from './editor/languages'
 import { diffStats } from './editor/diff'
+import { documentChange } from './editor/documentChange'
 
 /** diff 展示形态 */
 export type DiffMode = 'split' | 'unified'
@@ -86,29 +92,63 @@ function destroy(): void {
   unifiedView = null
 }
 
+/** 使用实际视图内容计算变更，兼容用户已经接受或拒绝过差异块的情况。 */
+function updateDocuments(config: ReturnType<typeof configuration>): void {
+  if (mergeView) {
+    if (config.original !== rendered?.original) {
+      const view = mergeView.a
+      const changes = documentChange(view.state.doc, view.state.toText(config.original))
+      if (changes) view.dispatch({ changes })
+    }
+    if (config.modified !== rendered?.modified) {
+      const view = mergeView.b
+      const changes = documentChange(view.state.doc, view.state.toText(config.modified))
+      if (changes) view.dispatch({ changes })
+    }
+  } else if (unifiedView) {
+    const view = unifiedView
+    const original = getOriginalDoc(view.state)
+    const originalChange =
+      config.original !== rendered?.original
+        ? documentChange(original, view.state.toText(config.original))
+        : null
+    const changes =
+      config.modified !== rendered?.modified
+        ? documentChange(view.state.doc, view.state.toText(config.modified))
+        : null
+    if (originalChange || changes) {
+      view.dispatch({
+        changes: changes ?? undefined,
+        effects: originalChange
+          ? originalDocChangeEffect(view.state, ChangeSet.of(originalChange, original.length))
+          : undefined,
+      })
+    }
+  }
+}
+
 /** 最新配置就绪后更新视图；加载期间保持现有内容可读。 */
 async function create(): Promise<void> {
   const request = ++createRequest
   const parent = host.value
   if (!parent) return
-  const config = configuration()
+  const filename = props.filename
+  const language = props.language
   const languageChanged =
-    !rendered || config.filename !== rendered.filename || config.language !== rendered.language
+    !rendered || filename !== rendered.filename || language !== rendered.language
   const loaded = languageChanged
-    ? await loadLanguage(
-        detectLanguage(config.filename ?? '', config.language),
-        config.filename ?? ''
-      )
+    ? await loadLanguage(detectLanguage(filename ?? '', language), filename ?? '')
     : languageExtensions
   // 等待期间又来了新请求或组件已卸载：丢弃本次结果，视图归属最新一次请求
   if (request !== createRequest || !host.value) return
+  // 等待语言模块时不额外保留每次快速更新的旧正文快照。
+  const config = configuration()
   const rebuild =
     !rendered ||
-    config.original !== rendered.original ||
-    config.modified !== rendered.modified ||
     config.mode !== rendered.mode ||
     (config.mode === 'unified' && config.readonly !== rendered.readonly)
   if (!rebuild) {
+    updateDocuments(config)
     if (languageChanged) {
       const effects = languageCompartment.reconfigure(loaded)
       mergeView?.a.dispatch({ effects })

@@ -2,7 +2,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import { Facet, type Extension } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
-import { getOriginalDoc } from '@codemirror/merge'
+import { getOriginalDoc, rejectChunk } from '@codemirror/merge'
 import UiCodeDiff from './UiCodeDiff.vue'
 import { loadLanguage } from './editor/languages'
 
@@ -82,6 +82,45 @@ it('内联视图语言更新保留原文和当前文档', async () => {
   expect(before.state.doc).toBe(document)
   expect(getOriginalDoc(before.state)).toBe(original)
   expect(before.state.facet(marker)).toBe('xml')
+})
+
+it.each(['split', 'unified'] as const)('%s 更新正文复用视图并映射原选区', async (mode) => {
+  const wrapper = mount(UiCodeDiff, {
+    props: { original: 'header\nold\ntail', modified: 'header\nnew\ntail', mode },
+  })
+  await flushPromises()
+  const before = editors(wrapper.element)
+  const modified = before.at(-1)!
+  modified.dispatch({ selection: { anchor: 11, head: 15 } })
+  await wrapper.setProps({
+    original: 'header\noriginal\ntail',
+    modified: 'header\nmodified\ntail',
+  })
+  await flushPromises()
+  const after = editors(wrapper.element)
+  after.forEach((view, index) => expect(view).toBe(before[index]))
+  expect(modified.state.doc.toString()).toBe('header\nmodified\ntail')
+  expect(modified.state.selection.main.anchor).toBe(16)
+  expect(modified.state.selection.main.head).toBe(20)
+  const original = mode === 'split' ? after[0]!.state.doc : getOriginalDoc(modified.state)
+  expect(original.toString()).toBe('header\noriginal\ntail')
+})
+
+it('拒绝差异后收到正文更新，按当前文档更新且不覆盖未变化的另一侧', async () => {
+  const wrapper = mount(UiCodeDiff, {
+    props: { original: 'old', modified: 'new', mode: 'unified', readonly: false },
+  })
+  await flushPromises()
+  const view = editors(wrapper.element)[0]!
+  expect(rejectChunk(view, 0)).toBe(true)
+  expect(view.state.doc.toString()).toBe('old')
+  await wrapper.setProps({ modified: 'newest' })
+  expect(editors(wrapper.element)[0]).toBe(view)
+  expect(view.state.doc.toString()).toBe('newest')
+  expect(getOriginalDoc(view.state).toString()).toBe('old')
+  await wrapper.setProps({ original: 'remote' })
+  expect(view.state.doc.toString()).toBe('newest')
+  expect(getOriginalDoc(view.state).toString()).toBe('remote')
 })
 
 it('异步语言加载期间保留内容，迟到加载不覆盖最新配置', async () => {
