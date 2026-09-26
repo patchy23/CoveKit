@@ -6,7 +6,7 @@
 //! 主机密钥校验在握手回调中等待前端人工确认（ssh://host-key-verify ↔ ssh_host_key_respond），
 //! 首连不再静默记录 TOFU，指纹变更必须经用户明确决定（仅本次 / 保存 / 替换 / 取消）。
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -201,7 +201,7 @@ pub async fn ssh_reconnect(
                     session,
                     sftp: Mutex::default(),
                     forward_targets,
-                    id_names: Mutex::new(None),
+                    id_names: Arc::default(),
                 },
             );
             old
