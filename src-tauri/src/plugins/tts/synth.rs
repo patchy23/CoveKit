@@ -223,6 +223,7 @@ pub(crate) async fn synth_to_writer<W: AsyncWrite + Unpin>(
 
     // 3) 收音频分片，直到 TurnEnd（消息 = 2 字节前缀 + 头部行 + MP3 数据）
     let mut bytes = 0u64;
+    let mut completed = false;
     loop {
         let Some(msg) = ws.next().await else {
             break;
@@ -234,6 +235,7 @@ pub(crate) async fn synth_to_writer<W: AsyncWrite + Unpin>(
             }
             tokio_tungstenite::tungstenite::Message::Text(t) => {
                 if t.contains("Path:turn.end") {
+                    completed = true;
                     break;
                 }
             }
@@ -242,6 +244,12 @@ pub(crate) async fn synth_to_writer<W: AsyncWrite + Unpin>(
         }
     }
 
+    if !completed {
+        return Err("语音服务在合成完成前关闭连接".into());
+    }
+    if bytes == 0 {
+        return Err("语音服务未返回音频".into());
+    }
     Ok(bytes)
 }
 

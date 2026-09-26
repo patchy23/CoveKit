@@ -4,7 +4,7 @@
  * 文本输入 → 选语音（中文优先）→ 语速/音调调节 → 合成 mp3 → 播放/下载。
  * 后端走微软 Edge TTS 免费服务（无需 API key）。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { convertFileSrc } from '@tauri-apps/api/core'
 import { useUiStore } from '@/stores/ui'
 import {
@@ -36,6 +36,18 @@ const generating = ref(false)
 const audioUrl = ref<string>('')
 const audioFile = ref('')
 const lastBytes = ref(0)
+const audioElement = ref<HTMLAudioElement | null>(null)
+let disposed = false
+let generation = 0
+
+/** 移除 DOM 本身不会立即停止媒体；清空和关闭时主动释放播放与解码缓冲。 */
+function releaseAudio() {
+  const audio = audioElement.value
+  if (!audio) return
+  audio.pause()
+  audio.removeAttribute('src')
+  audio.load()
+}
 
 /** 按语言分组：中文组在前 */
 const voiceOptions = computed(() => {
@@ -48,6 +60,7 @@ const voiceOptions = computed(() => {
 })
 
 async function generate() {
+  if (disposed || generating.value) return
   if (!text.value.trim()) {
     ui.toast('请输入要合成的文字')
     return
@@ -57,6 +70,7 @@ async function generate() {
     return
   }
   generating.value = true
+  const request = ++generation
   try {
     const r = await ipc.ttsSynthesize({
       text: text.value,
@@ -64,6 +78,7 @@ async function generate() {
       rate: rate.value,
       pitch: pitch.value,
     })
+    if (disposed || request !== generation) return
     if (r.ok && r.filePath) {
       audioFile.value = r.filePath
       audioUrl.value = convertFileSrc(r.filePath)
@@ -73,24 +88,34 @@ async function generate() {
       ui.toast(`合成失败：${r.error ?? '未知错误'}`)
     }
   } catch (e) {
-    ui.toast(`合成失败：${e}`)
+    if (!disposed && request === generation) ui.toast(`合成失败：${e}`)
   } finally {
-    generating.value = false
+    if (!disposed) generating.value = false
   }
 }
 
 function reset() {
+  generation++
+  releaseAudio()
   text.value = ''
   audioUrl.value = ''
   audioFile.value = ''
+  lastBytes.value = 0
 }
 
 onMounted(async () => {
   try {
-    voices.value = await ipc.ttsVoices()
+    const result = await ipc.ttsVoices()
+    if (!disposed) voices.value = result
   } catch (e) {
-    ui.toast(`语音列表加载失败：${e}`)
+    if (!disposed) ui.toast(`语音列表加载失败：${e}`)
   }
+})
+
+onBeforeUnmount(() => {
+  disposed = true
+  generation++
+  releaseAudio()
 })
 </script>
 
@@ -137,7 +162,7 @@ onMounted(async () => {
         class="flex min-h-0 flex-col items-center justify-center gap-[12px] rounded-lg border border-border bg-surface p-[16px] dark:border-border-dark dark:bg-surface-dark"
       >
         <template v-if="audioUrl">
-          <audio :src="audioUrl" controls class="w-full" />
+          <audio ref="audioElement" :src="audioUrl" controls class="w-full" />
           <p class="text-caption text-text-muted dark:text-text-muted-dark">
             已生成 {{ (lastBytes / 1024).toFixed(1) }} KB
           </p>
