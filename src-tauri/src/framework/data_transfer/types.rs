@@ -11,10 +11,13 @@
 //! 导出与导入两侧走同一序列化路径故可比；换序列化器必须同步改 `dataset_digest`，
 //! 否则旧包会在「摘要不符」处被判为损坏。
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{self, Write};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+
+use super::json_writer::LimitedWriter;
 
 /// 单包记录总数上限（§4.3）
 pub(crate) const MAX_RECORDS_PER_PACKAGE: usize = 50_000;
@@ -114,10 +117,28 @@ impl PackageManifest {
 
 /// 记录体摘要：本仓库序列化结果的 sha256（hex 小写）
 pub(crate) fn dataset_digest(records: &Value) -> Result<String, String> {
-    let body = serde_json::to_vec(records).map_err(|e| format!("记录体序列化失败: {e}"))?;
-    let mut hasher = Sha256::new();
-    hasher.update(&body);
+    let mut writer = io::BufWriter::new(DigestWriter(Sha256::new()));
+    serde_json::to_writer(&mut writer, records)
+        .map_err(|e| format!("记录体序列化失败: {e}"))?;
+    let hasher = writer
+        .into_inner()
+        .map_err(|e| format!("记录体摘要失败: {e}"))?
+        .0;
     Ok(hex::encode(hasher.finalize()))
+}
+
+/// 摘要只消费序列化字节；外层小缓冲合并 token 写入，避免持有整份记录正文。
+struct DigestWriter(Sha256);
+
+impl Write for DigestWriter {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0.update(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// JSON 嵌套深度（标量 = 1）：用显式栈遍历，恶意深嵌套不会耗尽调用栈
@@ -210,14 +231,16 @@ pub(crate) fn validate_manifest(manifest: &PackageManifest) -> Result<(), String
             ));
         }
         for item in items {
-            let size = serde_json::to_vec(item)
-                .map_err(|e| format!("数据集 {} 记录序列化失败: {e}", block.name))?
-                .len();
-            if size > MAX_RECORD_BYTES {
-                return Err(format!(
-                    "数据集 {} 存在超过单条上限（{} 字节）的记录",
-                    block.name, MAX_RECORD_BYTES
-                ));
+            let mut counter = LimitedWriter::new(io::sink(), MAX_RECORD_BYTES);
+            if let Err(error) = serde_json::to_writer(&mut counter, item) {
+                return Err(if counter.exceeded() {
+                    format!(
+                        "数据集 {} 存在超过单条上限（{} 字节）的记录",
+                        block.name, MAX_RECORD_BYTES
+                    )
+                } else {
+                    format!("数据集 {} 记录序列化失败: {error}", block.name)
+                });
             }
             if json_depth(item) > MAX_JSON_DEPTH {
                 return Err(format!(
@@ -668,6 +691,21 @@ pub(crate) struct ImportReport {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn streamed_digest_matches_existing_package_bytes() {
+        for records in [
+            serde_json::json!([]),
+            serde_json::json!([{"text": "中文😀\n\"", "enabled": true, "empty": null}]),
+            serde_json::json!([{"text": "abcdef".repeat(5000)}]),
+        ] {
+            let bytes = serde_json::to_vec(&records).unwrap();
+            assert_eq!(
+                dataset_digest(&records).unwrap(),
+                hex::encode(Sha256::digest(bytes))
+            );
+        }
+    }
 
     /// 构造一个内容自洽的块：记录体与 sha256/条数一致
     fn block(name: &str, policy: TransportPolicy, items: Vec<Value>) -> DatasetBlock {

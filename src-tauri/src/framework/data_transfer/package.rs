@@ -12,12 +12,13 @@
 //! - 头内只有算法参数与随机量：工具名、主机名、目录、记录清单、来源标识全在密文清单里
 //!
 //! 口令不落盘、不进日志；本模块的函数只接收口令参数，不做任何持久化。
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::Path;
 
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 
+use super::json_writer::LimitedWriter;
 use crate::framework::data_transfer::types::{validate_manifest, PackageManifest};
 use crate::framework::secure_store::{
     decrypt_with_aad_nonce, derive_key_argon2id, encrypt_with_aad_nonce,
@@ -167,12 +168,15 @@ pub(crate) fn validate_password(password: &str) -> Result<(), String> {
 pub(crate) fn seal_package(password: &str, manifest: &PackageManifest) -> Result<Vec<u8>, String> {
     validate_password(password)?;
     validate_manifest(manifest)?;
-    let plain = serde_json::to_vec(manifest).map_err(|e| format!("数据包清单序列化失败: {e}"))?;
-    if plain.len() as u64 > MAX_PLAINTEXT_BYTES {
-        return Err(format!(
-            "数据包明文超过上限（{MAX_PLAINTEXT_BYTES} 字节），请缩小导出范围"
-        ));
+    let mut writer = LimitedWriter::new(Vec::new(), MAX_PLAINTEXT_BYTES as usize);
+    if let Err(error) = serde_json::to_writer(&mut writer, manifest) {
+        return Err(if writer.exceeded() {
+            format!("数据包明文超过上限（{MAX_PLAINTEXT_BYTES} 字节），请缩小导出范围")
+        } else {
+            format!("数据包清单序列化失败: {error}")
+        });
     }
+    let plain = writer.into_inner();
     let mut salt = [0u8; SALT_LEN];
     rand::rngs::OsRng.fill_bytes(&mut salt);
     let mut nonce = [0u8; NONCE_LEN];
@@ -196,6 +200,7 @@ pub(crate) fn seal_package(password: &str, manifest: &PackageManifest) -> Result
     };
     let head = header.encode();
     let ciphertext = encrypt_with_aad_nonce(&key, &plain, &head, &nonce)?;
+    drop(plain);
     let mut out = Vec::with_capacity(HEADER_LEN + ciphertext.len());
     out.extend_from_slice(&head);
     out.extend_from_slice(&ciphertext);
@@ -236,14 +241,23 @@ pub(crate) fn open_package(password: &str, raw: &[u8]) -> Result<PackageManifest
 
 /// 读包文件：超过读取上限的文件直接拒绝，不整份读进内存。
 pub(crate) fn read_package(path: &Path) -> Result<Vec<u8>, String> {
-    let meta = std::fs::metadata(path).map_err(|e| format!("数据包读取失败: {e}"))?;
+    let file = std::fs::File::open(path).map_err(|e| format!("数据包读取失败: {e}"))?;
+    let meta = file.metadata().map_err(|e| format!("数据包读取失败: {e}"))?;
     if meta.len() > MAX_FILE_BYTES {
         return Err(format!(
             "数据包文件过大（{} 字节，上限 {MAX_FILE_BYTES}）",
             meta.len()
         ));
     }
-    std::fs::read(path).map_err(|e| format!("数据包读取失败: {e}"))
+    // stat 之后文件仍可能增长；实际读取也遵循同一个既有容器上限。
+    let mut bytes = Vec::with_capacity(meta.len() as usize);
+    file.take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("数据包读取失败: {e}"))?;
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Err(format!("数据包文件过大（上限 {MAX_FILE_BYTES} 字节）"));
+    }
+    Ok(bytes)
 }
 
 /// 读包的不可信输入摘要（`inspectId` 绑定它，提交前复核文件没被换过）

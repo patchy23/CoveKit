@@ -22,6 +22,7 @@ pub(crate) mod catalog;
 pub(crate) mod commands;
 pub(crate) mod datasets;
 pub(crate) mod import;
+mod json_writer;
 /// 导入映射（sourceLineage）：重复导入的幂等依据（L3）
 pub(crate) mod lineage;
 /// 合并/覆盖导入提交：原地物化（L3）
