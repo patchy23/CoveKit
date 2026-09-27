@@ -148,7 +148,8 @@ async fn send_input(
     loop {
         tokio::select! {
             biased;
-            _ = cancelled.wait_for(|value| *value) => {
+            // 在进入发送分支前释放 watch 借用，避免同步读锁跨越网络 await。
+            _ = async { let _ = cancelled.wait_for(|value| *value).await; } => {
                 writer.data_bytes(b"cancel\n".to_vec()).await.map_err(|e| e.to_string())?;
                 return Ok(());
             }

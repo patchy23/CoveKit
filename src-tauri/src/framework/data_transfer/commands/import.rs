@@ -31,11 +31,14 @@ use tauri::AppHandle;
 #[tauri::command]
 pub async fn data_import_inspect(
     app: AppHandle,
+    webview: tauri::Webview,
     path: String,
     password: String,
     request_id: Option<String>,
-    on_progress: Option<tauri::ipc::Channel<super::views::TransferProgress>>,
+    on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<ImportInspectResult, String> {
+    // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
+    let on_progress = on_progress.map(|id| id.channel_on(webview));
     let target = PathBuf::from(path.trim());
     if target.as_os_str().is_empty() {
         return Err("请选择数据包文件".into());
@@ -202,11 +205,14 @@ fn plan_mode_name(mode: ImportMode) -> &'static str {
 #[tauri::command]
 pub async fn data_import_commit(
     app: AppHandle,
+    webview: tauri::Webview,
     plan_id: String,
     password: String,
     request_id: Option<String>,
-    on_progress: Option<tauri::ipc::Channel<super::views::TransferProgress>>,
+    on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<ImportCommitResult, String> {
+    // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
+    let on_progress = on_progress.map(|id| id.channel_on(webview));
     package::validate_password(&password)?;
     let (plan, file_path, file_digest) = session::plan(&plan_id)?;
     let transfer = session::begin_transfer(request_id.as_deref())?;

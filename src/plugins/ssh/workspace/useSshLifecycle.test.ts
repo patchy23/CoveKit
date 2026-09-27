@@ -27,7 +27,7 @@ const subscriptions = [
   mock.onConnectStage,
   mock.onHostKeyVerify,
 ]
-let stops: ReturnType<typeof vi.fn>[]
+let stops: ReturnType<typeof vi.fn<() => void>>[]
 let wrapper: VueWrapper | undefined
 beforeEach(() => {
   vi.resetAllMocks()

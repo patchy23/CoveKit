@@ -12,13 +12,13 @@ export interface DiffRequest {
 export interface DiffResult {
   versionA: number
   versionB: number
-  chunks: Array<{
+  chunks: ReadonlyArray<{
     fromA: number
     toA: number
     fromB: number
     toB: number
     precise: boolean
-    changes: Array<{ fromA: number; toA: number; fromB: number; toB: number }>
+    changes: ReadonlyArray<{ fromA: number; toA: number; fromB: number; toB: number }>
   }>
   stats: DiffStats
 }

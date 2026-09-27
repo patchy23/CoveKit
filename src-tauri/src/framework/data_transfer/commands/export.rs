@@ -27,12 +27,15 @@ pub fn data_export_catalog(app: AppHandle) -> Result<ExportCatalog, String> {
 #[tauri::command]
 pub async fn data_export_start(
     app: AppHandle,
+    webview: tauri::Webview,
     selection: ExportSelection,
     password: String,
     path: String,
     request_id: Option<String>,
-    on_progress: Option<tauri::ipc::Channel<super::views::TransferProgress>>,
+    on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<TransferStart, String> {
+    // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
+    let on_progress = on_progress.map(|id| id.channel_on(webview));
     package::validate_password(&password)?;
     let target = PathBuf::from(path.trim());
     if target.as_os_str().is_empty() {

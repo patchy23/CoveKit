@@ -35,6 +35,7 @@ function files(): RemoteFile[] {
     modifiedAt: i,
     permissions: 'rw-r--r--',
     owner: 'user',
+    group: 'users',
   }))
 }
 

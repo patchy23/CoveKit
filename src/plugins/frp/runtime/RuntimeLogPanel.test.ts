@@ -28,8 +28,10 @@ function line(text: string): FrpLogLine {
 
 it('同毫秒日志裁剪和过滤后保留幸存行节点，追加只格式化新行', async () => {
   const format = vi.fn((ts: number) => String(ts))
+  const formatter = new Intl.DateTimeFormat()
+  Object.defineProperty(formatter, 'format', { value: format })
   vi.spyOn(Intl, 'DateTimeFormat').mockImplementation(function () {
-    return { format } as Intl.DateTimeFormat
+    return formatter
   })
   const first = line('first')
   const second = line('needle')

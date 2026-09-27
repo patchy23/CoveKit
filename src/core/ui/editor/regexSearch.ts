@@ -58,9 +58,9 @@ export function createRegexEngine() {
     if (cached?.key !== key) {
       const scan: MatchScan = { positions: [], lengths: [], truncated: false }
       const cursor = query.getCursor(state)
-      while (!cursor.next().done) {
-        scan.positions.push(cursor.value.from)
-        scan.lengths.push(cursor.value.to - cursor.value.from)
+      for (let result = cursor.next(); !result.done; result = cursor.next()) {
+        scan.positions.push(result.value.from)
+        scan.lengths.push(result.value.to - result.value.from)
         if (scan.positions.length === MAX_MATCHES) {
           scan.truncated = true
           break
@@ -74,8 +74,8 @@ export function createRegexEngine() {
       Math.max(0, request.viewport.from - 250),
       Math.min(state.doc.length, request.viewport.to + 250)
     )
-    while (!cursor.next().done)
-      response.highlights.push({ from: cursor.value.from, to: cursor.value.to })
+    for (let result = cursor.next(); !result.done; result = cursor.next())
+      response.highlights.push({ from: result.value.from, to: result.value.to })
     function next(from: number, to: number) {
       let cursor = query.getCursor(state, to).next()
       if (cursor.done) cursor = query.getCursor(state, 0, from).next()
@@ -85,15 +85,15 @@ export function createRegexEngine() {
       for (let size = 1; ; size++) {
         const start = Math.max(from, to - size * 10000)
         const cursor = query.getCursor(state, start, to)
-        let last: typeof cursor.value | undefined
-        while (!cursor.next().done) last = cursor.value
+        let last: SearchRange | undefined
+        for (let result = cursor.next(); !result.done; result = cursor.next()) last = result.value
         if (last && (start === from || last.from > start + 10)) return last
         if (start === from) return undefined
       }
     }
     function replacement(match: ReturnType<typeof next>): string {
-      if (!match || !('match' in match)) return request.replacement
-      const captures = match.match
+      if (!match || !('match' in match) || !Array.isArray(match.match)) return request.replacement
+      const captures: readonly string[] = match.match
       const text = request.replacement.replace(
         /\\([nrt\\])/g,
         (_, char: string) => ({ n: '\n', r: '\r', t: '\t', '\\': '\\' })[char]!
@@ -123,11 +123,11 @@ export function createRegexEngine() {
     if (request.action === 'replaceAll') {
       response.changes = []
       const cursor = query.getCursor(state)
-      while (!cursor.next().done)
+      for (let result = cursor.next(); !result.done; result = cursor.next())
         response.changes.push({
-          from: cursor.value.from,
-          to: cursor.value.to,
-          insert: replacement(cursor.value),
+          from: result.value.from,
+          to: result.value.to,
+          insert: replacement(result.value),
         })
     }
     if (selected) {

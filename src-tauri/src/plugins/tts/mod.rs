@@ -42,14 +42,17 @@ pub async fn tts_discard(app: tauri::AppHandle, job_id: String) -> Result<(), St
 #[tauri::command(rename_all = "camelCase")]
 pub async fn tts_synthesize(
     app: tauri::AppHandle,
+    webview: tauri::Webview,
     state: tauri::State<'_, TtsJobs>,
     job_id: String,
     text: String,
     voice: String,
     rate: Option<i32>,
     pitch: Option<i32>,
-    on_progress: Option<tauri::ipc::Channel<models::TtsProgress>>,
+    on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<TtsResult, String> {
+    // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
+    let on_progress = on_progress.map(|id| id.channel_on(webview));
     let (_job, mut cancelled) = state.claim(&job_id)?;
     let mut progress = progress::Progress::new(&job_id, on_progress);
     log::info!("语音合成开始");

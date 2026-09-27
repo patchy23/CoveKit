@@ -275,11 +275,14 @@ pub fn vault_protection_status(
 #[tauri::command]
 pub async fn vault_export(
     app: AppHandle,
+    webview: tauri::Webview,
     path: String,
     password: String,
     request_id: Option<String>,
-    on_progress: Option<tauri::ipc::Channel<crate::framework::data_transfer::commands::views::TransferProgress>>,
+    on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<(), String> {
+    // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
+    let on_progress = on_progress.map(|id| id.channel_on(webview));
     let transfer = crate::framework::data_transfer::begin_transfer(request_id.as_deref())?;
     let cancel = transfer.token();
     let work_cancel = cancel.clone();
@@ -315,12 +318,15 @@ pub async fn vault_export(
 #[tauri::command]
 pub async fn vault_import(
     app: AppHandle,
+    webview: tauri::Webview,
     path: String,
     password: String,
     overwrite: bool,
     request_id: Option<String>,
-    on_progress: Option<tauri::ipc::Channel<crate::framework::data_transfer::commands::views::TransferProgress>>,
+    on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<VaultImportResult, String> {
+    // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
+    let on_progress = on_progress.map(|id| id.channel_on(webview));
     let transfer = crate::framework::data_transfer::begin_transfer(request_id.as_deref())?;
     let cancel = transfer.token();
     let work_cancel = cancel.clone();
