@@ -152,9 +152,19 @@ defineExpose({
             </tr>
           </thead>
           <tbody>
+            <!-- 多选只更新选中态变化的行；保留完整表格布局和原有拖放目标。 -->
             <tr
               v-for="file in files"
               :key="file.path"
+              v-memo="[
+                file,
+                file.name,
+                file.path,
+                file.isDir,
+                file.size,
+                file.modifiedAt,
+                !!selectedPaths?.has(file.path),
+              ]"
               class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
               :class="
                 selectedPaths?.has(file.path)

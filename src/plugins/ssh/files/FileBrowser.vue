@@ -137,10 +137,22 @@ watch(
             </tr>
           </thead>
           <tbody>
+            <!-- 传输进度等外围状态不重建全部行；元数据和选中态变化仍更新对应行。 -->
             <tr
               v-for="file in files"
               :key="file.path"
               :ref="(element) => setRowElement(file.path, element)"
+              v-memo="[
+                file,
+                file.name,
+                file.path,
+                file.isDir,
+                file.size,
+                file.modifiedAt,
+                file.permissions,
+                file.owner,
+                !!selectedPaths?.has(file.path),
+              ]"
               class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
               :class="
                 selectedPaths?.has(file.path)
