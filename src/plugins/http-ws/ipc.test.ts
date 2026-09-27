@@ -50,3 +50,14 @@ it('WS 增量游标以顶层 camelCase 传入，省略游标仍支持完整快�
   await ipc.wsRecv('ws-test')
   expect(JSON.parse(JSON.stringify(invoke.mock.calls.at(-1)?.[1]))).toEqual({ id: 'ws-test' })
 })
+
+it('SSE 批次消费后确认同一会话和序号，消费者继续收到完整事件', async () => {
+  const receive = vi.fn()
+  await ipc.sseStart('owned-stream', requestPayload(newDraft('sse')), receive)
+  const channel = invoke.mock.calls[0][1].onEvent
+  const event = { event: 'delta', id: 'remote-id', data: '完整正文', retry: 2000 }
+  channel.onmessage({ type: 'events', sequence: 7, events: [event] })
+  expect(receive).toHaveBeenCalledWith({ type: 'event', event })
+  for (let count = 0; count < 8; count++) await Promise.resolve()
+  expect(invoke).toHaveBeenLastCalledWith('sse_ack', { id: 'owned-stream', sequence: 7 })
+})
