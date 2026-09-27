@@ -3,6 +3,7 @@
 
 mod jobs;
 mod models;
+mod output;
 mod synth;
 
 use jobs::{TtsJobs, CANCELLED};
@@ -89,22 +90,7 @@ pub async fn tts_synthesize(
             (Ok(_), Err(error)) => Err(format!("音频文件收尾失败: {error}")),
             (Err(error), Err(cleanup)) => Err(format!("{error}；音频文件收尾失败: {cleanup}")),
         };
-        let written = match written {
-            Ok(bytes) => tokio::fs::rename(&temporary, &path)
-                .await
-                .map(|_| bytes)
-                .map_err(|e| format!("保存音频失败: {e}")),
-            Err(error) => Err(error),
-        };
-        let bytes = match written {
-            Ok(bytes) => bytes,
-            Err(error) => {
-                if let Err(cleanup) = tokio::fs::remove_file(&temporary).await {
-                    return Err(format!("{error}；临时音频清理失败: {cleanup}"));
-                }
-                return Err(error);
-            }
-        };
+        let bytes = output::publish(&temporary, &path, written, &cancelled).await?;
 
         Ok(TtsResult {
             ok: true,
