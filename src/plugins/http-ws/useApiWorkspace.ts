@@ -1,9 +1,17 @@
 /** 接口库与多页签草稿；保存捕获目标和快照，异步完成不覆盖后续编辑。 */
-import { computed, reactive, ref, shallowReactive } from 'vue'
+import { computed, markRaw, reactive, ref, shallowReactive } from 'vue'
 import { ipc } from './ipc'
 import type { UiCollectionMove } from '@/core/ui'
 import { apiTreeDestination } from './apiTree'
-import { fingerprint, fromRecord, newDraft, toRecord, type RequestDraft } from './requestDraft'
+import {
+  fingerprint,
+  matchesFingerprint,
+  fromRecord,
+  newDraft,
+  toRecord,
+  type DraftFingerprint,
+  type RequestDraft,
+} from './requestDraft'
 import { useRequestSession, type RequestSession } from './useRequestSession'
 import type { ApiKind, ApiRecord } from './contracts'
 
@@ -13,7 +21,7 @@ export interface ApiTab {
   name: string
   groupName: string
   draft: RequestDraft
-  saved: string
+  saved: DraftFingerprint | null
   saving: boolean
   session: RequestSession
 }
@@ -42,7 +50,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
   let loadEpoch = 0
   let disposed = false
   function dirty(tab: ApiTab) {
-    return tab.recordId === null || fingerprint(tab.draft) !== tab.saved
+    return tab.recordId === null || tab.saved === null || !matchesFingerprint(tab.draft, tab.saved)
   }
   async function load() {
     const token = ++loadEpoch
@@ -71,7 +79,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
       name: record?.name || `未命名 ${draft.type.toUpperCase()}`,
       groupName: record?.groupName || '',
       draft,
-      saved: fingerprint(draft),
+      saved: markRaw(fingerprint(draft)) as DraftFingerprint | null,
       saving: false,
     })
     const session = useRequestSession(
@@ -108,7 +116,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
       throw new Error('接口正在移动，请稍后保存')
     if (tab.saving) return false
     if (!name.trim()) throw new Error('请输入接口名称')
-    const snapshot = fingerprint(tab.draft)
+    const snapshot = markRaw(fingerprint(tab.draft))
     const payload = toRecord(tab.draft, name, groupName, asCopy ? 0 : (tab.recordId ?? 0))
     tab.saving = true
     try {
@@ -159,7 +167,7 @@ export function useApiWorkspace(report: (message: string) => void, visible: () =
       await ipc.apiDelete(record.id)
       for (const tab of tabs.filter((t) => t.recordId === record.id)) {
         tab.recordId = null
-        tab.saved = ''
+        tab.saved = null
       }
       await load()
     } finally {

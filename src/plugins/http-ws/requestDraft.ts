@@ -102,9 +102,23 @@ export function toRecord(
     }),
   }
 }
-/** 行 ID 不参与脏标记；刷新/重载产生的新 ID 不应产生伪修改。 */
-export function fingerprint(draft: RequestDraft): string {
-  return JSON.stringify(draft, (key, value) => (key === 'id' ? undefined : value))
+export interface DraftFingerprint {
+  readonly body: string
+  readonly metadata: string
+}
+
+/** 正文沿用不可变字符串，避免每次脏标记检查都转义并复制大正文；行 ID 不参与比较。 */
+export function fingerprint(draft: RequestDraft): DraftFingerprint {
+  const { body, ...metadata } = draft
+  return {
+    body,
+    metadata: JSON.stringify(metadata, (key, value) => (key === 'id' ? undefined : value)),
+  }
+}
+
+/** 正文已变化时直接判脏，撤销回原文后再核对其它字段。 */
+export function matchesFingerprint(draft: RequestDraft, saved: DraftFingerprint): boolean {
+  return draft.body === saved.body && fingerprint(draft).metadata === saved.metadata
 }
 export function requestPayload(draft: RequestDraft): HttpRequestPayload {
   const query = draft.params

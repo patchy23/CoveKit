@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { fingerprint, fromRecord, newDraft, requestPayload, toRecord } from './requestDraft'
+import {
+  fingerprint,
+  matchesFingerprint,
+  fromRecord,
+  newDraft,
+  requestPayload,
+  toRecord,
+} from './requestDraft'
 import type { ApiRecord } from './contracts'
 
 describe('接口草稿与请求构建', () => {
@@ -65,7 +72,7 @@ describe('接口草稿与请求构建', () => {
     expect(draft.headers[0].key).toBe('X-Test')
     const before = fingerprint(draft)
     draft.headers[0].id = 'different'
-    expect(fingerprint(draft)).toBe(before)
+    expect(matchesFingerprint(draft, before)).toBe(true)
     draft.bodyMode = 'form'
     draft.form = [{ id: '1', key: 'text', value: 'a & b' }]
     expect(requestPayload(draft).body).toBe('text=a%20%26%20b')
@@ -85,5 +92,28 @@ describe('接口草稿与请求构建', () => {
       params: 'not json',
     } as ApiRecord
     expect(() => fromRecord(record)).toThrow()
+  })
+
+  it('大正文编辑和撤销保持脏标记正确，其它字段和临时认证仍参与比较', () => {
+    const draft = newDraft('http')
+    draft.body = '中文\\"\n'.repeat(200_000)
+    const baseline = fingerprint(draft)
+    expect(baseline.body).toBe(draft.body)
+    expect(baseline.metadata.length).toBeLessThan(1000)
+    expect(matchesFingerprint(draft, baseline)).toBe(true)
+    draft.body += 'changed'
+    expect(matchesFingerprint(draft, baseline)).toBe(false)
+    draft.body = baseline.body
+    expect(matchesFingerprint(draft, baseline)).toBe(true)
+    draft.headers[0].enabled = false
+    expect(matchesFingerprint(draft, baseline)).toBe(false)
+    draft.headers[0].enabled = true
+    draft.headers[0].id = 'new-render-id'
+    expect(matchesFingerprint(draft, baseline)).toBe(true)
+    draft.auth.secret = 'fixture-only'
+    expect(matchesFingerprint(draft, baseline)).toBe(false)
+    draft.auth.secret = ''
+    draft.form[0].value = 'form change'
+    expect(matchesFingerprint(draft, baseline)).toBe(false)
   })
 })
