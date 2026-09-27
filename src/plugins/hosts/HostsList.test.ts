@@ -1,6 +1,12 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import HostsList from './HostsList.vue'
+import { entryToText } from './useHosts'
+
+vi.mock('./useHosts', async (original) => {
+  const actual = await original<typeof import('./useHosts')>()
+  return { ...actual, entryToText: vi.fn(actual.entryToText) }
+})
 
 vi.mock('@/core/ui', () => ({
   UiScrollArea: { template: '<section><slot /></section>' },
@@ -21,6 +27,33 @@ vi.mock('@/core/ui', () => ({
   },
 }))
 enableAutoUnmount(afterEach)
+afterEach(() => vi.clearAllMocks())
+
+it('连续编辑只格式化修改行，增删同步完整正文且保留空行和纯注释', async () => {
+  const wrapper = mount(HostsList, {
+    props: { content: '# 原样\r\n\n127.0.0.1 a.test\n0.0.0.0 b.test\n' },
+  })
+  // 首次编辑按原路径建立完整正文，之后仅格式化变化行。
+  await wrapper.findAll('section .grid')[1]!.findAll('input')[1]!.setValue('first-edit.test')
+  vi.mocked(entryToText).mockClear()
+  const rows = () => wrapper.findAll('section .grid')
+  const change = () => wrapper.emitted('change')!.at(-1)![0] as string
+  await rows()[1]!.findAll('input')[1]!.setValue('changed.test')
+  expect(entryToText).toHaveBeenCalledTimes(1)
+  expect(change()).toBe('# 原样\r\n\n127.0.0.1 a.test\n0.0.0.0 changed.test\n')
+  await rows()[0]!.findAll('button')[1]!.trigger('click')
+  expect(entryToText).toHaveBeenCalledTimes(1)
+  expect(change()).toBe('# 原样\r\n\n0.0.0.0 changed.test\n')
+  const add = wrapper.findAll('button').find((button) => button.text().includes('新增映射'))!
+  await add.trigger('click')
+  await add.trigger('click')
+  expect(rows()).toHaveLength(3)
+  await rows()[1]!.findAll('input')[0]!.setValue('127.0.0.2')
+  await rows()[1]!.findAll('input')[1]!.setValue('new.test')
+  expect(change()).toBe('# 原样\r\n\n0.0.0.0 changed.test\n\n127.0.0.2 new.test\n')
+  await rows()[2]!.findAll('button')[1]!.trigger('click')
+  expect(change()).toBe('# 原样\r\n\n0.0.0.0 changed.test\n\n127.0.0.2 new.test')
+})
 
 it('复用列表行时 IP、域名、备注、开关与校验仍实时更新，删除不复用错误行', async () => {
   const wrapper = mount(HostsList, {

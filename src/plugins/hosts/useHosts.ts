@@ -178,16 +178,17 @@ export function parseEntries(content: string): HostsEntry[] {
 
 /** 条目列表重组为 hosts 文本（映射行生成，非映射行原样） */
 export function entriesToText(entries: HostsEntry[]): string {
-  return entries
-    .map((e) => {
-      if (e.raw !== undefined) return e.raw
-      const hostStr = e.hosts.join(' ')
-      let line = `${e.ip} ${hostStr}`.trimEnd()
-      if (!e.enabled) line = `# ${line}`
-      if (e.comment.trim()) line += ` ${e.comment.trim()}`
-      return line
-    })
-    .join('\n')
+  return entries.map(entryToText).join('\n')
+}
+
+/** 单行序列化与全量保存使用同一格式，纯注释和空行原样保留。 */
+export function entryToText(e: HostsEntry): string {
+  if (e.raw !== undefined) return e.raw
+  const hostStr = e.hosts.join(' ')
+  let line = `${e.ip} ${hostStr}`.trimEnd()
+  if (!e.enabled) line = `# ${line}`
+  if (e.comment.trim()) line += ` ${e.comment.trim()}`
+  return line
 }
 
 /** 校验单个条目（列表模式行内即时校验） */

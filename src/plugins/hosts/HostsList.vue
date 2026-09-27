@@ -6,13 +6,16 @@ import { UiScrollArea } from '@/core/ui'
  */
 import { computed, ref } from 'vue'
 import type { HostsEntry } from './useHosts'
-import { parseEntries, validateEntry } from './useHosts'
+import { entryToText, parseEntries, validateEntry } from './useHosts'
 import { UiButton, UiCheckbox, UiIcon, UiIconButton, UiInput } from '@/core/ui'
 
 const props = defineProps<{ content: string }>()
 const emit = defineEmits<{ (e: 'change', text: string): void }>()
 
 const entries = ref<HostsEntry[]>(parseEntries(props.content))
+// 与条目同生命周期，只重写修改行；发出的正文仍是即时完整快照。
+let serialized: string[] | undefined
+let nextEntryId = 0
 
 /** 可编辑条目（映射行 + 被注释的映射行（未勾选）；纯注释/空行保留但不在列表显示） */
 const editable = computed(() =>
@@ -24,28 +27,22 @@ const rawCount = computed(() => entries.value.filter((e) => e.raw !== undefined)
 
 const errors = computed(() => editable.value.filter((e) => !e.valid).length)
 
-function sync() {
-  emit('change', entriesToText())
-}
-
-function entriesToText(): string {
-  return entries.value
-    .map((e) => {
-      if (e.raw !== undefined) return e.raw
-      const hostStr = e.hosts.join(' ')
-      let line = `${e.ip} ${hostStr}`.trimEnd()
-      if (!e.enabled) line = `# ${line}`
-      if (e.comment.trim()) line += ` ${e.comment.trim()}`
-      return line
-    })
-    .join('\n')
+function sync(e?: HostsEntry) {
+  // 首次编辑才建立行文本，避免首次打开额外格式化整份列表。
+  if (!serialized) serialized = entries.value.map(entryToText)
+  else if (e) {
+    const index = entries.value.indexOf(e)
+    if (index < 0) return
+    serialized[index] = entryToText(e)
+  }
+  emit('change', serialized.join('\n'))
 }
 
 function updateEntry(e: HostsEntry) {
   const check = validateEntry(e.ip, e.hosts)
   e.valid = check.valid
   e.error = check.error
-  sync()
+  sync(e)
 }
 
 function onIpInput(e: HostsEntry, v: string) {
@@ -68,16 +65,19 @@ function onCommentInput(e: HostsEntry, v: string) {
 
 function toggleEnabled(e: HostsEntry) {
   e.enabled = !e.enabled
-  sync()
+  sync(e)
 }
 
 function remove(e: HostsEntry) {
-  entries.value = entries.value.filter((x) => x.id !== e.id)
+  const index = entries.value.indexOf(e)
+  if (index < 0) return
+  entries.value.splice(index, 1)
+  serialized?.splice(index, 1)
   sync()
 }
 
 function addRow() {
-  const id = `n${Date.now()}`
+  const id = `n${nextEntryId++}`
   entries.value.push({
     id,
     enabled: true,
@@ -87,7 +87,7 @@ function addRow() {
     valid: false,
     error: 'IP 无效',
   })
-  sync()
+  sync(entries.value.at(-1)!)
 }
 </script>
 
