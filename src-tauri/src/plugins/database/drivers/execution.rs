@@ -31,12 +31,12 @@ pub(crate) async fn execute_agent(
     }
     Ok(QueryResult::script(results))
 }
-fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryResult, String> {
+fn decode(mut value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryResult, String> {
     let columns = value
         .get("columns")
         .and_then(|v| v.as_array())
         .ok_or("DB_AGENT_PROTOCOL: 缺少 columns 数组")?;
-    let rows = value
+    value
         .get("rows")
         .and_then(|v| v.as_array())
         .ok_or("DB_AGENT_PROTOCOL: 缺少 rows 数组")?;
@@ -68,18 +68,29 @@ fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryRe
         .get("truncated")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+    let native_types: Vec<String> = result.column_types.iter().map(|s| s.to_uppercase()).collect();
+    let rows = value
+        .get_mut("rows")
+        .map(serde_json::Value::take)
+        .ok_or("DB_AGENT_PROTOCOL: 缺少 rows 数组")?;
+    let serde_json::Value::Array(rows) = rows else {
+        return Err("DB_AGENT_PROTOCOL: 缺少 rows 数组".into());
+    };
+    // 逐行接管协议结果；转换过的正文不再被原始 JSON 与展示结果同时持有。
+    drop(value);
     for row in rows {
-        let row = row.as_array().ok_or("DB_AGENT_PROTOCOL: 结果行不是数组")?;
+        let serde_json::Value::Array(row) = row else {
+            return Err("DB_AGENT_PROTOCOL: 结果行不是数组".into());
+        };
         if row.len() != result.columns.len() {
             return Err("DB_AGENT_PROTOCOL: 行列数不一致".into());
         }
         let mut cells = budget.row();
-        for (i, value) in row.iter().enumerate() {
-            let native = result
-                .column_types
+        for (i, value) in row.into_iter().enumerate() {
+            let native = native_types
                 .get(i)
-                .map(|s| s.to_uppercase())
-                .unwrap_or_default();
+                .map(String::as_str)
+                .unwrap_or("");
             match value {
                 serde_json::Value::Null => cells.value(DbValue::null()),
                 serde_json::Value::Bool(v) => cells.value(DbValue::text("boolean", v.to_string())),
@@ -91,9 +102,9 @@ fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryRe
                     },
                     v.to_string(),
                 )),
-                serde_json::Value::String(text) => {
+                serde_json::Value::String(mut text) => {
                     let kind = if ["RAW", "VARRAW", "LONG RAW", "LONGRAW", "BLOB", "BFILE"]
-                        .contains(&native.as_str())
+                        .contains(&native)
                     {
                         "binary"
                     } else if native.contains("NUMBER")
@@ -106,19 +117,19 @@ fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryRe
                     } else {
                         "text"
                     };
-                    let text = if kind == "binary" {
-                        let hex = text.strip_prefix("0x").unwrap_or(text);
+                    if kind == "binary" {
+                        let hex = text.strip_prefix("0x").unwrap_or(&text);
                         // 验证原有十六进制语义，不为验证临时解码整块二进制。
                         if hex.len() % 2 != 0 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                             return Err("DB_AGENT_PROTOCOL: 二进制值不是十六进制".into());
                         }
-                        hex
-                    } else {
-                        text.as_str()
-                    };
-                    cells.text(kind, text);
+                        if text.starts_with("0x") {
+                            text.drain(..2);
+                        }
+                    }
+                    cells.value(DbValue::text(kind, text));
                 }
-                other => cells.json(other)?,
+                other => cells.json(&other)?,
             }
         }
         budget.finish_row(&mut result, cells);
@@ -128,6 +139,25 @@ fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryRe
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn owned_text_moves_without_copy_and_column_types_preserve_wire_spelling() {
+        let text = "中文🙂".repeat(1024);
+        let pointer = text.as_ptr();
+        let mut value = serde_json::json!({
+            "columns":["text","raw","date"],
+            "column_types":["varchar","raw","timestamp"],
+            "rows":[[null,"0x00fF","2026-09-27"]]
+        });
+        value["rows"][0][0] = serde_json::Value::String(text);
+        let result = decode(value, &mut ResultBudget::new(10)).unwrap();
+        assert_eq!(result.values[0][0].value.as_ref().unwrap().as_ptr(), pointer);
+        assert_eq!(result.column_types, ["varchar", "raw", "timestamp"]);
+        assert_eq!(result.values[0][1].value.as_deref(), Some("00fF"));
+        assert_eq!(result.values[0][1].kind, "binary");
+        assert_eq!(result.values[0][2].kind, "temporal");
+        assert_eq!(result.rows[0][0], result.values[0][0].value.as_ref().unwrap().as_str());
+    }
+
     #[test]
     fn nested_json_budget_preserves_later_rows_and_protocol_validation() {
         let mut budget = ResultBudget::new(10);
