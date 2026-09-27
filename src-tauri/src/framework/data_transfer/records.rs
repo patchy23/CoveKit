@@ -379,13 +379,15 @@ pub(crate) fn select(records: Vec<Value>, ids: &[String]) -> Result<Vec<Value>, 
     if ids.is_empty() {
         return Ok(records);
     }
-    for id in ids {
-        if !records
-            .iter()
-            .any(|record| record.get("id").and_then(Value::as_str) == Some(id))
-        {
-            return Err("所选记录已变化，请刷新后重新选择".into());
+    let selected: BTreeSet<&str> = ids.iter().map(String::as_str).collect();
+    let mut missing = selected.clone();
+    for record in &records {
+        if let Some(id) = record.get("id").and_then(Value::as_str) {
+            missing.remove(id);
         }
+    }
+    if !missing.is_empty() {
+        return Err("所选记录已变化，请刷新后重新选择".into());
     }
     Ok(records
         .into_iter()
@@ -393,7 +395,7 @@ pub(crate) fn select(records: Vec<Value>, ids: &[String]) -> Result<Vec<Value>, 
             record
                 .get("id")
                 .and_then(Value::as_str)
-                .is_some_and(|id| ids.iter().any(|selected| selected == id))
+                .is_some_and(|id| selected.contains(id))
         })
         .collect())
 }
@@ -424,6 +426,35 @@ fn plan_records(
     merge: Option<MergeContext<'_>>,
     singleton: bool,
 ) -> Result<Vec<ImportPlanItem>, String> {
+    if records.is_empty() {
+        return Ok(Vec::new());
+    }
+    // 索引仅借用本次快照；同名/同身份重复时保持原先 find 的首项优先规则。
+    let mut by_id = BTreeMap::new();
+    let mut by_label = BTreeMap::new();
+    let mut mapped_targets = BTreeMap::new();
+    // 单条预览只扫描一次即可，不为它建立整张本地表的索引。
+    let indexed = records.len() > 1;
+    if let Some(core) = merge.filter(|core| indexed && core.mode != ImportMode::Overwrite) {
+        for entry in local {
+            if let Some(id) = entry.get("id").and_then(Value::as_str) {
+                by_id.entry(id).or_insert(entry);
+            }
+            by_label.entry(label(entry)).or_insert(entry);
+        }
+        for entry in &core.lineage.entries {
+            if entry.source_space_id != source_space || entry.dataset != dataset {
+                continue;
+            }
+            // 原规则：最后一条仍存在的映射；若全部目标已删除，保留首条用于恢复提示。
+            let target = mapped_targets
+                .entry(entry.source_id.as_str())
+                .or_insert(entry.target_id.as_str());
+            if by_id.contains_key(entry.target_id.as_str()) {
+                *target = entry.target_id.as_str();
+            }
+        }
+    }
     records
         .iter()
         .map(|record| {
@@ -435,37 +466,52 @@ fn plan_records(
             if core.mode == ImportMode::Overwrite {
                 return Ok(item);
             }
-            let mappings = core.lineage.lookup(source_space, dataset, id);
-            let mapped = mappings
-                .iter()
-                .rev()
-                .find(|entry| {
-                    local
-                        .iter()
-                        .any(|record| record["id"].as_str() == Some(entry.target_id.as_str()))
-                })
-                .or_else(|| mappings.first())
-                .map(|entry| entry.target_id.as_str());
-            let hit = local
-                .iter()
-                .find(|entry| entry.get("id").and_then(Value::as_str) == Some(mapped.unwrap_or(id)))
-                .or_else(|| {
-                    if mapped.is_none() && !singleton {
-                        local.iter().find(|entry| label(entry) == label(record))
-                    } else {
-                        None
-                    }
+            let mapped = if indexed {
+                mapped_targets.get(id).copied()
+            } else {
+                let mut mappings = core.lineage.entries.iter().filter(|entry| {
+                    entry.source_space_id == source_space
+                        && entry.dataset == dataset
+                        && entry.source_id == id
                 });
+                mappings
+                    .clone()
+                    .rev()
+                    .find(|entry| {
+                        local.iter().any(|record| {
+                            record.get("id").and_then(Value::as_str)
+                                == Some(entry.target_id.as_str())
+                        })
+                    })
+                    .or_else(|| mappings.next())
+                    .map(|entry| entry.target_id.as_str())
+            };
+            let hit = if indexed {
+                by_id.get(mapped.unwrap_or(id)).copied()
+            } else {
+                local.iter().find(|entry| {
+                    entry.get("id").and_then(Value::as_str) == Some(mapped.unwrap_or(id))
+                })
+            }
+            .or_else(|| {
+                if mapped.is_none() && !singleton {
+                    if indexed {
+                        by_label.get(label(record)).copied()
+                    } else {
+                        local.iter().find(|entry| label(entry) == label(record))
+                    }
+                } else {
+                    None
+                }
+            });
             let decision = core.decisions.get(&(dataset.into(), id.into()));
             if singleton && decision == Some(&ConflictDecision::KeepBoth) {
                 return Err(format!("{dataset} 为单槽配置，不能保留两份"));
             }
             if let Some(hit) = hit {
                 let target = string(hit, "id")?;
-                let mut normalized = record.clone();
-                normalized["id"] = Value::String(target.into());
                 item.target_id = Some(target.into());
-                if normalized == *hit && (mapped.is_some() || target == id) {
+                if same_record_except_id(record, hit) && (mapped.is_some() || target == id) {
                     item.decision = ItemDecision::Identical;
                 } else {
                     item.conflict = true;
@@ -490,6 +536,19 @@ fn plan_records(
             Ok(item)
         })
         .collect()
+}
+
+/// 双方身份已验证；只忽略顶层 id，嵌套字段和缺失/null 差异仍按 JSON 原语义比较。
+fn same_record_except_id(source: &Value, target: &Value) -> bool {
+    source
+        .as_object()
+        .zip(target.as_object())
+        .is_some_and(|(source, target)| {
+            source.len() == target.len()
+                && source
+                    .iter()
+                    .all(|(key, value)| key == "id" || target.get(key) == Some(value))
+        })
 }
 
 /// 只有计划明确允许的记录才进入事务。
@@ -604,6 +663,100 @@ mod tests {
                 .decision,
             ItemDecision::RestorePrompt
         );
+    }
+
+    #[test]
+    fn selection_preserves_snapshot_order_and_duplicate_records() {
+        let records = vec![
+            json!({"id":"b","value":1}),
+            json!({"id":"a"}),
+            json!({"id":"b","value":2}),
+            json!({"id":"c"}),
+        ];
+        assert_eq!(select(records.clone(), &[]).unwrap(), records);
+        assert_eq!(
+            select(records.clone(), &["b".into(), "a".into(), "b".into()]).unwrap(),
+            records[..3]
+        );
+        assert!(select(records, &["b".into(), "missing".into()]).is_err());
+    }
+
+    #[test]
+    fn indexed_conflicts_preserve_first_match_and_live_mapping_priority() {
+        let mut lineage = ImportMap::default();
+        for target in ["deleted-first", "copy-first", "copy-last", "deleted-last"] {
+            lineage.record("origin", "x.records", "mapped", target, "package", "now");
+        }
+        lineage.record("other", "x.records", "mapped", "wrong", "package", "now");
+        lineage.record("origin", "y.records", "mapped", "wrong", "package", "now");
+        let sources = BTreeMap::new();
+        let decisions = BTreeMap::new();
+        let core = MergeContext {
+            mode: ImportMode::Merge,
+            lineage: &lineage,
+            decisions: &decisions,
+            source_records: &sources,
+        };
+        let source = vec![
+            json!({"id":"same","name":"identity","value":1}),
+            json!({"id":"new","name":"duplicate","value":1}),
+            json!({"id":"mapped","name":"mapped","value":1}),
+        ];
+        let local = vec![
+            json!({"id":"same","name":"identity","value":2}),
+            source[0].clone(),
+            json!({"id":"label-first","name":"duplicate","value":2}),
+            json!({"id":"label-last","name":"duplicate","value":1}),
+            json!({"id":"copy-first","name":"mapped","value":2}),
+            json!({"id":"copy-last","name":"mapped","value":1}),
+            json!({"id":"wrong","name":"mapped","value":2}),
+        ];
+        let plan = plan_records("x.records", &source, &local, "origin", Some(core), false).unwrap();
+        assert_eq!(plan[0].decision, ItemDecision::Skip);
+        assert_eq!(plan[0].target_id.as_deref(), Some("same"));
+        assert_eq!(plan[1].decision, ItemDecision::Skip);
+        assert_eq!(plan[1].target_id.as_deref(), Some("label-first"));
+        assert_eq!(plan[2].decision, ItemDecision::Identical);
+        assert_eq!(plan[2].target_id.as_deref(), Some("copy-last"));
+        for (record, expected) in source.iter().zip(&plan) {
+            let single = plan_records(
+                "x.records",
+                std::slice::from_ref(record),
+                &local,
+                "origin",
+                Some(core),
+                false,
+            )
+            .unwrap();
+            assert_eq!(single[0].decision, expected.decision);
+            assert_eq!(single[0].target_id, expected.target_id);
+            assert_eq!(single[0].conflict, expected.conflict);
+        }
+        // 有映射但目标均已删除时，不退回同名匹配而意外覆盖另一条记录。
+        let plan = plan_records("x.records", &source, &local[6..], "origin", Some(core), false)
+            .unwrap();
+        assert_eq!(plan[2].decision, ItemDecision::RestorePrompt);
+        assert!(plan[2].target_id.is_none());
+    }
+
+    #[test]
+    fn identity_comparison_preserves_nested_ids_missing_fields_and_nulls() {
+        let source = json!({"id":"source","data":{"id":"nested","items":[null,1]},"empty":null});
+        let mut normalized = source.clone();
+        normalized["id"] = json!("target");
+        assert!(same_record_except_id(&source, &normalized));
+        let mut nested_changed = normalized.clone();
+        nested_changed["data"]["id"] = json!("changed");
+        let mut missing = normalized.clone();
+        missing.as_object_mut().unwrap().remove("empty");
+        let mut different_key = missing.clone();
+        different_key["another"] = Value::Null;
+        let mut extra = normalized.clone();
+        extra["extra"] = Value::Null;
+        for target in [nested_changed, missing, different_key, extra] {
+            assert_eq!(same_record_except_id(&source, &target), normalized == target);
+            assert!(!same_record_except_id(&source, &target));
+        }
     }
 
     #[test]
