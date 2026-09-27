@@ -541,8 +541,8 @@ pub(crate) struct MergeContext<'a> {
     pub lineage: &'a crate::framework::data_transfer::lineage::ImportMap,
     /// 用户冲突决策（数据集 + 来源记录 id → 处置）
     pub decisions: &'a BTreeMap<(String, String), ConflictDecision>,
-    /// 包内全部记录（书签等子记录的业务键判定要跨数据集解析档案名）
-    pub source_records: &'a BTreeMap<String, Vec<Value>>,
+    /// 借用包内记录，跨数据集判定不复制整包正文；不得逃逸本次计划构造。
+    pub source_records: &'a BTreeMap<String, &'a [Value]>,
 }
 
 /// 合并/覆盖模式下目标空间的只读视图（判定用，不落盘）

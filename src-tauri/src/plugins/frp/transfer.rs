@@ -10,6 +10,7 @@ use crate::framework::{paths, store::PluginDb};
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -258,6 +259,9 @@ fn local_contents(
     items: &[Value],
     context: &ImportContext<'_>,
 ) -> Result<Vec<Value>, String> {
+    if items.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut local = inventory(app)?;
     retain_matching_contents(
         &mut local,
@@ -300,6 +304,17 @@ fn retain_matching_contents(
             || candidate["name"].as_str().is_some_and(|name| names.contains(name))
     });
     Ok(())
+}
+
+fn carried_contents<'a>(contents: &'a [Value], context: &ImportContext<'_>) -> Cow<'a, [Value]> {
+    let selected = |record: &&Value| {
+        context.carries_id(CONTENT, record["id"].as_str().unwrap_or(""))
+    };
+    if contents.iter().all(|record| selected(&record)) {
+        Cow::Borrowed(contents)
+    } else {
+        Cow::Owned(contents.iter().filter(selected).cloned().collect())
+    }
 }
 
 fn validate(dataset: &str, records: &[Value]) -> Result<(), String> {
@@ -537,13 +552,7 @@ impl DatasetAdapter for FrpAdapter {
         if dataset == META {
             if let Some(view) = context.merge {
                 if let Some(contents) = view.core.source_records.get(CONTENT) {
-                    let source: Vec<Value> = contents
-                        .iter()
-                        .filter(|record| {
-                            context.carries_id(CONTENT, record["id"].as_str().unwrap_or(""))
-                        })
-                        .cloned()
-                        .collect();
+                    let source = carried_contents(contents, context);
                     let content_plan = records::plan(
                         CONTENT,
                         &source,
@@ -605,6 +614,25 @@ pub(super) fn register() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fully_carried_contents_borrow_body_and_partial_selection_stays_isolated() {
+        let contents = vec![
+            json!({"id":"one","content":"one"}),
+            json!({"id":"two","content":"two"}),
+        ];
+        let mut context = ImportContext::default();
+        assert!(carried_contents(&contents, &context).is_empty());
+        context.carried.insert(CONTENT.into(), CarriedBlock {
+            record_count: 2,
+            ids: Some(BTreeSet::from(["one".into(), "two".into()])),
+        });
+        let selected = carried_contents(&contents, &context);
+        assert!(std::ptr::eq(selected.as_ptr(), contents.as_ptr()));
+        assert!(matches!(selected, Cow::Borrowed(_)));
+        context.carried.get_mut(CONTENT).unwrap().ids.as_mut().unwrap().remove("two");
+        assert_eq!(carried_contents(&contents, &context).as_ref(), &contents[..1]);
+    }
 
     #[test]
     fn content_candidates_preserve_identity_name_and_scoped_lineage_matches() {

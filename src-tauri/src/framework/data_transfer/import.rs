@@ -187,7 +187,7 @@ pub(crate) fn build_plan(
 
         let adapter = find_adapter(descriptor)?;
         let records = match &block.records {
-            Some(Value::Array(records)) => records.clone(),
+            Some(Value::Array(records)) => records,
             Some(_) => {
                 return Err(format!("数据集 {} 的记录体不是数组", block.name));
             }
@@ -203,8 +203,8 @@ pub(crate) fn build_plan(
             }
         };
 
-        adapter.validate_records(&block.name, &records)?;
-        items.extend(adapter.plan_import(&block.name, &records, &context)?);
+        adapter.validate_records(&block.name, records)?;
+        items.extend(adapter.plan_import(&block.name, records, &context)?);
         if !records.is_empty()
             || merge
                 .as_ref()
@@ -213,7 +213,7 @@ pub(crate) fn build_plan(
             blocks.push(PlannedBlock {
                 dataset: block.name.clone(),
                 owner: descriptor.owner.clone(),
-                records,
+                records: records.clone(),
             });
         }
     }
@@ -405,12 +405,12 @@ pub(crate) fn commit(
 }
 
 /// 包内全部记录按数据集归拢（合并判定的跨数据集引用解析用；缺记录体的数据集不出现在表里）
-fn manifest_source_records(manifest: &PackageManifest) -> BTreeMap<String, Vec<Value>> {
+fn manifest_source_records(manifest: &PackageManifest) -> BTreeMap<String, &[Value]> {
     manifest
         .datasets
         .iter()
         .filter_map(|block| match &block.records {
-            Some(Value::Array(records)) => Some((block.name.clone(), records.clone())),
+            Some(Value::Array(records)) => Some((block.name.clone(), records.as_slice())),
             _ => None,
         })
         .collect()
@@ -470,6 +470,22 @@ fn find_adapter(
 mod tests {
     use super::*;
     use crate::framework::data_transfer::types::{DatasetBlock, DatasetDescriptor, DependencyEdge};
+
+    #[test]
+    fn source_lookup_borrows_manifest_records_including_empty_datasets() {
+        let mut manifest = manifest(vec![
+            block("t.records", TransportPolicy::Portable, vec![serde_json::json!({"id":"one","text":"正文"})]),
+            block("t.empty", TransportPolicy::Portable, vec![]),
+        ]);
+        let mut declared = block("t.declared", TransportPolicy::DeviceLocal, vec![]);
+        declared.records = None;
+        manifest.datasets.push(declared);
+        let sources = manifest_source_records(&manifest);
+        let original = manifest.datasets[0].records.as_ref().unwrap().as_array().unwrap();
+        assert!(std::ptr::eq(sources["t.records"].as_ptr(), original.as_ptr()));
+        assert!(sources["t.empty"].is_empty());
+        assert!(!sources.contains_key("t.declared"));
+    }
 
     /// 测试用适配器：把记录写成 JSON 文件，便于检查「真写没写、写了几条」
     ///

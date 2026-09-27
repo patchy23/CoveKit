@@ -405,7 +405,7 @@ mod cases {
     fn merge_core<'a>(
         lineage: &'a lineage::ImportMap,
         decisions: &'a BTreeMap<(String, String), ConflictDecision>,
-        source_records: &'a BTreeMap<String, Vec<Value>>,
+        source_records: &'a BTreeMap<String, &'a [Value]>,
     ) -> MergeContext<'a> {
         MergeContext {
             mode: ImportMode::Merge,
@@ -506,7 +506,8 @@ mod cases {
         local.host = "10.0.0.9".into();
         let live = live_index(&[local]);
         let mut packaged = serde_json::to_value(profile("p1")).expect("序列化");
-        sources.insert(DATASET_PROFILES.to_string(), vec![packaged.clone()]);
+        let source_records = vec![packaged.clone()];
+        sources.insert(DATASET_PROFILES.to_string(), source_records.as_slice());
 
         // 无决策 → 保留本地
         let decisions = BTreeMap::new();
