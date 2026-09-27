@@ -114,14 +114,14 @@ impl AgentClient {
         // 等待 ready 行（10s 超时）：测试二进制等宿主会先输出噪音行，逐行跳过直到出现 ready
         let mut reader = BufReader::new(stdout);
         let ready = timeout(Duration::from_secs(10), async {
-            let mut line = String::new();
             for _ in 0..200 {
-                line.clear();
-                match read_frame(&mut reader, &mut line).await {
-                    Ok(0) => return Err("agent 进程提前退出（未输出 ready）".to_string()),
+                let line = match read_frame(&mut reader).await {
+                    Ok(line) if line.is_empty() => {
+                        return Err("agent 进程提前退出（未输出 ready）".to_string());
+                    }
                     Err(e) => return Err(format!("读取 agent 输出失败: {e}")),
-                    Ok(_) => {}
-                }
+                    Ok(line) => line,
+                };
                 if serde_json::from_str::<Value>(&line)
                     .ok()
                     .and_then(|v| v.get("ready").and_then(Value::as_bool))
@@ -440,20 +440,21 @@ async fn write_loop(mut stdin: ChildStdin, mut rx: mpsc::Receiver<String>, pendi
 }
 
 /// 读循环：子进程 stdout → 按 id 路由到 pending 表
-async fn read_loop(mut reader: BufReader<tokio::process::ChildStdout>, pending: PendingMap) {
-    let mut line = String::new();
+async fn read_loop<R: tokio::io::AsyncBufRead + Unpin>(mut reader: R, pending: PendingMap) {
     loop {
-        line.clear();
-        match read_frame(&mut reader, &mut line).await {
-            Ok(0) | Err(_) => break, // EOF 或读错误：进程退出
-            Ok(_) => {}
-        }
+        let line = match read_frame(&mut reader).await {
+            Ok(line) if line.is_empty() => break,
+            Err(_) => break, // EOF 或读错误：进程退出
+            Ok(line) => line,
+        };
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
         let parsed: Option<Value> = serde_json::from_str(trimmed).ok();
-        let Some(value) = parsed else {
+        // JSON 已独立持有数据，路由及等待下一帧前释放原始帧，避免大响应容量闲置。
+        drop(line);
+        let Some(mut value) = parsed else {
             continue;
         };
         let id = value.get("id").and_then(|v| v.as_u64());
@@ -471,8 +472,8 @@ async fn read_loop(mut reader: BufReader<tokio::process::ChildStdout>, pending: 
                 .unwrap_or("agent 未知错误")
                 .to_string();
             let _ = sender.send(Err(message));
-        } else if let Some(result) = value.get("result") {
-            let _ = sender.send(Ok(result.clone()));
+        } else if let Some(result) = value.get_mut("result") {
+            let _ = sender.send(Ok(result.take()));
         } else {
             let _ = sender.send(Err("agent 响应缺少 result/error".to_string()));
         }
@@ -491,6 +492,90 @@ async fn read_loop(mut reader: BufReader<tokio::process::ChildStdout>, pending: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn frames_preserve_utf8_boundaries_and_unterminated_eof() {
+        let input = "\n{\"result\":\"中文\"}\r\n最后一帧";
+        let mut reader = BufReader::with_capacity(1, input.as_bytes());
+        assert_eq!(read_frame(&mut reader).await.unwrap(), "\n");
+        assert_eq!(
+            read_frame(&mut reader).await.unwrap(),
+            "{\"result\":\"中文\"}\r\n"
+        );
+        assert_eq!(read_frame(&mut reader).await.unwrap(), "最后一帧");
+        assert!(read_frame(&mut reader).await.unwrap().is_empty());
+
+        let mut invalid = BufReader::new(&b"\xff\n"[..]);
+        assert_eq!(
+            read_frame(&mut invalid).await.unwrap_err(),
+            "agent 输出不是 UTF-8"
+        );
+    }
+
+    #[tokio::test]
+    async fn frame_limit_includes_newline() {
+        let mut input = vec![b'x'; 16 * 1024 * 1024];
+        *input.last_mut().unwrap() = b'\n';
+        let mut reader = BufReader::new(input.as_slice());
+        assert_eq!(read_frame(&mut reader).await.unwrap().len(), input.len());
+        drop(reader);
+
+        input.insert(0, b'x');
+        let mut reader = BufReader::new(input.as_slice());
+        assert_eq!(
+            read_frame(&mut reader).await.unwrap_err(),
+            "agent 响应帧超过 16 MiB"
+        );
+    }
+
+    #[tokio::test]
+    async fn responses_route_out_of_order_and_preserve_result_and_error_semantics() {
+        let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
+        let mut receivers = Vec::new();
+        for id in 1..=7 {
+            let (sender, receiver) = oneshot::channel();
+            pending.lock().unwrap().insert(id, sender);
+            receivers.push(receiver);
+        }
+        // 取消后迟到的响应不能重新注册请求或影响其它响应。
+        drop(PendingRequest {
+            pending: Arc::clone(&pending),
+            id: 6,
+        });
+        let input = concat!(
+            "noise\n{\"id\":\"1\",\"result\":false}\n",
+            "{\"id\":99,\"result\":false}\n",
+            "{\"id\":6,\"result\":false}\n",
+            "{\"id\":2,\"result\":null}\n",
+            "{\"id\":3,\"error\":null,\"result\":true}\n",
+            "{\"id\":4,\"error\":{\"message\":\"查询失败\"},\"result\":true}\n",
+            "{\"id\":5}\n",
+            "{\"id\":1,\"result\":{\"rows\":[[\"中文\",null,42]],\"truncated\":false}}"
+        );
+        read_loop(BufReader::new(input.as_bytes()), Arc::clone(&pending)).await;
+
+        let mut receivers = receivers.into_iter();
+        assert_eq!(
+            receivers.next().unwrap().await.unwrap().unwrap(),
+            json!({ "rows": [["中文", null, 42]], "truncated": false })
+        );
+        assert_eq!(
+            receivers.next().unwrap().await.unwrap().unwrap(),
+            Value::Null
+        );
+        for message in ["agent 未知错误", "查询失败", "agent 响应缺少 result/error"] {
+            assert_eq!(
+                receivers.next().unwrap().await.unwrap().unwrap_err(),
+                message
+            );
+        }
+        assert!(receivers.next().unwrap().await.is_err());
+        assert_eq!(
+            receivers.next().unwrap().await.unwrap().unwrap_err(),
+            "agent 进程已退出"
+        );
+        assert!(pending.lock().unwrap().is_empty());
+    }
 
     /// 用当前测试二进制自身模拟 agent 进程（环境变量触发 agent 模式）
     /// 模拟协议：ready 首行 → 回显 handshake/open_session/execute_query 等方法的固定结果。
@@ -606,8 +691,7 @@ impl Drop for PendingRequest {
 /// 在读取时限制 NDJSON 帧，不能先分配无限长字符串再检查。
 async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(
     reader: &mut R,
-    output: &mut String,
-) -> Result<usize, String> {
+) -> Result<String, String> {
     let mut bytes = Vec::new();
     loop {
         let buffer = reader.fill_buf().await.map_err(|e| e.to_string())?;
@@ -629,7 +713,5 @@ async fn read_frame<R: tokio::io::AsyncBufRead + Unpin>(
             break;
         }
     }
-    let length = bytes.len();
-    *output = String::from_utf8(bytes).map_err(|_| "agent 输出不是 UTF-8")?;
-    Ok(length)
+    String::from_utf8(bytes).map_err(|_| "agent 输出不是 UTF-8".to_string())
 }
