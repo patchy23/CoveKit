@@ -14,8 +14,11 @@ export function useFileColumnWidths(
   let probe: HTMLDivElement | undefined
   let cache = new WeakMap<RemoteFile, { signature: string; widths: number[] }>()
   let styleSignature = ''
+  let expiry: ReturnType<typeof setTimeout> | undefined
   const minimum = local ? [48, 90, 132] : [160, 76, 118, 92, 88]
   function stop() {
+    clearTimeout(expiry)
+    expiry = undefined
     generation++
     cancelAnimationFrame(frame)
     probe?.remove()
@@ -120,6 +123,14 @@ export function useFileColumnWidths(
       else {
         probe.remove()
         probe = undefined
+        // 列宽数字继续用于布局；闲置的逐文件测量副本可以重建，不保留模型之外的长期缓存。
+        expiry = setTimeout(
+          () => {
+            cache = new WeakMap()
+            expiry = undefined
+          },
+          10 * 60 * 1000
+        )
       }
     }
     frame = requestAnimationFrame(chunk)

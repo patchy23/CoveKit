@@ -144,6 +144,7 @@ it('大目录首字母定位使用完整模型，离屏拖拽源在松手前保�
 })
 
 it('本地大目录按完整模型测量长文件名，切换目录取消旧测量，卸载释放辅助节点', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
   const frames: FrameRequestCallback[] = []
   const schedule = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
     frames.push(callback)
@@ -182,6 +183,13 @@ it('本地大目录按完整模型测量长文件名，切换目录取消旧测�
     while (frames.length) frames.shift()!(0)
     await nextTick()
     expect(env.time).not.toHaveBeenCalled()
+    const width = (wrapper.get('col').element as HTMLElement).style.width
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+    expect((wrapper.get('col').element as HTMLElement).style.width).toBe(width)
+    window.dispatchEvent(new Event('resize'))
+    while (frames.length) frames.shift()!(0)
+    await nextTick()
+    expect(env.time).toHaveBeenCalledTimes(1000)
     const replacement = source.slice(0, 500).map((file) => ({ ...file, name: 'short' }))
     env.read.mockResolvedValue({ ok: true, path: '/next', parentPath: '/', files: replacement })
     await wrapper.vm.refresh()
@@ -194,6 +202,7 @@ it('本地大目录按完整模型测量长文件名，切换目录取消旧测�
   } finally {
     schedule.mockRestore()
     rect.mockRestore()
+    vi.useRealTimers()
   }
 })
 
