@@ -9,6 +9,8 @@ import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import type { RemoteFile } from '../contracts'
 import { ipc } from '../ipc'
 import { useLocalDirectory } from './useLocalDirectory'
+import { useFileTableWindow } from './useFileTableWindow'
+import { useFileColumnWidths } from './useFileColumnWidths'
 import { formatBytes, formatTime } from '../connection/useSsh'
 import PathBreadcrumbs from './PathBreadcrumbs.vue'
 import { UiIcon, UiIconButton, UiStatusBar, UiTable, UiTableCell, UiToolbar } from '@/core/ui'
@@ -36,6 +38,9 @@ const currentPath = ref(props.initialPath)
 const directory = useLocalDirectory((error) => emit('error', `取消目录读取失败：${String(error)}`))
 // 操作完成后重新读取整个目录；文件快照不需要逐项建立深层响应式代理。
 const files = shallowRef<RemoteFile[]>([])
+const listViewport = ref<HTMLElement | null>(null)
+const viewport = useFileTableWindow(listViewport, () => files.value)
+const columnWidths = useFileColumnWidths(listViewport, () => files.value, true)
 const loading = ref(false)
 const parentPath = ref<string | null>(null)
 const atDrives = computed(() => currentPath.value === '')
@@ -136,12 +141,21 @@ defineExpose({
     <!-- 列表（与远程侧同款 UiTable 布局：名称/大小/修改时间；内容超宽时横向滚动） -->
     <UiScrollArea as-child axis="both">
       <div
-        class="min-h-0 flex-1"
+        ref="listViewport"
+        class="min-h-0 flex-1 [overflow-anchor:none]"
         aria-label="本地文件列表"
         @contextmenu="emit('blankContext', $event)"
+        @pointerdown="viewport.pointerDown"
       >
         <div v-if="loading" class="py-[16px] text-center text-caption text-text-muted">读取中…</div>
         <UiTable v-else :framed="false" :styled="false" table-class="w-max min-w-full text-body-sm">
+          <colgroup v-if="columnWidths.length">
+            <col
+              v-for="(width, index) in columnWidths"
+              :key="index"
+              :style="{ width: `${width}px` }"
+            />
+          </colgroup>
           <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
             <tr
               class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -152,11 +166,13 @@ defineExpose({
             </tr>
           </thead>
           <tbody>
+            <!-- eslint-disable vue/no-useless-template-attributes -- Vue 的 v-for template 支持 v-memo；同时缓存行和对应间隙，回归验证选中态只更新变化行。 -->
             <!-- 多选只更新选中态变化的行；保留完整表格布局和原有拖放目标。 -->
-            <tr
-              v-for="file in files"
+            <template
+              v-for="{ file, gap } in viewport.rows.value"
               :key="file.path"
               v-memo="[
+                gap,
                 file,
                 file.name,
                 file.path,
@@ -165,31 +181,44 @@ defineExpose({
                 file.modifiedAt,
                 !!selectedPaths?.has(file.path),
               ]"
-              class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
-              :class="
-                selectedPaths?.has(file.path)
-                  ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
-                  : 'hover:bg-border dark:hover:bg-border-dark'
-              "
-              @click="onRowClick($event, file)"
-              @dblclick="open(file)"
-              @contextmenu.stop="emit('rowContext', $event, file)"
-              @pointerdown="emit('rowPointerDown', $event, file)"
             >
-              <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">
-                <UiTooltip :content="file.path">
-                  <span>
-                    <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
-                    <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
-                  </span>
-                </UiTooltip>
-              </UiTableCell>
-              <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
-                file.isDir ? '-' : formatBytes(file.size)
-              }}</UiTableCell>
-              <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
-                formatTime(file.modifiedAt)
-              }}</UiTableCell>
+              <tr v-if="gap" aria-hidden="true">
+                <td :colspan="3" :style="{ height: `${gap}px`, padding: 0, border: 0 }" />
+              </tr>
+              <tr
+                :data-file-row="file.path"
+                class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
+                :class="
+                  selectedPaths?.has(file.path)
+                    ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
+                    : 'hover:bg-border dark:hover:bg-border-dark'
+                "
+                @click="onRowClick($event, file)"
+                @dblclick="open(file)"
+                @contextmenu.stop="emit('rowContext', $event, file)"
+                @pointerdown="emit('rowPointerDown', $event, file)"
+              >
+                <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">
+                  <UiTooltip :content="file.path">
+                    <span>
+                      <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
+                      <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
+                    </span>
+                  </UiTooltip>
+                </UiTableCell>
+                <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                  file.isDir ? '-' : formatBytes(file.size)
+                }}</UiTableCell>
+                <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                  formatTime(file.modifiedAt)
+                }}</UiTableCell>
+              </tr>
+            </template>
+            <tr v-if="viewport.trailing.value" aria-hidden="true">
+              <td
+                :colspan="3"
+                :style="{ height: `${viewport.trailing.value}px`, padding: 0, border: 0 }"
+              />
             </tr>
           </tbody>
         </UiTable>

@@ -2,7 +2,9 @@
 import { UiScrollArea } from '@/core/ui'
 import { UiTooltip } from '@/core/ui'
 /** FileBrowser · SSH 文件页的路径工具栏、远程文件表格与键盘首字母定位。 */
-import { nextTick, onMounted, ref, watch, type ComponentPublicInstance } from 'vue'
+import { nextTick, onMounted, ref, watch } from 'vue'
+import { useFileTableWindow } from './useFileTableWindow'
+import { useFileColumnWidths } from './useFileColumnWidths'
 import type { RemoteFile } from '../contracts'
 import { formatBytes, formatTime } from '../connection/useSsh'
 import { UiButton, UiStatusBar, UiTable, UiTableCell } from '@/core/ui'
@@ -35,12 +37,8 @@ const emit = defineEmits<{
 }>()
 
 const listViewport = ref<HTMLElement | null>(null)
-const rowElements = new Map<string, HTMLElement>()
-
-function setRowElement(path: string, element: Element | ComponentPublicInstance | null) {
-  if (element instanceof HTMLElement) rowElements.set(path, element)
-  else rowElements.delete(path)
-}
+const viewport = useFileTableWindow(listViewport, () => props.files)
+const columnWidths = useFileColumnWidths(listViewport, () => props.files, false)
 
 function focusList() {
   listViewport.value?.focus({ preventScroll: true })
@@ -68,13 +66,7 @@ async function jumpByInitial(event: KeyboardEvent) {
   const currentIndex = matches.findIndex((file) => props.selectedPaths?.has(file.path))
   const target = matches[currentIndex >= 0 ? (currentIndex + 1) % matches.length : 0]
   emit('rowClick', new MouseEvent('click'), target)
-  await nextTick()
-  const row = rowElements.get(target.path)
-  const viewport = listViewport.value
-  if (row && viewport) {
-    const headerHeight = viewport.querySelector('thead')?.getBoundingClientRect().height ?? 0
-    viewport.scrollTo({ top: Math.max(0, row.offsetTop - headerHeight), behavior: 'smooth' })
-  }
+  await viewport.jump(props.files.indexOf(target))
 }
 
 function selectFile(event: MouseEvent, file: RemoteFile) {
@@ -109,13 +101,30 @@ watch(
     <UiScrollArea as-child axis="both">
       <div
         ref="listViewport"
-        class="min-h-0 flex-1 outline-none"
+        class="min-h-0 flex-1 outline-none [overflow-anchor:none]"
         tabindex="0"
         aria-label="远程文件列表，输入首字母可循环定位"
         @keydown="jumpByInitial"
+        @pointerdown="viewport.pointerDown"
         @contextmenu="emit('context', $event, null)"
       >
-        <UiTable :framed="false" :styled="false" table-class="text-body-sm">
+        <UiTable
+          :framed="false"
+          :styled="false"
+          table-class="text-body-sm"
+          :style="
+            columnWidths.length
+              ? { minWidth: `${columnWidths.reduce((a, b) => a + b, 0)}px` }
+              : undefined
+          "
+        >
+          <colgroup v-if="columnWidths.length">
+            <col
+              v-for="(width, index) in columnWidths"
+              :key="index"
+              :style="index ? { width: `${width}px` } : undefined"
+            />
+          </colgroup>
           <thead class="sticky top-0 bg-surface dark:bg-surface-dark">
             <tr
               class="border-b border-border text-caption text-text-muted dark:border-border-dark dark:text-text-muted-dark"
@@ -137,12 +146,13 @@ watch(
             </tr>
           </thead>
           <tbody>
+            <!-- eslint-disable vue/no-useless-template-attributes -- Vue 的 v-for template 支持 v-memo；同时缓存行和对应间隙，回归验证选中态只更新变化行。 -->
             <!-- 传输进度等外围状态不重建全部行；元数据和选中态变化仍更新对应行。 -->
-            <tr
-              v-for="file in files"
+            <template
+              v-for="{ file, gap } in viewport.rows.value"
               :key="file.path"
-              :ref="(element) => setRowElement(file.path, element)"
               v-memo="[
+                gap,
                 file,
                 file.name,
                 file.path,
@@ -153,38 +163,51 @@ watch(
                 file.owner,
                 !!selectedPaths?.has(file.path),
               ]"
-              class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
-              :class="
-                selectedPaths?.has(file.path)
-                  ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
-                  : 'hover:bg-border dark:hover:bg-border-dark'
-              "
-              @click="selectFile($event, file)"
-              @dblclick="emit('open', file)"
-              @contextmenu.stop="emit('context', $event, file)"
-              @pointerdown="emit('rowPointerDown', $event, file)"
             >
-              <UiTableCell content="technical" class="max-w-0 px-[12px] py-[7px]">
-                <!-- 长文件名截断不换行：auto 布局下 max-w-0 单元格 + 内层 truncate（不挤掉其他列），完整名走 title -->
-                <UiTooltip :content="file.name">
-                  <span class="block truncate">
-                    <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
-                    <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
-                  </span>
-                </UiTooltip>
-              </UiTableCell>
-              <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">
-                {{ file.isDir ? '-' : formatBytes(file.size) }}
-              </UiTableCell>
-              <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
-                formatTime(file.modifiedAt)
-              }}</UiTableCell>
-              <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
-                file.permissions
-              }}</UiTableCell>
-              <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
-                file.owner
-              }}</UiTableCell>
+              <tr v-if="gap" aria-hidden="true">
+                <td :colspan="5" :style="{ height: `${gap}px`, padding: 0, border: 0 }" />
+              </tr>
+              <tr
+                :data-file-row="file.path"
+                class="cursor-pointer border-b border-border/50 transition-colors dark:border-border-dark/50"
+                :class="
+                  selectedPaths?.has(file.path)
+                    ? 'bg-tertiary-soft shadow-[inset_4px_0_0_0_#F0562C] dark:bg-tertiary-soft-dark'
+                    : 'hover:bg-border dark:hover:bg-border-dark'
+                "
+                @click="selectFile($event, file)"
+                @dblclick="emit('open', file)"
+                @contextmenu.stop="emit('context', $event, file)"
+                @pointerdown="emit('rowPointerDown', $event, file)"
+              >
+                <UiTableCell content="technical" class="max-w-0 px-[12px] py-[7px]">
+                  <!-- 长文件名截断不换行：auto 布局下 max-w-0 单元格 + 内层 truncate（不挤掉其他列），完整名走 title -->
+                  <UiTooltip :content="file.name">
+                    <span class="block truncate">
+                      <span class="mr-[6px]">{{ file.isDir ? '📁' : '📄' }}</span>
+                      <span :class="{ 'font-medium': file.isDir }">{{ file.name }}</span>
+                    </span>
+                  </UiTooltip>
+                </UiTableCell>
+                <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">
+                  {{ file.isDir ? '-' : formatBytes(file.size) }}
+                </UiTableCell>
+                <UiTableCell content="numeric" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                  formatTime(file.modifiedAt)
+                }}</UiTableCell>
+                <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                  file.permissions
+                }}</UiTableCell>
+                <UiTableCell content="technical" class="whitespace-nowrap px-[12px] py-[7px]">{{
+                  file.owner
+                }}</UiTableCell>
+              </tr>
+            </template>
+            <tr v-if="viewport.trailing.value" aria-hidden="true">
+              <td
+                :colspan="5"
+                :style="{ height: `${viewport.trailing.value}px`, padding: 0, border: 0 }"
+              />
             </tr>
           </tbody>
         </UiTable>
