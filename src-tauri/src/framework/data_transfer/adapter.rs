@@ -5,9 +5,9 @@
 //! 框架只做闭包展开、限额校验与包读写。
 //!
 //! 契约（改动前先读）：
-//! - **只读优先**：`describe_datasets` / `export_records` / `enumerate_references` 只查询，
+//! - **只读优先**：`describe_datasets` / `visit_records` / `enumerate_references` 只查询，
 //!   不得写入、不得触发连接或外部程序（§6.2）；
-//! - **逻辑记录**：`export_records` 返回逻辑 JSON（字段名与前端契约一致），不是原始表行；
+//! - **逻辑记录**：`visit_records` 逐条交付逻辑 JSON（字段名与前端契约一致），不是原始表行；
 //!   物理路径、二进制位置、主机信任状态一律不进包（§13.1 device-local）；
 //! - **秘密边界**：返回 `Err` 表示「读不出来」，不得用空数组冒充「没有数据」——静默空包会让用户
 //!   以为已经导出成功；
@@ -45,15 +45,16 @@ pub(crate) trait DatasetAdapter: Send + Sync {
     /// 声明本 owner 可导出的数据集与当前空间的候选条目（含依赖边）
     fn describe_datasets(&self, app: &AppHandle) -> Result<Vec<DatasetDescriptor>, String>;
 
-    /// 按 id 导出记录体（逻辑 JSON）
+    /// 按 id 逐条导出记录体（逻辑 JSON）。回调失败后立即停止读取后续记录。
     ///
     /// `ids` 为闭包展开后的记录 id；整块带出的数据集（收藏、最近使用）传空列表表示「全部」。
-    fn export_records(
+    fn visit_records(
         &self,
         app: &AppHandle,
         dataset: &str,
         ids: &[String],
-    ) -> Result<Vec<Value>, String>;
+        emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    ) -> Result<(), String>;
 
     /// 校验记录体：导出前与导入写入前共用
     fn validate_records(&self, dataset: &str, records: &[Value]) -> Result<(), String>;
@@ -178,16 +179,17 @@ mod tests {
             Ok(Vec::new())
         }
 
-        fn export_records(
+        fn visit_records(
             &self,
             _app: &AppHandle,
             _dataset: &str,
             ids: &[String],
-        ) -> Result<Vec<Value>, String> {
-            Ok(ids
-                .iter()
-                .map(|id| serde_json::json!({ "id": id }))
-                .collect())
+            emit: &mut dyn FnMut(Value) -> Result<(), String>,
+        ) -> Result<(), String> {
+            for id in ids {
+                emit(serde_json::json!({ "id": id }))?;
+            }
+            Ok(())
         }
 
         fn validate_records(&self, _dataset: &str, _records: &[Value]) -> Result<(), String> {

@@ -21,7 +21,18 @@ pub(crate) trait RecordStore: Send + Sync {
     /// 数据集名、显示名；顺序即依赖写入顺序。
     fn datasets(&self) -> &'static [(&'static str, &'static str)];
     /// 读取无物理主键的逻辑记录。
-    fn read(&self, conn: &Connection, dataset: &str) -> Result<Vec<Value>, String>;
+    fn read(&self, conn: &Connection, dataset: &str) -> Result<Vec<Value>, String> {
+        let mut records = Vec::new();
+        self.visit(conn, dataset, &mut |record| { records.push(record); Ok(()) })?;
+        Ok(records)
+    }
+    /// 顺序读取逻辑记录；取消或预算失败必须从回调传播并停止游标。
+    fn visit(
+        &self,
+        conn: &Connection,
+        dataset: &str,
+        emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    ) -> Result<(), String>;
     /// 验证字段与业务约束。
     fn validate(&self, dataset: &str, record: &Value) -> Result<(), String>;
     /// 写入已经改写身份的记录，不启动任何业务操作。
@@ -110,14 +121,23 @@ impl<S: RecordStore> DatasetAdapter for RecordsAdapter<S> {
                 .datasets()
                 .iter()
                 .map(|(name, label)| {
-                    let records = self.0.read(conn, name)?;
-                    let mut result = descriptor(self.owner(), name, label, &records)?;
+                    let mut result = descriptor(self.owner(), name, label, &[])?;
                     if let Some((field, dataset)) = self.0.reference(name) {
                         result.pulls.push(DatasetPull {
                             kind: field.into(),
                             dataset: dataset.into(),
                         });
-                        for (entry, record) in result.entries.iter_mut().zip(&records) {
+                    }
+                    self.0.visit(conn, name, &mut |record| {
+                        let mut entry = CatalogEntry {
+                            dataset: (*name).into(),
+                            id: string(&record, "id")?.into(),
+                            label: self::label(&record).into(),
+                            detail: String::new(),
+                            dependencies: Vec::new(),
+                            note: None,
+                        };
+                        if let Some((field, _)) = self.0.reference(name) {
                             if let Some(id) = record
                                 .get(field)
                                 .and_then(Value::as_str)
@@ -130,24 +150,26 @@ impl<S: RecordStore> DatasetAdapter for RecordsAdapter<S> {
                                 });
                             }
                         }
-                    }
+                        result.entries.push(entry);
+                        Ok(())
+                    })?;
+                    result.record_count = result.entries.len();
                     Ok(result)
                 })
                 .collect()
         })
     }
-    fn export_records(
+    fn visit_records(
         &self,
         app: &AppHandle,
         dataset: &str,
         ids: &[String],
-    ) -> Result<Vec<Value>, String> {
+        emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    ) -> Result<(), String> {
         self.check_dataset(dataset)?;
-        select(
-            self.database(app)?
-                .with_conn(|conn| self.0.read(conn, dataset))?,
-            ids,
-        )
+        self.database(app)?.with_conn(|conn| {
+            visit_selected(ids, emit, |selected| self.0.visit(conn, dataset, selected))
+        })
     }
     fn validate_records(&self, dataset: &str, records: &[Value]) -> Result<(), String> {
         self.check_dataset(dataset)?;
@@ -327,15 +349,27 @@ pub(crate) fn label(record: &Value) -> &str {
 
 /// 从 owner 的 JSON 查询构造逻辑记录，解析错误不能冒充空表。
 pub(crate) fn query(conn: &Connection, sql: &str) -> Result<Vec<Value>, String> {
+    let mut records = Vec::new();
+    query_each(conn, sql, &mut |record| { records.push(record); Ok(()) })?;
+    Ok(records)
+}
+
+/// 保持 SQLite 游标，只持有当前记录；消费方拒绝后不读取下一行。
+pub(crate) fn query_each(
+    conn: &Connection,
+    sql: &str,
+    emit: &mut dyn FnMut(Value) -> Result<(), String>,
+) -> Result<(), String> {
     let mut statement = conn.prepare(sql).map_err(|e| e.to_string())?;
     let rows = statement
         .query_map([], |row| row.get::<_, String>(0))
         .map_err(|e| e.to_string())?;
-    rows.map(|row| {
-        serde_json::from_str(&row.map_err(|e| e.to_string())?)
-            .map_err(|_| "本地逻辑记录解析失败".into())
-    })
-    .collect()
+    for row in rows {
+        let record = serde_json::from_str(&row.map_err(|e| e.to_string())?)
+            .map_err(|_| "本地逻辑记录解析失败".to_string())?;
+        emit(record)?;
+    }
+    Ok(())
 }
 
 /// 逐条可选的普通数据目录；原文不额外标记危险内容。
@@ -374,7 +408,28 @@ pub(crate) fn descriptor(
     })
 }
 
+/// 按原始游标顺序交付选中项，保留重复项供统一校验；缺失身份不伪装成功。
+pub(crate) fn visit_selected(
+    ids: &[String],
+    emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    read: impl FnOnce(&mut dyn FnMut(Value) -> Result<(), String>) -> Result<(), String>,
+) -> Result<(), String> {
+    let selected: BTreeSet<&str> = ids.iter().map(String::as_str).collect();
+    let mut missing = selected.clone();
+    read(&mut |record| {
+        let id = record.get("id").and_then(Value::as_str).unwrap_or_default();
+        if selected.is_empty() || selected.contains(id) {
+            missing.remove(id);
+            emit(record)?;
+        }
+        Ok(())
+    })?;
+    if missing.is_empty() { Ok(()) }
+    else { Err("所选记录已变化，请刷新后重新选择".into()) }
+}
+
 /// 验证所选身份仍存在；空身份集代表显式整类选择。
+#[cfg(test)]
 pub(crate) fn select(records: Vec<Value>, ids: &[String]) -> Result<Vec<Value>, String> {
     if ids.is_empty() {
         return Ok(records);
@@ -570,6 +625,37 @@ mod tests {
     use super::super::lineage::ImportMap;
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn cursor_stops_before_reading_later_broken_records() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE records(body TEXT); INSERT INTO records VALUES('{\"id\":\"a\"}'),('invalid json');").unwrap();
+        let mut delivered = 0;
+        let error = query_each(&conn, "SELECT body FROM records ORDER BY rowid", &mut |_| {
+            delivered += 1;
+            Err("已取消".into())
+        }).unwrap_err();
+        assert_eq!(error, "已取消");
+        assert_eq!(delivered, 1);
+    }
+
+    #[test]
+    fn streaming_selection_preserves_order_and_propagates_consumer_failure() {
+        let input = vec![json!({"id":"b"}), json!({"id":"a"}), json!({"id":"b"})];
+        let mut output = Vec::new();
+        visit_selected(&["a".into(), "b".into()], &mut |item| { output.push(item); Ok(()) }, |emit| {
+            for item in input.clone() { emit(item)?; }
+            Ok(())
+        }).unwrap();
+        assert_eq!(output, input);
+        let mut consumed = 0;
+        let error = visit_selected(&[], &mut |_| Err("预算不足".into()), |emit| {
+            for item in input { consumed += 1; emit(item)?; }
+            Ok(())
+        }).unwrap_err();
+        assert_eq!(error, "预算不足");
+        assert_eq!(consumed, 1);
+    }
 
     #[test]
     fn copied_records_remap_references_and_reject_missing_targets() {

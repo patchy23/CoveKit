@@ -65,32 +65,28 @@ impl DatasetAdapter for PreferencesAdapter {
     }
 
     /// 取数据集记录：整块返回（`ids` 为空即全量；非空时按 id 过滤，供将来逐条选择复用）
-    fn export_records(
+    fn visit_records(
         &self,
         app: &AppHandle,
         dataset: &str,
         ids: &[String],
-    ) -> Result<Vec<Value>, String> {
+        emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    ) -> Result<(), String> {
         let key = key_of(dataset)?;
         let map = preferences::read_current(app)?;
         let all = ids_of(&map, key)?;
-        let selected: Vec<Value> = if ids.is_empty() {
-            all.into_iter().map(Value::String).collect()
+        if ids.is_empty() {
+            for id in all { emit(Value::String(id))?; }
         } else {
-            let mut out = Vec::with_capacity(ids.len());
             for id in ids {
                 if !all.iter().any(|item| item == id) {
-                    return Err(format!(
-                        "{dataset} 不存在记录 {id}（列表可能已过期，请刷新后重试）"
-                    ));
+                    return Err(format!("{dataset} 不存在记录 {id}（列表可能已过期，请刷新后重试）"));
                 }
-                out.push(Value::String(id.clone()));
+                emit(Value::String(id.clone()))?;
             }
-            out
-        };
-        Ok(selected)
+        }
+        Ok(())
     }
-
     /// 记录体检：必须是工具 id 形态的非空字符串（导入侧要按 id 还原收藏）
     fn validate_records(&self, dataset: &str, records: &[Value]) -> Result<(), String> {
         key_of(dataset)?;

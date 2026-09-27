@@ -24,8 +24,8 @@ impl RecordStore for Providers {
     fn singleton(&self, _: &str) -> bool {
         true
     }
-    fn read(&self, conn: &Connection, _: &str) -> Result<Vec<Value>, String> {
-        records::query(conn, "SELECT json_object('id', platform, 'name', platform, 'account', CASE WHEN coalesce(credential_ref,'')='' THEN id ELSE '' END, 'key', CASE WHEN coalesce(credential_ref,'')='' THEN key ELSE '' END, 'needsCredential', json(CASE WHEN coalesce(credential_ref,'')='' AND credential_pending=0 THEN 'false' ELSE 'true' END)) FROM dns_config ORDER BY platform")
+    fn visit(&self, conn: &Connection, _: &str, emit: &mut dyn FnMut(Value) -> Result<(), String>) -> Result<(), String> {
+        records::query_each(conn, "SELECT json_object('id', platform, 'name', platform, 'account', CASE WHEN coalesce(credential_ref,'')='' THEN id ELSE '' END, 'key', CASE WHEN coalesce(credential_ref,'')='' THEN key ELSE '' END, 'needsCredential', json(CASE WHEN coalesce(credential_ref,'')='' AND credential_pending=0 THEN 'false' ELSE 'true' END)) FROM dns_config ORDER BY platform", emit)
     }
     fn validate(&self, _: &str, record: &Value) -> Result<(), String> {
         records::fields(record, &["id", "name", "account", "key", "needsCredential"])?;

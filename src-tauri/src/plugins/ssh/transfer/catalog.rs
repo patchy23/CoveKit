@@ -190,20 +190,61 @@ fn descriptor(
     }
 }
 
-/// 按 id 取记录（纯函数）
-pub(super) fn export(
+/// 单次查询按选择顺序交付记录，不建立全部正文索引；缺失身份保持明确失败。
+pub(super) fn visit_export(
     conn: &Connection,
     dataset: &str,
     ids: &[String],
-) -> Result<Vec<Value>, String> {
-    let index = records_index(conn, dataset)?;
-    let mut records = Vec::with_capacity(ids.len());
-    for id in ids {
-        let record = index
-            .get(id)
-            .ok_or_else(|| format!("{dataset} 不存在记录 {id}（列表可能已过期，请刷新后重试）"))?;
-        records.push(record.clone());
+    emit: &mut dyn FnMut(Value) -> Result<(), String>,
+) -> Result<(), String> {
+    let table = match dataset {
+        DATASET_PROFILES => "ssh_profiles",
+        DATASET_GROUPS => "ssh_groups",
+        DATASET_TUNNELS => "ssh_tunnels",
+        DATASET_BOOKMARKS => "profile_bookmarks",
+        other => return Err(format!("SSH 适配器不支持数据集 {other}")),
+    };
+    // 表名只来自上述 owner 内部常量，身份通过参数绑定，不拼接用户输入。
+    let sql = format!("SELECT selection.value AS selected_id,t.* FROM json_each(?1) selection LEFT JOIN {table} t ON t.id=selection.value ORDER BY selection.key");
+    let mut statement = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let selected = serde_json::to_string(ids).map_err(|e| e.to_string())?;
+    let mut rows = statement.query([selected]).map_err(|e| e.to_string())?;
+    let mut count = 0;
+    while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+        if row.get::<_, Option<String>>("id").map_err(|e| e.to_string())?.is_none() {
+            let id: String = row.get("selected_id").map_err(|e| e.to_string())?;
+            return Err(format!("{dataset} 不存在记录 {id}（列表可能已过期，请刷新后重试）"));
+        }
+        let value = match dataset {
+            DATASET_PROFILES => serde_json::to_value(store::profiles::row_to_profile(row).map_err(|e| e.to_string())?),
+            DATASET_TUNNELS => serde_json::to_value(store::tunnels::row_to_tunnel(row).map_err(|e| e.to_string())?),
+            DATASET_GROUPS => serde_json::to_value(crate::plugins::ssh::models::SshGroup {
+                id: row.get("id").map_err(|e| e.to_string())?,
+                name: row.get("name").map_err(|e| e.to_string())?,
+                sort_order: row.get("sort_order").map_err(|e| e.to_string())?,
+            }),
+            DATASET_BOOKMARKS => serde_json::to_value(SshBookmark {
+                id: row.get("id").map_err(|e| e.to_string())?,
+                profile_id: row.get("profile_id").map_err(|e| e.to_string())?,
+                name: row.get("name").map_err(|e| e.to_string())?,
+                path: row.get("path").map_err(|e| e.to_string())?,
+                sort: row.get("sort").map_err(|e| e.to_string())?,
+            }),
+            _ => unreachable!(),
+        }.map_err(|e| format!("{dataset} 记录序列化失败: {e}"))?;
+        emit(value)?;
+        count += 1;
     }
+    if count != ids.len() {
+        return Err(format!("{dataset} 所选记录不存在（列表可能已过期，请刷新后重试）"));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub(super) fn export(conn: &Connection, dataset: &str, ids: &[String]) -> Result<Vec<Value>, String> {
+    let mut records = Vec::new();
+    visit_export(conn, dataset, ids, &mut |record| { records.push(record); Ok(()) })?;
     Ok(records)
 }
 

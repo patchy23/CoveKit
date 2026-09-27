@@ -6,7 +6,7 @@ use tauri::{AppHandle, State};
 use crate::plugins::ssh::store::{with_db, ProfileState};
 
 /// 行 → TunnelConfig（列名与 SELECT 清单一致）
-fn row_to_tunnel(
+pub(crate) fn row_to_tunnel(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<crate::plugins::ssh::models::TunnelConfig> {
     use crate::plugins::ssh::models::TunnelType;

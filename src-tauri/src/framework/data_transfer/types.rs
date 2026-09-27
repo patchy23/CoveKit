@@ -447,24 +447,75 @@ impl ResolvedSelection {
     }
 }
 
-/// 构造带记录的块；复用摘要遍历扣减正文预算，不另行序列化或复制正文。
-pub(crate) fn block_carrying(
-    descriptor: &DatasetDescriptor,
+/// 逐记录校验和计算数组摘要；只由框架持有最终记录模型，不再复制 owner 聚合结果。
+pub(crate) struct RecordBlockBuilder {
     records: Vec<Value>,
-    remaining: &mut usize,
-) -> Result<DatasetBlock, String> {
-    let record_count = records.len();
-    let body = Value::Array(records);
-    let (sha256, bytes) = dataset_digest_with_limit(&body, *remaining)?;
-    *remaining -= bytes;
-    Ok(DatasetBlock {
-        name: descriptor.name.clone(),
-        schema_version: descriptor.schema_version,
-        policy: descriptor.policy,
-        record_count,
-        sha256,
-        records: Some(body),
-    })
+    digest: DigestWriter,
+    remaining: usize,
+    used: usize,
+}
+
+impl RecordBlockBuilder {
+    /// 两个数组括号也计入原有明文预算。
+    pub(crate) fn new(limit: usize) -> Result<Self, String> {
+        if limit < 2 {
+            return Err("数据包明文超过上限，请缩小导出范围".into());
+        }
+        let mut digest = DigestWriter(Sha256::new());
+        digest.0.update(b"[");
+        Ok(Self { records: Vec::new(), digest, remaining: limit - 2, used: 2 })
+    }
+
+    /// 在加入最终模型前检查深度、单条预算和剩余总预算；不改变记录或序列化顺序。
+    pub(crate) fn push(&mut self, record: Value) -> Result<(), String> {
+        if json_depth(&record) > MAX_JSON_DEPTH {
+            return Err(format!("记录嵌套深度超过 {MAX_JSON_DEPTH}"));
+        }
+        if self.records.len() >= MAX_RECORDS_PER_PACKAGE {
+            return Err(format!("记录总数超过单包上限 {MAX_RECORDS_PER_PACKAGE}"));
+        }
+        if !self.records.is_empty() {
+            self.remaining = self.remaining.checked_sub(1)
+                .ok_or("数据包明文超过上限，请缩小导出范围")?;
+            self.used += 1;
+            self.digest.0.update(b",");
+        }
+        let limit = self.remaining.min(MAX_RECORD_BYTES);
+        let mut writer = io::BufWriter::new(LimitedWriter::new(&mut self.digest, limit));
+        let result = serde_json::to_writer(&mut writer, &record)
+            .map_err(|e| e.to_string())
+            .and_then(|()| writer.flush().map_err(|e| e.to_string()));
+        if let Err(error) = result {
+            return Err(if writer.get_ref().exceeded() {
+                if limit == MAX_RECORD_BYTES {
+                    format!("记录超过单条上限（{MAX_RECORD_BYTES} 字节）")
+                } else { "数据包明文超过上限，请缩小导出范围".into() }
+            } else { format!("记录体序列化失败: {error}") });
+        }
+        let bytes = limit - writer.get_ref().remaining();
+        drop(writer);
+        self.remaining -= bytes;
+        self.used += bytes;
+        self.records.push(record);
+        Ok(())
+    }
+
+    /// 只借用当前最终模型，供 owner 执行跨记录一致性检查。
+    pub(crate) fn records(&self) -> &[Value] { &self.records }
+
+    /// 摘要与 serde_json 对同一 Value 数组的输出完全相同，旧包兼容性不变。
+    pub(crate) fn finish(mut self, descriptor: &DatasetDescriptor, remaining: &mut usize) -> DatasetBlock {
+        self.digest.0.update(b"]");
+        *remaining -= self.used;
+        DatasetBlock {
+            name: descriptor.name.clone(),
+            schema_version: descriptor.schema_version,
+            policy: descriptor.policy,
+            record_count: self.records.len(),
+            sha256: hex::encode(self.digest.0.finalize()),
+            records: Some(Value::Array(self.records)),
+        }
+    }
 }
 
 /// 由描述符构造「只声明不携带」的块（凭证未带出、device-local 类别）
@@ -709,6 +760,28 @@ pub(crate) struct ImportReport {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn record_delivery_digest_and_budget_match_existing_array_format() {
+        let descriptor = super::super::records::descriptor("test", "test.rows", "测试", &[]).unwrap();
+        for records in [json!([]), json!([{"id":"a","text":"中文😀\n\""}, {"id":"b","text":"x".repeat(20000)}])] {
+            let bytes = serde_json::to_vec(&records).unwrap();
+            let mut remaining = bytes.len();
+            let mut builder = RecordBlockBuilder::new(remaining).unwrap();
+            for record in records.as_array().unwrap() { builder.push(record.clone()).unwrap(); }
+            let block = builder.finish(&descriptor, &mut remaining);
+            assert_eq!(remaining, 0);
+            assert_eq!(block.sha256, dataset_digest(&records).unwrap());
+            assert_eq!(block.records, Some(records.clone()));
+            if !records.as_array().unwrap().is_empty() {
+                let mut short = RecordBlockBuilder::new(bytes.len() - 1).unwrap();
+                assert!(records.as_array().unwrap().iter().try_for_each(|record| short.push(record.clone())).is_err());
+            }
+        }
+        let mut builder = RecordBlockBuilder::new(4 * MAX_RECORD_BYTES).unwrap();
+        assert!(builder.push(json!({"text":"x".repeat(MAX_RECORD_BYTES)})).unwrap_err().contains("单条上限"));
+        assert!(builder.records().is_empty());
+    }
 
     #[test]
     fn streamed_digest_matches_existing_package_bytes() {

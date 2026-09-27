@@ -13,7 +13,7 @@ mod tests;
 use self::apply::apply_merge_blocks;
 use self::apply::apply_to_staging;
 use self::catalog::describe;
-use self::catalog::export;
+use self::catalog::visit_export;
 use self::catalog::with_read_conn;
 use self::plan::plan_import;
 use self::records::references;
@@ -91,15 +91,15 @@ impl DatasetAdapter for SshAdapter {
     }
 
     /// 按 id 取指定数据集的记录（顺序与 `ids` 一致，缺 id 直接报错）
-    fn export_records(
+    fn visit_records(
         &self,
         app: &AppHandle,
         dataset: &str,
         ids: &[String],
-    ) -> Result<Vec<Value>, String> {
-        with_read_conn(app, |conn| export(conn, dataset, ids))
+        emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    ) -> Result<(), String> {
+        with_read_conn(app, |conn| visit_export(conn, dataset, ids, emit))
     }
-
     /// 记录体检：结构必须能反序列化回逻辑结构，关键字段不许为空
     fn validate_records(&self, dataset: &str, records: &[Value]) -> Result<(), String> {
         validate(dataset, records)

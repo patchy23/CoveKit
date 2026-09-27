@@ -65,27 +65,22 @@ impl DatasetAdapter for VaultAdapter {
     }
 
     /// 按 id 取凭证记录（含秘密明文 —— 只在加密包内出现，`secret` 策略已在清单里标明）
-    fn export_records(
+    fn visit_records(
         &self,
         app: &AppHandle,
         dataset: &str,
         ids: &[String],
-    ) -> Result<Vec<Value>, String> {
-        if dataset != DATASET {
-            return Err(format!("凭证适配器不支持数据集 {dataset}"));
-        }
+        emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    ) -> Result<(), String> {
+        if dataset != DATASET { return Err(format!("凭证适配器不支持数据集 {dataset}")); }
         let credentials = credentials_read_all(app)?;
-        let mut records = Vec::with_capacity(ids.len());
         for id in ids {
-            let credential = credentials
-                .iter()
-                .find(|item| &item.id == id)
+            let credential = credentials.iter().find(|item| &item.id == id)
                 .ok_or_else(|| format!("凭证 {id} 不存在（列表可能已过期，请刷新后重试）"))?;
-            records.push(credential_record(credential)?);
+            emit(credential_record(credential)?)?;
         }
-        Ok(records)
+        Ok(())
     }
-
     /// 记录体检：导入侧要靠 `id` 建引用、靠 `fields` 还原秘密，缺一不可
     fn validate_records(&self, dataset: &str, records: &[Value]) -> Result<(), String> {
         if dataset != DATASET {

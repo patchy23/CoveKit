@@ -32,13 +32,13 @@ impl RecordStore for DatabaseRecords {
     fn reference(&self, dataset: &str) -> Option<(&'static str, &'static str)> {
         (dataset == HISTORY).then_some(("connectionId", CONNECTIONS))
     }
-    fn read(&self, conn: &Connection, dataset: &str) -> Result<Vec<Value>, String> {
-        records::query(conn, match dataset {
+    fn visit(&self, conn: &Connection, dataset: &str, emit: &mut dyn FnMut(Value) -> Result<(), String>) -> Result<(), String> {
+        records::query_each(conn, match dataset {
             CONNECTIONS => "SELECT json_object('id',id,'label',label,'dbType',db_type,'host',CASE WHEN db_type='sqlite' THEN '' ELSE host END,'port',port,'username',username,'database',CASE WHEN db_type='sqlite' THEN '' ELSE database END,'env',env,'readonly',json(CASE WHEN readonly<>0 THEN 'true' ELSE 'false' END),'ssl',json(CASE WHEN ssl<>0 THEN 'true' ELSE 'false' END),'connectTimeoutMs',connect_timeout_ms) FROM connections ORDER BY sort_order,id",
             SAVED => "SELECT json_object('id',uid,'title',title,'sql',sql,'at',at) FROM saved_sql ORDER BY id",
             HISTORY => "SELECT json_object('id',h.uid,'connectionId',CASE WHEN c.id IS NULL THEN '' ELSE h.conn_id END,'sql',h.sql,'status',h.status,'database',h.database_name,'schema',h.schema_name,'durationMs',h.duration_ms,'at',h.at) FROM history h LEFT JOIN connections c ON c.id=h.conn_id ORDER BY h.id",
             _ => return Err("未知数据库数据集".into()),
-        })
+        }, emit)
     }
     fn validate(&self, dataset: &str, record: &Value) -> Result<(), String> {
         records::fields(

@@ -14,13 +14,12 @@ const APP: &str = "settings.application";
 const TOOLS: &str = "settings.tools";
 struct SettingsAdapter;
 
-fn read(dataset: &str, map: &Map<String, Value>) -> Result<Vec<Value>, String> {
-    let mut result = Vec::new();
+fn visit(dataset: &str, map: &Map<String, Value>, emit: &mut dyn FnMut(Value) -> Result<(), String>) -> Result<(), String> {
     match dataset {
         APP => {
             for key in ["theme", "language"] {
                 if let Some(value) = map.get(key) {
-                    result.push(json!({"id":key,"value":value}));
+                    emit(json!({"id":key,"value":value}))?;
                 }
             }
         }
@@ -30,12 +29,18 @@ fn read(dataset: &str, map: &Map<String, Value>) -> Result<Vec<Value>, String> {
                 .and_then(|tools| tools.get("ssh"))
                 .and_then(|ssh| ssh.get("idleDisconnectMinutes"))
             {
-                result.push(json!({"id":"ssh.idleDisconnectMinutes","value":value}));
+                emit(json!({"id":"ssh.idleDisconnectMinutes","value":value}))?;
             }
         }
         _ => return Err("未知设置数据集".into()),
     }
-    Ok(result)
+    Ok(())
+}
+
+fn read(dataset: &str, map: &Map<String, Value>) -> Result<Vec<Value>, String> {
+    let mut records = Vec::new();
+    visit(dataset, map, &mut |record| { records.push(record); Ok(()) })?;
+    Ok(records)
 }
 
 fn validate(dataset: &str, record: &Value) -> Result<(), String> {
@@ -124,13 +129,15 @@ impl DatasetAdapter for SettingsAdapter {
             .map(|(name, label)| records::descriptor(self.owner(), name, label, &read(name, &map)?))
             .collect()
     }
-    fn export_records(
+    fn visit_records(
         &self,
         app: &AppHandle,
         dataset: &str,
         ids: &[String],
-    ) -> Result<Vec<Value>, String> {
-        records::select(read(dataset, &preferences::read_current(app)?)?, ids)
+        emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let map = preferences::read_current(app)?;
+        records::visit_selected(ids, emit, |selected| visit(dataset, &map, selected))
     }
     fn validate_records(&self, dataset: &str, items: &[Value]) -> Result<(), String> {
         let mut ids = std::collections::BTreeSet::new();

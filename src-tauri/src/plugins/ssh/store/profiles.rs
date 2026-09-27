@@ -57,7 +57,7 @@ pub(crate) fn delete_group(conn: &Connection, group_id: &str) -> Result<(), Stri
 /* ── 服务器配置 ── */
 
 /// 行 → ServerProfile（列名与 SELECT 清单一致）
-fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerProfile> {
+pub(crate) fn row_to_profile(row: &rusqlite::Row<'_>) -> rusqlite::Result<ServerProfile> {
     Ok(ServerProfile {
         id: row.get("id")?,
         name: row.get("name")?,

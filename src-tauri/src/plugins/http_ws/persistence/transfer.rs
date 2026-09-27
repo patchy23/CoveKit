@@ -27,18 +27,15 @@ impl RecordStore for Requests {
     fn singleton(&self, dataset: &str) -> bool {
         dataset == "http_ws.layout"
     }
-    fn read(&self, conn: &Connection, dataset: &str) -> Result<Vec<Value>, String> {
+    fn visit(&self, conn: &Connection, dataset: &str, emit: &mut dyn FnMut(Value) -> Result<(), String>) -> Result<(), String> {
         if dataset == "http_ws.layout" {
             let groups = records::query(conn, "SELECT json_object('path',path,'sortOrder',sort_order) FROM api_groups ORDER BY sort_order,path")?;
-            return Ok(vec![
-                serde_json::json!({"id":"layout","name":"接口分组与布局","groups":groups}),
-            ]);
+            return emit(serde_json::json!({"id":"layout","name":"接口分组与布局","groups":groups}));
         }
-        let mut records = records::query(conn, "SELECT json_object('id', uid, 'name', name, 'kind', type, 'method', method, 'url', url, 'params', params, 'headers', headers, 'bodyMode', body_mode, 'body', body, 'groupName', group_name, 'options', options, 'sortOrder', sort_order) FROM api_list ORDER BY sort_order,id")?;
-        for record in &mut records {
-            record["options"] = Value::String(portable_options(record)?);
-        }
-        Ok(records)
+        records::query_each(conn, "SELECT json_object('id', uid, 'name', name, 'kind', type, 'method', method, 'url', url, 'params', params, 'headers', headers, 'bodyMode', body_mode, 'body', body, 'groupName', group_name, 'options', options, 'sortOrder', sort_order) FROM api_list ORDER BY sort_order,id", &mut |mut record| {
+            record["options"] = Value::String(portable_options(&record)?);
+            emit(record)
+        })
     }
     fn note(&self, dataset: &str, _: &Value) -> Option<String> {
         if dataset == "http_ws.layout" {

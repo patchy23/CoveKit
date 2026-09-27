@@ -133,6 +133,12 @@ pub(super) fn remember(app: &AppHandle, name: &str) -> Result<String, String> {
 }
 
 fn inventory(app: &AppHandle) -> Result<Vec<Value>, String> {
+    let mut records = Vec::new();
+    visit_inventory(app, &mut |record| { records.push(record); Ok(()) })?;
+    Ok(records)
+}
+
+fn visit_inventory(app: &AppHandle, emit: &mut dyn FnMut(Value) -> Result<(), String>) -> Result<(), String> {
     let db = PluginDb::open(app, "frp", super::MIGRATIONS)?;
     let mut names = std::collections::BTreeSet::new();
     for directory in [super::profile_dir(app)?, managed_dir(app)?] {
@@ -151,10 +157,8 @@ fn inventory(app: &AppHandle) -> Result<Vec<Value>, String> {
             }
         }
     }
-    db.with_conn(|conn| {
-        names
-            .into_iter()
-            .map(|name| {
+    for name in names {
+        let record = db.with_conn(|conn| {
                 let metadata: Option<(String, String, String)> = conn
                     .query_row(
                         "SELECT uid,remark,source_name FROM profile_meta WHERE file_name=?1",
@@ -168,9 +172,11 @@ fn inventory(app: &AppHandle) -> Result<Vec<Value>, String> {
                     None => (available_id(conn, &name)?, String::new(), String::new()),
                 };
                 Ok(json!({"id":id,"name":if source.is_empty(){name}else{source},"remark":remark}))
-            })
-            .collect()
-    })
+        })?;
+        // 消费方可能读取该配置正文；不得把数据库锁带入回调。
+        emit(record)?;
+    }
+    Ok(())
 }
 
 fn include_contents(app: &AppHandle, items: &mut [Value]) -> Result<(), String> {
@@ -470,22 +476,22 @@ impl DatasetAdapter for FrpAdapter {
         }
         Ok(vec![metadata, contents])
     }
-    fn export_records(
+    fn visit_records(
         &self,
         app: &AppHandle,
         dataset: &str,
         ids: &[String],
-    ) -> Result<Vec<Value>, String> {
-        // 只读用户选中的文件原文，不递归读取外部目录。
-        if dataset == META {
-            return records::select(inventory(app)?, ids);
-        }
-        if dataset != CONTENT {
-            return Err("未知 FRP 数据集".into());
-        }
-        let mut selected = records::select(inventory(app)?, ids)?;
-        include_contents(app, &mut selected)?;
-        Ok(selected)
+        emit: &mut dyn FnMut(Value) -> Result<(), String>,
+    ) -> Result<(), String> {
+        if dataset != META && dataset != CONTENT { return Err("未知 FRP 数据集".into()); }
+        let db = PluginDb::open(app, "frp", super::MIGRATIONS)?;
+        let mut total = 0;
+        records::visit_selected(ids, &mut |mut record| {
+            if dataset == CONTENT {
+                record["content"] = Value::String(read_content(app, &db, &record, &mut total)?);
+            }
+            emit(record)
+        }, |selected| visit_inventory(app, selected))
     }
     fn validate_records(&self, dataset: &str, records: &[Value]) -> Result<(), String> {
         validate(dataset, records)

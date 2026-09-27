@@ -501,13 +501,14 @@ mod tests {
             Ok(Vec::new())
         }
 
-        fn export_records(
+        fn visit_records(
             &self,
             _app: &AppHandle,
             _dataset: &str,
             _ids: &[String],
-        ) -> Result<Vec<Value>, String> {
-            Ok(Vec::new())
+            _emit: &mut dyn FnMut(Value) -> Result<(), String>,
+        ) -> Result<(), String> {
+            Ok(())
         }
 
         fn validate_records(&self, _dataset: &str, _records: &[Value]) -> Result<(), String> {

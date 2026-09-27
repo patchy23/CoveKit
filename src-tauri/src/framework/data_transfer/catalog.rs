@@ -16,7 +16,7 @@ use tauri::AppHandle;
 
 use super::adapter::{self, DatasetAdapter};
 use super::types::{
-    block_carrying, block_declared, validate_manifest, DatasetDescriptor, ExportCatalog,
+    block_declared, validate_manifest, DatasetDescriptor, ExportCatalog, RecordBlockBuilder,
     ExportSelection, PackageManifest, ResolvedSelection, TransportPolicy,
 };
 use crate::framework::space;
@@ -254,6 +254,7 @@ pub(crate) fn build_manifest(
     let mut manifest = PackageManifest::new(&space_id, &space::display_name(app, &space_id));
     // 正文只是完整包的下界；借摘要遍历提前停止确定超额的聚合，最终仍校验完整容器。
     let mut remaining = super::package::MAX_PLAINTEXT_BYTES as usize;
+    let mut total_records = 0usize;
 
     for (name, ids) in &resolved.datasets {
         cancel.check()?;
@@ -268,15 +269,29 @@ pub(crate) fn build_manifest(
         };
         // 只声明不携带：设备级事实与凭证一律如此（凭证与空间 uid 绑死，永不进包，D 裁决）
         if descriptor.policy != TransportPolicy::Portable {
+            total_records = total_records.saturating_add(ids.len());
             manifest
                 .datasets
                 .push(block_declared(descriptor, ids.len()));
             continue;
         }
-        let records = owner_adapter.export_records(app, name, ids)?;
+        let mut block = RecordBlockBuilder::new(remaining)?;
+        owner_adapter.visit_records(app, name, ids, &mut |record| {
+            cancel.check()?;
+            total_records = total_records.saturating_add(1);
+            if total_records > super::types::MAX_RECORDS_PER_PACKAGE {
+                return Err("记录总数超过单包上限".into());
+            }
+            owner_adapter.validate_records(name, std::slice::from_ref(&record))?;
+            let references = owner_adapter.enumerate_references(name, std::slice::from_ref(&record))?;
+            block.push(record)?;
+            manifest.dependencies.extend(references);
+            Ok(())
+        })?;
         cancel.check()?;
-        owner_adapter.validate_records(name, &records)?;
-        cancel.check()?;
+        let records = block.records();
+        // 单条校验之外保留 owner 的跨记录约束（如身份重复、单槽数据）。
+        owner_adapter.validate_records(name, records)?;
         if !descriptor.entries.is_empty() && records.len() != ids.len() {
             return Err(format!(
                 "数据集 {name} 实际导出 {} 条，与选择集 {} 条不一致（记录可能在选择期间被删除，请刷新后重试）",
@@ -284,13 +299,7 @@ pub(crate) fn build_manifest(
                 ids.len()
             ));
         }
-        manifest
-            .dependencies
-            .extend(owner_adapter.enumerate_references(name, &records)?);
-        cancel.check()?;
-        manifest
-            .datasets
-            .push(block_carrying(descriptor, records, &mut remaining)?);
+        manifest.datasets.push(block.finish(descriptor, &mut remaining));
     }
 
     // 显式排除项：目录里有候选记录、本次没进包的类别（界面据此告知「没有带出什么」）
