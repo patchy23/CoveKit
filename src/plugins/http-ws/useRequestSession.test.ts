@@ -10,8 +10,19 @@ const mock = vi.hoisted(() => ({
   wsClose: vi.fn(),
   sseStart: vi.fn(),
   sseStop: vi.fn(),
+  validate: vi.fn(),
+  cancelValidation: vi.fn(),
+  destroyValidation: vi.fn(),
 }))
 vi.mock('./ipc', () => ({ ipc: mock }))
+vi.mock('./requestValidation', () => ({
+  needsJsonWorker: (text: string) => text.length > 32,
+  createRequestValidator: () => ({
+    run: mock.validate,
+    cancel: mock.cancelValidation,
+    destroy: mock.destroyValidation,
+  }),
+}))
 import { useRequestSession } from './useRequestSession'
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -71,6 +82,53 @@ describe('每个页签的请求与连接所有权', () => {
     await running
     expect(a.state.response).toBeNull()
     expect(b.state.response?.body).toBe('b')
+  })
+
+  it('大 JSON 通过校验才发送捕获的原始正文，取消期间的晚到结论不会发送请求', async () => {
+    const validation = deferred<boolean>()
+    mock.validate.mockReturnValue(validation.promise)
+    mock.httpRequest.mockResolvedValue(response)
+    const draft = newDraft('http')
+    draft.url = 'https://example.invalid'
+    draft.bodyMode = 'json'
+    draft.body = ' '.repeat(40) + '{"a":1}'
+    const original = draft.body
+    const session = useRequestSession(() => draft, vi.fn())
+    const sending = session.run()
+    await flush()
+    expect(mock.validate).toHaveBeenCalledWith(original)
+    expect(mock.httpRequest).not.toHaveBeenCalled()
+    draft.body = '{"new input":2}'
+    validation.resolve(true)
+    await sending
+    expect(mock.httpRequest.mock.calls[0][0].body).toBe(original)
+    const late = deferred<boolean>()
+    mock.validate.mockReturnValue(late.promise)
+    draft.body = original
+    const next = session.run()
+    await flush()
+    await session.dispose()
+    late.resolve(true)
+    await next
+    expect(mock.httpRequest).toHaveBeenCalledOnce()
+    expect(mock.destroyValidation).toHaveBeenCalledOnce()
+  })
+
+  it('大 JSON 无效或校验线程失败均可见，原文保留且不发送请求', async () => {
+    const draft = newDraft('sse')
+    draft.url = 'https://example.invalid/events'
+    draft.bodyMode = 'json'
+    draft.body = ' '.repeat(40) + '{invalid'
+    const session = useRequestSession(() => draft, vi.fn())
+    mock.validate.mockResolvedValue(false)
+    await session.run()
+    expect(session.state.error).toContain('JSON 请求体无效')
+    expect(session.state.busy).toBe(false)
+    mock.validate.mockRejectedValue(new Error('worker failed'))
+    await session.run()
+    expect(session.state.error).toContain('worker failed')
+    expect(mock.sseStart).not.toHaveBeenCalled()
+    expect(draft.body).toContain('{invalid')
   })
   it('连接中关闭页签会回收迟到的 WebSocket，停止旧请求不影响新连接', async () => {
     const pending = deferred<WsSession>()

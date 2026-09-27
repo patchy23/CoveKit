@@ -1,12 +1,16 @@
-/** 独立计算任务的归属：每个消费者最多一个在途 Worker，替换、完成、关闭均释放。 */
+/** 每个消费者最多一个在途任务；允许短期复用空闲 Worker，取消和销毁立即释放。 */
 export function createWorkerTask<Request extends object, Result>(
   create: () => Worker,
-  failure: string
+  failure: string,
+  idleTimeoutMs = 0
 ) {
   let worker: Worker | undefined
   let sequence = 0
   let pending: ((error: Error) => void) | undefined
+  let idleTimer: ReturnType<typeof setTimeout> | undefined
   function destroy() {
+    clearTimeout(idleTimer)
+    idleTimer = undefined
     sequence++
     if (worker) {
       worker.onmessage = null
@@ -25,7 +29,9 @@ export function createWorkerTask<Request extends object, Result>(
     cancel()
     return new Promise((resolve, reject) => {
       try {
-        worker = create()
+        clearTimeout(idleTimer)
+        idleTimer = undefined
+        worker ??= create()
         const current = worker
         const id = ++sequence
         pending = reject
@@ -54,7 +60,11 @@ export function createWorkerTask<Request extends object, Result>(
           }
           pending = undefined
           resolve(data.result as Result)
-          destroy()
+          current.onmessage = null
+          current.onerror = null
+          current.onmessageerror = null
+          if (idleTimeoutMs > 0) idleTimer = setTimeout(destroy, idleTimeoutMs)
+          else destroy()
         }
         worker.onerror = (event) => fail(event.message || failure)
         worker.onmessageerror = () => fail(`${failure}：无法读取计算结果`)

@@ -61,3 +61,28 @@ it('postMessage 同步失败仍释放已创建的线程', async () => {
   expect(worker.terminate).toHaveBeenCalledOnce()
   expect(worker.onmessage).toBeNull()
 })
+
+it('复用线程后旧响应不覆盖新任务，空闲回收计时不打断新计算', async () => {
+  vi.useFakeTimers()
+  try {
+    const worker = { postMessage: vi.fn(), terminate: vi.fn() } as unknown as Worker
+    const create = vi.fn(() => worker)
+    const task = createWorkerTask<{ text: string }, string>(create, '计算失败', 1000)
+    const first = task.run({ text: 'first' })
+    const lateReply = worker.onmessage!
+    lateReply.call(worker, new MessageEvent('message', { data: { id: 1, result: 'first' } }))
+    expect(await first).toBe('first')
+    const next = task.run({ text: 'next' })
+    vi.advanceTimersByTime(1000)
+    expect(worker.terminate).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledOnce()
+    lateReply.call(worker, new MessageEvent('message', { data: { id: 1, result: 'stale' } }))
+    const id = vi.mocked(worker.postMessage).mock.lastCall![0].id
+    worker.onmessage!(new MessageEvent('message', { data: { id, result: 'next' } }))
+    expect(await next).toBe('next')
+    vi.advanceTimersByTime(1000)
+    expect(worker.terminate).toHaveBeenCalledOnce()
+  } finally {
+    vi.useRealTimers()
+  }
+})

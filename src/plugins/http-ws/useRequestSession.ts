@@ -2,6 +2,7 @@
 import { reactive } from 'vue'
 import { ipc } from './ipc'
 import { requestPayload, type RequestDraft } from './requestDraft'
+import { createRequestValidator, needsJsonWorker } from './requestValidation'
 import type { HttpResponseResult, SseUpdate } from './contracts'
 
 export interface StreamEntry {
@@ -18,6 +19,7 @@ export function useRequestSession(
   report: (message: string) => void,
   isActive: () => boolean = () => true
 ) {
+  const validator = createRequestValidator()
   const state = reactive({
     busy: false,
     connected: false,
@@ -62,6 +64,7 @@ export function useRequestSession(
   }
   async function stop() {
     epoch++
+    validator.cancel()
     state.busy = false
     state.connected = false
     state.sending = false
@@ -74,6 +77,7 @@ export function useRequestSession(
   }
   async function dispose() {
     disposed = true
+    validator.destroy()
     await stop()
   }
   async function poll(token: number, id: string) {
@@ -161,9 +165,17 @@ export function useRequestSession(
     try {
       await release()
       if (disposed || token !== epoch) return
-      const draft = getDraft(),
-        payload = requestPayload(draft)
-      if (draft.type === 'http') {
+      const draft = getDraft()
+      const kind = draft.type
+      const asynchronousValidation =
+        kind !== 'ws' && draft.bodyMode === 'json' && needsJsonWorker(draft.body)
+      const payload = requestPayload(draft, !asynchronousValidation)
+      if (asynchronousValidation) {
+        const valid = await validator.run(payload.body!)
+        if (disposed || token !== epoch) return
+        if (!valid) throw new Error('JSON 请求体无效，请检查语法')
+      }
+      if (kind === 'http') {
         state.response = null
         const response = await ipc.httpRequest(payload)
         if (!disposed && token === epoch) {
@@ -171,7 +183,7 @@ export function useRequestSession(
           state.respondedAt = new Date().toLocaleTimeString()
           state.error = response.error || ''
         }
-      } else if (draft.type === 'ws') {
+      } else if (kind === 'ws') {
         const session = await ipc.wsConnect({
           url: payload.url,
           headers: payload.headers,

@@ -120,7 +120,8 @@ export function fingerprint(draft: RequestDraft): DraftFingerprint {
 export function matchesFingerprint(draft: RequestDraft, saved: DraftFingerprint): boolean {
   return draft.body === saved.body && fingerprint(draft).metadata === saved.metadata
 }
-export function requestPayload(draft: RequestDraft): HttpRequestPayload {
+/** 异步校验调用方可跳过重复解析，但必须在语法校验通过后才发送返回的快照。 */
+export function requestPayload(draft: RequestDraft, validateJson = true): HttpRequestPayload {
   const query = draft.params
     .filter((r) => r.enabled !== false && r.key.trim())
     .map((r) => `${encodeURIComponent(r.key.trim())}=${encodeURIComponent(r.value)}`)
@@ -146,7 +147,7 @@ export function requestPayload(draft: RequestDraft): HttpRequestPayload {
             .map((r) => `${encodeURIComponent(r.key.trim())}=${encodeURIComponent(r.value)}`)
             .join('&')
         : draft.body
-    if (draft.bodyMode === 'json') {
+    if (draft.bodyMode === 'json' && validateJson) {
       try {
         JSON.parse(body)
       } catch {
