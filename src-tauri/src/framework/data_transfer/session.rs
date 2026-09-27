@@ -256,6 +256,22 @@ pub(crate) struct TransferGuard {
 }
 
 impl TransferGuard {
+    /// Channel 可选以兼容已有调用；传输失败明确返回，取消仍由请求令牌负责。
+    pub(crate) fn progress(
+        &self,
+        channel: Option<tauri::ipc::Channel<super::commands::views::TransferProgress>>,
+    ) -> impl Fn(bool, u64) -> Result<(), String> + Send + 'static {
+        let request_id = self.id.clone();
+        move |waiting_memory, estimated_bytes| {
+            if let Some(channel) = &channel {
+                channel.send(super::commands::views::TransferProgress {
+                    request_id: request_id.clone(), waiting_memory, estimated_bytes,
+                }).map_err(|_| "数据传输进展通道已关闭".to_string())?;
+            }
+            Ok(())
+        }
+    }
+
     /// 工作线程只持有协作取消令牌，登记的释放责任留在调用方。
     pub(crate) fn token(&self) -> CancelToken {
         self.token.clone()

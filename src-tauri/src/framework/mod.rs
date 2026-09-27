@@ -22,6 +22,7 @@ pub mod exit;
 pub mod ipc_registry;
 pub mod lifecycle;
 pub mod module_manifest;
+pub(crate) mod memory_budget;
 pub mod paths;
 pub mod preferences;
 pub mod resource_monitor;

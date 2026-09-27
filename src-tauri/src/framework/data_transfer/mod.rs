@@ -32,6 +32,8 @@ pub(crate) mod package;
 pub(crate) mod records;
 /// 会话上下文（inspectId / planId）与取消标志
 mod session;
+/// 框架备份操作共用请求登记与取消，不为每种容器另建任务表。
+pub(crate) use session::begin_transfer;
 mod storage_files;
 pub(crate) mod types;
 

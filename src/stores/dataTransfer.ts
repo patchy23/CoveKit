@@ -9,6 +9,7 @@
  * 失败一律：记录到诊断 + toast 可见原因，并返回 false 让向导留在原步（不静默、不假装成功）。
  */
 import { computed, ref, onScopeDispose } from 'vue'
+import { Channel } from '@tauri-apps/api/core'
 import { defineStore } from 'pinia'
 import { ipc } from '@/core/ipc/ipc'
 import { recordError } from '@/core/diagnostics/errors'
@@ -19,6 +20,7 @@ import {
   type ExportChoice,
 } from '@/features/settings/data/packSelection'
 import type {
+  TransferProgress,
   BackupSummary,
   ConflictChoice,
   ConflictDecision,
@@ -71,20 +73,32 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
   const taskId = ref('')
   /** 命令进行中标记（按钮禁用 + 转圈，避免重复提交） */
   const busy = ref('')
+  const waitingMemory = ref(false)
   type TransferRequest = { id?: string; cancelled: boolean }
   let activeRequest: TransferRequest | undefined
-  async function withTransfer<T>(operation: (id: string) => Promise<T>): Promise<T> {
+  async function withTransfer<T>(
+    operation: (id: string, progress: Channel<TransferProgress>) => Promise<T>
+  ): Promise<T> {
     const request: TransferRequest = { cancelled: false }
     activeRequest = request
+    waitingMemory.value = false
+    let progress: Channel<TransferProgress> | undefined
     try {
+      progress = new Channel<TransferProgress>()
+      progress.onmessage = (event) => {
+        if (activeRequest === request && !request.cancelled && event.requestId === request.id)
+          waitingMemory.value = event.waitingMemory
+      }
       request.id = await ipc.dataTransferPrepare()
       if (request.cancelled) throw new DOMException('已取消', 'AbortError')
-      return await operation(request.id)
+      return await operation(request.id, progress)
     } catch (error) {
       if (request.cancelled && String(error).includes('已取消'))
         throw new DOMException('已取消', 'AbortError')
       throw error
     } finally {
+      if (progress) progress.onmessage = () => {}
+      if (activeRequest === request) waitingMemory.value = false
       if (request.id) {
         try {
           await ipc.dataTransferCancel(request.id)
@@ -145,7 +159,9 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     busy.value = 'export'
     try {
       const selection = buildSelection(catalog.value, choice.value)
-      const started = await withTransfer((id) => ipc.dataExportStart(selection, password, path, id))
+      const started = await withTransfer((id, progress) =>
+        ipc.dataExportStart(selection, password, path, id, progress)
+      )
       taskId.value = started.taskId
       exportReport.value = started.report
       useUiStore().toast(
@@ -163,7 +179,9 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
   async function inspectPack(path: string, password: string): Promise<boolean> {
     busy.value = 'inspect'
     try {
-      const result = await withTransfer((id) => ipc.dataImportInspect(path, password, id))
+      const result = await withTransfer((id, progress) =>
+        ipc.dataImportInspect(path, password, id, progress)
+      )
       inspected.value = result
       planned.value = null
       importDatasets.value = [...result.defaults.datasets]
@@ -210,7 +228,9 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     busy.value = 'commit'
     try {
       const planId = planned.value.planId
-      const result = await withTransfer((id) => ipc.dataImportCommit(planId, password, id))
+      const result = await withTransfer((id, progress) =>
+        ipc.dataImportCommit(planId, password, id, progress)
+      )
       taskId.value = result.taskId
       importReport.value = result.report
       await loadSpaces()
@@ -310,6 +330,7 @@ export const useDataTransferStore = defineStore('dataTransfer', () => {
     spaces,
     taskId,
     busy,
+    waitingMemory,
     sourceSpaceName,
     canExport,
     activeSpace,

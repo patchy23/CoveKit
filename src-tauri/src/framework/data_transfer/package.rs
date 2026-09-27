@@ -21,7 +21,7 @@ use sha2::{Digest, Sha256};
 use super::json_writer::LimitedWriter;
 use crate::framework::data_transfer::types::{validate_manifest, PackageManifest};
 use crate::framework::secure_store::{
-    decrypt_in_place_with_aad_nonce, derive_key_argon2id, encrypt_in_place_with_aad_nonce,
+    decrypt_in_place_with_aad_nonce, derive_key_argon2id_controlled, encrypt_in_place_with_aad_nonce,
 };
 
 /// 包魔数（8 字节；尾字节 0 便于文本工具识别边界）
@@ -165,7 +165,18 @@ pub(crate) fn validate_password(password: &str) -> Result<(), String> {
 /// 导出：口令 + 清单 → 完整包字节。
 ///
 /// 口令过短、清单自相矛盾或超限都在这里被拒（先校验再加密，不生成半成品）。
+#[cfg(test)]
 pub(crate) fn seal_package(password: &str, manifest: PackageManifest) -> Result<Vec<u8>, String> {
+    seal_package_controlled(password, manifest, &|| Ok(()), &|_, _| Ok(()))
+}
+
+/// 导出生产入口：准入等待复用当前请求取消和进展责任，不另外保存密码。
+pub(crate) fn seal_package_controlled(
+    password: &str,
+    manifest: PackageManifest,
+    check: &impl Fn() -> Result<(), String>,
+    waiting: &impl Fn(bool, u64) -> Result<(), String>,
+) -> Result<Vec<u8>, String> {
     validate_password(password)?;
     validate_manifest(&manifest)?;
     // 先预留固定头，序列化和加密始终使用同一正文缓冲；既有上限只计明文。
@@ -188,7 +199,7 @@ pub(crate) fn seal_package(password: &str, manifest: PackageManifest) -> Result<
     let m_cost = argon2::Params::DEFAULT_M_COST;
     let t_cost = argon2::Params::DEFAULT_T_COST;
     let p_cost = argon2::Params::DEFAULT_P_COST as u8;
-    let key = derive_key_argon2id(password, &salt, m_cost, t_cost, u32::from(p_cost))?;
+    let key = derive_key_argon2id_controlled(password, &salt, m_cost, t_cost, u32::from(p_cost), check, waiting)?;
     // 密文长度先算出来（明文 + 认证标签）写进头，头才是最终 AAD；
     // nonce 先随机定下并落头，再交给原语加密（原语不复用也不生成 nonce）
     let header = PackageHeader {
@@ -211,7 +222,18 @@ pub(crate) fn seal_package(password: &str, manifest: PackageManifest) -> Result<
 /// 导入：口令 + 完整包字节 → 清单。
 ///
 /// 口令错误、头部被改、密文被改、参数越界、清单不自洽都返回 Err，不产生部分解析结果。
-pub(crate) fn open_package(password: &str, mut raw: Vec<u8>) -> Result<PackageManifest, String> {
+#[cfg(test)]
+pub(crate) fn open_package(password: &str, raw: Vec<u8>) -> Result<PackageManifest, String> {
+    open_package_controlled(password, raw, &|| Ok(()), &|_, _| Ok(()))
+}
+
+/// 参数白名单和帧长校验先于 KDF 准入，不按未经校验的文件头预留内存。
+pub(crate) fn open_package_controlled(
+    password: &str,
+    mut raw: Vec<u8>,
+    check: &impl Fn() -> Result<(), String>,
+    waiting: &impl Fn(bool, u64) -> Result<(), String>,
+) -> Result<PackageManifest, String> {
     let head: [u8; HEADER_LEN] = raw
         .get(..HEADER_LEN)
         .and_then(|bytes| bytes.try_into().ok())
@@ -225,12 +247,14 @@ pub(crate) fn open_package(password: &str, mut raw: Vec<u8>) -> Result<PackageMa
             header.cipher_len
         ));
     }
-    let key = derive_key_argon2id(
+    let key = derive_key_argon2id_controlled(
         password,
         &header.salt,
         header.m_cost,
         header.t_cost,
         u32::from(header.p_cost),
+        check,
+        waiting,
     )
     .map_err(|e| format!("数据包口令派生失败: {e}"))?;
     let length = decrypt_in_place_with_aad_nonce(&key, ciphertext, &head, &header.nonce)

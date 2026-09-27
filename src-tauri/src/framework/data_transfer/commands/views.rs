@@ -9,6 +9,18 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+/// 只含资源准入状态，不包含密码、文件路径或记录正文。
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferProgress {
+    /// 已登记请求身份，用于丢弃关闭或替换请求的迟到进展。
+    pub request_id: String,
+    /// 正在等待物理内存；false 表示已进入密钥派生。
+    pub waiting_memory: bool,
+    /// 根据本次 KDF 参数计算的工作内存预留。
+    pub estimated_bytes: u64,
+}
+
 /// 空间摘要（`data_spaces_list` 条目；只含非秘密信息，绝不含路径与凭证）
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -218,4 +230,21 @@ pub struct BackupSummary {
     pub created_at: String,
     /// 覆盖的存储文件（空间根相对路径）
     pub files: Vec<String>,
+}
+
+#[cfg(test)]
+mod progress_contract_tests {
+    use super::*;
+
+    #[test]
+    fn resource_progress_contains_only_request_and_cost() {
+        let progress = TransferProgress {
+            request_id: "request".into(),
+            waiting_memory: true,
+            estimated_bytes: 20 * 1024 * 1024,
+        };
+        assert_eq!(serde_json::to_value(progress).unwrap(), serde_json::json!({
+            "requestId": "request", "waitingMemory": true, "estimatedBytes": 20 * 1024 * 1024,
+        }));
+    }
 }

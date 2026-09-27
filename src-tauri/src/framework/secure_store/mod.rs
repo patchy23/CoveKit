@@ -25,7 +25,7 @@ pub(crate) mod test_support;
 mod win_acl;
 
 pub(crate) use crypto::{
-    decrypt_in_place_with_aad_nonce, derive_key_argon2id, encrypt_in_place_with_aad_nonce,
+    decrypt_in_place_with_aad_nonce, derive_key_argon2id_controlled, encrypt_in_place_with_aad_nonce,
     encrypt_with_aad,
 };
 pub(crate) use file::{backup_path, ciphertext_evidence, load_verified, replace_file};

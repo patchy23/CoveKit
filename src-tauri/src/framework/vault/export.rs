@@ -48,22 +48,30 @@ pub struct VaultBackupFile {
 }
 
 /// 用一次性密码 + 参数派生 32B 加密密钥（Argon2id；派生实现走框架唯一原语）
-fn derive_key(password: &str, params: &KdfParams) -> Result<[u8; 32], String> {
+fn derive_key(password: &str, params: &KdfParams, check: &impl Fn() -> Result<(), String>, waiting: &impl Fn(bool, u64) -> Result<(), String>) -> Result<[u8; 32], String> {
     if params.algo != "argon2id" {
         return Err(format!("不支持的 KDF 算法：{}", params.algo));
     }
     let salt = hex::decode(&params.salt).map_err(|e| format!("备份盐解码失败: {e}"))?;
-    crate::framework::secure_store::derive_key_argon2id(
+    crate::framework::secure_store::derive_key_argon2id_controlled(
         password,
         &salt,
         params.m_cost,
         params.t_cost,
         params.p_cost,
+        check,
+        waiting,
     )
 }
 
 /// 导出加密：明文 → 备份文件结构（随机 salt + 随机 nonce，默认 Argon2id 参数）
+#[cfg(test)]
 pub(crate) fn encrypt_backup(password: &str, plain: &[u8]) -> Result<VaultBackupFile, String> {
+    encrypt_backup_controlled(password, plain, &|| Ok(()), &|_, _| Ok(()))
+}
+
+/// 备份容器保持兼容，资源等待归属于发起请求。
+pub(crate) fn encrypt_backup_controlled(password: &str, plain: &[u8], check: &impl Fn() -> Result<(), String>, waiting: &impl Fn(bool, u64) -> Result<(), String>) -> Result<VaultBackupFile, String> {
     if password.is_empty() {
         return Err("导出密码不能为空".into());
     }
@@ -76,7 +84,7 @@ pub(crate) fn encrypt_backup(password: &str, plain: &[u8]) -> Result<VaultBackup
         t_cost: Params::DEFAULT_T_COST,
         p_cost: Params::DEFAULT_P_COST,
     };
-    let key = derive_key(password, &kdf)?;
+    let key = derive_key(password, &kdf, check, waiting)?;
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
     let mut nonce = [0u8; 12];
     rand::rngs::OsRng.fill_bytes(&mut nonce);
@@ -92,7 +100,13 @@ pub(crate) fn encrypt_backup(password: &str, plain: &[u8]) -> Result<VaultBackup
 }
 
 /// 导入解密：备份文件结构 + 一次性密码 → 明文（密码错误 / 文件损坏均返回 Err 不 panic）
+#[cfg(test)]
 pub(crate) fn decrypt_backup(password: &str, backup: &VaultBackupFile) -> Result<Vec<u8>, String> {
+    decrypt_backup_controlled(password, backup, &|| Ok(()), &|_, _| Ok(()))
+}
+
+/// 取消准入等待不改写原备份或当前凭证库。
+pub(crate) fn decrypt_backup_controlled(password: &str, backup: &VaultBackupFile, check: &impl Fn() -> Result<(), String>, waiting: &impl Fn(bool, u64) -> Result<(), String>) -> Result<Vec<u8>, String> {
     if backup.version != BACKUP_VERSION {
         return Err(format!(
             "不支持的备份版本 {}（当前支持 {BACKUP_VERSION}）",
@@ -107,7 +121,7 @@ pub(crate) fn decrypt_backup(password: &str, backup: &VaultBackupFile) -> Result
     if ct.len() < 16 {
         return Err("备份文件损坏（密文长度不足）".into());
     }
-    let key = derive_key(password, &backup.kdf)?;
+    let key = derive_key(password, &backup.kdf, check, waiting)?;
     let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| e.to_string())?;
     cipher
         .decrypt(Nonce::from_slice(&nonce), ct.as_slice())

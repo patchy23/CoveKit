@@ -31,6 +31,7 @@ pub async fn data_export_start(
     password: String,
     path: String,
     request_id: Option<String>,
+    on_progress: Option<tauri::ipc::Channel<super::views::TransferProgress>>,
 ) -> Result<TransferStart, String> {
     package::validate_password(&password)?;
     let target = PathBuf::from(path.trim());
@@ -49,6 +50,7 @@ pub async fn data_export_start(
         return Err("同时进行的任务过多，请稍后再试".into());
     }
     let cancel = transfer.token();
+    let progress = transfer.progress(on_progress);
     let build_app = app.clone();
     let work = tauri::async_runtime::spawn_blocking(move || -> Result<ExportReport, String> {
         cancel.check()?;
@@ -69,7 +71,7 @@ pub async fn data_export_start(
             excluded,
             secret_included,
         };
-        let content = package::seal_package(&password, manifest)?;
+        let content = package::seal_package_controlled(&password, manifest, &|| cancel.check(), &progress)?;
         cancel.check()?;
         package::write_package(&target, &content)?;
         Ok(ExportReport {

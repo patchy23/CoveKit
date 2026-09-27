@@ -130,6 +130,7 @@ pub(crate) fn authenticates_with_aad(key: &[u8; 32], data: &[u8], aad: &[u8]) ->
 ///
 /// 成本参数的白名单校验属于调用方职责：本函数只负责按传入参数派生，
 /// 导入侧必须先验证参数范围再调用（否则等于按攻击者声明的成本分配内存）。
+#[cfg(test)]
 pub(crate) fn derive_key_argon2id(
     password: &str,
     salt: &[u8],
@@ -137,13 +138,31 @@ pub(crate) fn derive_key_argon2id(
     t_cost: u32,
     p_cost: u32,
 ) -> Result<[u8; 32], String> {
+    derive_key_argon2id_controlled(password, salt, m_cost, t_cost, p_cost, &|| Ok(()), &|_, _| Ok(()))
+}
+
+/// 工作线程中的 KDF：仅在物理内存不足时等待，派生参数和密码学结果保持不变。
+pub(crate) fn derive_key_argon2id_controlled(
+    password: &str,
+    salt: &[u8],
+    m_cost: u32,
+    t_cost: u32,
+    p_cost: u32,
+    check: &impl Fn() -> Result<(), String>,
+    waiting: &impl Fn(bool, u64) -> Result<(), String>,
+) -> Result<[u8; 32], String> {
     let params =
         Params::new(m_cost, t_cost, p_cost, Some(32)).map_err(|e| format!("KDF 参数非法: {e}"))?;
+    let bytes = (params.block_count() as u64).checked_mul(1024)
+        .and_then(|bytes| bytes.checked_add(1024 * 1024)).ok_or("KDF 内存成本溢出")?;
+    let _memory = crate::framework::memory_budget::reserve(bytes, check, waiting)?;
+    check()?;
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut key = [0u8; 32];
     argon
         .hash_password_into(password.as_bytes(), salt, &mut key)
         .map_err(|e| format!("密钥派生失败: {e}"))?;
+    check()?;
     Ok(key)
 }
 

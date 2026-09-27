@@ -34,6 +34,7 @@ pub async fn data_import_inspect(
     path: String,
     password: String,
     request_id: Option<String>,
+    on_progress: Option<tauri::ipc::Channel<super::views::TransferProgress>>,
 ) -> Result<ImportInspectResult, String> {
     let target = PathBuf::from(path.trim());
     if target.as_os_str().is_empty() {
@@ -41,6 +42,7 @@ pub async fn data_import_inspect(
     }
     let transfer = session::begin_transfer(request_id.as_deref())?;
     let cancel = transfer.token();
+    let progress = transfer.progress(on_progress);
     let inspect_app = app.clone();
     let work =
         tauri::async_runtime::spawn_blocking(move || -> Result<ImportInspectResult, String> {
@@ -48,7 +50,7 @@ pub async fn data_import_inspect(
             let raw = package::read_package(&target)?;
             cancel.check()?;
             let digest = package::file_digest(&raw);
-            let manifest = package::open_package(&password, raw)?;
+            let manifest = package::open_package_controlled(&password, raw, &|| cancel.check(), &progress)?;
             cancel.check()?;
             let descriptors = catalog::collect_descriptors(&inspect_app)?;
             let summary = package_summary(&manifest, &descriptors);
@@ -203,6 +205,7 @@ pub async fn data_import_commit(
     plan_id: String,
     password: String,
     request_id: Option<String>,
+    on_progress: Option<tauri::ipc::Channel<super::views::TransferProgress>>,
 ) -> Result<ImportCommitResult, String> {
     package::validate_password(&password)?;
     let (plan, file_path, file_digest) = session::plan(&plan_id)?;
@@ -218,6 +221,7 @@ pub async fn data_import_commit(
         return Err("同时进行的任务过多，请稍后再试".into());
     }
     let cancel = transfer.token();
+    let progress = transfer.progress(on_progress);
     let commit_app = app.clone();
     let work = {
         // 维护互斥：导入提交与根迁移、空间切换互斥
@@ -229,7 +233,7 @@ pub async fn data_import_commit(
             if package::file_digest(&raw) != file_digest {
                 return Err("数据包内容已改变，请重新预览后再提交".into());
             }
-            let manifest = package::open_package(&password, raw)?;
+            let manifest = package::open_package_controlled(&password, raw, &|| cancel.check(), &progress)?;
             cancel.check()?;
             if manifest.package_id != plan.package_id {
                 return Err("数据包与预览的不是同一份，请重新预览后再提交".into());

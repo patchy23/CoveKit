@@ -6,6 +6,8 @@ defineProps<{
   password: string
   importMode: string
   valid: boolean
+  busy?: boolean
+  waitingMemory?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -35,6 +37,7 @@ const emit = defineEmits<{
         备份密码（至少 4 位）
         <UiInput
           :model-value="password"
+          :disabled="busy"
           type="password"
           placeholder="备份密码"
           @update:model-value="emit('update:password', String($event))"
@@ -43,6 +46,7 @@ const emit = defineEmits<{
       <UiRadioGroup
         v-if="transfer?.mode === 'import'"
         :model-value="importMode"
+        :disabled="busy"
         name="import-mode"
         size="sm"
         :options="[
@@ -51,10 +55,23 @@ const emit = defineEmits<{
         ]"
         @update:model-value="emit('update:importMode', $event)"
       />
+      <p
+        v-if="waitingMemory"
+        role="status"
+        class="text-body-sm text-text-muted dark:text-text-muted-dark"
+      >
+        当前可用内存不足，正在等待其他任务释放内存。你可以继续等待或取消。
+      </p>
     </div>
     <template #footer>
       <UiButton size="sm" variant="ghost" @click="emit('close')">取消</UiButton>
-      <UiButton size="sm" variant="primary" :disabled="!valid" @click="emit('confirm')">
+      <UiButton
+        size="sm"
+        variant="primary"
+        :loading="busy"
+        :disabled="!valid || busy"
+        @click="emit('confirm')"
+      >
         {{ transfer?.mode === 'export' ? '导出' : '导入' }}
       </UiButton>
     </template>

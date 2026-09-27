@@ -3,9 +3,10 @@
  * - 框架命令封装见下方 `ipc`；
  * - 业务插件在各自 ipc.ts 用 invokeCommand 封装自己的命令（命令名/类型见插件 contracts.ts）。
  */
-import { invoke } from '@tauri-apps/api/core'
+import { invoke, type Channel } from '@tauri-apps/api/core'
 import { beginMeasuredCommand } from '@/core/resourceMonitor/metrics'
 import type {
+  TransferProgress,
   ConflictChoice,
   CredentialSavePayload,
   ExportSelection,
@@ -81,9 +82,32 @@ export const ipc = {
   vaultCredentialReferences: (id: string) => call('vault_credential_references', { id }),
   vaultReveal: (id: string) => call('vault_reveal', { id }),
   vaultProtectionStatus: () => call('vault_protection_status', {}),
-  vaultExport: (path: string, password: string) => call('vault_export', { path, password }),
-  vaultImport: (path: string, password: string, overwrite: boolean) =>
-    call('vault_import', { path, password, overwrite }),
+  vaultExport: (
+    path: string,
+    password: string,
+    requestId?: string,
+    onProgress?: Channel<TransferProgress>
+  ) =>
+    call('vault_export', {
+      path,
+      password,
+      ...(requestId ? { requestId } : {}),
+      ...(onProgress ? { onProgress } : {}),
+    }),
+  vaultImport: (
+    path: string,
+    password: string,
+    overwrite: boolean,
+    requestId?: string,
+    onProgress?: Channel<TransferProgress>
+  ) =>
+    call('vault_import', {
+      path,
+      password,
+      overwrite,
+      ...(requestId ? { requestId } : {}),
+      ...(onProgress ? { onProgress } : {}),
+    }),
   // 数据导出导入（sync L2）
   dataSpacesList: () => call('data_spaces_list', {}),
   dataSpaceSwitch: (spaceId: string, revision?: number) =>
@@ -93,10 +117,28 @@ export const ipc = {
     selection: ExportSelection,
     password: string,
     path: string,
-    requestId?: string
-  ) => call('data_export_start', { selection, password, path, requestId }),
-  dataImportInspect: (path: string, password: string, requestId?: string) =>
-    call('data_import_inspect', { path, password, requestId }),
+    requestId?: string,
+    onProgress?: Channel<TransferProgress>
+  ) =>
+    call('data_export_start', {
+      selection,
+      password,
+      path,
+      requestId,
+      ...(onProgress ? { onProgress } : {}),
+    }),
+  dataImportInspect: (
+    path: string,
+    password: string,
+    requestId?: string,
+    onProgress?: Channel<TransferProgress>
+  ) =>
+    call('data_import_inspect', {
+      path,
+      password,
+      requestId,
+      ...(onProgress ? { onProgress } : {}),
+    }),
   dataImportPlan: (
     inspectId: string,
     selection: ImportSelection,
@@ -113,8 +155,18 @@ export const ipc = {
       mode,
       conflicts,
     }),
-  dataImportCommit: (planId: string, password: string, requestId?: string) =>
-    call('data_import_commit', { planId, password, requestId }),
+  dataImportCommit: (
+    planId: string,
+    password: string,
+    requestId?: string,
+    onProgress?: Channel<TransferProgress>
+  ) =>
+    call('data_import_commit', {
+      planId,
+      password,
+      requestId,
+      ...(onProgress ? { onProgress } : {}),
+    }),
   dataBackupList: () => call('data_backup_list', {}),
   dataBackupRestore: (dir: string) => call('data_backup_restore', { dir }),
   dataTransferCancel: (requestId?: string | null) =>

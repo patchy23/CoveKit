@@ -226,6 +226,13 @@ async function runExport(): Promise<void> {
       </p>
     </div>
 
+    <p
+      v-if="store.waitingMemory"
+      role="status"
+      class="text-body-sm text-text-muted dark:text-text-muted-dark"
+    >
+      当前可用内存不足，正在等待其他任务释放内存。你可以继续等待或取消。
+    </p>
     <template #footer>
       <div class="flex items-center justify-between gap-2">
         <UiButton v-if="busy" variant="ghost" @click="store.cancelTransfer()">

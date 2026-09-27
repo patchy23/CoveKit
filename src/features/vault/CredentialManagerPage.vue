@@ -24,6 +24,7 @@ import type { CredentialReferenceSummary } from '@/core/ipc/contracts'
 import VaultTransferDialog from './VaultTransferDialog.vue'
 import VaultToolbar from './VaultToolbar.vue'
 import VaultCredentialTable from './VaultCredentialTable.vue'
+import { useBackupRequest } from './useBackupRequest'
 
 const ui = useUiStore()
 const { copyText } = useCopy()
@@ -218,27 +219,40 @@ async function startImport() {
 }
 
 const transferValid = computed(() => transferPassword.value.length >= 4)
+const backupRequest = useBackupRequest((error) =>
+  ui.toast(error instanceof Error ? error.message : String(error))
+)
+
+async function closeTransfer() {
+  try {
+    await backupRequest.cancel()
+    transfer.value = null
+  } catch (error) {
+    ui.toast(error instanceof Error ? error.message : String(error))
+  }
+}
 
 async function confirmTransfer() {
   const t = transfer.value
-  if (!t || !transferValid.value) return
+  if (!t || !transferValid.value || backupRequest.busy.value) return
+  const password = transferPassword.value
+  const overwrite = importOverwrite.value === 'overwrite'
   try {
     if (t.mode === 'export') {
-      await ipc.vaultExport(t.path, transferPassword.value)
+      await backupRequest.run((id, progress) => ipc.vaultExport(t.path, password, id, progress))
       ui.toast('已导出加密备份')
     } else {
-      const result = await ipc.vaultImport(
-        t.path,
-        transferPassword.value,
-        importOverwrite.value === 'overwrite'
+      const result = await backupRequest.run((id, progress) =>
+        ipc.vaultImport(t.path, password, overwrite, id, progress)
       )
       ui.toast(
         `导入完成：新增 ${result.imported} 条${result.skipped ? `，跳过 ${result.skipped} 条` : ''}`
       )
       void reload()
     }
-    transfer.value = null
+    if (transfer.value === t) transfer.value = null
   } catch (e) {
+    if (e instanceof Error && e.name === 'AbortError') return
     ui.toast(e instanceof Error ? e.message : String(e))
   }
 }
@@ -300,7 +314,9 @@ async function confirmTransfer() {
       :password="transferPassword"
       :import-mode="importOverwrite"
       :valid="transferValid"
-      @close="transfer = null"
+      :busy="backupRequest.busy.value"
+      :waiting-memory="backupRequest.waitingMemory.value"
+      @close="closeTransfer"
       @confirm="confirmTransfer"
       @update:password="transferPassword = $event"
       @update:import-mode="importOverwrite = $event"

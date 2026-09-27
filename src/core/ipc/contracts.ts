@@ -1,8 +1,16 @@
+import type { Channel } from '@tauri-apps/api/core'
 /**
  * IPC 契约 · 框架级（窗口 / 设置 / 外链）
  * 业务插件的 IPC 契约定义在各插件目录 src/plugins/<id>/contracts.ts
  * （插件隔离：新增/修改插件契约不动本文件与其它插件）。
  */
+
+/** 重任务准入进展，不含密码、文件路径或记录正文。 */
+export interface TransferProgress {
+  requestId: string
+  waitingMemory: boolean
+  estimatedBytes: number
+}
 
 // ── 出参结构 ──
 
@@ -692,8 +700,19 @@ export type FrameworkPayloads = {
   vault_credential_references: { id: string }
   vault_reveal: { id: string }
   vault_protection_status: Record<string, never>
-  vault_export: { path: string; password: string }
-  vault_import: { path: string; password: string; overwrite: boolean }
+  vault_export: {
+    path: string
+    password: string
+    requestId?: string
+    onProgress?: Channel<TransferProgress>
+  }
+  vault_import: {
+    path: string
+    password: string
+    overwrite: boolean
+    requestId?: string
+    onProgress?: Channel<TransferProgress>
+  }
   data_spaces_list: Record<string, never>
   data_space_switch: { spaceId: string; revision?: number }
   data_export_catalog: Record<string, never>
@@ -702,8 +721,14 @@ export type FrameworkPayloads = {
     password: string
     path: string
     requestId?: string
+    onProgress?: Channel<TransferProgress>
   }
-  data_import_inspect: { path: string; password: string; requestId?: string }
+  data_import_inspect: {
+    path: string
+    password: string
+    requestId?: string
+    onProgress?: Channel<TransferProgress>
+  }
   data_import_plan: {
     inspectId: string
     selection: ImportSelection
@@ -712,7 +737,12 @@ export type FrameworkPayloads = {
     mode?: ImportMode
     conflicts?: ConflictChoice[]
   }
-  data_import_commit: { planId: string; password: string; requestId?: string }
+  data_import_commit: {
+    planId: string
+    password: string
+    requestId?: string
+    onProgress?: Channel<TransferProgress>
+  }
   data_backup_list: Record<string, never>
   data_backup_restore: { dir: string }
   data_transfer_cancel: { requestId?: string | null }

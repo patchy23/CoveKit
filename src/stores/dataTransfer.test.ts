@@ -26,6 +26,11 @@ const { recordError, toast, ipcMock } = vi.hoisted(() => ({
 }))
 
 vi.mock('@/core/ipc/ipc', () => ({ ipc: ipcMock }))
+vi.mock('@tauri-apps/api/core', () => ({
+  Channel: class {
+    onmessage = vi.fn()
+  },
+}))
 vi.mock('@/core/diagnostics/errors', () => ({
   recordError: (...args: unknown[]) => recordError(...args),
 }))
@@ -67,6 +72,35 @@ describe('dataTransfer store', () => {
     ipcMock.dataSpacesList.mockResolvedValue([])
     ipcMock.dataTransferCancel.mockResolvedValue({ cancelled: false })
     ipcMock.dataTransferPrepare.mockResolvedValue('request-1')
+  })
+
+  it('内存等待按请求隔离，恢复及完成清除提示，迟到进展不复活旧任务', async () => {
+    ipcMock.dataExportCatalog.mockResolvedValue(catalogFixture())
+    let finish!: (result: unknown) => void
+    ipcMock.dataExportStart.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve
+        })
+    )
+    const store = useDataTransferStore()
+    await store.loadCatalog()
+    const operation = store.exportPack('secret-pass', 'test.pbdata')
+    await Promise.resolve()
+    await Promise.resolve()
+    const channel = ipcMock.dataExportStart.mock.calls.at(-1)![4]
+    channel.onmessage({ requestId: 'other-request', waitingMemory: true, estimatedBytes: 1024 })
+    expect(store.waitingMemory).toBe(false)
+    channel.onmessage({ requestId: 'request-1', waitingMemory: true, estimatedBytes: 1024 })
+    expect(store.waitingMemory).toBe(true)
+    channel.onmessage({ requestId: 'request-1', waitingMemory: false, estimatedBytes: 1024 })
+    expect(store.waitingMemory).toBe(false)
+    channel.onmessage({ requestId: 'request-1', waitingMemory: true, estimatedBytes: 1024 })
+    finish({ taskId: 'task', report: reportFixture() })
+    expect(await operation).toBe(true)
+    expect(store.waitingMemory).toBe(false)
+    channel.onmessage({ requestId: 'request-1', waitingMemory: true, estimatedBytes: 1024 })
+    expect(store.waitingMemory).toBe(false)
   })
 
   it('登记尚未完成就取消，不启动导出，也不取消旧报告的任务', async () => {

@@ -273,16 +273,27 @@ pub fn vault_protection_status(
 
 /// 导出 .pbvault 备份（用户设一次性密码 → Argon2id 派生密钥 → AES-256-GCM；路径由前端 dialog 选定）
 #[tauri::command]
-pub async fn vault_export(app: AppHandle, path: String, password: String) -> Result<(), String> {
+pub async fn vault_export(
+    app: AppHandle,
+    path: String,
+    password: String,
+    request_id: Option<String>,
+    on_progress: Option<tauri::ipc::Channel<crate::framework::data_transfer::commands::views::TransferProgress>>,
+) -> Result<(), String> {
+    let transfer = crate::framework::data_transfer::begin_transfer(request_id.as_deref())?;
+    let cancel = transfer.token();
+    let work_cancel = cancel.clone();
+    let progress = transfer.progress(on_progress);
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         let all = store::read_all(&app)?;
         let plain = serde_json::to_vec(&all).map_err(|e| e.to_string())?;
         // Argon2id 是 CPU 重负载（数百 ms），异步命令里必须挪到阻塞线程池（规范 §4）
         let backup =
-            tauri::async_runtime::spawn_blocking(move || export::encrypt_backup(&password, &plain))
+            tauri::async_runtime::spawn_blocking(move || export::encrypt_backup_controlled(&password, &plain, &|| work_cancel.check(), &progress))
                 .await
                 .map_err(|e| format!("加密任务失败: {e}"))??;
+        cancel.check()?;
         export::write_backup_file(std::path::Path::new(&path), &backup)
     }
     .await;
@@ -307,17 +318,24 @@ pub async fn vault_import(
     path: String,
     password: String,
     overwrite: bool,
+    request_id: Option<String>,
+    on_progress: Option<tauri::ipc::Channel<crate::framework::data_transfer::commands::views::TransferProgress>>,
 ) -> Result<VaultImportResult, String> {
+    let transfer = crate::framework::data_transfer::begin_transfer(request_id.as_deref())?;
+    let cancel = transfer.token();
+    let work_cancel = cancel.clone();
+    let progress = transfer.progress(on_progress);
     let log_started = std::time::Instant::now();
     let result: Result<VaultImportResult, String> = async {
         // 1) 备份文件由用户密码解开（不依赖主密钥，密钥丢失场景也能导入）
         let backup = export::read_backup_file(std::path::Path::new(&path))?;
         // Argon2id 解密同属 CPU 重负载，挪到阻塞线程池（规范 §4）
         let plain = tauri::async_runtime::spawn_blocking(move || {
-            export::decrypt_backup(&password, &backup)
+            export::decrypt_backup_controlled(&password, &backup, &|| work_cancel.check(), &progress)
         })
         .await
         .map_err(|e| format!("解密任务失败: {e}"))??;
+        cancel.check()?;
         let imported: Vec<Credential> =
             serde_json::from_slice(&plain).map_err(|e| format!("备份内容解析失败: {e}"))?;
 
