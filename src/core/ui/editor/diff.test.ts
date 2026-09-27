@@ -58,4 +58,51 @@ describe('diffStats', () => {
       same: false,
     })
   })
+
+  it('大文件首部、中部和末尾的小改保持完整行计数', () => {
+    const rows = Array.from({ length: 20_000 }, (_, i) => `条目 ${i}`)
+    const original = rows.join('\r\n')
+    for (const index of [0, 10_000, 19_999]) {
+      const modified = [...rows]
+      modified[index] = '替换行'
+      expect(diffStats(original, `${modified.join('\n')}\n`)).toEqual({
+        added: 1,
+        removed: 1,
+        same: false,
+      })
+    }
+  })
+
+  it('前后相同行剥离后仍正确处理重复空行、独立 CR 和行移动', () => {
+    const texts = ['', '\n', '\r\n', '\r', 'a', 'a\n', '\na\n', 'a\r\nb\n', 'b\na\n', '\n\n']
+    const split = (text: string) => {
+      if (!text) return []
+      const rows = text.replace(/\r\n/g, '\n').split('\n')
+      if (text.endsWith('\n')) rows.pop()
+      return rows
+    }
+    for (const a of texts) {
+      for (const b of texts) {
+        for (const [prefix, suffix] of [
+          ['', ''],
+          ['same\n', '\ntail\r\n'],
+        ]) {
+          const original = `${prefix}${a}${suffix}`
+          const modified = `${prefix}${b}${suffix}`
+          const remaining = split(original)
+          let added = 0
+          for (const line of split(modified)) {
+            const index = remaining.indexOf(line)
+            if (index < 0) added++
+            else remaining.splice(index, 1)
+          }
+          expect(diffStats(original, modified)).toEqual({
+            added,
+            removed: remaining.length,
+            same: added === 0 && remaining.length === 0,
+          })
+        }
+      }
+    }
+  })
 })
