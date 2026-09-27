@@ -1,11 +1,21 @@
 //! SSE 增量解析与任务所有权；停止请求立即取消网络读取，不自动重连。
 use super::models::{HttpRequestPayload, SseEvent, SseUpdate};
-use std::{collections::HashMap, sync::Mutex, time::Duration};
+use super::sse_flow::{Acknowledgements, Window};
+use std::{
+    collections::HashMap,
+    sync::{atomic::Ordering, Arc, Mutex},
+    time::Duration,
+};
 use tauri::{ipc::Channel, AppHandle, Manager, State};
 
 /// 每条连接拥有可取消任务，页签关闭和工具退出均释放它。
 #[derive(Default)]
-pub struct SseState(Mutex<HashMap<String, tauri::async_runtime::JoinHandle<()>>>);
+pub struct SseState(Mutex<HashMap<String, Session>>);
+
+struct Session {
+    task: tauri::async_runtime::JoinHandle<()>,
+    acknowledgements: Arc<Acknowledgements>,
+}
 
 /// 保留未完成字节行，避免网络分块切断 UTF-8 或 CRLF。
 #[derive(Default)]
@@ -104,10 +114,44 @@ impl Parser {
     }
 }
 
+struct Batch {
+    consumed: usize,
+    events: Vec<SseEvent>,
+    bytes: usize,
+    error: Option<String>,
+}
+
+/// 以输出字节控制批次；重复的大 id/event 元数据也计入，不能仅按输入分块。
+fn parse_batch(parser: &mut Parser, input: &[u8]) -> Batch {
+    let mut batch = Batch {
+        consumed: 0,
+        events: Vec::new(),
+        bytes: 64,
+        error: None,
+    };
+    for byte in input {
+        batch.consumed += 1;
+        if let Err(error) = parser.push(std::slice::from_ref(byte), |event| {
+            batch.bytes += 64 + event.data.len() + event.id.len() + event.event.len();
+            batch.events.push(event);
+            Ok(())
+        }) {
+            batch.error = Some(error);
+            break;
+        }
+        if batch.bytes >= 64 * 1024 {
+            break;
+        }
+    }
+    batch
+}
+
 async fn receive(
     app: &AppHandle,
     payload: HttpRequestPayload,
     channel: &Channel<SseUpdate>,
+    acknowledgements: &Acknowledgements,
+    mut window: Option<Window>,
 ) -> Result<(), String> {
     let timeout = Duration::from_millis(payload.timeout_ms.unwrap_or(15_000).clamp(1_000, 300_000));
     let request = super::http::request(app, payload, true)?;
@@ -148,11 +192,38 @@ async fn receive(
         .await
         .map_err(|e| e.without_url().to_string())?
     {
-        parser.push(&chunk, |event| {
-            channel
-                .send(SseUpdate::Event { event })
-                .map_err(|e| e.to_string())
-        })?;
+        if let Some(window) = &mut window {
+            // 限制一次解析产生的批次，而非网络正文或完整事件大小。
+            let mut offset = 0;
+            while offset < chunk.len() {
+                let end = (offset + 16 * 1024).min(chunk.len());
+                let batch = parse_batch(&mut parser, &chunk[offset..end]);
+                offset += batch.consumed;
+                if !batch.events.is_empty() {
+                    let sequence = window.reserve(batch.bytes).await?;
+                    acknowledgements.sent.store(sequence, Ordering::Release);
+                    channel
+                        .send(SseUpdate::Events {
+                            sequence,
+                            events: batch.events,
+                        })
+                        .map_err(|e| e.to_string())?;
+                }
+                // 同一网络块中错误之前已完成的事件照常交付。
+                if let Some(error) = batch.error {
+                    return Err(error);
+                }
+            }
+        } else {
+            parser.push(&chunk, |event| {
+                channel
+                    .send(SseUpdate::Event { event })
+                    .map_err(|e| e.to_string())
+            })?;
+        }
+    }
+    if let Some(window) = &mut window {
+        window.finish().await?;
     }
     channel.send(SseUpdate::Closed).map_err(|e| e.to_string())
 }
@@ -165,6 +236,7 @@ pub fn sse_start(
     id: String,
     payload: HttpRequestPayload,
     on_event: Channel<SseUpdate>,
+    flow_control: Option<bool>,
 ) -> Result<(), String> {
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = (|| {
@@ -173,9 +245,20 @@ pub fn sse_start(
             return Err("SSE 会话已经存在".into());
         }
         let task_id = id.clone();
+        let (acknowledgements, window) = Acknowledgements::new();
+        let acknowledgements = Arc::new(acknowledgements);
+        let task_acknowledgements = acknowledgements.clone();
         let task = tauri::async_runtime::spawn(async move {
             log::info!("SSE 接收任务开始 session={task_id}");
-            if let Err(message) = receive(&app, payload, &on_event).await {
+            if let Err(message) = receive(
+                &app,
+                payload,
+                &on_event,
+                &task_acknowledgements,
+                flow_control.unwrap_or(false).then_some(window),
+            )
+            .await
+            {
                 log::warn!("SSE 接收任务异常结束 session={task_id}");
                 // 接收端关闭时任务也结束；报告失败不能再启动另一条连接。
                 if let Err(error) = on_event.send(SseUpdate::Error { message }) {
@@ -188,7 +271,12 @@ pub fn sse_start(
             log::info!("SSE 接收任务结束 session={task_id}");
             match app.state::<SseState>().0.lock() {
                 Ok(mut tasks) => {
-                    tasks.remove(&task_id);
+                    // 旧任务结束不得删除同 ID 后来登记的新连接。
+                    if tasks.get(&task_id).is_some_and(|session| {
+                        Arc::ptr_eq(&session.acknowledgements, &task_acknowledgements)
+                    }) {
+                        tasks.remove(&task_id);
+                    }
                 }
                 Err(error) => log::error!(
                     "SSE 会话清理失败: {error_type}",
@@ -196,7 +284,13 @@ pub fn sse_start(
                 ),
             };
         });
-        tasks.insert(id, task);
+        tasks.insert(
+            id,
+            Session {
+                task,
+                acknowledgements,
+            },
+        );
         Ok(())
     })();
     match &result {
@@ -217,8 +311,8 @@ pub fn sse_start(
 pub fn sse_stop(state: State<'_, SseState>, id: String) -> Result<(), String> {
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = (|| {
-        if let Some(task) = state.0.lock().map_err(|e| e.to_string())?.remove(&id) {
-            task.abort();
+        if let Some(session) = state.0.lock().map_err(|e| e.to_string())?.remove(&id) {
+            session.task.abort();
         }
         Ok(())
     })();
@@ -235,10 +329,20 @@ pub fn sse_stop(state: State<'_, SseState>, id: String) -> Result<(), String> {
     result
 }
 
+/// 前端完成本批状态更新后累积确认；迟到的已关闭会话确认幂等忽略。
+#[tauri::command]
+pub fn sse_ack(state: State<'_, SseState>, id: String, sequence: u64) -> Result<(), String> {
+    let sessions = state.0.lock().map_err(|e| e.to_string())?;
+    if let Some(session) = sessions.get(&id) {
+        session.acknowledgements.acknowledge(sequence)?;
+    }
+    Ok(())
+}
+
 /// 工具与应用生命周期统一清理入口。
 pub(super) fn close_all(state: &SseState) -> Result<(), String> {
-    for (_, task) in state.0.lock().map_err(|e| e.to_string())?.drain() {
-        task.abort();
+    for (_, session) in state.0.lock().map_err(|e| e.to_string())?.drain() {
+        session.task.abort();
     }
     Ok(())
 }
@@ -279,5 +383,26 @@ mod tests {
         assert!(Parser::default()
             .push(&vec![b'x'; 1024 * 1024 + 1], |_| Ok(()))
             .is_err());
+    }
+
+    #[test]
+    fn batch_accounts_for_repeated_metadata_and_preserves_completed_events_before_error() {
+        let mut parser = Parser {
+            id: "x".repeat(128 * 1024),
+            ..Parser::default()
+        };
+        let input = b"data: one\n\ndata: two\n\n";
+        let first = parse_batch(&mut parser, input);
+        assert_eq!(first.events.len(), 1);
+        assert_eq!(first.events[0].data, "one");
+        assert!(first.bytes > 128 * 1024);
+        let second = parse_batch(&mut parser, &input[first.consumed..]);
+        assert_eq!(second.events.len(), 1);
+        assert_eq!(second.events[0].data, "two");
+        let input = format!("data: complete\n\n{}", "x".repeat(1024 * 1024 + 1));
+        let batch = parse_batch(&mut Parser::default(), input.as_bytes());
+        assert_eq!(batch.events.len(), 1);
+        assert_eq!(batch.events[0].data, "complete");
+        assert!(batch.error.is_some());
     }
 }

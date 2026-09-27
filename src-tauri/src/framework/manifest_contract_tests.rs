@@ -425,6 +425,7 @@ mod tests {
         ("http_ws", "http_request", "发送 HTTP 请求"),
         ("http_ws", "sse_start", "建立 SSE 订阅"),
         ("http_ws", "sse_stop", "停止 SSE 订阅"),
+        ("http_ws", "sse_ack", "确认 SSE 事件消费"),
         ("http_ws", "ws_close", "关闭 WS 会话"),
         (
             "http_ws",

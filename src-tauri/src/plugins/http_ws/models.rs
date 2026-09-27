@@ -68,6 +68,13 @@ pub enum SseUpdate {
         /// 已解析的事件原文与元数据。
         event: SseEvent,
     },
+    /// 协商消费确认后的即时批次，不等待额外刷新周期。
+    Events {
+        /// 会话内递增批次序号，由前端消费后累积确认。
+        sequence: u64,
+        /// 保持网络顺序的完整事件。
+        events: Vec<SseEvent>,
+    },
     /// 服务端正常结束。
     Closed,
     /// 握手、读取或解析失败。

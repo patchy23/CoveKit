@@ -13,6 +13,7 @@ pub(crate) mod http;
 mod models;
 pub(crate) mod persistence;
 pub(crate) mod sse;
+mod sse_flow;
 pub(crate) mod ws;
 
 pub use ws::WsState;
@@ -29,6 +30,7 @@ crate::covekit_module! {
         http::http_request => "发送 HTTP 请求",
         sse::sse_start => "建立 SSE 订阅",
         sse::sse_stop => "停止 SSE 订阅",
+        sse::sse_ack => "确认 SSE 事件消费",
         ws::ws_connect => "建立 WebSocket 连接（支持自定义请求头）",
         ws::ws_send => "发送 WS 消息",
         ws::ws_recv => "拉取会话快照",

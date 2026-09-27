@@ -64,6 +64,7 @@ export interface SseEvent {
 export type SseUpdate =
   | { type: 'connected'; status: number; headers: [string, string][] }
   | { type: 'event'; event: SseEvent }
+  | { type: 'events'; sequence: number; events: SseEvent[] }
   | { type: 'closed' }
   | { type: 'error'; message: string }
 export interface ApiRecord {
@@ -112,6 +113,7 @@ export const commands = {
   wsSessions: 'ws_sessions',
   sseStart: 'sse_start',
   sseStop: 'sse_stop',
+  sseAck: 'sse_ack',
 } as const
 export type Payloads = {
   api_rename: { id: number; name: string; groupName: string }
@@ -139,8 +141,10 @@ export type Payloads = {
     id: string
     payload: HttpRequestPayload
     onEvent: import('@tauri-apps/api/core').Channel<SseUpdate>
+    flowControl?: boolean
   }
   sse_stop: { id: string }
+  sse_ack: { id: string; sequence: number }
 }
 export type Results = {
   api_rename: void
@@ -160,4 +164,5 @@ export type Results = {
   ws_sessions: WsSession[]
   sse_start: void
   sse_stop: void
+  sse_ack: void
 }

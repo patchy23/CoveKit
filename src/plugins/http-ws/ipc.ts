@@ -1,6 +1,7 @@
 /** 接口调试命令封装；Channel 随页签生命周期停止消费。 */
 import { Channel } from '@tauri-apps/api/core'
 import { invokeCommand } from '@/core/ipc/ipc'
+import { sseConsumer } from './sseConsumer'
 import type {
   ApiSavePayload,
   HttpRequestPayload,
@@ -31,8 +32,12 @@ export const ipc = {
   wsSessions: () => call('ws_sessions', {}),
   sseStart: (id: string, payload: HttpRequestPayload, receive: (update: SseUpdate) => void) => {
     const onEvent = new Channel<SseUpdate>()
-    onEvent.onmessage = receive
-    return call('sse_start', { id, payload, onEvent })
+    onEvent.onmessage = sseConsumer(
+      receive,
+      (sequence) => call('sse_ack', { id, sequence }),
+      () => call('sse_stop', { id })
+    )
+    return call('sse_start', { id, payload, onEvent, flowControl: true })
   },
   sseStop: (id: string) => call('sse_stop', { id }),
 }
