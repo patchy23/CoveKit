@@ -46,7 +46,9 @@ tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 futures-util = "0.3"
 hickory-resolver = { version = "0.26", features = ["tokio", "system-config"] }
-aliyun-openapi-core-rust-sdk = "1.1"
+# AliDNS RPC v1 固定使用 HMAC-SHA1；复用现有连接池及锁文件中的密码学依赖。
+sha1 = "=0.10.7"
+base64 = "=0.22.1"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"

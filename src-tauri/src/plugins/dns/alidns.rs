@@ -1,16 +1,15 @@
 //! 阿里云云解析（alidns）实现
-//! 经 aliyun-openapi-core-rust-sdk 的 RPC 客户端调用 alidns.cn-hangzhou 接口；
-//! 与参考项目 DnsAnalysisTools 的 backed/src/dns/alidns.rs 同接口、结构对齐。
+//! 使用共享传输调用 alidns.cn-hangzhou，保持既有 RPC 操作与响应契约。
 
-use aliyun_openapi_core_rust_sdk::client::rpc::RPClient;
 use serde::{Deserialize, Serialize};
 
+use super::aliyun_rpc::AliyunRpc;
 use super::models::{DnsRecord, Domain, DomainList, ProviderConfig, RecordList};
 
-/// 阿里云云解析客户端（RPC 签名由 SDK 处理）
+/// 阿里云云解析客户端（RPC 签名与传输由 owner 内适配器处理）
 pub struct AliyunDns {
     /// RPC 客户端（AccessKey 签名 + alidns 端点）
-    client: RPClient,
+    client: AliyunRpc,
 }
 
 impl AliyunDns {
@@ -20,7 +19,7 @@ impl AliyunDns {
             return Err("请先在「设置」页配置阿里云 AccessKey（AccessKey ID / Secret）".into());
         }
         Ok(Self {
-            client: RPClient::new(&cfg.id, &cfg.key, "https://alidns.cn-hangzhou.aliyuncs.com"),
+            client: AliyunRpc::new(cfg),
         })
     }
 
@@ -28,13 +27,11 @@ impl AliyunDns {
     pub async fn get_domains(&self) -> Result<DomainList, String> {
         let resp = self
             .client
-            .clone()
-            .version("2015-01-09")
-            .query([("PageNumber", "1"), ("PageSize", "100")])
-            .post("DescribeDomains")
-            .json::<DescribeDomains>()
-            .await
-            .map_err(|e| format!("阿里云请求失败: {e}"))?;
+            .call::<DescribeDomains>(
+                "DescribeDomains",
+                &[("PageNumber", "1"), ("PageSize", "100")],
+            )
+            .await?;
         let list = resp
             .domain_list
             .domain
@@ -73,13 +70,14 @@ impl AliyunDns {
         }
         let resp = self
             .client
-            .clone()
-            .version("2015-01-09")
-            .query(params)
-            .post("DescribeDomainRecords")
-            .json::<DescribeDomainRecords>()
-            .await
-            .map_err(|e| format!("阿里云请求失败: {e}"))?;
+            .call::<DescribeDomainRecords>(
+                "DescribeDomainRecords",
+                &params
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.as_str()))
+                    .collect::<Vec<_>>(),
+            )
+            .await?;
         let list = resp
             .domain_records
             .record
@@ -109,19 +107,17 @@ impl AliyunDns {
         ttl: u32,
     ) -> Result<(), String> {
         self.client
-            .clone()
-            .version("2015-01-09")
-            .query([
-                ("DomainName", domain),
-                ("RR", rr),
-                ("Type", rtype),
-                ("Value", value),
-                ("TTL", &ttl.to_string()),
-            ])
-            .post("AddDomainRecord")
-            .json::<ActionDomainRecord>()
-            .await
-            .map_err(|e| format!("阿里云请求失败: {e}"))?;
+            .call::<ActionDomainRecord>(
+                "AddDomainRecord",
+                &[
+                    ("DomainName", domain),
+                    ("RR", rr),
+                    ("Type", rtype),
+                    ("Value", value),
+                    ("TTL", &ttl.to_string()),
+                ],
+            )
+            .await?;
         Ok(())
     }
 
@@ -136,33 +132,26 @@ impl AliyunDns {
         ttl: u32,
     ) -> Result<(), String> {
         self.client
-            .clone()
-            .version("2015-01-09")
-            .query([
-                ("DomainName", domain),
-                ("RecordId", record_id),
-                ("RR", rr),
-                ("Type", rtype),
-                ("Value", value),
-                ("TTL", &ttl.to_string()),
-            ])
-            .post("UpdateDomainRecord")
-            .json::<ActionDomainRecord>()
-            .await
-            .map_err(|e| format!("阿里云请求失败: {e}"))?;
+            .call::<ActionDomainRecord>(
+                "UpdateDomainRecord",
+                &[
+                    ("DomainName", domain),
+                    ("RecordId", record_id),
+                    ("RR", rr),
+                    ("Type", rtype),
+                    ("Value", value),
+                    ("TTL", &ttl.to_string()),
+                ],
+            )
+            .await?;
         Ok(())
     }
 
     /// 删除解析记录
     pub async fn delete_record(&self, record_id: &str) -> Result<(), String> {
         self.client
-            .clone()
-            .version("2015-01-09")
-            .query([("RecordId", record_id)])
-            .post("DeleteDomainRecord")
-            .json::<ActionDomainRecord>()
-            .await
-            .map_err(|e| format!("阿里云请求失败: {e}"))?;
+            .call::<ActionDomainRecord>("DeleteDomainRecord", &[("RecordId", record_id)])
+            .await?;
         Ok(())
     }
 }

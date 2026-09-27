@@ -1,6 +1,7 @@
 //! DNS 命令装配与插件注册入口。
 
 mod alidns;
+mod aliyun_rpc;
 mod cloudflare;
 mod credential_refs;
 mod dnspod;
