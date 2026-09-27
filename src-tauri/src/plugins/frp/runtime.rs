@@ -99,8 +99,8 @@ pub struct FrpRun {
     pub started_at: Option<i64>,
     /// 最近一行日志（已脱敏）
     pub last_line: Option<String>,
-    /// 最近一次失败原因（已脱敏）
-    pub last_error: Option<String>,
+    /// 最近一次失败原因（已脱敏）；状态比较共享正文，避免每行日志复制旧错误。
+    pub last_error: Option<Arc<String>>,
     /// 退出码（自然退出时记录）
     pub exit_code: Option<i32>,
     /// 停止信号发送端（发送即请求监控任务结束子进程）
@@ -136,7 +136,7 @@ impl FrpRun {
         if next == FrpStateName::Running {
             self.last_error = None;
         } else if let Some(error) = error {
-            self.last_error = Some(error);
+            self.last_error = Some(Arc::new(error));
         }
         self.last_line = Some(line);
     }
@@ -158,13 +158,21 @@ impl FrpRun {
 
     /// 转成契约快照（前端展示用）
     fn snapshot(&self, file_name: &str) -> FrpRuntimeState {
+        let mut state = self.snapshot_metadata(file_name);
+        state.last_line = self.last_line.clone();
+        state.last_error = self.last_error.as_deref().cloned();
+        state
+    }
+
+    /// 先构造小字段，日志事件再按别名契约选择需要复制的正文。
+    fn snapshot_metadata(&self, file_name: &str) -> FrpRuntimeState {
         FrpRuntimeState {
             file_name: file_name.to_string(),
             state: self.state,
             pid: self.pid,
             started_at: self.started_at,
-            last_line: self.last_line.clone(),
-            last_error: self.last_error.clone(),
+            last_line: None,
+            last_error: None,
             exit_code: self.exit_code,
         }
     }
@@ -200,8 +208,12 @@ where
     let before = (
         run.state,
         run.pid,
-        if log_stream.is_none() { run.last_line.clone() } else { None },
-        run.last_error.clone(),
+        if log_stream.is_none() {
+            run.last_line.clone()
+        } else {
+            None
+        },
+        run.last_error.as_ref().map(Arc::clone),
         run.exit_code,
     );
     mutate(run);
@@ -210,53 +222,53 @@ where
         || before.2.as_ref() != run.last_line.as_ref()
         || before.3.as_ref() != run.last_error.as_ref()
         || before.4 != run.exit_code;
-    let snapshot = (changed || log_stream.is_some()).then(|| run.snapshot(file_name));
+    let error_changed = before.3.as_ref() != run.last_error.as_ref();
+    let after = (run.state, run.pid, run.exit_code);
+    let (snapshot, payload) = match log_stream {
+        Some(stream) => (None, log_payload(run, file_name, stream)),
+        None => (changed.then(|| run.snapshot(file_name)), None),
+    };
     drop(map);
-    if let Some(mut snapshot) = snapshot {
+    if changed || log_stream.is_some() {
         // 状态错误不一定伴随子进程输出（异常退出、启动超时），后台也必须保留原因。
         // 仅状态/错误发生变化时打印，逐行日志更新及状态轮询不重复刷屏。
-        if snapshot.state == FrpStateName::Error
-            && (before.0 != snapshot.state || before.3 != snapshot.last_error)
-        {
-            log::error!("FRP 运行状态异常 pid={:?}", snapshot.pid);
-        } else if before.0 != snapshot.state && snapshot.state == FrpStateName::Running {
+        if after.0 == FrpStateName::Error && (before.0 != after.0 || error_changed) {
+            log::error!("FRP 运行状态异常 pid={:?}", after.1);
+        } else if before.0 != after.0 && after.0 == FrpStateName::Running {
             log::info!("已连接服务端");
-        } else if before.1.is_some()
-            && snapshot.pid.is_none()
-            && snapshot.state == FrpStateName::Stopped
-        {
-            log::info!("进程已停止，退出码 {:?}", snapshot.exit_code);
+        } else if before.1.is_some() && after.1.is_none() && after.0 == FrpStateName::Stopped {
+            log::info!("进程已停止，退出码 {:?}", after.2);
         }
-        if let Some(stream) = log_stream {
+        if log_stream.is_some() {
             // record_line 在同一临界区设置 last_line；空字符串仍是合法日志行。
-            if let Some(line) = snapshot.last_line.take() {
-                let payload = log_payload(snapshot, line, stream);
+            if let Some(payload) = payload {
                 if app.emit("frp://log", payload).is_err() {
                     log::warn!("FRP 日志事件发送失败");
                 }
             } else {
                 log::error!("FRP 日志事件缺少对应正文");
             }
-        } else {
+        } else if let Some(snapshot) = snapshot {
             let _ = app.emit("frp://state", snapshot);
         }
     }
 }
 
-fn log_payload(mut state: FrpRuntimeState, line: String, stream: FrpLogStream) -> FrpLogPayload {
-    state.last_line = None;
-    let last_error_from_line = state.last_error.as_deref() == Some(line.as_str());
-    if last_error_from_line {
-        state.last_error = None;
+fn log_payload(run: &FrpRun, file_name: &str, stream: FrpLogStream) -> Option<FrpLogPayload> {
+    let line = run.last_line.as_ref()?;
+    let mut state = run.snapshot_metadata(file_name);
+    let last_error_from_line = run.last_error.as_deref() == Some(line);
+    if !last_error_from_line {
+        state.last_error = run.last_error.as_deref().cloned();
     }
-    FrpLogPayload {
+    Some(FrpLogPayload {
         file_name: state.file_name.clone(),
-        line,
+        line: line.clone(),
         ts: chrono::Utc::now().timestamp_millis(),
         stream,
         state,
         last_error_from_line,
-    }
+    })
 }
 
 /// 按行读取一个流：每行推送 `frp://log` 并喂给状态机（流关闭即结束）
@@ -340,7 +352,7 @@ async fn monitor(
                     let (next, error) = next_state(run.state, &FrpEvent::StartupTimeout);
                     run.state = next;
                     if let Some(error) = error {
-                        run.last_error = Some(error);
+                        run.last_error = Some(Arc::new(error));
                     }
                 })
                 .await;
@@ -367,17 +379,16 @@ async fn monitor(
         } else {
             FrpEvent::Exited(exit_code)
         };
-        let last_line = run.last_line.clone();
         let (next, error) = next_state(run.state, &event);
         run.state = next;
         run.pid = None;
         run.exit_code = if stopped_by_user { None } else { exit_code };
         if let Some(mut error) = error {
             // 失败原因附最后一行日志（已脱敏），便于用户判读
-            if let Some(line) = last_line {
+            if let Some(line) = run.last_line.as_ref() {
                 error = format!("{error}；最后一行：{line}");
             }
-            run.last_error = Some(error);
+            run.last_error = Some(Arc::new(error));
         }
         run.stop_tx = None;
         run.handle = None;
@@ -581,12 +592,38 @@ pub(crate) async fn shutdown_all(app: &AppHandle) -> Vec<String> {
 mod tests {
     use super::*;
 
+    /// 普通日志沿用旧错误的同一缓冲；恢复或新错误替换后，既有比较快照仍有效。
+    #[test]
+    fn ordinary_logs_share_previous_error_until_recovery_or_replacement() {
+        let mut run = FrpRun::new(Some(7));
+        let error = "start error: ".to_string() + &"x".repeat(70000);
+        run.record_line(error.clone());
+        let previous = Arc::clone(run.last_error.as_ref().unwrap());
+        for _ in 0..100 {
+            run.record_line("retrying connection".to_string());
+            assert!(Arc::ptr_eq(&previous, run.last_error.as_ref().unwrap()));
+        }
+        assert_eq!(
+            run.snapshot("a.toml").last_error.as_deref(),
+            Some(error.as_str()),
+        );
+        let retry = log_payload(&run, "a.toml", FrpLogStream::Stdout).unwrap();
+        assert_eq!(retry.state.last_error.as_deref(), Some(error.as_str()));
+        assert!(!retry.last_error_from_line);
+        run.record_line("start error: new failure".to_string());
+        assert!(!Arc::ptr_eq(&previous, run.last_error.as_ref().unwrap()));
+        assert_eq!(previous.as_str(), error);
+        run.record_line("login to server success".to_string());
+        assert!(run.last_error.is_none());
+        assert_eq!(previous.as_str(), error);
+    }
+
     #[test]
     fn log_event_carries_body_once_and_preserves_state_and_error() {
         let mut run = FrpRun::new(Some(7));
         let line = "start error: ".to_string() + &"x".repeat(70000);
         run.record_line(line.clone());
-        let payload = log_payload(run.snapshot("a.toml"), line.clone(), FrpLogStream::Stderr);
+        let payload = log_payload(&run, "a.toml", FrpLogStream::Stderr).unwrap();
         let encoded = serde_json::to_value(&payload).unwrap();
         assert_eq!(encoded["line"], line);
         assert_eq!(encoded["state"]["state"], "error");
@@ -596,10 +633,25 @@ mod tests {
         assert!(payload.last_error_from_line);
         assert_eq!(run.last_line.as_deref(), Some(line.as_str()));
         run.record_line("login to server success".into());
-        let recovered = log_payload(run.snapshot("a.toml"), "login to server success".into(), FrpLogStream::Stdout);
+        let recovered = log_payload(&run, "a.toml", FrpLogStream::Stdout).unwrap();
         assert_eq!(recovered.state.state, FrpStateName::Running);
         assert!(recovered.state.last_error.is_none());
         assert!(!recovered.last_error_from_line);
+    }
+
+    /// 未收到日志与收到空行必须区分；重复空行也继续交付，不按正文去重。
+    #[test]
+    fn log_payload_distinguishes_missing_line_from_empty_line() {
+        let mut run = FrpRun::new(None);
+        assert!(log_payload(&run, "a.toml", FrpLogStream::Stdout).is_none());
+        for _ in 0..2 {
+            run.record_line(String::new());
+            let payload = log_payload(&run, "a.toml", FrpLogStream::Stdout).unwrap();
+            assert!(payload.line.is_empty());
+            assert!(!payload.last_error_from_line);
+            assert!(payload.state.last_line.is_none());
+            assert_eq!(run.snapshot("a.toml").last_line.as_deref(), Some(""));
+        }
     }
 
     /// 多个停止等待者共享完成状态，某个等待超时不取走任务句柄。
