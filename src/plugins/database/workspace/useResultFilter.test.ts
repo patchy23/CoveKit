@@ -86,3 +86,43 @@ it('连续收窄、替换、退格的结果与原全量算法一致且保留原�
     filtered.value.forEach((row, i) => expect(row).toBe(expected[i]))
   }
 })
+
+it('数字与标点查询直接匹配正文，Unicode 大小写及混合关键词保持原语义', () => {
+  const rows = markRaw([
+    ['ABC 2026-09-27T12:34:56', '中文'],
+    ['İ K Σ', '123\t456'],
+    ['ΟΣ', '[]{}:/_@`~!'],
+    ['i\u0307 k ος', '123\u0000456'],
+  ])
+  const query = ref('')
+  const filtered = useResultFilter(
+    () => rows,
+    () => query.value
+  )
+  for (const term of [
+    '2026-09',
+    '12:34',
+    '123',
+    '123\t456',
+    '123\u0000456',
+    '[]{}:/_@`~!',
+    'ABC 2026',
+    'İ',
+    '\u0307',
+    'K',
+    'Σ',
+    'ΟΣ',
+    '中文',
+  ]) {
+    query.value = term
+    const normalized = term.trim().toLowerCase()
+    expect(filtered.value).toEqual(
+      rows.filter((row) => row.some((cell) => cell.toLowerCase().includes(normalized)))
+    )
+  }
+  query.value = '2026-09'
+  const lower = vi.spyOn(String.prototype, 'toLowerCase')
+  expect(filtered.value).toEqual([rows[0]])
+  // 只归一化关键词，不为每个单元格建立小写副本。
+  expect(lower).toHaveBeenCalledTimes(1)
+})
