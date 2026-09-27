@@ -2,6 +2,7 @@
 
 use crate::framework::data_transfer::{
     adapter::{self, DatasetAdapter, MergeTarget, StagingTarget},
+    lineage::ImportMap,
     records,
     types::*,
 };
@@ -9,7 +10,7 @@ use crate::framework::{paths, store::PluginDb};
 use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
@@ -258,22 +259,47 @@ fn local_contents(
     context: &ImportContext<'_>,
 ) -> Result<Vec<Value>, String> {
     let mut local = inventory(app)?;
-    local.retain(|candidate| {
-        items.iter().any(|item| {
-            candidate["id"] == item["id"]
-                || candidate["name"] == item["name"]
-                || context.merge.is_some_and(|view| {
-                    view.core.lineage.entries.iter().any(|entry| {
-                        entry.source_space_id == context.source_space_id
-                            && entry.dataset == CONTENT
-                            && Some(entry.source_id.as_str()) == item["id"].as_str()
-                            && Some(entry.target_id.as_str()) == candidate["id"].as_str()
-                    })
-                })
-        })
-    });
+    retain_matching_contents(
+        &mut local,
+        items,
+        &context.source_space_id,
+        context.merge.map(|view| view.core.lineage),
+    )?;
     include_contents(app, &mut local)?;
     Ok(local)
+}
+
+fn retain_matching_contents(
+    local: &mut Vec<Value>,
+    items: &[Value],
+    source_space: &str,
+    lineage: Option<&ImportMap>,
+) -> Result<(), String> {
+    let mut ids = BTreeSet::new();
+    let mut names = BTreeSet::new();
+    for item in items {
+        ids.insert(records::string(item, "id")?);
+        names.insert(records::string(item, "name")?);
+    }
+    let mut mapped = BTreeSet::new();
+    if let Some(lineage) = lineage {
+        for entry in &lineage.entries {
+            if entry.source_space_id == source_space
+                && entry.dataset == CONTENT
+                && ids.contains(entry.source_id.as_str())
+            {
+                mapped.insert(entry.target_id.as_str());
+            }
+        }
+    }
+    // 借用小字段建立本次索引，保留 inventory 的顺序；只读取实际可能参与冲突的正文。
+    local.retain(|candidate| {
+        candidate["id"]
+            .as_str()
+            .is_some_and(|id| ids.contains(id) || mapped.contains(id))
+            || candidate["name"].as_str().is_some_and(|name| names.contains(name))
+    });
+    Ok(())
 }
 
 fn validate(dataset: &str, records: &[Value]) -> Result<(), String> {
@@ -525,10 +551,12 @@ impl DatasetAdapter for FrpAdapter {
                         context,
                         false,
                     )?;
+                    let mut content_by_id = BTreeMap::new();
+                    for content in &content_plan {
+                        content_by_id.entry(content.id.as_str()).or_insert(content);
+                    }
                     for item in &mut planned {
-                        if let Some(content) =
-                            content_plan.iter().find(|content| content.id == item.id)
-                        {
+                        if let Some(content) = content_by_id.get(item.id.as_str()) {
                             item.decision = content.decision;
                             item.target_id = content.target_id.clone();
                             item.conflict = false;
@@ -577,6 +605,29 @@ pub(super) fn register() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_candidates_preserve_identity_name_and_scoped_lineage_matches() {
+        let items = vec![json!({"id":"source","name":"source.toml"})];
+        let mut lineage = ImportMap::default();
+        lineage.record("origin", CONTENT, "source", "copy", "package", "now");
+        lineage.record("other", CONTENT, "source", "wrong-space", "package", "now");
+        lineage.record("origin", META, "source", "wrong-dataset", "package", "now");
+        lineage.record("origin", CONTENT, "unselected", "wrong-source", "package", "now");
+        let mut local = vec![
+            json!({"id":"copy","name":"copy.toml"}),
+            json!({"id":"wrong-space","name":"a.toml"}),
+            json!({"id":"wrong-dataset","name":"b.toml"}),
+            json!({"id":"wrong-source","name":"c.toml"}),
+            json!({"id":"same-name","name":"source.toml"}),
+            json!({"id":"source","name":"renamed.toml"}),
+        ];
+        let expected = vec![local[0].clone(), local[4].clone(), local[5].clone()];
+        retain_matching_contents(&mut local, &items, "origin", Some(&lineage)).unwrap();
+        assert_eq!(local, expected);
+        retain_matching_contents(&mut local, &[], "origin", Some(&lineage)).unwrap();
+        assert!(local.is_empty());
+    }
 
     #[test]
     fn content_read_rechecks_growth_and_counts_actual_utf8_bytes() {
