@@ -84,17 +84,25 @@ impl PreparedConfig {
 
     /// 先按实际秘密精确脱敏，再执行通用日志清理，覆盖短 Token 与无关键字回显。
     pub fn redact(&self, text: &str) -> String {
-        let mut result = text.to_string();
+        self.redact_owned(text.to_string())
+    }
+
+    /// 接管运行日志的缓冲，没有命中秘密时不为每次替换再复制整行。
+    pub fn redact_owned(&self, mut result: String) -> String {
         for value in [&self.escaped, &self.token].into_iter().flatten() {
             if !value.is_empty() {
-                result = result.replace(value, "***");
+                if result.contains(value) {
+                    result = result.replace(value, "***");
+                }
                 // 日志按行消费，包含换行的 Token 也不能以片段形式泄露。
                 for line in value.lines().filter(|line| !line.is_empty()) {
-                    result = result.replace(line, "***");
+                    if result.contains(line) {
+                        result = result.replace(line, "***");
+                    }
                 }
             }
         }
-        super::verify::clean_line(&result)
+        super::verify::clean_line_owned(result)
     }
 }
 
@@ -189,6 +197,26 @@ pub(super) async fn prepare(app: &AppHandle, path: &Path) -> Result<PreparedConf
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn owned_log_reuses_plain_buffer_and_preserves_exact_multiline_redaction() {
+        let config = PreparedConfig {
+            path: PathBuf::new(),
+            temporary: false,
+            token: Some("xy\nzq".into()),
+            escaped: Some("xy\\nzq".into()),
+        };
+        let text = "[INFO] ordinary output ".to_string() + &"a".repeat(100_000);
+        let pointer = text.as_ptr();
+        assert_eq!(config.redact_owned(text).as_ptr(), pointer);
+        for input in ["value xy", "value zq", "value xy\\nzq", "value xy\nzq"] {
+            assert_eq!(config.redact_owned(input.into()), "value ***");
+        }
+        assert_eq!(
+            config.redact_owned("\u{1b}[31mvalue xy\u{1b}[0m".into()),
+            "value ***"
+        );
+    }
 
     #[test]
     fn short_tokens_are_redacted_and_temporary_files_are_removed() {

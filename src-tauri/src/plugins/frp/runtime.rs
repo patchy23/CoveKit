@@ -281,7 +281,7 @@ fn spawn_reader<R>(
                     break;
                 }
             };
-            let line = config.redact(&raw);
+            let line = config.redact_owned(raw);
             // 日志与状态一次交付，正文不复制进应用诊断文件。
             update(&app, &file_name, Some(stream), |run| {
                 run.record_line(line);

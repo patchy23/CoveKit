@@ -3,6 +3,7 @@
 //! `run_verify` 才碰真实进程。解析必须能降级：frpc 各版本文案不一致时，宁可把原始输出作为一条错误
 //! 抛出，也不静默吞掉（任务书 §10 风险对策）。
 
+use std::borrow::Cow;
 use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
@@ -29,7 +30,10 @@ const ERROR_MARKERS: &[&str] = &[
 ];
 
 /// 剥除 ANSI 转义序列（frpc 带色输出；不去掉会污染错误信息与关键字匹配）
-pub fn strip_ansi(text: &str) -> String {
+pub fn strip_ansi(text: &str) -> Cow<'_, str> {
+    if !text.contains('\u{1b}') {
+        return Cow::Borrowed(text);
+    }
     let mut out = String::with_capacity(text.len());
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -47,7 +51,7 @@ pub fn strip_ansi(text: &str) -> String {
             }
         }
     }
-    out
+    Cow::Owned(out)
 }
 
 /// 取关键字后紧跟的十进制数字（如 `line 3` / `column 5`）；无数字返回 None
@@ -125,7 +129,23 @@ pub fn parse_verify_output(raw: &str, exit_ok: bool) -> Vec<FrpVerifyError> {
 /// `runtime.rs` 推送的 `frp://log` 与写入 `lastError` 的文本都经此处理：
 /// 避免终端配色残留，也避免 token 与密码随错误提示外泄。
 pub fn clean_line(text: &str) -> String {
-    mask_secrets(&strip_ansi(text))
+    let stripped = strip_ansi(text);
+    match mask_secrets(&stripped) {
+        Cow::Borrowed(_) => stripped.into_owned(),
+        Cow::Owned(masked) => masked,
+    }
+}
+
+/// 运行日志已拥有正文时复用其缓冲；只有实际清理改变内容才分配替代正文。
+pub(super) fn clean_line_owned(text: String) -> String {
+    let stripped = match strip_ansi(&text) {
+        Cow::Borrowed(_) => text,
+        Cow::Owned(stripped) => stripped,
+    };
+    match mask_secrets(&stripped) {
+        Cow::Borrowed(_) => stripped,
+        Cow::Owned(masked) => masked,
+    }
 }
 
 /// 敏感值打码：仅当关键字后的取值「看起来像密钥」时才替换为 `***`。
@@ -133,14 +153,19 @@ pub fn clean_line(text: &str) -> String {
 /// 判定规则：跳过空白与分隔符后，取值长度 ≥ 6 且以空白 / 逗号 / 引号 / 右花括号终止。
 /// 这样 `auth.token = "s3cr3t"`、`--token abc123`、`password: hunter2` 会被打码，
 /// 而 frp 的自然语句提示（`token is incorrect`）保持原文，不把错误信息本身打废。
-fn mask_secrets(text: &str) -> String {
+fn mask_secrets(text: &str) -> Cow<'_, str> {
     /// 触发打码的关键字（小写比较）
     const SECRET_KEYS: [&str; 4] = ["token", "password", "passwd", "secret"];
     /// 取值最短长度（短于此长度的连续词按普通文本处理）
     const MIN_SECRET_LEN: usize = 6;
 
-    let lower = text.to_ascii_lowercase();
-    let mut out = String::with_capacity(text.len());
+    let lower = if text.bytes().any(|byte| byte.is_ascii_uppercase()) {
+        Cow::Owned(text.to_ascii_lowercase())
+    } else {
+        Cow::Borrowed(text)
+    };
+    let mut out: Option<String> = None;
+    let mut copied = 0usize;
     let mut cursor = 0usize;
     while cursor < text.len() {
         let mut hit: Option<(usize, &str)> = None;
@@ -153,11 +178,9 @@ fn mask_secrets(text: &str) -> String {
             }
         }
         let Some((start, key)) = hit else {
-            out.push_str(&text[cursor..]);
             break;
         };
         let after = start + key.len();
-        out.push_str(&text[cursor..after]);
         let rest = &text[after..];
         let trimmed = rest.trim_start_matches([' ', '\t', '=', ':', '"', '\'']);
         let value_start = after + (rest.len() - trimmed.len());
@@ -170,10 +193,19 @@ fn mask_secrets(text: &str) -> String {
             cursor = after;
             continue;
         }
-        out.push_str("***");
+        let output = out.get_or_insert_with(|| String::with_capacity(text.len()));
+        output.push_str(&text[copied..after]);
+        output.push_str("***");
         cursor = value_start + end;
+        copied = cursor;
     }
-    out
+    match out {
+        Some(mut output) => {
+            output.push_str(&text[copied..]);
+            Cow::Owned(output)
+        }
+        None => Cow::Borrowed(text),
+    }
 }
 
 /// 拼装校验结果（纯函数）：`ok` 取 frpc 退出码，`raw` 由调用方脱敏后传入。
@@ -294,5 +326,27 @@ mod tests {
         assert_eq!(strip_ansi("\u{1b}[31mred\u{1b}[0m"), "red");
         assert_eq!(strip_ansi("no-escape"), "no-escape");
         assert_eq!(strip_ansi("a\u{1b}[1;32mb\u{1b}[0mc"), "abc");
+    }
+
+    #[test]
+    fn unchanged_owned_lines_reuse_buffer_and_masking_keeps_original_boundaries() {
+        for prefix in ["info message ", "[INFO] token is incorrect "] {
+            let text = prefix.to_string() + &"x".repeat(100_000);
+            let pointer = text.as_ptr();
+            let cleaned = clean_line_owned(text);
+            assert_eq!(cleaned.as_ptr(), pointer);
+        }
+        for (input, expected) in [
+            ("auth.token = \"s3cr3t\"", "auth.token***\""),
+            ("token x password hunter2 secret cat", "token x password*** secret cat"),
+            ("myTOKEN=aBc123, PASSWORD: 'abcdef'", "myTOKEN***, PASSWORD***'"),
+            ("中文 secret=秘密你好, end", "中文 secret***, end"),
+            ("\u{1b}[31mpassword: hunter2\u{1b}[0m", "password***"),
+        ] {
+            assert_eq!(clean_line(input), expected);
+            assert_eq!(clean_line_owned(input.to_string()), expected);
+        }
+        assert!(matches!(strip_ansi("plain"), Cow::Borrowed(_)));
+        assert!(matches!(mask_secrets("token is incorrect"), Cow::Borrowed(_)));
     }
 }
