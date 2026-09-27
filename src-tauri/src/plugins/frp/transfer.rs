@@ -28,16 +28,16 @@ impl crate::framework::credential_refs::CredentialReferenceProvider for FrpAdapt
         &self,
         app: &AppHandle,
     ) -> Result<Vec<crate::framework::credential_refs::CredentialReference>, String> {
-        let mut items = inventory(app)?;
-        include_contents(app, &mut items)?;
+        let items = inventory(app)?;
+        let ids = content_references(app, &items)?;
         let mut references = Vec::new();
-        for item in items {
-            if let Some(id) = super::auth::reference_in(records::string(&item, "content")?)? {
+        for (item, id) in items.iter().zip(ids) {
+            if let Some(id) = id {
                 references.push(crate::framework::credential_refs::CredentialReference {
                     owner: "frp".into(),
                     credential_id: id,
-                    object_id: records::string(&item, "id")?.into(),
-                    object_name: records::string(&item, "name")?.into(),
+                    object_id: records::string(item, "id")?.into(),
+                    object_name: records::string(item, "name")?.into(),
                 });
             }
         }
@@ -174,30 +174,57 @@ fn include_contents(app: &AppHandle, items: &mut [Value]) -> Result<(), String> 
     let db = PluginDb::open(app, "frp", super::MIGRATIONS)?;
     let mut total = 0u64;
     for record in items {
-        let name: Option<String> = db.with_conn(|conn| {
-            conn.query_row(
-                "SELECT file_name FROM profile_meta WHERE uid=?1",
-                [records::string(record, "id")?],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|e| e.to_string())
-        })?;
-        let name = name.as_deref().unwrap_or(records::string(record, "name")?);
-        let path = directory_for(app, name)?.join(name);
-        let metadata = path.symlink_metadata().map_err(|e| e.to_string())?;
-        if !metadata.is_file() {
-            return Err("FRP 配置不是普通文件".into());
-        }
-        total = total.saturating_add(metadata.len());
-        if metadata.len() > MAX_RECORD_BYTES as u64 || total > 32 * 1024 * 1024 {
-            return Err("所选 FRP 配置超过数据包大小上限".into());
-        }
-        record["content"] = Value::String(
-            std::fs::read_to_string(path).map_err(|e| format!("读取所选 FRP 配置失败: {e}"))?,
-        );
+        let content = read_content(app, &db, record, &mut total)?;
+        record["content"] = Value::String(content);
     }
     Ok(())
+}
+
+fn read_content(
+    app: &AppHandle,
+    db: &PluginDb,
+    record: &Value,
+    total: &mut u64,
+) -> Result<String, String> {
+    let name: Option<String> = db.with_conn(|conn| {
+        conn.query_row(
+            "SELECT file_name FROM profile_meta WHERE uid=?1",
+            [records::string(record, "id")?],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| e.to_string())
+    })?;
+    let name = name.as_deref().unwrap_or(records::string(record, "name")?);
+    let path = directory_for(app, name)?.join(name);
+    let metadata = path.symlink_metadata().map_err(|e| e.to_string())?;
+    if !metadata.is_file() {
+        return Err("FRP 配置不是普通文件".into());
+    }
+    *total = (*total).saturating_add(metadata.len());
+    if metadata.len() > MAX_RECORD_BYTES as u64 || *total > 32 * 1024 * 1024 {
+        return Err("所选 FRP 配置超过数据包大小上限".into());
+    }
+    std::fs::read_to_string(path).map_err(|e| format!("读取所选 FRP 配置失败: {e}"))
+}
+
+fn content_references(app: &AppHandle, items: &[Value]) -> Result<Vec<Option<String>>, String> {
+    let db = PluginDb::open(app, "frp", super::MIGRATIONS)?;
+    let mut total = 0u64;
+    collect_content_references(
+        items
+            .iter()
+            .map(|record| read_content(app, &db, record, &mut total)),
+    )
+}
+
+// 目录和凭证扫描只保留引用；每个正文在读取下一文件前释放，不进入聚合 JSON。
+fn collect_content_references(
+    contents: impl Iterator<Item = Result<String, String>>,
+) -> Result<Vec<Option<String>>, String> {
+    contents
+        .map(|content| super::auth::reference_in(&content?))
+        .collect()
 }
 
 fn local_contents(
@@ -353,25 +380,26 @@ impl DatasetAdapter for FrpAdapter {
             kind: "credential".into(),
             dataset: "vault.credentials".into(),
         });
-        let mut with_contents = records;
-        include_contents(app, &mut with_contents)?;
+        let references = content_references(app, &records)?;
+        let mut by_id = BTreeMap::new();
+        for (record, reference) in records.iter().zip(references) {
+            // 保留旧 find 的首项规则，包括首项没有凭证引用的情况。
+            by_id
+                .entry(records::string(record, "id")?)
+                .or_insert(reference);
+        }
         for entry in &mut contents.entries {
             entry.dependencies.push(DependencyEdge {
                 kind: "frpProfile".into(),
                 from_id: entry.id.clone(),
                 to_id: entry.id.clone(),
             });
-            if let Some(record) = with_contents
-                .iter()
-                .find(|record| record["id"].as_str() == Some(entry.id.as_str()))
-            {
-                if let Some(id) = super::auth::reference_in(records::string(record, "content")?)? {
-                    entry.dependencies.push(DependencyEdge {
-                        kind: "credential".into(),
-                        from_id: entry.id.clone(),
-                        to_id: id,
-                    });
-                }
+            if let Some(Some(id)) = by_id.get(entry.id.as_str()) {
+                entry.dependencies.push(DependencyEdge {
+                    kind: "credential".into(),
+                    from_id: entry.id.clone(),
+                    to_id: id.clone(),
+                });
             }
         }
         Ok(vec![metadata, contents])
@@ -524,6 +552,45 @@ pub(super) fn register() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reference_scan_preserves_order_and_absent_references() {
+        let source = [
+            "serverAddr = 'example.invalid'".to_string(),
+            format!("auth.token = '{}'", super::super::auth::token_reference("one")),
+            // 没有引用的原文沿用现有语义，不额外要求它能解析为 TOML。
+            "unfinished configuration".to_string(),
+            format!("auth.token = '{}'", super::super::auth::token_reference("two")),
+        ];
+        assert_eq!(
+            collect_content_references(source.into_iter().map(Ok)).unwrap(),
+            vec![None, Some("one".into()), None, Some("two".into())]
+        );
+    }
+
+    #[test]
+    fn reference_scan_propagates_read_and_parse_failures_without_reading_ahead() {
+        let reads = std::cell::Cell::new(0);
+        let malformed = format!("auth.token = '{}", super::super::auth::token_reference("one"));
+        let source = [Ok(malformed), Ok("unused".into())];
+        let result = collect_content_references(source.into_iter().inspect(|_| {
+            reads.set(reads.get() + 1);
+        }));
+        assert!(result.is_err());
+        assert_eq!(reads.get(), 1);
+
+        reads.set(0);
+        let source = [
+            Ok("no reference".into()),
+            Err("读取失败".into()),
+            Ok("unused".into()),
+        ];
+        let result = collect_content_references(source.into_iter().inspect(|_| {
+            reads.set(reads.get() + 1);
+        }));
+        assert_eq!(result.unwrap_err(), "读取失败");
+        assert_eq!(reads.get(), 2);
+    }
 
     #[test]
     fn credential_dependencies_and_import_mapping_follow_the_file() {
