@@ -162,6 +162,7 @@ export function useRequestSession(
     state.error = ''
     const token = ++epoch
     state.busy = true
+    let awaitingSse = false
     try {
       await release()
       if (disposed || token !== epoch) return
@@ -202,6 +203,7 @@ export function useRequestSession(
         state.connected = session.open
         void poll(token, session.id)
       } else {
+        awaitingSse = true
         const id = crypto.randomUUID()
         sseId = id
         state.entries = []
@@ -220,7 +222,7 @@ export function useRequestSession(
         state.connected = false
       }
     } finally {
-      if (!disposed && token === epoch && getDraft().type !== 'sse') state.busy = false
+      if (!disposed && token === epoch && !awaitingSse) state.busy = false
     }
   }
   async function send() {

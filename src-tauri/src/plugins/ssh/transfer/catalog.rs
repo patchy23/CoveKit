@@ -230,7 +230,7 @@ pub(super) fn visit_export(
                 path: row.get("path").map_err(|e| e.to_string())?,
                 sort: row.get("sort").map_err(|e| e.to_string())?,
             }),
-            _ => unreachable!(),
+            other => return Err(format!("SSH 适配器不支持数据集 {other}")),
         }.map_err(|e| format!("{dataset} 记录序列化失败: {e}"))?;
         emit(value)?;
         count += 1;

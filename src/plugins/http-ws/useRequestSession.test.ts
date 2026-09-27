@@ -99,9 +99,13 @@ describe('每个页签的请求与连接所有权', () => {
     expect(mock.validate).toHaveBeenCalledWith(original)
     expect(mock.httpRequest).not.toHaveBeenCalled()
     draft.body = '{"new input":2}'
+    draft.type = 'sse'
     validation.resolve(true)
     await sending
     expect(mock.httpRequest.mock.calls[0][0].body).toBe(original)
+    expect(session.state.busy).toBe(false)
+    expect(mock.sseStart).not.toHaveBeenCalled()
+    draft.type = 'http'
     const late = deferred<boolean>()
     mock.validate.mockReturnValue(late.promise)
     draft.body = original
