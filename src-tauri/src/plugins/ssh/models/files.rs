@@ -97,16 +97,19 @@ pub struct RemoteFileContent {
 pub struct EditSaveResult {
     /// 保存是否成功
     pub(crate) ok: bool,
-    /// 失败原因（成功时省略）
+    /// 写入或写后核对的失败原因。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
     /// 远端文件已被他人修改（乐观锁冲突），未写入
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) conflict: Option<bool>,
-    /// 冲突时远端当前 mtime（毫秒）
+    /// 写后核对或冲突时远端当前 mtime（毫秒）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) current_mtime: Option<u64>,
     /// 冲突时远端当前内容（供前端展示差异对比；读取失败或超限时省略）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) remote_content: Option<String>,
+    /// 已写入内容是否通过完整回读核对；缺省用于兼容旧结果契约。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) verified: Option<bool>,
 }

@@ -133,13 +133,16 @@ export interface EditSaveResult {
 
   conflict?: boolean
 
-  /** 冲突时远端当前 mtime（毫秒） */
+  /** 写后核对或冲突时远端当前 mtime（毫秒） */
 
   currentMtime?: number
 
   /** 冲突时远端当前内容（供差异对比；后端读取失败或超限时省略） */
 
   remoteContent?: string
+
+  /** 已写入内容是否通过完整回读核对；缺省时兼容旧端并自行回读。 */
+  verified?: boolean
 }
 
 /* ── 资源监控 ── */

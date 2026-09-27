@@ -96,6 +96,19 @@ export function useRemoteEditor(connection: () => ServerConnection | undefined) 
       // 只标记本次提交的内容；保存期间新输入仍保持 dirty。
       doc.saved = content
       doc.conflict = false
+      doc.remoteContent = undefined
+      if (result.verified !== undefined) {
+        if (result.verified) {
+          doc.modifiedAt = result.currentMtime
+          return true
+        }
+        doc.conflict = true
+        doc.remoteContent = result.remoteContent
+        doc.error = result.error
+          ? `文件已写入，但版本核对失败：${result.error}`
+          : '文件已写入，但远端内容已变化；再次保存前请核对远端'
+        return false
+      }
       const fresh = await ipc.sshEditOpen(id, doc.path)
       if (disposed || connection()?.sessionId !== id) return false
       if (fresh.ok && fresh.content === content) {

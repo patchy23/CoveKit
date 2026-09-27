@@ -83,13 +83,17 @@ pub async fn ssh_edit_save(
         if current != expected {
             // 附带远端当前内容：前端据此展示差异，让用户在「看清楚改了什么」之后再决定
             // 强制覆盖或放弃。读取失败（权限/非 UTF-8/超限）时省略该字段，不阻断冲突上报。
-            let remote_content = read_remote_text(&sftp, &target_path).await.ok();
+            let remote_content = read_remote_text(&sftp, &target_path)
+                .await
+                .ok()
+                .map(|(content, _)| content);
             return Ok(EditSaveResult {
                 ok: false,
                 error: Some("CONFLICT".into()),
                 conflict: Some(true),
                 current_mtime: Some(current),
                 remote_content,
+                verified: None,
             });
         }
     }
@@ -128,13 +132,25 @@ pub async fn ssh_edit_save(
     // 替换失败时 replace_remote_file 内部已按需清理/保留临时文件
     //（恢复旧文件失败的双重失败场景会刻意保留临时文件，作为新内容的唯一副本）
     replace_remote_file(&sftp, &temp_path, &target_path).await?;
-    Ok(EditSaveResult {
+    // 完整回读仍保留，正常结果只返回核对结论，避免再次向 WebView 搬运全文。
+    let fresh = read_remote_text(&sftp, &remote_path).await;
+    Ok(verified_save_result(&content, fresh))
+}
+
+fn verified_save_result(expected: &str, fresh: Result<(String, u64), String>) -> EditSaveResult {
+    let (verified, current_mtime, remote_content, error) = match fresh {
+        Ok((content, modified_at)) if content == expected => (true, Some(modified_at), None, None),
+        Ok((content, modified_at)) => (false, Some(modified_at), Some(content), None),
+        Err(error) => (false, None, None, Some(error)),
+    };
+    EditSaveResult {
         ok: true,
-        error: None,
+        error,
         conflict: None,
-        current_mtime: None,
-        remote_content: None,
-    })
+        current_mtime,
+        remote_content,
+        verified: Some(verified),
+    }
 }
 
 /// 读取远端文本文件（供冲突对比展示）
@@ -144,7 +160,7 @@ pub async fn ssh_edit_save(
 async fn read_remote_text(
     sftp: &russh_sftp::client::SftpSession,
     path: &str,
-) -> Result<String, String> {
+) -> Result<(String, u64), String> {
     let meta = sftp
         .metadata(path)
         .await
@@ -167,5 +183,30 @@ async fn read_remote_text(
     if buf.capacity() > buf.len().saturating_mul(2) {
         buf.shrink_to_fit();
     }
-    String::from_utf8(buf).map_err(|_| "远端内容不是有效 UTF-8 文本".to_string())
+    let content =
+        String::from_utf8(buf).map_err(|_| "远端内容不是有效 UTF-8 文本".to_string())?;
+    Ok((content, meta.mtime.unwrap_or(0) as u64 * 1000))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn verified_write_omits_identical_body_but_keeps_changed_body_and_read_failure() {
+        let result = verified_save_result("中文\n", Ok(("中文\n".into(), 123)));
+        assert!(result.ok);
+        assert_eq!(result.verified, Some(true));
+        assert_eq!(result.current_mtime, Some(123));
+        assert!(result.remote_content.is_none());
+        let result = verified_save_result("expected", Ok(("changed".into(), 456)));
+        assert!(result.ok);
+        assert_eq!(result.verified, Some(false));
+        assert_eq!(result.remote_content.as_deref(), Some("changed"));
+        let result = verified_save_result("expected", Err("读取失败".into()));
+        assert!(result.ok);
+        assert_eq!(result.verified, Some(false));
+        assert_eq!(result.error.as_deref(), Some("读取失败"));
+        assert!(result.current_mtime.is_none());
+    }
 }

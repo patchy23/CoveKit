@@ -73,6 +73,47 @@ it('冲突后禁止普通覆盖，明确覆盖才省略基线', async () => {
   expect(await editor.save(doc, true)).toBe(true)
   expect(env.save).toHaveBeenLastCalledWith('s', '/file', 'local', undefined)
 })
+
+it('后端完整核对成功不再跨 IPC 回传全文，保存期间的新输入仍保留', async () => {
+  env.open.mockResolvedValue(file())
+  const { editor } = setup()
+  await editor.openFile({ path: '/file' })
+  const doc = editor.current.value!
+  doc.content = 'submitted'
+  doc.remoteContent = 'old conflict'
+  let finish!: (value: { ok: boolean; verified: boolean; currentMtime: number }) => void
+  env.save.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+  const saving = editor.save(doc)
+  doc.content = 'new typing'
+  finish({ ok: true, verified: true, currentMtime: 456 })
+  expect(await saving).toBe(true)
+  expect(env.open).toHaveBeenCalledOnce()
+  expect(doc.saved).toBe('submitted')
+  expect(doc.content).toBe('new typing')
+  expect(doc.modifiedAt).toBe(456)
+  expect(doc.remoteContent).toBeUndefined()
+})
+
+it.each([
+  { ok: true, verified: false, remoteContent: 'externally changed' },
+  { ok: true, verified: false, error: '读取失败' },
+])('写入后内容变化或回读失败仍阻止普通覆盖', async (result) => {
+  env.open.mockResolvedValue(file())
+  const { editor } = setup()
+  await editor.openFile({ path: '/file' })
+  const doc = editor.current.value!
+  doc.content = 'submitted'
+  env.save.mockResolvedValue(result)
+  expect(await editor.save(doc)).toBe(false)
+  expect(doc.saved).toBe('submitted')
+  expect(doc.conflict).toBe(true)
+  expect(doc.modifiedAt).toBe(1)
+  expect(doc.remoteContent).toBe(result.remoteContent)
+  expect(doc.error).toContain('文件已写入')
+  expect(await editor.save(doc)).toBe(false)
+  expect(env.save).toHaveBeenCalledOnce()
+  expect(env.open).toHaveBeenCalledOnce()
+})
 it('断线保持草稿，卸载后迟到的读取不创建文件', async () => {
   env.open.mockResolvedValue(file())
   const { editor, connection, wrapper } = setup()
