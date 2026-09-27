@@ -24,6 +24,11 @@ impl<W> LimitedWriter<W> {
         self.exceeded
     }
 
+    /// 当前剩余预算，用于复用既有序列化遍历累计多个数据集的字节数。
+    pub(super) fn remaining(&self) -> usize {
+        self.remaining
+    }
+
     /// 取出已写入的正文或原接收端。
     pub(super) fn into_inner(self) -> W {
         self.inner

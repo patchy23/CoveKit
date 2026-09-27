@@ -244,6 +244,8 @@ pub(crate) fn build_manifest(
         .collect();
     let space_id = space::current_id()?;
     let mut manifest = PackageManifest::new(&space_id, &space::display_name(app, &space_id));
+    // 正文只是完整包的下界；借摘要遍历提前停止确定超额的聚合，最终仍校验完整容器。
+    let mut remaining = super::package::MAX_PLAINTEXT_BYTES as usize;
 
     for (name, ids) in &resolved.datasets {
         let Some(descriptor) = descriptors.iter().find(|item| item.name == *name) else {
@@ -274,7 +276,7 @@ pub(crate) fn build_manifest(
         manifest
             .dependencies
             .extend(owner_adapter.enumerate_references(name, &records)?);
-        manifest.datasets.push(block_carrying(descriptor, records)?);
+        manifest.datasets.push(block_carrying(descriptor, records, &mut remaining)?);
     }
 
     // 显式排除项：目录里有候选记录、本次没进包的类别（界面据此告知「没有带出什么」）

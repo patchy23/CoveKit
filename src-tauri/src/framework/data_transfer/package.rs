@@ -37,7 +37,7 @@ const NONCE_LEN: usize = 12;
 /// AES-GCM 认证标签长度（字节）
 const GCM_TAG_LEN: u64 = 16;
 /// 明文上限（32 MiB，§4.3）
-const MAX_PLAINTEXT_BYTES: u64 = 32 * 1024 * 1024;
+pub(super) const MAX_PLAINTEXT_BYTES: u64 = 32 * 1024 * 1024;
 /// 头部长度（magic ‖ version ‖ algo ‖ mCost ‖ tCost ‖ pCost ‖ salt ‖ nonce ‖ cipherLen）
 const HEADER_LEN: usize = 8 + 2 + 1 + 4 + 4 + 1 + SALT_LEN + NONCE_LEN + 8;
 

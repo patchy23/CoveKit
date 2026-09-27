@@ -117,14 +117,30 @@ impl PackageManifest {
 
 /// 记录体摘要：本仓库序列化结果的 sha256（hex 小写）
 pub(crate) fn dataset_digest(records: &Value) -> Result<String, String> {
-    let mut writer = io::BufWriter::new(DigestWriter(Sha256::new()));
-    serde_json::to_writer(&mut writer, records)
-        .map_err(|e| format!("记录体序列化失败: {e}"))?;
-    let hasher = writer
+    dataset_digest_with_limit(records, usize::MAX).map(|(digest, _)| digest)
+}
+
+fn dataset_digest_with_limit(records: &Value, limit: usize) -> Result<(String, usize), String> {
+    let mut writer = io::BufWriter::new(LimitedWriter::new(DigestWriter(Sha256::new()), limit));
+    if let Err(error) = serde_json::to_writer(&mut writer, records) {
+        return Err(if writer.get_ref().exceeded() {
+            "数据包明文超过上限，请缩小导出范围".into()
+        } else {
+            format!("记录体序列化失败: {error}")
+        });
+    }
+    if let Err(error) = writer.flush() {
+        return Err(if writer.get_ref().exceeded() {
+            "数据包明文超过上限，请缩小导出范围".into()
+        } else {
+            format!("记录体摘要失败: {error}")
+        });
+    }
+    let limited = writer
         .into_inner()
-        .map_err(|e| format!("记录体摘要失败: {e}"))?
-        .0;
-    Ok(hex::encode(hasher.finalize()))
+        .map_err(|e| format!("记录体摘要失败: {e}"))?;
+    let used = limit - limited.remaining();
+    Ok((hex::encode(limited.into_inner().0.finalize()), used))
 }
 
 /// 摘要只消费序列化字节；外层小缓冲合并 token 写入，避免持有整份记录正文。
@@ -431,14 +447,16 @@ impl ResolvedSelection {
     }
 }
 
-/// 由描述符与记录体构造「带记录」的块（条数与摘要一次算好，避免各处手填）
+/// 构造带记录的块；复用摘要遍历扣减正文预算，不另行序列化或复制正文。
 pub(crate) fn block_carrying(
     descriptor: &DatasetDescriptor,
     records: Vec<Value>,
+    remaining: &mut usize,
 ) -> Result<DatasetBlock, String> {
     let record_count = records.len();
     let body = Value::Array(records);
-    let sha256 = dataset_digest(&body)?;
+    let (sha256, bytes) = dataset_digest_with_limit(&body, *remaining)?;
+    *remaining -= bytes;
     Ok(DatasetBlock {
         name: descriptor.name.clone(),
         schema_version: descriptor.schema_version,
@@ -704,6 +722,28 @@ mod tests {
                 dataset_digest(&records).unwrap(),
                 hex::encode(Sha256::digest(bytes))
             );
+        }
+    }
+
+    #[test]
+    fn digest_budget_counts_exact_json_bytes_across_buffered_and_direct_writes() {
+        for records in [
+            json!([]),
+            json!([{"text":"中文🙂\n\""}]),
+            json!([{"text":"large".repeat(10000)}]),
+        ] {
+            let bytes = serde_json::to_vec(&records).unwrap();
+            let (digest, used) = dataset_digest_with_limit(&records, bytes.len()).unwrap();
+            assert_eq!(used, bytes.len());
+            assert_eq!(digest, hex::encode(Sha256::digest(&bytes)));
+            assert!(dataset_digest_with_limit(&records, bytes.len() - 1).is_err());
+            let mut remaining = bytes.len() * 2;
+            for _ in 0..2 {
+                let (_, used) = dataset_digest_with_limit(&records, remaining).unwrap();
+                remaining -= used;
+            }
+            assert_eq!(remaining, 0);
+            assert!(dataset_digest_with_limit(&records, remaining).is_err());
         }
     }
 
