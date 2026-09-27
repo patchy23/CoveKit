@@ -1,5 +1,28 @@
 //! 查询结果保真和预算：展示字符串只用于兼容网格，原值用于复制、导出与编辑。
 use super::models::{DbValue, QueryResult};
+use std::io::Write;
+
+/// JSON 编码沿用剩余结果预算；大字符串写入前拒绝，避免编码完才丢弃。
+struct JsonBuffer {
+    bytes: Vec<u8>,
+    limit: usize,
+    exceeded: bool,
+}
+
+impl Write for JsonBuffer {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        if bytes.len() > self.limit.saturating_sub(self.bytes.len()) {
+            self.exceeded = true;
+            return Err(std::io::Error::other("查询结果预算不足"));
+        }
+        self.bytes.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 /// 单次脚本累计保存预算；继续消费协议不再累计结果，避免连接带未读数据回池。
 pub(crate) struct ResultBudget {
@@ -33,6 +56,33 @@ impl ResultRow {
     /// 二进制预算按原有十六进制传输长度计算，不分配被丢弃的编码缓冲。
     pub(crate) fn binary(&mut self, bytes: &[u8]) {
         self.append(bytes.len().saturating_mul(2), || DbValue::binary(bytes));
+    }
+
+    /// 侧车的嵌套值按原 JSON 编码保真；超预算释放整行，后续小行仍可保留。
+    pub(crate) fn json(&mut self, value: &serde_json::Value) -> Result<(), String> {
+        if self.values.is_none() {
+            return Ok(());
+        }
+        if self.remaining < 128 {
+            self.values = None;
+            return Ok(());
+        }
+        let mut buffer = JsonBuffer {
+            bytes: Vec::new(),
+            limit: (self.remaining - 128) / 2,
+            exceeded: false,
+        };
+        if let Err(error) = serde_json::to_writer(&mut buffer, value) {
+            if buffer.exceeded {
+                self.values = None;
+                return Ok(());
+            }
+            return Err(format!("查询结果 JSON 编码失败: {error}"));
+        }
+        let text = String::from_utf8(buffer.bytes)
+            .map_err(|error| format!("查询结果 JSON 编码无效: {error}"))?;
+        self.value(DbValue::text("json", text));
+        Ok(())
     }
 
     /// 已拥有的小标量直接移动；大字段必须使用借用入口或预先核对长度。
@@ -174,6 +224,41 @@ impl QueryResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nested_json_uses_existing_budget_without_changing_encoding() {
+        let value = serde_json::json!({"text":"中文\n\u{0000}","array":[null,true,1.25,{"x":"\\\""}]});
+        let expected = value.to_string();
+        let mut row = ResultRow { remaining: expected.len() * 2 + 128, values: Some(Vec::new()) };
+        row.json(&value).unwrap();
+        let values = row.values.unwrap();
+        assert_eq!(values[0].kind, "json");
+        assert_eq!(values[0].value.as_deref(), Some(expected.as_str()));
+        let mut row = ResultRow { remaining: expected.len() * 2 + 127, values: Some(Vec::new()) };
+        row.json(&value).unwrap();
+        assert!(row.values.is_none());
+    }
+
+    #[test]
+    fn oversized_json_stops_before_copying_string_and_later_rows_survive() {
+        let value = serde_json::json!({"x":"x".repeat(5 * 1024 * 1024)});
+        let mut buffer = JsonBuffer { bytes: Vec::new(), limit: 64, exceeded: false };
+        assert!(serde_json::to_writer(&mut buffer, &value).is_err());
+        assert!(buffer.exceeded);
+        assert!(buffer.bytes.len() <= 64);
+        let mut budget = ResultBudget::new(10);
+        let mut result = QueryResult::empty();
+        let mut row = budget.row();
+        row.text("text", "前一列也随整行释放");
+        row.json(&value).unwrap();
+        budget.finish_row(&mut result, row);
+        assert!(result.truncated);
+        assert!(result.values.is_empty());
+        let mut row = budget.row();
+        row.json(&serde_json::json!([1,2])).unwrap();
+        budget.finish_row(&mut result, row);
+        assert_eq!(result.rows, [vec!["[1,2]"]]);
+    }
 
     #[test]
     fn rejected_rows_never_convert_and_do_not_exhaust_later_small_rows() {

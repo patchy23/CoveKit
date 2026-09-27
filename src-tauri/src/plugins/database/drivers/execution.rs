@@ -118,7 +118,7 @@ fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryRe
                     };
                     cells.text(kind, text);
                 }
-                other => cells.value(DbValue::text("json", other.to_string())),
+                other => cells.json(other)?,
             }
         }
         budget.finish_row(&mut result, cells);
@@ -128,6 +128,23 @@ fn decode(value: serde_json::Value, budget: &mut ResultBudget) -> Result<QueryRe
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn nested_json_budget_preserves_later_rows_and_protocol_validation() {
+        let mut budget = ResultBudget::new(10);
+        let large = serde_json::json!({"text":"x".repeat(5 * 1024 * 1024)});
+        let result = decode(serde_json::json!({
+            "columns":["nested"], "rows":[[large], [{"small":[1,true]}]]
+        }), &mut budget).unwrap();
+        assert!(result.truncated);
+        assert_eq!(result.values.len(), 1);
+        assert_eq!(result.values[0][0].kind, "json");
+        assert_eq!(result.values[0][0].value.as_deref(), Some("{\"small\":[1,true]}"));
+        let mut budget = ResultBudget::new(10);
+        assert!(decode(serde_json::json!({
+            "columns":["nested","raw"], "column_types":["JSON","RAW"],
+            "rows":[[{"text":"x".repeat(5 * 1024 * 1024)},"0xgg"]]
+        }), &mut budget).is_err());
+    }
     #[test]
     fn raw_validation_still_rejects_invalid_fields_after_budget_exhaustion() {
         for invalid in ["0x0", "0xgg", "0x你好"] {
