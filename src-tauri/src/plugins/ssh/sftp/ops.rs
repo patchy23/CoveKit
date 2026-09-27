@@ -154,6 +154,18 @@ pub struct TransferState(
 pub(crate) struct CancelFlag(Arc<std::sync::atomic::AtomicBool>);
 
 impl CancelFlag {
+    /// 仅用于可丢弃等待的 SFTP 请求；通道创建、落盘提交与清理由调用方收尾。
+    pub(crate) async fn wait<T, E: std::fmt::Display>(
+        &self,
+        operation: impl std::future::Future<Output = Result<T, E>>,
+    ) -> Result<T, String> {
+        tokio::select! {
+            biased;
+            _ = self.cancelled() => Err("已取消".into()),
+            result = operation => result.map_err(|error| error.to_string()),
+        }
+    }
+
     /// 等待协作取消，供目录扫描和阻塞网络读取退出。
     pub(crate) async fn cancelled(&self) {
         while !self.is_cancelled() {
@@ -164,6 +176,62 @@ impl CancelFlag {
     /// 是否已被请求取消
     pub(crate) fn is_cancelled(&self) -> bool {
         self.0.load(std::sync::atomic::Ordering::Relaxed)
+    }
+}
+
+#[cfg(test)]
+mod cancel_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[tokio::test]
+    async fn cancelled_wait_drops_pending_read_without_polling_next_operation() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let cancel = CancelFlag(Arc::clone(&flag));
+        let dropped = Arc::new(AtomicBool::new(false));
+        struct PendingRead(Arc<AtomicBool>);
+        impl Drop for PendingRead {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let read = async {
+            let _read = PendingRead(Arc::clone(&dropped));
+            started.send(()).unwrap();
+            std::future::pending::<Result<(), String>>().await
+        };
+        let trigger = async {
+            ready.await.unwrap();
+            flag.store(true, Ordering::Relaxed);
+        };
+        let (result, ()) = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::join!(cancel.wait(read), trigger)
+        })
+        .await
+        .unwrap();
+        assert_eq!(result, Err("已取消".into()));
+        assert!(dropped.load(Ordering::Relaxed));
+
+        let polled = AtomicBool::new(false);
+        assert_eq!(
+            cancel.wait(async {
+                polled.store(true, Ordering::Relaxed);
+                Ok::<_, String>(())
+            }).await,
+            Err("已取消".into())
+        );
+        assert!(!polled.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test]
+    async fn wait_preserves_operation_result_without_cancellation() {
+        let cancel = CancelFlag(Arc::new(AtomicBool::new(false)));
+        assert_eq!(cancel.wait(async { Ok::<_, String>(7) }).await, Ok(7));
+        assert_eq!(
+            cancel.wait(async { Err::<(), _>("读取失败") }).await,
+            Err("读取失败".into())
+        );
     }
 }
 
