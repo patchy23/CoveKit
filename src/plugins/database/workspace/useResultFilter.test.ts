@@ -120,8 +120,8 @@ it('数字与标点查询直接匹配正文，Unicode 大小写及混合关键�
       rows.filter((row) => row.some((cell) => cell.toLowerCase().includes(normalized)))
     )
   }
-  query.value = '2026-09'
   const lower = vi.spyOn(String.prototype, 'toLowerCase')
+  query.value = '2026-09'
   expect(filtered.value).toEqual([rows[0]])
   // 只归一化关键词，不为每个单元格建立小写副本。
   expect(lower).toHaveBeenCalledTimes(1)

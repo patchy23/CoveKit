@@ -200,28 +200,40 @@ const gridRows = computed(() =>
 
 /** 复制结果到剪贴板（TSV 制表符分隔） */
 async function copyResult() {
-  const source = queryState.value
-  const text = rowsToTsv(selectResultValues(db.filteredRows.value, source.values, rowIndex.value))
-  await copyText(text, '已复制筛选结果')
+  try {
+    const source = queryState.value
+    const index = rowIndex.value
+    const values = source.values
+    const filtered = await db.filteredRows.ready()
+    const text = rowsToTsv(selectResultValues(filtered, values, index))
+    await copyText(text, '已复制筛选结果')
+  } catch (error) {
+    if (!(error instanceof Error && error.name === 'AbortError')) db.showError(error)
+  }
 }
 
 /** 导出 CSV（对话框选路径 → dbc_export_csv 落盘） */
 async function exportCsv() {
   try {
     const source = queryState.value
-    const rows = selectResultValues(db.filteredRows.value, source.values, rowIndex.value)
+    const index = rowIndex.value
+    const values = source.values
+    const columns = source.columns
+    const truncated = source.truncated
+    const filtered = await db.filteredRows.ready()
+    const rows = selectResultValues(filtered, values, index)
     const path = await dialogSave({
       defaultPath: 'result.csv',
       filters: [{ name: 'CSV', extensions: ['csv'] }],
     })
     if (path) {
-      await fileIpc.exportRows(path, source.columns, rows)
+      await fileIpc.exportRows(path, columns, rows)
       ui.toast(
-        `已导出已加载结果中的 ${rows.length} 行${source.truncated ? '，原结果未完整' : ''}；NULL 编码为 \\N`
+        `已导出已加载结果中的 ${rows.length} 行${truncated ? '，原结果未完整' : ''}；NULL 编码为 \\N`
       )
     }
   } catch (err) {
-    db.showError(err)
+    if (!(err instanceof Error && err.name === 'AbortError')) db.showError(err)
   }
 }
 const exportRequest = ref('')

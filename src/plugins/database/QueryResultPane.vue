@@ -49,24 +49,50 @@ const emit = defineEmits<{
         size="xs"
         @update:model-value="emit('patch', { resultTab: String($event) })" />
       <template #trailing
-        ><span class="text-caption text-text-muted dark:text-text-muted-dark">{{
-          statusText
-        }}</span>
+        ><span
+          v-if="db.filteredRows.busy.value"
+          role="status"
+          class="text-caption text-secondary dark:text-secondary-dark"
+          >正在筛选…</span
+        >
+        <UiButton
+          v-if="db.filteredRows.busy.value"
+          variant="ghost"
+          @click="emit('patch', { filter: '', page: 1 })"
+          >取消筛选</UiButton
+        >
+        <span class="text-caption text-text-muted dark:text-text-muted-dark">{{ statusText }}</span>
         <UiIconButton
           label="复制筛选结果"
           size="xs"
-          :disabled="!db.filteredRows.value.length || queryState.status === 'running'"
+          :disabled="
+            (!db.filteredRows.busy.value && !db.filteredRows.value.length) ||
+            queryState.status === 'running' ||
+            !!db.filteredRows.error.value
+          "
           @click="emit('copy')"
           ><UiIcon name="copy" :size="12"
         /></UiIconButton>
         <UiIconButton
           label="导出筛选结果 CSV"
           size="xs"
-          :disabled="!db.filteredRows.value.length || queryState.status === 'running'"
+          :disabled="
+            (!db.filteredRows.busy.value && !db.filteredRows.value.length) ||
+            queryState.status === 'running' ||
+            !!db.filteredRows.error.value
+          "
           @click="emit('export')"
           ><UiIcon name="download" :size="12"
         /></UiIconButton> </template
     ></UiToolbar>
+    <UiAlert
+      v-if="db.filteredRows.error.value"
+      tone="danger"
+      title="筛选失败"
+      size="sm"
+      class="m-[8px]"
+      >{{ db.filteredRows.error.value }}</UiAlert
+    >
     <div
       v-if="queryState.status === 'running'"
       class="flex min-h-0 flex-1 flex-col items-center justify-center gap-[8px]"
