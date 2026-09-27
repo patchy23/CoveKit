@@ -55,22 +55,14 @@ const emit = defineEmits<{
         <UiIconButton
           label="复制筛选结果"
           size="xs"
-          :disabled="
-            (!db.filtering.value && !db.filteredRows.value.length) ||
-            queryState.status === 'running' ||
-            !!db.filterError.value
-          "
+          :disabled="!db.filteredRows.value.length || queryState.status === 'running'"
           @click="emit('copy')"
           ><UiIcon name="copy" :size="12"
         /></UiIconButton>
         <UiIconButton
           label="导出筛选结果 CSV"
           size="xs"
-          :disabled="
-            (!db.filtering.value && !db.filteredRows.value.length) ||
-            queryState.status === 'running' ||
-            !!db.filterError.value
-          "
+          :disabled="!db.filteredRows.value.length || queryState.status === 'running'"
           @click="emit('export')"
           ><UiIcon name="download" :size="12"
         /></UiIconButton> </template
@@ -119,11 +111,7 @@ const emit = defineEmits<{
     </UiAlert>
     <EditableResultGrid v-else :db="db" :state="queryState" class="min-h-0 flex-1" :rows="rows">
       <template #empty>
-        <span>{{
-          db.filtering.value
-            ? '正在筛选…'
-            : db.filterError.value || (queryState.filter ? '无匹配结果' : '当前查询未返回数据')
-        }}</span>
+        <span>{{ queryState.filter ? '无匹配结果' : '当前查询未返回数据' }}</span>
         <UiButton
           v-if="queryState.filter"
           size="xs"
@@ -141,7 +129,6 @@ const emit = defineEmits<{
         placeholder="筛选已加载结果…"
         @update:model-value="emit('patch', { filter: String($event), page: 1 })"
       />
-      <UiSpinner v-if="db.filtering.value" size="sm" label="正在筛选" />
       <span v-if="queryState.truncated" class="text-caption text-warning-strong"
         >结果未完整（达到行数或字节上限）</span
       >

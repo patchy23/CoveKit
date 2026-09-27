@@ -28,7 +28,7 @@ import type {
 import { adminIpc, queryIpc, draftIpc } from '../ipc'
 import { createSqlFormatter } from '@/core/format/asyncSql'
 import { nextRequestId } from '../requestId'
-import { useAsyncResultFilter } from './useAsyncResultFilter'
+import { useResultFilter } from './useResultFilter'
 
 /** 查询页签状态（真实后端字段） */
 export interface QueryState {
@@ -1134,7 +1134,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   // 结果派生
   // ──────────────────────────────────────────────────────────────────────
 
-  const { filteredRows, filtering, filterError, waitForFilter } = useAsyncResultFilter(
+  const filteredRows = useResultFilter(
     () => queryState.value.rows,
     () => queryState.value.filter
   )
@@ -1195,9 +1195,6 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     activeTabConnection,
     queryState,
     filteredRows,
-    filtering,
-    filterError,
-    waitForFilter,
     totalPages,
     pageRows,
     tableColumns,
