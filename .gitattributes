@@ -1,1 +1,3 @@
 .githooks/* text eol=lf
+# unified diff 的空上下文行必须保留一个前导空格。
+patches/*.patch text eol=lf whitespace=-blank-at-eol

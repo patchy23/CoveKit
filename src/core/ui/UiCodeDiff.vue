@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import UiScrollArea from './UiScrollArea.vue'
+import UiButton from './UiButton.vue'
 /**
  * 代码差异视图（L3 档，基于 `@codemirror/merge`）
  *
@@ -15,6 +16,7 @@ import {
   getOriginalDoc,
   MergeView,
   originalDocChangeEffect,
+  setExternalChunks,
   unifiedMergeView,
 } from '@codemirror/merge'
 import { ChangeSet, Compartment, EditorState, type Extension } from '@codemirror/state'
@@ -22,7 +24,8 @@ import { EditorView, lineNumbers } from '@codemirror/view'
 import { syntaxHighlighting } from '@codemirror/language'
 import { codeEditorTheme, codeHighlightStyle } from './editor/theme'
 import { detectLanguage, loadLanguage } from './editor/languages'
-import { diffStats } from './editor/diff'
+import { createDiffTask, restoreChunks, type DiffResult } from './editor/asyncDiff'
+import type { Text } from '@codemirror/state'
 import { documentChange } from './editor/documentChange'
 
 /** diff 展示形态 */
@@ -61,7 +64,83 @@ const props = withDefaults(
 
 const host = ref<HTMLDivElement | null>(null)
 /** 按行内容计数的差异统计，不代替视图的变更块对齐。 */
-const stats = computed(() => diffStats(props.original, props.modified))
+const stats = ref({ added: 0, removed: 0, same: true })
+const calculating = ref(false)
+const calculationError = ref('')
+const diffTask = createDiffTask()
+let diffEpoch = 0
+let versionA = 0
+let versionB = 0
+let documentA: Text | undefined
+let documentB: Text | undefined
+let queued = false
+
+/** 事务先安装正文并撤销旧块，再按不可变双文档快照计算；同一轮更新只计算一次。 */
+function refreshDiff() {
+  queued = false
+  const target = mergeView ?? unifiedView
+  if (!target) return
+  const original = mergeView ? mergeView.a.state.doc : getOriginalDoc(unifiedView!.state)
+  const modified = mergeView ? mergeView.b.state.doc : unifiedView!.state.doc
+  if (original === documentA && modified === documentB) return
+  if (original !== documentA) versionA++
+  if (modified !== documentB) versionB++
+  documentA = original
+  documentB = modified
+  const a = versionA
+  const b = versionB
+  const epoch = ++diffEpoch
+  calculationError.value = ''
+  function apply(result: DiffResult) {
+    if (epoch !== diffEpoch) return
+    if (result.versionA !== a || result.versionB !== b)
+      throw new Error('差异计算返回了不匹配的文档版本')
+    if (setExternalChunks(target!, original, modified, restoreChunks(result))) {
+      stats.value = result.stats
+      calculating.value = false
+    }
+  }
+  function fail(error: unknown) {
+    if (epoch !== diffEpoch) return
+    calculating.value = false
+    if (!(error instanceof Error && error.name === 'AbortError'))
+      calculationError.value = error instanceof Error ? error.message : String(error)
+  }
+  try {
+    const result = diffTask.run({
+      original: original.toString(),
+      modified: modified.toString(),
+      versionA: a,
+      versionB: b,
+    })
+    calculating.value = result instanceof Promise
+    if (result instanceof Promise) void result.then(apply).catch(fail)
+    else apply(result)
+  } catch (error) {
+    fail(error)
+  }
+}
+
+function scheduleDiff() {
+  if (queued) return
+  queued = true
+  queueMicrotask(() => {
+    if (queued) refreshDiff()
+  })
+}
+
+function cancelDiff() {
+  diffEpoch++
+  diffTask.cancel()
+  calculating.value = false
+  calculationError.value = '差异计算已取消，正文仍可阅读'
+}
+
+function retryDiff() {
+  documentA = undefined
+  documentB = undefined
+  refreshDiff()
+}
 /** 形态文案 */
 const modeLabel = computed(() => (props.mode === 'unified' ? '内联对比' : '左右对照'))
 
@@ -86,6 +165,11 @@ function configuration() {
 
 /** 卸载视图 */
 function destroy(): void {
+  queued = false
+  diffEpoch++
+  diffTask.destroy()
+  documentA = undefined
+  documentB = undefined
   mergeView?.destroy()
   mergeView = null
   unifiedView?.destroy()
@@ -160,6 +244,7 @@ async function create(): Promise<void> {
     }
     languageExtensions = loaded
     rendered = config
+    refreshDiff()
     return
   }
   destroy()
@@ -169,6 +254,7 @@ async function create(): Promise<void> {
     syntaxHighlighting(codeHighlightStyle),
     EditorView.editable.of(false),
     languageCompartment.of(loaded),
+    EditorView.updateListener.of(scheduleDiff),
   ]
   // 视图可能在建好之前就被卸载（快速切换 props）
   if (request !== createRequest || !host.value) return
@@ -182,6 +268,7 @@ async function create(): Promise<void> {
         extensions: [
           ...shared,
           unifiedMergeView({
+            externalDiff: true,
             original: config.original,
             mergeControls: !config.readonly,
             collapseUnchanged: { margin: 3, minSize: 4 },
@@ -189,10 +276,12 @@ async function create(): Promise<void> {
         ],
       }),
     })
+    refreshDiff()
     return
   }
 
   mergeView = new MergeView({
+    externalDiff: true,
     parent,
     a: { doc: config.original, extensions: [...shared, lineNumbers()] },
     b: { doc: config.modified, extensions: [...shared, lineNumbers()] },
@@ -201,6 +290,7 @@ async function create(): Promise<void> {
     collapseUnchanged: { margin: 3, minSize: 4 },
     revertControls: config.readonly ? undefined : 'a-to-b',
   })
+  refreshDiff()
 }
 
 onMounted(() => void create())
@@ -234,13 +324,32 @@ watch(
       class="flex shrink-0 items-center gap-3 border-b border-border px-3 py-1.5 text-caption dark:border-border-dark"
     >
       <span class="text-text-muted dark:text-text-muted-dark">{{ modeLabel }}</span>
-      <span v-if="stats.added > 0" class="text-success-strong dark:text-success-dark">
+      <span
+        v-if="!calculating && !calculationError && stats.added > 0"
+        class="text-success-strong dark:text-success-dark"
+      >
         +{{ stats.added }} 行
       </span>
-      <span v-if="stats.removed > 0" class="text-danger-strong dark:text-danger-dark">
+      <span
+        v-if="!calculating && !calculationError && stats.removed > 0"
+        class="text-danger-strong dark:text-danger-dark"
+      >
         -{{ stats.removed }} 行
       </span>
-      <span v-if="stats.same" class="text-text-muted dark:text-text-muted-dark">内容一致</span>
+      <span
+        v-if="!calculating && !calculationError && stats.same"
+        class="text-text-muted dark:text-text-muted-dark"
+        >内容一致</span
+      >
+    </div>
+    <div
+      v-if="calculating || calculationError"
+      role="status"
+      class="flex shrink-0 items-center gap-3 px-3 py-1.5 text-caption text-text-muted dark:text-text-muted-dark"
+    >
+      <span>{{ calculating ? '正在计算差异…' : calculationError }}</span>
+      <UiButton v-if="calculating" variant="ghost" size="xs" @click="cancelDiff">取消计算</UiButton>
+      <UiButton v-else variant="ghost" size="xs" @click="retryDiff">重新计算</UiButton>
     </div>
     <UiScrollArea as-child axis="vertical" managed>
       <div ref="host" class="min-h-0 flex-1 overflow-hidden" />

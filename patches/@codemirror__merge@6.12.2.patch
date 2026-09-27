@@ -1,0 +1,242 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index f3f9998639e0b29d8c6bfce1ff2f7914731b3b85..5a7e431c436e4ad5814f9dfe374abf08dd745ca3 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -1200,6 +1200,8 @@ class MergeView {
+         this.revertToLeft = false;
+         this.measuring = -1;
+         this.diffConf = config.diffConfig || defaultDiffConfig;
++        this.externalDiff = !!config.externalDiff;
++        this.externalCollapse = config.externalDiff ? config.collapseUnchanged : null;
+         let sharedExtensions = [
+             state.Prec.low(decorateChunks),
+             baseTheme,
+@@ -1247,10 +1249,10 @@ class MergeView {
+                 sharedExtensions
+             ]
+         });
+-        this.chunks = Chunk.build(stateA.doc, stateB.doc, this.diffConf);
++        this.chunks = this.externalDiff ? [] : Chunk.build(stateA.doc, stateB.doc, this.diffConf);
+         let add = [
+             ChunkField.init(() => this.chunks),
+-            collapseCompartment.of(config.collapseUnchanged ? collapseUnchanged(config.collapseUnchanged) : [])
++            collapseCompartment.of(!this.externalDiff && config.collapseUnchanged ? collapseUnchanged(config.collapseUnchanged) : [])
+         ];
+         stateA = stateA.update({ effects: state.StateEffect.appendConfig.of(add) }).state;
+         stateB = stateB.update({ effects: state.StateEffect.appendConfig.of(add) }).state;
+@@ -1286,7 +1288,7 @@ class MergeView {
+         if (trs.some(tr => tr.docChanged)) {
+             let last = trs[trs.length - 1];
+             let changes = trs.reduce((chs, tr) => chs.compose(tr.changes), state.ChangeSet.empty(trs[0].startState.doc.length));
+-            this.chunks = target == this.a ? Chunk.updateA(this.chunks, last.newDoc, this.b.state.doc, changes, this.diffConf)
++            this.chunks = this.externalDiff ? [] : target == this.a ? Chunk.updateA(this.chunks, last.newDoc, this.b.state.doc, changes, this.diffConf)
+                 : Chunk.updateB(this.chunks, this.a.state.doc, last.newDoc, changes, this.diffConf);
+             target.update([...trs, last.state.update({ effects: setChunks.of(this.chunks) })]);
+             let other = target == this.a ? this.b : this.a;
+@@ -1487,6 +1489,7 @@ function unifiedMergeView(config) {
+         view.EditorView.editorAttributes.of({ class: "cm-merge-b" }),
+         computeChunks.of((chunks, tr) => {
+             let updateDoc = tr.effects.find(e => e.is(updateOriginalDoc));
++            if (config.externalDiff) return updateDoc || tr.docChanged ? [] : chunks;
+             if (updateDoc)
+                 chunks = Chunk.updateA(chunks, updateDoc.value.doc, tr.startState.doc, updateDoc.value.changes, diffConf);
+             if (tr.docChanged)
+@@ -1498,14 +1501,16 @@ function unifiedMergeView(config) {
+             markGutter: config.gutter !== false,
+             syntaxHighlightDeletions: config.syntaxHighlightDeletions !== false,
+             syntaxHighlightDeletionsMaxLength: 3000,
++            externalDiff: !!config.externalDiff,
++            externalCollapse: config.externalDiff ? config.collapseUnchanged : null,
+             mergeControls: (_a = config.mergeControls) !== null && _a !== void 0 ? _a : true,
+             overrideChunk: config.allowInlineDiffs ? overrideChunkInline : undefined,
+             side: "b"
+         }),
+         originalDoc.init(() => orig),
+         config.gutter !== false ? unifiedChangeGutter : [],
+-        config.collapseUnchanged ? collapseUnchanged(config.collapseUnchanged) : [],
+-        ChunkField.init(state => Chunk.build(orig, state.doc, diffConf))
++        !config.externalDiff && config.collapseUnchanged ? collapseUnchanged(config.collapseUnchanged) : [],
++        ChunkField.init(state => config.externalDiff ? [] : Chunk.build(orig, state.doc, diffConf))
+     ];
+ }
+ /**
+@@ -1788,3 +1793,29 @@ exports.rejectChunk = rejectChunk;
+ exports.uncollapseUnchanged = uncollapseUnchanged;
+ exports.unifiedMergeView = unifiedMergeView;
+ exports.updateOriginalDoc = updateOriginalDoc;
++
++
++// CoveKit：只接收仍属于当前双文档快照的外部结果，更新沿用原有装饰与滚动对齐路径。
++function setExternalChunks(target, original, modified, chunks) {
++    if (target instanceof MergeView) {
++        if (!target.externalDiff || target.a.state.doc !== original || target.b.state.doc !== modified) return false;
++        target.chunks = chunks;
++        for (let editor of [target.a, target.b]) {
++            let effects = [setChunks.of(chunks)];
++            if (target.externalCollapse) effects.push(collapseCompartment.reconfigure(collapseUnchanged(target.externalCollapse)));
++            editor.dispatch({effects});
++        }
++        target.externalCollapse = null;
++        target.scheduleMeasure();
++    } else {
++        let config = target.state.facet(mergeConfig);
++        if (!config || !config.externalDiff || getOriginalDoc(target.state) !== original || target.state.doc !== modified) return false;
++        let effects = [setChunks.of(chunks)];
++        if (config.externalCollapse && !target.state.field(CollapsedRanges, false))
++            effects.push(state.StateEffect.appendConfig.of(collapseUnchanged(config.externalCollapse)));
++        target.dispatch({effects});
++    }
++    return true;
++}
++
++exports.setExternalChunks = setExternalChunks;
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index 4567d09879212ad1ba0c23eb9d304996687d7aeb..c38c69c8d1a379cbaf6945a0f60b6221519a8dfa 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -248,6 +248,8 @@ Configuration options given to the [`MergeView`](https://codemirror.net/6/docs/r
+ constructor.
+ */
+ interface DirectMergeConfig extends MergeConfig {
++    /** CoveKit：由外部按双文档快照交付差异，正文变化时立即撤销旧差异。 */
++    externalDiff?: boolean;
+     /**
+     Configuration for the first editor (the left one in a
+     left-to-right context).
+@@ -323,6 +325,8 @@ declare class MergeView {
+ }
+ 
+ interface UnifiedMergeConfig {
++    /** CoveKit：由外部按双文档快照交付差异，正文变化时立即撤销旧差异。 */
++    externalDiff?: boolean;
+     /**
+     The other document to compare the editor content with.
+     */
+@@ -432,3 +436,6 @@ declare function mergeViewSiblings(view: EditorView): {
+ } | null;
+ 
+ export { Change, Chunk, type DiffConfig, type DirectMergeConfig, type MergeConfig, MergeView, acceptChunk, diff, getChunks, getOriginalDoc, goToNextChunk, goToPreviousChunk, mergeViewSiblings, originalDocChangeEffect, presentableDiff, rejectChunk, uncollapseUnchanged, unifiedMergeView, updateOriginalDoc };
++
++/** CoveKit：快照不一致时返回 false，不应用过期差异。 */
++export declare function setExternalChunks(target: MergeView | EditorView, original: Text, modified: Text, chunks: readonly Chunk[]): boolean;
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 4567d09879212ad1ba0c23eb9d304996687d7aeb..c38c69c8d1a379cbaf6945a0f60b6221519a8dfa 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -248,6 +248,8 @@ Configuration options given to the [`MergeView`](https://codemirror.net/6/docs/r
+ constructor.
+ */
+ interface DirectMergeConfig extends MergeConfig {
++    /** CoveKit：由外部按双文档快照交付差异，正文变化时立即撤销旧差异。 */
++    externalDiff?: boolean;
+     /**
+     Configuration for the first editor (the left one in a
+     left-to-right context).
+@@ -323,6 +325,8 @@ declare class MergeView {
+ }
+ 
+ interface UnifiedMergeConfig {
++    /** CoveKit：由外部按双文档快照交付差异，正文变化时立即撤销旧差异。 */
++    externalDiff?: boolean;
+     /**
+     The other document to compare the editor content with.
+     */
+@@ -432,3 +436,6 @@ declare function mergeViewSiblings(view: EditorView): {
+ } | null;
+ 
+ export { Change, Chunk, type DiffConfig, type DirectMergeConfig, type MergeConfig, MergeView, acceptChunk, diff, getChunks, getOriginalDoc, goToNextChunk, goToPreviousChunk, mergeViewSiblings, originalDocChangeEffect, presentableDiff, rejectChunk, uncollapseUnchanged, unifiedMergeView, updateOriginalDoc };
++
++/** CoveKit：快照不一致时返回 false，不应用过期差异。 */
++export declare function setExternalChunks(target: MergeView | EditorView, original: Text, modified: Text, chunks: readonly Chunk[]): boolean;
+diff --git a/dist/index.js b/dist/index.js
+index 8322cf9b1d463a8e6b4b0ccb4e36069e2de53bda..3eedf0d56329a293c128eaf699ee4cc62d1079b2 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1198,6 +1198,8 @@ class MergeView {
+         this.revertToLeft = false;
+         this.measuring = -1;
+         this.diffConf = config.diffConfig || defaultDiffConfig;
++        this.externalDiff = !!config.externalDiff;
++        this.externalCollapse = config.externalDiff ? config.collapseUnchanged : null;
+         let sharedExtensions = [
+             Prec.low(decorateChunks),
+             baseTheme,
+@@ -1245,10 +1247,10 @@ class MergeView {
+                 sharedExtensions
+             ]
+         });
+-        this.chunks = Chunk.build(stateA.doc, stateB.doc, this.diffConf);
++        this.chunks = this.externalDiff ? [] : Chunk.build(stateA.doc, stateB.doc, this.diffConf);
+         let add = [
+             ChunkField.init(() => this.chunks),
+-            collapseCompartment.of(config.collapseUnchanged ? collapseUnchanged(config.collapseUnchanged) : [])
++            collapseCompartment.of(!this.externalDiff && config.collapseUnchanged ? collapseUnchanged(config.collapseUnchanged) : [])
+         ];
+         stateA = stateA.update({ effects: StateEffect.appendConfig.of(add) }).state;
+         stateB = stateB.update({ effects: StateEffect.appendConfig.of(add) }).state;
+@@ -1284,7 +1286,7 @@ class MergeView {
+         if (trs.some(tr => tr.docChanged)) {
+             let last = trs[trs.length - 1];
+             let changes = trs.reduce((chs, tr) => chs.compose(tr.changes), ChangeSet.empty(trs[0].startState.doc.length));
+-            this.chunks = target == this.a ? Chunk.updateA(this.chunks, last.newDoc, this.b.state.doc, changes, this.diffConf)
++            this.chunks = this.externalDiff ? [] : target == this.a ? Chunk.updateA(this.chunks, last.newDoc, this.b.state.doc, changes, this.diffConf)
+                 : Chunk.updateB(this.chunks, this.a.state.doc, last.newDoc, changes, this.diffConf);
+             target.update([...trs, last.state.update({ effects: setChunks.of(this.chunks) })]);
+             let other = target == this.a ? this.b : this.a;
+@@ -1485,6 +1487,7 @@ function unifiedMergeView(config) {
+         EditorView.editorAttributes.of({ class: "cm-merge-b" }),
+         computeChunks.of((chunks, tr) => {
+             let updateDoc = tr.effects.find(e => e.is(updateOriginalDoc));
++            if (config.externalDiff) return updateDoc || tr.docChanged ? [] : chunks;
+             if (updateDoc)
+                 chunks = Chunk.updateA(chunks, updateDoc.value.doc, tr.startState.doc, updateDoc.value.changes, diffConf);
+             if (tr.docChanged)
+@@ -1496,14 +1499,16 @@ function unifiedMergeView(config) {
+             markGutter: config.gutter !== false,
+             syntaxHighlightDeletions: config.syntaxHighlightDeletions !== false,
+             syntaxHighlightDeletionsMaxLength: 3000,
++            externalDiff: !!config.externalDiff,
++            externalCollapse: config.externalDiff ? config.collapseUnchanged : null,
+             mergeControls: (_a = config.mergeControls) !== null && _a !== void 0 ? _a : true,
+             overrideChunk: config.allowInlineDiffs ? overrideChunkInline : undefined,
+             side: "b"
+         }),
+         originalDoc.init(() => orig),
+         config.gutter !== false ? unifiedChangeGutter : [],
+-        config.collapseUnchanged ? collapseUnchanged(config.collapseUnchanged) : [],
+-        ChunkField.init(state => Chunk.build(orig, state.doc, diffConf))
++        !config.externalDiff && config.collapseUnchanged ? collapseUnchanged(config.collapseUnchanged) : [],
++        ChunkField.init(state => config.externalDiff ? [] : Chunk.build(orig, state.doc, diffConf))
+     ];
+ }
+ /**
+@@ -1771,3 +1776,29 @@ function overrideChunkInline(state, chunk, builder, gutterBuilder) {
+ }
+ 
+ export { Change, Chunk, MergeView, acceptChunk, diff, getChunks, getOriginalDoc, goToNextChunk, goToPreviousChunk, mergeViewSiblings, originalDocChangeEffect, presentableDiff, rejectChunk, uncollapseUnchanged, unifiedMergeView, updateOriginalDoc };
++
++
++// CoveKit：只接收仍属于当前双文档快照的外部结果，更新沿用原有装饰与滚动对齐路径。
++function setExternalChunks(target, original, modified, chunks) {
++    if (target instanceof MergeView) {
++        if (!target.externalDiff || target.a.state.doc !== original || target.b.state.doc !== modified) return false;
++        target.chunks = chunks;
++        for (let editor of [target.a, target.b]) {
++            let effects = [setChunks.of(chunks)];
++            if (target.externalCollapse) effects.push(collapseCompartment.reconfigure(collapseUnchanged(target.externalCollapse)));
++            editor.dispatch({effects});
++        }
++        target.externalCollapse = null;
++        target.scheduleMeasure();
++    } else {
++        let config = target.state.facet(mergeConfig);
++        if (!config || !config.externalDiff || getOriginalDoc(target.state) !== original || target.state.doc !== modified) return false;
++        let effects = [setChunks.of(chunks)];
++        if (config.externalCollapse && !target.state.field(CollapsedRanges, false))
++            effects.push(StateEffect.appendConfig.of(collapseUnchanged(config.externalCollapse)));
++        target.dispatch({effects});
++    }
++    return true;
++}
++
++export { setExternalChunks };
