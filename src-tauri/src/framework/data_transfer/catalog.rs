@@ -8,7 +8,7 @@
 //! - 进包条数必须与闭包解析结果一致（多带或漏带都是缺陷，不是「尽力而为」）；
 //! - 缺记录体只允许出现在 `device-local` 与未勾选带出的 `secret` 上（§13.1）。
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[cfg(test)]
 use serde_json::Value;
@@ -25,9 +25,18 @@ use crate::framework::space;
 ///
 /// 数据集名跨 owner 重名属于装配缺陷：这里直接报错，不静默覆盖。
 pub(crate) fn collect_descriptors(app: &AppHandle) -> Result<Vec<DatasetDescriptor>, String> {
+    collect_descriptors_checked(app, &|| Ok(()))
+}
+
+fn collect_descriptors_checked(
+    app: &AppHandle,
+    check: &impl Fn() -> Result<(), String>,
+) -> Result<Vec<DatasetDescriptor>, String> {
     let mut all: Vec<DatasetDescriptor> = Vec::new();
     for owner_adapter in adapter::all() {
+        check()?;
         let described = owner_adapter.describe_datasets(app)?;
+        check()?;
         for descriptor in described {
             if descriptor.owner != owner_adapter.owner() {
                 return Err(format!(
@@ -125,6 +134,17 @@ pub(crate) fn resolve_selection(
         .iter()
         .map(|item| (item.name.as_str(), item))
         .collect();
+    // 条目保留首次匹配语义；索引只借用目录，不复制正文或依赖边。
+    let entries: BTreeMap<_, BTreeMap<_, _>> = by_name
+        .iter()
+        .map(|(name, descriptor)| {
+            let mut index = BTreeMap::new();
+            for entry in &descriptor.entries {
+                index.entry(entry.id.as_str()).or_insert(entry);
+            }
+            (*name, index)
+        })
+        .collect();
     let mut sets: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
     for name in &selection.datasets {
@@ -163,7 +183,7 @@ pub(crate) fn resolve_selection(
         }
         let slot = sets.entry(descriptor.name.clone()).or_default();
         for id in &picked.ids {
-            if !descriptor.entries.iter().any(|entry| entry.id == *id) {
+            if !entries[descriptor.name.as_str()].contains_key(id.as_str()) {
                 return Err(format!(
                     "数据集 {} 中不存在记录 {id}（列表可能已过期，请刷新后重选）",
                     descriptor.name
@@ -177,47 +197,33 @@ pub(crate) fn resolve_selection(
         return Err("没有选择任何可导出的数据".into());
     }
 
-    // 闭包展开：每轮把「已进包条目」的依赖边按跟随关系并入目标数据集
-    loop {
-        let snapshot: Vec<(String, Vec<String>)> = sets
-            .iter()
-            .map(|(name, ids)| (name.clone(), ids.iter().cloned().collect()))
-            .collect();
-        let mut added = false;
-        for (name, ids) in snapshot {
-            let Some(descriptor) = by_name.get(name.as_str()) else {
+    // 仅展开新纳入的条目一次；集合负责环和重复边去重，输出仍按原顺序排序。
+    let mut pending: VecDeque<(String, String)> = sets
+        .iter()
+        .flat_map(|(name, ids)| ids.iter().map(move |id| (name.clone(), id.clone())))
+        .collect();
+    while let Some((name, id)) = pending.pop_front() {
+        let descriptor = by_name[name.as_str()];
+        let Some(entry) = entries[name.as_str()].get(id.as_str()) else {
+            continue;
+        };
+        for edge in &entry.dependencies {
+            let Some(pull) = descriptor.pulls.iter().find(|item| item.kind == edge.kind) else {
                 continue;
             };
-            if descriptor.pulls.is_empty() {
-                continue;
+            if !by_name.contains_key(pull.dataset.as_str()) {
+                return Err(format!(
+                    "数据集 {} 声明的跟随目标 {} 不存在",
+                    descriptor.name, pull.dataset
+                ));
             }
-            for id in ids {
-                let Some(entry) = descriptor.entries.iter().find(|item| item.id == id) else {
-                    continue;
-                };
-                for edge in &entry.dependencies {
-                    let Some(pull) = descriptor.pulls.iter().find(|item| item.kind == edge.kind)
-                    else {
-                        continue;
-                    };
-                    if !by_name.contains_key(pull.dataset.as_str()) {
-                        return Err(format!(
-                            "数据集 {} 声明的跟随目标 {} 不存在",
-                            descriptor.name, pull.dataset
-                        ));
-                    }
-                    if sets
-                        .entry(pull.dataset.clone())
-                        .or_default()
-                        .insert(edge.to_id.clone())
-                    {
-                        added = true;
-                    }
-                }
+            if sets
+                .entry(pull.dataset.clone())
+                .or_default()
+                .insert(edge.to_id.clone())
+            {
+                pending.push_back((pull.dataset.clone(), edge.to_id.clone()));
             }
-        }
-        if !added {
-            break;
         }
     }
 
@@ -235,9 +241,11 @@ pub(crate) fn resolve_selection(
 pub(crate) fn build_manifest(
     app: &AppHandle,
     selection: &ExportSelection,
+    cancel: &super::session::CancelToken,
 ) -> Result<PackageManifest, String> {
-    let descriptors = collect_descriptors(app)?;
+    let descriptors = collect_descriptors_checked(app, &|| cancel.check())?;
     let resolved = resolve_selection(&descriptors, selection)?;
+    cancel.check()?;
     let adapters: BTreeMap<&str, &'static dyn DatasetAdapter> = adapter::all()
         .into_iter()
         .map(|item| (item.owner(), item))
@@ -248,6 +256,7 @@ pub(crate) fn build_manifest(
     let mut remaining = super::package::MAX_PLAINTEXT_BYTES as usize;
 
     for (name, ids) in &resolved.datasets {
+        cancel.check()?;
         let Some(descriptor) = descriptors.iter().find(|item| item.name == *name) else {
             return Err(format!("数据集 {name} 在清单装配时消失（目录不一致）"));
         };
@@ -265,7 +274,9 @@ pub(crate) fn build_manifest(
             continue;
         }
         let records = owner_adapter.export_records(app, name, ids)?;
+        cancel.check()?;
         owner_adapter.validate_records(name, &records)?;
+        cancel.check()?;
         if !descriptor.entries.is_empty() && records.len() != ids.len() {
             return Err(format!(
                 "数据集 {name} 实际导出 {} 条，与选择集 {} 条不一致（记录可能在选择期间被删除，请刷新后重试）",
@@ -276,7 +287,10 @@ pub(crate) fn build_manifest(
         manifest
             .dependencies
             .extend(owner_adapter.enumerate_references(name, &records)?);
-        manifest.datasets.push(block_carrying(descriptor, records, &mut remaining)?);
+        cancel.check()?;
+        manifest
+            .datasets
+            .push(block_carrying(descriptor, records, &mut remaining)?);
     }
 
     // 显式排除项：目录里有候选记录、本次没进包的类别（界面据此告知「没有带出什么」）
@@ -452,6 +466,46 @@ mod tests {
         assert_eq!(resolved.ids_of("vault.credentials"), ["c1".to_string()]);
         assert!(!resolved.includes("ssh.tunnels"), "未引用隧道不进包");
         assert!(!resolved.includes("core.favorites"), "未勾选收藏不进包");
+    }
+
+    #[test]
+    fn closure_handles_long_cycles_duplicates_and_missing_referenced_records() {
+        let mut entries: Vec<_> = (0..1024)
+            .map(|index| {
+                let next = ((index + 1) % 1024).to_string();
+                entry("nodes", &index.to_string(), vec![("next", &next)])
+            })
+            .collect();
+        entries[0].dependencies.push(DependencyEdge {
+            kind: "next".into(),
+            from_id: "0".into(),
+            to_id: "missing".into(),
+        });
+        // 历史实现 find 取首个同 ID 条目，后续重复条目不得引入新的依赖。
+        entries.push(entry("nodes", "0", vec![("next", "ignored")]));
+        let descriptors = vec![descriptor(
+            "nodes",
+            TransportPolicy::Portable,
+            true,
+            vec![("next", "nodes")],
+            entries,
+        )];
+        let resolved = resolve_selection(
+            &descriptors,
+            &ExportSelection {
+                datasets: vec![],
+                entries: vec![super::super::types::SelectionEntry {
+                    dataset: "nodes".into(),
+                    ids: vec!["0".into(), "0".into()],
+                }],
+            },
+        )
+        .unwrap();
+        let ids = resolved.ids_of("nodes");
+        assert_eq!(ids.len(), 1025);
+        assert!(ids.iter().any(|id| id == "missing"));
+        assert!(!ids.iter().any(|id| id == "ignored"));
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
     }
 
     #[test]

@@ -52,7 +52,7 @@ pub async fn data_export_start(
     let build_app = app.clone();
     let work = tauri::async_runtime::spawn_blocking(move || -> Result<ExportReport, String> {
         cancel.check()?;
-        let manifest = catalog::build_manifest(&build_app, &selection)?;
+        let manifest = catalog::build_manifest(&build_app, &selection, &cancel)?;
         cancel.check()?;
         let counts = dataset_counts(&manifest);
         let excluded = manifest.excluded.clone();
