@@ -9,6 +9,7 @@ import type { RemoteFile } from '../contracts'
 
 // 排序规则固定；复用 Collator，避免每次比较都解析 localeCompare 的区域与选项。
 const nameCollator = new Intl.Collator('zh-CN', { numeric: true, sensitivity: 'base' })
+const DIRECTORY_IDLE_MS = 10 * 60 * 1000
 
 export function useRemoteDirectory(deps: {
   sessionId: () => string | undefined
@@ -24,7 +25,9 @@ export function useRemoteDirectory(deps: {
   const files = shallowRef<RemoteFile[]>([])
   const sortKey = ref<'name' | 'modifiedAt'>('name')
   const sortDirection = ref<'asc' | 'desc'>('asc')
-  const directoryCache = new Map<string, RemoteFile[]>()
+  const directoryCache = new Map<string, { files: RemoteFile[]; lastUsed: number }>()
+  let displayedKey: string | undefined
+  let expiryTimer: ReturnType<typeof setTimeout> | undefined
   /** 目录缓存上限：超出时淘汰最旧条目（Map 保持插入序），防长期浏览无限增长 */
   const DIRECTORY_CACHE_LIMIT = 100
   /** 目录请求序号：快速连续切换时只认最后一次请求的目录（竞态守卫） */
@@ -33,19 +36,49 @@ export function useRemoteDirectory(deps: {
   onScopeDispose(() => {
     disposed = true
     navigateSeq++
+    clearExpiryTimer()
+    displayedKey = undefined
     directoryCache.clear()
     files.value = []
     directoryHistory.value = []
   })
 
+  function clearExpiryTimer() {
+    if (expiryTimer !== undefined) clearTimeout(expiryTimer)
+    expiryTimer = undefined
+  }
+
+  /** 仅保留最近的闲置过期任务；当前显示快照不淘汰，也不触发网络刷新。 */
+  function expireIdle() {
+    clearExpiryTimer()
+    const now = performance.now()
+    let nextExpiry = Infinity
+    for (const [key, entry] of directoryCache) {
+      if (key === displayedKey) continue
+      const remaining = entry.lastUsed + DIRECTORY_IDLE_MS - now
+      if (remaining <= 0) directoryCache.delete(key)
+      else nextExpiry = Math.min(nextExpiry, remaining)
+    }
+    if (!disposed && Number.isFinite(nextExpiry))
+      expiryTimer = setTimeout(expireIdle, Math.ceil(nextExpiry))
+  }
+
   /** 写入目录缓存（带淘汰：同 key 刷新位置，超限删最旧） */
   function cacheDirectory(key: string, list: RemoteFile[]) {
+    const now = performance.now()
+    if (displayedKey !== key && displayedKey) {
+      const previous = directoryCache.get(displayedKey)
+      if (previous) previous.lastUsed = now
+    }
+    displayedKey = key
+    files.value = list
     if (directoryCache.has(key)) directoryCache.delete(key)
-    directoryCache.set(key, list)
+    directoryCache.set(key, { files: list, lastUsed: now })
     if (directoryCache.size > DIRECTORY_CACHE_LIMIT) {
       const oldest = directoryCache.keys().next().value
       if (oldest !== undefined) directoryCache.delete(oldest)
     }
+    expireIdle()
   }
 
   const parentPath = computed(() => {
@@ -87,9 +120,11 @@ export function useRemoteDirectory(deps: {
     currentPath.value = path
     deps.onNavigate?.()
     const key = cacheKey(connectionId, path)
+    // 后台 WebView 可能延后定时器，命中前再核对期限，不能复用已过期的闲置快照。
+    expireIdle()
     const cached = directoryCache.get(key)
     if (cached && !force) {
-      files.value = cached
+      cacheDirectory(key, cached.files)
       return
     }
     try {
@@ -97,7 +132,6 @@ export function useRemoteDirectory(deps: {
       if (seq !== navigateSeq) return // 已有更新的目录请求，丢弃本次结果
       if (deps.sessionId() !== connectionId) return
       if (r.ok) {
-        files.value = r.files
         cacheDirectory(key, r.files)
       } else {
         ui.toast(`读取目录失败：${r.error ?? '未知错误'}`)
@@ -133,6 +167,8 @@ export function useRemoteDirectory(deps: {
 
   /** 切换连接：清空全部导航状态并从根目录重来 */
   function reset(sessionId: string | undefined, path = '/') {
+    clearExpiryTimer()
+    displayedKey = undefined
     files.value = []
     directoryCache.clear()
     directoryHistory.value = []

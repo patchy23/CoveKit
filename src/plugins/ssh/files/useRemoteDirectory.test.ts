@@ -6,7 +6,10 @@ import type { RemoteFile } from '../contracts'
 const mocks = vi.hoisted(() => ({ list: vi.fn(), toast: vi.fn() }))
 vi.mock('../ipc', () => ({ ipc: { sshFileList: mocks.list } }))
 vi.mock('@/stores/ui', () => ({ useUiStore: () => ({ toast: mocks.toast }) }))
-afterEach(() => vi.resetAllMocks())
+afterEach(() => {
+  vi.resetAllMocks()
+  vi.useRealTimers()
+})
 
 function file(name: string, isDir = false, modifiedAt = 0): RemoteFile {
   return {
@@ -20,6 +23,64 @@ function file(name: string, isDir = false, modifiedAt = 0): RemoteFile {
     group: '-',
   }
 }
+
+it('当前目录长期保留，闲置十分钟自动过期且不主动刷新，关闭释放唯一计时器', async () => {
+  vi.useFakeTimers()
+  mocks.list.mockImplementation(async (_session, path) => ({ ok: true, files: [file(path)] }))
+  const scope = effectScope()
+  const directory = scope.run(() => useRemoteDirectory({ sessionId: () => 'session' }))!
+  try {
+    await directory.navigate('/a')
+    const a = directory.files.value
+    await vi.advanceTimersByTimeAsync(60 * 60 * 1000)
+    await directory.navigate('/a')
+    expect(directory.files.value).toBe(a)
+    expect(mocks.list).toHaveBeenCalledOnce()
+    expect(vi.getTimerCount()).toBe(0)
+    await directory.navigate('/b')
+    expect(vi.getTimerCount()).toBe(1)
+    await vi.advanceTimersByTimeAsync(10 * 60 * 1000)
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    expect(directory.files.value[0].name).toBe('/b')
+    expect(vi.getTimerCount()).toBe(0)
+    await directory.navigate('/a')
+    expect(mocks.list).toHaveBeenCalledTimes(3)
+    expect(directory.files.value).not.toBe(a)
+    expect(vi.getTimerCount()).toBe(1)
+  } finally {
+    scope.stop()
+  }
+  expect(vi.getTimerCount()).toBe(0)
+})
+
+it('重新访问续期，离开后重新计时；强制刷新与切换连接仍读取新数据', async () => {
+  vi.useFakeTimers()
+  mocks.list.mockImplementation(async (_session, path) => ({ ok: true, files: [file(path)] }))
+  const scope = effectScope()
+  const directory = scope.run(() => useRemoteDirectory({ sessionId: () => 'session' }))!
+  try {
+    await directory.navigate('/a')
+    const a = directory.files.value
+    await directory.navigate('/b')
+    await vi.advanceTimersByTimeAsync(9 * 60 * 1000)
+    await directory.navigate('/a')
+    expect(directory.files.value).toBe(a)
+    await directory.navigate('/b')
+    await vi.advanceTimersByTimeAsync(2 * 60 * 1000)
+    await directory.navigate('/a')
+    expect(directory.files.value).toBe(a)
+    expect(mocks.list).toHaveBeenCalledTimes(2)
+    await directory.refreshCurrent()
+    expect(mocks.list).toHaveBeenCalledTimes(3)
+    expect(directory.files.value).not.toBe(a)
+    directory.reset(undefined)
+    expect(vi.getTimerCount()).toBe(0)
+    await directory.navigate('/a')
+    expect(mocks.list).toHaveBeenCalledTimes(4)
+  } finally {
+    scope.stop()
+  }
+})
 
 it('排序保持原区域、数值和目录优先语义，快照与行身份复用，刷新仍替换内容', async () => {
   const source = [
