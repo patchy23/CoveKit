@@ -2,7 +2,8 @@
  * 文字转语音插件 · IPC 封装（本插件命令，独立于框架）
  */
 import { invokeCommand } from '@/core/ipc/ipc'
-import type { Payloads, Results } from './contracts'
+import { Channel } from '@tauri-apps/api/core'
+import type { Payloads, Results, TtsProgress } from './contracts'
 
 export const ipc = {
   /** 获取语音列表 */
@@ -15,6 +16,18 @@ export const ipc = {
   ttsDiscard: (jobId: string): Promise<Results['tts_discard']> =>
     invokeCommand('tts_discard', { jobId }),
   /** 合成语音（文本 + 语音 + 语速/音调 → mp3 文件路径） */
-  ttsSynthesize: (p: Payloads['tts_synthesize']): Promise<Results['tts_synthesize']> =>
-    invokeCommand('tts_synthesize', p),
+  ttsSynthesize: (
+    p: Omit<Payloads['tts_synthesize'], 'onProgress'>,
+    receive?: (progress: TtsProgress) => void
+  ): Promise<Results['tts_synthesize']> => {
+    if (!receive) return invokeCommand('tts_synthesize', p)
+    const onProgress = new Channel<TtsProgress>()
+    onProgress.onmessage = receive
+    return invokeCommand<Payloads['tts_synthesize'], Results['tts_synthesize']>('tts_synthesize', {
+      ...p,
+      onProgress,
+    }).finally(() => {
+      onProgress.onmessage = () => {}
+    })
+  },
 }

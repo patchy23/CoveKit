@@ -14,7 +14,10 @@ struct Job {
 
 /// 只保存活跃请求的取消信号，不缓存文本或音频。
 #[derive(Default)]
-pub struct TtsJobs(Mutex<HashMap<String, Job>>);
+pub struct TtsJobs(
+    Mutex<HashMap<String, Job>>,
+    tokio::sync::OnceCell<crate::framework::temp_instance::TempInstance>,
+);
 
 pub(super) struct JobGuard<'a> {
     jobs: &'a TtsJobs,
@@ -33,6 +36,15 @@ impl Drop for JobGuard<'_> {
 }
 
 impl TtsJobs {
+    /// 实例随应用状态存活；清理旧实例和创建锁在阻塞池执行，失败可重试。
+    pub(super) async fn temporary_directory(&self, root: std::path::PathBuf) -> Result<&std::path::Path, String> {
+        let instance = self.1.get_or_try_init(|| async {
+            tokio::task::spawn_blocking(move || crate::framework::temp_instance::TempInstance::open(&root))
+                .await.map_err(|e| format!("初始化音频临时实例失败: {e}"))?
+        }).await?;
+        Ok(instance.directory())
+    }
+
     pub(super) fn prepare(&self) -> Result<String, String> {
         let id = uuid::Uuid::new_v4().to_string();
         let (cancel, receiver) = watch::channel(false);

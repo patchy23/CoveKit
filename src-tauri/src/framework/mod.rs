@@ -31,6 +31,7 @@ pub mod space;
 pub mod storage;
 pub mod store;
 pub mod tasks;
+pub(crate) mod temp_instance;
 pub mod updater;
 pub mod vault;
 #[cfg(windows)]

@@ -149,7 +149,8 @@ it('清空后可以立即新建合成，旧请求结束不解除新请求的忙�
   await flushPromises()
   expect(mocks.cancel).toHaveBeenCalledWith('first')
   expect(mocks.synthesize).toHaveBeenLastCalledWith(
-    expect.objectContaining({ jobId: 'second', text: '新的合成' })
+    expect.objectContaining({ jobId: 'second', text: '新的合成' }),
+    expect.any(Function)
   )
   first({ ok: true, bytes: 4, filePath: '/old.mp3' })
   await flushPromises()
@@ -160,4 +161,21 @@ it('清空后可以立即新建合成，旧请求结束不解除新请求的忙�
   second({ ok: false, bytes: 0, error: '第二次失败' })
   await flushPromises()
   expect(button(wrapper, '合成语音').exists()).toBe(true)
+})
+
+it('取消新的合成保留已经呈现的音频、下载源和输入正文', async () => {
+  const wrapper = mount(Tts)
+  await button(wrapper, '合成语音').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('audio').attributes('src')).toBe('asset:/test.mp3')
+  mocks.synthesize.mockReturnValueOnce(new Promise(() => {}))
+  await button(wrapper, '合成语音').trigger('click')
+  await flushPromises()
+  const callback = mocks.synthesize.mock.lastCall![1]
+  callback({ jobId: 'job', sequence: 1, phase: 'receiving', lastProgressAt: Date.now(), bytes: 12 })
+  await button(wrapper, '取消合成').trigger('click')
+  expect(mocks.cancel).toHaveBeenCalledWith('job')
+  expect(wrapper.get('audio').attributes('src')).toBe('asset:/test.mp3')
+  expect(wrapper.get('textarea').element.value).toContain('你好')
+  expect(mocks.discard).not.toHaveBeenCalled()
 })

@@ -10,6 +10,8 @@ use futures_util::{SinkExt, StreamExt};
 use sha2::Digest;
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
+use super::models::TtsPhase;
+
 /// Edge TTS 公开客户端令牌（微软 readaloud 服务固定常量）
 const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
 /// Edge TTS 服务端点
@@ -108,6 +110,7 @@ pub(crate) async fn synth_to_writer<W: AsyncWrite + Unpin>(
     rate: Option<i32>,
     pitch: Option<i32>,
     output: &mut W,
+    progress: &mut impl FnMut(TtsPhase, u64) -> Result<(), String>,
 ) -> Result<u64, String> {
     // rustls 进程级 CryptoProvider（ring 后端，与 russh 一致；幂等）
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -184,10 +187,12 @@ pub(crate) async fn synth_to_writer<W: AsyncWrite + Unpin>(
         );
     }
 
+    progress(TtsPhase::Connecting, 0)?;
     let (mut ws, _) = tokio_tungstenite::connect_async(request)
         .await
         .map_err(|e| format!("连接语音服务失败: {e}"))?;
 
+    progress(TtsPhase::Sending, 0)?;
     // 1) speech.config（音频格式：24kHz 48kbps mp3）
     let config_msg = serde_json::json!({
         "context": {
@@ -203,6 +208,7 @@ pub(crate) async fn synth_to_writer<W: AsyncWrite + Unpin>(
     ))
     .await
     .map_err(|e| format!("发送配置失败: {e}"))?;
+    progress(TtsPhase::Sending, 0)?;
 
     // 2) SSML 消息
     let rate_str = format!("{:+}%", rate.unwrap_or(0));
@@ -224,6 +230,7 @@ pub(crate) async fn synth_to_writer<W: AsyncWrite + Unpin>(
     // 3) 收音频分片，直到 TurnEnd（消息 = 2 字节前缀 + 头部行 + MP3 数据）
     let mut bytes = 0u64;
     let mut completed = false;
+    progress(TtsPhase::Receiving, bytes)?;
     loop {
         let Some(msg) = ws.next().await else {
             break;
@@ -231,7 +238,11 @@ pub(crate) async fn synth_to_writer<W: AsyncWrite + Unpin>(
         let msg = msg.map_err(|e| format!("接收音频失败: {e}"))?;
         match msg {
             tokio_tungstenite::tungstenite::Message::Binary(data) => {
-                bytes += write_audio_chunk(output, &data).await?;
+                if !audio_chunk(&data).is_empty() {
+                    progress(TtsPhase::Writing, bytes)?;
+                    bytes += write_audio_chunk(output, &data).await?;
+                    progress(TtsPhase::Receiving, bytes)?;
+                }
             }
             tokio_tungstenite::tungstenite::Message::Text(t) => {
                 if t.contains("Path:turn.end") {
@@ -258,7 +269,17 @@ async fn write_audio_chunk<W: AsyncWrite + Unpin>(
     output: &mut W,
     data: &[u8],
 ) -> Result<u64, String> {
-    let audio = if let Some(p) = data.windows(10).position(|w| w == b"Path:audio") {
+    let audio = audio_chunk(data);
+    output
+        .write_all(audio)
+        .await
+        .map_err(|e| format!("写入音频失败: {e}"))?;
+    Ok(audio.len() as u64)
+}
+
+/// 空音频帧不计作接收进展；沿用原有帧头定位规则。
+fn audio_chunk(data: &[u8]) -> &[u8] {
+    if let Some(p) = data.windows(10).position(|w| w == b"Path:audio") {
         let mut start = p + 10;
         if data.get(start) == Some(&13) {
             start += 1;
@@ -269,12 +290,7 @@ async fn write_audio_chunk<W: AsyncWrite + Unpin>(
         &data[start..]
     } else {
         data
-    };
-    output
-        .write_all(audio)
-        .await
-        .map_err(|e| format!("写入音频失败: {e}"))?;
-    Ok(audio.len() as u64)
+    }
 }
 
 /// 当前时间（RFC 3339 格式，用于 X-Timestamp 头）
@@ -386,6 +402,7 @@ mod tests {
             None,
             None,
             &mut audio,
+            &mut |_, _| Ok(()),
         )
         .await
         .expect("合成失败");

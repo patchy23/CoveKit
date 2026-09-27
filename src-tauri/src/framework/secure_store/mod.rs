@@ -36,6 +36,20 @@ pub(crate) use key::{
 pub(crate) use status::inspect_domain;
 pub use status::ProtectionStatus;
 
+/// 临时数据目录在写入正文前收紧访问；目录需要遍历权限，不能复用文件的 0600。
+pub(crate) fn restrict_private_directory(path: &std::path::Path) -> Result<(), String> {
+    #[cfg(windows)]
+    { win_acl::restrict_to_current_user(path) }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+            .map_err(|e| format!("临时目录权限设置失败: {e}"))
+    }
+    #[cfg(not(any(windows, unix)))]
+    { let _ = path; Err("当前平台不支持私有临时目录".into()) }
+}
+
 /// 仅测试构建可见：uid 绑定格式的认证校验（构造夹具用）
 #[cfg(test)]
 pub(crate) use crypto::authenticates_with_aad;

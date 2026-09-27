@@ -4,6 +4,7 @@
 mod jobs;
 mod models;
 mod output;
+mod progress;
 mod synth;
 
 use jobs::{TtsJobs, CANCELLED};
@@ -47,8 +48,10 @@ pub async fn tts_synthesize(
     voice: String,
     rate: Option<i32>,
     pitch: Option<i32>,
+    on_progress: Option<tauri::ipc::Channel<models::TtsProgress>>,
 ) -> Result<TtsResult, String> {
     let (_job, mut cancelled) = state.claim(&job_id)?;
+    let mut progress = progress::Progress::new(&job_id, on_progress);
     log::info!("语音合成开始");
     let log_started = std::time::Instant::now();
     let mut log_stage = "synthesize";
@@ -60,7 +63,9 @@ pub async fn tts_synthesize(
             .await
             .map_err(|e| format!("创建 tts 目录失败: {e}"))?;
         let path = output::audio_path(&dir, &job_id)?;
-        let temporary = path.with_extension("part");
+        let temporary_dir = state.temporary_directory(dir.join("partial-instances")).await?;
+        if *cancelled.borrow() { return Err(CANCELLED.to_string()); }
+        let temporary = output::audio_path(temporary_dir, &job_id)?.with_extension("part");
         let file = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -70,13 +75,15 @@ pub async fn tts_synthesize(
         log_stage = "synthesize";
         // 取消只中断网络合成；文件已经提交的异步写入先收尾，再删除私有文件。
         let mut writer = tokio::io::BufWriter::with_capacity(64 * 1024, file);
+        let mut report = |phase, bytes| progress.report(phase, bytes);
         let synthesis = tokio::select! {
             biased;
             _ = cancelled.wait_for(|value| *value) => Err(CANCELLED.to_string()),
-            result = synth::synth_to_writer(&text, &voice, rate, pitch, &mut writer) => result,
+            result = synth::synth_to_writer(&text, &voice, rate, pitch, &mut writer, &mut report) => result,
         };
         let written: Result<u64, String> = async {
             let bytes = synthesis?;
+            progress.report(models::TtsPhase::Writing, bytes)?;
             writer
                 .flush()
                 .await
@@ -96,6 +103,11 @@ pub async fn tts_synthesize(
             (Ok(_), Err(error)) => Err(format!("音频文件收尾失败: {error}")),
             (Err(error), Err(cleanup)) => Err(format!("{error}；音频文件收尾失败: {cleanup}")),
         };
+        // 进展交付失败也走文件收尾，不能在 publish 前直接返回遗留临时文件。
+        let written = written.and_then(|bytes| {
+            progress.report(models::TtsPhase::Publishing, bytes)?;
+            Ok(bytes)
+        });
         let bytes = output::publish(&temporary, &path, written, &cancelled).await?;
 
         Ok(TtsResult {

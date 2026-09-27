@@ -2,6 +2,16 @@
  * 文字转语音插件 · IPC 契约（本插件私有，独立于框架与其它插件）
  * 与 Rust 侧 src-tauri/src/plugins/tts/models.rs 的 serde 结构逐字段对应。
  */
+import type { Channel } from '@tauri-apps/api/core'
+
+export type TtsPhase = 'connecting' | 'sending' | 'receiving' | 'writing' | 'publishing'
+export interface TtsProgress {
+  jobId: string
+  sequence: number
+  phase: TtsPhase
+  lastProgressAt: number
+  bytes: number
+}
 
 /** 语音项 */
 export interface TtsVoice {
@@ -31,7 +41,14 @@ export type Payloads = {
   tts_prepare: Record<string, never>
   tts_cancel: { jobId: string }
   tts_discard: { jobId: string }
-  tts_synthesize: { jobId: string; text: string; voice: string; rate?: number; pitch?: number }
+  tts_synthesize: {
+    jobId: string
+    text: string
+    voice: string
+    rate?: number
+    pitch?: number
+    onProgress?: Channel<TtsProgress>
+  }
 }
 
 /** 命令返回 */

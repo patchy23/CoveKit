@@ -18,6 +18,7 @@ import {
 } from '@/core/ui'
 import AppIcon from '@/features/ui/AppIcon.vue'
 import { ipc } from './ipc'
+import { useTtsProgress } from './useTtsProgress'
 import type { TtsVoice } from './contracts'
 
 const ui = useUiStore()
@@ -40,6 +41,7 @@ const audioElement = ref<HTMLAudioElement | null>(null)
 let disposed = false
 let generation = 0
 let activeJob: string | undefined
+const progress = useTtsProgress()
 
 async function cancelJob(jobId: string) {
   try {
@@ -50,6 +52,7 @@ async function cancelJob(jobId: string) {
 }
 
 function cancelActiveJob() {
+  progress.stop()
   const job = activeJob
   activeJob = undefined
   if (job) void cancelJob(job)
@@ -95,10 +98,16 @@ async function generate() {
       return
     }
     activeJob = jobId
-    const r = await ipc.ttsSynthesize({
-      ...input,
-      jobId,
-    })
+    progress.start(jobId)
+    const r = await ipc.ttsSynthesize(
+      {
+        ...input,
+        jobId,
+      },
+      (update) => {
+        if (!disposed && request === generation) progress.receive(update)
+      }
+    )
     if (disposed || request !== generation) {
       if (r.ok && r.filePath) {
         try {
@@ -123,7 +132,10 @@ async function generate() {
     if (!disposed && request === generation) ui.toast(`合成失败：${e}`)
   } finally {
     if (activeJob === jobId) activeJob = undefined
-    if (!disposed && request === generation) generating.value = false
+    if (!disposed && request === generation) {
+      generating.value = false
+      progress.stop()
+    }
   }
 }
 
@@ -136,6 +148,12 @@ function reset() {
   audioUrl.value = ''
   audioFile.value = ''
   lastBytes.value = 0
+}
+
+function cancelSynthesis() {
+  generation++
+  cancelActiveJob()
+  generating.value = false
 }
 
 onMounted(async () => {
@@ -190,6 +208,23 @@ onBeforeUnmount(() => {
             {{ generating ? '合成中…' : '合成语音' }}
           </UiButton>
           <UiButton variant="ghost" @click="reset">清空</UiButton>
+          <UiButton v-if="generating" variant="ghost" @click="cancelSynthesis">取消合成</UiButton>
+        </div>
+        <div
+          v-if="generating && progress.current.value"
+          role="status"
+          class="text-caption text-secondary dark:text-secondary-dark"
+        >
+          <p>
+            {{ progress.label.value }} · {{ (progress.current.value.bytes / 1024).toFixed(1) }} KB
+          </p>
+          <p>
+            最近进展：{{ new Date(progress.current.value.lastProgressAt).toLocaleTimeString() }}
+          </p>
+          <template v-if="progress.stalled.value">
+            <p>暂未收到新的进展，任务仍在等待。你可以继续等待或取消合成。</p>
+            <UiButton variant="ghost" @click="progress.keepWaiting">继续等待</UiButton>
+          </template>
         </div>
       </div>
 
