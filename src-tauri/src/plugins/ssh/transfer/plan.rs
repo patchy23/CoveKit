@@ -5,7 +5,7 @@ use super::catalog::with_read_conn;
 use super::records::business_key;
 use super::records::decode;
 use super::records::non_empty;
-use super::records::normalize_compare;
+use super::records::same_content;
 use super::records::record_identity;
 use super::CREDENTIAL_DATASET;
 use super::DATASET_BOOKMARKS;
@@ -237,7 +237,7 @@ fn merge_item(
                 let live_record = live
                     .get(&target_id)
                     .ok_or_else(|| format!("{dataset} 本地记录 {target_id} 读取失败"))?;
-                if normalize_compare(live_record) == normalize_compare(record) {
+                if same_content(live_record, record) {
                     identified_item(dataset, &id, &label, &target_id, pending_note)
                 } else {
                     conflict_item(
@@ -265,7 +265,7 @@ fn merge_item(
     // 2. 主键命中
     if let Some(live_record) = live.get(&id) {
         return Ok(
-            if normalize_compare(live_record) == normalize_compare(record) {
+            if same_content(live_record, record) {
                 identified_item(dataset, &id, &label, &id, pending_note)
             } else {
                 conflict_item(

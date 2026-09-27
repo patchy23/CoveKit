@@ -139,7 +139,7 @@ pub(super) fn business_key(
                 return Ok(None);
             };
             let mut name = None;
-            for item in profiles {
+            for item in profiles.iter() {
                 let profile = decode::<ServerProfile>(item, "服务器档案")?;
                 if profile.id == bookmark.profile_id {
                     name = Some(profile.name);
@@ -152,18 +152,23 @@ pub(super) fn business_key(
     }
 }
 
-/// 同一性比较前的归一：凭证引用永不随包（导入后一律置空待补录），不参与「内容相同」判定
-pub(super) fn normalize_compare(value: &Value) -> Value {
-    let mut value = value.clone();
-    if let Some(map) = value.as_object_mut() {
-        map.remove("credentialRef");
+/// 顶层凭证引用不参与同一性；直接借用字段比较，避免为移除一个字段复制两条记录。
+pub(super) fn same_content(left: &Value, right: &Value) -> bool {
+    match (left.as_object(), right.as_object()) {
+        (Some(left), Some(right)) => {
+            let left_len = left.len() - usize::from(left.contains_key("credentialRef"));
+            let right_len = right.len() - usize::from(right.contains_key("credentialRef"));
+            left_len == right_len && left.iter().all(|(key, value)| {
+                key == "credentialRef" || right.get(key) == Some(value)
+            })
+        }
+        _ => left == right,
     }
-    value
 }
 
 /// 反序列化回逻辑结构：失败即「结构不认识」，报错而不是跳过（跳过等于静默丢记录）
 pub(super) fn decode<T: DeserializeOwned>(record: &Value, label: &str) -> Result<T, String> {
-    serde_json::from_value(record.clone()).map_err(|e| format!("{label}记录结构不认识: {e}"))
+    T::deserialize(record).map_err(|e| format!("{label}记录结构不认识: {e}"))
 }
 
 /// id 与名称必须非空（导入侧靠 id 建引用，靠名称在界面里区分条目）
@@ -189,4 +194,49 @@ pub(super) fn edge(kind: &str, from_id: &str, to_id: &str) -> DependencyEdge {
 /// 取非空引用（空串 = 未设置，不产生引用边）
 pub(super) fn non_empty(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|item| !item.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn borrowed_comparison_matches_original_top_level_normalization() {
+        let variants = [
+            json!({"id":"one","nested":{"credentialRef":"nested"}}),
+            json!({"id":"one","nested":{"credentialRef":"nested"},"credentialRef":"a"}),
+            json!({"id":"one","nested":{"credentialRef":"nested"},"credentialRef":null}),
+            json!({"id":"one","nested":{"credentialRef":"changed"}}),
+            json!({"id":"one","nested":{"credentialRef":"nested"},"extra":null}),
+            Value::Null,
+            json!([{"credentialRef":"array-value"}]),
+        ];
+        for left in &variants {
+            for right in &variants {
+                let normalize = |value: &Value| {
+                    let mut copy = value.clone();
+                    if let Some(object) = copy.as_object_mut() {
+                        object.remove("credentialRef");
+                    }
+                    copy
+                };
+                assert_eq!(same_content(left, right), normalize(left) == normalize(right));
+            }
+        }
+    }
+
+    #[test]
+    fn borrowed_decode_preserves_owned_fields_and_rejects_wrong_types() {
+        #[derive(serde::Deserialize, Debug, PartialEq)]
+        struct Record {
+            text: String,
+            values: Vec<u64>,
+        }
+        let value = json!({"text":"中文🙂","values":[1,2,3]});
+        let decoded: Record = decode(&value, "测试").unwrap();
+        assert_eq!(decoded, serde_json::from_value::<Record>(value.clone()).unwrap());
+        assert!(decode::<Record>(&json!({"text":1,"values":[]}), "测试").is_err());
+        assert_eq!(value["text"], "中文🙂");
+    }
 }
