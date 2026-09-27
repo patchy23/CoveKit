@@ -53,6 +53,60 @@ beforeEach(() => {
 })
 afterEach(() => vi.restoreAllMocks())
 
+it('完整状态清单释放已删除档案日志，保留运行档案与查询期间新到达的事件', async () => {
+  const { wrapper, runtime } = setup()
+  await flushPromises()
+  const receive = mocks.listen.mock.calls.find(([name]) => name === 'frp://log')![1] as (event: {
+    payload: FrpLogPayload
+  }) => void
+  const send = (fileName: string, state: 'running' | 'stopped') =>
+    receive({
+      payload: {
+        fileName,
+        line: 'x'.repeat(70000),
+        ts: 1,
+        stream: 'stdout',
+        state: { fileName, state },
+      },
+    })
+  try {
+    send('deleted.toml', 'stopped')
+    send('active.toml', 'running')
+    send('imported.toml', 'stopped')
+    const pending = deferred<FrpRuntimeState[]>()
+    mocks.status.mockReturnValueOnce(pending.promise)
+    const refresh = runtime.refresh()
+    send('late.toml', 'running')
+    send('active.toml', 'stopped')
+    pending.resolve([
+      { fileName: 'active.toml', state: 'running' },
+      { fileName: 'imported.toml', state: 'stopped' },
+    ])
+    await refresh
+    expect(runtime.logs.value['deleted.toml']).toBeUndefined()
+    expect(runtime.stateOf('deleted.toml')).toBeUndefined()
+    expect(runtime.logsOf('active.toml')).toHaveLength(2)
+    expect(runtime.logsOf('imported.toml')).toHaveLength(1)
+    expect(runtime.logsOf('late.toml')).toHaveLength(1)
+    expect(runtime.stateOf('active.toml')?.state).toBe('stopped')
+    expect(runtime.stateOf('late.toml')?.state).toBe('running')
+    mocks.status.mockRejectedValueOnce(new Error('读取目录失败'))
+    await runtime.refresh()
+    expect(runtime.logsOf('imported.toml')).toHaveLength(1)
+    const old = deferred<FrpRuntimeState[]>()
+    mocks.status.mockReturnValueOnce(old.promise)
+    const stale = runtime.refresh()
+    mocks.status.mockResolvedValueOnce([])
+    await runtime.refresh()
+    old.resolve([{ fileName: 'deleted.toml', state: 'stopped' }])
+    await stale
+    expect(runtime.states.value).toEqual({})
+    expect(runtime.logs.value).toEqual({})
+  } finally {
+    wrapper.unmount()
+  }
+})
+
 it('单次日志事件同步状态和完整错误，重复行不丢弃，恢复立即清错误，兼容旧事件', async () => {
   const { wrapper, runtime } = setup()
   await flushPromises()

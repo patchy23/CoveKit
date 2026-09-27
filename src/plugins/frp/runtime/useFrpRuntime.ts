@@ -32,6 +32,9 @@ export function useFrpRuntime() {
   const logs = shallowRef<Record<string, FrpLogLine[]>>({})
   /** 正在执行启停操作的档案（按钮禁用以防连点） */
   const busy = ref<Record<string, boolean>>({})
+  let refreshVersion = 0
+  let eventVersion = 0
+  const updated = new Map<string, number>()
 
   // 生命周期（T10-1/T10-5/T10-7）：订阅与定时器都挂在 scope 上，卸载统一释放；
   // visibility 区分「页签切换/设置页覆盖/窗口隐藏」，只有真正不可见时才降频
@@ -60,6 +63,7 @@ export function useFrpRuntime() {
   /** 合并单个档案状态（整体替换对象触发响应式） */
   function applyState(state: FrpRuntimeState): void {
     if (scope.disposed) return
+    updated.set(state.fileName, ++eventVersion)
     states.value = { ...states.value, [state.fileName]: state }
   }
 
@@ -73,6 +77,8 @@ export function useFrpRuntime() {
         lastLine: payload.line,
         lastError: payload.lastErrorFromLine ? payload.line : payload.state.lastError,
       })
+    } else {
+      updated.set(payload.fileName, ++eventVersion)
     }
     const current = logs.value[payload.fileName] ?? []
     const line: FrpLogLine = {
@@ -92,14 +98,32 @@ export function useFrpRuntime() {
   /** 全量拉取状态（进入工具时 + 轮询兜底） */
   async function refresh(): Promise<void> {
     if (scope.disposed) return
+    const version = ++refreshVersion
+    // 只记录版本，不让慢查询持续持有查询开始时的整份日志/错误正文。
+    const startedAt = eventVersion
     try {
       const list = await ipc.status()
-      if (scope.disposed) return
+      if (scope.disposed || version !== refreshVersion) return
       const next: Record<string, FrpRuntimeState> = {}
       for (const item of list) next[item.fileName] = item
+      // 查询期间收到的事件或命令结果更新，不能被较早的服务端快照覆盖。
+      for (const [name, state] of Object.entries(states.value)) {
+        if ((updated.get(name) ?? 0) > startedAt || busy.value[name]) next[name] = state
+      }
       states.value = next
+      const retained: Record<string, FrpLogLine[]> = {}
+      for (const [name, lines] of Object.entries(logs.value)) {
+        if (next[name] || busy.value[name] || (updated.get(name) ?? 0) > startedAt) {
+          retained[name] = lines
+        }
+      }
+      // 成功的完整清单确认档案不存在且无活跃进程时，释放该档案的日志缓冲。
+      logs.value = retained
+      for (const name of updated.keys()) {
+        if (!next[name] && !retained[name] && !busy.value[name]) updated.delete(name)
+      }
       // 运行标记进关闭协商：关页签时用户能看到「还有进程在跑」（T10-4）
-      running.value = list.some((item) => isFrpLive(item.state))
+      running.value = Object.values(next).some((item) => isFrpLive(item.state))
     } catch {
       // 状态查询失败不打扰用户（轮询会自愈）；操作路径上的失败一定有 toast
     }
@@ -183,6 +207,7 @@ export function useFrpRuntime() {
     states.value = {}
     logs.value = {}
     busy.value = {}
+    updated.clear()
   })
 
   return { states, logs, busy, stateOf, logsOf, isBusy, clearLogs, refresh, start, stop, restart }

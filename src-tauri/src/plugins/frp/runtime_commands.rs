@@ -96,5 +96,5 @@ pub async fn frp_status(
     app: AppHandle,
     state: State<'_, FrpState>,
 ) -> Result<Vec<FrpRuntimeState>, String> {
-    Ok(runtime::status_all(&app, &state).await)
+    runtime::status_all(&app, &state).await
 }

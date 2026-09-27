@@ -4,7 +4,7 @@
 //! `frp://state`。Rust 侧不长期缓存日志（只留最后一行），环形缓冲交给前端；日志与 lastError 的
 //! 文本归一化（剥 ANSI + 敏感值打码）在 `verify` 模块，两侧共用同一份实现。
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
@@ -527,31 +527,45 @@ pub(crate) async fn state_of(state: &State<'_, FrpState>, file_name: &str) -> Fr
 pub(crate) async fn status_all(
     app: &AppHandle,
     state: &State<'_, FrpState>,
+) -> Result<Vec<FrpRuntimeState>, String> {
+    let dir = crate::plugins::frp::profile_dir(app)?;
+    let mut files = profile::list_profile_files(&dir).await?;
+    let managed = super::transfer::managed_dir(app)?;
+    if managed != dir {
+        match tokio::fs::metadata(&managed).await {
+            Ok(_) => files.extend(profile::list_profile_files(&managed).await?),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("读取导入档案目录失败: {error}")),
+        }
+    }
+    let names = files
+        .iter()
+        .filter_map(|path| path.file_name()?.to_str().map(str::to_string))
+        .collect();
+    // 两处目录都成功读取后才能判定删除；失败不能冒充空清单并清掉历史。
+    let mut map = state.0.lock().await;
+    Ok(collect_status(&mut map, names))
+}
+
+/// 已删除且监控已结束的条目不再持有正文；运行中的已删除档案仍保留停止入口。
+fn collect_status(
+    map: &mut HashMap<String, FrpRun>,
+    mut names: BTreeSet<String>,
 ) -> Vec<FrpRuntimeState> {
-    let mut names: Vec<String> = Vec::new();
-    if let Ok(dir) = crate::plugins::frp::profile_dir(app) {
-        if let Ok(files) = profile::list_profile_files(&dir).await {
-            for path in files {
-                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                    names.push(name.to_string());
-                }
-            }
-        }
-    }
-    {
-        let map = state.0.lock().await;
-        for name in map.keys() {
-            if !names.iter().any(|exist| exist == name) {
-                names.push(name.clone());
-            }
-        }
-    }
-    names.sort();
-    let mut result = Vec::with_capacity(names.len());
-    for name in names {
-        result.push(state_of(state, &name).await);
-    }
-    result
+    map.retain(|name, run| {
+        names.contains(name)
+            || run.pid.is_some()
+            || run.handle.as_ref().is_some_and(|handle| !handle.is_finished())
+    });
+    names.extend(map.keys().cloned());
+    names
+        .into_iter()
+        .map(|name| {
+            map.get(&name)
+                .map(|run| run.snapshot(&name))
+                .unwrap_or_else(|| stopped_state(&name))
+        })
+        .collect()
 }
 
 /// 应用退出兜底：向全部档案发停止信号并等收尾（best-effort，防残留 frpc）
@@ -591,6 +605,47 @@ pub(crate) async fn shutdown_all(app: &AppHandle) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn complete_catalog_releases_only_deleted_finished_runs() {
+        let mut deleted = FrpRun::new(None);
+        deleted.state = FrpStateName::Stopped;
+        deleted.last_error = Some(Arc::new("x".repeat(70000)));
+        let error = Arc::downgrade(deleted.last_error.as_ref().unwrap());
+        let mut pending = FrpRun::new(None);
+        let (release, ready) = oneshot::channel();
+        pending.handle = Some(tokio::spawn(async move {
+            let _ = ready.await;
+        }));
+        let mut map = HashMap::from([
+            ("deleted.toml".to_string(), deleted),
+            ("running.toml".to_string(), FrpRun::new(Some(7))),
+            ("pending.toml".to_string(), pending),
+            ("imported.toml".to_string(), FrpRun::new(None)),
+        ]);
+        let catalog = BTreeSet::from(["imported.toml".to_string(), "new.toml".to_string()]);
+        let result = collect_status(&mut map, catalog.clone());
+        assert!(error.upgrade().is_none());
+        assert_eq!(
+            result
+                .iter()
+                .map(|state| state.file_name.as_str())
+                .collect::<Vec<_>>(),
+            ["imported.toml", "new.toml", "pending.toml", "running.toml"],
+        );
+        release.send(()).unwrap();
+        map.get_mut("pending.toml")
+            .unwrap()
+            .handle
+            .take()
+            .unwrap()
+            .await
+            .unwrap();
+        collect_status(&mut map, catalog);
+        assert!(!map.contains_key("pending.toml"));
+        assert!(map.contains_key("running.toml"));
+        assert!(map.contains_key("imported.toml"));
+    }
 
     /// 普通日志沿用旧错误的同一缓冲；恢复或新错误替换后，既有比较快照仍有效。
     #[test]
