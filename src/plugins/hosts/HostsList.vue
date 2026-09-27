@@ -133,7 +133,7 @@ function addRow() {
           v-for="e in editable"
           :key="e.id"
           v-memo="[e.ip, e.hosts, e.comment, e.enabled, e.valid, e.error]"
-          class="mb-[8px] grid grid-cols-[40px_170px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
+          class="hosts-entry mb-[8px] grid grid-cols-[40px_170px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
           :class="
             e.valid
               ? 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark'
@@ -179,3 +179,18 @@ function addRow() {
     </UiScrollArea>
   </div>
 </template>
+
+<style scoped>
+/* 保留全部输入节点与原生 Tab 顺序，仅跳过离屏行的布局和绘制。
+ * 占位使用 md 输入框的内容区高度，内边距与边框仍由原布局计算。
+ * 浏览器测量后记住实际高度；不支持此优化时沿用完整渲染。 */
+.hosts-entry {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 36px;
+}
+
+/* 聚焦行保持完整布局，滚离视口时也不影响输入法及焦点装饰。 */
+.hosts-entry:focus-within {
+  content-visibility: visible;
+}
+</style>
