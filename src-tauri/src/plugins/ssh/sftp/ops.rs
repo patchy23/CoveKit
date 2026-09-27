@@ -10,7 +10,7 @@ use tauri::State;
 use crate::plugins::ssh::conn::{get_sftp_session, SshState};
 use crate::plugins::ssh::models::SshActionResult;
 use crate::plugins::ssh::sftp::util::{
-    check_chmod_allowed, check_delete_allowed, check_entry_name, is_dir_mode, LocalUploadEntry,
+    check_chmod_allowed, check_delete_allowed, check_entry_name, is_dir_mode, TransferPlan,
 };
 
 /// 删除远程文件/目录（目录需 recursive 或仅空目录）
@@ -272,56 +272,32 @@ pub(crate) async fn collect_remote_entries(
     sftp: &russh_sftp::client::SftpSession,
     remote_path: &str,
     local_path: &Path,
-) -> Result<Vec<LocalUploadEntry>, String> {
+) -> Result<TransferPlan, String> {
     let meta = sftp
         .metadata(remote_path)
         .await
         .map_err(|e| format!("读取远程元数据失败: {e}"))?;
+    let prefix = if remote_path.ends_with('/') { remote_path.to_string() } else { format!("{remote_path}/") };
+    let mut entries = TransferPlan::new(local_path.to_path_buf(), remote_path.to_string(), prefix);
     if !meta.permissions.map(is_dir_mode).unwrap_or(false) {
-        return Ok(vec![LocalUploadEntry {
-            local_path: local_path.to_path_buf(),
-            remote_path: remote_path.to_string(),
-            is_dir: false,
-            size: meta.size.unwrap_or(0),
-        }]);
+        entries.push(std::path::PathBuf::new(), false, meta.size.unwrap_or(0))?;
+        return Ok(entries);
     }
-    let mut entries = vec![LocalUploadEntry {
-        local_path: local_path.to_path_buf(),
-        remote_path: remote_path.to_string(),
-        is_dir: true,
-        size: 0,
-    }];
-    let mut pending = vec![remote_path.to_string()];
-    while let Some(directory) = pending.pop() {
+    entries.push(std::path::PathBuf::new(), true, 0)?;
+    let mut pending = vec![0];
+    while let Some(index) = pending.pop() {
+        let relative_directory = entries.relative(index)?.to_path_buf();
+        let directory = entries.remote_directory(&relative_directory);
         let remote_entries = sftp.read_dir(&directory).await.map_err(|e| e.to_string())?;
         for entry in remote_entries {
             let name = entry.file_name();
             check_entry_name(&name)?;
-            let child_remote = if directory.ends_with('/') {
-                format!("{directory}{name}")
-            } else {
-                format!("{directory}/{name}")
-            };
-            let relative = Path::new(&child_remote)
-                .strip_prefix(remote_path)
-                .map_err(|e| format!("计算相对路径失败: {e}"))?;
-            let child_local = local_path.join(relative);
+            let relative = relative_directory.join(&name);
             let meta = entry.metadata();
             if meta.permissions.map(is_dir_mode).unwrap_or(false) {
-                entries.push(LocalUploadEntry {
-                    local_path: child_local.clone(),
-                    remote_path: child_remote.clone(),
-                    is_dir: true,
-                    size: 0,
-                });
-                pending.push(child_remote);
+                pending.push(entries.push(relative, true, 0)?);
             } else {
-                entries.push(LocalUploadEntry {
-                    local_path: child_local,
-                    remote_path: child_remote,
-                    is_dir: false,
-                    size: meta.size.unwrap_or(0),
-                });
+                entries.push(relative, false, meta.size.unwrap_or(0))?;
             }
         }
     }

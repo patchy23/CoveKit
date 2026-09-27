@@ -82,7 +82,7 @@ pub async fn ssh_file_upload(
             if cancel.is_cancelled() {
                 return Err("已取消".into());
             }
-            total = entries.iter().map(|entry| entry.size).sum();
+            total = entries.total_size();
             let session = get_session(&app2.state::<SshState>(), &event_connection_id)?;
             let channel = session
                 .channel_open_session()
@@ -98,7 +98,7 @@ pub async fn ssh_file_upload(
                 .map_err(|e| e.to_string())?;
             // 同一任务逐文件传输，缓冲复用；只发送本轮读到的前 n 字节。
             let mut buf = vec![0u8; 64 * 1024];
-            for entry in entries {
+            for entry in entries.into_entries() {
                 if cancel.is_cancelled() {
                     return Err("已取消".into());
                 }
@@ -453,9 +453,9 @@ pub async fn ssh_file_download_recursive(
                 _ = cancel.cancelled() => return Err("已取消".into()),
                 result = collect_remote_entries(&sftp, &rpath, Path::new(&lpath)) => result?,
             };
-            total = entries.iter().map(|e| e.size).sum();
+            total = entries.total_size();
             let mut buf = vec![0u8; 64 * 1024];
-            for entry in entries {
+            for entry in entries.into_entries() {
                 if cancel.is_cancelled() {
                     return Err("已取消".into());
                 }

@@ -10,16 +10,115 @@ use std::path::{Path, PathBuf};
 use crate::plugins::ssh::conn::resource_id;
 use crate::plugins::ssh::models::RemoteFile;
 
-/// 递归上传前展开的单个本地文件或目录。
-pub(crate) struct LocalUploadEntry {
+/// 传输时临时展开的单个本地文件或目录。
+pub(crate) struct TransferEntry {
     /// 本地绝对或用户选择路径。
     pub(crate) local_path: PathBuf,
     /// 对应的远程目标路径。
     pub(crate) remote_path: String,
     /// 是否为目录。
     pub(crate) is_dir: bool,
-    /// 文件字节数；目录为 0。
-    pub(crate) size: u64,
+}
+
+/// 完整预检清单只保存一份相对路径；完整两端路径按传输条目临时构造。
+pub(crate) struct TransferPlan {
+    local_root: PathBuf,
+    remote_root: String,
+    remote_prefix: String,
+    entries: Vec<PlannedEntry>,
+    total: u64,
+}
+
+struct PlannedEntry {
+    relative: PathBuf,
+    is_dir: bool,
+}
+
+impl TransferPlan {
+    /// 子路径前缀由扫描端按原有拼接规则传入，根条目保持用户指定路径。
+    pub(crate) fn new(local_root: PathBuf, remote_root: String, remote_prefix: String) -> Self {
+        Self {
+            local_root,
+            remote_root,
+            remote_prefix,
+            entries: Vec::new(),
+            total: 0,
+        }
+    }
+
+    /// 返回稳定条目索引，待扫描目录栈只保留索引而不复制路径。
+    pub(crate) fn push(&mut self, relative: PathBuf, is_dir: bool, size: u64) -> Result<usize, String> {
+        if relative
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        {
+            return Err("目录条目不能是绝对路径、盘符或父目录".into());
+        }
+        self.total = self
+            .total
+            .checked_add(size)
+            .ok_or("文件传输总字节数溢出")?;
+        let index = self.entries.len();
+        self.entries.push(PlannedEntry { relative, is_dir });
+        Ok(index)
+    }
+
+    /// 目录待扫描栈通过索引借用相对路径，不持有第二份完整路径。
+    pub(crate) fn relative(&self, index: usize) -> Result<&Path, String> {
+        self.entries
+            .get(index)
+            .map(|entry| entry.relative.as_path())
+            .ok_or_else(|| "目录清单索引无效".into())
+    }
+
+    /// 远程枚举下一目录前恢复完整路径。
+    pub(crate) fn remote_directory(&self, relative: &Path) -> String {
+        planned_remote_path(&self.remote_root, &self.remote_prefix, relative)
+    }
+
+    /// 预检已累计的总量；传输前即可显示完整进度分母。
+    pub(crate) fn total_size(&self) -> u64 {
+        self.total
+    }
+
+    /// 消费清单时只构造当前条目的完整路径，已消费的相对路径立即释放。
+    pub(crate) fn into_entries(self) -> impl Iterator<Item = TransferEntry> {
+        let Self {
+            local_root,
+            remote_root,
+            remote_prefix,
+            entries,
+            ..
+        } = self;
+        entries.into_iter().map(move |entry| {
+            let remote_path =
+                planned_remote_path(&remote_root, &remote_prefix, &entry.relative);
+            let local_path = if entry.relative.as_os_str().is_empty() {
+                local_root.clone()
+            } else {
+                local_root.join(&entry.relative)
+            };
+            TransferEntry {
+                local_path,
+                remote_path,
+                is_dir: entry.is_dir,
+            }
+        })
+    }
+}
+
+fn planned_remote_path(root: &str, prefix: &str, relative: &Path) -> String {
+    if relative.as_os_str().is_empty() {
+        return root.to_string();
+    }
+    let mut result = prefix.to_string();
+    for (index, part) in relative.components().enumerate() {
+        if index > 0 {
+            result.push('/');
+        }
+        result.push_str(&part.as_os_str().to_string_lossy());
+    }
+    result
 }
 
 /// 展开本地上传目标；目录按父目录优先排列，符号链接不跟随，避免越出用户选择范围。
@@ -27,38 +126,32 @@ pub(crate) fn collect_upload_entries(
     local_path: &str,
     remote_path: &str,
     mut cancelled: impl FnMut() -> bool,
-) -> Result<Vec<LocalUploadEntry>, String> {
+) -> Result<TransferPlan, String> {
     if cancelled() {
         return Err("已取消".into());
     }
     let root = PathBuf::from(local_path);
     let root_meta = std::fs::symlink_metadata(&root).map_err(|e| format!("本地路径不可读: {e}"))?;
+    let mut entries = TransferPlan::new(root.clone(), remote_path.to_string(), format!("{}/", remote_path.trim_end_matches('/')));
     if root_meta.file_type().is_symlink() {
         return Err("暂不支持上传符号链接".into());
     }
     if root_meta.is_file() {
-        return Ok(vec![LocalUploadEntry {
-            local_path: root,
-            remote_path: remote_path.to_string(),
-            is_dir: false,
-            size: root_meta.len(),
-        }]);
+        entries.push(PathBuf::new(), false, root_meta.len())?;
+        return Ok(entries);
     }
     if !root_meta.is_dir() {
         return Err("仅支持上传普通文件或目录".into());
     }
 
-    let mut entries = vec![LocalUploadEntry {
-        local_path: root.clone(),
-        remote_path: remote_path.to_string(),
-        is_dir: true,
-        size: 0,
-    }];
-    let mut pending = vec![root.clone()];
-    while let Some(directory) = pending.pop() {
+    entries.push(PathBuf::new(), true, 0)?;
+    let mut pending = vec![0];
+    while let Some(index) = pending.pop() {
         if cancelled() {
             return Err("已取消".into());
         }
+        let relative_directory = entries.relative(index)?.to_path_buf();
+        let directory = root.join(&relative_directory);
         let children = std::fs::read_dir(&directory)
             .map_err(|e| format!("无法读取目录 {}: {e}", directory.display()))?;
         for child in children {
@@ -76,40 +169,15 @@ pub(crate) fn collect_upload_entries(
             let metadata = child
                 .metadata()
                 .map_err(|e| format!("读取 {} 元数据失败: {e}", path.display()))?;
-            let relative = path
-                .strip_prefix(&root)
-                .map_err(|e| format!("计算相对路径失败: {e}"))?;
-            let remote = join_remote_path(remote_path, relative);
+            let relative = relative_directory.join(child.file_name());
             if metadata.is_dir() {
-                entries.push(LocalUploadEntry {
-                    local_path: path.clone(),
-                    remote_path: remote,
-                    is_dir: true,
-                    size: 0,
-                });
-                pending.push(path);
+                pending.push(entries.push(relative, true, 0)?);
             } else if metadata.is_file() {
-                entries.push(LocalUploadEntry {
-                    local_path: path,
-                    remote_path: remote,
-                    is_dir: false,
-                    size: metadata.len(),
-                });
+                entries.push(relative, false, metadata.len())?;
             }
         }
     }
     Ok(entries)
-}
-
-/// 用 POSIX 分隔符把相对本地路径拼接到远程根路径。
-fn join_remote_path(root: &str, relative: &Path) -> String {
-    relative
-        .components()
-        .fold(root.trim_end_matches('/').to_string(), |mut path, part| {
-            path.push('/');
-            path.push_str(&part.as_os_str().to_string_lossy());
-            path
-        })
 }
 
 /// 将已完整写入的临时文件安全替换为目标文件；失败时尽量恢复旧文件。
@@ -400,6 +468,44 @@ mod policy_tests {
 mod download_commit_tests {
     use super::*;
 
+    #[test]
+    fn compact_plan_keeps_paths_order_and_totals_without_repeated_roots() {
+        let local_root = std::env::temp_dir().join("long-root-".repeat(50));
+        let remote_root = "//remote-root///";
+        let mut plan = TransferPlan::new(local_root.clone(), remote_root.into(), remote_root.into());
+        plan.push(PathBuf::new(), true, 0).unwrap();
+        let dir = plan.push(PathBuf::from("子目录"), true, 0).unwrap();
+        plan.push(PathBuf::from("子目录").join("a.txt"), false, 123).unwrap();
+        assert_eq!(plan.total_size(), 123);
+        assert_eq!(plan.remote_directory(plan.relative(dir).unwrap()), "//remote-root///子目录");
+        assert!(plan.entries.iter().all(|entry| !entry.relative.is_absolute()));
+        let mut resolved = plan.into_entries();
+        let root = resolved.next().unwrap();
+        assert_eq!(root.local_path, local_root);
+        assert_eq!(root.remote_path, remote_root);
+        assert!(root.is_dir);
+        let directory = resolved.next().unwrap();
+        assert_eq!(directory.local_path, local_root.join("子目录"));
+        let file = resolved.next().unwrap();
+        assert_eq!(file.local_path, local_root.join("子目录").join("a.txt"));
+        assert_eq!(file.remote_path, "//remote-root///子目录/a.txt");
+        assert!(!file.is_dir);
+        assert!(resolved.next().is_none());
+    }
+
+    #[test]
+    fn plan_rejects_escaping_paths_and_total_overflow_before_transfer() {
+        let mut plan = TransferPlan::new(PathBuf::from("local"), "/remote".into(), "/remote/".into());
+        assert!(plan.push(PathBuf::from("../escape"), false, 1).is_err());
+        assert!(plan.push(std::env::temp_dir(), false, 1).is_err());
+        #[cfg(windows)]
+        assert!(plan.push(PathBuf::from("C:escape"), false, 1).is_err());
+        plan.push(PathBuf::from("large"), false, u64::MAX).unwrap();
+        assert!(plan.push(PathBuf::from("overflow"), false, 1).is_err());
+        assert_eq!(plan.total_size(), u64::MAX);
+        assert_eq!(plan.entries.len(), 1);
+    }
+
     /// 准备阶段取消在元数据访问前生效，遍历过程中也逐条复查。
     #[test]
     fn upload_scan_can_cancel_before_and_during_enumeration() {
@@ -413,9 +519,9 @@ mod download_commit_tests {
             std::fs::write(root.join(format!("{index}.txt")), b"data").unwrap();
         }
         let complete = collect_upload_entries(root.to_str().unwrap(), "/remote", || false).unwrap();
-        assert_eq!(complete.len(), 21);
-        assert_eq!(complete.iter().map(|entry| entry.size).sum::<u64>(), 80);
-        assert!(complete[0].is_dir);
+        assert_eq!(complete.entries.len(), 21);
+        assert_eq!(complete.total_size(), 80);
+        assert!(complete.entries[0].is_dir);
         let mut checks = 0;
         let cancelled = collect_upload_entries(root.to_str().unwrap(), "/remote", || {
             checks += 1;
