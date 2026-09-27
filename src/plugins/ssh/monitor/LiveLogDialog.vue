@@ -3,7 +3,7 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { UiFloatingWindow, UiLogViewer } from '@/core/ui'
 import { useCopy } from '@/core/feedback/useCopy'
-import { ipc } from '../ipc'
+import { readLogSnapshot } from './logRequests'
 
 const props = defineProps<{
   activation?: number
@@ -48,20 +48,13 @@ async function refresh() {
   const previousFingerprint = fingerprintKey === key ? fingerprint : undefined
   loading.value = true
   try {
-    const result =
-      props.kind === 'service'
-        ? await ipc.sshServiceLogs({
-            connectionId: props.connectionId,
-            serviceName: props.targetId,
-            lines,
-            ...(previousFingerprint ? { previousFingerprint } : {}),
-          })
-        : await ipc.sshDockerLogs({
-            connectionId: props.connectionId,
-            containerId: props.targetId,
-            lines,
-            ...(previousFingerprint ? { previousFingerprint } : {}),
-          })
+    const result = await readLogSnapshot(
+      props.kind,
+      props.connectionId,
+      props.targetId,
+      lines,
+      previousFingerprint
+    )
     if (disposed || key !== sourceKey()) return
     if (!result.ok) throw new Error(result.error ?? '日志读取失败')
     if (result.unchanged) {

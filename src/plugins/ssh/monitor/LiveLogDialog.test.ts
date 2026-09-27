@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { UiLogViewer } from '@/core/ui'
 import LiveLogDialog from './LiveLogDialog.vue'
 import { ipc } from '../ipc'
+import { readLogSnapshot } from './logRequests'
 
 vi.mock('../ipc', () => ({ ipc: { sshDockerLogs: vi.fn(), sshServiceLogs: vi.fn() } }))
 vi.mock('@/core/feedback/useCopy', () => ({ useCopy: () => ({ copyText: vi.fn() }) }))
@@ -13,6 +14,66 @@ beforeEach(() => {
   vi.mocked(ipc.sshServiceLogs).mockReset().mockResolvedValue({ ok: true, logs: 'service' })
 })
 afterEach(() => vi.useRealTimers())
+
+it.each(['docker', 'service'] as const)(
+  '%s 多窗口共享相同在途读取，关闭其中一个不影响其他窗口，完成后重新读取',
+  async (kind) => {
+    const command = kind === 'docker' ? ipc.sshDockerLogs : ipc.sshServiceLogs
+    let resolve!: (value: { ok: boolean; logs: string }) => void
+    vi.mocked(command).mockReturnValueOnce(new Promise((done) => (resolve = done)))
+    const first = mountLog(kind)
+    const second = mountLog(kind)
+    expect(command).toHaveBeenCalledTimes(1)
+    first.unmount()
+    resolve({ ok: true, logs: '共享完整正文' })
+    await flushPromises()
+    expect(second.getComponent(UiLogViewer).props('content')).toBe('共享完整正文')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(command).toHaveBeenCalledTimes(2)
+  }
+)
+
+it('共享读取失败同时反馈，下一次刷新可以重试且不保留失败结果', async () => {
+  let reject!: (error: Error) => void
+  vi.mocked(ipc.sshDockerLogs).mockReturnValueOnce(new Promise((_done, fail) => (reject = fail)))
+  const first = mountLog()
+  const second = mountLog()
+  expect(ipc.sshDockerLogs).toHaveBeenCalledTimes(1)
+  reject(new Error('连接已断开'))
+  await flushPromises()
+  for (const wrapper of [first, second]) {
+    expect(wrapper.getComponent(UiLogViewer).props('error')).toContain('连接已断开')
+  }
+  second.getComponent(UiLogViewer).vm.$emit('refresh')
+  await flushPromises()
+  expect(ipc.sshDockerLogs).toHaveBeenCalledTimes(2)
+  expect(second.getComponent(UiLogViewer).props('content')).toBe('docker')
+  expect(second.getComponent(UiLogViewer).props('error')).toBe('')
+})
+
+it('不同来源、连接、行数或正文基线不能共用无变化响应', async () => {
+  let resolve!: (value: { ok: boolean; logs: string }) => void
+  const result = new Promise<{ ok: boolean; logs: string }>((done) => (resolve = done))
+  vi.mocked(ipc.sshDockerLogs).mockReturnValue(result)
+  vi.mocked(ipc.sshServiceLogs).mockReturnValue(result)
+  const first = readLogSnapshot('docker', 'c', 't', 300, 'base')
+  const joined = readLogSnapshot('docker', 'c', 't', 300, 'base')
+  const others = [
+    readLogSnapshot('docker', 'c2', 't', 300, 'base'),
+    readLogSnapshot('docker', 'c', 't2', 300, 'base'),
+    readLogSnapshot('docker', 'c', 't', 100, 'base'),
+    readLogSnapshot('docker', 'c', 't', 300, 'different'),
+    readLogSnapshot('docker', 'c', 't', 300),
+    readLogSnapshot('service', 'c', 't', 300, 'base'),
+  ]
+  expect(joined).toBe(first)
+  expect(ipc.sshDockerLogs).toHaveBeenCalledTimes(6)
+  expect(ipc.sshServiceLogs).toHaveBeenCalledOnce()
+  resolve({ ok: true, logs: '完整正文' })
+  await Promise.all([first, joined, ...others])
+  await readLogSnapshot('docker', 'c', 't', 300, 'base')
+  expect(ipc.sshDockerLogs).toHaveBeenCalledTimes(7)
+})
 
 function mountLog(kind: 'docker' | 'service' = 'docker') {
   return shallowMount(LiveLogDialog, {
