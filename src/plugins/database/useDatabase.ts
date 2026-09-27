@@ -157,6 +157,9 @@ export function useDatabase() {
     // 结果（workspace 域）
     pageRows: ws.pageRows,
     filteredRows: ws.filteredRows,
+    filtering: ws.filtering,
+    filterError: ws.filterError,
+    waitForFilter: ws.waitForFilter,
     totalPages: ws.totalPages,
     setPage: ws.setPage,
     resultTabs: ws.resultTabs,

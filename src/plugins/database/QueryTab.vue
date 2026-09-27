@@ -200,16 +200,35 @@ const gridRows = computed(() =>
 
 /** 复制结果到剪贴板（TSV 制表符分隔） */
 async function copyResult() {
-  const source = queryState.value
-  const text = rowsToTsv(selectResultValues(db.filteredRows.value, source.values, rowIndex.value))
-  await copyText(text, '已复制筛选结果')
+  try {
+    const source = queryState.value
+    const snapshot = source.rows
+    const condition = source.filter
+    const filtered = await db.waitForFilter()
+    if (queryState.value !== source || source.rows !== snapshot || source.filter !== condition) {
+      ui.toast('筛选条件或结果已变化，请重新复制')
+      return
+    }
+    const text = rowsToTsv(selectResultValues(filtered, source.values, rowIndex.value))
+    await copyText(text, '已复制筛选结果')
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') ui.toast(error.message)
+    else db.showError(error)
+  }
 }
 
 /** 导出 CSV（对话框选路径 → dbc_export_csv 落盘） */
 async function exportCsv() {
   try {
     const source = queryState.value
-    const rows = selectResultValues(db.filteredRows.value, source.values, rowIndex.value)
+    const snapshot = source.rows
+    const condition = source.filter
+    const filtered = await db.waitForFilter()
+    if (queryState.value !== source || source.rows !== snapshot || source.filter !== condition) {
+      ui.toast('筛选条件或结果已变化，请重新导出')
+      return
+    }
+    const rows = selectResultValues(filtered, source.values, rowIndex.value)
     const path = await dialogSave({
       defaultPath: 'result.csv',
       filters: [{ name: 'CSV', extensions: ['csv'] }],
@@ -221,7 +240,8 @@ async function exportCsv() {
       )
     }
   } catch (err) {
-    db.showError(err)
+    if (err instanceof DOMException && err.name === 'AbortError') ui.toast(err.message)
+    else db.showError(err)
   }
 }
 const exportRequest = ref('')
