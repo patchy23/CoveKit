@@ -1,5 +1,6 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
+import { reactive } from 'vue'
 import RuntimeLogPanel from './RuntimeLogPanel.vue'
 import type { FrpLogLine } from './frpStatus'
 
@@ -65,4 +66,36 @@ it('缓冲长度不变时继续跟随新日志，阅读历史时不强制滚动'
   await wrapper.setProps({ lines: [line('third')] })
   await wrapper.vm.$nextTick()
   expect(element.scrollTop).toBe(20)
+})
+
+it('持续追加和裁剪只搜索新正文，切换关键词及原地修改仍重新匹配', async () => {
+  const first = reactive(line('ERROR first'))
+  const second = line('INFO second')
+  const third = line('ERROR third')
+  const wrapper = mount(RuntimeLogPanel, { props: { lines: [first, second], running: true } })
+  const rows = () => wrapper.findAll('div.select-text').map((row) => row.text())
+  await wrapper.get('input').setValue('error')
+  const lower = vi.spyOn(String.prototype, 'toLowerCase')
+  await wrapper.setProps({ lines: [first, second, third] })
+  expect(rows()).toHaveLength(2)
+  expect(lower.mock.contexts).not.toContain(first.line)
+  expect(lower.mock.contexts).not.toContain(second.line)
+  expect(lower.mock.contexts).toContain(third.line)
+  lower.mockClear()
+  await wrapper.setProps({ lines: [first, third] })
+  expect(rows()).toHaveLength(2)
+  expect(lower.mock.contexts).not.toContain(third.line)
+  first.line = 'INFO changed'
+  await wrapper.vm.$nextTick()
+  expect(rows()).toHaveLength(1)
+  expect(rows()[0]).toContain('ERROR third')
+  await wrapper.get('input').setValue('INFO')
+  expect(rows()).toHaveLength(1)
+  expect(rows()[0]).toContain('INFO changed')
+  await wrapper.get('input').setValue('')
+  expect(rows()).toHaveLength(2)
+  await wrapper.setProps({ lines: [] })
+  await wrapper.get('input').setValue('error')
+  await wrapper.setProps({ lines: [third] })
+  expect(rows()[0]).toContain('ERROR third')
 })

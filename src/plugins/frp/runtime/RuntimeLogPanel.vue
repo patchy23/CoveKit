@@ -44,10 +44,24 @@ function rowView(item: FrpLogLine) {
 }
 
 /** 过滤后的日志行 */
+const needle = computed(() => keyword.value.trim().toLowerCase())
+let cachedNeedle = ''
+let matches = new WeakMap<FrpLogLine, { line: string; matched: boolean }>()
 const visible = computed(() => {
-  const needle = keyword.value.trim().toLowerCase()
-  if (needle === '') return props.lines
-  return props.lines.filter((item) => item.line.toLowerCase().includes(needle))
+  const term = needle.value
+  if (term !== cachedNeedle) {
+    cachedNeedle = term
+    matches = new WeakMap()
+  }
+  if (term === '') return props.lines
+  return props.lines.filter((item) => {
+    const cached = matches.get(item)
+    if (cached?.line === item.line) return cached.matched
+    const matched = item.line.toLowerCase().includes(term)
+    // 仅保存原文引用与命中布尔值；弱键不保留被裁剪的日志，不缓存小写正文。
+    matches.set(item, { line: item.line, matched })
+    return matched
+  })
 })
 
 /** 滚到底部（仅在自动滚动开启时执行） */
