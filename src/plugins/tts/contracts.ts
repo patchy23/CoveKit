@@ -30,6 +30,7 @@ export type Payloads = {
   tts_voices: Record<string, never>
   tts_prepare: Record<string, never>
   tts_cancel: { jobId: string }
+  tts_discard: { jobId: string }
   tts_synthesize: { jobId: string; text: string; voice: string; rate?: number; pitch?: number }
 }
 
@@ -38,5 +39,6 @@ export type Results = {
   tts_voices: TtsVoice[]
   tts_prepare: string
   tts_cancel: void
+  tts_discard: void
   tts_synthesize: TtsResult
 }

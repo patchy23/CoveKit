@@ -99,7 +99,16 @@ async function generate() {
       ...input,
       jobId,
     })
-    if (disposed || request !== generation) return
+    if (disposed || request !== generation) {
+      if (r.ok && r.filePath) {
+        try {
+          await ipc.ttsDiscard(jobId)
+        } catch (error) {
+          ui.toast(`清理过期音频失败：${error}`)
+        }
+      }
+      return
+    }
     if (r.ok && r.filePath) {
       audioFile.value = r.filePath
       audioUrl.value = convertFileSrc(r.filePath)

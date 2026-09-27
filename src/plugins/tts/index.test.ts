@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   toast: vi.fn(),
   prepare: vi.fn(),
   cancel: vi.fn(),
+  discard: vi.fn(),
 }))
 vi.mock('./ipc', () => ({
   ipc: {
@@ -16,6 +17,7 @@ vi.mock('./ipc', () => ({
     ttsVoices: mocks.voices,
     ttsPrepare: mocks.prepare,
     ttsCancel: mocks.cancel,
+    ttsDiscard: mocks.discard,
   },
 }))
 vi.mock('@tauri-apps/api/core', () => ({ convertFileSrc: (path: string) => `asset:${path}` }))
@@ -41,6 +43,7 @@ beforeEach(() => {
   mocks.voices.mockResolvedValue([])
   mocks.prepare.mockResolvedValue('job')
   mocks.cancel.mockResolvedValue(undefined)
+  mocks.discard.mockResolvedValue(undefined)
   mocks.synthesize.mockResolvedValue({ ok: true, filePath: '/test.mp3', bytes: 123 })
 })
 afterEach(() => vi.restoreAllMocks())
@@ -61,6 +64,7 @@ it.each(['clear', 'close'])('%s 时停止播放并卸载音频源', async (actio
   expect(pause).toHaveBeenCalledOnce()
   expect(load).toHaveBeenCalledOnce()
   expect(audio.hasAttribute('src')).toBe(false)
+  expect(mocks.discard).not.toHaveBeenCalled()
 })
 
 it.each(['clear', 'close'])('%s 后迟到的合成结果不恢复播放器或弹成功提示', async (action) => {
@@ -77,6 +81,7 @@ it.each(['clear', 'close'])('%s 后迟到的合成结果不恢复播放器或弹
   expect(wrapper.find('audio').exists()).toBe(false)
   expect(mocks.toast).not.toHaveBeenCalled()
   expect(mocks.cancel).toHaveBeenCalledWith('job')
+  expect(mocks.discard).toHaveBeenCalledWith('job')
 })
 
 it.each(['clear', 'close'])('%s 早于请求登记完成时取消登记结果，不启动合成', async (action) => {
@@ -106,6 +111,20 @@ it('合成 IPC 失败也回收登记并允许重试', async () => {
   expect(button(wrapper, '合成语音').exists()).toBe(true)
 })
 
+it('过期结果清理失败可见，仍不恢复旧播放器', async () => {
+  let finish!: (result: TtsResult) => void
+  mocks.synthesize.mockReturnValueOnce(new Promise<TtsResult>((resolve) => (finish = resolve)))
+  mocks.discard.mockRejectedValueOnce(new Error('文件占用'))
+  const wrapper = mount(Tts)
+  await button(wrapper, '合成语音').trigger('click')
+  await flushPromises()
+  await button(wrapper, '清空').trigger('click')
+  finish({ ok: true, filePath: '/late.mp3', bytes: 1 })
+  await flushPromises()
+  expect(mocks.toast).toHaveBeenCalledWith(expect.stringContaining('文件占用'))
+  expect(wrapper.find('audio').exists()).toBe(false)
+})
+
 it('清空后可以立即新建合成，旧请求结束不解除新请求的忙碌状态', async () => {
   let first!: (result: TtsResult) => void
   let second!: (result: TtsResult) => void
@@ -132,8 +151,10 @@ it('清空后可以立即新建合成，旧请求结束不解除新请求的忙�
   expect(mocks.synthesize).toHaveBeenLastCalledWith(
     expect.objectContaining({ jobId: 'second', text: '新的合成' })
   )
-  first({ ok: false, bytes: 0, error: '已取消' })
+  first({ ok: true, bytes: 4, filePath: '/old.mp3' })
   await flushPromises()
+  expect(mocks.discard).toHaveBeenCalledWith('first')
+  expect(mocks.discard).not.toHaveBeenCalledWith('second')
   expect(button(wrapper, '合成中…').exists()).toBe(true)
   expect(mocks.toast).not.toHaveBeenCalled()
   second({ ok: false, bytes: 0, error: '第二次失败' })

@@ -11,6 +11,9 @@ export const ipc = {
   ttsPrepare: (): Promise<Results['tts_prepare']> => invokeCommand('tts_prepare', {}),
   ttsCancel: (jobId: string): Promise<Results['tts_cancel']> =>
     invokeCommand('tts_cancel', { jobId }),
+  /** 只释放已返回但从未交付给播放器或下载链接的过期结果。 */
+  ttsDiscard: (jobId: string): Promise<Results['tts_discard']> =>
+    invokeCommand('tts_discard', { jobId }),
   /** 合成语音（文本 + 语音 + 语速/音调 → mp3 文件路径） */
   ttsSynthesize: (p: Payloads['tts_synthesize']): Promise<Results['tts_synthesize']> =>
     invokeCommand('tts_synthesize', p),

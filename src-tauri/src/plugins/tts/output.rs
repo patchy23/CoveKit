@@ -5,6 +5,22 @@ use tokio::sync::watch;
 
 use super::jobs::CANCELLED;
 
+/// 文件名只由后端登记的 UUID 推导；不接收前端路径，也不扫描其他任务。
+pub(super) fn audio_path(directory: &Path, job_id: &str) -> Result<std::path::PathBuf, String> {
+    let id = uuid::Uuid::parse_str(job_id).map_err(|_| "语音合成请求标识无效")?;
+    Ok(directory.join(format!("{id}.mp3")))
+}
+
+/// 仅在前端确认结果已过期、从未用于播放或下载时释放；重复释放是正常取消。
+pub(super) async fn discard(directory: &Path, job_id: &str) -> Result<(), String> {
+    let path = audio_path(directory, job_id)?;
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("清理过期音频失败: {error}")),
+    }
+}
+
 /// 调用前必须完成已开始的写入并关闭句柄；发布前后都核对取消，避免收尾等待漏掉取消。
 pub(super) async fn publish(
     temporary: &Path,
@@ -44,6 +60,24 @@ pub(super) async fn publish(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn discard_is_idempotent_and_cannot_accept_paths_or_delete_other_jobs() {
+        let dir = std::env::temp_dir().join(format!("covekit-tts-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir).await.unwrap();
+        let own = uuid::Uuid::new_v4().to_string();
+        let other = uuid::Uuid::new_v4().to_string();
+        let own_path = audio_path(&dir, &own).unwrap();
+        let other_path = audio_path(&dir, &other).unwrap();
+        tokio::fs::write(&own_path, b"own").await.unwrap();
+        tokio::fs::write(&other_path, b"other").await.unwrap();
+        assert!(discard(&dir, "../other.mp3").await.is_err());
+        discard(&dir, &own).await.unwrap();
+        discard(&dir, &own).await.unwrap();
+        assert!(!own_path.exists());
+        assert_eq!(tokio::fs::read(&other_path).await.unwrap(), b"other");
+        tokio::fs::remove_dir_all(dir).await.unwrap();
+    }
 
     #[tokio::test]
     async fn cancellation_after_writer_settlement_removes_only_its_private_file() {

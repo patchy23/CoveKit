@@ -30,6 +30,13 @@ pub fn tts_cancel(state: tauri::State<'_, TtsJobs>, job_id: String) -> Result<()
     state.cancel(&job_id)
 }
 
+/// 前端已收到但不再使用的迟到结果；不释放已经呈现给用户的播放或下载源。
+#[tauri::command(rename_all = "camelCase")]
+pub async fn tts_discard(app: tauri::AppHandle, job_id: String) -> Result<(), String> {
+    let directory = crate::framework::paths::cache_dir(&app, "tts")?;
+    output::discard(&directory, &job_id).await
+}
+
 /// 合成语音：文本 + 语音 + 语速/音调 → mp3 文件
 #[tauri::command(rename_all = "camelCase")]
 pub async fn tts_synthesize(
@@ -52,9 +59,8 @@ pub async fn tts_synthesize(
         tokio::fs::create_dir_all(&dir)
             .await
             .map_err(|e| format!("创建 tts 目录失败: {e}"))?;
-        let id = uuid::Uuid::new_v4();
-        let path = dir.join(format!("{id}.mp3"));
-        let temporary = dir.join(format!("{id}.part"));
+        let path = output::audio_path(&dir, &job_id)?;
+        let temporary = path.with_extension("part");
         let file = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -131,6 +137,7 @@ crate::covekit_module! {
         tts_voices => "获取文字转语音可选语音列表",
         tts_prepare => "登记可取消的语音合成请求",
         tts_cancel => "取消语音合成请求",
+        tts_discard => "清理未使用的过期语音合成结果",
         tts_synthesize => "合成语音（文本 + 语音 + 语速/音调 → mp3 文件）",
     },
 }

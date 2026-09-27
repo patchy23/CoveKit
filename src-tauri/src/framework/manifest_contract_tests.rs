@@ -529,6 +529,7 @@ mod tests {
         ("ssh", "ssh_tunnel_stop", "停止隧道"),
         ("ssh", "ssh_tunnels", "某连接下的隧道运行时快照"),
         ("tts", "tts_cancel", "取消语音合成请求"),
+        ("tts", "tts_discard", "清理未使用的过期语音合成结果"),
         ("tts", "tts_prepare", "登记可取消的语音合成请求"),
         (
             "tts",
