@@ -8,6 +8,7 @@ import { fileIpc, queryIpc } from './ipc'
 import { useToolLifecycle } from '@/core/lifecycle'
 import { nextRequestId } from './requestId'
 import { rowsToTsv } from './resultText'
+import { indexResultRows, resultGridRows, selectResultValues } from './resultRows'
 import { hasGridChanges } from './workspace/useQueryWorkspace'
 import { splitSqlStatements } from './sqlStatementRanges'
 import {
@@ -186,31 +187,21 @@ function confirmSave() {
   void db.saveQueryToDisk(saveTitle.value).catch((err) => db.showError(err))
 }
 
-/** 动态行对象（UiDataGrid 按 key 渲染；__row 作 row-key） */
-type GridRow = { __row: string } & Record<string, string | null>
-const gridRows = computed<GridRow[]>(() =>
-  db.pageRows.value.map((row) => ({
-    __row: String(queryState.value.rows.indexOf(row)),
-    ...Object.fromEntries(
-      queryState.value.columns.map((_, colIndex) => [
-        `c${colIndex}`,
-        queryState.value.values[queryState.value.rows.indexOf(row)]?.[colIndex]?.kind === 'null'
-          ? null
-          : (row[colIndex] ?? ''),
-      ])
-    ),
-  }))
+/** 结果替换时重建索引；筛选、翻页和复制共用，不重复扫描原始行。 */
+const rowIndex = computed(() => indexResultRows(queryState.value.rows))
+const gridRows = computed(() =>
+  resultGridRows(
+    queryState.value.columns,
+    db.pageRows.value,
+    queryState.value.values,
+    rowIndex.value
+  )
 )
 
 /** 复制结果到剪贴板（TSV 制表符分隔） */
 async function copyResult() {
   const source = queryState.value
-  const text = rowsToTsv(
-    db.filteredRows.value.map(
-      (row) =>
-        source.values[source.rows.indexOf(row)] ?? row.map((value) => ({ kind: 'text', value }))
-    )
-  )
+  const text = rowsToTsv(selectResultValues(db.filteredRows.value, source.values, rowIndex.value))
   await copyText(text, '已复制筛选结果')
 }
 
@@ -218,10 +209,7 @@ async function copyResult() {
 async function exportCsv() {
   try {
     const source = queryState.value
-    const rows = db.filteredRows.value.map(
-      (row) =>
-        source.values[source.rows.indexOf(row)] ?? row.map((value) => ({ kind: 'text', value }))
-    )
+    const rows = selectResultValues(db.filteredRows.value, source.values, rowIndex.value)
     const path = await dialogSave({
       defaultPath: 'result.csv',
       filters: [{ name: 'CSV', extensions: ['csv'] }],
