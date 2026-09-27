@@ -10,6 +10,7 @@ use rusqlite::OptionalExtension;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
@@ -201,11 +202,35 @@ fn read_content(
     if !metadata.is_file() {
         return Err("FRP 配置不是普通文件".into());
     }
-    *total = (*total).saturating_add(metadata.len());
-    if metadata.len() > MAX_RECORD_BYTES as u64 || *total > 32 * 1024 * 1024 {
+    let file = std::fs::File::open(path)
+        .map_err(|e| format!("读取所选 FRP 配置失败: {e}"))?;
+    read_content_text(file, metadata.len(), total)
+}
+
+fn read_content_text(
+    reader: impl Read,
+    declared: u64,
+    total: &mut u64,
+) -> Result<String, String> {
+    const TOTAL_BYTES: u64 = 32 * 1024 * 1024;
+    let remaining = TOTAL_BYTES.saturating_sub(*total);
+    // 沿用既有单文件和总量预算，在读取期间复核，防止 stat 后增长突破预检。
+    let allowed = remaining.min(MAX_RECORD_BYTES as u64);
+    if declared > allowed {
         return Err("所选 FRP 配置超过数据包大小上限".into());
     }
-    std::fs::read_to_string(path).map_err(|e| format!("读取所选 FRP 配置失败: {e}"))
+    let capacity = usize::try_from(declared).map_err(|_| "FRP 配置大小无法表示")?;
+    let mut content = String::with_capacity(capacity);
+    reader
+        .take(allowed + 1)
+        .read_to_string(&mut content)
+        .map_err(|e| format!("读取所选 FRP 配置失败: {e}"))?;
+    let actual = u64::try_from(content.len()).map_err(|_| "FRP 配置大小无法表示")?;
+    if actual > allowed {
+        return Err("所选 FRP 配置超过数据包大小上限".into());
+    }
+    *total += actual;
+    Ok(content)
 }
 
 fn content_references(app: &AppHandle, items: &[Value]) -> Result<Vec<Option<String>>, String> {
@@ -552,6 +577,40 @@ pub(super) fn register() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_read_rechecks_growth_and_counts_actual_utf8_bytes() {
+        let text = "中文🙂";
+        let mut total = 0;
+        assert_eq!(read_content_text(text.as_bytes(), 1, &mut total).unwrap(), text);
+        assert_eq!(total, 10);
+        let oversized = vec![b'x'; MAX_RECORD_BYTES + 20];
+        let mut input = std::io::Cursor::new(oversized);
+        assert!(read_content_text(&mut input, 1, &mut total).is_err());
+        assert_eq!(input.position(), (MAX_RECORD_BYTES + 1) as u64);
+        assert_eq!(total, 10);
+        total = 32 * 1024 * 1024 - 3;
+        assert!(read_content_text(&b"four"[..], 1, &mut total).is_err());
+        assert_eq!(read_content_text(&b"end"[..], 3, &mut total).unwrap(), "end");
+        assert_eq!(total, 32 * 1024 * 1024);
+        assert!(read_content_text(&b"x"[..], 0, &mut total).is_err());
+    }
+
+    #[test]
+    fn content_read_preserves_shrinkage_and_rejects_invalid_utf8_and_io_errors() {
+        let mut total = 0;
+        assert_eq!(read_content_text(&b"ok"[..], 10, &mut total).unwrap(), "ok");
+        assert_eq!(total, 2);
+        assert!(read_content_text(&[0xff][..], 1, &mut total).is_err());
+        struct Failed;
+        impl Read for Failed {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("读取失败"))
+            }
+        }
+        assert!(read_content_text(Failed, 0, &mut total).is_err());
+        assert_eq!(total, 2);
+    }
 
     #[test]
     fn reference_scan_preserves_order_and_absent_references() {
