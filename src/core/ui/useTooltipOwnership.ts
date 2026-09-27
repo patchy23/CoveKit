@@ -1,17 +1,27 @@
-import { computed, onScopeDispose, shallowRef } from 'vue'
+import { onScopeDispose, readonly, shallowRef, type ShallowRef } from 'vue'
 
 /** 当前指针或键盘目标的唯一提示归属；旧目标的延迟回调不能重新抢占。 */
-const activeTooltip = shallowRef<symbol | null>(null)
+// 只持有当前目标，不让每个列表行订阅一个全局响应式值。
+let activeTooltip: ShallowRef<boolean> | null = null
 
 export function useTooltipOwnership() {
-  const id = Symbol('tooltip')
-  const isOwner = computed(() => activeTooltip.value === id)
+  const owned = shallowRef(false)
+  let disposed = false
   function claim() {
-    activeTooltip.value = id
+    if (disposed || activeTooltip === owned) return
+    const previous = activeTooltip
+    activeTooltip = owned
+    if (previous) previous.value = false
+    owned.value = activeTooltip === owned
   }
   function release() {
-    if (activeTooltip.value === id) activeTooltip.value = null
+    if (activeTooltip !== owned) return
+    activeTooltip = null
+    owned.value = false
   }
-  onScopeDispose(release)
-  return { isOwner, claim, release }
+  onScopeDispose(() => {
+    disposed = true
+    release()
+  })
+  return { isOwner: readonly(owned), claim, release }
 }
