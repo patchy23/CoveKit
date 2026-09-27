@@ -7,6 +7,7 @@ import { UiScrollArea } from '@/core/ui'
 import { computed, ref } from 'vue'
 import type { HostsEntry } from './useHosts'
 import { entryToText, parseEntries, validateEntry } from './useHosts'
+import { useHostsViewport } from './useHostsViewport'
 import { UiButton, UiCheckbox, UiIcon, UiIconButton, UiInput } from '@/core/ui'
 
 const props = defineProps<{ content: string }>()
@@ -21,6 +22,8 @@ let nextEntryId = 0
 const editable = computed(() =>
   entries.value.filter((e) => e.raw === undefined || (e.raw.startsWith('#') && e.ip))
 )
+const scrollRoot = ref<HTMLElement | null>(null)
+const viewport = useHostsViewport(scrollRoot, () => editable.value)
 
 /** 纯注释/空行数量（提示保留） */
 const rawCount = computed(() => entries.value.filter((e) => e.raw !== undefined).length)
@@ -88,6 +91,7 @@ function addRow() {
     error: 'IP 无效',
   })
   sync(entries.value.at(-1)!)
+  void viewport.reveal(editable.value.length - 1)
 }
 </script>
 
@@ -128,46 +132,61 @@ function addRow() {
 
     <!-- 条目区（仅条目滚动） -->
     <UiScrollArea as-child axis="vertical">
-      <div class="min-h-0 flex-1">
+      <div
+        ref="scrollRoot"
+        class="min-h-0 flex-1 [overflow-anchor:none]"
+        @focusin="viewport.focusIn"
+        @focusout="viewport.focusOut"
+        @compositionstart="viewport.compositionStart"
+        @compositionend="viewport.compositionEnd"
+        @keydown="viewport.keydown"
+      >
+        <template v-for="{ entry: e, gap } in viewport.rows.value" :key="e.id">
+          <div v-if="gap" aria-hidden="true" :style="{ height: `${gap}px` }" />
+          <div
+            :ref="(node) => viewport.bind(e.id, node as Element | null)"
+            :data-host-entry="e.id"
+            class="hosts-entry mb-[8px] grid grid-cols-[40px_170px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
+            :class="
+              e.valid
+                ? 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark'
+                : 'border-tertiary/40 bg-tertiary-soft/30 dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30'
+            "
+          >
+            <UiCheckbox
+              :model-value="e.enabled"
+              :title="e.enabled ? '点击禁用（行首加 #）' : '点击启用'"
+              @update:model-value="toggleEnabled(e)"
+            />
+            <UiInput
+              :model-value="e.ip"
+              class="font-mono"
+              placeholder="127.0.0.1"
+              spellcheck="false"
+              @update:model-value="onIpInput(e, String($event))"
+            />
+            <UiInput
+              :model-value="e.hosts.join(' ')"
+              class="font-mono"
+              placeholder="example.com www.example.com"
+              spellcheck="false"
+              @update:model-value="onHostsInput(e, String($event))"
+            />
+            <UiInput
+              :model-value="e.comment.replace(/^#\s*/, '')"
+              placeholder="备注（可选）"
+              @update:model-value="onCommentInput(e, String($event))"
+            />
+            <UiIconButton label="删除此条" size="sm" @click="remove(e)">
+              <UiIcon name="trash" :size="14" />
+            </UiIconButton>
+          </div>
+        </template>
         <div
-          v-for="e in editable"
-          :key="e.id"
-          v-memo="[e.ip, e.hosts, e.comment, e.enabled, e.valid, e.error]"
-          class="hosts-entry mb-[8px] grid grid-cols-[40px_170px_1fr_200px_44px] items-center gap-[8px] rounded-md border px-[12px] py-[8px]"
-          :class="
-            e.valid
-              ? 'border-border bg-surface dark:border-border-dark dark:bg-surface-dark'
-              : 'border-tertiary/40 bg-tertiary-soft/30 dark:border-tertiary-dark/40 dark:bg-tertiary-soft-dark/30'
-          "
-        >
-          <UiCheckbox
-            :model-value="e.enabled"
-            :title="e.enabled ? '点击禁用（行首加 #）' : '点击启用'"
-            @update:model-value="toggleEnabled(e)"
-          />
-          <UiInput
-            :model-value="e.ip"
-            class="font-mono"
-            placeholder="127.0.0.1"
-            spellcheck="false"
-            @update:model-value="onIpInput(e, String($event))"
-          />
-          <UiInput
-            :model-value="e.hosts.join(' ')"
-            class="font-mono"
-            placeholder="example.com www.example.com"
-            spellcheck="false"
-            @update:model-value="onHostsInput(e, String($event))"
-          />
-          <UiInput
-            :model-value="e.comment.replace(/^#\s*/, '')"
-            placeholder="备注（可选）"
-            @update:model-value="onCommentInput(e, String($event))"
-          />
-          <UiIconButton label="删除此条" size="sm" @click="remove(e)">
-            <UiIcon name="trash" :size="14" />
-          </UiIconButton>
-        </div>
+          v-if="viewport.trailing.value"
+          aria-hidden="true"
+          :style="{ height: `${viewport.trailing.value}px` }"
+        />
 
         <p
           v-if="!editable.length"
@@ -181,16 +200,8 @@ function addRow() {
 </template>
 
 <style scoped>
-/* 保留全部输入节点与原生 Tab 顺序，仅跳过离屏行的布局和绘制。
- * 占位使用 md 输入框的内容区高度，内边距与边框仍由原布局计算。
- * 浏览器测量后记住实际高度；不支持此优化时沿用完整渲染。 */
+/* 行高由实际控件测量；焦点与组合输入行即使离屏也保留同一节点。 */
 .hosts-entry {
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 36px;
-}
-
-/* 聚焦行保持完整布局，滚离视口时也不影响输入法及焦点装饰。 */
-.hosts-entry:focus-within {
-  content-visibility: visible;
+  overflow-anchor: none;
 }
 </style>

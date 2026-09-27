@@ -8,7 +8,8 @@ vi.mock('./useHosts', async (original) => {
   return { ...actual, entryToText: vi.fn(actual.entryToText) }
 })
 
-vi.mock('@/core/ui', () => ({
+vi.mock('@/core/ui', async () => ({
+  useRowWindow: (await import('@/core/ui/collection/useRowWindow')).useRowWindow,
   UiScrollArea: { template: '<section><slot /></section>' },
   UiButton: { template: '<button><slot /></button>' },
   UiIconButton: { template: '<button>delete</button>' },
@@ -76,4 +77,69 @@ it('复用列表行时 IP、域名、备注、开关与校验仍实时更新，�
   expect(rows()).toHaveLength(1)
   expect(rows()[0]!.element).toBe(second)
   expect(change()).toBe('# 保留注释\n0.0.0.0 second.test')
+})
+
+it('大列表回收离屏节点，保留焦点及组合输入，跨行 Tab 从完整模型挂载目标', async () => {
+  const wrapper = mount(HostsList, {
+    attachTo: document.body,
+    props: {
+      content: Array.from({ length: 10000 }, (_, i) => `127.0.0.1 host${i}.test`).join('\n'),
+    },
+  })
+  const root = wrapper.find('section > div')
+  const rows = () => wrapper.findAll('[data-host-entry]')
+  expect(rows().length).toBeLessThan(100)
+  const first = rows()[0]!
+  const original = first.element
+  const input = first.findAll('input')[1]!
+  ;(input.element as HTMLInputElement).focus()
+  await input.trigger('compositionstart')
+  ;(root.element as HTMLElement).scrollTop = 62 * 5000
+  await root.trigger('scroll')
+  expect(wrapper.find(`[data-host-entry="${first.attributes('data-host-entry')}"]`).element).toBe(
+    original
+  )
+  await input.setValue('still-editable.test')
+  expect((wrapper.emitted('change')!.at(-1)![0] as string).split('\n')).toHaveLength(10000)
+  expect(wrapper.emitted('change')!.at(-1)![0]).toContain('still-editable.test')
+  await input.trigger('compositionend')
+  const lastButton = first.findAll('button').at(-1)!
+  ;(lastButton.element as HTMLButtonElement).focus()
+  await lastButton.trigger('keydown', { key: 'Tab' })
+  expect(
+    document.activeElement?.closest('[data-host-entry]')?.getAttribute('data-host-entry')
+  ).toBe('l1')
+  await wrapper
+    .find('[data-host-entry="l1"] button')
+    .trigger('keydown', { key: 'Tab', shiftKey: true })
+  expect(document.activeElement).toBe(lastButton.element)
+  ;(document.activeElement as HTMLElement).blur()
+  ;(root.element as HTMLElement).scrollTop = 62 * 9000
+  await root.trigger('scroll')
+  expect(wrapper.find('[data-host-entry="l0"]').exists()).toBe(false)
+  expect(rows().length).toBeLessThan(100)
+})
+
+it('组合输入结束前不会因失焦回收节点，结束后释放；删除锚点前的行保持同一可见条目', async () => {
+  const wrapper = mount(HostsList, {
+    attachTo: document.body,
+    props: {
+      content: Array.from({ length: 1000 }, (_, i) => `127.0.0.1 host${i}.test`).join('\n'),
+    },
+  })
+  const root = wrapper.find('section > div')
+  const input = wrapper.find('[data-host-entry="l0"] input')
+  ;(input.element as HTMLElement).focus()
+  await input.trigger('compositionstart')
+  ;(input.element as HTMLElement).blur()
+  ;(root.element as HTMLElement).scrollTop = 6200
+  await root.trigger('scroll')
+  expect(wrapper.find('[data-host-entry="l0"] input').element).toBe(input.element)
+  await input.trigger('compositionend')
+  expect(wrapper.find('[data-host-entry="l0"]').exists()).toBe(false)
+  const before = wrapper.find('[data-host-entry="l99"]')
+  await before.findAll('button').at(-1)!.trigger('click')
+  expect((root.element as HTMLElement).scrollTop).toBe(62 * 99)
+  expect(wrapper.find('[data-host-entry="l100"]').exists()).toBe(true)
+  expect(wrapper.findAll('[data-host-entry]').length).toBeLessThan(100)
 })
