@@ -8,7 +8,12 @@ export function createWorkerTask<Request extends object, Result>(
   let pending: ((error: Error) => void) | undefined
   function destroy() {
     sequence++
-    worker?.terminate()
+    if (worker) {
+      worker.onmessage = null
+      worker.onerror = null
+      worker.onmessageerror = null
+      worker.terminate()
+    }
     worker = undefined
     pending?.(new DOMException('计算已取消', 'AbortError'))
     pending = undefined
@@ -24,18 +29,35 @@ export function createWorkerTask<Request extends object, Result>(
         const current = worker
         const id = ++sequence
         pending = reject
-        worker.onmessage = (event: MessageEvent<{ id: number; result: Result }>) => {
-          if (worker !== current || sequence !== id || event.data.id !== id) return
-          pending = undefined
-          resolve(event.data.result)
-          destroy()
-        }
-        worker.onerror = (event) => {
+        const fail = (message: string) => {
           if (worker !== current || sequence !== id) return
           pending = undefined
-          reject(new Error(event.message || failure))
+          reject(new Error(message))
           destroy()
         }
+        worker.onmessage = (event: MessageEvent<unknown>) => {
+          if (worker !== current || sequence !== id) return
+          const data = event.data
+          if (
+            !data ||
+            typeof data !== 'object' ||
+            !('id' in data) ||
+            !Number.isSafeInteger(data.id)
+          ) {
+            fail(`${failure}：响应格式无效`)
+            return
+          }
+          if (data.id !== id) return
+          if (!('result' in data)) {
+            fail(`${failure}：响应缺少计算结果`)
+            return
+          }
+          pending = undefined
+          resolve(data.result as Result)
+          destroy()
+        }
+        worker.onerror = (event) => fail(event.message || failure)
+        worker.onmessageerror = () => fail(`${failure}：无法读取计算结果`)
         worker.postMessage({ ...request, id })
       } catch (error) {
         pending = undefined
