@@ -30,7 +30,7 @@ pub(crate) struct InspectContext {
     /// 文件内容摘要（复核用：文件被换过就拒绝复用这份上下文）
     pub file_digest: String,
     /// 解密并校验过的清单
-    pub manifest: PackageManifest,
+    pub manifest: Arc<PackageManifest>,
     /// 建立时间（判超时用）
     pub created_at: Instant,
 }
@@ -38,7 +38,7 @@ pub(crate) struct InspectContext {
 /// 一次 `plan` 的结果
 pub(crate) struct PlanContext {
     /// 已解析的导入计划
-    pub plan: ImportPlan,
+    pub plan: Arc<ImportPlan>,
     /// 来源包路径（提交前复核）
     pub file_path: PathBuf,
     /// 来源包的文件摘要（提交前复核）
@@ -54,6 +54,8 @@ struct Sessions {
     inspects: BTreeMap<String, InspectContext>,
     /// plan 上下文
     plans: BTreeMap<String, PlanContext>,
+    /// 非空会话表共用一个到期清理任务，空表时任务自行结束。
+    cleanup_running: bool,
 }
 
 /// 会话表单例
@@ -62,15 +64,55 @@ fn sessions() -> &'static Mutex<Sessions> {
     SESSIONS.get_or_init(|| Mutex::new(Sessions::default()))
 }
 
-/// 清掉过期条目（每次写入时顺手做，避免表无限增长）
-fn prune(sessions: &mut Sessions) {
-    let now = Instant::now();
+/// 到期只释放缓存所有权，已领取的不可变上下文继续供当前操作使用。
+fn prune(sessions: &mut Sessions, now: Instant) {
     sessions
         .inspects
         .retain(|_, context| now.duration_since(context.created_at) < SESSION_TTL);
     sessions
         .plans
         .retain(|_, context| now.duration_since(context.created_at) < SESSION_TTL);
+}
+
+/// 有效期按创建时间计算，读取不会延长密码重新校验的原有边界。
+fn next_expiry(sessions: &Sessions) -> Option<Instant> {
+    sessions
+        .inspects
+        .values()
+        .map(|context| context.created_at)
+        .chain(sessions.plans.values().map(|context| context.created_at))
+        .min()
+        .map(|created_at| created_at + SESSION_TTL)
+}
+
+/// 新条目的到期时间不会早于已有条目，无须每次插入重建或唤醒定时器。
+fn ensure_cleanup(sessions: &mut Sessions) {
+    if sessions.cleanup_running {
+        return;
+    }
+    sessions.cleanup_running = true;
+    tauri::async_runtime::spawn(async {
+        loop {
+            let deadline = {
+                let mut guard = match self::sessions().lock() {
+                    Ok(guard) => guard,
+                    Err(error) => {
+                        log::error!("清理数据传输预览缓存失败: {error}");
+                        return;
+                    }
+                };
+                prune(&mut guard, Instant::now());
+                match next_expiry(&guard) {
+                    Some(deadline) => deadline,
+                    None => {
+                        guard.cleanup_running = false;
+                        return;
+                    }
+                }
+            };
+            tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await;
+        }
+    });
 }
 
 /// 登记一次 inspect，返回 `inspectId`
@@ -81,29 +123,28 @@ pub(crate) fn put_inspect(
 ) -> Result<String, String> {
     let id = format!("insp-{}", uuid::Uuid::new_v4());
     let mut guard = sessions().lock().map_err(|e| e.to_string())?;
-    prune(&mut guard);
+    prune(&mut guard, Instant::now());
     guard.inspects.insert(
         id.clone(),
         InspectContext {
             file_path,
             file_digest,
-            manifest,
+            manifest: Arc::new(manifest),
             created_at: Instant::now(),
         },
     );
+    ensure_cleanup(&mut guard);
     Ok(id)
 }
 
 /// 取一次 inspect（不删除：用户可以反复调整选择再规划；超时/未知即报错）
-pub(crate) fn inspect(id: &str) -> Result<(PathBuf, String, PackageManifest), String> {
-    let guard = sessions().lock().map_err(|e| e.to_string())?;
+pub(crate) fn inspect(id: &str) -> Result<(PathBuf, String, Arc<PackageManifest>), String> {
+    let mut guard = sessions().lock().map_err(|e| e.to_string())?;
+    prune(&mut guard, Instant::now());
     let context = guard
         .inspects
         .get(id)
         .ok_or_else(|| "预览已过期，请重新选择数据包并输入密码".to_string())?;
-    if Instant::now().duration_since(context.created_at) >= SESSION_TTL {
-        return Err("预览已过期，请重新选择数据包并输入密码".into());
-    }
     Ok((
         context.file_path.clone(),
         context.file_digest.clone(),
@@ -119,29 +160,28 @@ pub(crate) fn put_plan(
 ) -> Result<String, String> {
     let id = plan.plan_id.clone();
     let mut guard = sessions().lock().map_err(|e| e.to_string())?;
-    prune(&mut guard);
+    prune(&mut guard, Instant::now());
     guard.plans.insert(
         id.clone(),
         PlanContext {
-            plan,
+            plan: Arc::new(plan),
             file_path,
             file_digest,
             created_at: Instant::now(),
         },
     );
+    ensure_cleanup(&mut guard);
     Ok(id)
 }
 
 /// 取一次 plan（不删除：提交失败后用户可以改选择重试）
-pub(crate) fn plan(id: &str) -> Result<(ImportPlan, PathBuf, String), String> {
-    let guard = sessions().lock().map_err(|e| e.to_string())?;
+pub(crate) fn plan(id: &str) -> Result<(Arc<ImportPlan>, PathBuf, String), String> {
+    let mut guard = sessions().lock().map_err(|e| e.to_string())?;
+    prune(&mut guard, Instant::now());
     let context = guard
         .plans
         .get(id)
         .ok_or_else(|| "导入计划已过期，请重新预览后再提交".to_string())?;
-    if Instant::now().duration_since(context.created_at) >= SESSION_TTL {
-        return Err("导入计划已过期，请重新预览后再提交".into());
-    }
     Ok((
         context.plan.clone(),
         context.file_path.clone(),
@@ -287,6 +327,58 @@ pub(crate) fn cancel_all_transfers() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expiry_releases_cached_manifest_without_invalidating_active_reader() {
+        let created_at = Instant::now();
+        let manifest = Arc::new(PackageManifest::new("source", "来源"));
+        let weak = Arc::downgrade(&manifest);
+        let mut sessions = Sessions::default();
+        sessions.inspects.insert(
+            "preview".into(),
+            InspectContext {
+                file_path: PathBuf::from("package.pbdata"),
+                file_digest: "digest".into(),
+                manifest,
+                created_at,
+            },
+        );
+        let active = sessions.inspects["preview"].manifest.clone();
+        let deadline = created_at + SESSION_TTL;
+        assert_eq!(next_expiry(&sessions), Some(deadline));
+        prune(&mut sessions, deadline - Duration::from_nanos(1));
+        assert!(Arc::ptr_eq(&active, &sessions.inspects["preview"].manifest));
+        prune(&mut sessions, deadline);
+        assert!(sessions.inspects.is_empty());
+        assert_eq!(next_expiry(&sessions), None);
+        assert_eq!(active.source_space_id, "source");
+        drop(active);
+        assert!(weak.upgrade().is_none());
+    }
+
+    #[test]
+    fn expiry_keeps_later_entries_at_their_original_deadline() {
+        let start = Instant::now();
+        let mut sessions = Sessions::default();
+        for (id, created_at) in [("old", start), ("new", start + Duration::from_secs(1))] {
+            sessions.inspects.insert(
+                id.into(),
+                InspectContext {
+                    file_path: PathBuf::new(),
+                    file_digest: String::new(),
+                    manifest: Arc::new(PackageManifest::new("source", "来源")),
+                    created_at,
+                },
+            );
+        }
+        prune(&mut sessions, start + SESSION_TTL);
+        assert!(!sessions.inspects.contains_key("old"));
+        assert!(sessions.inspects.contains_key("new"));
+        assert_eq!(
+            next_expiry(&sessions),
+            Some(start + SESSION_TTL + Duration::from_secs(1))
+        );
+    }
 
     #[test]
     fn finishing_old_transfer_preserves_new_cancellation_and_drop_notifies_worker() {

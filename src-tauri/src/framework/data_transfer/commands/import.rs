@@ -234,6 +234,8 @@ pub async fn data_import_commit(
             if manifest.package_id != plan.package_id {
                 return Err("数据包与预览的不是同一份，请重新预览后再提交".into());
             }
+            // 复核完成后仅使用已确认的计划，写入期间不再保留第二份完整记录。
+            drop(manifest);
             match plan.mode {
                 ImportMode::NewSpace => {
                     let device_root = crate::framework::paths::storage_root(&commit_app)?;
