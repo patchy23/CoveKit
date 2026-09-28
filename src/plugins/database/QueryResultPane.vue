@@ -5,7 +5,6 @@ import {
   UiIcon,
   UiIconButton,
   UiInput,
-  UiPagination,
   UiSpinner,
   UiSelect,
   UiTabs,
@@ -13,6 +12,7 @@ import {
 } from '@/core/ui'
 import EditableResultGrid from './EditableResultGrid.vue'
 import type { QueryState, useDatabase } from './useDatabase'
+import { hasGridChanges } from './workspace/useQueryWorkspace'
 
 defineProps<{
   db: ReturnType<typeof useDatabase>
@@ -40,6 +40,7 @@ const emit = defineEmits<{
           }))
         "
         size="xs"
+        :disabled="queryState.loadingMore"
         class="w-[130px]"
         @update:model-value="db.selectStatement(Number(String($event).slice(1)))" />
       <UiTabs
@@ -135,7 +136,15 @@ const emit = defineEmits<{
               : `返回 ${queryState.total} 行，耗时 ${queryState.durationMs} ms。`
       }}
     </UiAlert>
-    <EditableResultGrid v-else :db="db" :state="queryState" class="min-h-0 flex-1" :rows="rows">
+    <EditableResultGrid
+      v-else
+      :db="db"
+      :state="queryState"
+      class="min-h-0 flex-1"
+      :rows="rows"
+      :near-end="!!queryState.hasMore && !queryState.loadMoreError && !queryState.loadLimit"
+      @near-end="db.loadMore()"
+    >
       <template #empty>
         <span>{{ queryState.filter ? '无匹配结果' : '当前查询未返回数据' }}</span>
         <UiButton
@@ -155,16 +164,31 @@ const emit = defineEmits<{
         placeholder="筛选已加载结果…"
         @update:model-value="emit('patch', { filter: String($event), page: 1 })"
       />
-      <span v-if="queryState.truncated" class="text-caption text-warning-strong"
+      <span
+        v-if="queryState.truncated && !queryState.hasMore"
+        class="text-caption text-warning-strong"
         >结果未完整（达到行数或字节上限）</span
       >
-      <template #trailing
-        ><UiPagination
-          :model-value="queryState.page"
-          :total-pages="db.totalPages.value"
+      <template #trailing>
+        <span role="status" class="text-caption text-text-muted dark:text-text-muted-dark">{{
+          queryState.loadLimit ||
+          queryState.loadMoreError ||
+          (queryState.loadingMore
+            ? '正在读取更多…'
+            : queryState.hasMore
+              ? `已加载 ${queryState.rows.length} 行，向下滚动继续读取`
+              : `已加载 ${queryState.rows.length} 行`)
+        }}</span>
+        <UiButton
+          v-if="queryState.hasMore && !queryState.loadLimit"
           size="xs"
-          @update:model-value="db.setPage"
-      /></template>
+          variant="ghost"
+          :disabled="queryState.loadingMore || queryState.gridSaving || hasGridChanges(queryState)"
+          @click="db.loadMore()"
+        >
+          {{ queryState.loadMoreError ? '重试读取' : '继续读取' }}
+        </UiButton>
+      </template>
     </UiToolbar>
   </div>
 </template>

@@ -121,9 +121,13 @@ struct Registration<'a> {
     state: &'a DbCancelState,
     id: &'a str,
     handle: CancelHandle,
+    active: bool,
 }
 impl Drop for Registration<'_> {
     fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
         self.handle.finished.store(true, Ordering::Release);
         if let Ok(mut map) = self.state.0.lock() {
             map.remove(self.id);
@@ -182,7 +186,7 @@ pub async fn dbc_execute(
     let workspace_id = workspace_id.as_deref().unwrap_or(&request_id);
     let slot = workspaces.slot(&conn_id, workspace_id)?;
     let mut slot = slot
-        .try_lock()
+        .try_lock_owned()
         .map_err(|_| "DB_SESSION_BUSY: 当前页签正在执行或关闭")?;
     let mut handle = CancelHandle::pending();
     handle.connection_id = conn_id.clone();
@@ -194,10 +198,11 @@ pub async fn dbc_execute(
         }
         map.insert(request_id.clone(), handle.clone());
     }
-    let registration = Registration {
+    let mut registration = Registration {
         state: &cancel_state,
         id: &request_id,
         handle: handle.clone(),
+        active: true,
     };
     if slot
         .as_ref()
@@ -259,6 +264,21 @@ pub async fn dbc_execute(
         return Err("DB_CANCELLED: 已取消，语句尚未发往服务器".into());
     }
     let limit = max_rows.unwrap_or(1000).clamp(1, 100_000);
+    if !session.transaction
+        && matches!(&session.connection, WorkspaceConnection::Mysql(..) | WorkspaceConnection::Postgres(..) | WorkspaceConnection::Sqlite(..))
+        && sql_analysis::streamable(entry.config.db_type, &sql)
+    {
+        let edit_target = if !entry.config.readonly && !session.ambiguous_edit_source {
+            sql_analysis::edit_target(entry.config.db_type, &sql, &conn_id, &session.scope, &entry.config.database)
+        } else {
+            None
+        };
+        // actor 接管取消登记和工作连接；首批返回不意味着执行通道已结束。
+        registration.active = false;
+        let mut result = drivers::cursor::start(app.clone(), slot, handle, request_id.clone(), sql.clone(), limit.min(500)).await?;
+        result.edit_target = edit_target;
+        return Ok(result);
+    }
     let started = Instant::now();
     let execution = async {
         match &mut session.connection {
@@ -357,9 +377,10 @@ pub async fn dbc_execute(
     match &result {
         _ if log_cancelled => log::info!("查询取消后收尾 request={request_id}"),
         Ok(value) if value.ok => log::info!(
-            "查询完成 request={request_id} elapsed_ms={} rows={} transaction={}",
+            "查询结果返回 request={request_id} elapsed_ms={} rows={} has_more={} transaction={}",
             log_started.elapsed().as_millis(),
             value.rows.len(),
+            value.has_more,
             value.transaction_active
         ),
         Err(error) if error.starts_with("DB_CANCELLED:") => {
@@ -414,24 +435,32 @@ pub async fn dbc_cancel(state: State<'_, DbCancelState>, request_id: String) -> 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_workspace_close(
     workspaces: State<'_, WorkspaceState>,
+    cursors: State<'_, drivers::cursor::CursorState>,
     conn_id: String,
     workspace_id: String,
 ) -> Result<(), String> {
     let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
+        let cursor_close =
+            drivers::cursor::close_workspace(&cursors, &conn_id, &workspace_id).await;
         let slot = workspaces
             .0
             .lock()
             .map_err(|e| e.to_string())?
             .remove(&(conn_id, workspace_id));
         if let Some(slot) = slot {
-            let mut session = slot.lock().await;
-            if let Some(session) = session.take() {
-                workspace::close(session).await?;
-            }
+            tokio::time::timeout(Duration::from_secs(12), async {
+                let mut session = slot.lock().await;
+                if let Some(session) = session.take() {
+                    workspace::close(session).await?;
+                }
+                Ok::<(), String>(())
+            })
+            .await
+            .map_err(|_| "工作会话仍在收尾，请稍后重试")??;
         }
-        Ok(())
+        cursor_close
     }
     .await;
     match &result {
@@ -445,6 +474,38 @@ pub async fn dbc_workspace_close(
         ),
     }
     result
+}
+
+/// 按需继续读取原结果流，不重复执行用户 SQL。
+#[tauri::command(rename_all = "camelCase")]
+pub async fn dbc_query_fetch(
+    cursors: State<'_, drivers::cursor::CursorState>,
+    conn_id: String,
+    workspace_id: String,
+    cursor_id: String,
+    expected_offset: u64,
+) -> Result<QueryResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
+    drivers::cursor::fetch(
+        &cursors,
+        &conn_id,
+        &workspace_id,
+        &cursor_id,
+        expected_offset,
+    )
+    .await
+}
+
+/// 等待原结果完成清理后才允许复用工作页连接。
+#[tauri::command(rename_all = "camelCase")]
+pub async fn dbc_query_close(
+    cursors: State<'_, drivers::cursor::CursorState>,
+    conn_id: String,
+    workspace_id: String,
+    cursor_id: String,
+) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
+    drivers::cursor::close_cursor(&cursors, &conn_id, &workspace_id, &cursor_id).await
 }
 
 /// 导出已加载 CSV；异步 IO 不阻塞 tokio 执行线程。

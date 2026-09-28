@@ -77,7 +77,7 @@ it('清空关键词取消计算并立即恢复完整模型，替换数据使用�
   const old = expect(filtered.ready()).rejects.toMatchObject({ name: 'AbortError' })
   query.value = ''
   expect(filtered.value).toBe(rows.value)
-  expect(task.cancel).toHaveBeenCalledWith(false)
+  expect(task.destroy).toHaveBeenCalled()
   first.resolve(new Uint32Array([0]))
   await old
   rows.value = markRaw([['x'], ['y'], ['z']])

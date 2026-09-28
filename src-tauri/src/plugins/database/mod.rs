@@ -425,6 +425,8 @@ crate::covekit_module! {
         dbc_driver_status => "agent 驱动就绪状态（含目录指引）",
         catalog::query::dbc_execute => "执行 SQL（多语句拆分，查询返回表格）",
         catalog::query::dbc_cancel => "取消进行中的查询",
+        catalog::query::dbc_query_fetch => "继续读取 SQL 查询结果",
+        catalog::query::dbc_query_close => "关闭 SQL 查询结果",
         catalog::query::dbc_prepare_execution => "SQL 风险与执行目标预检",
         catalog::query::dbc_workspace_close => "关闭 SQL 页签独占会话",
         catalog::metadata::dbc_databases => "数据库列表",
@@ -473,6 +475,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         ))
         .manage(drivers::DbCancelState(Mutex::new(HashMap::new())))
         .manage(drivers::WorkspaceState::default())
+        .manage(drivers::cursor::CursorState::default())
         .manage(drivers::AgentRuntimeState(Mutex::new(HashMap::new())))
         .manage(StoreState(Mutex::new(None)))
         .manage(secrets::SecretsState(Mutex::new(None)))

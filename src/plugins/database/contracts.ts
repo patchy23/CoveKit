@@ -108,6 +108,8 @@ export interface ExecutionPreview {
 
 /** SQL 执行结果 */
 export interface QueryResult {
+  cursorId?: string
+  hasMore: boolean
   editTarget?: TableTarget | null
   statementIndex?: number | null
   transactionActive?: boolean
@@ -297,6 +299,8 @@ export type Payloads = {
   }
   dbc_prepare_execution: { connId: string; sql: string; requestId: string; scope: ExecutionScope }
   dbc_workspace_close: { connId: string; workspaceId: string }
+  dbc_query_fetch: { connId: string; workspaceId: string; cursorId: string; expectedOffset: number }
+  dbc_query_close: { connId: string; workspaceId: string; cursorId: string }
   dbc_cancel: { requestId: string }
   dbc_databases: { connId: string }
   dbc_schemas: { connId: string; database?: string }
@@ -310,6 +314,8 @@ export type Payloads = {
     page: number
     pageSize: number
     options?: TableOptions
+    after?: DbValue[]
+    requestId?: string
   }
   dbc_table_count: TableTarget & { options?: TableOptions; requestId: string }
   dbc_table_apply: TableTarget & { changes: TableChange[]; requestId: string }
@@ -376,6 +382,8 @@ export type Results = {
   dbc_driver_status: DriverStatus
   dbc_prepare_execution: ExecutionPreview
   dbc_workspace_close: void
+  dbc_query_fetch: QueryResult
+  dbc_query_close: void
   dbc_execute: QueryResult
   dbc_cancel: void
   dbc_databases: string[]

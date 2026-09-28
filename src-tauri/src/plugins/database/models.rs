@@ -242,6 +242,11 @@ pub struct ExecutionScope {
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryResult {
+    /// 同一次执行的可继续读取结果；完成或关闭后失效。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cursor_id: Option<String>,
+    /// 仅表示还有未加载结果，不代表已知精确总行数。
+    pub has_more: bool,
     /// 可证明为单表直接投影的结果来源；仍须校验完整列和主键才能编辑。
     pub edit_target: Option<ResultEditTarget>,
     /// 多结果集按原 SQL 语句归属，不把 CALL 的第二结果误当成后续 SQL。

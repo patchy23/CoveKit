@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import UiScrollArea from './UiScrollArea.vue'
 import UiTooltip from './UiTooltip.vue'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { UiContentKind } from './types'
+import { useRowWindow } from './collection/useRowWindow'
 
 export interface UiDataGridColumn {
   key: string
@@ -22,6 +23,12 @@ const props = withDefaults(
     rowNumbers?: boolean
     height?: string
     ariaLabel?: string
+    /** 固定 25px 单行窗口；单元格插槽也须保持单行高度。 */
+    virtual?: boolean
+    /** 启用接近底部通知，加载中或无后续数据时由消费方关闭。 */
+    nearEnd?: boolean
+    /** 距底部触发通知的像素距离。 */
+    nearEndThreshold?: number
   }>(),
   {
     rowKey: 'id',
@@ -29,18 +36,140 @@ const props = withDefaults(
     rowNumbers: true,
     height: '260px',
     ariaLabel: '数据结果',
+    virtual: false,
+    nearEnd: false,
+    nearEndThreshold: 250,
   }
 )
 
 const emit = defineEmits<{
   (event: 'update:modelValue', value: string): void
   (event: 'cell', payload: { row: Record<string, unknown>; column: UiDataGridColumn }): void
+  (event: 'near-end'): void
   (
     event: 'cell-contextmenu',
     payload: { row: Record<string, unknown>; column: UiDataGridColumn },
     mouse: MouseEvent
   ): void
 }>()
+
+const root = ref<HTMLElement | null>(null)
+const focusedKey = ref('')
+const rowHeight = 25
+const viewport = useRowWindow(
+  computed(() => (props.virtual ? root.value : null)),
+  () => props.rows.length,
+  () => rowHeight,
+  () => rowHeight
+)
+const focusedIndex = computed(() =>
+  focusedKey.value
+    ? props.rows.findIndex((row, index) => rowKeyOf(row, index) === focusedKey.value)
+    : -1
+)
+const visibleRows = computed(() => {
+  const start = props.virtual ? viewport.start.value : 0
+  const end = props.virtual ? viewport.end.value : props.rows.length
+  const indexes = Array.from({ length: end - start }, (_, index) => start + index)
+  // 原生焦点所在行离屏仍保留；编辑输入框和键盘焦点不能因滚动被卸载。
+  if (props.virtual && focusedIndex.value >= 0) {
+    if (focusedIndex.value < start) indexes.unshift(focusedIndex.value)
+    else if (focusedIndex.value >= end) indexes.push(focusedIndex.value)
+  }
+  return indexes.map((index, position) => ({
+    row: props.rows[index],
+    index,
+    gap: index - (position ? indexes[position - 1] + 1 : 0),
+  }))
+})
+const trailingRows = computed(() =>
+  props.virtual
+    ? props.rows.length - ((visibleRows.value[visibleRows.value.length - 1]?.index ?? -1) + 1)
+    : 0
+)
+let endNotified = false
+function checkNearEnd() {
+  const element = root.value
+  if (!props.nearEnd || !element || element.clientHeight <= 0 || !props.rows.length) return
+  const near =
+    element.scrollHeight - element.scrollTop - element.clientHeight <=
+    Math.max(0, props.nearEndThreshold)
+  if (!near) endNotified = false
+  else if (!endNotified) {
+    endNotified = true
+    emit('near-end')
+  }
+}
+watch([() => props.rows.length, () => props.nearEnd], () => {
+  endNotified = false
+  void nextTick(checkNearEnd)
+})
+watch(
+  root,
+  (element, _previous, cleanup) => {
+    if (!element) return
+    const observer =
+      typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(checkNearEnd)
+    observer?.observe(element)
+    window.addEventListener('resize', checkNearEnd)
+    void nextTick(checkNearEnd)
+    cleanup(() => {
+      observer?.disconnect()
+      window.removeEventListener('resize', checkNearEnd)
+    })
+  },
+  { flush: 'post' }
+)
+
+function ensureRowVisible(index: number) {
+  viewport.ensureVisible(index)
+  // useRowWindow 的上沿不含 sticky 表头；补齐遮挡范围。
+  if (root.value && index * rowHeight < root.value.scrollTop) {
+    root.value.scrollTop = index * rowHeight
+    root.value.dispatchEvent(new Event('scroll'))
+  }
+}
+function focusRow(index: number) {
+  const row = props.rows[index]
+  if (!row) return
+  focusedKey.value = rowKeyOf(row, index)
+  ensureRowVisible(index)
+  void nextTick(() =>
+    root.value
+      ?.querySelector<HTMLElement>(`[data-grid-row="${index}"]`)
+      ?.focus({ preventScroll: true })
+  )
+}
+watch(
+  [root, () => props.modelValue, () => props.virtual],
+  ([, value]) => {
+    if (!props.virtual || !value) return
+    const index = props.rows.findIndex((row, index) => rowKeyOf(row, index) === value)
+    if (index >= 0) ensureRowVisible(index)
+  },
+  { flush: 'post' }
+)
+watch(
+  () => props.rows,
+  () => {
+    if (props.virtual && focusedKey.value && focusedIndex.value < 0) {
+      focusedKey.value = ''
+      if (props.rows.length) focusRow(0)
+      else void nextTick(() => root.value?.focus({ preventScroll: true }))
+    }
+  }
+)
+
+function trackFocus(event: FocusEvent) {
+  const row =
+    event.target instanceof Element ? event.target.closest<HTMLElement>('[data-grid-row]') : null
+  const index = Number(row?.dataset.gridRow)
+  if (row && props.rows[index]) focusedKey.value = rowKeyOf(props.rows[index], index)
+}
+function releaseFocus(event: FocusEvent) {
+  if (!(event.relatedTarget instanceof Node) || !root.value?.contains(event.relatedTarget))
+    focusedKey.value = ''
+}
 
 const widths = ref<Record<string, number>>({})
 let resizeKey = ''
@@ -98,7 +227,9 @@ function startResize(event: PointerEvent, column: UiDataGridColumn) {
 function display(value: unknown) {
   if (value === null) return 'NULL'
   if (value === '') return '(空字符串)'
-  return String(value ?? '')
+  const text = String(value ?? '')
+  // 大结果只将短预览送入文本节点和提示层；插槽与操作事件始终携带原值。
+  return props.virtual && text.length > 500 ? text.slice(0, 500) + '…' : text
 }
 
 /** 行主键（无 rowKey 字段时回退行序号） */
@@ -109,9 +240,33 @@ function rowKeyOf(row: Record<string, unknown>, rowIndex: number): string {
 /** 行键盘选中（Enter/空格），与点击同语义 */
 function onRowKeydown(event: KeyboardEvent, row: Record<string, unknown>, rowIndex: number) {
   if (event.target !== event.currentTarget) return
+  if (props.virtual) {
+    const page = Math.max(1, Math.floor((root.value?.clientHeight || 260) / rowHeight) - 1)
+    const destinations: Record<string, number> = {
+      ArrowUp: rowIndex - 1,
+      ArrowDown: rowIndex + 1,
+      Home: 0,
+      End: props.rows.length - 1,
+      PageUp: rowIndex - page,
+      PageDown: rowIndex + page,
+    }
+    if (event.key in destinations) {
+      event.preventDefault()
+      focusRow(Math.max(0, Math.min(props.rows.length - 1, destinations[event.key])))
+      return
+    }
+  }
   if (event.key !== 'Enter' && event.key !== ' ') return
   event.preventDefault()
   emit('update:modelValue', rowKeyOf(row, rowIndex))
+}
+
+function onViewportKeydown(event: KeyboardEvent) {
+  if (!props.virtual || event.target !== event.currentTarget) return
+  if (['ArrowDown', 'Home', 'End'].includes(event.key)) {
+    event.preventDefault()
+    focusRow(event.key === 'End' ? props.rows.length - 1 : 0)
+  }
 }
 
 onBeforeUnmount(stop)
@@ -120,14 +275,20 @@ onBeforeUnmount(stop)
 <template>
   <UiScrollArea as-child axis="both">
     <div
+      ref="root"
       class="min-h-0 bg-surface outline-none dark:bg-surface-dark"
       :style="{ height }"
       tabindex="0"
       :aria-label="ariaLabel"
+      @scroll.passive="checkNearEnd"
+      @keydown="onViewportKeydown"
+      @focusin="trackFocus"
+      @focusout="releaseFocus"
     >
       <table
         class="border-separate border-spacing-0 text-left text-body-sm"
         :style="{ width: `${tableWidth}px` }"
+        :aria-rowcount="virtual ? rows.length + 1 : undefined"
       >
         <thead class="sticky top-0 z-20 bg-surface-muted dark:bg-surface-muted-dark">
           <tr>
@@ -152,61 +313,78 @@ onBeforeUnmount(stop)
           </tr>
         </thead>
         <tbody>
-          <tr
-            v-for="(row, rowIndex) in rows"
+          <template
+            v-for="{ row, index: rowIndex, gap } in visibleRows"
             :key="rowKeyOf(row, rowIndex)"
-            class="h-[25px] outline-none hover:bg-surface-muted focus-visible:bg-surface-muted dark:hover:bg-surface-muted-dark dark:focus-visible:bg-surface-muted-dark"
-            :class="
-              modelValue === rowKeyOf(row, rowIndex)
-                ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
-                : ''
-            "
-            :aria-selected="modelValue === rowKeyOf(row, rowIndex)"
-            tabindex="0"
-            @click="emit('update:modelValue', rowKeyOf(row, rowIndex))"
-            @keydown="onRowKeydown($event, row, rowIndex)"
           >
-            <td
-              v-if="rowNumbers"
-              class="sticky left-0 z-10 border-b border-r border-border bg-surface-muted px-[6px] text-center font-data text-caption tabular-nums text-text-muted dark:border-border-dark dark:bg-surface-muted-dark dark:text-text-muted-dark"
-            >
-              {{ rowIndex + 1 }}
-            </td>
-            <UiTooltip
-              v-for="column in columns"
-              :key="column.key"
-              :content="display(row[column.key])"
+            <tr v-if="virtual && gap" aria-hidden="true">
+              <td
+                :colspan="columns.length + (rowNumbers ? 1 : 0)"
+                :style="{ height: `${gap * rowHeight}px`, padding: 0, border: 0 }"
+              />
+            </tr>
+            <tr
+              :data-grid-row="rowIndex"
+              :aria-rowindex="virtual ? rowIndex + 2 : undefined"
+              class="h-[25px] outline-none hover:bg-surface-muted focus-visible:bg-surface-muted dark:hover:bg-surface-muted-dark dark:focus-visible:bg-surface-muted-dark"
+              :class="
+                modelValue === rowKeyOf(row, rowIndex)
+                  ? 'bg-tertiary-soft dark:bg-tertiary-soft-dark'
+                  : ''
+              "
+              :aria-selected="modelValue === rowKeyOf(row, rowIndex)"
+              tabindex="0"
+              @click="emit('update:modelValue', rowKeyOf(row, rowIndex))"
+              @keydown="onRowKeydown($event, row, rowIndex)"
             >
               <td
-                class="max-w-0 truncate border-b border-r border-border px-[7px] text-secondary dark:border-border-dark dark:text-secondary-dark"
-                :class="[
-                  column.content === 'action' ? 'font-sans' : 'font-data',
-                  column.content === 'numeric' ? 'tabular-nums' : '',
-                  column.align === 'right'
-                    ? 'text-right tabular-nums'
-                    : column.align === 'center'
-                      ? 'text-center'
-                      : 'text-left',
-                  row[column.key] === null
-                    ? 'italic text-text-muted dark:text-text-muted-dark'
-                    : '',
-                ]"
-                :style="{ width: `${widths[column.key]}px`, minWidth: `${widths[column.key]}px` }"
-                @dblclick="emit('cell', { row, column })"
-                @contextmenu="emit('cell-contextmenu', { row, column }, $event)"
+                v-if="rowNumbers"
+                class="sticky left-0 z-10 border-b border-r border-border bg-surface-muted px-[6px] text-center font-data text-caption tabular-nums text-text-muted dark:border-border-dark dark:bg-surface-muted-dark dark:text-text-muted-dark"
               >
-                <slot
-                  :name="`cell-${column.key}`"
-                  :row="row"
-                  :column="column"
-                  :value="row[column.key]"
-                >
-                  <slot name="cell" :row="row" :column="column" :value="row[column.key]">
-                    {{ display(row[column.key]) }}
-                  </slot>
-                </slot>
+                {{ rowIndex + 1 }}
               </td>
-            </UiTooltip>
+              <UiTooltip
+                v-for="column in columns"
+                :key="column.key"
+                :content="display(row[column.key])"
+              >
+                <td
+                  class="max-w-0 truncate border-b border-r border-border px-[7px] text-secondary dark:border-border-dark dark:text-secondary-dark"
+                  :class="[
+                    column.content === 'action' ? 'font-sans' : 'font-data',
+                    column.content === 'numeric' ? 'tabular-nums' : '',
+                    column.align === 'right'
+                      ? 'text-right tabular-nums'
+                      : column.align === 'center'
+                        ? 'text-center'
+                        : 'text-left',
+                    row[column.key] === null
+                      ? 'italic text-text-muted dark:text-text-muted-dark'
+                      : '',
+                  ]"
+                  :style="{ width: `${widths[column.key]}px`, minWidth: `${widths[column.key]}px` }"
+                  @dblclick="emit('cell', { row, column })"
+                  @contextmenu="emit('cell-contextmenu', { row, column }, $event)"
+                >
+                  <slot
+                    :name="`cell-${column.key}`"
+                    :row="row"
+                    :column="column"
+                    :value="row[column.key]"
+                  >
+                    <slot name="cell" :row="row" :column="column" :value="row[column.key]">
+                      {{ display(row[column.key]) }}
+                    </slot>
+                  </slot>
+                </td>
+              </UiTooltip>
+            </tr>
+          </template>
+          <tr v-if="trailingRows" aria-hidden="true">
+            <td
+              :colspan="columns.length + (rowNumbers ? 1 : 0)"
+              :style="{ height: `${trailingRows * rowHeight}px`, padding: 0, border: 0 }"
+            />
           </tr>
           <tr v-if="!rows.length">
             <td

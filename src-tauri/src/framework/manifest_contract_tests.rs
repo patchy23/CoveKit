@@ -83,6 +83,8 @@ mod tests {
             "SQL 风险与执行目标预检",
         ),
         ("database", "dbc_workspace_close", "关闭 SQL 页签独占会话"),
+        ("database", "dbc_query_fetch", "继续读取 SQL 查询结果"),
+        ("database", "dbc_query_close", "关闭 SQL 查询结果"),
         ("database", "dbc_export_query", "完整查询结果流式导出"),
         ("database", "dbc_csv_preview", "预览 CSV 文件与列映射"),
         ("database", "dbc_csv_import", "事务导入 CSV 文件"),
@@ -356,7 +358,11 @@ mod tests {
             "data_transfer_cancel",
             "取消正在进行的导出/导入（清理半成品）",
         ),
-        ("framework", "data_transfer_prepare", "登记可取消的数据包请求"),
+        (
+            "framework",
+            "data_transfer_prepare",
+            "登记可取消的数据包请求",
+        ),
         ("framework", "window_hide", "隐藏主窗口（最小化到托盘）"),
         (
             "framework",

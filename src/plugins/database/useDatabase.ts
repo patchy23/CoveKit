@@ -101,7 +101,6 @@ export function useDatabase() {
     // 元数据（catalog 域）
     databaseOptions: cat.databaseOptions,
     schemaOptions: cat.schemaOptions,
-    rowLimitOptions: ws.rowLimitOptions,
     completionTables: cat.completionTables,
     resolveEditorColumns: cat.resolveEditorColumns,
     ensureMeta: cat.ensureMeta,
@@ -145,6 +144,8 @@ export function useDatabase() {
     patchTabQueryState: ws.patchTabQueryState,
     patchQueryState: ws.patchQueryState,
     runQuery: ws.runQuery,
+    loadMore: ws.loadMore,
+    closeQueryResults: ws.closeQueryResults,
     cancelQuery: ws.cancelQuery,
     onFormatSql: ws.onFormatSql,
     // 树（catalog 域）
@@ -157,8 +158,6 @@ export function useDatabase() {
     // 结果（workspace 域）
     pageRows: ws.pageRows,
     filteredRows: ws.filteredRows,
-    totalPages: ws.totalPages,
-    setPage: ws.setPage,
     resultTabs: ws.resultTabs,
     tableColumns: ws.tableColumns,
     structureErrors: ws.structureErrors,

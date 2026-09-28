@@ -44,6 +44,10 @@ const env = vi.hoisted(() => {
     // 查询
     dbcPrepare: vi.fn(),
     dbcExecute: vi.fn(),
+    dbcFetch: vi.fn(),
+    dbcCloseCursor: vi.fn(async () => undefined),
+    exportRows: vi.fn(),
+    dialogSave: vi.fn(),
     dbcCancel: vi.fn(),
     // 元数据与结构
     dbcDatabases: vi.fn(),
@@ -90,12 +94,19 @@ vi.mock('./ipc', () => ({
     driverStatus: vi.fn(),
   },
   csvIpc: { preview: vi.fn(), import: vi.fn() },
-  fileIpc: { exportQuery: vi.fn(), readSql: vi.fn(), writeSql: vi.fn(), exportRows: vi.fn() },
+  fileIpc: {
+    exportQuery: vi.fn(),
+    readSql: vi.fn(),
+    writeSql: vi.fn(),
+    exportRows: env.commands.exportRows,
+  },
   tableIpc: { count: vi.fn(), apply: vi.fn() },
   queryIpc: {
     prepare: env.commands.dbcPrepare,
     closeWorkspace: vi.fn(async () => undefined),
     execute: env.commands.dbcExecute,
+    fetch: env.commands.dbcFetch,
+    closeCursor: env.commands.dbcCloseCursor,
     cancel: env.commands.dbcCancel,
     databases: env.commands.dbcDatabases,
     schemas: env.commands.dbcSchemas,
@@ -127,6 +138,8 @@ vi.mock('./ipc', () => ({
   },
 }))
 
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: env.commands.dialogSave, open: vi.fn() }))
+
 /* ── 夹具 ── */
 
 function connection(
@@ -156,6 +169,7 @@ function connection(
 
 function result(over: Partial<QueryResult> = {}): QueryResult {
   return {
+    hasMore: false,
     ok: true,
     columns: ['n'],
     rows: [['1']],
@@ -173,7 +187,7 @@ function tablePage(over: Partial<DbTablePage> = {}): DbTablePage {
     rows: [['1']],
     total: 1,
     page: 1,
-    pageSize: 50,
+    pageSize: 200,
     durationMs: 2,
     ...over,
   }
@@ -276,6 +290,8 @@ beforeEach(() => {
     summary: '',
   })
   env.commands.dbcHistoryAdd.mockResolvedValue(undefined)
+  env.commands.dbcCloseCursor.mockResolvedValue(undefined)
+  env.commands.dbcCancel.mockResolvedValue(undefined)
   env.commands.dbcConnect.mockImplementation(async (id: string) => connection(id, id))
   env.commands.dbcDisconnect.mockResolvedValue(undefined)
   env.commands.dbcConnectionDelete.mockResolvedValue(undefined)
@@ -288,6 +304,202 @@ afterEach(() => {
 })
 
 /* ────────────────────────────────────────────────────────────────────── */
+describe('滚动继续读取', () => {
+  it('卸载工具主动清空结果模型，外部仍持状态引用也不保留正文', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    openEditor(api, 'conn-a', 'SELECT n FROM numbers')
+    env.commands.dbcExecute.mockResolvedValue(
+      result({ rows: [['large result']], values: [[{ kind: 'text', value: 'large result' }]] })
+    )
+    await api.runQuery()
+    const retained = api.queryState.value
+    hosts.pop()!()
+    expect(retained.rows).toEqual([])
+    expect(retained.values).toEqual([])
+    expect(retained.statements).toEqual([])
+    expect(api.queryStates.value).toEqual({})
+  })
+  it('共享预算保留旧页草稿，阻止继续累积结果', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const text = 'x'.repeat(4 * 1024 * 1024)
+    const protectedTabs: string[] = []
+    for (let index = 0; index < 2; index++) {
+      const id = openEditor(api, 'conn-a', `SELECT ${index}`)
+      env.commands.dbcExecute.mockResolvedValue(result({ rows: [[text], [text]] }))
+      await api.runQuery()
+      api.patchQueryState({ gridEdits: { 0: { n: { kind: 'text', value: '修改' } } } })
+      protectedTabs.push(id)
+    }
+    const current = openEditor(api, 'conn-a', 'SELECT 3')
+    env.commands.dbcExecute.mockResolvedValue(
+      result({ rows: [[text], [text]], hasMore: true, cursorId: 'bounded' })
+    )
+    await api.runQuery()
+    env.commands.dbcFetch.mockResolvedValue(
+      result({ rows: [[text], [text]], hasMore: true, cursorId: 'bounded' })
+    )
+    await api.loadMore()
+    expect(stateOf(api, current).rows).toHaveLength(2)
+    expect(stateOf(api, current).loadLimit).toContain('上限')
+    for (const id of protectedTabs) {
+      expect(stateOf(api, id).rows).toHaveLength(2)
+      expect(stateOf(api, id).gridEdits?.[0].n.value).toBe('修改')
+    }
+    expect(env.commands.dbcCloseCursor).toHaveBeenCalledWith('conn-a', current, 'bounded')
+  })
+  it('导出已加载结果时明确提示游标仍有未加载数据', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    openEditor(api, 'conn-a', 'SELECT n FROM numbers')
+    api.patchQueryState({
+      status: 'success',
+      columns: ['n'],
+      rows: [['1']],
+      values: [[{ kind: 'integer', value: '1' }]],
+      total: 1,
+      hasMore: true,
+      truncated: false,
+    })
+    const toast = vi.spyOn(useUiStore(), 'toast')
+    env.commands.dialogSave.mockResolvedValue('result.csv')
+    env.commands.exportRows.mockResolvedValue(1)
+    const panel = mount(QueryTab, { props: { db: api } })
+    hosts.push(() => panel.unmount())
+    await flush()
+    await panel.get('button[aria-label="导出筛选结果 CSV"]').trigger('click')
+    await flush()
+    expect(env.commands.exportRows).toHaveBeenCalledWith(
+      'result.csv',
+      ['n'],
+      [[{ kind: 'integer', value: '1' }]]
+    )
+    expect(toast).toHaveBeenCalledWith(expect.stringContaining('原结果未完整'))
+  })
+  it('SQL 单飞追加，失败保留已加载结果并按同一偏移重试', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers')
+    env.commands.dbcExecute.mockResolvedValue(result({ hasMore: true, cursorId: 'cursor-a' }))
+    await api.runQuery()
+    expect(env.commands.dbcExecute.mock.calls[0][2]).toBe(200)
+    const next = deferred<QueryResult>()
+    env.commands.dbcFetch.mockReturnValueOnce(next.promise)
+    const reading = api.loadMore()
+    await api.loadMore()
+    expect(env.commands.dbcFetch).toHaveBeenCalledTimes(1)
+    next.reject(new Error('暂时无法读取'))
+    await reading
+    expect(stateOf(api, id).rows).toEqual([['1']])
+    expect(stateOf(api, id).loadMoreError).toContain('暂时无法读取')
+    env.commands.dbcFetch.mockResolvedValue(result({ rows: [['2']], hasMore: false }))
+    await api.loadMore()
+    expect(env.commands.dbcFetch).toHaveBeenLastCalledWith('conn-a', id, 'cursor-a', 1)
+    expect(stateOf(api, id).rows).toEqual([['1'], ['2']])
+    expect(api.pageRows.value).toEqual([['1'], ['2']])
+    expect(stateOf(api, id).hasMore).toBe(false)
+  })
+
+  it('重新执行前先关闭游标，关闭失败保留旧结果并阻止执行', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers')
+    env.commands.dbcExecute.mockResolvedValue(result({ hasMore: true, cursorId: 'cursor-a' }))
+    await api.runQuery()
+    env.commands.dbcCloseCursor.mockRejectedValueOnce(new Error('DB_CURSOR_SESSION_RESET'))
+    await api.runQuery('SELECT 2')
+    expect(env.commands.dbcExecute).toHaveBeenCalledTimes(1)
+    expect(stateOf(api, id).rows).toEqual([['1']])
+    expect(stateOf(api, id).error).toContain('DB_CURSOR_SESSION_RESET')
+    env.commands.dbcExecute.mockResolvedValue(result({ rows: [['new']] }))
+    await api.runQuery('SELECT 2')
+    expect(stateOf(api, id).rows).toEqual([['new']])
+  })
+
+  it('重新执行后的迟到追加不能混入新结果', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers')
+    env.commands.dbcExecute.mockResolvedValue(result({ hasMore: true, cursorId: 'old' }))
+    await api.runQuery()
+    const next = deferred<QueryResult>()
+    env.commands.dbcFetch.mockReturnValueOnce(next.promise)
+    const reading = api.loadMore()
+    env.commands.dbcExecute.mockResolvedValue(result({ rows: [['new']] }))
+    await api.runQuery('SELECT 2')
+    next.resolve(result({ rows: [['old-late']] }))
+    await reading
+    expect(env.commands.dbcCloseCursor).toHaveBeenCalledWith('conn-a', id, 'old')
+    expect(stateOf(api, id).rows).toEqual([['new']])
+  })
+
+  it('表追加携带完整末行，草稿阻止追加，刷新取消旧批次并丢弃迟到结果', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    env.commands.dbcTableData.mockResolvedValue(
+      tablePage({ hasMore: true, values: [[{ kind: 'integer', value: '1' }]] })
+    )
+    api.selectResource('conn-a::db1::table:users')
+    const id = api.activeTabId.value
+    await flush()
+    api.patchQueryState({ gridEdits: { 0: { id: { kind: 'integer', value: '9' } } } })
+    await api.loadMore()
+    expect(env.commands.dbcTableData).toHaveBeenCalledTimes(1)
+    api.patchQueryState({ gridEdits: {} })
+    const next = deferred<DbTablePage>()
+    env.commands.dbcTableData.mockReturnValueOnce(next.promise)
+    const reading = api.loadMore()
+    const append = env.commands.dbcTableData.mock.calls.at(-1)!
+    expect(append.slice(2, 4)).toEqual([2, 200])
+    expect(append[7]).toEqual([{ kind: 'integer', value: '1' }])
+    env.commands.dbcTableData.mockResolvedValue(tablePage({ rows: [['fresh']], hasMore: false }))
+    await api.loadTableData(id)
+    next.resolve(tablePage({ rows: [['stale']], hasMore: false }))
+    await reading
+    expect(env.commands.dbcCancel).toHaveBeenCalledWith(append[8])
+    expect(stateOf(api, id).rows).toEqual([['fresh']])
+    expect(stateOf(api, id).page).toBe(1)
+  })
+
+  it('追加期间保留网格实例和已加载行', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    env.commands.dbcTableData.mockResolvedValue(tablePage({ hasMore: true }))
+    api.selectResource('conn-a::db1::table:users')
+    await flush()
+    const panel = mount(DataTab, { props: { db: api } })
+    hosts.push(() => panel.unmount())
+    const grid = panel.findComponent({ name: 'UiDataGrid' }).element
+    const next = deferred<DbTablePage>()
+    env.commands.dbcTableData.mockReturnValueOnce(next.promise)
+    const reading = api.loadMore()
+    await nextTick()
+    expect(panel.findComponent({ name: 'UiDataGrid' }).element).toBe(grid)
+    expect(panel.text()).toContain('正在读取更多')
+    next.resolve(tablePage({ rows: [['2']], hasMore: false }))
+    await reading
+    await nextTick()
+    expect(panel.findComponent({ name: 'UiDataGrid' }).element).toBe(grid)
+    expect(api.queryState.value.rows).toEqual([['1'], ['2']])
+  })
+
+  it('达到活动结果行数上限关闭游标，保留行身份并停止追加', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers')
+    const rows = Array.from({ length: 100_000 }, (_, index) => [String(index)])
+    env.commands.dbcExecute.mockResolvedValue(result({ rows, hasMore: true, cursorId: 'limit' }))
+    await api.runQuery()
+    await api.loadMore()
+    expect(stateOf(api, id).rows).toHaveLength(100_000)
+    expect(stateOf(api, id).rows[99_999]).toEqual(['99999'])
+    expect(stateOf(api, id).loadLimit).toContain('上限')
+    expect(env.commands.dbcFetch).not.toHaveBeenCalled()
+    expect(env.commands.dbcCloseCursor).toHaveBeenCalledWith('conn-a', id, 'limit')
+  })
+})
+
 describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
   it('大 SQL 格式化在改写或切页时取消，不覆盖其它页签', async () => {
     const workers: {
@@ -324,7 +536,7 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     expect(workers[1].terminate).toHaveBeenCalledOnce()
     expect(api.queryState.value.sql).toBe('SELECT other')
   })
-  it('查询结果表格按页显示，过滤会回到第一页且无匹配时显示空态', async () => {
+  it('查询结果提供全部已加载行，过滤后无匹配时显示空态', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()
     openEditor(api, 'conn-a', 'SELECT id FROM users')
@@ -338,14 +550,9 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     hosts.push(() => panel.unmount())
     await flush()
     expect(panel.text()).toContain('user-001')
-    expect(panel.text()).not.toContain('user-051')
-    await panel
-      .findAll('button')
-      .find((button) => button.text() === '下一页')!
-      .trigger('click')
-    await flush()
+    expect(api.pageRows.value).toHaveLength(61)
     expect(panel.text()).toContain('user-051')
-    expect(panel.text()).not.toContain('user-001')
+    expect(panel.findAll('button').some((button) => button.text() === '下一页')).toBe(false)
     await panel.get('input[placeholder="筛选已加载结果…"]').setValue('user-001')
     await flush()
     expect(api.queryState.value.page).toBe(1)
@@ -1159,16 +1366,18 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
 
     expect(panel.text()).toContain('用户名')
     expect(panel.text()).toContain('首次加载用户')
-    expect(panel.text()).toContain('当前页 1 行')
+    expect(panel.text()).toContain('已加载 1 行')
     expect(env.commands.dbcTableData).toHaveBeenCalledTimes(1)
     expect(env.commands.dbcTableData).toHaveBeenCalledWith(
       'conn-a',
       'users',
       1,
-      50,
+      200,
       'db1',
       'db1',
-      undefined
+      undefined,
+      undefined,
+      expect.any(String)
     )
   })
 

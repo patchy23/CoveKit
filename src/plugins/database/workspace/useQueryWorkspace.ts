@@ -1,14 +1,13 @@
 /**
  * database 查询工作区域（页签域）：query/data/structure/redis/create-table 页签，
- * 每个页签的 SQL、dirty、结果与请求状态，运行/取消执行，以及结果分页投影
- * （filteredRows/totalPages/pageRows/tableColumns/resultTabs）。
+ * 每个页签的 SQL、dirty、结果与请求状态，运行/取消执行，以及增量结果投影。
  *
  * 依赖只以端口注入：connection 域的只读快照（connections/activeConnectionId/activeConnection）
  * 与 library 域的历史、收藏读写命令。catalog 域需要的数据只以只读 computed 视图暴露
  * （activeTabConnectionId/activeTabSchema）与命令函数（openDataTab/openRedisKeyTab 等），
  * 不把可写页签状态对象交给别的域。
  */
-import { computed, markRaw, ref, watch, onScopeDispose } from 'vue'
+import { computed, markRaw, ref, watch, onScopeDispose, toRaw } from 'vue'
 import type { ComputedRef } from 'vue'
 import type { UiDataGridColumn, UiTabItem } from '@/core/ui'
 import type { V2QueryStatus, V2Tab, V2TabKind } from '../useDatabaseMeta'
@@ -32,6 +31,10 @@ import { useResultFilter } from './useResultFilter'
 
 /** 查询页签状态（真实后端字段） */
 export interface QueryState {
+  cursorId?: string
+  loadingMore?: boolean
+  loadMoreError?: string
+  loadLimit?: string
   /** 网格修改留在内存，手动保存时才提交事务。 */
   gridEdits?: Record<string, Record<string, DbValue>>
   gridSaving?: boolean
@@ -129,7 +132,24 @@ export interface TabContext {
   table?: string
 }
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 200
+const RESULT_ROWS_LIMIT = 100_000
+const RESULT_BYTES_LIMIT = 64 * 1024 * 1024
+
+/** 展示文本与类型化原值都占内存；用于追加前预算，保留已加载行的稳定身份。 */
+function rowsBytes(rows: string[][], values: DbValue[][]): number {
+  return (
+    rows.reduce(
+      (sum, row) => sum + row.reduce((size, value) => size + value.length * 2 + 64, 0),
+      0
+    ) +
+    values.reduce(
+      (sum, row) =>
+        sum + row.reduce((size, value) => size + (value.value?.length ?? 0) * 2 + 128, 0),
+      0
+    )
+  )
+}
 
 /** 页签上下文 → 后端 schema 入参（mysql/polardb 传库名；PG 系传 schema；sqlite/redis 不用） */
 export function ipcScopeArg(conn: DbConnectionInfo, ctx: TabContext): string | undefined {
@@ -189,6 +209,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   }
   const tabContexts = ref<Record<string, TabContext>>({})
   const queryStates = ref<Record<string, QueryState>>({})
+  let disposed = false
 
   /** 在途请求身份：页签 id → 请求 id（结果回填与取消都按它判定归属） */
   const loadGeneration = new Map<string, number>()
@@ -196,26 +217,49 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   const structureRequests = new Map<string, symbol>()
   const structureErrors = ref<Record<string, { columns?: string; indexes?: string }>>({})
   const resultBytes = new Map<string, number>()
+  const fetchRequests = new Map<string, symbol>()
+  const tableRequests = new Map<string, string>()
+
+  async function closeCursors(tabId: string, state: QueryState, connectionId?: string) {
+    const connId = connectionId ?? tabContexts.value[tabId]?.connectionId
+    const cursors = new Set([state.cursorId, ...state.statements.map((result) => result.cursorId)])
+    const statements = state.statements
+    if (!connId) return
+    await Promise.all(
+      [...cursors]
+        .filter((id): id is string => !!id)
+        .map((id) => queryIpc.closeCursor(connId, tabId, id))
+    )
+    if (cursors.has(state.cursorId)) state.cursorId = undefined
+    for (const result of statements) if (cursors.has(result.cursorId)) result.cursorId = undefined
+  }
+
+  async function closeQueryResults(tabId: string) {
+    const state = queryStates.value[tabId]
+    if (!state) return
+    invalidateFetch(tabId, state)
+    await closeCursors(tabId, state)
+    state.hasMore = false
+  }
+
+  function invalidateFetch(tabId: string, state: QueryState) {
+    const requestId = tableRequests.get(tabId)
+    if (requestId) void queryIpc.cancel(requestId).catch(ports.showError)
+    tableRequests.delete(tabId)
+    fetchRequests.delete(tabId)
+    state.loadingMore = false
+    state.loadMoreError = ''
+  }
   /** 结果数组不深度代理；旧页结果总预算 64 MiB，编辑文档与事务状态不被驱逐。 */
   function retainResult(tabId: string, state: QueryState) {
-    state.rows = markRaw(state.rows)
-    state.values = markRaw(state.values)
-    state.statements = markRaw(state.statements)
-    const size = (rows: string[][], values: DbValue[][]) =>
-      rows.reduce(
-        (sum, row) => sum + row.reduce((bytes, value) => bytes + value.length * 2 + 64, 0),
-        0
-      ) +
-      values.reduce(
-        (sum, row) =>
-          sum + row.reduce((bytes, value) => bytes + (value.value?.length ?? 0) * 2 + 128, 0),
-        0
-      )
+    state.rows = markRaw(toRaw(state.rows))
+    state.values = markRaw(toRaw(state.values))
+    state.statements = markRaw(toRaw(state.statements))
     // 根展示与活动语句可能共享同一数组；按对象身份计数，不把内容相同的独立副本当共享。
     const seenRows = new Set<string[][]>()
     const seenValues = new Set<DbValue[][]>()
     const uniqueSize = (rows: string[][], values: DbValue[][]) => {
-      const bytes = size(seenRows.has(rows) ? [] : rows, seenValues.has(values) ? [] : values)
+      const bytes = rowsBytes(seenRows.has(rows) ? [] : rows, seenValues.has(values) ? [] : values)
       seenRows.add(rows)
       seenValues.add(values)
       return bytes
@@ -228,9 +272,26 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       )
     resultBytes.delete(tabId)
     resultBytes.set(tabId, bytes)
-    let total = [...resultBytes.values()].reduce((sum, bytes) => sum + bytes, 0)
+    if (!reserveResultBytes(tabId, 0)) {
+      void closeCursors(tabId, state).catch(ports.showError)
+      Object.assign(state, {
+        rows: [],
+        values: [],
+        statements: [],
+        total: 0,
+        truncated: true,
+        loadLimit:
+          '结果超过共享 64 MiB 内存预算，已停止加载；请先关闭旧结果或保存修改，再重新查询。',
+      })
+      resultBytes.delete(tabId)
+    }
+  }
+
+  /** 不驱逐草稿与活动页；无足够空间时停止接收新批次，不累积无限多个受保护结果。 */
+  function reserveResultBytes(tabId: string, additional: number): boolean {
+    let total = additional + [...resultBytes.values()].reduce((sum, bytes) => sum + bytes, 0)
     for (const [id, bytes] of resultBytes) {
-      if (total <= 64 * 1024 * 1024) break
+      if (total <= RESULT_BYTES_LIMIT) break
       if (id === tabId || id === activeTabId.value) continue
       const previous = queryStates.value[id]
       if (
@@ -240,11 +301,14 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         previous.gridSaving
       )
         continue
+      invalidateFetch(id, previous)
+      void closeCursors(id, previous).catch(ports.showError)
       Object.assign(previous, {
         rows: [],
         values: [],
         statements: [],
         total: 0,
+        hasMore: false,
         status: 'idle',
         resultTab: 'message',
         error: '为限制内存占用，此页旧结果已释放；SQL 内容仍保留，可重新执行。',
@@ -252,6 +316,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       resultBytes.delete(id)
       total -= bytes
     }
+    return total <= RESULT_BYTES_LIMIT
   }
   let draftsReady = false
   let draftRestoreError = ''
@@ -346,7 +411,22 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     }, 500)
   })
   onScopeDispose(() => {
+    disposed = true
     if (draftTimer) clearTimeout(draftTimer)
+    for (const [id, context] of Object.entries(tabContexts.value)) {
+      const state = queryStates.value[id]
+      if (state) {
+        invalidateFetch(id, state)
+        Object.assign(state, { rows: [], values: [], statements: [], gridEdits: {}, sql: '' })
+      }
+      void queryIpc.closeWorkspace(context.connectionId, id).catch(ports.showError)
+    }
+    loadGeneration.clear()
+    inFlight.clear()
+    resultBytes.clear()
+    queryStates.value = {}
+    tabContexts.value = {}
+    tabs.value = []
   })
   async function restoreDrafts() {
     if (draftsReady) return
@@ -390,6 +470,13 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       const state = queryStates.value[id]
       if (!state) continue
       state.transactionActive = false
+      invalidateFetch(id, state)
+      state.cursorId = undefined
+      state.hasMore = false
+      for (const result of state.statements) {
+        result.cursorId = undefined
+        result.hasMore = false
+      }
       if (inFlight.has(id)) {
         inFlight.delete(id)
         state.status = 'error'
@@ -416,7 +503,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     })
   }
   function selectStatement(index: number) {
-    if (pendingGrid(queryState.value)) return
+    if (queryState.value.loadingMore || pendingGrid(queryState.value)) return
     const result = queryState.value.statements[index]
     if (!result) return
     patchQueryState({
@@ -428,6 +515,8 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       total: result.rows.length,
       affected: result.rowsAffected,
       truncated: result.truncated,
+      cursorId: result.cursorId,
+      hasMore: result.hasMore,
       page: 1,
       error: result.error ?? '',
       resultTab: result.ok ? 'data' : 'message',
@@ -464,17 +553,17 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     ports.connections.value.find((c) => c.id === activeTabContext.value.connectionId)
   )
 
+  const disposedQueryState = makeQueryState()
   const queryState = computed<QueryState>(() => {
-    queryStates.value[activeTabId.value] ??= makeQueryState()
-    return queryStates.value[activeTabId.value]
+    const state = queryStates.value[activeTabId.value]
+    if (state || disposed) return state ?? disposedQueryState
+    return (queryStates.value[activeTabId.value] = makeQueryState())
   })
 
   /** catalog 只读视图：当前页签所属连接 / schema（库/schema 下拉与编辑器补全） */
   const activeTabConnectionId = computed(() => activeTabContext.value.connectionId)
   const activeTabSchema = computed(() => activeTabContext.value.schema)
   const activeTabDatabase = computed(() => activeTabContext.value.database)
-
-  const rowLimitOptions = ['50', '100', '500', '1000'].map((v) => ({ value: v, label: v }))
 
   // ──────────────────────────────────────────────────────────────────────
   // 页签开闭
@@ -617,6 +706,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       return
     }
     const ctx = tabContexts.value[id]
+    if (source) invalidateFetch(id, source)
     const request = inFlight.get(id)
     if (request) void queryIpc.cancel(request).catch(ports.showError)
     if (ctx) void queryIpc.closeWorkspace(ctx.connectionId, id).catch(ports.showError)
@@ -742,9 +832,14 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     // 请求身份：后端按它登记取消句柄，本函数的回填也按它判定本次结果是否仍然有效
     const requestId = nextRequestId(tabId)
     inFlight.set(tabId, requestId)
+    invalidateFetch(tabId, state)
+    const oldCursors = closeCursors(tabId, state, conn.id)
     patchQueryState({
       status: 'running',
       error: '',
+      cancelRequested: false,
+    })
+    const resetResult = {
       page: 1,
       columns: [],
       rows: [],
@@ -752,10 +847,17 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       statements: [],
       total: 0,
       cancelRequested: false,
-    })
+      cursorId: undefined,
+      hasMore: false,
+      loadLimit: '',
+    }
     const ctx = tabContexts.value[tabId]
     const scope = { database: ctx?.database ?? conn.database, schema: ctx?.schema ?? '' }
     try {
+      await oldCursors
+      if (inFlight.get(tabId) !== requestId || !tabContexts.value[tabId]) return
+      patchTabState(state, resetResult)
+      resultBytes.delete(tabId)
       const preview = await queryIpc.prepare(conn.id, sql, requestId, scope)
       if (state.cancelRequested) {
         if (settleRequest(tabId, requestId))
@@ -782,13 +884,20 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       const result = await queryIpc.execute(
         conn.id,
         sql,
-        1000,
+        PAGE_SIZE,
         requestId,
         tabId,
         scope,
         preview.confirmationToken ?? undefined
       )
-      if (inFlight.get(tabId) !== requestId || !tabs.value.some((tab) => tab.id === tabId)) return
+      if (inFlight.get(tabId) !== requestId || !tabs.value.some((tab) => tab.id === tabId)) {
+        await closeCursors(
+          tabId,
+          { ...state, cursorId: result.cursorId, statements: result.statements ?? [] },
+          conn.id
+        )
+        return
+      }
       state.editTarget = result.editTarget
       state.querySql = sql
       state.gridError = ''
@@ -810,6 +919,8 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
           values: result.values ?? [],
           total: result.rows.length,
           truncated: result.truncated,
+          cursorId: result.cursorId,
+          hasMore: result.hasMore,
           filter: '',
         })
       } else {
@@ -824,6 +935,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         })
       }
       retainResult(tabId, state)
+      enforceLimit(tabId, state)
       ports.recordHistory(
         conn.id,
         sql,
@@ -920,7 +1032,115 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   // 数据浏览 / 结构 / Redis 键
   // ──────────────────────────────────────────────────────────────────────
 
-  /** 数据页签：从页签上下文取库/schema 与表名，后端分页 */
+  function enforceLimit(tabId: string, state: QueryState): boolean {
+    if (state.rows.length < RESULT_ROWS_LIMIT && (resultBytes.get(tabId) ?? 0) < RESULT_BYTES_LIMIT)
+      return false
+    state.loadLimit =
+      '已达到 100,000 行或 64 MiB 显示上限，停止继续读取；已加载行保留，请缩小查询范围或完整导出。'
+    state.truncated = !!state.hasMore || state.truncated
+    void closeCursors(tabId, state).catch(ports.showError)
+    return true
+  }
+
+  /** 同页只保留一次追加请求；失败不清空已加载行，重试仍读取原页码或游标。 */
+  async function loadMore(tabId = activeTabId.value) {
+    const state = queryStates.value[tabId]
+    const ctx = tabContexts.value[tabId]
+    const kind = tabs.value.find((tab) => tab.id === tabId)?.kind
+    if (
+      !state ||
+      !ctx ||
+      !state.hasMore ||
+      state.loadingMore ||
+      state.loadLimit ||
+      state.status === 'running' ||
+      hasGridChanges(state) ||
+      state.gridSaving ||
+      (kind !== 'data' && !state.cursorId)
+    )
+      return
+    if (enforceLimit(tabId, state)) return
+    const request = Symbol()
+    fetchRequests.set(tabId, request)
+    state.loadingMore = true
+    state.loadMoreError = ''
+    const current = () =>
+      queryStates.value[tabId] === state &&
+      tabContexts.value[tabId] === ctx &&
+      fetchRequests.get(tabId) === request
+    const cursorId = state.cursorId
+    const tableRequest = kind === 'data' ? nextRequestId('table-more') : undefined
+    if (tableRequest) tableRequests.set(tabId, tableRequest)
+    try {
+      const conn = ports.connections.value.find((connection) => connection.id === ctx.connectionId)
+      if (!conn || conn.status !== 'online') throw new Error('连接已断开，请重新连接后刷新')
+      const page =
+        kind === 'data'
+          ? await queryIpc.tableData(
+              ctx.connectionId,
+              ctx.table ?? tabTableName(tabId),
+              state.page + 1,
+              PAGE_SIZE,
+              ipcScopeArg(conn, ctx),
+              ctx.database,
+              state.tableOptions,
+              state.values.at(-1),
+              tableRequest
+            )
+          : await queryIpc.fetch(ctx.connectionId, tabId, cursorId!, state.rows.length)
+      if (!current()) return
+      if (page.error) throw new Error(page.error)
+      if ('ok' in page && !page.ok) throw new Error('读取更多结果失败，请重试')
+      if (page.hasMore && !page.rows.length) throw new Error('本批次未返回数据，请重试读取')
+      if (
+        state.columns.length !== page.columns.length ||
+        state.columns.some((name, index) => page.columns[index] !== name)
+      )
+        throw new Error('结果列已变化，请刷新后重新读取')
+      const bytes = rowsBytes(page.rows, page.values ?? [])
+      if (
+        state.rows.length + page.rows.length > RESULT_ROWS_LIMIT ||
+        !reserveResultBytes(tabId, bytes)
+      ) {
+        state.loadLimit =
+          '追加结果将超过 100,000 行或 64 MiB 显示上限，已停止读取；已加载行保留，请缩小查询范围或完整导出。'
+        state.truncated = true
+        await closeCursors(tabId, state)
+        return
+      }
+      state.rows = markRaw([...state.rows, ...page.rows])
+      state.values = markRaw([...state.values, ...(page.values ?? [])])
+      state.total = state.rows.length
+      state.hasMore = page.hasMore ?? page.rows.length === PAGE_SIZE
+      if (kind === 'data') state.page += 1
+      else {
+        const result = page as QueryResult
+        state.cursorId = result.hasMore ? (result.cursorId ?? cursorId) : undefined
+        state.truncated = result.truncated
+        const statement = state.statements[state.activeStatement]
+        if (statement)
+          Object.assign(statement, {
+            rows: state.rows,
+            values: state.values,
+            hasMore: state.hasMore,
+            cursorId: state.cursorId,
+            truncated: state.truncated,
+          })
+      }
+      retainResult(tabId, state)
+      enforceLimit(tabId, state)
+    } catch (error) {
+      if (current()) state.loadMoreError = String(error)
+    } finally {
+      if (current()) {
+        state.loadingMore = false
+        fetchRequests.delete(tabId)
+        tableRequests.delete(tabId)
+      }
+    }
+  }
+
+  /** 数据页签刷新从首批开始；代次隔离之前的刷新与追加。 */
   async function loadTableData(tabId: string) {
     const ctx = tabContexts.value[tabId]
     queryStates.value[tabId] ??= makeQueryState()
@@ -931,9 +1151,18 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     if (!table) return
     const conn = ports.connections.value.find((c) => c.id === ctx.connectionId)
     if (!conn) return
+    invalidateFetch(tabId, state)
+    state.page = 1
+    state.hasMore = false
+    state.loadLimit = ''
+    state.rows = []
+    state.values = []
+    resultBytes.delete(tabId)
     state.status = 'running'
     const generation = ++nextLoadGeneration
     loadGeneration.set(tabId, generation)
+    const requestId = nextRequestId('table-load')
+    tableRequests.set(tabId, requestId)
     try {
       const page = await queryIpc.tableData(
         ctx.connectionId,
@@ -942,7 +1171,9 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         PAGE_SIZE,
         ipcScopeArg(conn, ctx),
         ctx.database,
-        state.tableOptions
+        state.tableOptions,
+        undefined,
+        requestId
       )
       if (!tabContexts.value[tabId] || loadGeneration.get(tabId) !== generation) return
       state.editTarget = {
@@ -955,13 +1186,13 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       state.gridMessage = ''
       state.querySql = page.querySql
       state.queryParams = page.queryParams
-      state.hasMore = page.hasMore
+      state.hasMore = page.hasMore ?? page.rows.length === PAGE_SIZE
       state.totalKind = page.totalKind
       state.stableOrder = page.stableOrder
       state.values = page.values ?? []
       state.columns = page.columns
       state.rows = page.rows
-      state.total = page.total
+      state.total = page.rows.length
       state.durationMs = page.durationMs
       state.truncated = false
       state.status = page.error ? 'error' : 'success'
@@ -969,22 +1200,14 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       state.resultTab = 'data'
       state.selectedRow = ''
       retainResult(tabId, state)
+      enforceLimit(tabId, state)
     } catch (err) {
       if (!tabContexts.value[tabId] || loadGeneration.get(tabId) !== generation) return
       state.status = 'error'
       state.error = String(err)
       state.resultTab = 'message'
-    }
-  }
-
-  function setPage(nextPage: number) {
-    const state = queryState.value
-    if (activeTabKind.value === 'data' && pendingGrid(state)) return
-    state.page = Math.max(1, nextPage)
-    if (activeTabKind.value === 'data') {
-      void loadTableData(activeTabId.value)
-    } else if (activeTabKind.value === 'query') {
-      // 查询结果分页：前端按 total 切片（后端已取回一页）
+    } finally {
+      if (tableRequests.get(tabId) === requestId) tableRequests.delete(tabId)
     }
   }
 
@@ -1139,18 +1362,9 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     () => queryState.value.filter
   )
 
-  const totalPages = computed(() => {
-    const state = queryState.value
-    if (activeTabKind.value === 'data') return Math.max(1, Math.ceil(state.total / PAGE_SIZE))
-    return Math.max(1, Math.ceil(filteredRows.value.length / PAGE_SIZE))
-  })
-
-  const pageRows = computed(() => {
-    const state = queryState.value
-    if (activeTabKind.value === 'data') return state.rows
-    const start = (state.page - 1) * PAGE_SIZE
-    return filteredRows.value.slice(start, start + PAGE_SIZE)
-  })
+  const pageRows = computed(() =>
+    activeTabKind.value === 'data' ? queryState.value.rows : filteredRows.value
+  )
 
   /** 动态列 → UiDataGridColumn（宽度按内容类型估算） */
   const tableColumns = computed<UiDataGridColumn[]>(() =>
@@ -1195,11 +1409,9 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     activeTabConnection,
     queryState,
     filteredRows,
-    totalPages,
     pageRows,
     tableColumns,
     resultTabs,
-    rowLimitOptions,
     // catalog 只读视图 + 窄命令
     activeTabConnectionId,
     activeTabSchema,
@@ -1228,9 +1440,10 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     runQuery,
     cancelQuery,
     onFormatSql,
-    setPage,
     // 数据加载
     loadTableData,
+    loadMore,
+    closeQueryResults,
     loadColumns,
     loadStructureExtras,
     loadRedisKeyInfo,

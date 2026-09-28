@@ -30,12 +30,14 @@ pub(crate) fn on_dispose(app: Option<&tauri::AppHandle>, _reason: CloseReason) -
         return Vec::new();
     };
     let mut failures = Vec::new();
+    super::drivers::cursor::close_all(&app.state::<super::drivers::cursor::CursorState>());
 
     // 1) 进行中的查询：置取消标志，让执行中的命令尽快返回
     match app.state::<DbCancelState>().0.lock() {
         Ok(map) => {
             for handle in map.values() {
                 handle.aborted.store(true, Ordering::Relaxed);
+                handle.notify.notify_one();
             }
         }
         Err(_) => failures.push(format!("{OWNER}.query: 取消注册表锁不可用")),

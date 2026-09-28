@@ -28,7 +28,7 @@ export function selectResultValues(
   )
 }
 
-/** 仅为当前页构建网格对象，行号查找不随列数重复执行。 */
+/** 为已加载结果构建网格投影，复用单元格字符串；行号查找不随列数重复执行。 */
 export function resultGridRows(
   columns: string[],
   rows: string[][],

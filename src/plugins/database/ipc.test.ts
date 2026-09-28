@@ -25,8 +25,25 @@ it('草稿增量通过原命令携带完整顺序，空顺序用于原子清空'
   })
 })
 
+it('继续读取携带已接收偏移，关闭精确命中当前页游标', async () => {
+  await queryIpc.fetch('connection', 'workspace', 'cursor', 200)
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_query_fetch', {
+    connId: 'connection',
+    workspaceId: 'workspace',
+    cursorId: 'cursor',
+    expectedOffset: 200,
+  })
+  await queryIpc.closeCursor('connection', 'workspace', 'cursor')
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_query_close', {
+    connId: 'connection',
+    workspaceId: 'workspace',
+    cursorId: 'cursor',
+  })
+})
+
 function result(overrides: Partial<QueryResult> = {}): QueryResult {
   return {
+    hasMore: false,
     ok: true,
     columns: [],
     rows: [],

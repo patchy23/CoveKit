@@ -75,6 +75,8 @@ export const queryIpc = {
         result.rows = display.rows
         result.values = display.values
         result.columnTypes = display.columnTypes
+        result.cursorId = display.cursorId
+        result.hasMore = display.hasMore
       }
       return result
     }),
@@ -82,6 +84,15 @@ export const queryIpc = {
     call('dbc_prepare_execution', { connId, sql, requestId, scope }),
   closeWorkspace: (connId: string, workspaceId: string) =>
     call('dbc_workspace_close', { connId, workspaceId }),
+  fetch: (
+    connId: string,
+    workspaceId: string,
+    cursorId: string,
+    expectedOffset: number
+  ): Promise<QueryResult> =>
+    call('dbc_query_fetch', { connId, workspaceId, cursorId, expectedOffset }),
+  closeCursor: (connId: string, workspaceId: string, cursorId: string): Promise<void> =>
+    call('dbc_query_close', { connId, workspaceId, cursorId }),
   cancel: (requestId: string): Promise<void> => call('dbc_cancel', { requestId }),
   databases: (connId: string): Promise<string[]> => call('dbc_databases', { connId }),
   schemas: (connId: string, database?: string): Promise<string[]> =>
@@ -102,9 +113,21 @@ export const queryIpc = {
     pageSize: number,
     schema?: string,
     database?: string,
-    options?: TableOptions
+    options?: TableOptions,
+    after?: DbValue[],
+    requestId?: string
   ): Promise<DbTablePage> =>
-    call('dbc_table_data', { connId, schema, table, page, pageSize, database, options }),
+    call('dbc_table_data', {
+      connId,
+      schema,
+      table,
+      page,
+      pageSize,
+      database,
+      options,
+      after,
+      requestId,
+    }),
   redisKeys: (connId: string, pattern: string, cursor: number): Promise<[number, string[]]> =>
     call('dbc_redis_keys', { connId, pattern, cursor }),
   redisKeyInfo: (connId: string, key: string): Promise<RedisKeyInfo> =>

@@ -11,6 +11,7 @@ pub mod redis;
 pub mod sqlite;
 
 pub(crate) mod connection;
+pub(crate) mod cursor;
 pub(crate) mod execution;
 pub(crate) mod probe;
 pub(crate) mod session;

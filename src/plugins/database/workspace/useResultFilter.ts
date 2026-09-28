@@ -17,12 +17,13 @@ export function useResultFilter(rows: () => string[][], query: () => string) {
   function invalidate() {
     epoch++
     const sameSource = input?.rows === source.value
-    task.cancel(sameSource && !!keyword.value)
+    if (sameSource && keyword.value) task.cancel(true)
+    else task.destroy()
     input = undefined
     waiting = undefined
     busy.value = false
     error.value = ''
-    if (!sameSource) matches.value = []
+    if (!sameSource || !keyword.value) matches.value = []
   }
   const stop = watch([source, keyword], invalidate, { flush: 'sync' })
   function destroy() {

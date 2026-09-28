@@ -2,7 +2,7 @@
 use super::{bound::BoundConnection, metadata::columns_for_entry, table_sql};
 use crate::plugins::database::{
     drivers::{self, DbSession, DbState},
-    models::{DbTablePage, DbType, TableOptions},
+    models::{DbTablePage, DbType, DbValue, TableOptions},
 };
 use std::time::Instant;
 use tauri::State;
@@ -30,11 +30,13 @@ pub async fn dbc_table_data(
     page: u32,
     page_size: u32,
     options: Option<TableOptions>,
+    request_id: Option<String>,
+    after: Option<Vec<DbValue>>,
 ) -> Result<DbTablePage, String> {
     let _storage_operation = crate::framework::storage::access::operation()?;
     let mut task = super::bound::BoundTask::register(
         &cancel_state,
-        uuid::Uuid::new_v4().to_string(),
+        request_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         &conn_id,
     )?;
     let entry = crate::plugins::database::catalog::scoped_session(
@@ -46,9 +48,11 @@ pub async fn dbc_table_data(
     )
     .await?;
     let started = Instant::now();
+    task.check()?;
     let page = page.max(1);
     let page_size = page_size.clamp(1, 500);
     let columns = columns_for_entry(&entry, schema.clone(), table.clone()).await?;
+    task.check()?;
     if columns.is_empty() {
         return Err("表不存在、不可见或没有可浏览列，请刷新结构".into());
     }
@@ -69,15 +73,31 @@ pub async fn dbc_table_data(
         .map(|c| quote(kind, &c.name))
         .collect();
     let options = options.unwrap_or_default();
-    let (filter, params) = table_sql::predicates(kind, &columns, &options)?;
+    let (mut filter, mut params) = table_sql::predicates(kind, &columns, &options)?;
     let order = table_sql::ordering(kind, &columns, &options)?;
     let offset = u64::from(page - 1) * u64::from(page_size);
+    let boundary = if page > 1 {
+        table_sql::keyset_boundary(kind, &columns, &options, after.as_deref(), &mut params)?
+    } else {
+        None
+    };
+    let query_offset = if let Some(boundary) = boundary {
+        filter.push_str(if filter.is_empty() {
+            " WHERE "
+        } else {
+            " AND "
+        });
+        filter.push_str(&boundary);
+        0
+    } else {
+        offset
+    };
     let count = u64::from(page_size) + 1;
     let sql = if kind == DbType::Oracle {
         format!("SELECT * FROM {qualified}{filter}{order} OFFSET {offset} ROWS FETCH NEXT {count} ROWS ONLY")
     } else {
         format!(
-            "SELECT {} FROM {qualified}{filter}{order} LIMIT {count} OFFSET {offset}",
+            "SELECT {} FROM {qualified}{filter}{order} LIMIT {count} OFFSET {query_offset}",
             table_sql::projection(kind, &columns)
         )
     };

@@ -96,6 +96,8 @@ pub struct CancelHandle {
     pub workspace_id: String,
     /// 已请求取消的共享标记。
     pub aborted: Arc<AtomicBool>,
+    /// 唤醒正在等待下一批数据的游标；取消通知不代表驱动已收尾。
+    pub notify: Arc<tokio::sync::Notify>,
     /// 驱动已收尾或已进入不可取消提交阶段。
     pub finished: Arc<AtomicBool>,
     /// 取消与连接复用的互斥门闩。
@@ -120,6 +122,7 @@ impl CancelHandle {
             connection_id: String::new(),
             workspace_id: String::new(),
             aborted: Arc::new(AtomicBool::new(false)),
+            notify: Arc::new(tokio::sync::Notify::new()),
             finished: Arc::new(AtomicBool::new(false)),
             gate: Arc::new(tokio::sync::Mutex::new(())),
             pg_cancel: None,
@@ -139,6 +142,7 @@ impl CancelHandle {
             return Ok(());
         }
         self.aborted.store(true, Ordering::Release);
+        self.notify.notify_waiters();
         if let Some(token) = &self.pg_cancel {
             if self.pg_ssl {
                 let mut roots = rustls::RootCertStore::empty();

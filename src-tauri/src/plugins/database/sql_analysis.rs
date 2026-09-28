@@ -393,6 +393,90 @@ fn query_readonly(query: &Query) -> bool {
     }
     query.visit(&mut ReadOnlyQueries).is_continue()
 }
+
+/// 只有可提前停止的单条只读查询进入增量结果通道；未知函数可能有副作用。
+pub(crate) fn streamable(kind: DbType, sql: &str) -> bool {
+    let Ok(statements) = Parser::parse_sql(parser_dialect(kind).as_ref(), sql) else {
+        return false;
+    };
+    let [Statement::Query(query)] = statements.as_slice() else {
+        return false;
+    };
+    struct SafeQueries;
+    impl Visitor for SafeQueries {
+        type Break = ();
+        fn pre_visit_table_factor(
+            &mut self,
+            table: &sqlparser::ast::TableFactor,
+        ) -> std::ops::ControlFlow<()> {
+            use sqlparser::ast::TableFactor;
+            if matches!(
+                table,
+                TableFactor::Table { args: None, .. }
+                    | TableFactor::Derived { .. }
+                    | TableFactor::NestedJoin { .. }
+            ) {
+                std::ops::ControlFlow::Continue(())
+            } else {
+                std::ops::ControlFlow::Break(())
+            }
+        }
+        fn pre_visit_query(&mut self, query: &Query) -> std::ops::ControlFlow<()> {
+            if !query.locks.is_empty() || !set_readonly(&query.body) {
+                std::ops::ControlFlow::Break(())
+            } else {
+                std::ops::ControlFlow::Continue(())
+            }
+        }
+        fn pre_visit_expr(&mut self, expr: &Expr) -> std::ops::ControlFlow<()> {
+            if matches!(expr, Expr::Function(_)) {
+                std::ops::ControlFlow::Break(())
+            } else {
+                std::ops::ControlFlow::Continue(())
+            }
+        }
+    }
+    query.visit(&mut SafeQueries).is_continue()
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_single_plain_query_and_rejects_effectful_results() {
+        for kind in [DbType::Mysql, DbType::Postgresql, DbType::Sqlite] {
+            for sql in [
+                "SELECT * FROM items",
+                "SELECT id FROM items WHERE id > 5 ORDER BY id",
+                "SELECT * FROM a UNION ALL SELECT * FROM b",
+            ] {
+                assert!(streamable(kind, sql), "{kind}: {sql}");
+            }
+            for sql in [
+                "SELECT * FROM items; DELETE FROM items",
+                "DELETE FROM items RETURNING id",
+                "SELECT custom_function()",
+                "SELECT * FROM items FOR UPDATE",
+                "SELECT * INTO backup FROM items",
+            ] {
+                assert!(!streamable(kind, sql), "{kind}: {sql}");
+            }
+        }
+        assert!(!streamable(
+            DbType::Postgresql,
+            "WITH deleted AS (DELETE FROM items RETURNING *) SELECT * FROM deleted"
+        ));
+        assert!(!streamable(
+            DbType::Postgresql,
+            "SELECT * FROM custom_function()"
+        ));
+        assert!(!streamable(
+            DbType::Postgresql,
+            "SELECT * FROM (SELECT * FROM items FOR UPDATE) locked"
+        ));
+    }
+}
 fn set_readonly(expr: &SetExpr) -> bool {
     match expr {
         SetExpr::Select(select) => select.into.is_none(),

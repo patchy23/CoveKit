@@ -23,7 +23,9 @@ const props = defineProps<{
   db: ReturnType<typeof useDatabase>
   state: QueryState
   rows: Record<string, unknown>[]
+  nearEnd?: boolean
 }>()
+const emit = defineEmits<{ 'near-end': [] }>()
 const { copyText } = useCopy()
 const tabId = computed(
   () =>
@@ -51,6 +53,7 @@ const connection = computed(() =>
 const pending = computed(() => hasGridChanges(props.state))
 const count = computed(() => Object.keys(props.state.gridEdits ?? {}).length)
 const reason = computed(() => {
+  if (props.state.loadingMore) return '正在读取更多数据，请稍候再编辑'
   if (props.state.gridSaving) return '正在提交事务…'
   if (
     props.state.gridError?.includes('DB_OUTCOME_UNKNOWN') ||
@@ -130,13 +133,15 @@ function valueAt(row: number, column: number): DbValue {
 }
 function display(row: number, column: number) {
   const value = valueAt(row, column)
+  const preview =
+    value.value && value.value.length > 500 ? `${value.value.slice(0, 500)}…` : value.value
   return value.kind === 'null'
     ? 'NULL'
     : value.value === ''
       ? '(空字符串)'
       : value.kind === 'binary'
-        ? `0x${value.value}`
-        : value.value
+        ? `0x${preview}`
+        : preview
 }
 async function start(event?: CellEvent) {
   if (event) selectCell(event)
@@ -332,6 +337,8 @@ function discard() {
       {{ state.gridError || metadataError || state.gridMessage }}
     </p>
     <UiDataGrid
+      virtual
+      :near-end="nearEnd && !pending && !state.gridSaving && !state.loadingMore"
       :model-value="state.selectedRow"
       :columns="db.tableColumns.value"
       :rows="rows"
@@ -341,6 +348,7 @@ function discard() {
       @update:model-value="patch({ selectedRow: String($event) })"
       @cell="start"
       @cell-contextmenu="context"
+      @near-end="emit('near-end')"
     >
       <template #cell="{ row, column }">
         <UiInput

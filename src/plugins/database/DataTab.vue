@@ -12,7 +12,6 @@ import {
   UiEmptyState,
   UiIcon,
   UiIconButton,
-  UiPagination,
   UiSpinner,
   UiToolbar,
 } from '@/core/ui'
@@ -70,8 +69,8 @@ function toStructure() {
       ><span
         class="max-w-[240px] truncate font-mono text-caption text-secondary dark:text-secondary-dark"
       >
-        {{ db.activeTabConnection.value?.label ?? '' }} · 当前页 {{ state.rows.length }} 行{{
-          state.hasMore ? '，还有下一页' : ''
+        {{ db.activeTabConnection.value?.label ?? '' }} · 已加载 {{ state.rows.length }} 行{{
+          state.hasMore ? '，还有更多' : ''
         }}
       </span></template
     >
@@ -89,7 +88,15 @@ function toStructure() {
     <UiButton size="sm" variant="secondary" @click="refresh">重试</UiButton>
   </UiEmptyState>
 
-  <EditableResultGrid v-else :db="db" :state="state" class="min-h-0 flex-1" :rows="gridRows" />
+  <EditableResultGrid
+    v-else
+    :db="db"
+    :state="state"
+    class="min-h-0 flex-1"
+    :rows="gridRows"
+    :near-end="!!state.hasMore && !state.loadMoreError && !state.loadLimit"
+    @near-end="db.loadMore()"
+  />
   <UiToolbar density="compact" class="border-t border-border px-[6px] dark:border-border-dark">
     <span class="text-caption text-text-muted dark:text-text-muted-dark">
       {{
@@ -100,12 +107,27 @@ function toStructure() {
             : `耗时 ${state.durationMs} ms`
       }}
     </span>
-    <template #trailing
-      ><UiPagination
-        :model-value="state.page"
-        :total-pages="db.totalPages.value"
+    <template #trailing>
+      <span role="status" class="text-caption text-text-muted dark:text-text-muted-dark">{{
+        state.loadLimit ||
+        state.loadMoreError ||
+        (state.loadingMore
+          ? '正在读取更多…'
+          : hasGridChanges(state)
+            ? '请先保存或放弃修改，再继续读取'
+            : state.hasMore
+              ? '向下滚动继续读取'
+              : '已全部加载')
+      }}</span>
+      <UiButton
+        v-if="state.hasMore && !state.loadLimit"
         size="xs"
-        @update:model-value="db.setPage"
-    /></template>
+        variant="ghost"
+        :disabled="state.loadingMore || hasGridChanges(state) || state.gridSaving"
+        @click="db.loadMore()"
+      >
+        {{ state.loadMoreError ? '重试读取' : '继续读取' }}
+      </UiButton>
+    </template>
   </UiToolbar>
 </template>

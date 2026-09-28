@@ -80,8 +80,18 @@ async function changeConnection(value: string) {
     return
   scopeChanging.value = true
   try {
+    await db.closeQueryResults(tabId)
     await queryIpc.closeWorkspace(context.connectionId, tabId)
     if (db.activeTabId.value !== tabId) return
+    patchQueryState({
+      cursorId: undefined,
+      hasMore: false,
+      loadingMore: false,
+      statements: [],
+      rows: [],
+      values: [],
+      total: 0,
+    })
     Object.assign(context, { connectionId: value, database: connection.database, schema: '' })
   } catch (error) {
     db.showError(error)
@@ -190,12 +200,14 @@ function confirmSave() {
 /** 结果替换时重建索引；筛选、翻页和复制共用，不重复扫描原始行。 */
 const rowIndex = computed(() => indexResultRows(queryState.value.rows))
 const gridRows = computed(() =>
-  resultGridRows(
-    queryState.value.columns,
-    db.pageRows.value,
-    queryState.value.values,
-    rowIndex.value
-  )
+  db.activeTabKind.value !== 'query'
+    ? []
+    : resultGridRows(
+        queryState.value.columns,
+        db.pageRows.value,
+        queryState.value.values,
+        rowIndex.value
+      )
 )
 
 /** 复制结果到剪贴板（TSV 制表符分隔） */
@@ -219,7 +231,7 @@ async function exportCsv() {
     const index = rowIndex.value
     const values = source.values
     const columns = source.columns
-    const truncated = source.truncated
+    const truncated = source.truncated || source.hasMore
     const filtered = await db.filteredRows.ready()
     const rows = selectResultValues(filtered, values, index)
     const path = await dialogSave({
@@ -506,6 +518,7 @@ async function saveSqlFile() {
   </UiTooltip>
 
   <QueryResultPane
+    v-if="db.activeTabKind.value === 'query'"
     :db="db"
     :query-state="queryState"
     :rows="gridRows"

@@ -74,6 +74,17 @@ async function rowMenu(wrapper: ReturnType<typeof mount>, label: string) {
   await nextTick()
 }
 describe('结果单元格编辑事务', () => {
+  it('长字段网格仅显示短预览，完整值与复制保留原文', async () => {
+    const { wrapper, state } = setup()
+    const text = '长'.repeat(20_000)
+    state.rows[0][1] = text
+    state.values[0][1] = { kind: 'text', value: text }
+    await flushPromises()
+    expect(wrapper.findAll('td')[2].text()).toBe('长'.repeat(500) + '…')
+    expect(state.values[0][1].value).toBe(text)
+    await rowMenu(wrapper, '复制单元格')
+    expect(mocks.copy).toHaveBeenLastCalledWith(text)
+  })
   it('查询快照转为原始数组后，可见代理行仍显示原值并编辑、复制正确行', async () => {
     const { wrapper, state } = setup()
     const visible = state.rows.slice()
