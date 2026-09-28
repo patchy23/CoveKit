@@ -1,6 +1,7 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, expect, it, vi } from 'vitest'
 import UiDataGrid from './UiDataGrid.vue'
+import UiTooltip from './UiTooltip.vue'
 import { nextTick } from 'vue'
 
 enableAutoUnmount(afterEach)
@@ -80,6 +81,35 @@ it('默认渲染完整数据且不主动请求后续数据', async () => {
   await nextTick()
   expect(grid.findAll('[data-grid-row]')).toHaveLength(160)
   expect(grid.emitted('near-end')).toBeUndefined()
+})
+
+it('单元格数量变化不会创建 UiTooltip 组件', async () => {
+  const grid = mount(UiDataGrid, { props: { columns, rows: makeRows(1), virtual: true } })
+  expect(grid.findAllComponents(UiTooltip)).toHaveLength(0)
+  await grid.setProps({ rows: makeRows(200) })
+  await nextTick()
+  expect(grid.findAllComponents(UiTooltip)).toHaveLength(0)
+})
+
+it('长值 title 最多500字符且双击和右键事件保留原始行值', async () => {
+  const text = '界'.repeat(600)
+  const row = { id: 'row-1', value: text }
+  const column = { key: 'value', label: '值' }
+  const grid = mount(UiDataGrid, {
+    props: { columns: [column], rows: [row], rowNumbers: false },
+  })
+  const cell = grid.get('tbody td')
+  expect(cell.attributes('title')).toBe(`${text.slice(0, 499)}…`)
+  expect(cell.attributes('title')?.length).toBeLessThanOrEqual(500)
+  expect(cell.text()).toBe(text)
+  await cell.trigger('dblclick')
+  expect(grid.emitted('cell')?.[0]).toEqual([{ row, column }])
+  const contextMenu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+  cell.element.dispatchEvent(contextMenu)
+  await nextTick()
+  const contextPayload = grid.emitted('cell-contextmenu')?.[0]
+  expect(contextPayload?.[0]).toEqual({ row, column })
+  expect(contextPayload?.[1]).toBe(contextMenu)
 })
 
 it('虚拟网格保持全局行号和插槽数据，键盘可到达最后一行并保留离屏焦点', async () => {

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import UiScrollArea from './UiScrollArea.vue'
-import UiTooltip from './UiTooltip.vue'
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { UiContentKind } from './types'
 import { useRowWindow } from './collection/useRowWindow'
@@ -228,8 +227,17 @@ function display(value: unknown) {
   if (value === null) return 'NULL'
   if (value === '') return '(空字符串)'
   const text = String(value ?? '')
-  // 大结果只将短预览送入文本节点和提示层；插槽与操作事件始终携带原值。
+  // 虚拟网格只将短预览送入文本节点；插槽与操作事件始终携带原值。
   return props.virtual && text.length > 500 ? text.slice(0, 500) + '…' : text
+}
+
+function preview(value: unknown) {
+  const text = display(value)
+  if (text.length <= 500) return text
+  // title 总长不超过 500 个 UTF-16 单元，并避免截断代理对。
+  const end = text.charCodeAt(498)
+  const length = end >= 0xd800 && end <= 0xdbff ? 498 : 499
+  return text.slice(0, length) + '…'
 }
 
 /** 行主键（无 rowKey 字段时回退行序号） */
@@ -343,41 +351,38 @@ onBeforeUnmount(stop)
               >
                 {{ rowIndex + 1 }}
               </td>
-              <UiTooltip
+              <td
                 v-for="column in columns"
                 :key="column.key"
-                :content="display(row[column.key])"
+                :title="preview(row[column.key])"
+                class="max-w-0 truncate border-b border-r border-border px-[7px] text-secondary dark:border-border-dark dark:text-secondary-dark"
+                :class="[
+                  column.content === 'action' ? 'font-sans' : 'font-data',
+                  column.content === 'numeric' ? 'tabular-nums' : '',
+                  column.align === 'right'
+                    ? 'text-right tabular-nums'
+                    : column.align === 'center'
+                      ? 'text-center'
+                      : 'text-left',
+                  row[column.key] === null
+                    ? 'italic text-text-muted dark:text-text-muted-dark'
+                    : '',
+                ]"
+                :style="{ width: `${widths[column.key]}px`, minWidth: `${widths[column.key]}px` }"
+                @dblclick="emit('cell', { row, column })"
+                @contextmenu="emit('cell-contextmenu', { row, column }, $event)"
               >
-                <td
-                  class="max-w-0 truncate border-b border-r border-border px-[7px] text-secondary dark:border-border-dark dark:text-secondary-dark"
-                  :class="[
-                    column.content === 'action' ? 'font-sans' : 'font-data',
-                    column.content === 'numeric' ? 'tabular-nums' : '',
-                    column.align === 'right'
-                      ? 'text-right tabular-nums'
-                      : column.align === 'center'
-                        ? 'text-center'
-                        : 'text-left',
-                    row[column.key] === null
-                      ? 'italic text-text-muted dark:text-text-muted-dark'
-                      : '',
-                  ]"
-                  :style="{ width: `${widths[column.key]}px`, minWidth: `${widths[column.key]}px` }"
-                  @dblclick="emit('cell', { row, column })"
-                  @contextmenu="emit('cell-contextmenu', { row, column }, $event)"
+                <slot
+                  :name="`cell-${column.key}`"
+                  :row="row"
+                  :column="column"
+                  :value="row[column.key]"
                 >
-                  <slot
-                    :name="`cell-${column.key}`"
-                    :row="row"
-                    :column="column"
-                    :value="row[column.key]"
-                  >
-                    <slot name="cell" :row="row" :column="column" :value="row[column.key]">
-                      {{ display(row[column.key]) }}
-                    </slot>
+                  <slot name="cell" :row="row" :column="column" :value="row[column.key]">
+                    {{ display(row[column.key]) }}
                   </slot>
-                </td>
-              </UiTooltip>
+                </slot>
+              </td>
             </tr>
           </template>
           <tr v-if="trailingRows" aria-hidden="true">

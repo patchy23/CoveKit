@@ -28,7 +28,7 @@ const titleComponents = new Set([
   'ToolHost',
 ])
 
-function titleViolations(source: string): string[] {
+function titleViolations(source: string, file = ''): string[] {
   const ast = parse(source).descriptor.template?.ast
   if (!ast) return []
   const violations: string[] = []
@@ -42,7 +42,8 @@ function titleViolations(source: string): string[] {
             prop.name === 'bind' &&
             prop.arg?.type === 4 &&
             prop.arg.content === 'title')
-        if (isTitle && !titleComponents.has(node.tag)) {
+        const isGridValuePreview = file === '/src/core/ui/UiDataGrid.vue' && node.tag === 'td'
+        if (isTitle && !titleComponents.has(node.tag) && !isGridValuePreview) {
           violations.push(`${node.tag}: ${prop.loc.source}`)
         }
       }
@@ -62,9 +63,15 @@ describe('悬停提示统一入口', () => {
     expect(titleViolations('<template><UiButton title="保存" /></template>')).toEqual([])
   })
 
+  it('只允许 UiDataGrid 单元格用原生 title 提供数据值预览', () => {
+    const cellTitle = '<template><td :title="value" /></template>'
+    expect(titleViolations(cellTitle, '/src/core/ui/UiDataGrid.vue')).toEqual([])
+    expect(titleViolations(cellTitle, '/src/other.vue')).toHaveLength(1)
+  })
+
   it('全仓 Vue 模板的 title 均有明确归属', () => {
     const violations = Object.entries(sources).flatMap(([file, source]) =>
-      titleViolations(source).map((entry) => `${file}: ${entry}`)
+      titleViolations(source, file).map((entry) => `${file}: ${entry}`)
     )
     expect(violations).toEqual([])
   })
