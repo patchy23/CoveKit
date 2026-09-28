@@ -158,7 +158,7 @@ fn replace_token_literal(text: &str, token: &str) -> Result<String, String> {
 pub(super) async fn prepare(app: &AppHandle, path: &Path) -> Result<PreparedConfig, String> {
     let app = app.clone();
     let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || {
+    crate::framework::storage::access::spawn_blocking(move || {
         let text = std::fs::read_to_string(&path).map_err(|e| format!("读取 FRP 配置失败：{e}"))?;
         let Some(id) = reference_in(&text)? else {
             return Ok(PreparedConfig {

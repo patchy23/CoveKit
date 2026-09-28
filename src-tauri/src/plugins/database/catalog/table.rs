@@ -31,6 +31,7 @@ pub async fn dbc_table_data(
     page_size: u32,
     options: Option<TableOptions>,
 ) -> Result<DbTablePage, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let mut task = super::bound::BoundTask::register(
         &cancel_state,
         uuid::Uuid::new_v4().to_string(),
@@ -153,6 +154,7 @@ pub async fn dbc_table_count(
     table: String,
     options: Option<TableOptions>,
 ) -> Result<String, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let mut task = super::bound::BoundTask::register(&cancel_state, request_id, &conn_id)?;
     let entry =
         super::scoped_session(&app, &state, &secrets_state, &conn_id, database.as_deref()).await?;

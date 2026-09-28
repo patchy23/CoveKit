@@ -15,13 +15,14 @@ pub fn file_lock_supported() -> bool {
 /// 查询完整文件路径的使用进程；同步系统调用不占用异步执行线程。
 #[tauri::command]
 pub async fn file_lock_query(path: String) -> Result<FileLockResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FileLockResult, String> = async {
         #[cfg(windows)]
         {
             // 跨页签重开也只允许一个查询；不在阻塞线程池内排队堆积会话。
             let permit = windows::QueryPermit::acquire()?;
-            tokio::task::spawn_blocking(move || {
+            crate::framework::storage::access::spawn_blocking(move || {
                 let _permit = permit;
                 windows::query(&path)
             })
@@ -52,12 +53,13 @@ pub async fn file_lock_query(path: String) -> Result<FileLockResult, String> {
 /// 关闭用户确认的文件使用进程；后端再次核对文件关系、启动时间和系统关键进程状态。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn file_lock_terminate(path: String, pid: u32, started_at: String) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         #[cfg(windows)]
         {
             let permit = windows::QueryPermit::acquire()?;
-            tokio::task::spawn_blocking(move || {
+            crate::framework::storage::access::spawn_blocking(move || {
                 let _permit = permit;
                 windows::terminate(&path, pid, &started_at)
             })

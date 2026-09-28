@@ -91,6 +91,7 @@ pub async fn ssh_docker_list(
     connection_id: String,
     compose_project: Option<String>,
 ) -> Result<Vec<DockerContainer>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     let command = container_list_command(compose_project.as_deref())?;
     let out = exec_collect(&session, &command).await?;
@@ -108,6 +109,7 @@ pub async fn ssh_docker_action(
     container_id: String,
     action: String,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshActionResult, String> = async {
         let session = get_session(&ssh_state, &connection_id)?;
@@ -163,6 +165,7 @@ pub async fn ssh_docker_logs(
     lines: Option<u32>,
     previous_fingerprint: Option<String>,
 ) -> Result<LogSnapshot, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     let n = lines.unwrap_or(100).clamp(1, 2_000);
     let out = exec_collect(
@@ -181,6 +184,7 @@ pub async fn ssh_docker_exec(
     ssh_state: State<'_, SshState>,
     payload: SshDockerExecPayload,
 ) -> Result<TerminalSession, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let SshDockerExecPayload {
         connection_id,
         container_id,
@@ -227,20 +231,31 @@ pub async fn ssh_docker_exec(
     // 会话日志共享状态（docker 终端不开录制，占位以复用通道任务签名）
     let log = log::new_shared();
 
-    state.0.lock().map_err(|e| e.to_string())?.insert(
-        terminal_id.clone(),
-        crate::plugins::ssh::terminal::TerminalHandle {
-            shell_pid: None,
-            connection_id: connection_id.clone(),
-            title: format!("docker:{container_id}"),
-            cols,
-            rows,
-            active: true,
-            tx,
-            cancel,
-            log: log.clone(),
-        },
-    );
+    let registered = (|| -> Result<(), String> {
+        let mut registry = state.0.lock().map_err(|e| e.to_string())?;
+        let _admission = crate::framework::storage::access::operation()?;
+        registry.insert(
+            terminal_id.clone(),
+            crate::plugins::ssh::terminal::TerminalHandle {
+                shell_pid: None,
+                connection_id: connection_id.clone(),
+                title: format!("docker:{container_id}"),
+                cols,
+                rows,
+                active: true,
+                tx,
+                cancel,
+                log: log.clone(),
+            },
+        );
+        Ok(())
+    })();
+    if let Err(error) = registered {
+        return Err(match channel.close().await {
+            Ok(()) => error,
+            Err(close) => format!("{error}；关闭新建终端通道失败：{close}"),
+        });
+    }
 
     // 后台读写任务（复用 terminal/ 公共实现）
     crate::plugins::ssh::terminal::spawn_channel_task(

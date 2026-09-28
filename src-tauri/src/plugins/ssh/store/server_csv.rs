@@ -7,7 +7,8 @@ use tauri::{AppHandle, State};
 /// 读取用户选择的 UTF-8 CSV，限制导入体积。
 #[tauri::command]
 pub async fn ssh_server_csv_read(path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let _storage_operation = crate::framework::storage::access::operation()?;
+    crate::framework::storage::access::spawn_blocking_tauri(move || {
         let file = std::fs::File::open(path).map_err(|_| "无法打开 CSV 文件")?;
         let mut bytes = Vec::new();
         file.take(2 * 1024 * 1024 + 1)
@@ -25,7 +26,8 @@ pub async fn ssh_server_csv_read(path: String) -> Result<String, String> {
 /// 写入用户选择的模板或脱敏结果报告。
 #[tauri::command]
 pub async fn ssh_server_csv_write(path: String, content: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let _storage_operation = crate::framework::storage::access::operation()?;
+    crate::framework::storage::access::spawn_blocking_tauri(move || {
         std::fs::write(path, content).map_err(|_| "写入 CSV 失败".into())
     })
     .await
@@ -45,8 +47,9 @@ pub async fn ssh_server_csv_export(
     ids: Vec<String>,
     include_password: bool,
 ) -> Result<usize, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let (content, count) = with_db(&app, &state, |db| export_csv(db, &ids, include_password))?;
-    tauri::async_runtime::spawn_blocking(move || {
+    crate::framework::storage::access::spawn_blocking_tauri(move || {
         std::fs::write(path, content).map_err(|_| "导出文件写入失败".to_string())
     })
     .await

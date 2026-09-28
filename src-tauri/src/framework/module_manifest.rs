@@ -221,6 +221,13 @@ macro_rules! covekit_module {
         pub(crate) fn invoke_handler(
             invoke: tauri::ipc::Invoke<tauri::Wry>,
         ) -> bool {
+            let _storage_operation = match $crate::framework::storage::access::dispatch(invoke.message.command()) {
+                Ok(operation) => operation,
+                Err(error) => {
+                    invoke.resolver.reject(error);
+                    return true;
+                }
+            };
             let handler: fn(tauri::ipc::Invoke<tauri::Wry>) -> bool =
                 tauri::generate_handler![ $( $( $segment )::+ ),* ];
             handler(invoke)

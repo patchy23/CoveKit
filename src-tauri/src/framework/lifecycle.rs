@@ -93,6 +93,8 @@ impl CloseScopes {
 pub type PrepareHook = fn(Option<&AppHandle>, CloseReason) -> Result<(), String>;
 /// dispose 钩子：返回清理失败描述（空 = 成功）。不得 panic（panic 会被兜住并计入失败）。
 pub type DisposeHook = fn(Option<&AppHandle>, CloseReason) -> Vec<String>;
+/// 数据根维护钩子：仅在入口冻结且操作排空后，同步释放 owner 持有的存储缓存。
+pub type StorageResetHook = fn(&AppHandle) -> Result<(), String>;
 
 /// 模块生命周期登记项：清理由模块自己提供，应用只协调
 #[derive(Clone, Copy)]
@@ -107,6 +109,8 @@ pub struct ModuleLifecycle {
     pub prepare: Option<PrepareHook>,
     /// 允许关闭后的清理（可选）：返回失败描述
     pub dispose: Option<DisposeHook>,
+    /// 存储维护时释放缓存与文件句柄；不负责取消或等待业务操作。
+    pub storage_reset: Option<StorageResetHook>,
 }
 
 impl ModuleLifecycle {
@@ -118,6 +122,7 @@ impl ModuleLifecycle {
             scopes: CloseScopes::EXIT_ONLY,
             prepare: None,
             dispose: None,
+            storage_reset: None,
         }
     }
 
@@ -152,6 +157,12 @@ impl ModuleLifecycle {
     /// 追加清理钩子
     pub fn with_dispose(mut self, hook: DisposeHook) -> Self {
         self.dispose = Some(hook);
+        self
+    }
+
+    /// 登记数据根维护时的存储释放契约；钩子不得启动后台清理。
+    pub fn with_storage_reset(mut self, hook: StorageResetHook) -> Self {
+        self.storage_reset = Some(hook);
         self
     }
 }
@@ -200,6 +211,18 @@ pub fn register(spec: ModuleLifecycle) {
         return;
     }
     table.push(spec);
+}
+
+/// 冻结新入口、完成业务清理并确认操作排空后，释放全部 owner 的存储缓存。
+/// 在当前线程同步完成；任一失败阻止切换，不能留下超时后台任务继续访问旧根。
+pub fn reset_storage(app: &AppHandle) -> Result<(), String> {
+    let planned = hooks().clone();
+    for hook in planned {
+        if let Some(reset) = hook.storage_reset {
+            reset(app).map_err(|error| format!("{}: {error}", hook.owner))?;
+        }
+    }
+    Ok(())
 }
 
 /// 已登记钩子的 owner 列表（诊断与测试）
@@ -344,6 +367,51 @@ pub fn dispose(app: &AppHandle, reason: CloseReason) -> DisposeOutcome {
     dispose_with_timeout(Some(app), reason, None, DISPOSE_TIMEOUT)
 }
 
+/// 根切换必须等待真实清理结束，不能在后台清理线程仍运行时解除准入冻结。
+pub(crate) fn dispose_for_storage(app: &AppHandle) -> DisposeOutcome {
+    let reason = CloseReason::Restart;
+    let planned = hooks()
+        .iter()
+        .copied()
+        .filter(|hook| selected(hook, reason, None) && hook.dispose.is_some())
+        .collect();
+    run_dispose(Some(app), reason, planned)
+}
+
+/// 顺序执行已选中的钩子；运行期维护与普通关闭共用相同的失败汇总。
+fn run_dispose(
+    app: Option<&AppHandle>,
+    reason: CloseReason,
+    planned: Vec<ModuleLifecycle>,
+) -> DisposeOutcome {
+    let mut outcome = DisposeOutcome::default();
+    for hook in planned {
+        let Some(dispose) = hook.dispose else {
+            continue;
+        };
+        match std::panic::catch_unwind(AssertUnwindSafe(|| dispose(app, reason))) {
+            Ok(list) => {
+                outcome.owners.push(hook.owner);
+                if !list.is_empty() {
+                    log::error!("模块资源清理失败 owner={} count={}", hook.owner, list.len());
+                } else {
+                    log::info!("模块资源清理完成 owner={}", hook.owner);
+                }
+                outcome
+                    .failures
+                    .extend(list.into_iter().map(|msg| format!("{}: {msg}", hook.owner)));
+            }
+            Err(_) => {
+                log::error!("模块资源清理异常 owner={}", hook.owner);
+                outcome
+                    .failures
+                    .push(format!("{}: 清理钩子异常（已兜住，计入失败）", hook.owner));
+            }
+        }
+    }
+    outcome
+}
+
 /// 页签关闭的清理阶段：只清声明了 `tab` 作用域且归属该工具的模块
 pub fn dispose_tool(app: &AppHandle, tool: &str, reason: CloseReason) -> DisposeOutcome {
     dispose_with_timeout(Some(app), reason, Some(tool), DISPOSE_TIMEOUT)
@@ -367,37 +435,15 @@ pub fn dispose_with_timeout(
     // 钩子是 fn 指针（可 Send + Copy），放到独立线程里跑：同步钩子若卡住，主线程仍能按总超时收口
     let (tx, rx) = std::sync::mpsc::channel();
     let app = app.cloned();
+    // 超时只结束等待，清理线程仍可能持旧句柄；根切换必须等实际清理退出。
+    let storage_operation = crate::framework::storage::access::retain();
     std::thread::spawn(move || {
-        let mut failures: Vec<String> = Vec::new();
-        let mut owners: Vec<&'static str> = Vec::new();
-        for hook in planned {
-            let Some(dispose) = hook.dispose else {
-                continue;
-            };
-            match std::panic::catch_unwind(AssertUnwindSafe(|| dispose(app.as_ref(), reason))) {
-                Ok(list) => {
-                    owners.push(hook.owner);
-                    if !list.is_empty() {
-                        log::error!("模块资源清理失败 owner={} count={}", hook.owner, list.len());
-                    } else {
-                        log::info!("模块资源清理完成 owner={}", hook.owner);
-                    }
-                    failures.extend(list.into_iter().map(|msg| format!("{}: {msg}", hook.owner)));
-                }
-                Err(_) => {
-                    log::error!("模块资源清理异常 owner={}", hook.owner);
-                    failures.push(format!("{}: 清理钩子异常（已兜住，计入失败）", hook.owner))
-                }
-            }
-        }
-        let _ = tx.send((owners, failures));
+        let _storage_operation = storage_operation;
+        let outcome = run_dispose(app.as_ref(), reason, planned);
+        let _ = tx.send(outcome);
     });
     match rx.recv_timeout(timeout) {
-        Ok((owners, failures)) => DisposeOutcome {
-            failures,
-            timed_out: false,
-            owners,
-        },
+        Ok(outcome) => outcome,
         Err(_) => {
             log::error!("资源清理未在预算内完成 timeout_ms={}", timeout.as_millis());
             DisposeOutcome {

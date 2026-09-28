@@ -131,6 +131,7 @@ pub async fn dbc_table_apply(
     changes: Vec<TableChange>,
     request_id: String,
 ) -> Result<u64, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<u64, String> = async {
         let config = store::list_connections(&app, &store_state)?

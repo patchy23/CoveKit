@@ -71,6 +71,7 @@ export const ipc = {
   frameworkTasks: () => call('framework_tasks', {}),
   storageInfo: () => call('storage_info', {}),
   storageScheduleMigration: (target: string) => call('storage_schedule_migration', { target }),
+  storageMigrateNow: (target?: string) => call('storage_migrate_now', { target }),
   storageCancelMigration: () => call('storage_cancel_migration', {}),
   storageRecoveryStatus: () => call('storage_recovery_status', {}),
   storageRecoveryAction: (action: StorageRecoveryAction, target?: string) =>

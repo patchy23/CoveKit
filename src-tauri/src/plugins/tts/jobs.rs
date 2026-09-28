@@ -16,7 +16,7 @@ struct Job {
 #[derive(Default)]
 pub struct TtsJobs(
     Mutex<HashMap<String, Job>>,
-    tokio::sync::OnceCell<crate::framework::temp_instance::TempInstance>,
+    tokio::sync::Mutex<Option<crate::framework::temp_instance::TempInstance>>,
 );
 
 pub(super) struct JobGuard<'a> {
@@ -37,12 +37,42 @@ impl Drop for JobGuard<'_> {
 
 impl TtsJobs {
     /// 实例随应用状态存活；清理旧实例和创建锁在阻塞池执行，失败可重试。
-    pub(super) async fn temporary_directory(&self, root: std::path::PathBuf) -> Result<&std::path::Path, String> {
-        let instance = self.1.get_or_try_init(|| async {
-            tokio::task::spawn_blocking(move || crate::framework::temp_instance::TempInstance::open(&root))
-                .await.map_err(|e| format!("初始化音频临时实例失败: {e}"))?
-        }).await?;
-        Ok(instance.directory())
+    pub(super) async fn temporary_directory(
+        &self,
+        root: std::path::PathBuf,
+    ) -> Result<std::path::PathBuf, String> {
+        let mut instance = self.1.lock().await;
+        if instance.is_none() {
+            *instance = Some(
+                crate::framework::storage::access::spawn_blocking(move || {
+                    crate::framework::temp_instance::TempInstance::open(&root)
+                })
+                .await
+                .map_err(|e| format!("初始化音频临时实例失败: {e}"))??,
+            );
+        }
+        instance
+            .as_ref()
+            .map(|instance| instance.directory().to_path_buf())
+            .ok_or_else(|| "音频临时实例尚未初始化".to_string())
+    }
+
+    /// 维护入口已冻结并排空操作后释放存活文件锁；后续请求在新根重新创建实例。
+    pub(super) fn release_storage(&self) -> Result<(), String> {
+        let jobs = self
+            .0
+            .try_lock()
+            .map_err(|e| format!("合成任务仍在使用: {e}"))?;
+        if !jobs.is_empty() {
+            return Err("仍有语音合成任务，请等待取消完成后重试".into());
+        }
+        let mut instance = self
+            .1
+            .try_lock()
+            .map_err(|e| format!("音频临时实例仍在使用: {e}"))?;
+        // TempInstance 持有的 File 随 drop 关闭，解除旧根 alive.lock 的独占锁。
+        *instance = None;
+        Ok(())
     }
 
     pub(super) fn prepare(&self) -> Result<String, String> {
@@ -93,6 +123,52 @@ impl TtsJobs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn maintenance_releases_old_instance_and_reopens_in_new_root() {
+        let root = std::env::temp_dir().join(format!("covekit-tts-reset-{}", uuid::Uuid::new_v4()));
+        let old_root = root.join("old");
+        let new_root = root.join("new");
+        let jobs = TtsJobs::default();
+        let old_path = jobs.temporary_directory(old_root.clone()).await.unwrap();
+        assert_eq!(
+            jobs.temporary_directory(old_root.clone()).await.unwrap(),
+            old_path
+        );
+        let alive = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(old_path.join("alive.lock"))
+            .unwrap();
+        assert!(matches!(
+            alive.try_lock(),
+            Err(std::fs::TryLockError::WouldBlock)
+        ));
+        jobs.release_storage().unwrap();
+        alive.try_lock().unwrap();
+        drop(alive);
+        let new_path = jobs.temporary_directory(new_root.clone()).await.unwrap();
+        assert!(new_path.starts_with(&new_root));
+        assert_ne!(new_path, old_path);
+        jobs.release_storage().unwrap();
+        // 旧实例释放后，原根再次打开能回收旧目录，不遗留存活锁。
+        let reopened = crate::framework::temp_instance::TempInstance::open(&old_root).unwrap();
+        assert!(!old_path.exists());
+        drop(reopened);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn maintenance_rejects_pending_jobs_and_busy_instance() {
+        let jobs = TtsJobs::default();
+        let id = jobs.prepare().unwrap();
+        assert!(jobs.release_storage().is_err());
+        jobs.cancel(&id).unwrap();
+        let instance = jobs.1.lock().await;
+        assert!(jobs.release_storage().is_err());
+        drop(instance);
+        jobs.release_storage().unwrap();
+    }
 
     #[tokio::test]
     async fn cancellation_before_and_after_claim_is_not_lost() {

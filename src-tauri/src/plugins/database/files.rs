@@ -4,6 +4,7 @@ use crate::plugins::database::models::DbValue;
 /// 读取 UTF-8 SQL 文件，拒绝超大文件而非先无限分配。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_sql_file_read(path: String) -> Result<String, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<String, String> = async {
         let metadata = tokio::fs::metadata(&path)
@@ -34,6 +35,7 @@ pub async fn dbc_sql_file_read(path: String) -> Result<String, String> {
 /// 保存 SQL 草稿文件，路径由公共文件对话框选择。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_sql_file_write(path: String, sql: String) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         if path.trim().is_empty() || sql.len() > 1024 * 1024 {
@@ -105,13 +107,14 @@ pub async fn dbc_export_rows(
     columns: Vec<String>,
     rows: Vec<Vec<DbValue>>,
 ) -> Result<u64, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<u64, String> = async {
         if rows.len() > 100_000 || columns.len() > 2000 {
             return Err("导出规模超过已加载结果限制".into());
         }
         let count = rows.len() as u64;
-        let bytes = tokio::task::spawn_blocking(move || {
+        let bytes = crate::framework::storage::access::spawn_blocking(move || {
             let mut writer = csv::WriterBuilder::new()
                 .terminator(csv::Terminator::CRLF)
                 .from_writer(Vec::new());

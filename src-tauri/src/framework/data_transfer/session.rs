@@ -64,6 +64,17 @@ fn sessions() -> &'static Mutex<Sessions> {
     SESSIONS.get_or_init(|| Mutex::new(Sessions::default()))
 }
 
+/// 数据根维护冻结并排空操作后丢弃全部预览与计划，旧标识不能用于新根提交。
+pub(crate) fn clear_storage_cache() -> Result<(), String> {
+    let mut guard = sessions()
+        .try_lock()
+        .map_err(|error| format!("数据传输预览缓存仍在使用: {error}"))?;
+    guard.inspects.clear();
+    guard.plans.clear();
+    // 已有到期任务只处理内存缓存；保留其归属标记，避免新预览重复创建清理任务。
+    Ok(())
+}
+
 /// 到期只释放缓存所有权，已领取的不可变上下文继续供当前操作使用。
 fn prune(sessions: &mut Sessions, now: Instant) {
     sessions
@@ -264,9 +275,13 @@ impl TransferGuard {
         let request_id = self.id.clone();
         move |waiting_memory, estimated_bytes| {
             if let Some(channel) = &channel {
-                channel.send(super::commands::views::TransferProgress {
-                    request_id: request_id.clone(), waiting_memory, estimated_bytes,
-                }).map_err(|_| "数据传输进展通道已关闭".to_string())?;
+                channel
+                    .send(super::commands::views::TransferProgress {
+                        request_id: request_id.clone(),
+                        waiting_memory,
+                        estimated_bytes,
+                    })
+                    .map_err(|_| "数据传输进展通道已关闭".to_string())?;
             }
             Ok(())
         }
@@ -343,6 +358,61 @@ pub(crate) fn cancel_all_transfers() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn storage_reset_invalidates_old_preview_and_plan_and_accepts_new_preview() {
+        let old_inspect = "storage-reset-old-preview";
+        let old_plan = "storage-reset-old-plan";
+        let preview = InspectContext {
+            file_path: PathBuf::from("old/package.pbdata"),
+            file_digest: "digest".into(),
+            manifest: Arc::new(PackageManifest::new("source", "来源")),
+            created_at: Instant::now(),
+        };
+        let import_plan = ImportPlan {
+            plan_id: old_plan.into(),
+            mode: super::super::types::ImportMode::Merge,
+            space_id: "old-target".into(),
+            space_name: "旧空间".into(),
+            package_id: "package".into(),
+            source_space_id: "source".into(),
+            source_space_name: "来源".into(),
+            declared_counts: BTreeMap::new(),
+            blocks: Vec::new(),
+            items: Vec::new(),
+            excluded: Vec::new(),
+            expected_revision: Some("old-revision".into()),
+        };
+        {
+            let mut cache = sessions().lock().unwrap();
+            cache.inspects.insert(old_inspect.into(), preview);
+            cache.plans.insert(
+                old_plan.into(),
+                PlanContext {
+                    plan: Arc::new(import_plan),
+                    file_path: PathBuf::from("old/package.pbdata"),
+                    file_digest: "digest".into(),
+                    created_at: Instant::now(),
+                },
+            );
+        }
+        assert!(inspect(old_inspect).is_ok());
+        assert!(plan(old_plan).is_ok());
+        clear_storage_cache().unwrap();
+        assert!(inspect(old_inspect).is_err());
+        assert!(plan(old_plan).is_err());
+        let new_inspect = put_inspect(
+            PathBuf::from("new/package.pbdata"),
+            "new-digest".into(),
+            PackageManifest::new("new-source", "新来源"),
+        )
+        .unwrap();
+        let (path, digest, manifest) = inspect(&new_inspect).unwrap();
+        assert_eq!(path, PathBuf::from("new/package.pbdata"));
+        assert_eq!(digest, "new-digest");
+        assert_eq!(manifest.source_space_id, "new-source");
+        clear_storage_cache().unwrap();
+    }
 
     #[test]
     fn expiry_releases_cached_manifest_without_invalidating_active_reader() {

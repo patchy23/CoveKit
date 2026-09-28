@@ -1,32 +1,20 @@
 <script setup lang="ts">
 import { UiTooltip } from '@/core/ui'
-/**
- * StorageRecoveryOverlay · 存储恢复页（框架级，覆盖整个窗口）
- *
- * 触发条件：配置的存储盘不可用（未插盘/只读/路径失效）或上次启动的根迁移失败。
- * 语义（任务书 T01）：不得静默退回默认目录新建一套空环境；磁盘重新出现也不会自动换根，
- * 必须由用户显式选择动作，且三个动作都**需要重启**才生效。
- * 可选动作：重试（重新探测配置盘）/ 选择新数据环境（登记迁移计划）/ 改用默认数据环境。
- */
+/** 存储恢复页：显式验证既有数据目录或重试迁移，成功后应用内刷新。 */
 import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { open as dialogOpen } from '@tauri-apps/plugin-dialog'
-import { relaunch } from '@tauri-apps/plugin-process'
 import { UiButton, UiModal } from '@/core/ui'
 import { ipc } from '@/core/ipc/ipc'
 import type { StorageRecovery } from '@/core/ipc/contracts'
-import { useUiStore } from '@/stores/ui'
+import { useStorageMaintenance } from './useStorageMaintenance'
 
 const { t } = useI18n()
-const ui = useUiStore()
+const { busy, error, run } = useStorageMaintenance(t)
 
 /** 当前恢复状态（null = 正常，不显示任何界面） */
 const state = ref<StorageRecovery | null>(null)
-/** 动作进行中（按钮禁用） */
-const busy = ref(false)
-/** 失败原因（恢复动作被拒绝时展示） */
-const error = ref('')
-/** 改用默认环境确认弹窗（破坏性：下次启动会打开另一套环境） */
+/** 改用默认环境确认弹窗（切换到默认目录中的既有空间） */
 const defaultConfirmVisible = ref(false)
 
 /** 读取恢复状态（挂载时一次；恢复页本身就是启动期快照） */
@@ -40,52 +28,53 @@ async function load() {
 
 onMounted(load)
 
-/** 执行恢复动作；成功后按后端返回的「需重启」提示用户重启 */
+/** 先完成工具关闭协商，再执行恢复；只有后端确认切换完成才刷新。 */
 async function act(action: 'retry' | 'use-default' | 'choose', target?: string) {
+  defaultConfirmVisible.value = false
+  await run(async () => {
+    const result = await ipc.storageRecoveryAction(action, target)
+    if (!result.ok || result.restartRequired) throw new Error(result.message)
+  })
+}
+
+/** 重试当前目录或保留的迁移计划。 */
+function retry() {
+  void act('retry')
+}
+
+/** 失败计划可显式取消，随后允许选择原有数据目录；不删除任何迁移文件。 */
+async function cancelPlan() {
   busy.value = true
   error.value = ''
-  defaultConfirmVisible.value = false
   try {
-    const result = await ipc.storageRecoveryAction(action, target)
-    ui.toast(result.message)
-    if (result.restartRequired) {
-      // 动作改的是「下次启动」的解析结果，本进程不做热切换；刷新状态以反映已清除的恢复态
-      state.value = await ipc.storageRecoveryStatus()
-    }
+    await ipc.storageCancelMigration()
+    if (state.value) state.value.planId = null
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : String(reason)
-    ui.toast(error.value)
   } finally {
     busy.value = false
   }
 }
 
-/** 重试：重新探测配置盘（可用则提示重启；仍不可用由后端回报原因） */
-function retry() {
-  void act('retry')
-}
-
-/** 选择新数据环境：目录选择 → 登记迁移计划（重启后复制并切换） */
-async function chooseNew() {
-  const selected = await dialogOpen({
-    directory: true,
-    multiple: false,
-    defaultPath: state.value?.configuredRoot,
-  })
-  if (typeof selected !== 'string') return
-  await act('choose', selected)
-}
-
-/** 立即重启 */
-async function restartNow() {
-  await relaunch()
+/** 选择原有数据所在目录；恢复操作不从当前故障目录复制数据。 */
+async function chooseExisting() {
+  try {
+    const selected = await dialogOpen({
+      directory: true,
+      multiple: false,
+      defaultPath: state.value?.configuredRoot,
+    })
+    if (typeof selected === 'string') await act('choose', selected)
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : String(reason)
+  }
 }
 </script>
 
 <template>
   <!--
     阻断式恢复弹窗：受控 open，close 事件不回写 state → ×/Esc 都不会真正关闭，
-    用户必须在四个动作里选一个（重试/换目录/用默认环境/重启）。
+    用户选择重试、原有数据目录或默认目录中的既有空间。
   -->
   <UiModal :open="!!state" size="md" :title="t('storageRecovery.title')">
     <div v-if="state" class="flex flex-col gap-sm">
@@ -128,20 +117,30 @@ async function restartNow() {
         {{ t('storageRecovery.note') }}
       </p>
 
-      <p v-if="error" class="select-text text-body-sm text-danger-strong dark:text-danger-dark">
+      <p v-if="busy" role="status" class="text-body-sm text-secondary dark:text-secondary-dark">
+        {{ t('settings.storageWorking') }}
+      </p>
+      <p
+        v-if="error"
+        role="alert"
+        class="select-text whitespace-pre-line text-body-sm text-danger-strong dark:text-danger-dark"
+      >
         {{ error }}
       </p>
     </div>
     <template v-if="state" #footer>
+      <UiButton v-if="state.planId" :disabled="busy" @click="cancelPlan">
+        {{ t('settings.storagePendingCancel') }}
+      </UiButton>
       <UiButton v-if="state.canRetry" :disabled="busy" @click="retry">
         {{ t('storageRecovery.retry') }}
       </UiButton>
-      <UiButton :disabled="busy" @click="chooseNew">{{ t('storageRecovery.choose') }}</UiButton>
+      <UiButton :disabled="busy" @click="chooseExisting">{{
+        t('storageRecovery.choose')
+      }}</UiButton>
       <UiButton v-if="state.canUseDefault" :disabled="busy" @click="defaultConfirmVisible = true">
         {{ t('storageRecovery.useDefault') }}
       </UiButton>
-      <span class="flex-1"></span>
-      <UiButton :disabled="busy" @click="restartNow">{{ t('storageRecovery.restart') }}</UiButton>
     </template>
   </UiModal>
 

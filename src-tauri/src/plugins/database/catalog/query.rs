@@ -102,6 +102,7 @@ pub async fn dbc_prepare_execution(
     request_id: String,
     scope: Option<ExecutionScope>,
 ) -> Result<serde_json::Value, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let config = config_for(&app, &store_state, &conn_id)?;
     let scope = scope.unwrap_or_default();
     let (write, dangerous) = sql_analysis::assess(config.db_type, &sql)?;
@@ -148,6 +149,7 @@ pub async fn dbc_execute(
     scope: Option<ExecutionScope>,
     confirmation_token: Option<String>,
 ) -> Result<QueryResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let mut log_cancelled = false;
     let result: Result<QueryResult, String> = async {
@@ -269,7 +271,7 @@ pub async fn dbc_execute(
             WorkspaceConnection::Sqlite(conn) => {
                 let conn = Arc::clone(conn);
                 let text = sql.clone();
-                tokio::task::spawn_blocking(move || {
+                crate::framework::storage::access::spawn_blocking(move || {
                     drivers::sqlite::execute_sqlite(&conn, &text, limit)
                 })
                 .await
@@ -378,6 +380,7 @@ pub async fn dbc_execute(
 /// 请求取消；原生驱动发送真实请求，Redis 不能撤销已发送命令。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_cancel(state: State<'_, DbCancelState>, request_id: String) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         let handle = state
@@ -414,6 +417,7 @@ pub async fn dbc_workspace_close(
     conn_id: String,
     workspace_id: String,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         let slot = workspaces
@@ -446,6 +450,7 @@ pub async fn dbc_workspace_close(
 /// 导出已加载 CSV；异步 IO 不阻塞 tokio 执行线程。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_export_csv(path: String, text: String) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         if path.trim().is_empty() {

@@ -32,6 +32,7 @@ pub(crate) fn commit(app: &AppHandle, plan: &ImportPlan) -> Result<ImportReport,
         return Err("隔离导入请走暂存物化路径（materialize），不走合并提交".into());
     }
     let device_root = context::root().ok_or("数据上下文未初始化")?;
+    let device_root = device_root.as_path();
     let space_root = space_index::space_root(device_root, &plan.space_id);
     if !space_root.exists() {
         return Err(format!("目标空间不存在：{}", plan.space_id));

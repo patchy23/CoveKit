@@ -70,6 +70,7 @@ pub async fn http_request(
     app: AppHandle,
     payload: HttpRequestPayload,
 ) -> Result<HttpResponseResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<HttpResponseResult, String> = async {
         let request = request(&app, payload, false)?;

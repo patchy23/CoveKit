@@ -2,13 +2,14 @@
 //!
 //! 职责：
 //! - `storage_info`：展示当前根目录、四分区路径与占用、待执行迁移计划、恢复状态。
-//! - `storage_schedule_migration`：**只登记**迁移计划（复制与校验在下次启动的维护阶段执行）。
+//! - `storage_schedule_migration`：只登记可恢复的迁移计划。
+//! - `storage_migrate_now`：关闭工具、冻结准入、排空任务并释放句柄后执行迁移。
 //! - `storage_cancel_migration`：取消未执行的计划（不修改任何业务文件）。
 //! - `storage_recovery_status` / `storage_recovery_action`：配置盘不可用或迁移失败时的可见恢复入口。
 //!
-//! 语义与安全约定（任务书 T01）：
-//! - 生效根在运行期**不切换**：登记计划或选择恢复动作后一律需要重启，重启时在维护阶段
-//!   （业务资源初始化之前）执行复制与校验，校验通过才提交 `storageRoot`。
+//! 语义与安全约定：
+//! - 复制所有空间和业务日志缓存，校验通过才提交新根及同一空间的新上下文快照。
+//! - 运行期维护失败保留原根；未完成计划可在应用内重试，也可由下次启动维护续跑。
 //! - 迁移**只复制不删除**：原目录原样保留，由用户确认后手工清理。
 //! - 任一步失败即中止并回报原因，**绝不写 `storageRoot`**，计划里保留源、目标、阶段与错误。
 //! - 同一时间只接受一个待执行计划（第二次请求被拒绝），避免两个计划互相覆盖。
@@ -138,6 +139,9 @@ mod test_support {
     }
 }
 
+pub(crate) mod access;
+pub(crate) mod switch;
+
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -145,6 +149,9 @@ use crate::framework::{context, paths, space};
 
 /// 四分区名称（顺序即设置页展示顺序）
 const PARTITIONS: [&str; 4] = ["data", "vault", "logs", "cache"];
+
+/// 设备根迁移范围；空间数据与凭证整体搬迁，不读取已废弃的根下扁平分区。
+const DEVICE_ROOT_ENTRIES: [&str; 3] = ["spaces", "logs", "cache"];
 
 /// 存储位置信息（设置页展示）
 #[derive(Serialize)]
@@ -210,7 +217,7 @@ pub struct StorageScheduleResult {
 pub struct RecoveryActionResult {
     /// 动作是否被接受
     ok: bool,
-    /// 是否需要重启才能生效（恢复动作一律不热切换）
+    /// 是否需要重启才能生效（当前恢复流程在应用内生效，返回 false）
     restart_required: bool,
     /// 面向用户的说明
     message: String,
@@ -304,8 +311,14 @@ pub async fn storage_schedule_migration(
     app: AppHandle,
     target: String,
 ) -> Result<StorageScheduleResult, String> {
+    let _storage_operation = access::operation()?;
     // 维护互斥：根迁移与导入提交/空间激活/更新安装共用同一把锁（前端禁用按钮不算锁）
     let _maintenance = context::maintenance_guard().await;
+    schedule_migration(&app, &target)
+}
+
+/// 由启动安排和运行期维护共用的计划校验；调用方持维护锁。
+fn schedule_migration(app: &AppHandle, target: &str) -> Result<StorageScheduleResult, String> {
     let cfg = plan::AppConfig(&app);
 
     let trimmed = target.trim();
@@ -319,7 +332,7 @@ pub async fn storage_schedule_migration(
 
     if let Some(existing) = plan::load_pending(&cfg) {
         return Err(format!(
-            "已有待执行的迁移计划（计划 {}，目标 {}）。请先取消该计划，或重启应用完成迁移后再安排新的。",
+            "已有待执行的迁移计划（计划 {}，目标 {}）。请先取消或执行该计划后再安排新的。",
             existing.id, existing.target
         ));
     }
@@ -344,7 +357,7 @@ pub async fn storage_schedule_migration(
 
     plan::save_pending(&cfg, &pending)?;
     let message = format!(
-        "已登记迁移计划：重启应用后在新位置建立数据（复制并校验，完成后自动切换）。当前仍使用原目录 {}。",
+        "已登记迁移计划：维护阶段复制并校验，完成后自动切换。当前仍使用原目录 {}。",
         source_root.display()
     );
     Ok(StorageScheduleResult {
@@ -364,6 +377,10 @@ pub fn storage_cancel_migration(app: AppHandle) -> Result<bool, String> {
         return Ok(false);
     }
     plan::clear_pending(&cfg)?;
+    if let Some(mut state) = recovery::current() {
+        state.plan_id = None;
+        recovery::set(state);
+    }
     Ok(true)
 }
 
@@ -373,104 +390,14 @@ pub fn storage_recovery_status() -> Option<recovery::StorageRecovery> {
     recovery::current()
 }
 
-/// 执行一个恢复动作：retry（重试探测）/ use-default（改用默认数据环境）/ choose（选择新数据环境）
+/// 执行恢复动作：retry（重试）/ use-default（使用默认位置的原有数据）/ choose（选择原有目录）
 ///
-/// 三个动作都**不热切换**：需要重启才生效（恢复动作改变的是下次启动的解析结果）。
+/// 完成资源清理并校验当前空间存在后，应用内切换，无需重启进程。
 #[tauri::command]
 pub async fn storage_recovery_action(
     app: AppHandle,
     action: String,
     target: Option<String>,
 ) -> Result<RecoveryActionResult, String> {
-    let _maintenance = context::maintenance_guard().await;
-    let cfg = plan::AppConfig(&app);
-    let state = recovery::current();
-
-    match action.as_str() {
-        "retry" => {
-            let Some(state) = state else {
-                return Ok(RecoveryActionResult {
-                    ok: true,
-                    restart_required: false,
-                    message: "当前没有待处理的存储故障".into(),
-                });
-            };
-            match state.reason {
-                recovery::RecoveryReason::ConfiguredRootUnavailable => {
-                    // 显式重试：由用户触发，不做任何自动换根
-                    let root = std::path::PathBuf::from(&state.configured_root);
-                    if !paths::is_writable_dir(&root) {
-                        return Err(format!("存储目录仍不可用：{}", root.display()));
-                    }
-                    recovery::clear();
-                    Ok(RecoveryActionResult {
-                        ok: true,
-                        restart_required: true,
-                        message: "存储目录已恢复可用，请重启应用以完成初始化。".into(),
-                    })
-                }
-                recovery::RecoveryReason::MigrationFailed => {
-                    // 计划仍在：重启后维护阶段会再试一次（失败原因已保留在计划里）
-                    recovery::clear();
-                    Ok(RecoveryActionResult {
-                        ok: true,
-                        restart_required: true,
-                        message: "迁移计划已保留，重启应用后将重新执行迁移。".into(),
-                    })
-                }
-            }
-        }
-        "use-default" => {
-            if let Some(state) = &state {
-                if !state.can_use_default {
-                    return Err("当前故障不允许改用默认数据环境，请先处理迁移问题".into());
-                }
-            }
-            let previous = state
-                .as_ref()
-                .map(|s| s.configured_root.clone())
-                .unwrap_or_else(|| {
-                    paths::storage_root(&app)
-                        .map(|p| p.display().to_string())
-                        .unwrap_or_default()
-                });
-            // 清空配置根 = 下次启动使用默认目录；原目录文件一个都不动
-            paths::set_storage_root(&app, "")?;
-            recovery::clear();
-            Ok(RecoveryActionResult {
-                ok: true,
-                restart_required: true,
-                message: format!(
-                    "已改为使用默认数据环境，请重启应用。原目录 {previous} 中的数据未被删除或修改。"
-                ),
-            })
-        }
-        "choose" => {
-            let Some(trimmed) = target.as_deref().map(str::trim).filter(|s| !s.is_empty()) else {
-                return Err("选择新数据环境时必须提供目标目录".into());
-            };
-            if plan::load_pending(&cfg).is_some() {
-                return Err("已有待执行的迁移计划，请先取消或重启完成迁移".into());
-            }
-            let source_root = paths::storage_root(&app)?;
-            let target_root =
-                plan::validate_target(&source_root, &std::path::PathBuf::from(trimmed))?;
-            if !paths::is_writable_dir(&target_root) {
-                return Err(format!("目标目录不可写：{}", target_root.display()));
-            }
-            let pending = plan::PendingPlan::new(&source_root, &target_root);
-            plan::save_pending(&cfg, &pending)?;
-            recovery::clear();
-            Ok(RecoveryActionResult {
-                ok: true,
-                restart_required: true,
-                message: format!(
-                    "已登记迁移计划：重启应用后把 {} 的数据复制到 {} 并切换。",
-                    source_root.display(),
-                    target_root.display()
-                ),
-            })
-        }
-        other => Err(format!("未知的恢复动作: {other}")),
-    }
+    switch::recover(app, action, target).await
 }

@@ -34,6 +34,7 @@ pub fn tts_cancel(state: tauri::State<'_, TtsJobs>, job_id: String) -> Result<()
 /// 前端已收到但不再使用的迟到结果；不释放已经呈现给用户的播放或下载源。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn tts_discard(app: tauri::AppHandle, job_id: String) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let directory = crate::framework::paths::cache_dir(&app, "tts")?;
     output::discard(&directory, &job_id).await
 }
@@ -51,6 +52,7 @@ pub async fn tts_synthesize(
     pitch: Option<i32>,
     on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<TtsResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
     let on_progress = on_progress.map(|id| id.channel_on(webview));
     let (_job, mut cancelled) = state.claim(&job_id)?;
@@ -68,7 +70,7 @@ pub async fn tts_synthesize(
         let path = output::audio_path(&dir, &job_id)?;
         let temporary_dir = state.temporary_directory(dir.join("partial-instances")).await?;
         if *cancelled.borrow() { return Err(CANCELLED.to_string()); }
-        let temporary = output::audio_path(temporary_dir, &job_id)?.with_extension("part");
+        let temporary = output::audio_path(&temporary_dir, &job_id)?.with_extension("part");
         let file = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -165,7 +167,11 @@ fn on_dispose(
     let Some(app) = app else {
         return Vec::new();
     };
-    app.state::<TtsJobs>().cancel_all().err().into_iter().collect()
+    app.state::<TtsJobs>()
+        .cancel_all()
+        .err()
+        .into_iter()
+        .collect()
 }
 
 /// 插件注册：命令、取消状态与关闭责任同时装配。
@@ -174,7 +180,13 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     crate::framework::lifecycle::register(
         crate::framework::lifecycle::ModuleLifecycle::for_tool(IPC_OWNER, "tts")
             .with_tab_scope()
-            .with_dispose(on_dispose),
+            .with_dispose(on_dispose)
+            .with_storage_reset(release_storage),
     );
     builder.manage(TtsJobs::default())
+}
+
+/// 数据根维护排空业务后释放临时实例；下一次合成使用当前数据根重新打开。
+pub(crate) fn release_storage(app: &tauri::AppHandle) -> Result<(), String> {
+    app.state::<TtsJobs>().release_storage()
 }

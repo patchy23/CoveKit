@@ -281,6 +281,7 @@ pub async fn vault_export(
     request_id: Option<String>,
     on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
     let on_progress = on_progress.map(|id| id.channel_on(webview));
     let transfer = crate::framework::data_transfer::begin_transfer(request_id.as_deref())?;
@@ -292,10 +293,11 @@ pub async fn vault_export(
         let all = store::read_all(&app)?;
         let plain = serde_json::to_vec(&all).map_err(|e| e.to_string())?;
         // Argon2id 是 CPU 重负载（数百 ms），异步命令里必须挪到阻塞线程池（规范 §4）
-        let backup =
-            tauri::async_runtime::spawn_blocking(move || export::encrypt_backup_controlled(&password, &plain, &|| work_cancel.check(), &progress))
-                .await
-                .map_err(|e| format!("加密任务失败: {e}"))??;
+        let backup = crate::framework::storage::access::spawn_blocking_tauri(move || {
+            export::encrypt_backup_controlled(&password, &plain, &|| work_cancel.check(), &progress)
+        })
+        .await
+        .map_err(|e| format!("加密任务失败: {e}"))??;
         cancel.check()?;
         export::write_backup_file(std::path::Path::new(&path), &backup)
     }
@@ -325,6 +327,7 @@ pub async fn vault_import(
     request_id: Option<String>,
     on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<VaultImportResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
     let on_progress = on_progress.map(|id| id.channel_on(webview));
     let transfer = crate::framework::data_transfer::begin_transfer(request_id.as_deref())?;
@@ -336,8 +339,13 @@ pub async fn vault_import(
         // 1) 备份文件由用户密码解开（不依赖主密钥，密钥丢失场景也能导入）
         let backup = export::read_backup_file(std::path::Path::new(&path))?;
         // Argon2id 解密同属 CPU 重负载，挪到阻塞线程池（规范 §4）
-        let plain = tauri::async_runtime::spawn_blocking(move || {
-            export::decrypt_backup_controlled(&password, &backup, &|| work_cancel.check(), &progress)
+        let plain = crate::framework::storage::access::spawn_blocking_tauri(move || {
+            export::decrypt_backup_controlled(
+                &password,
+                &backup,
+                &|| work_cancel.check(),
+                &progress,
+            )
         })
         .await
         .map_err(|e| format!("解密任务失败: {e}"))??;

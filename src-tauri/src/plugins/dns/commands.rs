@@ -39,6 +39,7 @@ pub async fn dns_query(
     rtype: String,
     servers: Vec<String>,
 ) -> Result<Vec<ServerQueryResult>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let rtype = query::parse_record_type(&rtype)?;
     let domain = domain.trim().to_string();
     if domain.is_empty() {
@@ -81,23 +82,27 @@ pub async fn dns_domains(
     app: AppHandle,
     platform: String,
 ) -> Result<DomainList, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let requests = app.state::<DnsRequests>();
     let state = app.state::<DnsState>();
     let log_started = std::time::Instant::now();
-    let result: Result<DomainList, String> = requests.run(request_id.as_deref(), async {
-        let cfg = load_effective_config(&app, &state)?;
-        match platform.as_str() {
-            models::PLATFORM_ALIYUN => alidns::AliyunDns::new(&cfg.aliyun)?.get_domains().await,
-            models::PLATFORM_DNSPOD => dnspod::TencentDns::new(&cfg.dnspod)?.get_domains().await,
-            models::PLATFORM_CLOUDFLARE => {
-                cloudflare::CloudflareDns::new(&cfg.cloudflare)?
-                    .get_domains()
-                    .await
+    let result: Result<DomainList, String> = requests
+        .run(request_id.as_deref(), async {
+            let cfg = load_effective_config(&app, &state)?;
+            match platform.as_str() {
+                models::PLATFORM_ALIYUN => alidns::AliyunDns::new(&cfg.aliyun)?.get_domains().await,
+                models::PLATFORM_DNSPOD => {
+                    dnspod::TencentDns::new(&cfg.dnspod)?.get_domains().await
+                }
+                models::PLATFORM_CLOUDFLARE => {
+                    cloudflare::CloudflareDns::new(&cfg.cloudflare)?
+                        .get_domains()
+                        .await
+                }
+                _ => Err(format!("不支持的平台: {platform}")),
             }
-            _ => Err(format!("不支持的平台: {platform}")),
-        }
-    })
-    .await;
+        })
+        .await;
     match &result {
         Ok(_value) => log::debug!(
             "操作完成 operation=dns_domains elapsed_ms={}",
@@ -130,31 +135,33 @@ pub async fn dns_records(
     size: u32,
     keyword: String,
 ) -> Result<RecordList, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let requests = app.state::<DnsRequests>();
     let state = app.state::<DnsState>();
     let log_started = std::time::Instant::now();
-    let result: Result<RecordList, String> = requests.run(request_id.as_deref(), async {
-        let cfg = load_effective_config(&app, &state)?;
-        match platform.as_str() {
-            models::PLATFORM_ALIYUN => {
-                alidns::AliyunDns::new(&cfg.aliyun)?
-                    .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
-                    .await
+    let result: Result<RecordList, String> = requests
+        .run(request_id.as_deref(), async {
+            let cfg = load_effective_config(&app, &state)?;
+            match platform.as_str() {
+                models::PLATFORM_ALIYUN => {
+                    alidns::AliyunDns::new(&cfg.aliyun)?
+                        .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
+                        .await
+                }
+                models::PLATFORM_DNSPOD => {
+                    dnspod::TencentDns::new(&cfg.dnspod)?
+                        .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
+                        .await
+                }
+                models::PLATFORM_CLOUDFLARE => {
+                    cloudflare::CloudflareDns::new(&cfg.cloudflare)?
+                        .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
+                        .await
+                }
+                _ => Err(format!("不支持的平台: {platform}")),
             }
-            models::PLATFORM_DNSPOD => {
-                dnspod::TencentDns::new(&cfg.dnspod)?
-                    .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
-                    .await
-            }
-            models::PLATFORM_CLOUDFLARE => {
-                cloudflare::CloudflareDns::new(&cfg.cloudflare)?
-                    .get_records(&domain, page.max(1), size.clamp(1, 200), &keyword)
-                    .await
-            }
-            _ => Err(format!("不支持的平台: {platform}")),
-        }
-    })
-    .await;
+        })
+        .await;
     match &result {
         Ok(_value) => log::debug!(
             "操作完成 operation=dns_records elapsed_ms={}",
@@ -183,6 +190,7 @@ pub async fn dns_add_record(
     state: State<'_, DnsState>,
     payload: models::AddRecordPayload,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         if payload.rr.trim().is_empty() || payload.value.trim().is_empty() {
@@ -254,6 +262,7 @@ pub async fn dns_update_record(
     state: State<'_, DnsState>,
     payload: models::UpdateRecordPayload,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         let cfg = load_effective_config(&app, &state)?;
@@ -327,6 +336,7 @@ pub async fn dns_delete_record(
     domain: String,
     record_id: String,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         let cfg = load_effective_config(&app, &state)?;

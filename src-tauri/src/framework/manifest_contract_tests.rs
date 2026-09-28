@@ -243,6 +243,11 @@ mod tests {
         ),
         (
             "framework",
+            "storage_migrate_now",
+            "关闭工具并排空任务后迁移数据目录，应用内生效",
+        ),
+        (
+            "framework",
             "storage_schedule_migration",
             "安排存储目录迁移（只登记计划，重启后复制并校验）",
         ),

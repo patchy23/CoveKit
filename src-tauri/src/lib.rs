@@ -126,7 +126,7 @@ pub fn run() {
 
             // ── 空间自举（首装建 uid 空间 + 完整性自检；不读不搬任何旧布局内容）──
             // 必须在数据上下文固定之前执行：上下文要读到自举确定的空间标识。
-            // fail-fast：失败即登记恢复状态（保留现场，重试 = 重启后重跑，自举幂等）。
+            // fail-fast：失败即登记恢复状态并保留现场，由恢复入口校验原有空间。
             if framework::storage::recovery::current().is_some() {
                 log::warn!("存在未处理的存储故障，跳过空间自举");
             } else {
@@ -140,7 +140,7 @@ pub fn run() {
                         );
                         framework::storage::recovery::set(
                             framework::storage::recovery::StorageRecovery::migration_failed(
-                                "",
+                                &root.display().to_string(),
                                 &root.display().to_string(),
                                 None,
                                 format!("空间自举失败：{error}"),
@@ -162,7 +162,7 @@ pub fn run() {
                 );
                 framework::storage::recovery::set(
                     framework::storage::recovery::StorageRecovery::migration_failed(
-                        "",
+                        &configured_before,
                         &configured_before,
                         None,
                         format!("空间初始化失败：{error}"),

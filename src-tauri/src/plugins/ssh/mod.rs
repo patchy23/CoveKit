@@ -117,7 +117,8 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     // 关闭清理登记：会话/终端/隧道/传输由本模块自己清，框架只协调、超时与汇总
     crate::framework::lifecycle::register(
         crate::framework::lifecycle::ModuleLifecycle::exit_only(IPC_OWNER)
-            .with_dispose(close_hooks::on_dispose),
+            .with_dispose(close_hooks::on_dispose)
+            .with_storage_reset(release_storage),
     );
     builder
         .manage(sftp::local_browse::LocalBrowseState::default())
@@ -141,4 +142,22 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         .manage(monitor::MonitorState(std::sync::Mutex::new(
             std::collections::HashMap::new(),
         )))
+}
+
+/// 维护入口冻结并排空操作后释放配置库；存在外部持有者时保留缓存并拒绝切换。
+pub(crate) fn release_storage(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let state = app.state::<ProfileState>();
+    let mut database = state
+        .0
+        .try_lock()
+        .map_err(|e| format!("SSH 配置库仍在使用: {e}"))?;
+    if database
+        .as_ref()
+        .is_some_and(|db| std::sync::Arc::strong_count(db) != 1)
+    {
+        return Err("SSH 配置库仍有进行中的操作，请等待完成后重试".into());
+    }
+    *database = None;
+    Ok(())
 }

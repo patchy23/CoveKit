@@ -75,11 +75,14 @@ pub fn hosts_read() -> Result<HostsResult, String> {
 /// 备份 + 写入 hosts（平台提权；取消/失败返回 ok=false）
 #[tauri::command]
 pub async fn hosts_save(content: String) -> Result<HostsResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<HostsResult, String> = async {
-        tauri::async_runtime::spawn_blocking(move || save_hosts_blocking(&content))
-            .await
-            .map_err(|e| format!("提权任务失败: {e}"))?
+        crate::framework::storage::access::spawn_blocking_tauri(move || {
+            save_hosts_blocking(&content)
+        })
+        .await
+        .map_err(|e| format!("提权任务失败: {e}"))?
     }
     .await;
     match &result {

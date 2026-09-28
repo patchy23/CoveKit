@@ -412,6 +412,8 @@ fn register_session(
     // 注册表锁中毒不吞：断开刚建立的会话并报错（宁可连接失败也不留无人持有的会话）
     match state.0.lock() {
         Ok(mut map) => {
+            let _admission = crate::framework::storage::access::operation()
+                .map_err(|error| connect_error("CANCELLED", error, None))?;
             map.insert(session_id.clone(), handle);
             Ok(session_id)
         }
@@ -426,6 +428,7 @@ fn register_session(
 /// 全部会话快照（侧栏/状态栏轮询用）
 #[tauri::command]
 pub async fn ssh_connections(state: State<'_, SshState>) -> Result<Vec<ServerConnection>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let map = state.0.lock().map_err(|e| e.to_string())?;
     Ok(map
         .iter()

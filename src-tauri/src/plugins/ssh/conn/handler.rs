@@ -41,6 +41,8 @@ pub struct SshHandler {
     pub(crate) port: u16,
     /// CoveKit 私有 known_hosts 文件。
     pub(crate) known_hosts_path: PathBuf,
+    /// 路径所属上下文；旧连接延迟进入校验时不得写入迁移前的目录。
+    pub(crate) storage_epoch: Option<u64>,
     /// 事件推送句柄（host-key-verify / connect-stage）。
     pub(crate) app: AppHandle,
     /// 本次连接尝试的请求 id。
@@ -70,6 +72,9 @@ impl SshHandler {
                 .0
                 .lock()
                 .map_err(|e| internal("主机密钥应答表异常", Some(e.to_string())))?;
+            // 与清表使用同一把注册锁：冻结先到就拒绝，冻结后到则清理必能看到本项。
+            let _admission = crate::framework::storage::access::operation()
+                .map_err(|error| internal(&error, None))?;
             map.insert(request.request_id.clone(), tx);
         }
         if let Err(e) = self.app.emit("ssh://host-key-verify", &request) {
@@ -111,18 +116,23 @@ impl client::Handler for SshHandler {
         &mut self,
         server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
+        let _storage_operation = crate::framework::storage::access::operation()?;
+        if self
+            .storage_epoch
+            .is_some_and(|epoch| !crate::framework::context::is_current(epoch))
+        {
+            return Err("数据目录已切换，旧连接的主机密钥校验已取消".into());
+        }
         let fingerprint = host_keys::fingerprint_of(server_public_key);
         let algorithm = server_public_key.algorithm().as_str().to_string();
         // host_keys 是同步 std::fs 读写，在 async 回调里会阻塞执行器线程，转交阻塞线程池
         let saved = {
-            let (path, host, port) = (
-                self.known_hosts_path.clone(),
-                self.host.clone(),
-                self.port,
-            );
-            tokio::task::spawn_blocking(move || host_keys::entries_for(&path, &host, port))
-                .await
-                .map_err(|e| format!("读取 known_hosts 任务失败: {e}"))??
+            let (path, host, port) = (self.known_hosts_path.clone(), self.host.clone(), self.port);
+            crate::framework::storage::access::spawn_blocking(move || {
+                host_keys::entries_for(&path, &host, port)
+            })
+            .await
+            .map_err(|e| format!("读取 known_hosts 任务失败: {e}"))??
         };
         if saved.iter().any(|e| e.fingerprint == fingerprint) {
             return Ok(true);
@@ -158,10 +168,12 @@ impl client::Handler for SshHandler {
                         self.port,
                         server_public_key.clone(),
                     );
-                    tokio::task::spawn_blocking(move || host_keys::learn(&path, &host, port, &key))
-                        .await
-                        .map_err(|e| format!("写入 known_hosts 任务失败: {e}"))
-                        .and_then(|r| r)
+                    crate::framework::storage::access::spawn_blocking(move || {
+                        host_keys::learn(&path, &host, port, &key)
+                    })
+                    .await
+                    .map_err(|e| format!("写入 known_hosts 任务失败: {e}"))
+                    .and_then(|r| r)
                 };
                 if let Err(e) = learn_result {
                     self.record_failure(HOST_KEY_STORE_FAILED, "主机密钥保存失败", e.clone());
@@ -179,7 +191,7 @@ impl client::Handler for SshHandler {
                         self.port,
                         server_public_key.clone(),
                     );
-                    tokio::task::spawn_blocking(move || {
+                    crate::framework::storage::access::spawn_blocking(move || {
                         host_keys::replace_entries(&path, &host, port, &key)
                     })
                     .await

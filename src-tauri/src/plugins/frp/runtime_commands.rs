@@ -15,6 +15,7 @@ use tauri::State;
 /// 校验档案（`frpc verify -c <path>`，错误行与列按解析结果返回）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_verify(app: AppHandle, file_name: String) -> Result<FrpVerifyResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let dir = transfer::directory_for(&app, &file_name)?;
     let path = profile::resolve_profile_path(&dir, &file_name).await?;
     // 校验必须用档案实际绑定的客户端：否则会出现「校验通过但启动失败」
@@ -42,6 +43,7 @@ pub async fn frp_start(
     state: State<'_, FrpState>,
     file_name: String,
 ) -> Result<FrpRuntimeState, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     log::info!("请求启动");
     touch_used(&app, &file_name);
     runtime::start(&app, &state, &file_name)
@@ -61,6 +63,7 @@ pub async fn frp_stop(
     state: State<'_, FrpState>,
     file_name: String,
 ) -> Result<FrpRuntimeState, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     log::info!("请求停止");
     runtime::stop(&app, &state, &file_name)
         .await
@@ -79,6 +82,7 @@ pub async fn frp_restart(
     state: State<'_, FrpState>,
     file_name: String,
 ) -> Result<FrpRuntimeState, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     log::info!("请求重启");
     runtime::restart(&app, &state, &file_name)
         .await
@@ -96,5 +100,6 @@ pub async fn frp_status(
     app: AppHandle,
     state: State<'_, FrpState>,
 ) -> Result<Vec<FrpRuntimeState>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     runtime::status_all(&app, &state).await
 }

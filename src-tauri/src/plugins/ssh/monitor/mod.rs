@@ -141,6 +141,7 @@ pub async fn ssh_monitor_get(
     monitor_state: State<'_, MonitorState>,
     connection_id: String,
 ) -> Result<MonitorData, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     let out = exec_collect(&session, COLLECT_CMD).await?;
     let mut data = parse_monitor_output(&out);

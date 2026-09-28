@@ -34,6 +34,7 @@ pub async fn data_export_start(
     request_id: Option<String>,
     on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<TransferStart, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
     let on_progress = on_progress.map(|id| id.channel_on(webview));
     package::validate_password(&password)?;
@@ -55,33 +56,40 @@ pub async fn data_export_start(
     let cancel = transfer.token();
     let progress = transfer.progress(on_progress);
     let build_app = app.clone();
-    let work = tauri::async_runtime::spawn_blocking(move || -> Result<ExportReport, String> {
-        cancel.check()?;
-        let manifest = catalog::build_manifest(&build_app, &selection, &cancel)?;
-        cancel.check()?;
-        let counts = dataset_counts(&manifest);
-        let excluded = manifest.excluded.clone();
-        let secret_included = manifest
-            .datasets
-            .iter()
-            .any(|block| block.policy == TransportPolicy::Secret && block.records.is_some());
-        let report = ExportReport {
-            path: target.display().to_string(),
-            bytes: 0,
-            package_id: manifest.package_id.clone(),
-            source_space_name: manifest.source_space_name.clone(),
-            counts,
-            excluded,
-            secret_included,
-        };
-        let content = package::seal_package_controlled(&password, manifest, &|| cancel.check(), &progress)?;
-        cancel.check()?;
-        package::write_package(&target, &content)?;
-        Ok(ExportReport {
-            bytes: content.len() as u64,
-            ..report
-        })
-    })
+    let work = crate::framework::storage::access::spawn_blocking_tauri(
+        move || -> Result<ExportReport, String> {
+            cancel.check()?;
+            let manifest = catalog::build_manifest(&build_app, &selection, &cancel)?;
+            cancel.check()?;
+            let counts = dataset_counts(&manifest);
+            let excluded = manifest.excluded.clone();
+            let secret_included = manifest
+                .datasets
+                .iter()
+                .any(|block| block.policy == TransportPolicy::Secret && block.records.is_some());
+            let report = ExportReport {
+                path: target.display().to_string(),
+                bytes: 0,
+                package_id: manifest.package_id.clone(),
+                source_space_name: manifest.source_space_name.clone(),
+                counts,
+                excluded,
+                secret_included,
+            };
+            let content = package::seal_package_controlled(
+                &password,
+                manifest,
+                &|| cancel.check(),
+                &progress,
+            )?;
+            cancel.check()?;
+            package::write_package(&target, &content)?;
+            Ok(ExportReport {
+                bytes: content.len() as u64,
+                ..report
+            })
+        },
+    )
     .await
     .map_err(|e| format!("导出任务失败: {e}"))?;
     match work {

@@ -3,7 +3,7 @@
  *
  * 页签关闭是**协商**而不是删除：所有关闭入口（关闭按钮、Ctrl+W、溢出菜单、关闭全部）
  * 都走 `requestClose` → 框架询问 owner（未保存内容/运行中任务）→ 允许才移除页签。
- * 低层移除函数不导出，调用方拿不到「绕过询问」的路径（类型层面即守住）。
+ * 存储维护在统一协商并完成清理后，经 clearDisposedTabs 移除已释放的工具页签。
  */
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -141,6 +141,13 @@ export const useUiStore = defineStore('ui', () => {
     return outcomes
   }
 
+  /** 仅供维护流程在所有工具协商通过且清理成功后移除页签，保留设置页。 */
+  function clearDisposedTabs() {
+    openTabs.value = []
+    activeTab.value = null
+    closePrompt.value = null
+  }
+
   /** 设置主窗口隐藏状态，并广播给所有工具（隐藏只降频，不改变连接与任务） */
   function setWorkspaceHidden(hidden: boolean) {
     if (workspaceHidden.value === hidden) return
@@ -205,6 +212,7 @@ export const useUiStore = defineStore('ui', () => {
     confirmClose,
     cancelClose,
     requestCloseAll,
+    clearDisposedTabs,
     setWorkspaceHidden,
     goHome,
     toastMessage,

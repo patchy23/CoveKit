@@ -32,6 +32,7 @@ pub async fn ssh_editor_window(
     token: String,
     action: String,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let label = editor_label(window.label(), &token, &action)?;
     let result = (|| -> Result<(), String> {
         if action == "open" {

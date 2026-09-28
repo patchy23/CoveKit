@@ -3,7 +3,7 @@
 //! 校验项（任务书 T02）：
 //! 1. **逐文件清单比对**：相对路径、字节数、SHA-256 摘要逐项一致；缺失 / 多余 / 同长度不同内容都算失败。
 //! 2. 迁移过来的每个 `.db` 跑 `PRAGMA quick_check`（SQLite 完整性检查，能发现截断/半写）。
-//! 3. `vault/vault.dat` 长度语义检查（AES-GCM 密文至少 12B nonce + 16B tag = 28B）；
+//! 3. 各空间 `vault/vault.dat` 长度语义检查（AES-GCM 密文至少 12B nonce + 16B tag = 28B）；
 //!    **不生成任何新主密钥**，只看文件本身。
 //!
 //! 说明（T02-5/6）：迁移在启动维护阶段执行，此时所有插件数据库尚未打开，
@@ -14,8 +14,9 @@
 
 use std::path::Path;
 
+use crate::framework::space;
 use crate::framework::storage::scan::{self, Manifest};
-use crate::framework::storage::PARTITIONS;
+use crate::framework::storage::DEVICE_ROOT_ENTRIES;
 
 /// 校验暂存区内容与源清单是否一致，并做数据库与 Vault 语义检查
 ///
@@ -23,8 +24,7 @@ use crate::framework::storage::PARTITIONS;
 pub fn verify_staging(staged_root: &Path, expected: &Manifest) -> Result<(), String> {
     let actual = scan::scan_root(staged_root)?;
     scan::diff(expected, &actual)?;
-    check_sqlite_dbs(&staged_root.join("data"))?;
-    check_vault_file(&staged_root.join("vault"))?;
+    check_spaces(staged_root)?;
     Ok(())
 }
 
@@ -32,8 +32,49 @@ pub fn verify_staging(staged_root: &Path, expected: &Manifest) -> Result<(), Str
 pub fn verify_existing_target(target_root: &Path, expected: &Manifest) -> Result<(), String> {
     let actual = scan::scan_root(target_root)?;
     scan::diff(expected, &actual)?;
-    check_sqlite_dbs(&target_root.join("data"))?;
-    check_vault_file(&target_root.join("vault"))?;
+    check_spaces(target_root)?;
+    Ok(())
+}
+
+/// 源必须具有当前空间布局；已有活动空间缺失时拒绝迁移，不创建空环境。
+pub fn validate_source_layout(root: &Path, active: Option<&str>) -> Result<(), String> {
+    let spaces = root.join("spaces");
+    let entries = std::fs::read_dir(&spaces)
+        .map_err(|e| format!("空间目录不可用 {}：{e}", spaces.display()))?;
+    let mut has_space = false;
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("读取空间目录失败：{e}"))?;
+        let name = entry.file_name();
+        if space::is_valid_space_id(&name.to_string_lossy()) && entry.path().is_dir() {
+            has_space = true;
+        }
+    }
+    if !has_space {
+        return Err("源目录没有有效空间，拒绝迁移空环境；请检查存储位置".into());
+    }
+    if let Some(id) = active
+        .map(str::trim)
+        .filter(|id| space::is_valid_space_id(id))
+    {
+        if !spaces.join(id).is_dir() {
+            return Err(format!("源目录缺少活动空间 spaces/{id}，拒绝迁移"));
+        }
+    }
+    Ok(())
+}
+
+fn check_spaces(root: &Path) -> Result<(), String> {
+    validate_source_layout(root, None)?;
+    let spaces = root.join("spaces");
+    for entry in std::fs::read_dir(&spaces).map_err(|e| format!("读取空间目录失败：{e}"))?
+    {
+        let entry = entry.map_err(|e| format!("读取空间目录项失败：{e}"))?;
+        if !space::is_valid_space_id(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        check_sqlite_dbs(&entry.path().join("data"))?;
+        check_vault_file(&entry.path().join("vault"))?;
+    }
     Ok(())
 }
 
@@ -115,9 +156,9 @@ pub fn only_own_staging(root: &Path, staging_name: &str) -> Result<bool, String>
     Ok(true)
 }
 
-/// 列出四分区中在目标根下已存在的分区名（提交前用于冲突提示）
+/// 列出目标根下已存在的迁移目录名（提交前用于冲突提示）
 pub fn existing_partitions(root: &Path) -> Vec<String> {
-    PARTITIONS
+    DEVICE_ROOT_ENTRIES
         .iter()
         .filter(|name| root.join(name).exists())
         .map(|name| (*name).to_string())
@@ -132,12 +173,23 @@ mod tests {
 
     /// 造一份含真实 SQLite 与 vault 密文的源目录
     fn make_source(dir: &Path) {
-        std::fs::create_dir_all(dir.join("data")).unwrap();
-        let conn = rusqlite::Connection::open(dir.join("data").join("ssh.db")).unwrap();
+        std::fs::create_dir_all(dir.join("spaces/11111111-1111-4111-8111-111111111111/data"))
+            .unwrap();
+        let conn = rusqlite::Connection::open(
+            dir.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("ssh.db"),
+        )
+        .unwrap();
         conn.execute_batch("CREATE TABLE t (id INTEGER);").unwrap();
         drop(conn);
-        std::fs::create_dir_all(dir.join("vault")).unwrap();
-        std::fs::write(dir.join("vault").join("vault.dat"), vec![0u8; 32]).unwrap();
+        std::fs::create_dir_all(dir.join("spaces/11111111-1111-4111-8111-111111111111/vault"))
+            .unwrap();
+        std::fs::write(
+            dir.join("spaces/11111111-1111-4111-8111-111111111111/vault")
+                .join("vault.dat"),
+            vec![0u8; 32],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -147,8 +199,7 @@ mod tests {
         let dst = dir.join("staging");
         make_source(&src);
         let manifest = scan::scan_root(&src).unwrap();
-        transfer::copy_tree(&src.join("data"), &dst.join("data")).unwrap();
-        transfer::copy_tree(&src.join("vault"), &dst.join("vault")).unwrap();
+        transfer::copy_tree(&src.join("spaces"), &dst.join("spaces")).unwrap();
         assert!(verify_staging(&dst, &manifest).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -160,8 +211,14 @@ mod tests {
         let dst = dir.join("staging");
         make_source(&src);
         let manifest = scan::scan_root(&src).unwrap();
-        std::fs::create_dir_all(dst.join("data")).unwrap();
-        std::fs::write(dst.join("data").join("ssh.db"), b"x").unwrap();
+        std::fs::create_dir_all(dst.join("spaces/11111111-1111-4111-8111-111111111111/data"))
+            .unwrap();
+        std::fs::write(
+            dst.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("ssh.db"),
+            b"x",
+        )
+        .unwrap();
         let err = verify_staging(&dst, &manifest).unwrap_err();
         assert!(err.contains("缺失"), "实际错误: {err}");
         let _ = std::fs::remove_dir_all(&dir);
@@ -204,10 +261,22 @@ mod tests {
         let dir = temp_dir("verify-vault");
         let src = dir.join("src");
         let dst = dir.join("staging");
-        std::fs::create_dir_all(src.join("vault")).unwrap();
-        std::fs::create_dir_all(dst.join("vault")).unwrap();
-        std::fs::write(src.join("vault").join("vault.dat"), vec![0u8; 8]).unwrap();
-        std::fs::write(dst.join("vault").join("vault.dat"), vec![0u8; 8]).unwrap();
+        std::fs::create_dir_all(src.join("spaces/11111111-1111-4111-8111-111111111111/vault"))
+            .unwrap();
+        std::fs::create_dir_all(dst.join("spaces/11111111-1111-4111-8111-111111111111/vault"))
+            .unwrap();
+        std::fs::write(
+            src.join("spaces/11111111-1111-4111-8111-111111111111/vault")
+                .join("vault.dat"),
+            vec![0u8; 8],
+        )
+        .unwrap();
+        std::fs::write(
+            dst.join("spaces/11111111-1111-4111-8111-111111111111/vault")
+                .join("vault.dat"),
+            vec![0u8; 8],
+        )
+        .unwrap();
         let manifest = scan::scan_root(&src).unwrap();
         let err = verify_staging(&dst, &manifest).unwrap_err();
         assert!(err.contains("长度异常"), "实际错误: {err}");
@@ -219,12 +288,24 @@ mod tests {
         let dir = temp_dir("verify-db");
         let src = dir.join("src");
         let dst = dir.join("staging");
-        std::fs::create_dir_all(src.join("data")).unwrap();
-        std::fs::create_dir_all(dst.join("data")).unwrap();
+        std::fs::create_dir_all(src.join("spaces/11111111-1111-4111-8111-111111111111/data"))
+            .unwrap();
+        std::fs::create_dir_all(dst.join("spaces/11111111-1111-4111-8111-111111111111/data"))
+            .unwrap();
         // 两侧同样的垃圾内容：清单一致，但 quick_check 应该失败
         let garbage = b"this is not a sqlite database at all";
-        std::fs::write(src.join("data").join("bad.db"), garbage).unwrap();
-        std::fs::write(dst.join("data").join("bad.db"), garbage).unwrap();
+        std::fs::write(
+            src.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("bad.db"),
+            garbage,
+        )
+        .unwrap();
+        std::fs::write(
+            dst.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("bad.db"),
+            garbage,
+        )
+        .unwrap();
         let manifest = scan::scan_root(&src).unwrap();
         let err = verify_staging(&dst, &manifest).unwrap_err();
         assert!(err.contains("校验失败"), "实际错误: {err}");

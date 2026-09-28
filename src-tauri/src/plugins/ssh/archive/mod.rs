@@ -48,6 +48,7 @@ pub async fn ssh_archive_run(
     request: ArchiveRequest,
     progress: Channel<ArchiveEvent>,
 ) -> Result<ArchiveEvent, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     if job_id.len() > 80
         || !job_id.starts_with("archive-")
         || !job_id

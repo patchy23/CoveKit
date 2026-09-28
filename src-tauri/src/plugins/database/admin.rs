@@ -124,6 +124,7 @@ pub async fn dbc_charset_options(
     state: State<'_, DbState>,
     conn_id: String,
 ) -> Result<DbCharsetOptions, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = session(&state, &conn_id)?;
     let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持字符集选项")?;
     let (Some(charsets_sql), Some(collations_sql)) =
@@ -162,6 +163,7 @@ pub async fn dbc_users(
     state: State<'_, DbState>,
     conn_id: String,
 ) -> Result<Vec<DbUserInfo>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = session(&state, &conn_id)?;
     let dialect = dialect_for(entry.config.db_type).ok_or("该类型不支持用户清单")?;
     let Some(sql) = dialect.users_sql() else {
@@ -193,6 +195,7 @@ pub async fn dbc_create_database(
     collation: Option<String>,
     grants: Option<Vec<DbGrantInput>>,
 ) -> Result<Vec<DbStepResult>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<Vec<DbStepResult>, String> = async {
         let entry = session(&state, &conn_id)?;
@@ -274,6 +277,7 @@ pub async fn dbc_drop_database(
     conn_id: String,
     name: String,
 ) -> Result<String, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<String, String> = async {
         let entry = session(&state, &conn_id)?;
@@ -316,6 +320,7 @@ pub async fn dbc_table_admin(
     new_name: Option<String>,
     kind: Option<String>,
 ) -> Result<String, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<String, String> = async {
         let entry = crate::plugins::database::catalog::scoped_session(
@@ -377,6 +382,7 @@ pub async fn dbc_table_ddl(
     schema: Option<String>,
     table: String,
 ) -> Result<String, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = crate::plugins::database::catalog::scoped_session(
         &app,
         &state,
@@ -414,6 +420,7 @@ pub async fn dbc_table_indexes(
     schema: Option<String>,
     table: String,
 ) -> Result<Vec<DbIndexInfo>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = crate::plugins::database::catalog::scoped_session(
         &app,
         &state,

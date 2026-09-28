@@ -15,8 +15,11 @@ fn build(logs: String, previous: Option<&str>) -> LogSnapshot {
 }
 
 /// 摘要计算移出异步执行线程；变化正文直接移动进 DTO，避免 json! 再复制字符串。
-pub(crate) async fn snapshot(logs: String, previous: Option<String>) -> Result<LogSnapshot, String> {
-    tokio::task::spawn_blocking(move || build(logs, previous.as_deref()))
+pub(crate) async fn snapshot(
+    logs: String,
+    previous: Option<String>,
+) -> Result<LogSnapshot, String> {
+    crate::framework::storage::access::spawn_blocking(move || build(logs, previous.as_deref()))
         .await
         .map_err(|e| format!("构建日志响应失败：{e}"))
 }

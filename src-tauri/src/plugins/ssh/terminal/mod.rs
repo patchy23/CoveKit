@@ -145,7 +145,7 @@ pub(crate) fn spawn_channel_task(
     log: SharedLog,
     initial_decoder: Option<Utf8ChunkDecoder>,
 ) {
-    tauri::async_runtime::spawn(async move {
+    crate::framework::storage::access::spawn(async move {
         let mut decoder = initial_decoder.unwrap_or_default();
         loop {
             if *cancel_rx.borrow() {
@@ -255,6 +255,7 @@ pub async fn ssh_terminal_open(
     cols: u32,
     rows: u32,
 ) -> Result<TerminalSession, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<TerminalSession, String> = async {
         if cols == 0 || rows == 0 || cols > u16::MAX as u32 || rows > u16::MAX as u32 {
@@ -296,20 +297,31 @@ pub async fn ssh_terminal_open(
         let log = log::new_shared();
 
         // 登记句柄（先插入，任务退出时移除）
-        state.0.lock().map_err(|e| e.to_string())?.insert(
-            terminal_id.clone(),
-            TerminalHandle {
-                connection_id: connection_id.clone(),
-                title: String::new(),
-                cols,
-                rows,
-                active: true,
-                shell_pid: Some(shell_pid),
-                tx,
-                cancel,
-                log: log.clone(),
-            },
-        );
+        let registered = (|| -> Result<(), String> {
+            let mut registry = state.0.lock().map_err(|e| e.to_string())?;
+            let _admission = crate::framework::storage::access::operation()?;
+            registry.insert(
+                terminal_id.clone(),
+                TerminalHandle {
+                    connection_id: connection_id.clone(),
+                    title: String::new(),
+                    cols,
+                    rows,
+                    active: true,
+                    shell_pid: Some(shell_pid),
+                    tx,
+                    cancel,
+                    log: log.clone(),
+                },
+            );
+            Ok(())
+        })();
+        if let Err(error) = registered {
+            return Err(match channel.close().await {
+                Ok(()) => error,
+                Err(close) => format!("{error}；关闭新建终端通道失败：{close}"),
+            });
+        }
 
         spawn_channel_task(
             app.clone(),
@@ -353,6 +365,7 @@ pub async fn ssh_terminal_write(
     terminal_id: String,
     data: String,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let tx = state
         .0
         .lock()
@@ -377,6 +390,7 @@ pub async fn ssh_terminal_resize(
     cols: u32,
     rows: u32,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     if cols == 0 || rows == 0 || cols > u16::MAX as u32 || rows > u16::MAX as u32 {
         return Err("终端行列数必须在 1..=65535 范围内".into());
     }
@@ -402,6 +416,7 @@ pub async fn ssh_terminal_close(
     state: State<'_, TerminalState>,
     terminal_id: String,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshActionResult, String> = async {
         let cancel = state
@@ -442,6 +457,7 @@ pub async fn ssh_terminal_list(
     state: State<'_, TerminalState>,
     connection_id: String,
 ) -> Result<Vec<TerminalSession>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let map = state.0.lock().map_err(|e| e.to_string())?;
     Ok(map
         .iter()
@@ -515,7 +531,10 @@ mod tests {
     #[test]
     fn 大块非法字节和后续合法数据不残留整块缓冲() {
         let mut decoder = Utf8ChunkDecoder::default();
-        assert_eq!(decoder.feed(&vec![0xff; 100_000]), "\u{FFFD}".repeat(100_000));
+        assert_eq!(
+            decoder.feed(&vec![0xff; 100_000]),
+            "\u{FFFD}".repeat(100_000)
+        );
         assert_eq!(decoder.pending_len, 0);
         assert_eq!(decoder.feed("正常🙂".as_bytes()), "正常🙂");
         assert!(decoder.finish().is_empty());

@@ -29,6 +29,7 @@ pub async fn ssh_tunnel_start(
     connection_id: String,
     tunnel_id: String,
 ) -> Result<TunnelRuntime, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<TunnelRuntime, String> = {
         ssh_tunnel_start_inner(
@@ -62,6 +63,7 @@ pub async fn ssh_tunnel_stop(
     tunnel_state: State<'_, TunnelState>,
     tunnel_id: String,
 ) -> Result<TunnelRuntime, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<TunnelRuntime, String> = async {
         let handle = {
@@ -118,6 +120,7 @@ pub async fn ssh_tunnel_delete(
     profile_state: State<'_, ProfileState>,
     tunnel_id: String,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         let handle = {
@@ -261,7 +264,9 @@ async fn ssh_tunnel_start_inner(
                 );
                 handle.set_status(app, TunnelStatus::Error, Some(message.clone()));
                 if let Ok(mut map) = tunnel_state.0.lock() {
-                    map.insert(tunnel_id.to_string(), handle.clone());
+                    if let Ok(_admission) = crate::framework::storage::access::operation() {
+                        map.insert(tunnel_id.to_string(), handle.clone());
+                    }
                 }
                 return Err(message);
             }
@@ -280,8 +285,23 @@ async fn ssh_tunnel_start_inner(
         }
     }
 
-    if let Ok(mut map) = tunnel_state.0.lock() {
+    let registered = (|| -> Result<(), String> {
+        let mut map = tunnel_state.0.lock().map_err(|error| error.to_string())?;
+        let _admission = crate::framework::storage::access::operation()?;
         map.insert(tunnel_id.to_string(), handle.clone());
+        Ok(())
+    })();
+    if let Err(error) = registered {
+        stop_handle_with_session(
+            app,
+            Some(StopSession {
+                session: conn.session.clone(),
+                forward_targets: conn.forward_targets.clone(),
+            }),
+            &handle,
+        )
+        .await;
+        return Err(error);
     }
     Ok(handle.runtime())
 }
@@ -429,6 +449,36 @@ pub(crate) fn stop_session_tunnels(state: &TunnelState, connection_id: &str) {
     }
 }
 
+/// 工具维护与退出：显式停止监听及其子连接，不能仅清表释放带任务引用的句柄。
+pub(crate) async fn shutdown_all(app: &AppHandle) -> Vec<String> {
+    let tunnels = app.state::<TunnelState>();
+    let handles = match tunnels.0.lock() {
+        Ok(map) => map.values().cloned().collect::<Vec<_>>(),
+        Err(error) => return vec![format!("隧道注册表锁不可用：{error}")],
+    };
+    let ssh = app.state::<SshState>();
+    // 各隧道独立收尾，并行复用有界停止流程，避免逐项耗尽总清理预算。
+    let results = futures_util::future::join_all(handles.iter().map(|handle| async {
+        let session = session_for_handle(&ssh, handle);
+        stop_handle_with_session(app, session, handle).await;
+        match handle.status.lock() {
+            Ok(status) if *status == TunnelStatus::Stopped => None,
+            Ok(_) => Some(match handle.error.lock() {
+                Ok(error) => error.clone().unwrap_or_else(|| "隧道未完成停止".into()),
+                Err(error) => format!("读取隧道清理结果失败：{error}"),
+            }),
+            Err(error) => Some(format!("读取隧道停止状态失败：{error}")),
+        }
+    }))
+    .await;
+    let mut failures: Vec<String> = results.into_iter().flatten().collect();
+    match tunnels.0.lock() {
+        Ok(mut map) => map.clear(),
+        Err(error) => failures.push(format!("释放隧道注册表失败：{error}")),
+    }
+    failures
+}
+
 /// 连接建立/重连成功：恢复该 profile 下期望运行的隧道。
 /// 规则：已有句柄看 desired_running；首次（无句柄）看 auto_start。
 pub(crate) fn resume_for_profile(
@@ -462,7 +512,7 @@ pub(crate) fn resume_for_profile(
         let app2 = app.clone();
         let cid = connection_id.to_string();
         let tid = config.id.clone();
-        tauri::async_runtime::spawn(async move {
+        crate::framework::storage::access::spawn(async move {
             let ssh = app2.state::<SshState>();
             let tunnels = app2.state::<TunnelState>();
             let profiles = app2.state::<ProfileState>();

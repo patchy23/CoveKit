@@ -19,6 +19,7 @@ pub async fn ssh_edit_open(
     connection_id: String,
     remote_path: String,
 ) -> Result<RemoteFileContent, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
     let meta = sftp
         .metadata(&remote_path)
@@ -68,6 +69,7 @@ pub async fn ssh_edit_save(
     content: String,
     expected_mtime: Option<u64>,
 ) -> Result<EditSaveResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
     let target_path = sftp
         .canonicalize(&remote_path)
@@ -183,8 +185,7 @@ async fn read_remote_text(
     if buf.capacity() > buf.len().saturating_mul(2) {
         buf.shrink_to_fit();
     }
-    let content =
-        String::from_utf8(buf).map_err(|_| "远端内容不是有效 UTF-8 文本".to_string())?;
+    let content = String::from_utf8(buf).map_err(|_| "远端内容不是有效 UTF-8 文本".to_string())?;
     Ok((content, meta.mtime.unwrap_or(0) as u64 * 1000))
 }
 

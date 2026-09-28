@@ -132,7 +132,10 @@ mod cleanup_tests {
         local.write_all(&vec![3; 128 * 1024]).await.unwrap();
         let result = finish_local_write::<()>(local, Err("已取消".into())).await;
         assert_eq!(result, Err("已取消".into()));
-        assert_eq!(tokio::fs::metadata(&temporary).await.unwrap().len(), 128 * 1024);
+        assert_eq!(
+            tokio::fs::metadata(&temporary).await.unwrap().len(),
+            128 * 1024
+        );
         assert_eq!(
             cleanup_local_temp(temporary.to_str().unwrap(), result.unwrap_err()).await,
             "已取消"
@@ -190,6 +193,7 @@ pub async fn ssh_file_upload(
     local_path: String,
     remote_path: String,
 ) -> Result<FileTransferProgress, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FileTransferProgress, String> = async {
     let transfer_id = resource_id("up");
@@ -205,7 +209,7 @@ pub async fn ssh_file_upload(
     let tid = transfer_id.clone();
     let rpath = remote_path.clone();
     let lpath = local_path.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::framework::storage::access::spawn(async move {
         // 提升到闭包层：结束事件要携带失败时的实际已传字节数
         let mut transferred: u64 = 0;
         let mut total: u64 = 0;
@@ -213,7 +217,7 @@ pub async fn ssh_file_upload(
         let result: Result<(), String> = async {
             let (scan_local, scan_remote) = (lpath.clone(), rpath.clone());
             let scan_cancel = cancel.clone();
-            let entries = tokio::task::spawn_blocking(move || {
+            let entries = crate::framework::storage::access::spawn_blocking(move || {
                 collect_upload_entries(&scan_local, &scan_remote, || scan_cancel.is_cancelled())
             })
             .await
@@ -429,6 +433,7 @@ pub async fn ssh_file_download(
     remote_path: String,
     local_path: String,
 ) -> Result<FileTransferProgress, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FileTransferProgress, String> = async {
     let transfer_id = resource_id("down");
@@ -443,7 +448,7 @@ pub async fn ssh_file_download(
     let tid = transfer_id.clone();
     let rpath = remote_path.clone();
     let lpath = local_path.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::framework::storage::access::spawn(async move {
         // 临时文件路径提升到闭包层：任何失败（含取消）统一在事后清理
         let temp_path = format!("{lpath}.covekit-download-{}", resource_id("file"));
         let mut throttle = ProgressThrottle::new();
@@ -570,6 +575,7 @@ pub async fn ssh_file_download_recursive(
     local_path: String,
     overwrite: Option<bool>,
 ) -> Result<FileTransferProgress, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FileTransferProgress, String> = async {
     let transfer_id = resource_id("downr");
@@ -585,7 +591,7 @@ pub async fn ssh_file_download_recursive(
     let tid = transfer_id.clone();
     let rpath = remote_path.clone();
     let lpath = local_path.clone();
-    tauri::async_runtime::spawn(async move {
+    crate::framework::storage::access::spawn(async move {
         let mut throttle = ProgressThrottle::new();
         // 提升到闭包层：结束事件携带真实总量与已传字节数（不再发 total: 0 的假进度）
         let mut total: u64 = 0;

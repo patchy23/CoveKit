@@ -34,6 +34,7 @@ pub async fn ssh_disconnect(
     tunnel_state: State<'_, crate::plugins::ssh::tunnel::TunnelState>,
     session_id: String,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshActionResult, String> = async {
         crate::plugins::ssh::archive::cancel_connection(
@@ -117,6 +118,7 @@ pub async fn ssh_reconnect(
     session_id: String,
     overrides: Option<CredentialOverride>,
 ) -> Result<SshConnectOutcome, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshConnectOutcome, String> = async {
         // 终端/监控/隧道的 State 走 app.state 内部获取（命令参数过多触发 clippy 8/7）
@@ -190,6 +192,7 @@ pub async fn ssh_reconnect(
         let connected_at = now_ms();
         let old = {
             let mut sessions = state.0.lock().map_err(|e| e.to_string())?;
+            let _admission = crate::framework::storage::access::operation()?;
             let old = sessions.remove(&session_id);
             sessions.insert(
                 new_id.clone(),

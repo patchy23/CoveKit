@@ -58,6 +58,7 @@ pub async fn dbc_export_query(
     path: String,
     request_id: String,
 ) -> Result<u64, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<u64, String> = async {
         let mut entry = state.entry(&conn_id)?;
@@ -179,7 +180,7 @@ pub(crate) async fn write_rows(
         let path = temporary.to_path_buf();
         let sql = sql.to_string();
         let aborted = Arc::clone(&handle.aborted);
-        return tokio::task::spawn_blocking(move || {
+        return crate::framework::storage::access::spawn_blocking(move || {
             let guard = conn.lock().map_err(|e| e.to_string())?;
             let mut statement = guard.prepare(&sql).map_err(|e| e.to_string())?;
             if !statement.readonly() || statement.column_count() == 0 {

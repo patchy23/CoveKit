@@ -131,6 +131,7 @@ pub(crate) fn ssh_log_dir(app: &AppHandle) -> Result<PathBuf, String> {
 /// 打开当前存储位置的 SSH 日志目录；首次使用时创建，不依赖活跃终端。
 #[tauri::command]
 pub async fn ssh_terminal_log_open_dir(app: AppHandle) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let dir = resolve_dir(&app, None).await?;
     let path = dir
         .to_str()
@@ -234,6 +235,7 @@ pub async fn ssh_terminal_log_start(
     terminal_id: String,
     dir: Option<String>,
 ) -> Result<LogActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     // 取共享状态与标题（不持注册表锁跨 await）
     let (sink, title) = {
         let map = state.0.lock().map_err(|e| e.to_string())?;
@@ -301,6 +303,7 @@ pub async fn ssh_terminal_log_stop(
     state: State<'_, TerminalState>,
     terminal_id: String,
 ) -> Result<LogActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let sink = {
         let map = state.0.lock().map_err(|e| e.to_string())?;
         map.get(&terminal_id)
@@ -343,7 +346,8 @@ mod tests {
     async fn pending_start_cannot_outlive_stop_or_close() {
         for close in [false, true] {
             let sink = new_shared();
-            let path = std::env::temp_dir().join(format!("covekit-log-{}.txt", uuid::Uuid::new_v4()));
+            let path =
+                std::env::temp_dir().join(format!("covekit-log-{}.txt", uuid::Uuid::new_v4()));
             let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
             let (release_tx, release_rx) = tokio::sync::oneshot::channel();
             let task_sink = sink.clone();
@@ -391,9 +395,11 @@ mod tests {
             .unwrap();
         assert_ne!(first.path, third.path);
         finish(&sink).await.unwrap();
-        assert!(start_recording(&sink, async { panic!("关闭后不应创建文件") })
-            .await
-            .is_err());
+        assert!(
+            start_recording(&sink, async { panic!("关闭后不应创建文件") })
+                .await
+                .is_err()
+        );
         tokio::fs::remove_dir_all(dir).await.unwrap();
     }
 

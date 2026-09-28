@@ -3,17 +3,13 @@
 //! 设计要点：
 //! - **单一入口**：所有落盘路径必须经本模块解析，禁止插件手拼 `app_data_dir()`。
 //! - **取值来自描述符**：四个分区（`data` / `vault` / `logs` / `cache`）一律取自
-//!   `context` 固定下来的存储位置描述符（`StorageLocation`），本模块不做二次拼接；
-//!   描述符有两种形态（旧扁平 / 分区），见 `context::LayoutKind`。
+//!   `context` 当前的存储位置快照（`StorageLocation`），本模块不做二次拼接。
 //! - **设备级与空间级分清**：`storage_root` 是**设备级**根（日志缓存分层基、根迁移源，
 //!   跨空间共享）；空间内的数据与凭证取描述符的 `data` / `vault` 字段。
 //! - **配置位置**：`settings.json` 的 `app.storageRoot`（空串 = 默认 `app_data_dir`）。
 //!   配置类根下文件（`settings.json` / `covekit.json` / `.window-state.json`）永不搬移，
 //!   因此配置的读取位置是常量，与数据根目录指向哪个盘无关（自举安全，见任务书 §3.1）。
-//! - **老布局迁移**：根下的 `*.db`、`vault.dat`、`credentials/`、`ssh-known-hosts`、`tts/`、
-//!   `agents/` 在启动早期一次性搬入四分区（同卷 rename 优先，跨卷退化为复制 + 校验 + 删源），
-//!   迁移完成写 `layoutVersion` 防重放。
-//! - **失败不丢数据**：迁移失败或未迁移时，`data_path` 会回落旧位置，升级后数据不会「消失」。
+//! - **恢复态不新建数据**：空间缺失时由存储恢复入口处理，不回落旧布局或默认空环境。
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -40,7 +36,6 @@ pub(crate) fn read_setting(app: &AppHandle, key: &str) -> Option<serde_json::Val
 }
 
 /// 写入设置项（settings.json → app.<key>；失败返回错误）
-/// 写入存储根目录配置（空字符串 = 恢复默认；重启后生效）。
 ///
 /// 只有 `storage` 模块的「安排迁移 / 恢复动作」入口可以调用；通用设置写入会拒绝该键。
 pub(crate) fn write_setting(
@@ -49,15 +44,25 @@ pub(crate) fn write_setting(
     value: serde_json::Value,
 ) -> Result<(), String> {
     let store = app.store("settings.json").map_err(|e| e.to_string())?;
-    let mut current = store.get("app").unwrap_or_else(|| serde_json::json!({}));
+    let previous = store.get("app");
+    let mut current = previous.clone().unwrap_or_else(|| serde_json::json!({}));
     if let serde_json::Value::Object(map) = &mut current {
         map.insert(key.to_string(), value);
     }
     store.set("app", current);
-    store.save().map_err(|e| e.to_string())
+    if let Err(error) = store.save() {
+        // 保存失败不能把仅驻留内存的新根当成已提交配置。
+        if let Some(previous) = previous {
+            store.set("app", previous);
+        } else {
+            store.delete("app");
+        }
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
-/// 写入存储根目录配置（空字符串 = 恢复默认；重启后生效）
+/// 写入存储根目录配置（空字符串 = 默认位置；生效快照由存储维护入口提交）
 pub fn set_storage_root(app: &AppHandle, root: &str) -> Result<(), String> {
     write_setting(app, KEY_STORAGE_ROOT, serde_json::json!(root))
 }
@@ -145,7 +150,7 @@ pub fn storage_root(app: &AppHandle) -> Result<PathBuf, String> {
 pub(crate) fn current_location(app: &AppHandle) -> Result<Cow<'static, StorageLocation>, String> {
     let _ = app;
     crate::framework::context::location()
-        .map(Cow::Borrowed)
+        .map(Cow::Owned)
         .ok_or_else(|| "数据上下文未初始化，存储位置不可得".to_string())
 }
 
@@ -178,6 +183,9 @@ pub(crate) fn partition_path(location: &StorageLocation, name: &str) -> Option<P
 
 /// 分区目录（自动创建）：data / vault / logs / cache，取值一律来自存储位置描述符
 pub fn partition_dir(app: &AppHandle, name: &str) -> Result<PathBuf, String> {
+    if crate::framework::storage::recovery::current().is_some() {
+        return Err("存储目录尚未恢复，暂不能打开数据分区".into());
+    }
     if !valid_scope(name) {
         return Err(format!("分区名非法: {name}"));
     }

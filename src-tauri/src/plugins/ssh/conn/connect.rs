@@ -144,6 +144,7 @@ pub async fn ssh_connect(
     profile_state: State<'_, ProfileState>,
     payload: SshConnectPayload,
 ) -> Result<SshConnectOutcome, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshConnectOutcome, String> = async {
         let request_id = resource_id("sshc");

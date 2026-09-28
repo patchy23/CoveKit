@@ -406,7 +406,11 @@ pub(crate) async fn start(
     {
         let map = state.0.lock().await;
         if let Some(run) = map.get(file_name) {
-            if run.handle.as_ref().is_some_and(|handle| !handle.is_finished()) {
+            if run
+                .handle
+                .as_ref()
+                .is_some_and(|handle| !handle.is_finished())
+            {
                 return Ok(run.snapshot(file_name));
             }
         }
@@ -431,8 +435,13 @@ pub(crate) async fn start(
     let snapshot = {
         let mut map = state.0.lock().await;
         // 配置准备有 await，必须在真正 spawn 前复核，避免两个启动各建一个进程。
+        let _admission = crate::framework::storage::access::operation()?;
         if let Some(run) = map.get(file_name) {
-            if run.handle.as_ref().is_some_and(|handle| !handle.is_finished()) {
+            if run
+                .handle
+                .as_ref()
+                .is_some_and(|handle| !handle.is_finished())
+            {
                 return Ok(run.snapshot(file_name));
             }
         }
@@ -446,7 +455,7 @@ pub(crate) async fn start(
         let completion = RunCompletion(run.completion.clone());
         let snapshot = run.snapshot(file_name);
         map.insert(file_name.to_string(), run);
-        let handle = tokio::spawn(monitor(
+        let handle = crate::framework::storage::access::spawn_tokio(monitor(
             app.clone(),
             file_name.to_string(),
             child,
@@ -555,7 +564,10 @@ fn collect_status(
     map.retain(|name, run| {
         names.contains(name)
             || run.pid.is_some()
-            || run.handle.as_ref().is_some_and(|handle| !handle.is_finished())
+            || run
+                .handle
+                .as_ref()
+                .is_some_and(|handle| !handle.is_finished())
     });
     names.extend(map.keys().cloned());
     names
@@ -721,12 +733,11 @@ mod tests {
             let _completion = completion;
             let _ = ready.await;
         }));
-        assert!(tokio::time::timeout(
-            Duration::ZERO,
-            first.wait_for(|finished| *finished),
-        )
-        .await
-        .is_err());
+        assert!(
+            tokio::time::timeout(Duration::ZERO, first.wait_for(|finished| *finished),)
+                .await
+                .is_err()
+        );
         assert!(!run.handle.as_ref().unwrap().is_finished());
         release.send(()).unwrap();
         assert!(*second.wait_for(|finished| *finished).await.unwrap());

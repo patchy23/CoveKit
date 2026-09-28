@@ -186,6 +186,7 @@ pub async fn ssh_compose_list(
     ssh_state: State<'_, SshState>,
     connection_id: String,
 ) -> Result<Vec<ComposeProject>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let out = execute(
         &ssh_state,
         &connection_id,
@@ -249,6 +250,7 @@ pub async fn ssh_compose_home(
     ssh_state: State<'_, SshState>,
     connection_id: String,
 ) -> Result<String, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     get_sftp_session(&ssh_state, &connection_id)
         .await?
         .canonicalize(".")
@@ -269,6 +271,7 @@ pub async fn ssh_compose_action(
     draft_path: Option<String>,
     draft_content: Option<String>,
 ) -> Result<ComposeOutput, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<ComposeOutput, String> = async {
         // Channel 仅支持顶层 CommandArg；可选参数通过可反序列化的 ID 绑定调用窗口。
@@ -318,6 +321,7 @@ pub async fn ssh_compose_create(
     remote_path: String,
     content: String,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         validate_path(&remote_path)?;

@@ -69,12 +69,7 @@ impl WsSessionHandle {
             url: self.url.clone(),
             connected_at: self.connected_at,
             open: self.open,
-            messages: self
-                .queue
-                .iter()
-                .skip(start)
-                .cloned()
-                .collect(),
+            messages: self.queue.iter().skip(start).cloned().collect(),
             first_seq: self
                 .queue
                 .front()
@@ -96,6 +91,7 @@ pub async fn ws_connect(
     auth: Option<RequestAuth>,
     timeout_ms: Option<u64>,
 ) -> Result<WsSession, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<WsSession, String> = async {
     let parsed = reqwest::Url::parse(&url).map_err(|_| "WebSocket 地址无效".to_string())?;
@@ -225,6 +221,7 @@ pub async fn ws_send(
     id: String,
     message: String,
 ) -> Result<WsActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<WsActionResult, String> = async {
         if message.len() > 1024 * 1024 {
@@ -274,6 +271,7 @@ pub async fn ws_recv(
     id: String,
     after_seq: Option<u64>,
 ) -> Result<WsSession, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     state
         .0
         .lock()
@@ -286,6 +284,7 @@ pub async fn ws_recv(
 /// 幂等关闭；直接取消任务使阻塞读写同时释放。
 #[tauri::command]
 pub async fn ws_close(state: State<'_, WsState>, id: String) -> Result<WsActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<WsActionResult, String> = async {
         if let Some(handle) = state.0.lock().map_err(|e| e.to_string())?.remove(&id) {
@@ -321,6 +320,7 @@ pub(crate) fn close_all_sessions(state: &WsState) -> Result<(), String> {
 /// 全部会话快照，仅返回本 owner 的运行状态。
 #[tauri::command]
 pub async fn ws_sessions(state: State<'_, WsState>) -> Result<Vec<WsSession>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     Ok(state
         .0
         .lock()

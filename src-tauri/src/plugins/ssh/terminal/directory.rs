@@ -62,6 +62,7 @@ pub async fn ssh_terminal_directory(
     ssh_state: State<'_, SshState>,
     terminal_id: String,
 ) -> Result<String, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let (connection_id, pid) = {
         let registry = state.0.lock().map_err(|e| e.to_string())?;
         let terminal = registry.get(&terminal_id).ok_or("终端已关闭")?;

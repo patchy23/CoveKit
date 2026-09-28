@@ -18,6 +18,7 @@ pub async fn ssh_file_list(
     connection_id: String,
     path: String,
 ) -> Result<FileListResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
     let entries = match sftp.read_dir(&path).await {
         Ok(entries) => entries,
@@ -93,12 +94,17 @@ pub async fn ssh_local_list(
     path: String,
     request_id: Option<String>,
 ) -> Result<FileListResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let guard = state.claim(request_id)?;
-    tokio::task::spawn_blocking(move || read_local_directory(path, &guard))
-        .await.map_err(|e| format!("读取本地目录任务失败: {e}"))?
+    crate::framework::storage::access::spawn_blocking(move || read_local_directory(path, &guard))
+        .await
+        .map_err(|e| format!("读取本地目录任务失败: {e}"))?
 }
 
-fn read_local_directory(path: String, guard: &super::local_browse::ReadGuard) -> Result<FileListResult, String> {
+fn read_local_directory(
+    path: String,
+    guard: &super::local_browse::ReadGuard,
+) -> Result<FileListResult, String> {
     guard.check()?;
     // 规范化：分隔符统一；盘符 'C:' 补尾斜杠（裸盘符是「该盘当前目录」而非根）
     let normalized = normalize_local_path(&path);
@@ -165,7 +171,8 @@ fn read_local_directory(path: String, guard: &super::local_browse::ReadGuard) ->
 
 fn compare_local_names(a: &str, b: &str) -> std::cmp::Ordering {
     if a.is_ascii() && b.is_ascii() {
-        a.bytes().map(|byte| byte.to_ascii_lowercase())
+        a.bytes()
+            .map(|byte| byte.to_ascii_lowercase())
             .cmp(b.bytes().map(|byte| byte.to_ascii_lowercase()))
     } else {
         a.to_lowercase().cmp(&b.to_lowercase())
@@ -336,11 +343,18 @@ pub async fn ssh_local_default_directory(
     app: tauri::AppHandle,
     preferred: Option<String>,
 ) -> Result<(String, Option<String>), String> {
-    tokio::task::spawn_blocking(move || local_default_directory(&app, preferred))
-        .await.map_err(|e| format!("检查默认本地目录任务失败: {e}"))?
+    let _storage_operation = crate::framework::storage::access::operation()?;
+    crate::framework::storage::access::spawn_blocking(move || {
+        local_default_directory(&app, preferred)
+    })
+    .await
+    .map_err(|e| format!("检查默认本地目录任务失败: {e}"))?
 }
 
-fn local_default_directory(app: &tauri::AppHandle, preferred: Option<String>) -> Result<(String, Option<String>), String> {
+fn local_default_directory(
+    app: &tauri::AppHandle,
+    preferred: Option<String>,
+) -> Result<(String, Option<String>), String> {
     let preferred = preferred.filter(|p| !p.is_empty());
     let mut candidates = Vec::new();
     if let Some(path) = &preferred {
@@ -378,15 +392,25 @@ mod local_scan_tests {
         let state = super::super::local_browse::LocalBrowseState::default();
         let guard = state.claim(None).unwrap();
         state.cancel_all().unwrap();
-        assert_eq!(read_local_directory("not-an-existing-directory".into(), &guard).err().as_deref(), Some("SSH_LOCAL_LIST_CANCELLED"));
+        assert_eq!(
+            read_local_directory("not-an-existing-directory".into(), &guard)
+                .err()
+                .as_deref(),
+            Some("SSH_LOCAL_LIST_CANCELLED")
+        );
     }
 
     #[test]
     fn allocation_free_ascii_order_matches_original_unicode_sorting() {
-        let names = ["A", "a", "B.txt", "b.TXT", "file10", "file2", "", "_x", "ΣΟΣ", "σος", "İ", "中文"];
+        let names = [
+            "A", "a", "B.txt", "b.TXT", "file10", "file2", "", "_x", "ΣΟΣ", "σος", "İ", "中文",
+        ];
         for a in names {
             for b in names {
-                assert_eq!(compare_local_names(a, b), a.to_lowercase().cmp(&b.to_lowercase()));
+                assert_eq!(
+                    compare_local_names(a, b),
+                    a.to_lowercase().cmp(&b.to_lowercase())
+                );
             }
         }
     }

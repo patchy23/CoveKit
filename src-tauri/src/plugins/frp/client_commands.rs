@@ -17,6 +17,7 @@ pub async fn frp_binary_detect(
     app: AppHandle,
     path: Option<String>,
 ) -> Result<FrpBinaryInfo, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     Ok(binary::detect_with(&app, path.as_deref()).await)
 }
 
@@ -26,12 +27,14 @@ pub async fn frp_binary_versions(
     _app: AppHandle,
     limit: Option<u32>,
 ) -> Result<Vec<FrpReleaseInfo>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     binary::versions(limit.unwrap_or(10)).await
 }
 
 /// 下载并安装 frpc（进度走 `frp://download` 事件；失败不改动已配置路径）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_binary_download(app: AppHandle, version: String) -> Result<FrpBinaryInfo, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FrpBinaryInfo, String> =
         async { binary::download(&app, &version).await }.await;
@@ -53,12 +56,14 @@ pub async fn frp_binary_download(app: AppHandle, version: String) -> Result<FrpB
 /// 列出已登记的客户端（含默认项与「文件是否还在」）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_client_list(app: AppHandle) -> Result<FrpClientList, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     Ok(clients::list(&app).await)
 }
 
 /// 登记一个外部 frpc 可执行文件（只引用路径，不复制文件）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_client_add(app: AppHandle, path: String) -> Result<FrpClient, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FrpClient, String> =
         async { clients::add_external(&app, &path).await }.await;

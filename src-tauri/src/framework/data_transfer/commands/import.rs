@@ -37,6 +37,7 @@ pub async fn data_import_inspect(
     request_id: Option<String>,
     on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<ImportInspectResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
     let on_progress = on_progress.map(|id| id.channel_on(webview));
     let target = PathBuf::from(path.trim());
@@ -47,13 +48,14 @@ pub async fn data_import_inspect(
     let cancel = transfer.token();
     let progress = transfer.progress(on_progress);
     let inspect_app = app.clone();
-    let work =
-        tauri::async_runtime::spawn_blocking(move || -> Result<ImportInspectResult, String> {
+    let work = crate::framework::storage::access::spawn_blocking_tauri(
+        move || -> Result<ImportInspectResult, String> {
             cancel.check()?;
             let raw = package::read_package(&target)?;
             cancel.check()?;
             let digest = package::file_digest(&raw);
-            let manifest = package::open_package_controlled(&password, raw, &|| cancel.check(), &progress)?;
+            let manifest =
+                package::open_package_controlled(&password, raw, &|| cancel.check(), &progress)?;
             cancel.check()?;
             let descriptors = catalog::collect_descriptors(&inspect_app)?;
             let summary = package_summary(&manifest, &descriptors);
@@ -82,9 +84,10 @@ pub async fn data_import_inspect(
                 excluded,
                 duplicate,
             })
-        })
-        .await
-        .map_err(|e| format!("校验任务失败: {e}"))?;
+        },
+    )
+    .await
+    .map_err(|e| format!("校验任务失败: {e}"))?;
     work
 }
 
@@ -142,6 +145,7 @@ pub fn data_import_plan(
                 .map(|choice| ((choice.dataset, choice.source_id), choice.decision))
                 .collect();
             let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
+            let device_root = device_root.as_path();
             let before =
                 crate::framework::data_transfer::merge::storage_revision(device_root, &space_id)?;
             let mut plan = import::build_plan(
@@ -158,6 +162,7 @@ pub fn data_import_plan(
                 }),
             )?;
             let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
+            let device_root = device_root.as_path();
             let after =
                 crate::framework::data_transfer::merge::storage_revision(device_root, &space_id)?;
             if before != after {
@@ -211,6 +216,7 @@ pub async fn data_import_commit(
     request_id: Option<String>,
     on_progress: Option<tauri::ipc::JavaScriptChannelId>,
 ) -> Result<ImportCommitResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     // 可选 Channel 通过 ID 反序列化，再绑定本次调用的窗口。
     let on_progress = on_progress.map(|id| id.channel_on(webview));
     package::validate_password(&password)?;
@@ -232,40 +238,48 @@ pub async fn data_import_commit(
     let work = {
         // 维护互斥：导入提交与根迁移、空间切换互斥
         let _guard = maintenance_guard().await;
-        tauri::async_runtime::spawn_blocking(move || -> Result<ImportReport, String> {
-            cancel.check()?;
-            // 复核：文件没被换过、密码仍能解开同一份包（不缓存密码，这里重新解一次）
-            let raw = package::read_package(&file_path)?;
-            if package::file_digest(&raw) != file_digest {
-                return Err("数据包内容已改变，请重新预览后再提交".into());
-            }
-            let manifest = package::open_package_controlled(&password, raw, &|| cancel.check(), &progress)?;
-            cancel.check()?;
-            if manifest.package_id != plan.package_id {
-                return Err("数据包与预览的不是同一份，请重新预览后再提交".into());
-            }
-            // 复核完成后仅使用已确认的计划，写入期间不再保留第二份完整记录。
-            drop(manifest);
-            match plan.mode {
-                ImportMode::NewSpace => {
-                    let device_root = crate::framework::paths::storage_root(&commit_app)?;
-                    import::commit(&commit_app, &device_root, &plan)
+        crate::framework::storage::access::spawn_blocking_tauri(
+            move || -> Result<ImportReport, String> {
+                cancel.check()?;
+                // 复核：文件没被换过、密码仍能解开同一份包（不缓存密码，这里重新解一次）
+                let raw = package::read_package(&file_path)?;
+                if package::file_digest(&raw) != file_digest {
+                    return Err("数据包内容已改变，请重新预览后再提交".into());
                 }
-                ImportMode::Merge | ImportMode::Overwrite => {
-                    // 修订号复核（D7）：预览之后本地数据有变化 → 拒绝，回到预览重新确认
-                    let device_root =
-                        crate::framework::context::root().ok_or("数据上下文未初始化")?;
-                    let current = crate::framework::data_transfer::merge::storage_revision(
-                        device_root,
-                        &plan.space_id,
-                    )?;
-                    if plan.expected_revision.as_deref() != Some(current.as_str()) {
-                        return Err("预览之后本地数据有变化，请重新预览后再提交".into());
+                let manifest = package::open_package_controlled(
+                    &password,
+                    raw,
+                    &|| cancel.check(),
+                    &progress,
+                )?;
+                cancel.check()?;
+                if manifest.package_id != plan.package_id {
+                    return Err("数据包与预览的不是同一份，请重新预览后再提交".into());
+                }
+                // 复核完成后仅使用已确认的计划，写入期间不再保留第二份完整记录。
+                drop(manifest);
+                match plan.mode {
+                    ImportMode::NewSpace => {
+                        let device_root = crate::framework::paths::storage_root(&commit_app)?;
+                        import::commit(&commit_app, &device_root, &plan)
                     }
-                    crate::framework::data_transfer::merge::commit(&commit_app, &plan)
+                    ImportMode::Merge | ImportMode::Overwrite => {
+                        // 修订号复核（D7）：预览之后本地数据有变化 → 拒绝，回到预览重新确认
+                        let device_root =
+                            crate::framework::context::root().ok_or("数据上下文未初始化")?;
+                        let device_root = device_root.as_path();
+                        let current = crate::framework::data_transfer::merge::storage_revision(
+                            device_root,
+                            &plan.space_id,
+                        )?;
+                        if plan.expected_revision.as_deref() != Some(current.as_str()) {
+                            return Err("预览之后本地数据有变化，请重新预览后再提交".into());
+                        }
+                        crate::framework::data_transfer::merge::commit(&commit_app, &plan)
+                    }
                 }
-            }
-        })
+            },
+        )
         .await
         .map_err(|e| format!("导入任务失败: {e}"))?
     };

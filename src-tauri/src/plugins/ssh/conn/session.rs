@@ -125,6 +125,7 @@ pub(crate) async fn open_session(
         host: profile.host.clone(),
         port: profile.port,
         known_hosts_path,
+        storage_epoch: crate::framework::context::current().map(|context| context.epoch()),
         app: app.clone(),
         request_id: request_id.to_string(),
         verify: resolved.verify.clone(),
@@ -191,11 +192,11 @@ pub(crate) async fn open_session(
                 )
             })?
             .map_err(|e| {
-                    connect_error(
-                        "AUTH_FAILED",
-                        format!("认证阶段失败：{}", profile.username),
-                        Some(e.to_string()),
-                    )
+                connect_error(
+                    "AUTH_FAILED",
+                    format!("认证阶段失败：{}", profile.username),
+                    Some(e.to_string()),
+                )
             })?
         }
         AuthMethod::PrivateKey | AuthMethod::PrivateKeyWithPassphrase => {
@@ -239,11 +240,11 @@ pub(crate) async fn open_session(
                 )
             })?
             .map_err(|e| {
-                    connect_error(
-                        "AUTH_FAILED",
-                        format!("认证阶段失败：{}", profile.username),
-                        Some(e.to_string()),
-                    )
+                connect_error(
+                    "AUTH_FAILED",
+                    format!("认证阶段失败：{}", profile.username),
+                    Some(e.to_string()),
+                )
             })?
         }
     };

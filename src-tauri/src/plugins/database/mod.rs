@@ -45,6 +45,7 @@ pub async fn dbc_connection_save(
     password: String,
     clear_password: Option<bool>,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         let _maintenance = crate::framework::context::maintenance_guard().await;
@@ -124,6 +125,7 @@ pub async fn dbc_connection_delete(
     secrets_state: State<'_, secrets::SecretsState>,
     id: String,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         session_state.next_generation(&id)?;
@@ -156,6 +158,7 @@ pub async fn dbc_connections(
     session_state: State<'_, drivers::DbState>,
     secrets_state: State<'_, secrets::SecretsState>,
 ) -> Result<Vec<models::DbConnectionInfo>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let configs = secrets::migrate_references(&app, &secrets_state, &store_state)?;
     Ok(drivers::snapshot(&session_state, &configs).await)
 }
@@ -170,6 +173,7 @@ pub async fn dbc_connect(
     runtimes: State<'_, drivers::AgentRuntimeState>,
     id: String,
 ) -> Result<models::DbConnectionInfo, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<models::DbConnectionInfo, String> = async {
         let configs = store::list_connections(&app, &store_state)?;
@@ -212,6 +216,7 @@ pub async fn dbc_disconnect(
     runtimes: State<'_, drivers::AgentRuntimeState>,
     id: String,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         session_state.next_generation(&id)?;
@@ -245,6 +250,7 @@ pub async fn dbc_test(
     password: String,
     clear_password: Option<bool>,
 ) -> Result<String, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<String, String> = async {
         let password = if clear_password.unwrap_or(false) {
@@ -288,6 +294,7 @@ pub async fn dbc_history(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
 ) -> Result<Vec<HistoryEntry>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     store::list_history(&app, &store_state)
 }
 
@@ -302,6 +309,7 @@ pub async fn dbc_history_add(
     duration_ms: u64,
     scope: Option<models::ExecutionScope>,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     store::add_history(
         &app,
         &store_state,
@@ -319,6 +327,7 @@ pub async fn dbc_history_clear(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     store::clear_history(&app, &store_state)
 }
 
@@ -328,6 +337,7 @@ pub async fn dbc_saved(
     app: tauri::AppHandle,
     store_state: State<'_, StoreState>,
 ) -> Result<Vec<SavedEntry>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     store::list_saved(&app, &store_state)
 }
 
@@ -339,6 +349,7 @@ pub async fn dbc_saved_add(
     title: String,
     sql: String,
 ) -> Result<i64, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     store::add_saved(&app, &store_state, &title, &sql)
 }
 
@@ -351,6 +362,7 @@ pub async fn dbc_saved_update(
     title: String,
     sql: String,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     store::update_saved(&app, &store_state, id, &title, &sql)
 }
 
@@ -361,6 +373,7 @@ pub async fn dbc_saved_delete(
     store_state: State<'_, StoreState>,
     id: i64,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     store::delete_saved(&app, &store_state, id)
 }
 
@@ -370,6 +383,7 @@ pub async fn dbc_driver_status(
     app: tauri::AppHandle,
     db_type: String,
 ) -> Result<serde_json::Value, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let db_type =
         models::DbType::parse(&db_type).ok_or_else(|| format!("未知数据库类型：{db_type}"))?;
     if !db_type.is_agent() {
@@ -449,7 +463,8 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     // 框架只协调、超时与汇总（没有这一步，父进程退出后 agent 会变成孤儿进程）
     crate::framework::lifecycle::register(
         crate::framework::lifecycle::ModuleLifecycle::exit_only(IPC_OWNER)
-            .with_dispose(close_hooks::on_dispose),
+            .with_dispose(close_hooks::on_dispose)
+            .with_storage_reset(release_storage),
     );
     builder
         .manage(drivers::DbState(
@@ -461,4 +476,55 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         .manage(drivers::AgentRuntimeState(Mutex::new(HashMap::new())))
         .manage(StoreState(Mutex::new(None)))
         .manage(secrets::SecretsState(Mutex::new(None)))
+}
+
+/// 维护入口冻结、连接清理并排空操作后释放本地库和凭据迁移缓存。
+/// 保留仍被借用的缓存并拒绝切换，避免旧文件句柄在切换后继续被使用。
+pub(crate) fn release_storage(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    let workspaces = app.state::<drivers::WorkspaceState>();
+    if !workspaces
+        .0
+        .try_lock()
+        .map_err(|e| format!("数据库工作会话仍在使用: {e}"))?
+        .is_empty()
+    {
+        return Err("数据库工作会话尚未关闭，请先关闭连接后重试".into());
+    }
+    let sessions = app.state::<drivers::DbState>();
+    if !sessions
+        .0
+        .try_lock()
+        .map_err(|e| format!("数据库连接仍在使用: {e}"))?
+        .is_empty()
+    {
+        return Err("数据库连接尚未关闭，请先关闭连接后重试".into());
+    }
+    let state = app.state::<StoreState>();
+    let secrets = app.state::<secrets::SecretsState>();
+    let mut database = state
+        .0
+        .try_lock()
+        .map_err(|e| format!("数据库配置库仍在使用: {e}"))?;
+    let mut migrated = secrets
+        .0
+        .try_lock()
+        .map_err(|e| format!("数据库凭据迁移仍在使用: {e}"))?;
+    if database
+        .as_ref()
+        .is_some_and(|db| std::sync::Arc::strong_count(db) != 1)
+        || migrated
+            .as_ref()
+            .is_some_and(|cache| std::sync::Arc::strong_count(cache) != 1)
+    {
+        return Err("数据库配置或凭据仍有进行中的操作，请等待完成后重试".into());
+    }
+    sessions
+        .1
+        .try_lock()
+        .map_err(|e| format!("数据库连接代次仍在使用: {e}"))?
+        .clear();
+    *database = None;
+    *migrated = None;
+    Ok(())
 }

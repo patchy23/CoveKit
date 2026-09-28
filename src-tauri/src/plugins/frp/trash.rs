@@ -56,6 +56,7 @@ async fn list_in(dir: &Path, managed: bool) -> Result<Vec<DeletedProfile>, Strin
 /// 列出当前空间与配置目录内的已删除档案。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_profiles_deleted(app: AppHandle) -> Result<Vec<DeletedProfile>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let dir = profile_dir(&app)?;
     let managed = transfer::managed_dir(&app)?;
     let mut result = list_in(&dir, false).await?;
@@ -121,6 +122,7 @@ pub async fn frp_profile_restore(
     trash_name: String,
     managed: bool,
 ) -> Result<FrpOpResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let _maintenance = crate::framework::context::maintenance_guard().await;
     let (original, _) = parse_name(&trash_name)?;
     transfer::ensure_name_available(&app, original)?;

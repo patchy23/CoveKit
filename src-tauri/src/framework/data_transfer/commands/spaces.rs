@@ -54,6 +54,7 @@ pub async fn data_space_switch(
     space_id: String,
     revision: Option<u64>,
 ) -> Result<SpaceSwitchResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     if !space::is_valid_space_id(&space_id) {
         return Err(format!("空间 id 非法：{space_id}"));
     }
@@ -84,6 +85,7 @@ pub fn data_backup_list(_app: AppHandle) -> Result<Vec<BackupSummary>, String> {
     let ctx = crate::framework::context::current().ok_or("数据上下文未初始化")?;
     let space_id = ctx.space_id().to_string();
     let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
+    let device_root = device_root.as_path();
     let snapshots = crate::framework::data_transfer::backup::list_snapshots(device_root)?;
     Ok(snapshots
         .into_iter()
@@ -105,12 +107,14 @@ pub fn data_backup_list(_app: AppHandle) -> Result<Vec<BackupSummary>, String> {
 /// 与导入提交同款互斥与写冻结；还原对象必须是当前空间的快照（别的空间的快照拒绝）。
 #[tauri::command]
 pub async fn data_backup_restore(app: AppHandle, dir: String) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let ctx = crate::framework::context::current().ok_or("数据上下文未初始化")?;
     let space_id = ctx.space_id().to_string();
     let _guard = maintenance_guard().await;
     let app_clone = app.clone();
-    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+    crate::framework::storage::access::spawn_blocking_tauri(move || -> Result<(), String> {
         let device_root = crate::framework::context::root().ok_or("数据上下文未初始化")?;
+        let device_root = device_root.as_path();
         let snapshot_dir =
             crate::framework::data_transfer::backup::backups_dir(device_root).join(&dir);
         // 防目录穿越：目录名不允许含路径分隔符

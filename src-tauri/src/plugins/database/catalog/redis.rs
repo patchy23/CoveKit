@@ -14,6 +14,7 @@ pub async fn dbc_redis_keys(
     pattern: String,
     cursor: u64,
 ) -> Result<(u64, Vec<String>), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = session(&state, &conn_id)?;
     if !entry.config.db_type.is_redis() {
         return Err("当前连接不是 Redis".to_string());
@@ -33,6 +34,7 @@ pub async fn dbc_redis_key_info(
     conn_id: String,
     key: String,
 ) -> Result<crate::plugins::database::models::RedisKeyInfo, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = session(&state, &conn_id)?;
     if !entry.config.db_type.is_redis() {
         return Err("当前连接不是 Redis".to_string());

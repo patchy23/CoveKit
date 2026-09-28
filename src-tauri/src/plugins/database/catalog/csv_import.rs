@@ -28,7 +28,10 @@ struct CsvSource {
 fn check_csv_cancel(
     cancelled: &Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<(), String> {
-    if cancelled.as_ref().is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)) {
+    if cancelled
+        .as_ref()
+        .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire))
+    {
         Err("DB_CANCELLED: 操作已取消，未提交修改将回滚".into())
     } else {
         Ok(())
@@ -59,7 +62,7 @@ impl CsvSource {
             }
             bytes.extend_from_slice(&buffer[..length]);
         }
-        tokio::task::spawn_blocking(move || {
+        crate::framework::storage::access::spawn_blocking(move || {
             check_csv_cancel(&cancelled)?;
             let fingerprint = hex::encode(Sha256::digest(&bytes));
             let text = std::str::from_utf8(&bytes).map_err(|_| "CSV 必须为 UTF-8 编码")?;
@@ -68,12 +71,23 @@ impl CsvSource {
             // offset 受既有 16 MiB 文件上限约束。
             cursor.set_position(offset as u64);
             let mut reader = csv::ReaderBuilder::new().from_reader(cursor);
-            let headers: Vec<String> = reader.headers().map_err(|e| e.to_string())?
-                .iter().map(str::to_string).collect();
+            let headers: Vec<String> = reader
+                .headers()
+                .map_err(|e| e.to_string())?
+                .iter()
+                .map(str::to_string)
+                .collect();
             if headers.is_empty() || headers.len() > 512 {
                 return Err("CSV 列数须为 1 至 512".into());
             }
-            Ok(Self { reader, headers, fingerprint, count: 0, byte_offset: offset as u64, cancelled })
+            Ok(Self {
+                reader,
+                headers,
+                fingerprint,
+                count: 0,
+                byte_offset: offset as u64,
+                cancelled,
+            })
         })
         .await
         .map_err(|e| e.to_string())?
@@ -82,7 +96,9 @@ impl CsvSource {
     fn read_record(&mut self) -> Result<Option<csv::StringRecord>, String> {
         check_csv_cancel(&self.cancelled)?;
         let mut record = csv::StringRecord::new();
-        let found = self.reader.read_record(&mut record)
+        let found = self
+            .reader
+            .read_record(&mut record)
             .map_err(|e| format!("CSV 第 {} 条记录格式错误：{e}", self.count + 1))?;
         if !found {
             return Ok(None);
@@ -97,13 +113,15 @@ impl CsvSource {
     /// 写入前验证完整快照，保留原来坏文件不会发出任何 INSERT 的行为。
     /// 第二遍只解析同一份内存字节，不重读文件，也不保留全文件的单元格对象。
     async fn validated(mut self) -> Result<Self, String> {
-        tokio::task::spawn_blocking(move || {
+        crate::framework::storage::access::spawn_blocking(move || {
             let first_record = self.reader.position().clone();
             while self.read_record()?.is_some() {}
-            self.reader.seek_raw(
-                std::io::SeekFrom::Start(first_record.byte() + self.byte_offset),
-                first_record,
-            ).map_err(|e| format!("CSV 无法开始导入：{e}"))?;
+            self.reader
+                .seek_raw(
+                    std::io::SeekFrom::Start(first_record.byte() + self.byte_offset),
+                    first_record,
+                )
+                .map_err(|e| format!("CSV 无法开始导入：{e}"))?;
             self.count = 0;
             Ok(self)
         })
@@ -114,7 +132,7 @@ impl CsvSource {
     /// 批次只约束暂存，不限制行或字段；超大合法单行仍完整交付。
     /// 解析留在阻塞池，调用者停止请求下一批后没有后台生产者或待发送队列。
     async fn next_batch(mut self) -> Result<(Self, Vec<csv::StringRecord>), String> {
-        tokio::task::spawn_blocking(move || {
+        crate::framework::storage::access::spawn_blocking(move || {
             let mut batch = Vec::new();
             let mut bytes = 0;
             while batch.len() < 128 && bytes < 64 * 1024 {
@@ -138,7 +156,7 @@ async fn read_csv(
 ) -> Result<(Vec<String>, Vec<Vec<String>>, String, u64), String> {
     let mut source = CsvSource::open(path, None).await?;
     // 预览没有数据库消费等待，整轮在同一个阻塞任务校验，避免逐批跨线程调度。
-    tokio::task::spawn_blocking(move || {
+    crate::framework::storage::access::spawn_blocking(move || {
         let mut rows = Vec::new();
         while let Some(record) = source.read_record()? {
             if rows.len() < retained_rows {
@@ -147,12 +165,13 @@ async fn read_csv(
         }
         Ok((source.headers, rows, source.fingerprint, source.count))
     })
-        .await
-        .map_err(|e| e.to_string())?
+    .await
+    .map_err(|e| e.to_string())?
 }
 #[tauri::command(rename_all = "camelCase")]
 /// 读取受限 CSV，返回列映射预览与内容指纹，不写入目标数据库。
 pub async fn dbc_csv_preview(path: String) -> Result<CsvPreview, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let (columns, rows, fingerprint, total) = read_csv(&path, 20).await?;
     Ok(CsvPreview {
         columns,
@@ -200,6 +219,7 @@ pub async fn dbc_csv_import(
     mapping: Vec<CsvMapping>,
     request_id: String,
 ) -> Result<u64, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<u64, String> = async {
         let config = store::list_connections(&app, &store_state)?
@@ -267,7 +287,8 @@ pub async fn dbc_csv_import(
                         original: HashMap::new(),
                         values,
                     };
-                    let (sql, params) = mutation_sql(entry.config.db_type, &name, &columns, &change)?;
+                    let (sql, params) =
+                        mutation_sql(entry.config.db_type, &name, &columns, &change)?;
                     let result = task
                         .query(&mut conn, &sql, &params)
                         .await
@@ -338,21 +359,37 @@ mod tests {
     /// 解析分批保留，不为完整文件分配逐单元格 String；取消不再解析下一批。
     #[tokio::test]
     async fn import_batches_preserve_content_and_stop_on_cancel() {
-        use std::sync::{atomic::{AtomicBool, Ordering}, Arc};
-        let path = std::env::temp_dir().join(format!("covekit-csv-batch-{}.csv", uuid::Uuid::new_v4()));
-        let text = format!("\u{feff}id,text\n{}", (0..1000).map(|i| format!("{i},\"中文,\\N\"\n")).collect::<String>());
+        use std::sync::{
+            atomic::{AtomicBool, Ordering},
+            Arc,
+        };
+        let path =
+            std::env::temp_dir().join(format!("covekit-csv-batch-{}.csv", uuid::Uuid::new_v4()));
+        let text = format!(
+            "\u{feff}id,text\n{}",
+            (0..1000)
+                .map(|i| format!("{i},\"中文,\\N\"\n"))
+                .collect::<String>()
+        );
         tokio::fs::write(&path, &text).await.unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
-        let source = CsvSource::open(path.to_str().unwrap(), Some(cancel.clone())).await.unwrap();
+        let source = CsvSource::open(path.to_str().unwrap(), Some(cancel.clone()))
+            .await
+            .unwrap();
         let mut source = source.validated().await.unwrap();
-        assert_eq!(source.fingerprint, hex::encode(Sha256::digest(text.as_bytes())));
+        assert_eq!(
+            source.fingerprint,
+            hex::encode(Sha256::digest(text.as_bytes()))
+        );
         // 文件后续改变不影响已读取的固定字节和对应指纹。
         tokio::fs::write(&path, "changed\n").await.unwrap();
         let mut count = 0;
         loop {
             let (next, batch) = source.next_batch().await.unwrap();
             source = next;
-            if batch.is_empty() { break; }
+            if batch.is_empty() {
+                break;
+            }
             assert!(batch.len() <= 128);
             for row in batch {
                 assert_eq!(&row[0], count.to_string());
@@ -362,14 +399,17 @@ mod tests {
         }
         assert_eq!(count, 1000);
         cancel.store(true, Ordering::Release);
-        assert!(matches!(source.next_batch().await, Err(error) if error.starts_with("DB_CANCELLED")));
+        assert!(
+            matches!(source.next_batch().await, Err(error) if error.starts_with("DB_CANCELLED"))
+        );
         tokio::fs::remove_file(path).await.unwrap();
     }
 
     /// 后部坏行在后续批次返回错误，导入方据此回滚同一事务。
     #[tokio::test]
     async fn import_reports_errors_after_the_first_batch() {
-        let path = std::env::temp_dir().join(format!("covekit-csv-tail-{}.csv", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("covekit-csv-tail-{}.csv", uuid::Uuid::new_v4()));
         let text = format!("a,b\n{}bad,extra,column\n", "1,2\n".repeat(128));
         tokio::fs::write(&path, text).await.unwrap();
         let source = CsvSource::open(path.to_str().unwrap(), None).await.unwrap();
@@ -384,7 +424,8 @@ mod tests {
     /// 只保留展示行，但计数、指纹和后续记录校验仍覆盖完整文件。
     #[tokio::test]
     async fn preview_keeps_twenty_rows_and_validates_the_tail() {
-        let path = std::env::temp_dir().join(format!("covekit-preview-{}.csv", uuid::Uuid::new_v4()));
+        let path =
+            std::env::temp_dir().join(format!("covekit-preview-{}.csv", uuid::Uuid::new_v4()));
         let mut text = String::from("id,text\n");
         for index in 0..100 {
             text.push_str(&format!("{index},value\n"));

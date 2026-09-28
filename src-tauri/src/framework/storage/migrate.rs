@@ -1,7 +1,7 @@
 //! 框架 · 维护阶段执行待执行的根迁移（可靠性 T01 / T02）
 //!
-//! 启动顺序契约：`run_pending` 必须在**任何业务资源初始化之前**执行；成功提交新根之后
-//! 才由 `context::init_from_app` 固定生效根。此时所有插件数据库尚未打开，属于 SQLite 的
+//! 启动维护在业务初始化前执行；运行期维护必须先冻结准入、排空任务并释放缓存句柄。
+//! 成功提交新根之后才由协调入口激活新的上下文快照。此时插件数据库均已关闭，属于 SQLite 的
 //! 完整离线处理（`.db` 与 `-wal` / `-shm` 一并复制），因此不需要在线备份 API。
 //!
 //! 一次执行的严格顺序（任一步失败即停止，且**绝不写 `storageRoot`**）：
@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use crate::framework::paths;
 use crate::framework::tasks;
 
-use super::{plan, recovery, scan, transfer, verify, PARTITIONS};
+use super::{plan, recovery, scan, transfer, verify, DEVICE_ROOT_ENTRIES};
 
 /// 进度上报节流间隔（按文件 / 分块更新，不只在分区结束时发一次）
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
@@ -139,6 +139,12 @@ pub fn execute_pending(
             format!("源数据目录不可用：{}", source.display()),
         );
     }
+    let active = cfg.read(crate::framework::space::KEY_ACTIVE_SPACE_ID);
+    if let Err(error) =
+        verify::validate_source_layout(&source, active.as_ref().and_then(|v| v.as_str()))
+    {
+        return fail(cfg, pending, "precheck", error);
+    }
     if !paths::is_writable_dir(&target) {
         return fail(
             cfg,
@@ -212,7 +218,7 @@ pub fn execute_pending(
             let _ = std::fs::remove_dir_all(&staging);
             return fail(cfg, pending, "precheck", e);
         }
-        for name in PARTITIONS {
+        for name in DEVICE_ROOT_ENTRIES {
             let from = source.join(name);
             if !from.is_dir() {
                 continue;
@@ -247,12 +253,12 @@ pub fn execute_pending(
             let _ = std::fs::remove_dir_all(&staging);
             return fail(cfg, pending, "verify", e);
         }
-        // 探针不是数据：提交前移除（scan 只遍历四分区，探针在暂存根，不影响清单）
+        // 探针不是数据：提交前移除（scan 只遍历迁移目录，探针在暂存根，不影响清单）
         let _ = std::fs::remove_file(&probe);
 
         // ── 6. 提交：逐分区 rename（同卷原子）──
         let mut moved: Vec<String> = Vec::new();
-        for name in PARTITIONS {
+        for name in DEVICE_ROOT_ENTRIES {
             let from = staging.join(name);
             if !from.exists() {
                 continue;
@@ -324,7 +330,7 @@ pub fn execute_pending(
 /// 失败处理：阶段与错误写回计划，保留源/目标/尝试次数，返回失败结果。
 ///
 /// 已进入复制阶段的失败会附带一句提示：目标目录可能留有半截数据，
-/// 下次启动重试按合并方式覆盖（同名文件以源为准），不会把半截目录当成功。
+/// 重试只接受完整副本或空目标，不会覆盖非空冲突目标，也不会把半截目录当成功。
 fn fail(
     cfg: &dyn plan::ConfigStore,
     mut pending: plan::PendingPlan,
@@ -419,14 +425,28 @@ mod tests {
 
     /// 造一份源存储根：真实 SQLite 库 + vault 密文 + 日志 + 缓存
     fn make_source(root: &Path) {
-        std::fs::create_dir_all(root.join("data").join("database")).unwrap();
+        std::fs::create_dir_all(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("database"),
+        )
+        .unwrap();
         // 夹具里的 .db 必须是真 SQLite：校验会对每个 .db 跑 quick_check，假文件应当被判失败
         for db in ["ssh.db", "database/mysql.db"] {
-            let conn = rusqlite::Connection::open(root.join("data").join(db)).unwrap();
+            let conn = rusqlite::Connection::open(
+                root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                    .join(db),
+            )
+            .unwrap();
             conn.execute_batch("CREATE TABLE t (id INTEGER);").unwrap();
         }
-        std::fs::create_dir_all(root.join("vault")).unwrap();
-        std::fs::write(root.join("vault").join("vault.dat"), vec![7u8; 64]).unwrap();
+        std::fs::create_dir_all(root.join("spaces/11111111-1111-4111-8111-111111111111/vault"))
+            .unwrap();
+        std::fs::write(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/vault")
+                .join("vault.dat"),
+            vec![7u8; 64],
+        )
+        .unwrap();
         std::fs::create_dir_all(root.join("logs")).unwrap();
         std::fs::write(root.join("logs").join("app.log"), b"hello").unwrap();
         std::fs::create_dir_all(root.join("cache")).unwrap();
@@ -472,8 +492,10 @@ mod tests {
             MigrationOutcome::Committed { .. }
         ));
         assert_eq!(
-            std::fs::read(target.join("data/ssh.db")).unwrap(),
-            std::fs::read(source.join("data/ssh.db")).unwrap()
+            std::fs::read(target.join("spaces/11111111-1111-4111-8111-111111111111/data/ssh.db"))
+                .unwrap(),
+            std::fs::read(source.join("spaces/11111111-1111-4111-8111-111111111111/data/ssh.db"))
+                .unwrap()
         );
         assert!(!staging.exists());
         assert!(plan::load_pending(&cfg).is_none());
@@ -488,6 +510,13 @@ mod tests {
         let target = dir.join("target");
         std::fs::create_dir_all(&target).unwrap();
         make_source(&source);
+        let second_space = "spaces/22222222-2222-4222-8222-222222222222";
+        std::fs::create_dir_all(source.join(second_space).join("data/empty")).unwrap();
+        std::fs::create_dir_all(source.join(second_space).join("vault")).unwrap();
+        std::fs::write(source.join(second_space).join("preferences.json"), b"{}").unwrap();
+        // 已废弃的扁平数据不参与迁移，也不能替代任何空间内容。
+        std::fs::create_dir_all(source.join("data")).unwrap();
+        std::fs::write(source.join("data/legacy.db"), b"legacy").unwrap();
         let cfg = FileConfig::new(&dir.join("settings.json"));
         let pending = schedule(&cfg, &source, &target);
         let phases: std::sync::Mutex<Vec<&'static str>> = std::sync::Mutex::new(Vec::new());
@@ -521,9 +550,28 @@ mod tests {
             "留档应记录本次计划"
         );
         // 目标内容完整，源目录保留
-        assert!(target.join("data").join("ssh.db").exists());
-        assert!(target.join("vault").join("vault.dat").exists());
-        assert!(source.join("data").join("ssh.db").exists(), "源不得删除");
+        assert!(target.join(second_space).join("data/empty").is_dir());
+        assert!(target.join(second_space).join("vault").is_dir());
+        assert_eq!(
+            std::fs::read(target.join(second_space).join("preferences.json")).unwrap(),
+            b"{}"
+        );
+        assert!(!target.join("data").exists());
+        assert!(target
+            .join("spaces/11111111-1111-4111-8111-111111111111/data")
+            .join("ssh.db")
+            .exists());
+        assert!(target
+            .join("spaces/11111111-1111-4111-8111-111111111111/vault")
+            .join("vault.dat")
+            .exists());
+        assert!(
+            source
+                .join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("ssh.db")
+                .exists(),
+            "源不得删除"
+        );
         // 暂存目录已清理
         assert!(!target.join(plan::staging_dir_name(&pending.id)).exists());
         // 进度含 copy 与 verify 阶段（不只每个分区发一次）
@@ -560,7 +608,10 @@ mod tests {
         assert_eq!(kept.id, pending.id);
         assert!(kept.last_error.is_some(), "失败原因应写回计划");
         assert!(cfg.read(paths::KEY_STORAGE_ROOT).is_none(), "不得写新根");
-        assert!(source.join("data").join("ssh.db").exists());
+        assert!(source
+            .join("spaces/11111111-1111-4111-8111-111111111111/data")
+            .join("ssh.db")
+            .exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -640,11 +691,19 @@ mod tests {
             other => panic!("期望校验失败，实际 {other:?}"),
         }
         // 目标保持为空（分区没搬过去），暂存区被清理，计划保留可重试
-        assert!(!target.join("data").exists(), "目标不得留下半截数据");
+        assert!(
+            !target
+                .join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .exists(),
+            "目标不得留下半截数据"
+        );
         assert!(!staging.exists(), "暂存区应清理");
         assert!(plan::load_pending(&cfg).is_some());
         assert!(cfg.read(paths::KEY_STORAGE_ROOT).is_none());
-        assert!(source.join("data").join("ssh.db").exists());
+        assert!(source
+            .join("spaces/11111111-1111-4111-8111-111111111111/data")
+            .join("ssh.db")
+            .exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -655,8 +714,15 @@ mod tests {
         let source = dir.join("source");
         make_source(&source);
         let target = dir.join("target");
-        std::fs::create_dir_all(target.join("data")).unwrap();
-        std::fs::write(target.join("data").join("someone-else.db"), b"mine").unwrap();
+        std::fs::create_dir_all(target.join("spaces/11111111-1111-4111-8111-111111111111/data"))
+            .unwrap();
+        std::fs::write(
+            target
+                .join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("someone-else.db"),
+            b"mine",
+        )
+        .unwrap();
         let cfg = FileConfig::new(&dir.join("settings.json"));
         schedule(&cfg, &source, &target);
 
@@ -669,7 +735,10 @@ mod tests {
             other => panic!("期望冲突拒绝，实际 {other:?}"),
         }
         assert!(
-            target.join("data").join("someone-else.db").exists(),
+            target
+                .join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("someone-else.db")
+                .exists(),
             "用户既有数据不得被覆盖"
         );
         assert!(cfg.read(paths::KEY_STORAGE_ROOT).is_none());
@@ -698,9 +767,18 @@ mod tests {
             other => panic!("期望提交阶段失败，实际 {other:?}"),
         }
         assert!(cfg.read(paths::KEY_STORAGE_ROOT).is_none(), "配置不得写入");
-        assert!(source.join("vault").join("vault.dat").exists(), "源保留");
         assert!(
-            target.join("vault").join("vault.dat").exists(),
+            source
+                .join("spaces/11111111-1111-4111-8111-111111111111/vault")
+                .join("vault.dat")
+                .exists(),
+            "源保留"
+        );
+        assert!(
+            target
+                .join("spaces/11111111-1111-4111-8111-111111111111/vault")
+                .join("vault.dat")
+                .exists(),
             "目标数据已在"
         );
 
@@ -711,7 +789,10 @@ mod tests {
             other => panic!("期望续跑提交成功，实际 {other:?}"),
         }
         assert!(plan::load_pending(&cfg).is_none());
-        assert!(source.join("data").join("ssh.db").exists());
+        assert!(source
+            .join("spaces/11111111-1111-4111-8111-111111111111/data")
+            .join("ssh.db")
+            .exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -720,7 +801,8 @@ mod tests {
     fn empty_source_switches_root() {
         let dir = temp_dir("migrate-empty");
         let source = dir.join("source");
-        std::fs::create_dir_all(&source).unwrap();
+        let empty_space = "spaces/11111111-1111-4111-8111-111111111111";
+        std::fs::create_dir_all(source.join(empty_space)).unwrap();
         let target = dir.join("target");
         let cfg = FileConfig::new(&dir.join("settings.json"));
         schedule(&cfg, &source, &target);
@@ -735,7 +817,94 @@ mod tests {
             serde_json::json!(target.display().to_string())
         );
         assert!(plan::load_pending(&cfg).is_none());
+        assert!(target.join(empty_space).is_dir());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 旧实现遗漏 spaces 的目标不能作为完整副本续跑，空空间也参与清单校验。
+    #[test]
+    fn target_without_spaces_is_not_a_complete_copy() {
+        let dir = temp_dir("migrate-missing-spaces");
+        let source = dir.join("source");
+        let target = dir.join("target");
+        std::fs::create_dir_all(source.join("spaces/11111111-1111-4111-8111-111111111111"))
+            .unwrap();
+        std::fs::create_dir_all(source.join("logs")).unwrap();
+        std::fs::create_dir_all(target.join("logs")).unwrap();
+        let cfg = FileConfig::new(&dir.join("settings.json"));
+        schedule(&cfg, &source, &target);
+        assert!(matches!(
+            execute_pending(&cfg, &|_, _, _, _| {}).unwrap(),
+            MigrationOutcome::Failed {
+                stage: "precheck",
+                ..
+            }
+        ));
+        assert!(cfg.read(paths::KEY_STORAGE_ROOT).is_none());
+        assert!(plan::load_pending(&cfg).is_some());
+        assert!(!target.join("spaces").exists());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// 错误根再次迁移不得被空清单伪装为成功，活动空间缺失也必须拒绝。
+    #[test]
+    fn missing_source_spaces_or_active_space_keeps_root() {
+        let dir = temp_dir("migrate-source-spaces");
+        let source = dir.join("source");
+        let target = dir.join("target");
+        std::fs::create_dir_all(&source).unwrap();
+        let cfg = FileConfig::new(&dir.join("settings.json"));
+        schedule(&cfg, &source, &target);
+        cfg.write(
+            crate::framework::space::KEY_ACTIVE_SPACE_ID,
+            serde_json::json!("22222222-2222-4222-8222-222222222222"),
+        )
+        .unwrap();
+        assert!(matches!(
+            execute_pending(&cfg, &|_, _, _, _| {}).unwrap(),
+            MigrationOutcome::Failed {
+                stage: "precheck",
+                ..
+            }
+        ));
+        std::fs::create_dir_all(source.join("spaces/11111111-1111-4111-8111-111111111111"))
+            .unwrap();
+        assert!(matches!(
+            execute_pending(&cfg, &|_, _, _, _| {}).unwrap(),
+            MigrationOutcome::Failed {
+                stage: "precheck",
+                ..
+            }
+        ));
+        assert!(cfg.read(paths::KEY_STORAGE_ROOT).is_none());
+        assert!(plan::load_pending(&cfg).is_some());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// 空间内嵌套库损坏时不提交新根，即使文件复制和摘要一致。
+    #[test]
+    fn corrupted_nested_database_keeps_source_root() {
+        let dir = temp_dir("migrate-corrupted-db");
+        let source = dir.join("source");
+        let target = dir.join("target");
+        make_source(&source);
+        let bad_db =
+            source.join("spaces/11111111-1111-4111-8111-111111111111/data/database/mysql.db");
+        std::fs::write(&bad_db, b"not a sqlite database").unwrap();
+        let cfg = FileConfig::new(&dir.join("settings.json"));
+        schedule(&cfg, &source, &target);
+        assert!(matches!(
+            execute_pending(&cfg, &|_, _, _, _| {}).unwrap(),
+            MigrationOutcome::Failed {
+                stage: "verify",
+                ..
+            }
+        ));
+        assert!(cfg.read(paths::KEY_STORAGE_ROOT).is_none());
+        assert!(plan::load_pending(&cfg).is_some());
+        assert!(!target.join("spaces").exists());
+        assert_eq!(std::fs::read(&bad_db).unwrap(), b"not a sqlite database");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     /// 源内出现符号链接 → 扫描阶段拒绝（不跟随链接，不产生半截目标）
@@ -743,10 +912,15 @@ mod tests {
     fn link_in_source_is_refused_before_copying() {
         let dir = temp_dir("migrate-link");
         let source = dir.join("source");
-        std::fs::create_dir_all(source.join("data")).unwrap();
-        let real = source.join("data").join("real.db");
+        std::fs::create_dir_all(source.join("spaces/11111111-1111-4111-8111-111111111111/data"))
+            .unwrap();
+        let real = source
+            .join("spaces/11111111-1111-4111-8111-111111111111/data")
+            .join("real.db");
         std::fs::write(&real, b"payload").unwrap();
-        let link = source.join("data").join("link.db");
+        let link = source
+            .join("spaces/11111111-1111-4111-8111-111111111111/data")
+            .join("link.db");
         let created = {
             #[cfg(unix)]
             {
@@ -774,7 +948,12 @@ mod tests {
             }
             other => panic!("期望扫描拒绝，实际 {other:?}"),
         }
-        assert!(!target.join("data").exists(), "不得搬入半截数据");
+        assert!(
+            !target
+                .join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .exists(),
+            "不得搬入半截数据"
+        );
         assert!(plan::load_pending(&cfg).is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -20,6 +20,7 @@ pub async fn dbc_databases(
     state: State<'_, DbState>,
     conn_id: String,
 ) -> Result<Vec<String>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = session(&state, &conn_id)?;
     match &entry.session {
         DbSession::Mysql(pool) => {
@@ -53,6 +54,7 @@ pub async fn dbc_schemas(
     state: State<'_, DbState>,
     conn_id: String,
 ) -> Result<Vec<String>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = crate::plugins::database::catalog::scoped_session(
         &app,
         &state,
@@ -86,6 +88,7 @@ pub async fn dbc_objects(
     conn_id: String,
     schema: Option<String>,
 ) -> Result<Vec<DbObjectInfo>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = crate::plugins::database::catalog::scoped_session(
         &app,
         &state,
@@ -169,6 +172,7 @@ pub async fn dbc_columns(
     schema: Option<String>,
     table: String,
 ) -> Result<Vec<DbColumnInfo>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let entry = crate::plugins::database::catalog::scoped_session(
         &app,
         &state,

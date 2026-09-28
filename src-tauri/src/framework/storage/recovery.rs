@@ -4,13 +4,25 @@
 //! - 配置的存储盘不可用（未插盘、只读、路径失效）时**不得静默退回默认目录新建一套空环境**，
 //!   否则用户会以为「数据没了」，新环境也可能在盘回来后与真实数据分叉。
 //! - 此时生效根保持为配置值，业务读写自然失败并可见；恢复状态通过 IPC 上报，前端显示恢复页。
-//! - 磁盘重新出现不会让同进程自动换根：用户必须显式选择动作（重试 / 选择新数据环境 /
-//!   改用默认数据环境），且生效一律需要重启。
+//! - 用户显式重试或选择包含当前空间的既有目录，完成资源清理和校验后在应用内生效。
 //! - 迁移失败同样登记恢复状态，并保留源、计划与错误详情。
 
 use std::sync::Mutex;
 
 use serde::Serialize;
+
+/// 恢复只能选择包含当前空间的既有根，不能把空目录当成已恢复的数据。
+pub(crate) fn validate_existing_root(root: &std::path::Path, space_id: &str) -> Result<(), String> {
+    if !root.is_absolute() || !root.is_dir() {
+        return Err("请选择已存在的数据根目录，其中应包含 spaces 目录".into());
+    }
+    match crate::framework::space::bootstrap::plan(root, Some(space_id))? {
+        crate::framework::space::bootstrap::BootstrapAction::Current => Ok(()),
+        crate::framework::space::bootstrap::BootstrapAction::FreshInstall => {
+            Err("当前空间标识无效，不能将新建环境当成数据恢复".into())
+        }
+    }
+}
 
 /// 恢复原因（前端据此选择文案与可选动作）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -52,7 +64,9 @@ impl StorageRecovery {
             configured_root: configured_root.to_string(),
             active_root: active_root.to_string(),
             plan_id: None,
-            detail: "配置的数据目录当前不可用，请恢复该磁盘后重试，或选择新的数据环境。".into(),
+            detail:
+                "配置的数据目录当前不可用，请恢复该磁盘后重试，或选择包含当前空间的原有数据目录。"
+                    .into(),
             can_retry: true,
             can_use_default: true,
             created_at: now_ms(),
@@ -119,6 +133,19 @@ fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recovery_requires_existing_current_space_without_creating_it() {
+        let root = super::super::test_support::temp_dir("recovery-existing");
+        let id = "11111111-1111-4111-8111-111111111111";
+        assert!(validate_existing_root(&root, id).is_err());
+        assert!(!root.join("spaces").exists());
+        std::fs::create_dir_all(root.join("spaces").join(id)).unwrap();
+        assert!(validate_existing_root(&root, id).is_ok());
+        assert!(validate_existing_root(&root, "22222222-2222-4222-8222-222222222222").is_err());
+        assert!(validate_existing_root(&root, "invalid").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn recovery_state_roundtrip_is_process_wide() {

@@ -41,7 +41,8 @@ pub(crate) mod types;
 pub(crate) fn register_lifecycle() {
     crate::framework::lifecycle::register(
         crate::framework::lifecycle::ModuleLifecycle::exit_only("framework.data-transfer")
-            .with_dispose(|_, _| session::cancel_all_transfers().err().into_iter().collect()),
+            .with_dispose(|_, _| session::cancel_all_transfers().err().into_iter().collect())
+            .with_storage_reset(|_| session::clear_storage_cache()),
     );
 }
 

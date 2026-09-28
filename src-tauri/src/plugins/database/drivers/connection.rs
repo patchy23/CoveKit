@@ -55,9 +55,11 @@ pub async fn connect(
         DbType::Sqlite => {
             let config = config.clone();
             DbSession::Sqlite(
-                tokio::task::spawn_blocking(move || sqlite::sqlite_conn(&config))
-                    .await
-                    .map_err(|e| e.to_string())??,
+                crate::framework::storage::access::spawn_blocking(move || {
+                    sqlite::sqlite_conn(&config)
+                })
+                .await
+                .map_err(|e| e.to_string())??,
             )
         }
         DbType::Redis => DbSession::Redis(redis_mgr(&config, password).await?),
@@ -147,7 +149,7 @@ pub async fn test_connection(
         }
         DbType::Sqlite => {
             let path = config.host.clone();
-            tokio::task::spawn_blocking(move || {
+            crate::framework::storage::access::spawn_blocking(move || {
                 let conn = rusqlite::Connection::open_with_flags(
                     path,
                     rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,

@@ -202,6 +202,7 @@ pub async fn ssh_system_info_get(
     ssh_state: State<'_, SshState>,
     connection_id: String,
 ) -> Result<SshSystemInfoResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     let out = exec_collect(&session, COLLECT_CMD).await?;
     Ok(SshSystemInfoResult {

@@ -6,15 +6,15 @@
 //! 遍历契约：
 //! - 遇到 symlink / junction / 其他 reparse point 立即报错并指出路径，**不跟随链接**（v1 明确拒绝）。
 //! - `read_dir` 失败必须报错，不用 `flatten()` 静默漏项。
-//! - 只遍历四分区目录；分区缺失视为空（未使用过的分区不建目录）。
+//! - 只遍历当前设备根迁移目录；可选目录缺失不入清单，空间布局完整性由迁移预检负责。
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
-/// 四个固定分区（与 `storage::PARTITIONS` 一致）
-use super::PARTITIONS;
+/// 设备根迁移目录，与设置页当前空间的四分区展示分开
+use super::DEVICE_ROOT_ENTRIES;
 
 /// 清单中的单个文件项
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +30,8 @@ pub struct ManifestEntry {
 /// 一次扫描得到的完整清单
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Manifest {
+    /// 相对根的目录集合，空空间也必须完整保留。
+    pub directories: BTreeSet<String>,
     /// 按相对路径升序排列的文件项
     pub entries: Vec<ManifestEntry>,
     /// 合计字节数
@@ -64,10 +66,10 @@ pub fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-/// 扫描存储根，生成四分区清单（拒绝链接、错误传播）
+/// 扫描存储根，生成设备根清单（拒绝链接、错误传播）
 pub fn scan_root(root: &Path) -> Result<Manifest, String> {
     let mut manifest = Manifest::default();
-    for name in PARTITIONS {
+    for name in DEVICE_ROOT_ENTRIES {
         let dir = root.join(name);
         if !dir.exists() {
             continue;
@@ -79,6 +81,15 @@ pub fn scan_root(root: &Path) -> Result<Manifest, String> {
 
 /// 递归扫描单个目录；`rel_prefix` 为该目录相对根的路径分量
 fn scan_dir(dir: &Path, rel_prefix: &str, out: &mut Manifest) -> Result<(), String> {
+    let metadata = std::fs::symlink_metadata(dir)
+        .map_err(|e| format!("读取目录 {} 失败: {e}", dir.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(format!(
+            "迁移目录不是普通目录或包含符号链接：{}",
+            dir.display()
+        ));
+    }
+    out.directories.insert(rel_prefix.to_string());
     for entry in
         std::fs::read_dir(dir).map_err(|e| format!("读取目录 {} 失败: {e}", dir.display()))?
     {
@@ -116,6 +127,9 @@ fn scan_dir(dir: &Path, rel_prefix: &str, out: &mut Manifest) -> Result<(), Stri
 
 /// 比对期望清单与实际清单：缺失 / 多余 / 同长度不同内容都算失败
 pub fn diff(expected: &Manifest, actual: &Manifest) -> Result<(), String> {
+    if expected.directories != actual.directories {
+        return Err("校验失败：目录清单不一致，存在缺失或多余目录".into());
+    }
     let exp: BTreeMap<&str, &ManifestEntry> = expected
         .entries
         .iter()
@@ -178,14 +192,32 @@ mod tests {
     #[test]
     fn scan_reports_files_and_digests_per_partition() {
         let root = temp_dir("scan-basic");
-        std::fs::create_dir_all(root.join("data").join("sub")).unwrap();
-        std::fs::write(root.join("data").join("a.db"), b"1234").unwrap();
-        std::fs::write(root.join("data").join("sub").join("b.db"), b"123456").unwrap();
+        std::fs::create_dir_all(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("sub"),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("a.db"),
+            b"1234",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("sub")
+                .join("b.db"),
+            b"123456",
+        )
+        .unwrap();
 
         let manifest = scan_root(&root).unwrap();
         assert_eq!(manifest.file_count(), 2);
         assert_eq!(manifest.total_bytes, 10);
-        assert_eq!(manifest.entries[0].rel, "data/a.db");
+        assert_eq!(
+            manifest.entries[0].rel,
+            "spaces/11111111-1111-4111-8111-111111111111/data/a.db"
+        );
         assert_eq!(
             manifest.entries[0].digest,
             "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4"
@@ -203,15 +235,45 @@ mod tests {
     #[test]
     fn diff_detects_missing_extra_and_same_length_different_content() {
         let root = temp_dir("scan-diff");
-        std::fs::create_dir_all(root.join("data")).unwrap();
-        std::fs::write(root.join("data").join("keep.db"), b"aaaa").unwrap();
-        std::fs::write(root.join("data").join("gone.db"), b"bbbb").unwrap();
-        std::fs::write(root.join("data").join("same-len.db"), b"cccc").unwrap();
+        std::fs::create_dir_all(root.join("spaces/11111111-1111-4111-8111-111111111111/data"))
+            .unwrap();
+        std::fs::write(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("keep.db"),
+            b"aaaa",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("gone.db"),
+            b"bbbb",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("same-len.db"),
+            b"cccc",
+        )
+        .unwrap();
         let expected = scan_root(&root).unwrap();
 
-        std::fs::remove_file(root.join("data").join("gone.db")).unwrap();
-        std::fs::write(root.join("data").join("same-len.db"), b"dddd").unwrap();
-        std::fs::write(root.join("data").join("extra.db"), b"eeee").unwrap();
+        std::fs::remove_file(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("gone.db"),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("same-len.db"),
+            b"dddd",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("spaces/11111111-1111-4111-8111-111111111111/data")
+                .join("extra.db"),
+            b"eeee",
+        )
+        .unwrap();
         let actual = scan_root(&root).unwrap();
 
         let err = diff(&expected, &actual).unwrap_err();
@@ -224,10 +286,13 @@ mod tests {
     #[test]
     fn scan_rejects_symlinks_with_path() {
         let root = temp_dir("scan-link");
-        std::fs::create_dir_all(root.join("data")).unwrap();
+        std::fs::create_dir_all(root.join("spaces/11111111-1111-4111-8111-111111111111/data"))
+            .unwrap();
         let target = root.join("outside.txt");
         std::fs::write(&target, b"payload").unwrap();
-        let link = root.join("data").join("link.db");
+        let link = root
+            .join("spaces/11111111-1111-4111-8111-111111111111/data")
+            .join("link.db");
         if !make_file_symlink(&target, &link) {
             // 无权限创建链接（未开启开发者模式）时跳过：不能把「没造出夹具」当通过
             eprintln!("跳过：当前环境无法创建符号链接");

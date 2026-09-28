@@ -16,6 +16,7 @@ pub async fn ssh_service_list(
     connection_id: String,
     filter: Option<String>,
 ) -> Result<Vec<SystemdService>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     let out = exec_collect(&session, SERVICE_LIST_COMMAND).await?;
     let mut services: Vec<SystemdService> = parse_service_properties(&out)?
@@ -88,6 +89,7 @@ pub async fn ssh_service_action(
     service_name: String,
     action: String,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     let action = match action.as_str() {
         "start" => "start",
@@ -123,6 +125,7 @@ pub async fn ssh_service_logs(
     lines: Option<u32>,
     previous_fingerprint: Option<String>,
 ) -> Result<LogSnapshot, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     let n = lines.unwrap_or(100).clamp(1, 2_000);
     let out = exec_collect(
@@ -157,6 +160,7 @@ pub async fn ssh_service_config(
     connection_id: String,
     service_name: String,
 ) -> Result<String, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let command = service_config_command(&service_name)?;
     let session = get_session(&ssh_state, &connection_id)?;
     tokio::time::timeout(

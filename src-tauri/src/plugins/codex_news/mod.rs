@@ -48,6 +48,7 @@ async fn fetch_json(client: &reqwest::Client, url: &str) -> Result<Value, String
 /// 只请求固定 HTTPS 地址；限制重定向、请求时间及体积，无后台常驻任务。
 #[tauri::command]
 pub async fn codex_news_fetch() -> Result<NewsFeeds, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<NewsFeeds, String> = async {
         let client = reqwest::Client::builder()
@@ -77,9 +78,8 @@ pub async fn codex_news_fetch() -> Result<NewsFeeds, String> {
 #[tauri::command]
 pub fn codex_news_load(app: AppHandle) -> Result<Option<Value>, String> {
     let log_started = std::time::Instant::now();
-    let result: Result<Option<Value>, String> = (|| {
-        PluginDb::open(&app, "codex_news", MIGRATIONS)?.with_conn(storage::load)
-    })();
+    let result: Result<Option<Value>, String> =
+        (|| PluginDb::open(&app, "codex_news", MIGRATIONS)?.with_conn(storage::load))();
     match &result {
         Ok(_value) => log::debug!(
             "操作完成 operation=codex_news_load elapsed_ms={}",

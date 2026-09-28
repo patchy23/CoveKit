@@ -78,6 +78,7 @@ crate::covekit_module! {
         settings::preferences_set => "写入空间级用户数据（收藏、最近使用）",
     updater::update_availability => "读取更新可用性（占位公钥等无效配置按不可用上报）",
         storage::storage_info => "读取存储位置信息（四分区路径与占用、待执行计划、恢复状态）",
+        storage::switch::storage_migrate_now => "关闭工具并排空任务后迁移数据目录，应用内生效",
         storage::storage_schedule_migration => "安排存储目录迁移（只登记计划，重启后复制并校验）",
         storage::storage_cancel_migration => "取消待执行的存储目录迁移计划（不修改业务文件）",
         storage::storage_recovery_status => "读取存储恢复状态（配置盘不可用或迁移失败）",

@@ -80,10 +80,22 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     crate::framework::lifecycle::register(
         crate::framework::lifecycle::ModuleLifecycle::for_tool(IPC_OWNER, "http-ws")
             .with_tab_scope()
-            .with_dispose(on_dispose),
+            .with_dispose(on_dispose)
+            .with_storage_reset(release_storage),
     );
     let builder = persistence::register_state(builder);
     builder
         .manage(WsState::default())
         .manage(sse::SseState::default())
+}
+
+/// 维护入口冻结并排空请求后释放接口库句柄，后续访问按当前数据根惰性打开。
+pub(crate) fn release_storage(app: &tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<persistence::ApiState>();
+    let mut database = state
+        .0
+        .try_lock()
+        .map_err(|e| format!("接口库仍在使用: {e}"))?;
+    *database = None;
+    Ok(())
 }

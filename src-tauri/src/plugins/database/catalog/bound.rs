@@ -51,7 +51,7 @@ impl BoundConnection {
             ))),
             DbSession::Sqlite(_) => {
                 let config = entry.config.clone();
-                let conn = tokio::task::spawn_blocking(move || {
+                let conn = crate::framework::storage::access::spawn_blocking(move || {
                     crate::plugins::database::drivers::sqlite::sqlite_conn(&config)
                 })
                 .await
@@ -162,7 +162,7 @@ impl BoundConnection {
                     .iter()
                     .map(sqlite_param)
                     .collect::<Result<Vec<_>, _>>()?;
-                return tokio::task::spawn_blocking(move || {
+                return crate::framework::storage::access::spawn_blocking(move || {
                     let guard = conn.lock().map_err(|e| e.to_string())?;
                     let mut statement = guard.prepare(&sql).map_err(|e| e.to_string())?;
                     let mut result = QueryResult::empty();
@@ -190,8 +190,7 @@ impl BoundConnection {
                                     }
                                     ValueRef::Text(s) => cells.text(
                                         "text",
-                                        std::str::from_utf8(s)
-                                            .map_err(|e| e.to_string())?,
+                                        std::str::from_utf8(s).map_err(|e| e.to_string())?,
                                     ),
                                     ValueRef::Blob(s) => cells.binary(s),
                                 }

@@ -21,6 +21,7 @@ pub async fn ssh_file_delete(
     remote_path: String,
     recursive: Option<bool>,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshActionResult, String> = async {
         // 系统路径删除拦截（后端最后防线；本体及子树一律禁止，根下自定义目录放行）
@@ -110,6 +111,7 @@ pub async fn ssh_file_rename(
     old_path: String,
     new_path: String,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshActionResult, String> = async {
         let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
@@ -215,10 +217,12 @@ mod cancel_tests {
 
         let polled = AtomicBool::new(false);
         assert_eq!(
-            cancel.wait(async {
-                polled.store(true, Ordering::Relaxed);
-                Ok::<_, String>(())
-            }).await,
+            cancel
+                .wait(async {
+                    polled.store(true, Ordering::Relaxed);
+                    Ok::<_, String>(())
+                })
+                .await,
             Err("已取消".into())
         );
         assert!(!polled.load(Ordering::Relaxed));
@@ -301,6 +305,7 @@ pub async fn ssh_file_mkdir(
     connection_id: String,
     path: String,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshActionResult, String> = async {
         let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
@@ -345,7 +350,11 @@ pub(crate) async fn collect_remote_entries(
         .metadata(remote_path)
         .await
         .map_err(|e| format!("读取远程元数据失败: {e}"))?;
-    let prefix = if remote_path.ends_with('/') { remote_path.to_string() } else { format!("{remote_path}/") };
+    let prefix = if remote_path.ends_with('/') {
+        remote_path.to_string()
+    } else {
+        format!("{remote_path}/")
+    };
     let mut entries = TransferPlan::new(local_path.to_path_buf(), remote_path.to_string(), prefix);
     if !meta.permissions.map(is_dir_mode).unwrap_or(false) {
         entries.push(std::path::PathBuf::new(), false, meta.size.unwrap_or(0))?;
@@ -379,6 +388,7 @@ pub async fn ssh_file_create(
     connection_id: String,
     remote_path: String,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshActionResult, String> = async {
         let sftp = get_sftp_session(&ssh_state, &connection_id).await?;
@@ -435,6 +445,7 @@ pub async fn ssh_file_chmod(
     recursive: Option<bool>,
     acknowledge_risk: Option<bool>,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<SshActionResult, String> = async {
         let recursive = recursive.unwrap_or(false);

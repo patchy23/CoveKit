@@ -28,6 +28,7 @@ pub async fn frp_profiles_list(
     app: AppHandle,
     state: State<'_, FrpState>,
 ) -> Result<FrpProfileList, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let dir = profile_dir(&app)?;
     let mut files = match profile::list_profile_files(&dir).await {
         Ok(files) => files,
@@ -101,6 +102,7 @@ pub async fn frp_profile_read(
     app: AppHandle,
     file_name: String,
 ) -> Result<FrpProfileContent, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let dir = transfer::directory_for(&app, &file_name)?;
     let content = profile::read_profile_text(&dir, &file_name).await?;
     let parsed = models::toml_text_to_value(&content)?;
@@ -121,6 +123,7 @@ pub async fn frp_profile_save_text(
     file_name: String,
     content: String,
 ) -> Result<FrpOpResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FrpOpResult, String> = async {
         let _maintenance = crate::framework::context::maintenance_guard().await;
@@ -153,6 +156,7 @@ pub async fn frp_profile_save_form(
     file_name: String,
     parsed: serde_json::Value,
 ) -> Result<FrpOpResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FrpOpResult, String> = async {
         let _maintenance = crate::framework::context::maintenance_guard().await;
@@ -186,6 +190,7 @@ pub async fn frp_profile_create(
     file_name: String,
     template: String,
 ) -> Result<FrpOpResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FrpOpResult, String> = async {
         let _maintenance = crate::framework::context::maintenance_guard().await;
@@ -219,6 +224,7 @@ pub async fn frp_profile_duplicate(
     file_name: String,
     new_name: String,
 ) -> Result<FrpOpResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FrpOpResult, String> = async {
         let _maintenance = crate::framework::context::maintenance_guard().await;
@@ -252,6 +258,7 @@ pub async fn frp_profile_rename(
     file_name: String,
     new_name: String,
 ) -> Result<FrpOpResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FrpOpResult, String> = async {
         let _maintenance = crate::framework::context::maintenance_guard().await;
@@ -299,6 +306,7 @@ pub async fn frp_profile_rename(
 /// 删除档案（移入同目录 `.trash/`，不物理抹除）
 #[tauri::command(rename_all = "camelCase")]
 pub async fn frp_profile_delete(app: AppHandle, file_name: String) -> Result<FrpOpResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<FrpOpResult, String> = async {
         let _maintenance = crate::framework::context::maintenance_guard().await;
@@ -331,6 +339,7 @@ pub async fn frp_profile_remark(
     file_name: String,
     remark: String,
 ) -> Result<FrpOpResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let _maintenance = crate::framework::context::maintenance_guard().await;
     let dir = transfer::directory_for(&app, &file_name)?;
     // 先确认档案存在，避免给不存在的文件留下孤儿备注

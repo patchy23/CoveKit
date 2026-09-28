@@ -32,6 +32,7 @@ pub async fn ssh_process_list(
     sort_by: Option<String>,
     keyword: Option<String>,
 ) -> Result<Vec<ProcessInfo>, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     let out = exec_collect(&session, "ps -eo pid,user,%cpu,%mem,rss,args --sort=-%cpu").await?;
     let mut procs: Vec<ProcessInfo> = out.lines().skip(1).filter_map(parse_process_line).collect();
@@ -61,6 +62,7 @@ pub async fn ssh_process_kill(
     pid: u32,
     force: Option<bool>,
 ) -> Result<SshActionResult, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     let cmd = if force.unwrap_or(false) {
         format!("kill -9 {pid} 2>&1")
@@ -138,6 +140,7 @@ pub async fn ssh_process_detail(
     connection_id: String,
     pid: u32,
 ) -> Result<ProcessDetail, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let session = get_session(&ssh_state, &connection_id)?;
     // `-w` 关列宽截断以免 CMD 列被切；不支持 `-w` 的实现退回不带 `-w` 的调用
     let cmd = format!("ps -fp {pid} -w 2>&1 || ps -fp {pid} 2>&1 || true");

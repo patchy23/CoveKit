@@ -106,9 +106,11 @@ pub(crate) async fn open(
             WorkspaceConnection::Postgres(client)
         }
         DbSession::Sqlite(_) => {
-            let conn = tokio::task::spawn_blocking(move || sqlite::sqlite_conn(&config))
-                .await
-                .map_err(|e| e.to_string())??;
+            let conn = crate::framework::storage::access::spawn_blocking(move || {
+                sqlite::sqlite_conn(&config)
+            })
+            .await
+            .map_err(|e| e.to_string())??;
             WorkspaceConnection::Sqlite(conn)
         }
         DbSession::Redis(_) => {

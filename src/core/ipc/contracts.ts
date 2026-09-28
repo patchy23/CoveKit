@@ -303,7 +303,7 @@ export interface StorageInfo {
   fileCount: number
   /** 非秘密空间标识（全局唯一 uid；恢复状态下为空串） */
   spaceId: string
-  /** 待执行的迁移计划（重启后执行；运行期不换根） */
+  /** 待执行的迁移计划，可在应用内执行或由下次启动维护阶段接续。 */
   pendingMigration: StoragePendingMigration | null
   /** 最近一次成功迁移的留档 */
   lastMigration: StorageLastMigration | null
@@ -314,7 +314,7 @@ export interface StorageInfo {
 /** 迁移阶段（崩溃后靠阶段值识别半截状态） */
 export type StorageMigrationPhase = 'scheduled' | 'copying' | 'verifying'
 
-/** 待执行的迁移计划（重启后由维护阶段执行；运行期不换根） */
+/** 待执行的迁移计划，由应用内维护或下次启动执行。 */
 export interface StoragePendingMigration {
   /** 计划标识 */
   id: string
@@ -379,7 +379,12 @@ export interface StorageScheduleResult {
   message: string
 }
 
-/** 恢复动作结果（动作一律需要重启生效） */
+/** 应用内迁移结果，返回前后端已切换到新根。 */
+export interface StorageMigrateResult {
+  root: string
+}
+
+/** 恢复动作结果；restartRequired 为 false 时可刷新界面加载生效环境。 */
 export interface RecoveryActionResult {
   ok: boolean
   restartRequired: boolean
@@ -644,6 +649,7 @@ export const frameworkCommands = {
   // 存储位置（框架命令，src-tauri framework/storage）
   storageInfo: 'storage_info',
   storageScheduleMigration: 'storage_schedule_migration',
+  storageMigrateNow: 'storage_migrate_now',
   storageCancelMigration: 'storage_cancel_migration',
   storageRecoveryStatus: 'storage_recovery_status',
   storageRecoveryAction: 'storage_recovery_action',
@@ -691,6 +697,7 @@ export type FrameworkPayloads = {
   framework_commands: Record<string, never>
   storage_info: Record<string, never>
   storage_schedule_migration: { target: string }
+  storage_migrate_now: { target?: string }
   storage_cancel_migration: Record<string, never>
   storage_recovery_status: Record<string, never>
   storage_recovery_action: { action: StorageRecoveryAction; target?: string }
@@ -770,6 +777,7 @@ export type FrameworkResults = {
   framework_commands: { name: string; doc: string; toolId: string }[]
   storage_info: StorageInfo
   storage_schedule_migration: StorageScheduleResult
+  storage_migrate_now: StorageMigrateResult
   storage_cancel_migration: boolean
   storage_recovery_status: StorageRecovery | null
   storage_recovery_action: RecoveryActionResult

@@ -45,7 +45,8 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
     transfer::register();
     crate::framework::lifecycle::register(
         crate::framework::lifecycle::ModuleLifecycle::for_tool(IPC_OWNER, "dns")
-            .with_dispose(on_dispose),
+            .with_dispose(on_dispose)
+            .with_storage_reset(release_storage),
     );
     // 凭证引用自报：框架删除凭证前据此判断还有哪些平台配置在用
     credential_refs::register_provider();
@@ -69,4 +70,15 @@ crate::covekit_module! {
         config::dns_config_get => "读取云平台密钥配置",
         config::dns_config_set => "保存云平台密钥配置",
     },
+}
+
+/// 维护入口冻结并排空请求后释放配置库句柄，后续访问按当前数据根惰性打开。
+pub(crate) fn release_storage(app: &tauri::AppHandle) -> Result<(), String> {
+    let state = app.state::<DnsState>();
+    let mut database = state
+        .0
+        .try_lock()
+        .map_err(|e| format!("DNS 配置库仍在使用: {e}"))?;
+    *database = None;
+    Ok(())
 }

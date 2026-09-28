@@ -15,12 +15,13 @@ pub fn port_viewer_supported() -> bool {
 /// 读取 TCP/UDP 的 IPv4/IPv6 快照，系统调用在阻塞线程执行。
 #[tauri::command]
 pub async fn port_viewer_query() -> Result<PortSnapshot, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<PortSnapshot, String> = async {
         #[cfg(windows)]
         {
             let permit = windows::OperationPermit::acquire()?;
-            tokio::task::spawn_blocking(move || {
+            crate::framework::storage::access::spawn_blocking(move || {
                 let _permit = permit;
                 windows::query()
             })
@@ -53,12 +54,13 @@ pub async fn port_viewer_terminate(
     endpoint: PortEndpoint,
     started_at: String,
 ) -> Result<(), String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
     let result: Result<(), String> = async {
         #[cfg(windows)]
         {
             let permit = windows::OperationPermit::acquire()?;
-            tokio::task::spawn_blocking(move || {
+            crate::framework::storage::access::spawn_blocking(move || {
                 let _permit = permit;
                 windows::terminate(&endpoint, &started_at)
             })

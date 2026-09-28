@@ -2,9 +2,8 @@
 //!
 //! 清理由本模块自己提供，框架只负责协调、超时与汇总（`framework/lifecycle.rs`）。
 //!
-//! 只做**同步**动作：置取消标志 + 清空注册表（句柄 drop 即关闭底层连接）。
-//! 理由：退出清理有总预算（`lifecycle::DISPOSE_TIMEOUT`），在这里等对端回包会把预算耗光，
-//! 后面的模块就没机会清理了；进程随即退出，远端会看到连接结束。
+//! 传输与终端先通知取消；隧道复用有界停止流程并报告未完成的收尾。
+//! 数据目录维护还会等待真实执行者排空，不能把清空注册表视为任务已结束。
 //!
 //! 作用域只声明 `exit`：页签关闭时页面内 owner 按连接/终端粒度逐个断开，
 //! 后端再按工具整体清一遍会误伤同工具下其它页签还在用的会话。
@@ -19,7 +18,6 @@ use super::conn::{HostKeyState, SshState};
 use super::monitor::MonitorState;
 use super::sftp::TransferState;
 use super::terminal::TerminalState;
-use super::tunnel::TunnelState;
 
 /// 本插件在统一关闭入口里的 owner 名（与 `covekit_module!{ owner: ... }` 一致）与失败前缀
 const OWNER: &str = "ssh";
@@ -32,7 +30,10 @@ pub(crate) fn on_dispose(app: Option<&tauri::AppHandle>, _reason: CloseReason) -
         return Vec::new();
     };
     let mut failures = Vec::new();
-    if let Err(error) = app.state::<super::sftp::local_browse::LocalBrowseState>().cancel_all() {
+    if let Err(error) = app
+        .state::<super::sftp::local_browse::LocalBrowseState>()
+        .cancel_all()
+    {
         failures.push(format!("{OWNER}.local-browse: {error}"));
     }
     super::archive::cancel_connection(&app.state::<super::archive::ArchiveState>(), None);
@@ -53,11 +54,12 @@ pub(crate) fn on_dispose(app: Option<&tauri::AppHandle>, _reason: CloseReason) -
         Err(_) => failures.push(format!("{OWNER}.terminal: 终端注册表锁不可用")),
     }
 
-    // 3) 隧道：清空注册表，本地监听随句柄释放停止
-    match app.state::<TunnelState>().0.lock() {
-        Ok(mut registry) => registry.clear(),
-        Err(_) => failures.push(format!("{OWNER}.tunnel: 隧道注册表锁不可用")),
-    }
+    // 3) 隧道任务持有句柄引用：显式停止并等待，不能依靠清表触发 Drop。
+    failures.extend(
+        tauri::async_runtime::block_on(super::tunnel::lifecycle::shutdown_all(app))
+            .into_iter()
+            .map(|error| format!("{OWNER}.tunnel: {error}")),
+    );
 
     // 4) 会话：清空注册表，russh 句柄 drop 关闭连接（进程即将退出，不等优雅断开）
     match app.state::<SshState>().0.lock() {
