@@ -137,7 +137,7 @@ export interface TabContext {
   table?: string
 }
 
-const PAGE_SIZE = 200
+const PAGE_SIZE = 100
 const RESULT_ROWS_LIMIT = 100_000
 const RESULT_BYTES_LIMIT = 64 * 1024 * 1024
 

@@ -395,7 +395,7 @@ pub async fn dbc_execute(
             log_started.elapsed().as_millis()
         ),
     }
-    result
+    result.map(QueryResult::compact_transport)
 }
 
 /// 请求取消；原生驱动发送真实请求，Redis 不能撤销已发送命令。
@@ -494,6 +494,7 @@ pub async fn dbc_query_fetch(
         expected_offset,
     )
     .await
+    .map(QueryResult::compact_transport)
 }
 
 /// 等待原结果完成清理后才允许复用工作页连接。

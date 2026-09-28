@@ -120,6 +120,7 @@ export interface QueryResult {
   displayStatement?: number | null
   ok: boolean
   columns: string[]
+  /** 传输时有完整 values 可为空；IPC 入口重建并复用原字符串。 */
   rows: string[][]
   rowsAffected: number
   isQuery: boolean
@@ -137,6 +138,7 @@ export interface DbTablePage {
   totalKind?: string
   stableOrder?: boolean
   columns: string[]
+  /** 与查询结果一样，IPC 入口从完整 values 还原显示行。 */
   rows: string[][]
   total: number
   page: number

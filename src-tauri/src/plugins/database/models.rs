@@ -266,7 +266,7 @@ pub struct QueryResult {
     pub ok: bool,
     /// 列名（查询语句）
     pub columns: Vec<String>,
-    /// 数据行（单元格统一字符串化，NULL → "NULL"）
+    /// 数据行；IPC 有完整 values 时置空，由前端复用原值恢复显示。
     pub rows: Vec<Vec<String>>,
     /// 影响行数（非查询语句）
     pub rows_affected: u64,
@@ -312,7 +312,7 @@ pub struct DbTablePage {
     pub stable_order: bool,
     /// 列名
     pub columns: Vec<String>,
-    /// 当前页数据行
+    /// 当前页显示行；IPC 有完整 values 时置空。
     pub rows: Vec<Vec<String>>,
     /// 总行数（COUNT 探测；失败时为当前页行数）
     pub total: u64,

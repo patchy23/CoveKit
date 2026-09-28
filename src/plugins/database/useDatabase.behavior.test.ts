@@ -383,7 +383,7 @@ describe('滚动继续读取', () => {
     const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers')
     env.commands.dbcExecute.mockResolvedValue(result({ hasMore: true, cursorId: 'cursor-a' }))
     await api.runQuery()
-    expect(env.commands.dbcExecute.mock.calls[0][2]).toBe(200)
+    expect(env.commands.dbcExecute.mock.calls[0][2]).toBe(100)
     const next = deferred<QueryResult>()
     env.commands.dbcFetch.mockReturnValueOnce(next.promise)
     const reading = api.loadMore()
@@ -451,7 +451,7 @@ describe('滚动继续读取', () => {
     env.commands.dbcTableData.mockReturnValueOnce(next.promise)
     const reading = api.loadMore()
     const append = env.commands.dbcTableData.mock.calls.at(-1)!
-    expect(append.slice(2, 4)).toEqual([2, 200])
+    expect(append.slice(2, 4)).toEqual([2, 100])
     expect(append[7]).toEqual([{ kind: 'integer', value: '1' }])
     env.commands.dbcTableData.mockResolvedValue(tablePage({ rows: [['fresh']], hasMore: false }))
     await api.loadTableData(id)
@@ -470,17 +470,17 @@ describe('滚动继续读取', () => {
     await flush()
     const panel = mount(DataTab, { props: { db: api } })
     hosts.push(() => panel.unmount())
-    const grid = panel.findComponent({ name: 'UiDataGrid' }).element
+    const grid = panel.findComponent({ name: 'ResultCanvasGrid' }).element
     const next = deferred<DbTablePage>()
     env.commands.dbcTableData.mockReturnValueOnce(next.promise)
     const reading = api.loadMore()
     await nextTick()
-    expect(panel.findComponent({ name: 'UiDataGrid' }).element).toBe(grid)
+    expect(panel.findComponent({ name: 'ResultCanvasGrid' }).element).toBe(grid)
     expect(panel.text()).toContain('正在读取下一批')
     next.resolve(tablePage({ rows: [['2']], hasMore: false }))
     await reading
     await nextTick()
-    expect(panel.findComponent({ name: 'UiDataGrid' }).element).toBe(grid)
+    expect(panel.findComponent({ name: 'ResultCanvasGrid' }).element).toBe(grid)
     expect(api.queryState.value.rows).toEqual([['1'], ['2']])
   })
 
@@ -551,7 +551,7 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     await flush()
     expect(panel.text()).toContain('user-001')
     expect(api.pageRows.value).toHaveLength(61)
-    expect(panel.text()).toContain('user-051')
+    expect(panel.findComponent({ name: 'ResultCanvasGrid' }).props('rows')[50].c0).toBe('user-051')
     expect(
       panel
         .findAll('button')
@@ -1377,7 +1377,7 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
       'conn-a',
       'users',
       1,
-      200,
+      100,
       'db1',
       'db1',
       undefined,
@@ -1429,7 +1429,7 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
 
     expect(grid().props('rows')).toHaveLength(100)
     expect(grid().props('rows')[0].__row).toBe('0')
-    await panel.findComponent({ name: 'UiDataGrid' }).trigger('scroll')
+    await panel.findComponent({ name: 'ResultCanvasGrid' }).trigger('scroll')
     await flush()
     expect(env.commands.dbcTableData).toHaveBeenCalledTimes(1)
 

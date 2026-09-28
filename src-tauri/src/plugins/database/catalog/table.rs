@@ -124,6 +124,7 @@ pub async fn dbc_table_data(
     result.rows.truncate(page_size as usize);
     result.values.truncate(page_size as usize);
     let total = offset + result.rows.len() as u64 + u64::from(has_more);
+    let result = result.compact_transport();
     Ok(DbTablePage {
         query_sql: sql,
         query_params: params,

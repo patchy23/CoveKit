@@ -34,6 +34,21 @@ async function call<K extends keyof Payloads & keyof Results>(
   return invokeCommand<Payloads[K], Results[K]>(command, payload)
 }
 
+/** 完整类型值仅传输一次；显示文本复用原字符串，兼容仅有 rows 的驱动。 */
+function hydrateResultRows<
+  T extends { rows: string[][]; values?: DbValue[][]; statements?: QueryResult[] },
+>(result: T): T {
+  for (const statement of result.statements ?? []) hydrateResultRows(statement)
+  if (!result.rows.length && result.values?.length) {
+    result.rows = result.values.map((row) =>
+      row.map((cell) =>
+        cell.value == null ? 'NULL' : cell.kind === 'binary' ? `0x${cell.value}` : cell.value
+      )
+    )
+  }
+  return result
+}
+
 /** 连接管理 */
 export const connectionIpc = {
   list: (): Promise<DbConnectionInfo[]> => call('dbc_connections', {}),
@@ -67,19 +82,21 @@ export const queryIpc = {
       workspaceId,
       scope,
       confirmationToken,
-    }).then((result) => {
-      if (result.displayStatement !== undefined && result.displayStatement !== null) {
-        const display = result.statements?.[result.displayStatement]
-        if (!display) throw new Error('查询结果缺少对应语句的数据')
-        result.columns = display.columns
-        result.rows = display.rows
-        result.values = display.values
-        result.columnTypes = display.columnTypes
-        result.cursorId = display.cursorId
-        result.hasMore = display.hasMore
-      }
-      return result
-    }),
+    })
+      .then(hydrateResultRows)
+      .then((result) => {
+        if (result.displayStatement !== undefined && result.displayStatement !== null) {
+          const display = result.statements?.[result.displayStatement]
+          if (!display) throw new Error('查询结果缺少对应语句的数据')
+          result.columns = display.columns
+          result.rows = display.rows
+          result.values = display.values
+          result.columnTypes = display.columnTypes
+          result.cursorId = display.cursorId
+          result.hasMore = display.hasMore
+        }
+        return result
+      }),
   prepare: (connId: string, sql: string, requestId: string, scope: ExecutionScope) =>
     call('dbc_prepare_execution', { connId, sql, requestId, scope }),
   closeWorkspace: (connId: string, workspaceId: string) =>
@@ -90,7 +107,9 @@ export const queryIpc = {
     cursorId: string,
     expectedOffset: number
   ): Promise<QueryResult> =>
-    call('dbc_query_fetch', { connId, workspaceId, cursorId, expectedOffset }),
+    call('dbc_query_fetch', { connId, workspaceId, cursorId, expectedOffset }).then(
+      hydrateResultRows
+    ),
   closeCursor: (connId: string, workspaceId: string, cursorId: string): Promise<void> =>
     call('dbc_query_close', { connId, workspaceId, cursorId }),
   cancel: (requestId: string): Promise<void> => call('dbc_cancel', { requestId }),
@@ -127,7 +146,7 @@ export const queryIpc = {
       options,
       after,
       requestId,
-    }),
+    }).then(hydrateResultRows),
   redisKeys: (connId: string, pattern: string, cursor: number): Promise<[number, string[]]> =>
     call('dbc_redis_keys', { connId, pattern, cursor }),
   redisKeyInfo: (connId: string, key: string): Promise<RedisKeyInfo> =>

@@ -4,7 +4,6 @@ import { computed, nextTick, ref, watch } from 'vue'
 import {
   UiButton,
   UiContextMenu,
-  UiDataGrid,
   UiInput,
   UiModal,
   UiToolbar,
@@ -18,6 +17,7 @@ import { hasGridChanges, type QueryState } from './workspace/useQueryWorkspace'
 import type { DbColumnInfo, DbValue, TableChange } from './contracts'
 import type { useDatabase } from './useDatabase'
 import CellValueDialog from './CellValueDialog.vue'
+import ResultCanvasGrid from './ResultCanvasGrid.vue'
 
 const props = defineProps<{
   db: ReturnType<typeof useDatabase>
@@ -139,7 +139,10 @@ function display(row: number, column: number) {
       ? '(空字符串)'
       : value.kind === 'binary'
         ? `0x${preview}`
-        : preview
+        : (preview ?? '')
+}
+function dirtyCell(row: number, column: number) {
+  return !!props.state.gridEdits?.[row]?.[props.state.columns[column]]
 }
 async function start(event?: CellEvent) {
   if (event) selectCell(event)
@@ -334,46 +337,37 @@ function discard() {
     >
       {{ state.gridError || metadataError || state.gridMessage }}
     </p>
-    <UiDataGrid
-      virtual
-      :model-value="state.selectedRow"
+    <ResultCanvasGrid
       :columns="db.tableColumns.value"
       :rows="rows"
-      row-key="__row"
-      height="100%"
-      class="min-h-0 flex-1"
-      @update:model-value="patch({ selectedRow: String($event) })"
+      :selected="selected"
+      :text="display"
+      :dirty="dirtyCell"
+      :revision="[state.rows, state.values, state.gridEdits]"
+      @select="selectCell"
       @cell="start"
-      @cell-contextmenu="context"
+      @context="context"
+      @copy="copyCell"
     >
-      <template #cell="{ row, column }">
-        <UiInput
-          v-if="
-            editing?.row === Number(row.__row) && editing?.column === Number(column.key.slice(1))
-          "
-          ref="input"
-          size="xs"
-          class="result-cell-input w-full min-w-0"
-          :aria-label="`编辑 ${column.label}`"
-          :model-value="valueAt(editing.row, editing.column).value ?? ''"
-          @update:model-value="change"
-          @blur="editing = null"
-          @dblclick.stop
-        />
-        <span
-          v-else
-          class="block min-h-[20px]"
-          :class="
-            state.gridEdits?.[Number(row.__row)]?.[column.label]
-              ? 'bg-warning-soft text-warning-strong dark:bg-warning-soft-dark'
-              : ''
-          "
-          @click="selectCell({ row, column })"
-          >{{ display(Number(row.__row), Number(column.key.slice(1))) }}</span
-        >
-      </template>
       <template #empty><slot name="empty">暂无数据</slot></template>
-    </UiDataGrid>
+    </ResultCanvasGrid>
+    <UiModal
+      :open="!!editing"
+      :title="`编辑 ${editing ? state.columns[editing.column] : '单元格'}`"
+      description="修改暂存于结果页，点击保存并提交后才写入数据库。"
+      size="md"
+      @close="editing = null"
+    >
+      <UiInput
+        v-if="editing"
+        ref="input"
+        :aria-label="`编辑 ${state.columns[editing.column]}`"
+        :model-value="valueAt(editing.row, editing.column).value ?? ''"
+        @update:model-value="change"
+        @keydown.enter.prevent="editing = null"
+      />
+      <template #footer><UiButton @click="editing = null">完成</UiButton></template>
+    </UiModal>
     <UiContextMenu
       v-if="menu"
       :x="menu.x"
@@ -392,21 +386,3 @@ function discard() {
     </UiModal>
   </div>
 </template>
-
-<style scoped>
-@layer components {
-  /* 单元格自身提供边界，编辑时保持文本位置与行高。 */
-  .field-input.result-cell-input {
-    display: block;
-    height: 20px !important;
-    padding: 0 !important;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    box-shadow: none;
-    outline: none;
-  }
-}
-</style>

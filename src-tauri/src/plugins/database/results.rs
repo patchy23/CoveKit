@@ -2,6 +2,23 @@
 use super::models::{DbValue, QueryResult};
 use std::io::Write;
 
+/// IPC 只发送一份完整类型值；不完整的旧驱动结果仍保留显示行。
+impl QueryResult {
+    pub(crate) fn compact_transport(mut self) -> Self {
+        for statement in &mut self.statements {
+            let owned = std::mem::take(statement);
+            *statement = owned.compact_transport();
+        }
+        if !self.values.is_empty()
+            && self.values.len() == self.rows.len()
+            && self.values.iter().all(|row| row.len() == self.columns.len())
+        {
+            self.rows = Vec::new();
+        }
+        self
+    }
+}
+
 /// JSON 编码沿用剩余结果预算；大字符串写入前拒绝，避免编码完才丢弃。
 struct JsonBuffer {
     bytes: Vec<u8>,
@@ -224,6 +241,28 @@ impl QueryResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transport_keeps_one_typed_payload_and_preserves_legacy_rows() {
+        let typed = QueryResult {
+            columns: vec!["v".into()],
+            rows: vec![vec!["正文".into()]],
+            values: vec![vec![DbValue::text("text", "正文".into())]],
+            ..QueryResult::default()
+        };
+        let result = QueryResult {
+            statements: vec![typed],
+            rows: vec![vec!["旧驱动".into()]],
+            ..QueryResult::default()
+        }
+        .compact_transport();
+        assert_eq!(result.rows[0][0], "旧驱动");
+        assert!(result.statements[0].rows.is_empty());
+        assert_eq!(
+            result.statements[0].values[0][0].value.as_deref(),
+            Some("正文")
+        );
+    }
 
     #[test]
     fn nested_json_uses_existing_budget_without_changing_encoding() {
