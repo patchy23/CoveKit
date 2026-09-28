@@ -1,8 +1,9 @@
 import { createPinia, setActivePinia } from 'pinia'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import Toast from './Toast.vue'
+import UiModal from '@/core/ui/UiModal.vue'
 import { useUiStore } from '@/stores/ui'
 import { writeClipboardText } from '@/core/platform/clipboard'
 
@@ -73,4 +74,59 @@ it('详情保持所打开消息的快照，复制不被后来的提示覆盖', a
     .trigger('click')
   await flushPromises()
   expect(wrapper.get('section').text()).toContain('复制失败，请选择正文手动复制')
+})
+
+it('后打开的消息详情置于业务弹窗之上，关闭详情后业务弹窗仍可操作', async () => {
+  // 全局 Toast 先于随后进入的工具弹窗挂载，保留真实 Portal 和 Reka 焦点层。
+  const toast = mount(Toast, { attachTo: document.body })
+  const modal = mount(UiModal, {
+    attachTo: document.body,
+    props: { open: true, title: '业务弹窗', description: '输入内容' },
+    slots: { default: '<input aria-label="原表单" value="保留内容" />' },
+  })
+  await flushPromises()
+  const original = document.querySelector<HTMLElement>('[role="dialog"]')!
+  const input = original.querySelector('input')!
+  const ui = useUiStore()
+  for (const closeByEscape of [false, true]) {
+    ui.toast('错误的完整详情')
+    await nextTick()
+    const button = Array.from(document.querySelectorAll('button')).find(
+      (node) => node.textContent === '详情'
+    )!
+    await new DOMWrapper(button).trigger('click')
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(20)
+    await flushPromises()
+    expect(ui.toastVisible).toBe(false)
+    const details = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find(
+      (node) => node !== original
+    )!
+    expect(original.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
+    expect(details.style.pointerEvents).not.toBe('none')
+    const copy = Array.from(details.querySelectorAll('button')).find(
+      (node) => node.textContent === '复制内容'
+    )!
+    copy.focus()
+    expect(document.activeElement).toBe(copy)
+    await new DOMWrapper(copy).trigger('click')
+    await flushPromises()
+    expect(writeClipboardText).toHaveBeenCalledWith('错误的完整详情')
+    if (closeByEscape) {
+      await new DOMWrapper(copy).trigger('keydown', { key: 'Escape' })
+    } else {
+      await new DOMWrapper(
+        details.querySelector<HTMLButtonElement>('button[aria-label="关闭"]')!
+      ).trigger('click')
+    }
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    expect(modal.emitted('close')).toBeUndefined()
+    input.focus()
+    expect(document.activeElement).toBe(input)
+    expect(input.value).toBe('保留内容')
+  }
+  toast.unmount()
+  modal.unmount()
 })

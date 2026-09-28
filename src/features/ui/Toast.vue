@@ -60,7 +60,8 @@ onUnmounted(() => ui.resumeToast())
       </div>
     </Transition>
   </Teleport>
-  <UiModal :open="detail !== null" title="消息详情" @close="detail = null">
+  <!-- 按打开时机挂载 Portal，保证详情位于已经打开的业务弹窗之上。 -->
+  <UiModal v-if="detail !== null" :open="true" title="消息详情" @close="detail = null">
     <UiScrollArea class="max-h-[50vh]" axis="both">
       <p class="select-text whitespace-pre-wrap break-all text-body-sm">{{ detail }}</p>
     </UiScrollArea>
