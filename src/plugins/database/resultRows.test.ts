@@ -4,6 +4,18 @@ import { indexResultRows, resultGridRows, selectResultValues } from './resultRow
 import { rowsToTsv } from './resultText'
 import type { DbValue } from './contracts'
 
+it.each([2, 128, 129])('原始快照与响应式可见行混用时，%i 行结果仍定位到原值', (length) => {
+  const rows = Array.from({ length }, (_, index) => [`row-${index}`])
+  const visible = reactive(rows).slice().reverse()
+  const values: DbValue[][] = rows.map((row) => [{ kind: 'text', value: row[0] }])
+  const index = indexResultRows(markRaw(rows))
+  expect(index(visible[0])).toBe(length - 1)
+  expect(resultGridRows(['name'], visible.slice(0, 1), values, index)).toEqual([
+    { __row: String(length - 1), c0: `row-${length - 1}` },
+  ])
+  expect(selectResultValues(visible.slice(0, 1), values, index)[0]).toBe(values[length - 1])
+})
+
 it('筛选和重排行沿用原类型，保留 NULL、二进制、空文本及缺少类型时的回退', () => {
   const rows = [[''], ['00ff'], [''], ['fallback']]
   const values: DbValue[][] = [

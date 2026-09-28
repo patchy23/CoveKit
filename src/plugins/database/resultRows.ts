@@ -4,7 +4,11 @@ import type { DbValue } from './contracts'
 /** 一个结果快照共用行身份索引；弱键不额外持有正文，重复引用沿用 indexOf 的首项语义。 */
 export function indexResultRows(rows: string[][]): (row: string[]) => number {
   // 小结果直接查找更便宜；只选择算法，不限制可筛选、复制或导出的行数。
-  if (rows.length <= 128) return (row) => rows.indexOf(row)
+  if (rows.length <= 128)
+    return (row) => {
+      const key = toRaw(row)
+      return rows.findIndex((candidate) => toRaw(candidate) === key)
+    }
   const positions = new WeakMap<string[], number>()
   rows.forEach((row, index) => {
     const key = toRaw(row)

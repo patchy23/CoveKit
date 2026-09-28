@@ -1,7 +1,8 @@
 import { mount, flushPromises } from '@vue/test-utils'
-import { computed, nextTick, reactive, ref } from 'vue'
+import { computed, markRaw, nextTick, reactive, ref, toRaw } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EditableResultGrid from './EditableResultGrid.vue'
+import { indexResultRows, resultGridRows } from './resultRows'
 import type { QueryState, useDatabase } from './useDatabase'
 
 const mocks = vi.hoisted(() => ({ columns: vi.fn(), apply: vi.fn(), copy: vi.fn() }))
@@ -73,6 +74,23 @@ async function rowMenu(wrapper: ReturnType<typeof mount>, label: string) {
   await nextTick()
 }
 describe('结果单元格编辑事务', () => {
+  it('查询快照转为原始数组后，可见代理行仍显示原值并编辑、复制正确行', async () => {
+    const { wrapper, state } = setup()
+    const visible = state.rows.slice()
+    state.rows = markRaw(toRaw(state.rows))
+    await wrapper.setProps({
+      rows: resultGridRows(state.columns, visible, state.values, indexResultRows(state.rows)),
+    })
+    await flushPromises()
+    expect(wrapper.findAll('td')[1].text()).toBe('9007199254740993')
+    expect(wrapper.findAll('td')[2].text()).toBe('原始值')
+    expect(wrapper.text()).not.toContain('(空字符串)')
+    await edit(wrapper, '修改后')
+    await wrapper.get('input').trigger('blur')
+    expect(state.gridEdits?.[0].name.value).toBe('修改后')
+    await rowMenu(wrapper, '复制整行')
+    expect(mocks.copy).toHaveBeenLastCalledWith('9007199254740993\t修改后', '已复制整行')
+  })
   it('无明确来源的查询结果仍可复制 SQL，并明确提示占位表名', async () => {
     const { wrapper, state } = setup()
     state.editTarget = null
