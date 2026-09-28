@@ -1,8 +1,31 @@
 import { computed, markRaw, reactive, ref } from 'vue'
 import { expect, it, vi } from 'vitest'
-import { indexResultRows, resultGridRows, selectResultValues } from './resultRows'
+import {
+  indexResultRows,
+  resultGridRows,
+  resultPageAction,
+  selectResultValues,
+  sliceResultPage,
+} from './resultRows'
 import { rowsToTsv } from './resultText'
 import type { DbValue } from './contracts'
+
+it('显示页先切原始行并保留筛选行身份，未满页时先读完当前页', () => {
+  const rows = markRaw(Array.from({ length: 250 }, (_, index) => [`row-${index}`]))
+  const filtered = [rows[2], rows[100], rows[201]]
+  const visible = sliceResultPage(filtered, 2, 1)
+  const values: DbValue[][] = rows.map((row) => [{ kind: 'text', value: row[0] }])
+  const index = indexResultRows(rows)
+  expect(resultGridRows(['name'], visible, values, index)).toEqual([
+    { __row: '100', c0: 'row-100' },
+  ])
+  expect(sliceResultPage(rows, 2, 100)).toEqual(rows.slice(100, 200))
+  expect(resultPageAction(1, 100, 50, true)).toBe('fill-current')
+  expect(resultPageAction(1, 100, 100, true)).toBe('load-next')
+  expect(resultPageAction(1, 100, 200, true)).toBe('advance')
+  expect(resultPageAction(2, 100, 150, true)).toBe('fill-current')
+  expect(resultPageAction(2, 100, 150, false)).toBe('end')
+})
 
 it.each([2, 128, 129])('原始快照与响应式可见行混用时，%i 行结果仍定位到原值', (length) => {
   const rows = Array.from({ length }, (_, index) => [`row-${index}`])

@@ -476,7 +476,7 @@ describe('滚动继续读取', () => {
     const reading = api.loadMore()
     await nextTick()
     expect(panel.findComponent({ name: 'UiDataGrid' }).element).toBe(grid)
-    expect(panel.text()).toContain('正在读取更多')
+    expect(panel.text()).toContain('正在读取下一批')
     next.resolve(tablePage({ rows: [['2']], hasMore: false }))
     await reading
     await nextTick()
@@ -552,7 +552,12 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     expect(panel.text()).toContain('user-001')
     expect(api.pageRows.value).toHaveLength(61)
     expect(panel.text()).toContain('user-051')
-    expect(panel.findAll('button').some((button) => button.text() === '下一页')).toBe(false)
+    expect(
+      panel
+        .findAll('button')
+        .find((button) => button.text().trim() === '下一页')
+        ?.attributes('disabled')
+    ).toBeDefined()
     await panel.get('input[placeholder="筛选已加载结果…"]').setValue('user-001')
     await flush()
     expect(api.queryState.value.page).toBe(1)
@@ -1406,6 +1411,47 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
 
     expect(panel.text()).toContain('重试成功用户')
     expect(panel.text()).not.toContain('加载失败')
+  })
+
+  it('数据表按显式显示页切片，滚动不取数且上限内缓存仍可翻阅', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const rows = Array.from({ length: 200 }, (_, index) => [`row-${index}`])
+    env.commands.dbcTableData.mockResolvedValue(
+      tablePage({ rows, total: rows.length, hasMore: true })
+    )
+    api.selectResource('conn-a::db1::table:users')
+    await flush()
+    const tabId = api.activeTabId.value
+    const panel = mount(DataTab, { props: { db: api } })
+    hosts.push(() => panel.unmount())
+    const grid = () => panel.findComponent({ name: 'EditableResultGrid' })
+
+    expect(grid().props('rows')).toHaveLength(100)
+    expect(grid().props('rows')[0].__row).toBe('0')
+    await panel.findComponent({ name: 'UiDataGrid' }).trigger('scroll')
+    await flush()
+    expect(env.commands.dbcTableData).toHaveBeenCalledTimes(1)
+
+    const pageSize = panel.get('input[aria-label="每页条数"]')
+    await pageSize.setValue('50')
+    expect(grid().props('rows')).toHaveLength(100)
+    await panel
+      .findAll('button')
+      .find((button) => button.text().trim() === '应用')!
+      .trigger('click')
+    await nextTick()
+    expect(grid().props('rows')).toHaveLength(50)
+
+    api.patchTabQueryState(tabId, { loadLimit: '已停止读取' })
+    await panel
+      .findAll('button')
+      .find((button) => button.text().trim() === '下一页')!
+      .trigger('click')
+    await nextTick()
+    expect(stateOf(api, tabId).gridPage).toBe(2)
+    expect(grid().props('rows')[0].__row).toBe('50')
+    expect(env.commands.dbcTableData).toHaveBeenCalledTimes(1)
   })
 
   it('数据页签按自己的页签状态加载分页数据，切换页签不影响已加载结果', async () => {

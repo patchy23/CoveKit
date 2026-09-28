@@ -1,6 +1,29 @@
 import { toRaw } from 'vue'
 import type { DbValue } from './contracts'
 
+export type ResultPageAction = 'advance' | 'fill-current' | 'load-next' | 'end'
+
+/** 在构造网格投影前截取当前显示页，保留原行对象身份。 */
+export function sliceResultPage<T>(rows: T[], page: number, pageSize: number): T[] {
+  const size = Math.max(1, Math.floor(pageSize))
+  const start = (Math.max(1, Math.floor(page)) - 1) * size
+  return rows.slice(start, start + size)
+}
+
+/** 判断显式下一步是切页还是按需再读取一批；当前页未满时先补齐。 */
+export function resultPageAction(
+  page: number,
+  pageSize: number,
+  loadedCount: number,
+  hasMore: boolean
+): ResultPageAction {
+  const size = Math.max(1, Math.floor(pageSize))
+  const end = Math.max(1, Math.floor(page)) * size
+  if (loadedCount < end && hasMore) return 'fill-current'
+  if (loadedCount > end) return 'advance'
+  return hasMore ? 'load-next' : 'end'
+}
+
 /** 一个结果快照共用行身份索引；弱键不额外持有正文，重复引用沿用 indexOf 的首项语义。 */
 export function indexResultRows(rows: string[][]): (row: string[]) => number {
   // 小结果直接查找更便宜；只选择算法，不限制可筛选、复制或导出的行数。

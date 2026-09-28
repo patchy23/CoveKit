@@ -23,9 +23,7 @@ const props = defineProps<{
   db: ReturnType<typeof useDatabase>
   state: QueryState
   rows: Record<string, unknown>[]
-  nearEnd?: boolean
 }>()
-const emit = defineEmits<{ 'near-end': [] }>()
 const { copyText } = useCopy()
 const tabId = computed(
   () =>
@@ -338,7 +336,6 @@ function discard() {
     </p>
     <UiDataGrid
       virtual
-      :near-end="nearEnd && !pending && !state.gridSaving && !state.loadingMore"
       :model-value="state.selectedRow"
       :columns="db.tableColumns.value"
       :rows="rows"
@@ -348,7 +345,6 @@ function discard() {
       @update:model-value="patch({ selectedRow: String($event) })"
       @cell="start"
       @cell-contextmenu="context"
-      @near-end="emit('near-end')"
     >
       <template #cell="{ row, column }">
         <UiInput

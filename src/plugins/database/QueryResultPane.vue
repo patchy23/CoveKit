@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
 import {
   UiAlert,
   UiButton,
@@ -13,18 +14,108 @@ import {
 import EditableResultGrid from './EditableResultGrid.vue'
 import type { QueryState, useDatabase } from './useDatabase'
 import { hasGridChanges } from './workspace/useQueryWorkspace'
+import { resultPageAction } from './resultRows'
 
-defineProps<{
+const props = defineProps<{
   db: ReturnType<typeof useDatabase>
   queryState: QueryState
   rows: Array<{ __row: string } & Record<string, string | null>>
   statusText: string
 }>()
+const db = props.db
+const queryState = computed(() => props.queryState)
+const rows = computed(() => props.rows)
+const statusText = computed(() => props.statusText)
 const emit = defineEmits<{
   copy: []
   export: []
   patch: [value: Partial<QueryState>]
 }>()
+const gridPage = computed(() => queryState.value.gridPage ?? 1)
+const gridPageSize = computed(() => queryState.value.gridPageSize ?? 100)
+const loadedRows = computed(() => db.filteredRows.value.length)
+const pageAction = computed(() =>
+  resultPageAction(gridPage.value, gridPageSize.value, loadedRows.value, !!queryState.value.hasMore)
+)
+const pageSizeDraft = ref('100')
+const pageSizeError = ref('')
+watch(gridPageSize, (size) => (pageSizeDraft.value = String(size)), { immediate: true })
+const pagerDisabled = computed(
+  () =>
+    hasGridChanges(queryState.value) ||
+    queryState.value.gridSaving ||
+    queryState.value.loadingMore ||
+    queryState.value.status === 'running' ||
+    db.filteredRows.busy.value
+)
+
+function applyPageSize() {
+  if (pagerDisabled.value) return
+  const size = Number(pageSizeDraft.value)
+  if (!Number.isInteger(size) || size < 1 || size > 1000) {
+    pageSizeError.value = '每页条数须为 1 到 1000 的整数'
+    return
+  }
+  pageSizeError.value = ''
+  emit('patch', { gridPage: 1, gridPageSize: size })
+}
+
+function previousPage() {
+  if (pagerDisabled.value || gridPage.value <= 1) return
+  emit('patch', { gridPage: gridPage.value - 1 })
+}
+
+async function nextPage() {
+  const sourceState = queryState.value
+  const page = sourceState.gridPage ?? 1
+  const size = sourceState.gridPageSize ?? 100
+  const action = resultPageAction(page, size, loadedRows.value, !!sourceState.hasMore)
+  if (pagerDisabled.value || action === 'end') return
+  const next = page + 1
+  if (action === 'advance') {
+    emit('patch', { gridPage: next })
+    return
+  }
+  if (sourceState.loadLimit) return
+  const tabId =
+    Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === sourceState) ?? ''
+  if (!tabId) return
+  const filter = sourceState.filter
+  await db.loadMore(tabId)
+  if (
+    db.queryStates.value[tabId] !== sourceState ||
+    db.activeTabId.value !== tabId ||
+    queryState.value !== sourceState ||
+    sourceState.filter !== filter ||
+    gridPage.value !== page ||
+    gridPageSize.value !== size ||
+    hasGridChanges(sourceState)
+  )
+    return
+  if (action === 'load-next') {
+    try {
+      const filtered = await db.filteredRows.ready()
+      if (
+        filtered.length > page * size &&
+        db.queryStates.value[tabId] === sourceState &&
+        db.activeTabId.value === tabId &&
+        queryState.value === sourceState &&
+        sourceState.filter === filter &&
+        gridPage.value === page &&
+        gridPageSize.value === size &&
+        !hasGridChanges(sourceState)
+      )
+        emit('patch', { gridPage: next })
+    } catch (error) {
+      if (
+        db.queryStates.value[tabId] === sourceState &&
+        db.activeTabId.value === tabId &&
+        !(error instanceof Error && error.name === 'AbortError')
+      )
+        db.showError(error)
+    }
+  }
+}
 </script>
 
 <template>
@@ -59,7 +150,7 @@ const emit = defineEmits<{
         <UiButton
           v-if="db.filteredRows.busy.value"
           variant="ghost"
-          @click="emit('patch', { filter: '', page: 1 })"
+          @click="emit('patch', { filter: '', page: 1, gridPage: 1 })"
           >取消筛选</UiButton
         >
         <span class="text-caption text-text-muted dark:text-text-muted-dark">{{ statusText }}</span>
@@ -136,22 +227,14 @@ const emit = defineEmits<{
               : `返回 ${queryState.total} 行，耗时 ${queryState.durationMs} ms。`
       }}
     </UiAlert>
-    <EditableResultGrid
-      v-else
-      :db="db"
-      :state="queryState"
-      class="min-h-0 flex-1"
-      :rows="rows"
-      :near-end="!!queryState.hasMore && !queryState.loadMoreError && !queryState.loadLimit"
-      @near-end="db.loadMore()"
-    >
+    <EditableResultGrid v-else :db="db" :state="queryState" class="min-h-0 flex-1" :rows="rows">
       <template #empty>
         <span>{{ queryState.filter ? '无匹配结果' : '当前查询未返回数据' }}</span>
         <UiButton
           v-if="queryState.filter"
           size="xs"
           variant="ghost"
-          @click="emit('patch', { filter: '', page: 1 })"
+          @click="emit('patch', { filter: '', page: 1, gridPage: 1 })"
           >清除过滤</UiButton
         >
       </template>
@@ -162,7 +245,7 @@ const emit = defineEmits<{
         class="min-w-0 w-[160px]"
         size="xs"
         placeholder="筛选已加载结果…"
-        @update:model-value="emit('patch', { filter: String($event), page: 1 })"
+        @update:model-value="emit('patch', { filter: String($event), page: 1, gridPage: 1 })"
       />
       <span
         v-if="queryState.truncated && !queryState.hasMore"
@@ -171,22 +254,57 @@ const emit = defineEmits<{
       >
       <template #trailing>
         <span role="status" class="text-caption text-text-muted dark:text-text-muted-dark">{{
+          pageSizeError ||
           queryState.loadLimit ||
           queryState.loadMoreError ||
           (queryState.loadingMore
-            ? '正在读取更多…'
-            : queryState.hasMore
-              ? `已加载 ${queryState.rows.length} 行，向下滚动继续读取`
-              : `已加载 ${queryState.rows.length} 行`)
+            ? '正在读取下一批…'
+            : hasGridChanges(queryState)
+              ? '请先保存或放弃修改，再翻页或调整每页条数'
+              : `第 ${gridPage} 页 · 筛选后 ${loadedRows} 行${queryState.hasMore ? '，仍有后续' : ''}`)
         }}</span>
         <UiButton
-          v-if="queryState.hasMore && !queryState.loadLimit"
           size="xs"
           variant="ghost"
-          :disabled="queryState.loadingMore || queryState.gridSaving || hasGridChanges(queryState)"
-          @click="db.loadMore()"
+          :disabled="pagerDisabled || gridPage <= 1"
+          @click="previousPage"
+          >上一页</UiButton
         >
-          {{ queryState.loadMoreError ? '重试读取' : '继续读取' }}
+        <UiInput
+          v-model="pageSizeDraft"
+          aria-label="每页条数"
+          type="number"
+          min="1"
+          max="1000"
+          class="w-[64px]"
+          size="xs"
+          :disabled="pagerDisabled"
+          @keydown.enter.prevent="applyPageSize"
+        />
+        <UiButton size="xs" variant="ghost" :disabled="pagerDisabled" @click="applyPageSize"
+          >应用</UiButton
+        >
+        <UiButton
+          size="xs"
+          variant="ghost"
+          :disabled="
+            pagerDisabled ||
+            pageAction === 'end' ||
+            (!!queryState.loadLimit && pageAction !== 'advance')
+          "
+          @click="nextPage"
+        >
+          {{
+            queryState.loadingMore
+              ? '读取中…'
+              : queryState.loadMoreError
+                ? '重试读取'
+                : pageAction === 'fill-current'
+                  ? '读取当前页剩余数据'
+                  : pageAction === 'load-next'
+                    ? '读取下一页数据'
+                    : '下一页'
+          }}
         </UiButton>
       </template>
     </UiToolbar>

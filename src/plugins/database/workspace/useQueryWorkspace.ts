@@ -60,6 +60,9 @@ export interface QueryState {
   error: string
   resultTab: string
   filter: string
+  /** 用户可见页，与后端表数据读取批号 `page` 分离。 */
+  gridPage?: number
+  gridPageSize?: number
   page: number
   sortAsc: boolean
   selectedRow: string
@@ -110,6 +113,8 @@ function makeQueryState(sql = ''): QueryState {
     error: '',
     resultTab: 'data',
     filter: '',
+    gridPage: 1,
+    gridPageSize: 100,
     page: 1,
     sortAsc: false,
     selectedRow: '',
@@ -518,6 +523,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       cursorId: result.cursorId,
       hasMore: result.hasMore,
       page: 1,
+      gridPage: 1,
       error: result.error ?? '',
       resultTab: result.ok ? 'data' : 'message',
       status: result.ok ? 'success' : 'error',
@@ -841,6 +847,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     })
     const resetResult = {
       page: 1,
+      gridPage: 1,
       columns: [],
       rows: [],
       values: [],
@@ -1153,6 +1160,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     if (!conn) return
     invalidateFetch(tabId, state)
     state.page = 1
+    state.gridPage = 1
     state.hasMore = false
     state.loadLimit = ''
     state.rows = []

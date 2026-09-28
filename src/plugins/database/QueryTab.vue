@@ -8,7 +8,7 @@ import { fileIpc, queryIpc } from './ipc'
 import { useToolLifecycle } from '@/core/lifecycle'
 import { nextRequestId } from './requestId'
 import { rowsToTsv } from './resultText'
-import { indexResultRows, resultGridRows, selectResultValues } from './resultRows'
+import { indexResultRows, resultGridRows, selectResultValues, sliceResultPage } from './resultRows'
 import { hasGridChanges } from './workspace/useQueryWorkspace'
 import { splitSqlStatements } from './sqlStatementRanges'
 import {
@@ -204,7 +204,11 @@ const gridRows = computed(() =>
     ? []
     : resultGridRows(
         queryState.value.columns,
-        db.pageRows.value,
+        sliceResultPage(
+          db.pageRows.value,
+          queryState.value.gridPage ?? 1,
+          queryState.value.gridPageSize ?? 100
+        ),
         queryState.value.values,
         rowIndex.value
       )
