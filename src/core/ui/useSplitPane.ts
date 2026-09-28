@@ -27,32 +27,36 @@ export function useSplitPane(
   vertical = false
 ) {
   const size = ref(initial)
-  let dragging = false
+  let stopDrag: (() => void) | undefined
+
+  function stop() {
+    stopDrag?.()
+    stopDrag = undefined
+  }
 
   function onPointerDown(event: MouseEvent, getMax?: () => number) {
     event.preventDefault()
-    dragging = true
+    stop()
     const startPos = vertical ? event.clientY : event.clientX
     const startSize = size.value
     const sign = reverse ? -1 : 1
     const onMove = (move: MouseEvent) => {
-      if (!dragging) return
       const pos = vertical ? move.clientY : move.clientX
       const upper = getMax?.() ?? max
       size.value = Math.min(upper, Math.max(min, startSize + sign * (pos - startPos)))
     }
-    const onUp = () => {
-      dragging = false
+    stopDrag = () => {
       window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      window.removeEventListener('mouseup', stop)
+      window.removeEventListener('blur', stop)
     }
     window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    window.addEventListener('mouseup', stop)
+    window.addEventListener('blur', stop)
   }
 
-  onBeforeUnmount(() => {
-    dragging = false
-  })
+  // 拖动中关闭工具或切离窗口也必须解绑，避免 window 持有页面与 getMax 闭包。
+  onBeforeUnmount(stop)
 
   return { size, onPointerDown }
 }
