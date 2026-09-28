@@ -29,6 +29,9 @@ const emit = defineEmits<{ (event: 'update:modelValue', value: string): void }>(
       v-bind="$attrs"
       :id="($attrs.id as string | undefined) ?? field?.controlId"
       autocomplete="off"
+      autocapitalize="off"
+      autocorrect="off"
+      spellcheck="false"
       class="field-textarea"
       :class="[
         `ui-textarea-${size}`,
