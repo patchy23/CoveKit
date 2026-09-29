@@ -96,11 +96,18 @@ async function rowMenu(wrapper: ReturnType<typeof mount>, label: string) {
   await nextTick()
 }
 describe('结果单元格编辑事务', () => {
-  it('查询结果使用查询返回的原生列类型', async () => {
+  it('单表查询结果优先显示表结构里的数据库字段类型', async () => {
+    mocks.columns.mockResolvedValueOnce([
+      { name: 'id', dataType: 'bigint unsigned', key: 'PK' },
+      { name: 'name', dataType: 'varchar(64)', key: '' },
+    ])
     const { wrapper, state } = setup()
-    state.columnTypes = ['bigint', 'text']
-    await nextTick()
-    expect(wrapper.getComponent(ResultCanvasGrid).props('columnTypes')).toEqual(['bigint', 'text'])
+    state.columnTypes = ['mysql_type_long', 'mysql_type_var_string']
+    await flushPromises()
+    expect(wrapper.getComponent(ResultCanvasGrid).props('columnTypes')).toEqual([
+      'bigint unsigned',
+      'varchar(64)',
+    ])
   })
   it('表浏览使用现有列结构元数据的真实类型', async () => {
     const { wrapper, db } = setup()

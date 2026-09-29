@@ -375,7 +375,7 @@ defineExpose({ focus: () => root.value?.focus() })
     aria-label="数据结果"
     :aria-rowcount="rows.length"
     :aria-colcount="columns.length"
-    class="result-canvas-grid relative min-h-0 min-w-0 flex-1 overflow-auto text-caption font-mono text-primary dark:text-primary-dark"
+    class="result-canvas-grid relative min-h-0 min-w-0 flex-1 overflow-auto bg-surface text-caption font-mono text-primary dark:bg-surface-dark dark:text-primary-dark"
     @scroll="scrolled"
     @keydown="keydown"
   >
@@ -387,6 +387,7 @@ defineExpose({ focus: () => root.value?.focus() })
       }"
     >
       <div
+        v-if="rows.length"
         role="row"
         class="sticky top-0 z-20 flex bg-surface-muted dark:bg-surface-muted-dark border-b border-border dark:border-border-dark"
         :style="{ height: `${HEADER_HEIGHT}px` }"

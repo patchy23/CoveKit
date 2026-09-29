@@ -40,7 +40,7 @@ function makeState(overrides: Partial<QueryState> = {}): QueryState {
   }) as unknown as QueryState
 }
 
-it('结果页签可翻阅缓存，选中页大小后保留服务端当前页并受草稿保护', async () => {
+it('结果页签调整页大小时保留当前首行并受草稿保护', async () => {
   const first = makeState()
   const filtered = Array.from({ length: 200 }, (_, index) => [`row-${index}`])
   const queryStates = ref({ query: first })
@@ -84,7 +84,7 @@ it('结果页签可翻阅缓存，选中页大小后保留服务端当前页并�
   expect(wrapper.find('button[aria-label="每页条数"]').exists()).toBe(true)
   expect(pageSize.props('options').map(({ value }) => value)).toEqual(['100', '200', '500', '1000'])
   await pageSize.vm.$emit('update:modelValue', '500')
-  expect(db.goToPage).toHaveBeenCalledWith('query', 2, 500)
+  expect(db.goToPage).toHaveBeenCalledWith('query', 1, 500)
   expect(wrapper.text()).not.toContain('应用')
   expect(wrapper.text()).not.toContain('读取当前页剩余数据')
 

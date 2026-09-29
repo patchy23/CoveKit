@@ -176,15 +176,17 @@ function changePageSize(value: string) {
   if (pagerDisabled.value) return
   const size = Number(value)
   if (!pageSizeOptions.some((option) => Number(option.value) === size)) return
+  const firstRow = (gridPage.value - 1) * gridPageSize.value
+  const page = Math.floor(firstRow / size) + 1
   const tabId =
     Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === queryState.value) ??
     ''
   if (queryState.value.paginationMode && tabId) {
-    void db.goToPage(tabId, gridPage.value, size)
+    void db.goToPage(tabId, page, size)
     return
   }
-  const page = Math.min(gridPage.value, Math.max(1, Math.ceil(loadedRows.value / size)))
-  emit('patch', { gridPage: page, gridPageSize: size })
+  const lastPage = Math.max(1, Math.ceil(loadedRows.value / size))
+  emit('patch', { gridPage: Math.min(page, lastPage), gridPageSize: size })
 }
 
 function previousPage() {

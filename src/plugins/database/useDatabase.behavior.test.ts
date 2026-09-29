@@ -1623,33 +1623,40 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
     const pageSize = panel.findComponent({ name: 'UiSelect' })
     await pageSize.vm.$emit('update:modelValue', '200')
     await flush()
-    expect(stateOf(api, tabId).gridPage).toBe(2)
+    expect(stateOf(api, tabId).gridPage).toBe(1)
     expect(grid().props('rows')).toHaveLength(200)
-    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '201' })
+    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '1' })
 
     await panel
       .findAll('button')
       .find((button) => button.text().includes('下一页'))!
       .trigger('click')
     await flush()
-    expect(stateOf(api, tabId).gridPage).toBe(3)
-    expect(grid().props('rows')).toHaveLength(100)
-    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '401' })
+    expect(stateOf(api, tabId).gridPage).toBe(2)
+    expect(grid().props('rows')).toHaveLength(200)
+    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '201' })
 
+    await pageSize.vm.$emit('update:modelValue', '500')
+    await flush()
+    expect(stateOf(api, tabId).gridPage).toBe(1)
+    expect(stateOf(api, tabId).gridPageSize).toBe(500)
+    expect(stateOf(api, tabId).status).toBe('success')
+    expect(grid().props('rows')).toHaveLength(500)
+    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '1' })
+    expect(stateOf(api, tabId).loadMoreError).toBe('')
     await pageSize.vm.$emit('update:modelValue', '1000')
     await flush()
-    expect(stateOf(api, tabId).gridPage).toBe(3)
-    expect(stateOf(api, tabId).gridPageSize).toBe(200)
-    expect(stateOf(api, tabId).status).toBe('success')
-    expect(grid().props('rows')).toHaveLength(100)
-    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '401' })
-    expect(stateOf(api, tabId).loadMoreError).toContain('页码超出结果范围')
+    expect(stateOf(api, tabId).gridPage).toBe(1)
+    expect(stateOf(api, tabId).gridPageSize).toBe(1000)
+    expect(grid().props('rows')).toHaveLength(500)
+    expect(stateOf(api, tabId).loadMoreError).toBe('')
     expect(env.commands.dbcTableData.mock.calls.map((call) => call.slice(2, 4))).toEqual([
       [1, 100],
       [2, 100],
+      [1, 200],
       [2, 200],
-      [3, 200],
-      [3, 1000],
+      [1, 500],
+      [1, 1000],
     ])
   })
 

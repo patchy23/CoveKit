@@ -54,6 +54,12 @@ it('宽表正文只有一个画布，增加结果行数不增加单元格 DOM', 
   expect(wrapper.attributes('aria-rowcount')).toBe('1000')
 })
 
+it('空结果不渲染表头，避免覆盖空状态文案', () => {
+  const wrapper = setup(0, 2)
+  expect(wrapper.findAll('[role="columnheader"]')).toHaveLength(0)
+  expect(wrapper.text()).toContain('暂无数据')
+})
+
 it('表头在字段名下显示数据库类型，缺少类型时明确标注未知', () => {
   const wrapper = setup(1, 2, { columnTypes: ['BIGINT'] })
   const headers = wrapper.findAll('[role="columnheader"]')

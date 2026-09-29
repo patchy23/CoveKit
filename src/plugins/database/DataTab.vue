@@ -63,7 +63,9 @@ function changePageSize(value: string) {
   if (pagerDisabled.value) return
   const size = Number(value)
   if (!pageSizeOptions.some((option) => Number(option.value) === size)) return
-  void db.goToPage(db.activeTabId.value, gridPage.value, size)
+  const firstRow = (gridPage.value - 1) * gridPageSize.value
+  const page = Math.floor(firstRow / size) + 1
+  void db.goToPage(db.activeTabId.value, page, size)
 }
 
 function previousPage() {
