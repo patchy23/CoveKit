@@ -576,7 +576,10 @@ async fn mysql(conn: &mut mysql_async::Conn, sql: &str, pager: &mut Pager) -> Re
     pager.types = query
         .columns_ref()
         .iter()
-        .map(|column| format!("{:?}", column.column_type()))
+        .map(|column| {
+            super::mysql::mysql_column_type_name(column.column_type(), column.character_set() == 63)
+                .to_string()
+        })
         .collect();
     let binary = query
         .columns_ref()

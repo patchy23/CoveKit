@@ -7,6 +7,80 @@ use mysql_async::Value as MysqlValue;
 
 use crate::plugins::database::models::{ConnConfig, QueryResult};
 
+/// 将 MySQL 协议列类型转换为用户熟悉的 SQL 类型名。
+pub(crate) fn mysql_column_type_name(
+    column_type: mysql_async::consts::ColumnType,
+    binary: bool,
+) -> &'static str {
+    use mysql_async::consts::ColumnType::*;
+    match column_type {
+        MYSQL_TYPE_DECIMAL | MYSQL_TYPE_NEWDECIMAL => "DECIMAL",
+        MYSQL_TYPE_TINY => "TINYINT",
+        MYSQL_TYPE_SHORT => "SMALLINT",
+        MYSQL_TYPE_LONG => "INT",
+        MYSQL_TYPE_FLOAT => "FLOAT",
+        MYSQL_TYPE_DOUBLE => "DOUBLE",
+        MYSQL_TYPE_NULL => "NULL",
+        MYSQL_TYPE_TIMESTAMP | MYSQL_TYPE_TIMESTAMP2 => "TIMESTAMP",
+        MYSQL_TYPE_LONGLONG => "BIGINT",
+        MYSQL_TYPE_INT24 => "MEDIUMINT",
+        MYSQL_TYPE_DATE | MYSQL_TYPE_NEWDATE => "DATE",
+        MYSQL_TYPE_TIME | MYSQL_TYPE_TIME2 => "TIME",
+        MYSQL_TYPE_DATETIME | MYSQL_TYPE_DATETIME2 => "DATETIME",
+        MYSQL_TYPE_YEAR => "YEAR",
+        MYSQL_TYPE_VARCHAR | MYSQL_TYPE_VAR_STRING => {
+            if binary {
+                "VARBINARY"
+            } else {
+                "VARCHAR"
+            }
+        }
+        MYSQL_TYPE_BIT => "BIT",
+        MYSQL_TYPE_TYPED_ARRAY => "ARRAY",
+        MYSQL_TYPE_VECTOR => "VECTOR",
+        MYSQL_TYPE_UNKNOWN => "UNKNOWN",
+        MYSQL_TYPE_JSON => "JSON",
+        MYSQL_TYPE_ENUM => "ENUM",
+        MYSQL_TYPE_SET => "SET",
+        MYSQL_TYPE_TINY_BLOB => {
+            if binary {
+                "TINYBLOB"
+            } else {
+                "TINYTEXT"
+            }
+        }
+        MYSQL_TYPE_MEDIUM_BLOB => {
+            if binary {
+                "MEDIUMBLOB"
+            } else {
+                "MEDIUMTEXT"
+            }
+        }
+        MYSQL_TYPE_LONG_BLOB => {
+            if binary {
+                "LONGBLOB"
+            } else {
+                "LONGTEXT"
+            }
+        }
+        MYSQL_TYPE_BLOB => {
+            if binary {
+                "BLOB"
+            } else {
+                "TEXT"
+            }
+        }
+        MYSQL_TYPE_STRING => {
+            if binary {
+                "BINARY"
+            } else {
+                "CHAR"
+            }
+        }
+        MYSQL_TYPE_GEOMETRY => "GEOMETRY",
+    }
+}
+
 /// 按连接配置创建并预检 MySQL / PolarDB 连接池。
 pub(crate) async fn mysql_pool(
     config: &ConnConfig,
@@ -84,7 +158,9 @@ pub(crate) async fn execute_mysql_conn(
                 result.column_types = query
                     .columns_ref()
                     .iter()
-                    .map(|c| format!("{:?}", c.column_type()))
+                    .map(|c| {
+                        mysql_column_type_name(c.column_type(), c.character_set() == 63).to_string()
+                    })
                     .collect();
                 result.is_query = !result.columns.is_empty();
                 let affected = query.affected_rows();
@@ -174,23 +250,37 @@ pub(crate) fn mysql_value(
 }
 
 fn mysql_bytes_kind(binary: bool, native: &str) -> &'static str {
-    if native.contains("DECIMAL") {
-        "decimal"
-    } else if ["TINY", "SHORT", "LONG", "INT24", "YEAR"]
-        .iter()
-        .any(|t| native.contains(t))
-    {
-        "integer"
-    } else if native.contains("FLOAT") || native.contains("DOUBLE") {
-        "float"
-    } else if native.contains("JSON") {
-        "json"
-    } else if ["DATE", "TIME"].iter().any(|t| native.contains(t)) {
-        "temporal"
-    } else if binary {
-        "binary"
-    } else {
-        "text"
+    match native {
+        "DECIMAL" | "NEWDECIMAL" | "MYSQL_TYPE_DECIMAL" | "MYSQL_TYPE_NEWDECIMAL" => "decimal",
+        "TINYINT"
+        | "SMALLINT"
+        | "MEDIUMINT"
+        | "INT"
+        | "BIGINT"
+        | "YEAR"
+        | "LONGLONG"
+        | "MYSQL_TYPE_TINY"
+        | "MYSQL_TYPE_SHORT"
+        | "MYSQL_TYPE_INT24"
+        | "MYSQL_TYPE_LONG"
+        | "MYSQL_TYPE_LONGLONG"
+        | "MYSQL_TYPE_YEAR" => "integer",
+        "FLOAT" | "DOUBLE" | "MYSQL_TYPE_FLOAT" | "MYSQL_TYPE_DOUBLE" => "float",
+        "JSON" | "MYSQL_TYPE_JSON" => "json",
+        "DATE"
+        | "TIME"
+        | "DATETIME"
+        | "TIMESTAMP"
+        | "MYSQL_TYPE_DATE"
+        | "MYSQL_TYPE_NEWDATE"
+        | "MYSQL_TYPE_TIME"
+        | "MYSQL_TYPE_TIME2"
+        | "MYSQL_TYPE_DATETIME"
+        | "MYSQL_TYPE_DATETIME2"
+        | "MYSQL_TYPE_TIMESTAMP"
+        | "MYSQL_TYPE_TIMESTAMP2" => "temporal",
+        _ if binary => "binary",
+        _ => "text",
     }
 }
 
@@ -257,10 +347,18 @@ mod tests {
     #[test]
     fn budget_conversion_matches_full_conversion_without_losing_precision() {
         for (value, binary, native) in [
-            (MysqlValue::Bytes(b"12345678901234567890.01".to_vec()), true, "NEWDECIMAL"),
+            (
+                MysqlValue::Bytes(b"12345678901234567890.01".to_vec()),
+                true,
+                "NEWDECIMAL",
+            ),
             (MysqlValue::Bytes(vec![0, 255]), true, "BLOB"),
             (MysqlValue::Bytes(vec![255]), false, "VAR_STRING"),
-            (MysqlValue::Bytes("中文".as_bytes().to_vec()), false, "VAR_STRING"),
+            (
+                MysqlValue::Bytes("中文".as_bytes().to_vec()),
+                false,
+                "VAR_STRING",
+            ),
             (MysqlValue::UInt(u64::MAX), true, "LONGLONG"),
             (MysqlValue::NULL, false, "VAR_STRING"),
         ] {

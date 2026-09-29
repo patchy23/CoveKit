@@ -94,7 +94,13 @@ impl BoundConnection {
                 result.column_types = query
                     .columns_ref()
                     .iter()
-                    .map(|c| format!("{:?}", c.column_type()))
+                    .map(|c| {
+                        crate::plugins::database::drivers::mysql::mysql_column_type_name(
+                            c.column_type(),
+                            c.character_set() == 63,
+                        )
+                        .to_string()
+                    })
                     .collect();
                 let binary: Vec<_> = query
                     .columns_ref()
