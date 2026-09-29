@@ -74,7 +74,8 @@ export const queryIpc = {
     scope?: ExecutionScope,
     confirmationToken?: string,
     page?: number,
-    pageSize?: number
+    pageSize?: number,
+    countOnly?: boolean
   ): Promise<QueryResult> =>
     call('dbc_execute', {
       connId,
@@ -86,6 +87,7 @@ export const queryIpc = {
       confirmationToken,
       page,
       pageSize,
+      countOnly,
     })
       .then(hydrateResultRows)
       .then((result) => {
@@ -102,6 +104,23 @@ export const queryIpc = {
         }
         return result
       }),
+  /** 对后端确认可安全重放的单条 SELECT 统计结果行数。 */
+  count: (
+    connId: string,
+    sql: string,
+    requestId: string,
+    workspaceId: string,
+    scope: ExecutionScope
+  ): Promise<QueryResult> =>
+    call('dbc_execute', {
+      connId,
+      sql,
+      maxRows: 1,
+      requestId,
+      workspaceId,
+      scope,
+      countOnly: true,
+    }).then(hydrateResultRows),
   prepare: (connId: string, sql: string, requestId: string, scope: ExecutionScope) =>
     call('dbc_prepare_execution', { connId, sql, requestId, scope }),
   closeWorkspace: (connId: string, workspaceId: string) =>

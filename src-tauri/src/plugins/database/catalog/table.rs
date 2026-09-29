@@ -94,7 +94,9 @@ pub async fn dbc_table_data(
     };
     let count = u64::from(page_size) + 1;
     let sql = if kind == DbType::Oracle {
-        format!("SELECT * FROM {qualified}{filter}{order} OFFSET {offset} ROWS FETCH NEXT {count} ROWS ONLY")
+        format!(
+            "SELECT * FROM {qualified}{filter}{order} OFFSET {offset} ROWS FETCH NEXT {count} ROWS ONLY"
+        )
     } else {
         format!(
             "SELECT {} FROM {qualified}{filter}{order} LIMIT {count} OFFSET {query_offset}",
@@ -191,9 +193,50 @@ pub async fn dbc_table_count(
         "SELECT {count} AS total FROM {}{filter}",
         qualified(&entry, schema.as_deref(), &table)
     );
-    let mut conn = BoundConnection::open(&entry).await?;
-    task.bind(&conn, &entry).await?;
-    let result = task.query(&mut conn, &sql, &params).await?;
+    let result = if matches!(
+        &entry.session,
+        crate::plugins::database::drivers::DbSession::Agent { .. }
+    ) {
+        if !params.is_empty() {
+            return Err("DB_UNSUPPORTED: 该驱动未提供筛选参数绑定".into());
+        }
+        let password =
+            crate::plugins::database::secrets::secret_get(&app, &secrets_state, &conn_id)?;
+        let count_scope = crate::plugins::database::models::ExecutionScope {
+            database: database.unwrap_or_else(|| entry.config.database.clone()),
+            schema: schema.clone().unwrap_or_default(),
+        };
+        let session = drivers::workspace::open(&entry, count_scope, &password).await?;
+        let result = async {
+            match &session.connection {
+                drivers::workspace::WorkspaceConnection::Agent(client, session_id) => {
+                    task.bind_agent(client, session_id).await?;
+                    task.query_agent(client, session_id, &sql, 1, entry.config.db_type)
+                        .await
+                }
+                _ => Err("DB_SESSION_RESET: 侧车统计会话类型不匹配".into()),
+            }
+        }
+        .await;
+        let close_result = drivers::workspace::close(session).await;
+        match (result, close_result) {
+            (Ok(result), Ok(())) => result,
+            (Err(error), close_result) => {
+                if close_result.is_err() {
+                    log::warn!("数据库表计数专用驱动会话关闭失败");
+                }
+                return Err(error);
+            }
+            (Ok(_), Err(error)) => {
+                log::warn!("数据库表计数专用驱动会话关闭失败");
+                return Err(format!("统计完成但关闭专用驱动会话失败：{error}"));
+            }
+        }
+    } else {
+        let mut conn = BoundConnection::open(&entry).await?;
+        task.bind(&conn, &entry).await?;
+        task.query(&mut conn, &sql, &params).await?
+    };
     result
         .rows
         .first()

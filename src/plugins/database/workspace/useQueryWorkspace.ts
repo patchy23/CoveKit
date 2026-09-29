@@ -14,6 +14,7 @@ import type { V2QueryStatus, V2Tab, V2TabKind } from '../useDatabaseMeta'
 import type {
   QueryDraft,
   QueryDraftPosition,
+  ExecutionScope,
   TableTarget,
   DbValue,
   TableOptions,
@@ -24,7 +25,7 @@ import type {
   HistoryEntry,
   SavedEntry,
 } from '../contracts'
-import { adminIpc, queryIpc, draftIpc } from '../ipc'
+import { adminIpc, queryIpc, draftIpc, tableIpc } from '../ipc'
 import { createSqlFormatter } from '@/core/format/asyncSql'
 import { nextRequestId } from '../requestId'
 import { useResultFilter } from './useResultFilter'
@@ -36,6 +37,8 @@ export interface QueryState {
   paginationMode?: 'server' | 'cursor' | 'table'
   /** SQL 首次执行快照；后续安全分页不读取可能已被编辑器改写的 sql。 */
   executedSql?: string
+  /** SQL 首次执行连接与作用域；数据库选择变化后分页仍命中产生当前结果的目标。 */
+  executionTarget?: { connectionId: string; database: string; schema: string }
   /** cursor 绝对已读取行数及当前内存窗口首行的绝对偏移。 */
   cursorOffset?: number
   cursorBufferStart?: number
@@ -150,6 +153,8 @@ export interface TabContext {
 const PAGE_SIZE = 100
 const CURSOR_CACHE_PAGES = 5
 const RESULT_BYTES_LIMIT = 64 * 1024 * 1024
+const MAX_DATABASE_PAGE = 0xffff_ffff
+const MAX_DATABASE_PAGE_BIGINT = 0xffff_ffffn
 
 /** 展示文本与类型化原值都占内存；用于追加前预算，保留已加载行的稳定身份。 */
 function rowsBytes(rows: string[][], values: DbValue[][]): number {
@@ -875,6 +880,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       loadLimit: '',
       paginationMode: undefined,
       executedSql: undefined,
+      executionTarget: undefined,
       cursorOffset: 0,
       cursorBufferStart: 0,
     }
@@ -957,6 +963,11 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
           hasMore: result.hasMore,
           paginationMode: state.paginationMode,
           executedSql: sql,
+          executionTarget: {
+            connectionId: conn.id,
+            database: scope.database,
+            schema: scope.schema,
+          },
           cursorOffset: result.rows.length,
           cursorBufferStart: 0,
           gridPage: result.pageInfo?.page ?? 1,
@@ -1015,11 +1026,12 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     const tabId = activeTabId.value
     const conn = activeTabConnection.value
     if (!conn) return
-    const requestId = inFlight.get(tabId)
+    const queryRequestId = inFlight.get(tabId)
+    const requestId = queryRequestId ?? tableRequests.get(tabId)
     // 没有在途请求就没有取消对象，不打扰后端（取消与预期缺失不报错）
     if (!requestId) return
     const pendingState = queryStates.value[tabId]
-    if (pendingState) pendingState.cancelRequested = true
+    if (pendingState && queryRequestId) pendingState.cancelRequested = true
     try {
       await queryIpc.cancel(requestId)
     } catch (err) {
@@ -1027,9 +1039,12 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       return
     }
     const state = queryStates.value[tabId]
-    if (state && inFlight.get(tabId) === requestId) {
+    if (state && queryRequestId && inFlight.get(tabId) === requestId) {
       state.cancelRequested = true
       state.error = '已请求停止，等待数据库确认；已完成的写操作不会自动撤销。'
+    } else if (state && tableRequests.get(tabId) === requestId) {
+      fetchRequests.delete(tabId)
+      state.loadMoreError = '已请求停止读取，等待数据库确认；当前页已保留。'
     }
   }
 
@@ -1109,6 +1124,9 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       )
       if (!current()) return
       if (result.error) throw new Error(result.error)
+      if (pageNumber > 1 && !result.rows.length) {
+        throw new Error('页码超出结果范围，已保留当前页')
+      }
       state.editTarget = {
         connId: ctx.connectionId,
         database: ctx.database,
@@ -1121,6 +1139,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       state.queryParams = result.queryParams
       state.paginationMode = 'table'
       state.executedSql = undefined
+      state.executionTarget = undefined
       state.cursorId = undefined
       state.cursorOffset = 0
       state.cursorBufferStart = 0
@@ -1153,12 +1172,157 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         }
       }
     } finally {
-      if (current()) {
+      if (current() || tableRequests.get(tabId) === requestId) {
         state.loadingMore = false
         fetchRequests.delete(tabId)
         tableRequests.delete(tabId)
       }
     }
+  }
+
+  function parseCountText(raw: unknown): bigint {
+    if (typeof raw !== 'string' || !/^\d+$/.test(raw)) {
+      throw new Error('精确统计未返回有效的非负整数')
+    }
+    return BigInt(raw)
+  }
+
+  function parseExactCount(result: QueryResult): bigint {
+    if (!result.ok) throw new Error(result.error ?? '精确统计失败')
+    const raw = result.values?.[0]?.[0]?.value ?? result.rows[0]?.[0]
+    return parseCountText(raw)
+  }
+
+  /** 仅尾页操作统计；计数请求沿用本页签的取消与迟到响应保护。 */
+  async function exactPageCount(tabId: string): Promise<bigint | undefined> {
+    const state = queryStates.value[tabId]
+    const ctx = tabContexts.value[tabId]
+    const tab = tabs.value.find((item) => item.id === tabId)
+    if (
+      !state ||
+      !ctx ||
+      pendingGrid(state) ||
+      state.gridSaving ||
+      state.loadingMore ||
+      state.status === 'running'
+    )
+      return
+    if (state.paginationMode === 'cursor') {
+      state.loadMoreError = '游标结果不支持统计总数或直达尾页，请继续读取后续结果页。'
+      return
+    }
+    const tableMode = tab?.kind === 'data' || state.paginationMode === 'table'
+    const sql = state.executedSql
+    const target = state.executionTarget
+    if (!tableMode && (state.paginationMode !== 'server' || !sql || !target)) {
+      state.loadMoreError = '当前结果不能安全统计总数；已保留当前页。'
+      return
+    }
+    const connectionId = tableMode ? ctx.connectionId : target!.connectionId
+    const conn = ports.connections.value.find((connection) => connection.id === connectionId)
+    if (!conn || conn.status !== 'online') {
+      state.loadMoreError = '连接已断开，请重新连接后再跳转。'
+      return
+    }
+
+    const table = tableMode ? (ctx.table ?? tabTableName(tabId)) : undefined
+    const database = tableMode ? ctx.database : target!.database
+    const schema = tableMode ? ipcScopeArg(conn, ctx) : target!.schema
+    const options = state.tableOptions
+    const request = Symbol()
+    const requestId = nextRequestId('page-count')
+    invalidateFetch(tabId, state)
+    fetchRequests.set(tabId, request)
+    tableRequests.set(tabId, requestId)
+    state.loadingMore = true
+    state.loadMoreError = ''
+    const current = () =>
+      queryStates.value[tabId] === state &&
+      tabContexts.value[tabId] === ctx &&
+      fetchRequests.get(tabId) === request &&
+      (tableMode
+        ? ctx.connectionId === connectionId &&
+          ctx.database === database &&
+          (ctx.table ?? tabTableName(tabId)) === table &&
+          state.tableOptions === options
+        : state.executedSql === sql && state.executionTarget === target)
+    try {
+      const count = tableMode
+        ? parseCountText(
+            await tableIpc.count(
+              {
+                connId: connectionId,
+                database,
+                schema,
+                table: table!,
+              },
+              options,
+              requestId
+            )
+          )
+        : parseExactCount(
+            await queryIpc.count(connectionId, sql!, requestId, tabId, {
+              database: database!,
+              schema: schema!,
+            } satisfies ExecutionScope)
+          )
+      if (!current()) return
+      return count
+    } catch (error) {
+      if (current()) state.loadMoreError = `${String(error)}；已保留当前页`
+      return
+    } finally {
+      if (tableRequests.get(tabId) === requestId) {
+        state.loadingMore = false
+        tableRequests.delete(tabId)
+        if (fetchRequests.get(tabId) === request) fetchRequests.delete(tabId)
+      }
+    }
+  }
+
+  async function jumpToPage(
+    tabId: string,
+    pageNumber: number,
+    requestedSize?: number
+  ): Promise<boolean> {
+    const state = queryStates.value[tabId]
+    if (!state || !Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > MAX_DATABASE_PAGE)
+      return false
+    if (state.paginationMode === 'cursor') {
+      const size = Math.max(1, Math.min(1000, requestedSize ?? state.gridPageSize ?? PAGE_SIZE))
+      const start = (pageNumber - 1) * size
+      const end = start + size
+      const bufferStart = state.cursorBufferStart ?? 0
+      const bufferEnd = bufferStart + state.rows.length
+      if (start < bufferStart) {
+        state.loadMoreError = `此游标只保留最近 ${CURSOR_CACHE_PAGES} 页，较早页面不可用。`
+        return false
+      }
+      if (start >= bufferEnd || (end > bufferEnd && state.hasMore)) {
+        state.loadMoreError = '目标页尚未加载，请使用“下一页”继续读取。'
+        return false
+      }
+    }
+    return goToPage(tabId, pageNumber, requestedSize)
+  }
+
+  async function goToLastPage(tabId: string, requestedSize?: number): Promise<boolean> {
+    const state = queryStates.value[tabId]
+    if (!state || state.paginationMode === 'cursor') {
+      if (state) state.loadMoreError = '游标结果不支持统计总数或直达尾页，请继续读取后续结果页。'
+      return false
+    }
+    const count = await exactPageCount(tabId)
+    if (count === undefined) return false
+    const size = BigInt(
+      Math.max(1, Math.min(1000, requestedSize ?? state.gridPageSize ?? PAGE_SIZE))
+    )
+    const pages = count === 0n ? 1n : (count + size - 1n) / size
+    if (pages > MAX_DATABASE_PAGE_BIGINT) {
+      state.loadMoreError = '结果页数超过可支持范围，已保留当前页。'
+      return false
+    }
+    return goToPage(tabId, Number(pages), Number(size))
   }
 
   /** 加载目标页；可重放 SQL 与表浏览仅替换当前页，游标查询只向前推进有限窗口。 */
@@ -1169,7 +1333,14 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   ): Promise<boolean> {
     const state = queryStates.value[tabId]
     const ctx = tabContexts.value[tabId]
-    if (!state || !ctx || !Number.isInteger(pageNumber) || pageNumber < 1) return false
+    if (
+      !state ||
+      !ctx ||
+      !Number.isInteger(pageNumber) ||
+      pageNumber < 1 ||
+      pageNumber > MAX_DATABASE_PAGE
+    )
+      return false
     if (pendingGrid(state) || state.gridSaving || state.loadingMore || state.status === 'running')
       return false
     const size = Math.max(1, Math.min(1000, requestedSize ?? state.gridPageSize ?? PAGE_SIZE))
@@ -1179,7 +1350,14 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       return state.gridPage === pageNumber && !state.loadMoreError
     }
     if (state.paginationMode === 'server' && state.executedSql) {
-      const conn = ports.connections.value.find((connection) => connection.id === ctx.connectionId)
+      const target = state.executionTarget
+      if (!target) {
+        state.loadMoreError = '查询执行目标已变化，请重新执行 SQL。'
+        return false
+      }
+      const conn = ports.connections.value.find(
+        (connection) => connection.id === target.connectionId
+      )
       if (!conn || conn.status !== 'online') {
         state.loadMoreError = '连接已断开，请重新连接后刷新'
         return false
@@ -1194,15 +1372,16 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       const current = () =>
         queryStates.value[tabId] === state &&
         tabContexts.value[tabId] === ctx &&
+        state.executionTarget === target &&
         fetchRequests.get(tabId) === request
       try {
         const result = await queryIpc.execute(
-          ctx.connectionId,
+          target.connectionId,
           state.executedSql,
           size,
           requestId,
           tabId,
-          { database: ctx.database, schema: ctx.schema },
+          { database: target.database, schema: target.schema },
           undefined,
           pageNumber,
           size
@@ -1210,23 +1389,26 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
         if (!current()) {
           if (result.cursorId)
             await queryIpc
-              .closeCursor(ctx.connectionId, tabId, result.cursorId)
+              .closeCursor(target.connectionId, tabId, result.cursorId)
               .catch(ports.showError)
           return false
         }
         if (!result.ok) {
           if (result.cursorId)
             await queryIpc
-              .closeCursor(ctx.connectionId, tabId, result.cursorId)
+              .closeCursor(target.connectionId, tabId, result.cursorId)
               .catch(ports.showError)
           throw new Error(result.error ?? '读取结果页失败')
         }
         if (result.pageInfo?.mode !== 'server' || result.cursorId) {
           if (result.cursorId)
             await queryIpc
-              .closeCursor(ctx.connectionId, tabId, result.cursorId)
+              .closeCursor(target.connectionId, tabId, result.cursorId)
               .catch(ports.showError)
           throw new Error('目标页未返回安全分页结果，已保留当前页')
+        }
+        if (pageNumber > 1 && !result.rows.length) {
+          throw new Error('页码超出结果范围，已保留当前页')
         }
         state.rows = result.rows
         state.values = result.values ?? []
@@ -1255,7 +1437,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       } catch (error) {
         if (current()) state.loadMoreError = String(error)
       } finally {
-        if (current()) {
+        if (current() || tableRequests.get(tabId) === requestId) {
           state.loadingMore = false
           fetchRequests.delete(tabId)
           tableRequests.delete(tabId)
@@ -1637,6 +1819,8 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     // 数据加载
     loadTableData,
     goToPage,
+    jumpToPage,
+    goToLastPage,
     loadMore,
     closeQueryResults,
     loadColumns,

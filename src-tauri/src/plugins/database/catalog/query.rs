@@ -154,6 +154,7 @@ pub async fn dbc_execute(
     confirmation_token: Option<String>,
     page: Option<u32>,
     page_size: Option<u32>,
+    count_only: Option<bool>,
 ) -> Result<QueryResult, String> {
     let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
@@ -265,9 +266,10 @@ pub async fn dbc_execute(
     if handle.aborted.load(Ordering::Acquire) {
         return Err("DB_CANCELLED: 已取消，语句尚未发往服务器".into());
     }
+    let count_only = count_only.unwrap_or(false);
     let page = page.unwrap_or(1).max(1);
     let page_size = page_size.unwrap_or(100).clamp(1, 1000);
-    let page_sql = if !session.transaction {
+    let page_sql = if !count_only && !session.transaction {
         super::super::query_pagination::build_page_sql(
             entry.config.db_type,
             &sql,
@@ -277,19 +279,31 @@ pub async fn dbc_execute(
     } else {
         None
     };
-    if page > 1 && page_sql.is_none() {
+    if !count_only && page > 1 && page_sql.is_none() {
         return Err("DB_PAGINATION_UNSUPPORTED: 此结果不可安全重放，已保留原查询游标".into());
     }
-    let execution_sql = page_sql
+    let count_sql = if count_only {
+        Some(
+            super::super::query_pagination::build_count_sql(entry.config.db_type, &sql)
+                .ok_or("DB_PAGINATION_UNSUPPORTED: 此 SQL 不能安全统计或重放")?,
+        )
+    } else {
+        None
+    };
+    let execution_sql = count_sql
         .as_ref()
-        .map(|plan| plan.sql.clone())
+        .or_else(|| page_sql.as_ref().map(|plan| &plan.sql))
+        .cloned()
         .unwrap_or_else(|| sql.clone());
-    let limit = if page_sql.is_some() {
+    let limit = if count_only {
+        1
+    } else if page_sql.is_some() {
         u64::from(page_size) + 1
     } else {
         max_rows.unwrap_or(1000).clamp(1, 100_000)
     };
-    if page_sql.is_none()
+    if !count_only
+        && page_sql.is_none()
         && !session.transaction
         && matches!(&session.connection, WorkspaceConnection::Mysql(..) | WorkspaceConnection::Postgres(..) | WorkspaceConnection::Sqlite(..))
         && sql_analysis::streamable(entry.config.db_type, &sql)

@@ -94,6 +94,23 @@ it('单语句及原有完整响应直接返回，不重新复制数组', async (
   expect(await queryIpc.execute('c', 'select 1', 100, 'r')).toBe(payload)
 })
 
+it('安全结果计数复用 dbc_execute 请求身份与执行作用域', async () => {
+  vi.mocked(invokeCommand).mockResolvedValueOnce(result({ rows: [['42']] }))
+  await queryIpc.count('connection', 'SELECT id FROM items', 'count#1', 'query', {
+    database: 'app',
+    schema: 'public',
+  })
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_execute', {
+    connId: 'connection',
+    sql: 'SELECT id FROM items',
+    maxRows: 1,
+    requestId: 'count#1',
+    workspaceId: 'query',
+    scope: { database: 'app', schema: 'public' },
+    countOnly: true,
+  })
+})
+
 it('缺失的数据引用显式失败，不能伪装成空查询成功', async () => {
   vi.mocked(invokeCommand).mockResolvedValueOnce(result({ displayStatement: 2, statements: [] }))
   await expect(queryIpc.execute('c', 'select 1', 100, 'r')).rejects.toThrow('缺少对应语句')

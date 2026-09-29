@@ -73,6 +73,7 @@ async function changeConnection(value: string) {
     !connection ||
     scopeChanging.value ||
     queryState.value.status === 'running' ||
+    queryState.value.loadingMore ||
     queryState.value.transactionActive ||
     hasGridChanges(queryState.value) ||
     queryState.value.gridSaving
@@ -86,11 +87,16 @@ async function changeConnection(value: string) {
     patchQueryState({
       cursorId: undefined,
       hasMore: false,
+      paginationMode: undefined,
+      executedSql: undefined,
+      executionTarget: undefined,
       loadingMore: false,
       statements: [],
       rows: [],
       values: [],
       total: 0,
+      gridPage: 1,
+      page: 1,
     })
     Object.assign(context, { connectionId: value, database: connection.database, schema: '' })
   } catch (error) {
@@ -111,7 +117,8 @@ const canExecute = computed(
   () =>
     !scopeChanging.value &&
     activeTabConnection.value?.status === 'online' &&
-    queryState.value.status !== 'running'
+    queryState.value.status !== 'running' &&
+    !queryState.value.loadingMore
 )
 
 const statusText = computed(() => {
@@ -390,9 +397,12 @@ async function saveSqlFile() {
         <UiIcon v-else name="play" :size="14" class="shrink-0" />
       </UiIconButton>
       <UiIconButton
-        label="停止"
+        :label="queryState.status === 'running' ? '停止' : '停止读取'"
         size="xs"
-        :disabled="queryState.status !== 'running'"
+        :disabled="
+          queryState.status !== 'running' &&
+          (!queryState.loadingMore || queryState.paginationMode === 'cursor')
+        "
         class="text-danger-strong dark:text-danger-dark"
         @click="db.cancelQuery"
       >
@@ -474,6 +484,7 @@ async function saveSqlFile() {
         :disabled="
           scopeChanging ||
           queryState.status === 'running' ||
+          queryState.loadingMore ||
           queryState.transactionActive ||
           hasGridChanges(queryState) ||
           queryState.gridSaving
@@ -490,6 +501,7 @@ async function saveSqlFile() {
         :disabled="
           scopeChanging ||
           queryState.status === 'running' ||
+          queryState.loadingMore ||
           queryState.transactionActive ||
           hasGridChanges(queryState) ||
           queryState.gridSaving
@@ -506,6 +518,7 @@ async function saveSqlFile() {
         :disabled="
           scopeChanging ||
           queryState.status === 'running' ||
+          queryState.loadingMore ||
           queryState.transactionActive ||
           hasGridChanges(queryState) ||
           queryState.gridSaving

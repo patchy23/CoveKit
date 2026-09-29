@@ -378,6 +378,21 @@ impl<'a> BoundTask<'a> {
             .insert(self.id.clone(), self.handle.clone());
         self.check()
     }
+    /// 侧车会话不经过原生连接绑定，但仍登记真实取消目标。
+    pub(crate) async fn bind_agent(
+        &mut self,
+        client: &Arc<crate::plugins::database::agent::AgentClient>,
+        session_id: &str,
+    ) -> Result<(), String> {
+        self.idle_gate = Some(self.handle.gate.clone().lock_owned().await);
+        self.handle.agent = Some((Arc::clone(client), session_id.to_string()));
+        self.state
+            .0
+            .lock()
+            .map_err(|e| e.to_string())?
+            .insert(self.id.clone(), self.handle.clone());
+        self.check()
+    }
     /// 检查取消标记；取消后禁止发出下一条 SQL。
     pub(crate) fn check(&self) -> Result<(), String> {
         if self
@@ -431,6 +446,45 @@ impl<'a> BoundTask<'a> {
             if let Err(error) = conn.discard_lost_mysql_session().await {
                 log::warn!("丢弃已消失的 MySQL 工作会话失败：{error}");
             }
+        }
+        result
+    }
+    /// 执行侧车只读查询，取消与超时都等待驱动确认结束后再释放身份。
+    pub(crate) async fn query_agent(
+        &mut self,
+        client: &Arc<crate::plugins::database::agent::AgentClient>,
+        session_id: &str,
+        sql: &str,
+        max_rows: u64,
+        kind: crate::plugins::database::models::DbType,
+    ) -> Result<QueryResult, String> {
+        self.check()?;
+        self.idle_gate.take();
+        let query = crate::plugins::database::drivers::execute_agent(
+            client, session_id, sql, max_rows, kind,
+        );
+        tokio::pin!(query);
+        let result = tokio::select! {
+            result = &mut query => result,
+            _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
+                let cancelled = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    self.handle.cancel(),
+                ).await;
+                let settled = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    &mut query,
+                ).await;
+                if settled.is_err() || !matches!(cancelled, Ok(Ok(()))) {
+                    Err("DB_OUTCOME_UNKNOWN: 侧车查询超时且停止未确认".into())
+                } else {
+                    Err("DB_TIMEOUT: 侧车查询超过 30 秒，已请求停止".into())
+                }
+            }
+        };
+        self.idle_gate = Some(self.handle.gate.clone().lock_owned().await);
+        if result.is_ok() {
+            self.check()?;
         }
         result
     }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import {
   UiAlert,
   UiButton,
@@ -33,7 +33,41 @@ const emit = defineEmits<{
 }>()
 const gridPage = computed(() => queryState.value.gridPage ?? 1)
 const gridPageSize = computed(() => queryState.value.gridPageSize ?? 100)
+const pageDraft = ref(String(gridPage.value))
+const pageError = ref('')
+watch(gridPage, (page) => {
+  pageDraft.value = String(page)
+  pageError.value = ''
+})
 const loadedRows = computed(() => db.filteredRows.value.length)
+const pagerDisabled = computed(
+  () =>
+    hasGridChanges(queryState.value) ||
+    queryState.value.gridSaving ||
+    queryState.value.loadingMore ||
+    queryState.value.status === 'running' ||
+    db.filteredRows.busy.value
+)
+const previousDisabled = computed(() => {
+  const state = queryState.value
+  if (pagerDisabled.value || gridPage.value <= 1) return true
+  return (
+    state.paginationMode === 'cursor' &&
+    (gridPage.value - 2) * gridPageSize.value < (state.cursorBufferStart ?? 0)
+  )
+})
+const firstDisabled = computed(
+  () =>
+    pagerDisabled.value ||
+    gridPage.value <= 1 ||
+    (queryState.value.paginationMode === 'cursor' && (queryState.value.cursorBufferStart ?? 0) > 0)
+)
+const lastDisabled = computed(() => {
+  const state = queryState.value
+  if (pagerDisabled.value || state.paginationMode === 'cursor') return true
+  if (state.paginationMode === 'server' || state.paginationMode === 'table') return !state.hasMore
+  return state.truncated || !!state.hasMore || loadedRows.value === 0
+})
 const pageAction = computed(() => {
   const state = queryState.value
   if (state.paginationMode === 'server') return state.hasMore ? 'load-next' : 'end'
@@ -49,14 +83,81 @@ const pageSizeOptions = [100, 200, 500, 1000].map((size) => ({
   value: String(size),
   label: String(size),
 }))
-const pagerDisabled = computed(
-  () =>
-    hasGridChanges(queryState.value) ||
-    queryState.value.gridSaving ||
-    queryState.value.loadingMore ||
-    queryState.value.status === 'running' ||
-    db.filteredRows.busy.value
-)
+function updatePageDraft(value: string | number) {
+  pageDraft.value = String(value)
+  pageError.value = ''
+}
+
+async function jumpToPage() {
+  if (pagerDisabled.value) return
+  const raw = pageDraft.value.trim()
+  if (!/^[0-9]+$/.test(raw)) {
+    pageError.value = '请输入正整数页码。'
+    return
+  }
+  const page = BigInt(raw)
+  if (page < 1n || page > 0xffff_ffffn) {
+    pageError.value = '页码需在 1 至 4294967295 之间。'
+    return
+  }
+  const value = Number(page)
+  if (value === gridPage.value) return
+  const sourceState = queryState.value
+  if (!sourceState.paginationMode) {
+    const pageCount = Math.max(1, Math.ceil(loadedRows.value / gridPageSize.value))
+    if (value > pageCount) {
+      pageError.value = `页码超出已加载结果范围，共 ${pageCount} 页。`
+      return
+    }
+    emit('patch', { gridPage: value })
+    return
+  }
+  const tabId =
+    Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === sourceState) ?? ''
+  if (!tabId) return
+  const loaded = await db.jumpToPage(tabId, value, gridPageSize.value)
+  if (
+    !loaded &&
+    db.queryStates.value[tabId] === sourceState &&
+    db.activeTabId.value === tabId &&
+    queryState.value === sourceState &&
+    !sourceState.loadMoreError
+  )
+    pageError.value = '无法读取目标页，当前页已保留。'
+}
+
+function firstPage() {
+  if (firstDisabled.value) return
+  const sourceState = queryState.value
+  if (!sourceState.paginationMode) {
+    emit('patch', { gridPage: 1 })
+    return
+  }
+  const tabId =
+    Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === sourceState) ?? ''
+  if (tabId) void db.goToPage(tabId, 1)
+}
+
+async function lastPage() {
+  if (lastDisabled.value) return
+  const sourceState = queryState.value
+  if (!sourceState.paginationMode) {
+    emit('patch', { gridPage: Math.max(1, Math.ceil(loadedRows.value / gridPageSize.value)) })
+    return
+  }
+  const tabId =
+    Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === sourceState) ?? ''
+  if (!tabId) return
+  const loaded = await db.goToLastPage(tabId, gridPageSize.value)
+  if (
+    !loaded &&
+    db.queryStates.value[tabId] === sourceState &&
+    db.activeTabId.value === tabId &&
+    queryState.value === sourceState &&
+    !sourceState.loadMoreError
+  )
+    pageError.value = '无法读取尾页，当前页已保留。'
+}
 
 function changePageSize(value: string) {
   if (pagerDisabled.value) return
@@ -74,7 +175,7 @@ function changePageSize(value: string) {
 }
 
 function previousPage() {
-  if (pagerDisabled.value || gridPage.value <= 1) return
+  if (previousDisabled.value) return
   if (queryState.value.paginationMode) {
     const tabId =
       Object.keys(db.queryStates.value).find(
@@ -304,16 +405,39 @@ async function nextPage() {
             ? '正在读取下一批…'
             : hasGridChanges(queryState)
               ? '请先保存或放弃修改，再翻页或调整每页条数'
-              : queryState.paginationMode === 'cursor' && (queryState.cursorBufferStart ?? 0) > 0
-                ? `第 ${gridPage} 页 · 仅保留最近结果页，较早页面不可用`
+              : queryState.paginationMode === 'cursor'
+                ? `第 ${gridPage} 页 · 游标仅保留最近 5 页，不能统计或直达尾页`
                 : `第 ${gridPage} 页 · 筛选后 ${loadedRows} 行${queryState.hasMore ? '，仍有后续' : ''}`)
         }}</span>
         <UiButton
           size="xs"
           variant="ghost"
-          :disabled="pagerDisabled || gridPage <= 1"
-          @click="previousPage"
+          :disabled="firstDisabled"
+          aria-label="首页"
+          title="首页"
+          @click="firstPage"
+          >首页</UiButton
+        >
+        <UiButton size="xs" variant="ghost" :disabled="previousDisabled" @click="previousPage"
           >上一页</UiButton
+        >
+        <UiInput
+          :model-value="pageDraft"
+          type="number"
+          min="1"
+          max="4294967295"
+          step="1"
+          aria-label="跳转页码"
+          title="输入页码并按 Enter 跳转"
+          class="w-[68px]"
+          size="xs"
+          :invalid="!!pageError"
+          :disabled="pagerDisabled"
+          @update:model-value="updatePageDraft"
+          @keydown.enter.prevent="jumpToPage"
+        />
+        <UiButton size="xs" variant="ghost" :disabled="pagerDisabled" @click="jumpToPage"
+          >跳转</UiButton
         >
         <UiSelect
           :model-value="String(gridPageSize)"
@@ -345,7 +469,24 @@ async function nextPage() {
                   : '下一页'
           }}
         </UiButton>
+        <UiButton
+          size="xs"
+          variant="ghost"
+          :disabled="lastDisabled"
+          aria-label="尾页"
+          title="统计总数并跳转到尾页"
+          @click="lastPage"
+          >尾页</UiButton
+        >
+        <UiButton
+          v-if="queryState.loadingMore && queryState.paginationMode !== 'cursor'"
+          size="xs"
+          variant="secondary"
+          @click="db.cancelQuery"
+          >停止读取</UiButton
+        >
       </template>
     </UiToolbar>
+    <p v-if="pageError" role="alert" class="px-sm text-caption text-danger">{{ pageError }}</p>
   </div>
 </template>

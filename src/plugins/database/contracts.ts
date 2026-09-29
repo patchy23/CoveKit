@@ -308,6 +308,7 @@ export type Payloads = {
     confirmationToken?: string
     page?: number
     pageSize?: number
+    countOnly?: boolean
   }
   dbc_prepare_execution: { connId: string; sql: string; requestId: string; scope: ExecutionScope }
   dbc_workspace_close: { connId: string; workspaceId: string }

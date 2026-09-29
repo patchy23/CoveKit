@@ -55,6 +55,8 @@ const env = vi.hoisted(() => {
     dbcObjects: vi.fn(),
     dbcColumns: vi.fn(),
     dbcTableData: vi.fn(),
+    dbcTableCount: vi.fn(),
+    dbcQueryCount: vi.fn(),
     dbcTableIndexes: vi.fn(),
     dbcTableDdl: vi.fn(),
     dbcRedisKeys: vi.fn(),
@@ -100,11 +102,12 @@ vi.mock('./ipc', () => ({
     writeSql: vi.fn(),
     exportRows: env.commands.exportRows,
   },
-  tableIpc: { count: vi.fn(), apply: vi.fn() },
+  tableIpc: { count: env.commands.dbcTableCount, apply: vi.fn() },
   queryIpc: {
     prepare: env.commands.dbcPrepare,
     closeWorkspace: vi.fn(async () => undefined),
     execute: env.commands.dbcExecute,
+    count: env.commands.dbcQueryCount,
     fetch: env.commands.dbcFetch,
     closeCursor: env.commands.dbcCloseCursor,
     cancel: env.commands.dbcCancel,
@@ -511,10 +514,12 @@ describe('滚动继续读取', () => {
     expect(env.commands.dbcCloseCursor).not.toHaveBeenCalledWith('conn-a', id, 'limit')
   })
 
-  it('安全 SQL 可直接读取超过旧累计阈值的目标页，并沿用执行时 SQL 快照', async () => {
+  it('安全 SQL 页码与尾页继续使用首次执行的 SQL 和连接作用域快照', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()
     const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers ORDER BY n')
+    api.activeTabContext.value.database = 'database-at-run'
+    api.activeTabContext.value.schema = 'schema-at-run'
     env.commands.dbcExecute.mockResolvedValueOnce(
       result({
         rows: [['first-page']],
@@ -524,6 +529,8 @@ describe('滚动继续读取', () => {
     )
     await api.runQuery()
     api.patchQueryState({ sql: 'SELECT changed FROM elsewhere', dirty: true })
+    api.activeTabContext.value.database = 'database-after-run'
+    api.activeTabContext.value.schema = 'schema-after-run'
     env.commands.dbcExecute.mockResolvedValueOnce(
       result({
         rows: [['target-page']],
@@ -535,9 +542,107 @@ describe('滚动继续读取', () => {
     expect(await api.goToPage(id, 1001)).toBe(true)
     const targetRequest = env.commands.dbcExecute.mock.calls.at(-1)!
     expect(targetRequest[1]).toBe('SELECT n FROM numbers ORDER BY n')
+    expect(targetRequest[0]).toBe('conn-a')
+    expect(targetRequest[5]).toEqual({ database: 'database-at-run', schema: 'schema-at-run' })
     expect(targetRequest.slice(7, 9)).toEqual([1001, 100])
     expect(stateOf(api, id).rows).toEqual([['target-page']])
     expect(stateOf(api, id).gridPage).toBe(1001)
+  })
+
+  it('仅尾页显式COUNT，并用字符串精度定位目标页', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers ORDER BY n')
+    api.activeTabContext.value.database = 'database-at-run'
+    api.activeTabContext.value.schema = 'schema-at-run'
+    env.commands.dbcExecute.mockResolvedValueOnce(
+      result({
+        rows: [['first-page']],
+        hasMore: true,
+        pageInfo: { mode: 'server', page: 1, pageSize: 100 },
+      })
+    )
+    await api.runQuery()
+    api.activeTabContext.value.database = 'database-after-run'
+    api.activeTabContext.value.schema = 'schema-after-run'
+    env.commands.dbcQueryCount.mockResolvedValueOnce(result({ rows: [['250']] }))
+    env.commands.dbcExecute.mockResolvedValueOnce(
+      result({
+        rows: [['last-page']],
+        hasMore: false,
+        pageInfo: { mode: 'server', page: 3, pageSize: 100 },
+      })
+    )
+
+    expect(await api.goToLastPage(id)).toBe(true)
+    expect(env.commands.dbcQueryCount).toHaveBeenCalledWith(
+      'conn-a',
+      'SELECT n FROM numbers ORDER BY n',
+      expect.any(String),
+      id,
+      { database: 'database-at-run', schema: 'schema-at-run' }
+    )
+    expect(env.commands.dbcExecute.mock.calls.at(-1)?.slice(7, 9)).toEqual([3, 100])
+    expect(stateOf(api, id).gridPage).toBe(3)
+  })
+
+  it('关闭页签后丢弃迟到的尾页COUNT且不再读取结果页', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers ORDER BY n')
+    env.commands.dbcExecute.mockResolvedValueOnce(
+      result({
+        rows: [['first-page']],
+        hasMore: true,
+        pageInfo: { mode: 'server', page: 1, pageSize: 100 },
+      })
+    )
+    await api.runQuery()
+    const delayedCount = deferred<QueryResult>()
+    env.commands.dbcQueryCount.mockReturnValueOnce(delayedCount.promise)
+
+    const lastPage = api.goToLastPage(id)
+    await flush()
+    expect(env.commands.dbcQueryCount).toHaveBeenCalledTimes(1)
+    api.closeTab(id, true)
+    delayedCount.resolve(result({ rows: [['250']] }))
+
+    expect(await lastPage).toBe(false)
+    expect(env.commands.dbcExecute).toHaveBeenCalledTimes(1)
+    expect(api.tabs.value.some((tab) => tab.id === id)).toBe(false)
+  })
+
+  it('重新执行后丢弃迟到的尾页COUNT且不再读取旧结果页', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers ORDER BY n')
+    env.commands.dbcExecute.mockResolvedValueOnce(
+      result({
+        rows: [['first-page']],
+        hasMore: true,
+        pageInfo: { mode: 'server', page: 1, pageSize: 100 },
+      })
+    )
+    await api.runQuery()
+    const delayedCount = deferred<QueryResult>()
+    env.commands.dbcQueryCount.mockReturnValueOnce(delayedCount.promise)
+
+    const lastPage = api.goToLastPage(id)
+    await flush()
+    expect(env.commands.dbcQueryCount).toHaveBeenCalledTimes(1)
+    env.commands.dbcExecute.mockResolvedValueOnce(
+      result({
+        rows: [['new-query']],
+        hasMore: true,
+        pageInfo: { mode: 'server', page: 1, pageSize: 100 },
+      })
+    )
+    await api.runQuery('SELECT n FROM another_table')
+    delayedCount.resolve(result({ rows: [['250']] }))
+
+    expect(await lastPage).toBe(false)
+    expect(env.commands.dbcExecute).toHaveBeenCalledTimes(2)
+    expect(stateOf(api, id).rows).toEqual([['new-query']])
   })
 })
 
@@ -1534,9 +1639,11 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
     await pageSize.vm.$emit('update:modelValue', '1000')
     await flush()
     expect(stateOf(api, tabId).gridPage).toBe(3)
-    expect(stateOf(api, tabId).status).toBe('empty')
-    expect(grid().props('rows')).toHaveLength(0)
-    expect(panel.text()).toContain('第 3 页 · 已加载 0 行')
+    expect(stateOf(api, tabId).gridPageSize).toBe(200)
+    expect(stateOf(api, tabId).status).toBe('success')
+    expect(grid().props('rows')).toHaveLength(100)
+    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '401' })
+    expect(stateOf(api, tabId).loadMoreError).toContain('页码超出结果范围')
     expect(env.commands.dbcTableData.mock.calls.map((call) => call.slice(2, 4))).toEqual([
       [1, 100],
       [2, 100],

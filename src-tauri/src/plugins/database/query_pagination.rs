@@ -10,6 +10,28 @@ pub(crate) struct QueryPageSql {
     pub(crate) hidden_column: Option<String>,
 }
 
+/// 为安全重放的单条 SELECT 统计其完整结果；原始 LIMIT/OFFSET 保留在派生表内。
+pub(crate) fn build_count_sql(kind: DbType, original_sql: &str) -> Option<String> {
+    if !sql_analysis::streamable(kind, original_sql) {
+        return None;
+    }
+    let statements =
+        Parser::parse_sql(sql_analysis::parser_dialect(kind).as_ref(), original_sql).ok()?;
+    let [Statement::Query(query)] = statements.as_slice() else {
+        return None;
+    };
+    if !safe_wrapper_output(query) {
+        return None;
+    }
+    let inner = without_terminal_semicolon(kind, original_sql)?;
+    let alias = if matches!(kind, DbType::Oracle | DbType::Dameng) {
+        "covekit_count"
+    } else {
+        "AS covekit_count"
+    };
+    Some(format!("SELECT COUNT(*) FROM (\n{inner}\n) {alias}"))
+}
+
 /// 为已确认可重放的单条只读 SELECT 生成目标页 SQL；不改写或丢弃用户 LIMIT/OFFSET。
 pub(crate) fn build_page_sql(
     kind: DbType,
@@ -311,5 +333,25 @@ mod tests {
                 "{sql}"
             );
         }
+    }
+
+    #[test]
+    fn counts_only_safe_single_selects_and_preserves_user_limits() {
+        let sql = build_count_sql(
+            DbType::Postgresql,
+            "SELECT id FROM items ORDER BY id LIMIT 20 OFFSET 3;",
+        )
+        .expect("可安全统计");
+        assert!(sql.contains("LIMIT 20 OFFSET 3"));
+        assert!(sql.ends_with(") AS covekit_count"));
+        for sql in [
+            "SELECT custom_fn(id) FROM items",
+            "SELECT id FROM items; DELETE FROM items",
+            "SELECT * FROM items FOR UPDATE",
+        ] {
+            assert!(build_count_sql(DbType::Postgresql, sql).is_none(), "{sql}");
+        }
+        let oracle = build_count_sql(DbType::Oracle, "SELECT id FROM items").unwrap();
+        assert!(oracle.ends_with(") covekit_count"));
     }
 }
