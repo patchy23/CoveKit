@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { h, nextTick } from 'vue'
 import ResultCanvasGrid from './ResultCanvasGrid.vue'
 
@@ -7,6 +7,7 @@ const mounted: Array<ReturnType<typeof mount>> = []
 afterEach(() => {
   for (const wrapper of mounted) wrapper.unmount()
   mounted.length = 0
+  vi.unstubAllGlobals()
 })
 function setup(
   count = 100,
@@ -58,6 +59,59 @@ it('空结果不渲染表头，避免覆盖空状态文案', () => {
   const wrapper = setup(0, 2)
   expect(wrapper.findAll('[role="columnheader"]')).toHaveLength(0)
   expect(wrapper.text()).toContain('暂无数据')
+})
+
+it('ResizeObserver 的尺寸测量延迟到下一帧，避免回调中改变布局', async () => {
+  const observers: ResizeObserverCallback[] = []
+  class ResizeObserverMock {
+    constructor(callback: ResizeObserverCallback) {
+      observers.push(callback)
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  const frames = new Map<number, FrameRequestCallback>()
+  let frameId = 0
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    const id = ++frameId
+    frames.set(id, callback)
+    return id
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+
+  const wrapper = setup(1, 2)
+  const root = wrapper.element as HTMLElement
+  let measuredWidth = 120
+  let measuredHeight = 80
+  Object.defineProperty(root, 'clientWidth', {
+    configurable: true,
+    get: () => measuredWidth,
+  })
+  Object.defineProperty(root, 'clientHeight', {
+    configurable: true,
+    get: () => measuredHeight,
+  })
+  const canvas = wrapper.get('canvas')
+  await nextTick()
+  await nextTick()
+
+  expect(canvas.element.style.width).toBe('120px')
+  measuredWidth = 321
+  measuredHeight = 123
+  observers[0]([], {} as ResizeObserver)
+  expect(canvas.element.style.width).toBe('120px')
+  while (canvas.element.style.width !== '321px') {
+    const frame = frames.entries().next().value
+    expect(frame).toBeDefined()
+    frames.delete(frame![0])
+    frame![1](0)
+    await nextTick()
+  }
+
+  expect(canvas.element.style.width).toBe('321px')
+  expect(canvas.element.style.height).toBe('123px')
 })
 
 it('表头在字段名下显示数据库类型，缺少类型时明确标注未知', () => {

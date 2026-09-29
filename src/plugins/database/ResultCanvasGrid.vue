@@ -81,6 +81,7 @@ const activeText = computed(() => {
 })
 const error = ref('')
 let frame = 0
+let measurementFrame = 0
 let observer: ResizeObserver | undefined
 let themeObserver: MutationObserver | undefined
 let drag: { index: number; x: number; width: number } | undefined
@@ -135,9 +136,19 @@ function schedule() {
 }
 function measure() {
   if (!root.value) return
-  width.value = root.value.clientWidth
-  height.value = root.value.clientHeight
+  const nextWidth = root.value.clientWidth
+  const nextHeight = root.value.clientHeight
+  if (width.value !== nextWidth) width.value = nextWidth
+  if (height.value !== nextHeight) height.value = nextHeight
   scrolled()
+}
+/** ResizeObserver 通知中只排下一帧测量，避免回写画布尺寸重入当前布局周期。 */
+function scheduleMeasure() {
+  if (disposed || measurementFrame) return
+  measurementFrame = requestAnimationFrame(() => {
+    measurementFrame = 0
+    measure()
+  })
 }
 function scrolled() {
   if (!root.value) return
@@ -345,14 +356,14 @@ watch(
   }
 )
 onMounted(() => {
-  observer = new ResizeObserver(measure)
+  observer = new ResizeObserver(scheduleMeasure)
   observer.observe(root.value!)
   themeObserver = new MutationObserver(schedule)
   themeObserver.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['class', 'data-theme', 'style'],
   })
-  window.addEventListener('resize', measure)
+  window.addEventListener('resize', scheduleMeasure)
   void document.fonts?.ready.then(schedule)
   void nextTick(measure)
 })
@@ -361,7 +372,8 @@ onBeforeUnmount(() => {
   end()
   observer?.disconnect()
   themeObserver?.disconnect()
-  window.removeEventListener('resize', measure)
+  window.removeEventListener('resize', scheduleMeasure)
+  cancelAnimationFrame(measurementFrame)
   cancelAnimationFrame(frame)
 })
 defineExpose({ focus: () => root.value?.focus() })
