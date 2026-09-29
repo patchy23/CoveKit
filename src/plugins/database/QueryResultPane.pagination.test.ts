@@ -81,7 +81,7 @@ it('结果页签可翻阅缓存，选中页大小后保留服务端当前页并�
   expect(wrapper.text()).toContain('第 2 页')
 
   const pageSize = wrapper.findComponent(UiSelect)
-  expect(wrapper.get('button[aria-label="每页条数"]').exists()).toBe(true)
+  expect(wrapper.find('button[aria-label="每页条数"]').exists()).toBe(true)
   expect(pageSize.props('options').map(({ value }) => value)).toEqual(['100', '200', '500', '1000'])
   await pageSize.vm.$emit('update:modelValue', '500')
   expect(db.goToPage).toHaveBeenCalledWith('query', 2, 500)

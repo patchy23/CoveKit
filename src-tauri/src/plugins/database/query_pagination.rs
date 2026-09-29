@@ -210,10 +210,10 @@ fn outer_order(query: &Query) -> Option<String> {
             _ => return None,
         }
         let mut item_sql = expr.to_string();
-        if let Some(asc) = item.asc {
+        if let Some(asc) = item.options.asc {
             item_sql.push_str(if asc { " ASC" } else { " DESC" });
         }
-        if let Some(nulls_first) = item.nulls_first {
+        if let Some(nulls_first) = item.options.nulls_first {
             item_sql.push_str(if nulls_first {
                 " NULLS FIRST"
             } else {

@@ -254,9 +254,7 @@ function toStructure() {
       <UiButton
         size="xs"
         variant="ghost"
-        :disabled="
-          pagerDisabled || pageAction === 'end' || (!!state.loadLimit && pageAction !== 'advance')
-        "
+        :disabled="pagerDisabled || pageAction === 'end' || !!state.loadLimit"
         @click="nextPage"
       >
         {{

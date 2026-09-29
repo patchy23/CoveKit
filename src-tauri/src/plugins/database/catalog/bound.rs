@@ -424,9 +424,10 @@ impl<'a> BoundTask<'a> {
     ) -> Result<QueryResult, String> {
         self.check()?;
         self.idle_gate.take();
-        let query = conn.query(sql, params, limit);
-        tokio::pin!(query);
-        let result = tokio::select! {
+        let result = {
+            let query = conn.query(sql, params, limit);
+            tokio::pin!(query);
+            tokio::select! {
             result = &mut query => result,
             _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
                 let cancelled = tokio::time::timeout(std::time::Duration::from_secs(5),self.handle.cancel()).await;
@@ -434,6 +435,7 @@ impl<'a> BoundTask<'a> {
                 if settled.is_err() || !matches!(cancelled,Ok(Ok(()))) {
                     Err("DB_OUTCOME_UNKNOWN: 操作超时且服务端停止未确认，请核对事务状态".into())
                 } else { Err("DB_TIMEOUT: 操作超过 30 秒，已请求服务端停止".into()) }
+            }
             }
         };
         // 归还连接前阻止迟到取消；下一条同任务 SQL 开始时才释放。

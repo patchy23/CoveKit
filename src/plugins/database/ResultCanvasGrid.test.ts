@@ -33,7 +33,7 @@ function setup(
     },
     slots: options.editor
       ? {
-          editor: ({ style }: { style: Record<string, string> }) =>
+          editor: ({ style }: { style: Record<string, string | number> }) =>
             h('input', { 'aria-label': '编辑中', style }),
         }
       : undefined,
@@ -98,7 +98,7 @@ it('键盘选择、编辑和列宽调整无需为单元格挂载输入控件', a
 
 it('只为当前单元格挂载一个编辑输入，并按列宽计算其内容坐标', async () => {
   const wrapper = setup(20, 5, { editing: { row: 202, column: 2 }, editor: true })
-  const editor = wrapper.get('input[aria-label="编辑中"]')
+  const editor = wrapper.get<HTMLInputElement>('input[aria-label="编辑中"]')
   expect(wrapper.findAll('input')).toHaveLength(1)
   expect(editor.element.style.left).toBe('324px')
   expect(editor.element.style.top).toBe('90px')
@@ -108,7 +108,9 @@ it('只为当前单元格挂载一个编辑输入，并按列宽计算其内容�
     .props('columns')
     .map((column, index) => (index === 0 ? { ...column, width: 170 } : column))
   await wrapper.setProps({ columns })
-  expect(wrapper.get('input[aria-label="编辑中"]').element.style.left).toBe('354px')
+  expect(wrapper.get<HTMLInputElement>('input[aria-label="编辑中"]').element.style.left).toBe(
+    '354px'
+  )
 })
 
 it('编辑框裁切在可视数据区域内，单元格离开视口时结束编辑', async () => {
@@ -119,7 +121,7 @@ it('编辑框裁切在可视数据区域内，单元格离开视口时结束编�
   window.dispatchEvent(new Event('resize'))
   await nextTick()
 
-  const editor = wrapper.get('input[aria-label="编辑中"]')
+  const editor = wrapper.get<HTMLInputElement>('input[aria-label="编辑中"]')
   expect(editor.element.style.left).toBe('44px')
   expect(editor.element.style.width).toBe('140px')
 
