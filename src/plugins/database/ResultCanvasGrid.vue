@@ -466,7 +466,7 @@ defineExpose({ focus: () => root.value?.focus() })
   --grid-selected: var(--color-tertiary-soft);
   --grid-dirty: var(--color-warning-soft);
 }
-:global(html[data-theme='dark']) .result-canvas-grid {
+:global(html[data-theme='dark'] .result-canvas-grid) {
   --grid-background: var(--color-surface-dark);
   --grid-muted: var(--color-text-muted-dark);
   --grid-border: var(--color-border-dark);
