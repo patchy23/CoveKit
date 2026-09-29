@@ -320,10 +320,10 @@ describe('滚动继续读取', () => {
     expect(retained.statements).toEqual([])
     expect(api.queryStates.value).toEqual({})
   })
-  it('共享预算保留旧页草稿，阻止继续累积结果', async () => {
+  it('共享预算保留旧页草稿，游标只在有限窗口内继续前读', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()
-    const text = 'x'.repeat(4 * 1024 * 1024)
+    const text = 'x'.repeat(1024 * 1024)
     const protectedTabs: string[] = []
     for (let index = 0; index < 2; index++) {
       const id = openEditor(api, 'conn-a', `SELECT ${index}`)
@@ -334,20 +334,20 @@ describe('滚动继续读取', () => {
     }
     const current = openEditor(api, 'conn-a', 'SELECT 3')
     env.commands.dbcExecute.mockResolvedValue(
-      result({ rows: [[text], [text]], hasMore: true, cursorId: 'bounded' })
+      result({ rows: [['first-1'], ['first-2']], hasMore: true, cursorId: 'bounded' })
     )
     await api.runQuery()
     env.commands.dbcFetch.mockResolvedValue(
-      result({ rows: [[text], [text]], hasMore: true, cursorId: 'bounded' })
+      result({ rows: [['next-1'], ['next-2']], hasMore: false })
     )
     await api.loadMore()
-    expect(stateOf(api, current).rows).toHaveLength(2)
-    expect(stateOf(api, current).loadLimit).toContain('上限')
+    expect(stateOf(api, current).rows).toEqual([['first-1'], ['first-2'], ['next-1'], ['next-2']])
+    expect(stateOf(api, current).loadLimit).toBe('')
     for (const id of protectedTabs) {
       expect(stateOf(api, id).rows).toHaveLength(2)
       expect(stateOf(api, id).gridEdits?.[0].n.value).toBe('修改')
     }
-    expect(env.commands.dbcCloseCursor).toHaveBeenCalledWith('conn-a', current, 'bounded')
+    expect(env.commands.dbcFetch).toHaveBeenCalledWith('conn-a', current, 'bounded', 2)
   })
   it('导出已加载结果时明确提示游标仍有未加载数据', async () => {
     const api = mountWorkbench()
@@ -434,7 +434,7 @@ describe('滚动继续读取', () => {
     expect(stateOf(api, id).rows).toEqual([['new']])
   })
 
-  it('表追加携带完整末行，草稿阻止追加，刷新取消旧批次并丢弃迟到结果', async () => {
+  it('表浏览目标页替换当前页，草稿阻止翻页，刷新取消旧页并丢弃迟到结果', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()
     env.commands.dbcTableData.mockResolvedValue(
@@ -450,19 +450,19 @@ describe('滚动继续读取', () => {
     const next = deferred<DbTablePage>()
     env.commands.dbcTableData.mockReturnValueOnce(next.promise)
     const reading = api.loadMore()
-    const append = env.commands.dbcTableData.mock.calls.at(-1)!
-    expect(append.slice(2, 4)).toEqual([2, 100])
-    expect(append[7]).toEqual([{ kind: 'integer', value: '1' }])
+    const nextPage = env.commands.dbcTableData.mock.calls.at(-1)!
+    expect(nextPage.slice(2, 4)).toEqual([2, 100])
+    expect(nextPage[7]).toBeUndefined()
     env.commands.dbcTableData.mockResolvedValue(tablePage({ rows: [['fresh']], hasMore: false }))
     await api.loadTableData(id)
     next.resolve(tablePage({ rows: [['stale']], hasMore: false }))
     await reading
-    expect(env.commands.dbcCancel).toHaveBeenCalledWith(append[8])
+    expect(env.commands.dbcCancel).toHaveBeenCalledWith(nextPage[8])
     expect(stateOf(api, id).rows).toEqual([['fresh']])
     expect(stateOf(api, id).page).toBe(1)
   })
 
-  it('追加期间保留网格实例和已加载行', async () => {
+  it('切换表页期间保留网格实例，返回后替换为目标页', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()
     env.commands.dbcTableData.mockResolvedValue(tablePage({ hasMore: true }))
@@ -481,22 +481,63 @@ describe('滚动继续读取', () => {
     await reading
     await nextTick()
     expect(panel.findComponent({ name: 'ResultCanvasGrid' }).element).toBe(grid)
-    expect(api.queryState.value.rows).toEqual([['1'], ['2']])
+    expect(api.queryState.value.rows).toEqual([['2']])
   })
 
-  it('达到活动结果行数上限关闭游标，保留行身份并停止追加', async () => {
+  it('游标跨过旧累计行数后仍可继续读取下一页', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()
     const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers')
-    const rows = Array.from({ length: 100_000 }, (_, index) => [String(index)])
-    env.commands.dbcExecute.mockResolvedValue(result({ rows, hasMore: true, cursorId: 'limit' }))
+    const rows = Array.from({ length: 100 }, (_, index) => [String(index)])
+    env.commands.dbcExecute.mockResolvedValue(
+      result({
+        rows,
+        hasMore: true,
+        cursorId: 'limit',
+        pageInfo: { mode: 'cursor', page: 1, pageSize: 100 },
+      })
+    )
     await api.runQuery()
+    const nextRows = Array.from({ length: 100 }, (_, index) => [String(index + 100)])
+    env.commands.dbcFetch.mockResolvedValue(
+      result({ rows: nextRows, hasMore: true, cursorId: 'limit' })
+    )
     await api.loadMore()
-    expect(stateOf(api, id).rows).toHaveLength(100_000)
-    expect(stateOf(api, id).rows[99_999]).toEqual(['99999'])
-    expect(stateOf(api, id).loadLimit).toContain('上限')
-    expect(env.commands.dbcFetch).not.toHaveBeenCalled()
-    expect(env.commands.dbcCloseCursor).toHaveBeenCalledWith('conn-a', id, 'limit')
+    expect(stateOf(api, id).rows).toHaveLength(200)
+    expect(stateOf(api, id).rows[199]).toEqual(['199'])
+    expect(stateOf(api, id).cursorOffset).toBe(200)
+    expect(stateOf(api, id).loadLimit).toBe('')
+    expect(env.commands.dbcFetch).toHaveBeenCalledWith('conn-a', id, 'limit', 100)
+    expect(env.commands.dbcCloseCursor).not.toHaveBeenCalledWith('conn-a', id, 'limit')
+  })
+
+  it('安全 SQL 可直接读取超过旧累计阈值的目标页，并沿用执行时 SQL 快照', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const id = openEditor(api, 'conn-a', 'SELECT n FROM numbers ORDER BY n')
+    env.commands.dbcExecute.mockResolvedValueOnce(
+      result({
+        rows: [['first-page']],
+        hasMore: true,
+        pageInfo: { mode: 'server', page: 1, pageSize: 100 },
+      })
+    )
+    await api.runQuery()
+    api.patchQueryState({ sql: 'SELECT changed FROM elsewhere', dirty: true })
+    env.commands.dbcExecute.mockResolvedValueOnce(
+      result({
+        rows: [['target-page']],
+        hasMore: true,
+        pageInfo: { mode: 'server', page: 1001, pageSize: 100 },
+      })
+    )
+
+    expect(await api.goToPage(id, 1001)).toBe(true)
+    const targetRequest = env.commands.dbcExecute.mock.calls.at(-1)!
+    expect(targetRequest[1]).toBe('SELECT n FROM numbers ORDER BY n')
+    expect(targetRequest.slice(7, 9)).toEqual([1001, 100])
+    expect(stateOf(api, id).rows).toEqual([['target-page']])
+    expect(stateOf(api, id).gridPage).toBe(1001)
   })
 })
 
@@ -1440,12 +1481,19 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
     expect(panel.text()).not.toContain('加载失败')
   })
 
-  it('数据表按显式显示页切片，滚动不取数且上限内缓存仍可翻阅', async () => {
+  it('数据表按服务端目标页替换结果，滚动不取数且保留页内行索引', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()
     const rows = Array.from({ length: 200 }, (_, index) => [`row-${index}`])
-    env.commands.dbcTableData.mockResolvedValue(
-      tablePage({ rows, total: rows.length, hasMore: true })
+    env.commands.dbcTableData.mockImplementation(
+      async (_connId: string, _table: string, page: number, size: number) =>
+        tablePage({
+          rows: rows.slice((page - 1) * size, page * size),
+          total: rows.length,
+          page,
+          pageSize: size,
+          hasMore: page * size < rows.length,
+        })
     )
     api.selectResource('conn-a::db1::table:users')
     await flush()
@@ -1467,18 +1515,22 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
       .findAll('button')
       .find((button) => button.text().trim() === '应用')!
       .trigger('click')
-    await nextTick()
+    await flush()
     expect(grid().props('rows')).toHaveLength(50)
 
-    api.patchTabQueryState(tabId, { loadLimit: '已停止读取' })
     await panel
       .findAll('button')
-      .find((button) => button.text().trim() === '下一页')!
+      .find((button) => button.text().includes('下一页'))!
       .trigger('click')
-    await nextTick()
+    await flush()
     expect(stateOf(api, tabId).gridPage).toBe(2)
-    expect(grid().props('rows')[0].__row).toBe('50')
-    expect(env.commands.dbcTableData).toHaveBeenCalledTimes(1)
+    expect(grid().props('rows')).toHaveLength(50)
+    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '51' })
+    expect(env.commands.dbcTableData.mock.calls.map((call) => call.slice(2, 4))).toEqual([
+      [1, 100],
+      [1, 50],
+      [2, 50],
+    ])
   })
 
   it('数据页签按自己的页签状态加载分页数据，切换页签不影响已加载结果', async () => {

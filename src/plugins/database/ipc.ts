@@ -72,7 +72,9 @@ export const queryIpc = {
     requestId: string,
     workspaceId?: string,
     scope?: ExecutionScope,
-    confirmationToken?: string
+    confirmationToken?: string,
+    page?: number,
+    pageSize?: number
   ): Promise<QueryResult> =>
     call('dbc_execute', {
       connId,
@@ -82,6 +84,8 @@ export const queryIpc = {
       workspaceId,
       scope,
       confirmationToken,
+      page,
+      pageSize,
     })
       .then(hydrateResultRows)
       .then((result) => {
@@ -94,6 +98,7 @@ export const queryIpc = {
           result.columnTypes = display.columnTypes
           result.cursorId = display.cursorId
           result.hasMore = display.hasMore
+          result.pageInfo = display.pageInfo
         }
         return result
       }),

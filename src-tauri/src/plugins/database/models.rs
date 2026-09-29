@@ -238,10 +238,24 @@ pub struct ExecutionScope {
     pub schema: String,
 }
 
+/// 查询结果分页方式；server 每次只返回一个 SQL 目标页，cursor 沿用原执行游标。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueryPageInfo {
+    /// server 或 cursor；cursor 结果只允许继续读取原执行流。
+    pub mode: String,
+    /// 用户可见页码，从 1 开始。
+    pub page: u32,
+    /// 用户可见每页行数。
+    pub page_size: u32,
+}
+
 /// SQL 执行结果（查询返回表格，非查询返回影响行数）
 #[derive(Debug, Clone, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QueryResult {
+    /// 分页方式与当前目标页；不影响原始 rows/values 的单页索引。
+    pub page_info: Option<QueryPageInfo>,
     /// 同一次执行的可继续读取结果；完成或关闭后失效。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cursor_id: Option<String>,

@@ -152,6 +152,8 @@ pub async fn dbc_execute(
     workspace_id: Option<String>,
     scope: Option<ExecutionScope>,
     confirmation_token: Option<String>,
+    page: Option<u32>,
+    page_size: Option<u32>,
 ) -> Result<QueryResult, String> {
     let _storage_operation = crate::framework::storage::access::operation()?;
     let log_started = std::time::Instant::now();
@@ -263,8 +265,32 @@ pub async fn dbc_execute(
     if handle.aborted.load(Ordering::Acquire) {
         return Err("DB_CANCELLED: 已取消，语句尚未发往服务器".into());
     }
-    let limit = max_rows.unwrap_or(1000).clamp(1, 100_000);
-    if !session.transaction
+    let page = page.unwrap_or(1).max(1);
+    let page_size = page_size.unwrap_or(100).clamp(1, 1000);
+    let page_sql = if !session.transaction {
+        super::super::query_pagination::build_page_sql(
+            entry.config.db_type,
+            &sql,
+            page,
+            page_size,
+        )
+    } else {
+        None
+    };
+    if page > 1 && page_sql.is_none() {
+        return Err("DB_PAGINATION_UNSUPPORTED: 此结果不可安全重放，已保留原查询游标".into());
+    }
+    let execution_sql = page_sql
+        .as_ref()
+        .map(|plan| plan.sql.clone())
+        .unwrap_or_else(|| sql.clone());
+    let limit = if page_sql.is_some() {
+        u64::from(page_size) + 1
+    } else {
+        max_rows.unwrap_or(1000).clamp(1, 100_000)
+    };
+    if page_sql.is_none()
+        && !session.transaction
         && matches!(&session.connection, WorkspaceConnection::Mysql(..) | WorkspaceConnection::Postgres(..) | WorkspaceConnection::Sqlite(..))
         && sql_analysis::streamable(entry.config.db_type, &sql)
     {
@@ -277,20 +303,28 @@ pub async fn dbc_execute(
         registration.active = false;
         let mut result = drivers::cursor::start(app.clone(), slot, handle, request_id.clone(), sql.clone(), limit.min(500)).await?;
         result.edit_target = edit_target;
+        result.page_info = Some(crate::plugins::database::models::QueryPageInfo {
+            mode: "cursor".into(),
+            page,
+            page_size,
+        });
         return Ok(result);
     }
     let started = Instant::now();
+    let hidden_page_column = page_sql
+        .as_ref()
+        .and_then(|plan| plan.hidden_column.as_deref());
     let execution = async {
         match &mut session.connection {
             WorkspaceConnection::Mysql(conn, _) => {
-                drivers::mysql::execute_mysql_conn(conn, &sql, limit).await
+                drivers::mysql::execute_mysql_conn(conn, &execution_sql, limit).await
             }
             WorkspaceConnection::Postgres(client) => {
-                drivers::postgres::execute_postgres_client(client, &sql, limit).await
+                drivers::postgres::execute_postgres_client(client, &execution_sql, limit).await
             }
             WorkspaceConnection::Sqlite(conn) => {
                 let conn = Arc::clone(conn);
-                let text = sql.clone();
+                let text = execution_sql.clone();
                 crate::framework::storage::access::spawn_blocking(move || {
                     drivers::sqlite::execute_sqlite(&conn, &text, limit)
                 })
@@ -298,9 +332,9 @@ pub async fn dbc_execute(
                 .map_err(|e| e.to_string())?
             }
             WorkspaceConnection::Agent(client, id) => {
-                drivers::execute_agent(client, id, &sql, limit, entry.config.db_type).await
+                drivers::execute_agent(client, id, &execution_sql, limit, entry.config.db_type).await
             }
-            WorkspaceConnection::Redis(manager) => drivers::redis::exec_command(manager, &sql)
+            WorkspaceConnection::Redis(manager) => drivers::redis::exec_command(manager, &execution_sql)
                 .await
                 .map(|value| {
                     let mut result = QueryResult::empty();
@@ -334,6 +368,26 @@ pub async fn dbc_execute(
     log_cancelled = handle.aborted.load(Ordering::Acquire) && !timed_out;
     drop(gate);
     let result = outcome.map(|mut result| {
+        if page_sql.is_some() {
+            if let Some(column) = hidden_page_column {
+                strip_hidden_page_column(&mut result, column);
+            }
+            if result.truncated {
+                result = QueryResult::failed(
+                    "当前页结果超过 8 MiB 显示上限，请减小每页行数或选择较小字段".into(),
+                );
+            } else {
+                result.has_more = result.rows.len() > page_size as usize;
+                result.rows.truncate(page_size as usize);
+                result.values.truncate(page_size as usize);
+                result.cursor_id = None;
+                result.page_info = Some(crate::plugins::database::models::QueryPageInfo {
+                    mode: "server".into(),
+                    page,
+                    page_size,
+                });
+            }
+        }
         if let Ok(parts) = sql_analysis::split(entry.config.db_type, &sql) {
             if result.statements.is_empty() {
                 if result.ok {
@@ -402,6 +456,19 @@ pub async fn dbc_execute(
         ),
     }
     result.map(QueryResult::compact_transport)
+}
+
+fn strip_hidden_page_column(result: &mut QueryResult, column: &str) {
+    if result.columns.last().is_some_and(|name| name == column) {
+        result.columns.pop();
+        result.column_types.pop();
+        for row in &mut result.rows {
+            row.pop();
+        }
+        for row in &mut result.values {
+            row.pop();
+        }
+    }
 }
 
 /// 请求取消；原生驱动发送真实请求，Redis 不能撤销已发送命令。

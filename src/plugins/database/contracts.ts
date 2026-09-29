@@ -106,8 +106,16 @@ export interface ExecutionPreview {
   summary: string
 }
 
+/** 查询结果分页方式；cursor 结果只沿用原执行游标，不会重放 SQL。 */
+export interface QueryPageInfo {
+  mode: 'server' | 'cursor'
+  page: number
+  pageSize: number
+}
+
 /** SQL 执行结果 */
 export interface QueryResult {
+  pageInfo?: QueryPageInfo | null
   cursorId?: string
   hasMore: boolean
   editTarget?: TableTarget | null
@@ -298,6 +306,8 @@ export type Payloads = {
     workspaceId?: string
     scope?: ExecutionScope
     confirmationToken?: string
+    page?: number
+    pageSize?: number
   }
   dbc_prepare_execution: { connId: string; sql: string; requestId: string; scope: ExecutionScope }
   dbc_workspace_close: { connId: string; workspaceId: string }

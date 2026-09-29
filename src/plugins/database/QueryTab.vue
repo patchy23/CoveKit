@@ -199,20 +199,42 @@ function confirmSave() {
 
 /** 结果替换时重建索引；筛选、翻页和复制共用，不重复扫描原始行。 */
 const rowIndex = computed(() => indexResultRows(queryState.value.rows))
-const gridRows = computed(() =>
-  db.activeTabKind.value !== 'query'
-    ? []
-    : resultGridRows(
-        queryState.value.columns,
-        sliceResultPage(
-          db.pageRows.value,
-          queryState.value.gridPage ?? 1,
-          queryState.value.gridPageSize ?? 100
-        ),
-        queryState.value.values,
-        rowIndex.value
-      )
-)
+const gridRows = computed(() => {
+  const state = queryState.value
+  if (db.activeTabKind.value !== 'query') return []
+  const page = state.gridPage ?? 1
+  const size = state.gridPageSize ?? 100
+  if (state.paginationMode === 'server') {
+    return resultGridRows(
+      state.columns,
+      db.pageRows.value,
+      state.values,
+      rowIndex.value,
+      (_, index) => (page - 1) * size + index + 1
+    )
+  }
+  if (state.paginationMode === 'cursor') {
+    const first = (page - 1) * size - (state.cursorBufferStart ?? 0)
+    const last = first + size
+    const rows = db.filteredRows.value.filter((row) => {
+      const index = rowIndex.value(row)
+      return index >= first && index < last
+    })
+    return resultGridRows(
+      state.columns,
+      rows,
+      state.values,
+      rowIndex.value,
+      (_, index) => (state.cursorBufferStart ?? 0) + index + 1
+    )
+  }
+  return resultGridRows(
+    state.columns,
+    sliceResultPage(db.pageRows.value, page, size),
+    state.values,
+    rowIndex.value
+  )
+})
 
 /** 复制结果到剪贴板（TSV 制表符分隔） */
 async function copyResult() {

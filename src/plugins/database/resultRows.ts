@@ -56,13 +56,15 @@ export function resultGridRows(
   columns: string[],
   rows: string[][],
   values: DbValue[][],
-  indexOf: (row: string[]) => number
-): Array<{ __row: string } & Record<string, string | null>> {
+  indexOf: (row: string[]) => number,
+  rowLabel?: (row: string[], index: number) => number
+): Array<{ __row: string; __label?: string } & Record<string, string | null>> {
   return rows.map((row) => {
     const index = indexOf(row)
     const typed = values[index]
     return {
       __row: String(index),
+      ...(rowLabel ? { __label: String(rowLabel(row, index)) } : {}),
       ...Object.fromEntries(
         columns.map((_, col) => [
           `c${col}`,

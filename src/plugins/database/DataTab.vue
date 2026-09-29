@@ -16,7 +16,6 @@ import {
   UiSpinner,
   UiToolbar,
 } from '@/core/ui'
-import { resultPageAction, sliceResultPage } from './resultRows'
 import type { useDatabase } from './useDatabase'
 
 const props = defineProps<{
@@ -37,18 +36,7 @@ const pagerDisabled = computed(
     state.value.loadingMore ||
     state.value.status === 'running'
 )
-const pageAction = computed(() =>
-  resultPageAction(
-    gridPage.value,
-    gridPageSize.value,
-    state.value.rows.length,
-    !!state.value.hasMore
-  )
-)
-
-function patchGridPage(value: Partial<typeof state.value>, tabId = db.activeTabId.value) {
-  db.patchTabQueryState(tabId, value)
-}
+const pageAction = computed(() => (state.value.hasMore ? 'load-next' : 'end'))
 
 function applyPageSize() {
   if (pagerDisabled.value) return
@@ -58,52 +46,32 @@ function applyPageSize() {
     return
   }
   pageSizeError.value = ''
-  patchGridPage({ gridPage: 1, gridPageSize: size })
+  void db.goToPage(db.activeTabId.value, 1, size)
 }
 
 function previousPage() {
   if (pagerDisabled.value || gridPage.value <= 1) return
-  patchGridPage({ gridPage: gridPage.value - 1 })
+  void db.goToPage(db.activeTabId.value, gridPage.value - 1)
 }
 
 async function nextPage() {
   const tabId = db.activeTabId.value
-  const sourceState = state.value
-  const page = sourceState.gridPage ?? 1
-  const size = sourceState.gridPageSize ?? 100
-  const action = resultPageAction(page, size, sourceState.rows.length, !!sourceState.hasMore)
-  if (pagerDisabled.value || action === 'end') return
-  const next = page + 1
-  if (action === 'advance') {
-    patchGridPage({ gridPage: next }, tabId)
-    return
-  }
-  if (sourceState.loadLimit) return
-  await db.loadMore(tabId)
-  if (
-    db.activeTabId.value !== tabId ||
-    db.queryStates.value[tabId] !== sourceState ||
-    hasGridChanges(sourceState)
-  )
-    return
-  if (action === 'load-next' && sourceState.rows.length > page * size)
-    patchGridPage({ gridPage: next }, tabId)
+  if (pagerDisabled.value || !state.value.hasMore) return
+  await db.goToPage(tabId, gridPage.value + 1)
 }
 
 /** 动态行对象（列名为 c0/c1…） */
-type GridRow = { __row: string } & Record<string, string | null>
+type GridRow = { __row: string; __label: string } & Record<string, string | null>
 const gridRows = computed<GridRow[]>(() => {
   const page = gridPage.value
   const size = gridPageSize.value
-  const first = (page - 1) * size
-  return sliceResultPage(state.value.rows, page, size).map((row, offset) => ({
-    __row: String(first + offset),
+  return state.value.rows.map((row, offset) => ({
+    __row: String(offset),
+    __label: String((page - 1) * size + offset + 1),
     ...Object.fromEntries(
       state.value.columns.map((_, colIndex) => [
         `c${colIndex}`,
-        state.value.values[first + offset]?.[colIndex]?.kind === 'null'
-          ? null
-          : (row[colIndex] ?? ''),
+        state.value.values[offset]?.[colIndex]?.kind === 'null' ? null : (row[colIndex] ?? ''),
       ])
     ),
   }))

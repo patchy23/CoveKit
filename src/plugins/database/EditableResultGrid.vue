@@ -91,7 +91,13 @@ const reason = computed(() => {
   return ''
 })
 watch(
-  [() => props.state, () => props.state.editTarget],
+  [
+    () => props.state,
+    () => target.value?.connId,
+    () => target.value?.database,
+    () => target.value?.schema,
+    () => target.value?.table,
+  ],
   async () => {
     const request = ++generation
     selected.value = null
@@ -123,6 +129,13 @@ watch(
   },
   { immediate: true }
 )
+watch([() => props.state.rows, () => props.state.values, () => props.state.gridPage], () => {
+  selected.value = null
+  editing.value = null
+  detail.value = null
+  menu.value = null
+  discardOpen.value = false
+})
 
 type CellEvent = { row: Record<string, unknown>; column: UiDataGridColumn }
 function selectCell(event: CellEvent) {

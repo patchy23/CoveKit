@@ -16,6 +16,7 @@ pub(crate) mod drivers;
 mod execution_tests;
 pub(crate) mod files;
 pub(crate) mod models;
+mod query_pagination;
 pub(crate) mod results;
 pub(crate) mod secrets;
 pub(crate) mod sql_analysis;

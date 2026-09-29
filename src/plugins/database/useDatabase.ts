@@ -144,6 +144,7 @@ export function useDatabase() {
     patchTabQueryState: ws.patchTabQueryState,
     patchQueryState: ws.patchQueryState,
     runQuery: ws.runQuery,
+    goToPage: ws.goToPage,
     loadMore: ws.loadMore,
     closeQueryResults: ws.closeQueryResults,
     cancelQuery: ws.cancelQuery,

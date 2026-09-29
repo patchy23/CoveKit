@@ -50,7 +50,7 @@ pub async fn dbc_table_data(
     let started = Instant::now();
     task.check()?;
     let page = page.max(1);
-    let page_size = page_size.clamp(1, 500);
+    let page_size = page_size.clamp(1, 1000);
     let columns = columns_for_entry(&entry, schema.clone(), table.clone()).await?;
     task.check()?;
     if columns.is_empty() {

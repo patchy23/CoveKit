@@ -115,7 +115,7 @@ function paint() {
     widths: widths.value,
     rowCount: props.rows.length,
     text: (row, column) => props.text(Number(props.rows[row].__row), column),
-    rowLabel: (row) => String(Number(props.rows[row].__row) + 1),
+    rowLabel: (row) => String(props.rows[row].__label ?? Number(props.rows[row].__row) + 1),
     selected: active.value,
     dirty: (row, column) => props.dirty(Number(props.rows[row].__row), column),
     theme: {

@@ -34,9 +34,18 @@ const emit = defineEmits<{
 const gridPage = computed(() => queryState.value.gridPage ?? 1)
 const gridPageSize = computed(() => queryState.value.gridPageSize ?? 100)
 const loadedRows = computed(() => db.filteredRows.value.length)
-const pageAction = computed(() =>
-  resultPageAction(gridPage.value, gridPageSize.value, loadedRows.value, !!queryState.value.hasMore)
-)
+const pageAction = computed(() => {
+  const state = queryState.value
+  if (state.paginationMode === 'server') return state.hasMore ? 'load-next' : 'end'
+  if (state.paginationMode === 'cursor') {
+    const loadedEnd = (state.cursorBufferStart ?? 0) + state.rows.length
+    const pageEnd = gridPage.value * gridPageSize.value
+    if (loadedEnd < pageEnd && state.hasMore) return 'fill-current'
+    if (loadedEnd > pageEnd) return 'advance'
+    return state.hasMore ? 'load-next' : 'end'
+  }
+  return resultPageAction(gridPage.value, gridPageSize.value, loadedRows.value, !!state.hasMore)
+})
 const pageSizeDraft = ref('100')
 const pageSizeError = ref('')
 watch(gridPageSize, (size) => (pageSizeDraft.value = String(size)), { immediate: true })
@@ -57,11 +66,23 @@ function applyPageSize() {
     return
   }
   pageSizeError.value = ''
-  emit('patch', { gridPage: 1, gridPageSize: size })
+  const tabId =
+    Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === queryState.value) ??
+    ''
+  if (queryState.value.paginationMode && tabId) void db.goToPage(tabId, 1, size)
+  else emit('patch', { gridPage: 1, gridPageSize: size })
 }
 
 function previousPage() {
   if (pagerDisabled.value || gridPage.value <= 1) return
+  if (queryState.value.paginationMode) {
+    const tabId =
+      Object.keys(db.queryStates.value).find(
+        (id) => db.queryStates.value[id] === queryState.value
+      ) ?? ''
+    if (tabId) void db.goToPage(tabId, gridPage.value - 1)
+    return
+  }
   emit('patch', { gridPage: gridPage.value - 1 })
 }
 
@@ -69,14 +90,25 @@ async function nextPage() {
   const sourceState = queryState.value
   const page = sourceState.gridPage ?? 1
   const size = sourceState.gridPageSize ?? 100
-  const action = resultPageAction(page, size, loadedRows.value, !!sourceState.hasMore)
+  const action = pageAction.value
   if (pagerDisabled.value || action === 'end') return
   const next = page + 1
+  if (sourceState.paginationMode && sourceState.paginationMode !== 'cursor') {
+    const tabId =
+      Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === sourceState) ?? ''
+    if (tabId) await db.goToPage(tabId, next, size)
+    return
+  }
+  if (sourceState.paginationMode === 'cursor') {
+    const tabId =
+      Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === sourceState) ?? ''
+    if (tabId) await db.goToPage(tabId, action === 'fill-current' ? page : next, size)
+    return
+  }
   if (action === 'advance') {
     emit('patch', { gridPage: next })
     return
   }
-  if (sourceState.loadLimit) return
   const tabId =
     Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === sourceState) ?? ''
   if (!tabId) return
@@ -150,7 +182,13 @@ async function nextPage() {
         <UiButton
           v-if="db.filteredRows.busy.value"
           variant="ghost"
-          @click="emit('patch', { filter: '', page: 1, gridPage: 1 })"
+          @click="
+            emit('patch', {
+              filter: '',
+              page: 1,
+              gridPage: queryState.paginationMode ? gridPage : 1,
+            })
+          "
           >取消筛选</UiButton
         >
         <span class="text-caption text-text-muted dark:text-text-muted-dark">{{ statusText }}</span>
@@ -245,7 +283,13 @@ async function nextPage() {
         class="min-w-0 w-[160px]"
         size="xs"
         placeholder="筛选已加载结果…"
-        @update:model-value="emit('patch', { filter: String($event), page: 1, gridPage: 1 })"
+        @update:model-value="
+          emit('patch', {
+            filter: String($event),
+            page: 1,
+            gridPage: queryState.paginationMode ? gridPage : 1,
+          })
+        "
       />
       <span
         v-if="queryState.truncated && !queryState.hasMore"
@@ -261,7 +305,9 @@ async function nextPage() {
             ? '正在读取下一批…'
             : hasGridChanges(queryState)
               ? '请先保存或放弃修改，再翻页或调整每页条数'
-              : `第 ${gridPage} 页 · 筛选后 ${loadedRows} 行${queryState.hasMore ? '，仍有后续' : ''}`)
+              : queryState.paginationMode === 'cursor' && (queryState.cursorBufferStart ?? 0) > 0
+                ? `第 ${gridPage} 页 · 仅保留最近结果页，较早页面不可用`
+                : `第 ${gridPage} 页 · 筛选后 ${loadedRows} 行${queryState.hasMore ? '，仍有后续' : ''}`)
         }}</span>
         <UiButton
           size="xs"

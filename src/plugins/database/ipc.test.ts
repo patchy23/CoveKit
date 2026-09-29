@@ -62,6 +62,7 @@ it('多语句根展示引用完整末语句数据，保留脚本汇总状态', a
     rows: [['large text']],
     values: [[{ kind: 'text', value: 'large text' }]],
     columnTypes: ['TEXT'],
+    pageInfo: { mode: 'cursor', page: 2, pageSize: 100 },
   })
   const payload = result({
     statements: [result({ ok: false }), last],
@@ -77,6 +78,7 @@ it('多语句根展示引用完整末语句数据，保留脚本汇总状态', a
   expect(received.values).toBe(last.values)
   expect(received.columns).toBe(last.columns)
   expect(received.columnTypes).toBe(last.columnTypes)
+  expect(received.pageInfo).toBe(last.pageInfo)
   expect(received).toMatchObject({
     ok: false,
     truncated: true,
