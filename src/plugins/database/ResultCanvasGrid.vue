@@ -350,7 +350,7 @@ onMounted(() => {
   themeObserver = new MutationObserver(schedule)
   themeObserver.observe(document.documentElement, {
     attributes: true,
-    attributeFilter: ['class', 'style'],
+    attributeFilter: ['class', 'data-theme', 'style'],
   })
   window.addEventListener('resize', measure)
   void document.fonts?.ready.then(schedule)
@@ -466,7 +466,7 @@ defineExpose({ focus: () => root.value?.focus() })
   --grid-selected: var(--color-tertiary-soft);
   --grid-dirty: var(--color-warning-soft);
 }
-:global(.dark) .result-canvas-grid {
+:global(html[data-theme='dark']) .result-canvas-grid {
   --grid-background: var(--color-surface-dark);
   --grid-muted: var(--color-text-muted-dark);
   --grid-border: var(--color-border-dark);
