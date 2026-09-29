@@ -38,6 +38,7 @@ pub(crate) enum BoundConnection {
     Mysql(mysql_async::Conn),
     Postgres(deadpool_postgres::ClientWrapper),
     Sqlite(Arc<Mutex<rusqlite::Connection>>),
+    Discarded,
 }
 impl BoundConnection {
     /// 按执行目标获取原生连接；调用方持有连接直至事务和取消收尾。
@@ -208,8 +209,23 @@ impl BoundConnection {
                 .await
                 .map_err(|e| e.to_string())?;
             }
+            Self::Discarded => return Err("DB_SESSION_RESET: 工作连接已失效，请重试操作".into()),
         }
         Ok(result)
+    }
+
+    /// MySQL 服务端已确认连接线程不存在时，消费连接以阻止它返回共享池。
+    async fn discard_lost_mysql_session(&mut self) -> Result<(), String> {
+        match std::mem::replace(self, Self::Discarded) {
+            Self::Mysql(conn) => conn
+                .disconnect()
+                .await
+                .map_err(|error| format!("丢弃失效 MySQL 工作连接失败：{error}")),
+            other => {
+                *self = other;
+                Ok(())
+            }
+        }
     }
 }
 fn scalar(value: &DbValue) -> Result<Option<&str>, String> {
@@ -351,6 +367,9 @@ impl<'a> BoundTask<'a> {
                         .get_interrupt_handle(),
                 ));
             }
+            BoundConnection::Discarded => {
+                return Err("DB_SESSION_RESET: 工作连接已失效，请重试操作".into());
+            }
         }
         self.state
             .0
@@ -404,6 +423,15 @@ impl<'a> BoundTask<'a> {
         };
         // 归还连接前阻止迟到取消；下一条同任务 SQL 开始时才释放。
         self.idle_gate = Some(self.handle.gate.clone().lock_owned().await);
+        if self
+            .handle
+            .mysql_session_gone
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            if let Err(error) = conn.discard_lost_mysql_session().await {
+                log::warn!("丢弃已消失的 MySQL 工作会话失败：{error}");
+            }
+        }
         result
     }
     /// 与取消请求互斥后进入提交阶段，提交期间不再发送迟到取消。

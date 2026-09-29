@@ -223,8 +223,21 @@ pub(crate) async fn start(
         } else {
             log::error!("释放查询游标取消登记失败");
         }
+        let mysql_session_gone = handle.mysql_session_gone.load(Ordering::Acquire);
+        let lost_session = if mysql_session_gone {
+            lane.take()
+        } else {
+            None
+        };
         drop(lane);
         drop(gate);
+        if let Some(session) = lost_session {
+            match tokio::time::timeout(CLOSE_TIMEOUT, workspace::close(session)).await {
+                Ok(Ok(())) => {}
+                Ok(Err(close)) => log::warn!("MySQL 取消目标已消失，关闭工作连接失败：{close}"),
+                Err(_) => log::warn!("MySQL 取消目标已消失，关闭工作连接超时"),
+            }
+        }
         if let Some(first) = pager.first.take() {
             let response = match &outcome {
                 Err(error) => Err(error.clone()),
@@ -616,6 +629,9 @@ async fn mysql(conn: &mut mysql_async::Conn, sql: &str, pager: &mut Pager) -> Re
             .map_err(|error| format!("MySQL 结果完成后的协议收尾失败：{error}")),
         End::Closed => {
             cancel(&pager.handle).await?;
+            if pager.handle.mysql_session_gone.load(Ordering::Acquire) {
+                return Ok(());
+            }
             match tokio::time::timeout(CLOSE_TIMEOUT, query.drop_result()).await {
                 Ok(Ok(())) => Ok(()),
                 // 驱动读取 ERR 包时已清 pending result，可以安全保留原工作连接。

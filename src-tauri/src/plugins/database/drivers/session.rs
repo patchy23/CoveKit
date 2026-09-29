@@ -108,6 +108,8 @@ pub struct CancelHandle {
     pub pg_ssl: bool,
     /// 本次真实 MySQL 会话线程号。
     pub mysql_thread_id: Option<u32>,
+    /// KILL QUERY 时服务器已找不到工作会话；工作连接不能继续留在页签槽位。
+    pub mysql_session_gone: Arc<AtomicBool>,
     /// 发送 KILL QUERY 的管理连接池。
     pub mysql_pool: Option<mysql_async::Pool>,
     /// 当前 SQLite 连接的 interrupt 句柄。
@@ -128,6 +130,7 @@ impl CancelHandle {
             pg_cancel: None,
             pg_ssl: false,
             mysql_thread_id: None,
+            mysql_session_gone: Arc::new(AtomicBool::new(false)),
             mysql_pool: None,
             sqlite: None,
             agent: None,
@@ -162,13 +165,19 @@ impl CancelHandle {
             }
         }
         if let (Some(pool), Some(id)) = (&self.mysql_pool, self.mysql_thread_id) {
-            let mut conn = pool
-                .get_conn()
-                .await
-                .map_err(|e| format!("取消控制连接失败: {e}"))?;
-            conn.query_drop(format!("KILL QUERY {id}"))
-                .await
-                .map_err(|e| format!("MySQL 取消失败: {e}"))?;
+            if !self.mysql_session_gone.load(Ordering::Acquire) {
+                let mut conn = pool
+                    .get_conn()
+                    .await
+                    .map_err(|e| format!("取消控制连接失败: {e}"))?;
+                if let Err(error) = conn.query_drop(format!("KILL QUERY {id}")).await {
+                    if mysql_cancel_target_gone(&error) {
+                        self.mysql_session_gone.store(true, Ordering::Release);
+                    } else {
+                        return Err(format!("MySQL 取消失败: {error}"));
+                    }
+                }
+            }
         }
         if let Some(handle) = &self.sqlite {
             handle.interrupt();
@@ -177,6 +186,32 @@ impl CancelHandle {
             client.cancel_session(id).await?;
         }
         Ok(())
+    }
+}
+
+fn mysql_cancel_target_gone(error: &mysql_async::Error) -> bool {
+    matches!(error, mysql_async::Error::Server(error) if error.code == 1094)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mysql_cancel_target_gone;
+
+    #[test]
+    fn only_unknown_mysql_thread_is_an_idempotent_cancel() {
+        let unknown_thread = mysql_async::Error::Server(mysql_async::ServerError {
+            code: 1094,
+            message: "Unknown thread id".into(),
+            state: "HY000".into(),
+        });
+        let query_interrupted = mysql_async::Error::Server(mysql_async::ServerError {
+            code: 1317,
+            message: "Query execution was interrupted".into(),
+            state: "70100".into(),
+        });
+
+        assert!(mysql_cancel_target_gone(&unknown_thread));
+        assert!(!mysql_cancel_target_gone(&query_interrupted));
     }
 }
 

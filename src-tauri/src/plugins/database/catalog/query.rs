@@ -370,6 +370,12 @@ pub async fn dbc_execute(
         if let Some(old) = slot.take() {
             workspace::close(old).await?;
         }
+    } else if handle.mysql_session_gone.load(Ordering::Acquire) {
+        if let Some(old) = slot.take() {
+            if let Err(error) = workspace::close(old).await {
+                log::warn!("MySQL 取消目标已消失，关闭工作会话失败：{error}");
+            }
+        }
     }
     drop(registration);
     result
