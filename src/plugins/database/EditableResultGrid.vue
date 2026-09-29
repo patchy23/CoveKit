@@ -334,7 +334,7 @@ function discard() {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
     <UiToolbar v-if="pending || state.gridSaving" density="compact" bordered>
       <template #trailing>
         <span v-if="pending" class="text-caption text-text-muted">{{ count }} 行待保存</span>

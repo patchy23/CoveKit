@@ -205,7 +205,7 @@ function toStructure() {
     <UiButton size="sm" variant="secondary" @click="refresh">重试</UiButton>
   </UiEmptyState>
 
-  <div v-else class="relative flex min-h-0 flex-1">
+  <div v-else class="relative flex min-h-0 min-w-0 flex-1">
     <EditableResultGrid :db="db" :state="state" class="min-h-0 flex-1" :rows="gridRows" />
     <div
       v-if="state.loadingMore || cancelingLoad"

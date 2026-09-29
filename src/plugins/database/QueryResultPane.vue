@@ -265,7 +265,7 @@ async function nextPage() {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col border-t border-border dark:border-border-dark">
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col border-t border-border dark:border-border-dark">
     <UiToolbar density="compact" bordered>
       <UiSelect
         v-if="queryState.statements.length > 1"
@@ -379,7 +379,7 @@ async function nextPage() {
               : `返回 ${queryState.total} 行，耗时 ${queryState.durationMs} ms。`
       }}
     </UiAlert>
-    <div v-else class="relative flex min-h-0 flex-1">
+    <div v-else class="relative flex min-h-0 min-w-0 flex-1">
       <EditableResultGrid :db="db" :state="queryState" class="min-h-0 flex-1" :rows="rows">
         <template #empty>
           <span>{{ queryState.filter ? '无匹配结果' : '当前查询未返回数据' }}</span>
