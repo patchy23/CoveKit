@@ -2,6 +2,9 @@
 use super::models::{DbValue, QueryResult};
 use std::io::Write;
 
+/// 单页可保留结果的字节上限；小结果按行逐步分配，不预留整页内存。
+pub(crate) const RESULT_BYTES_LIMIT: usize = 32 * 1024 * 1024;
+
 /// IPC 只发送一份完整类型值；不完整的旧驱动结果仍保留显示行。
 impl QueryResult {
     pub(crate) fn compact_transport(mut self) -> Self {
@@ -11,7 +14,10 @@ impl QueryResult {
         }
         if !self.values.is_empty()
             && self.values.len() == self.rows.len()
-            && self.values.iter().all(|row| row.len() == self.columns.len())
+            && self
+                .values
+                .iter()
+                .all(|row| row.len() == self.columns.len())
         {
             self.rows = Vec::new();
         }
@@ -112,7 +118,7 @@ impl ResultBudget {
     /// 行被拒绝不消耗预算，后续较小行仍按原有语义尝试保存。
     pub(crate) fn row(&self) -> ResultRow {
         ResultRow {
-            remaining: (8 * 1024 * 1024usize).saturating_sub(self.bytes),
+            remaining: RESULT_BYTES_LIMIT.saturating_sub(self.bytes),
             values: (self.rows < self.max_rows).then(Vec::new),
         }
     }
@@ -145,7 +151,7 @@ impl ResultBudget {
                     .saturating_add(128)
             })
             .fold(0usize, usize::saturating_add);
-        if self.rows >= self.max_rows || self.bytes.saturating_add(bytes) > 8 * 1024 * 1024 {
+        if self.rows >= self.max_rows || self.bytes.saturating_add(bytes) > RESULT_BYTES_LIMIT {
             result.truncated = true;
             return;
         }
@@ -266,22 +272,33 @@ mod tests {
 
     #[test]
     fn nested_json_uses_existing_budget_without_changing_encoding() {
-        let value = serde_json::json!({"text":"中文\n\u{0000}","array":[null,true,1.25,{"x":"\\\""}]});
+        let value =
+            serde_json::json!({"text":"中文\n\u{0000}","array":[null,true,1.25,{"x":"\\\""}]});
         let expected = value.to_string();
-        let mut row = ResultRow { remaining: expected.len() * 2 + 128, values: Some(Vec::new()) };
+        let mut row = ResultRow {
+            remaining: expected.len() * 2 + 128,
+            values: Some(Vec::new()),
+        };
         row.json(&value).unwrap();
         let values = row.values.unwrap();
         assert_eq!(values[0].kind, "json");
         assert_eq!(values[0].value.as_deref(), Some(expected.as_str()));
-        let mut row = ResultRow { remaining: expected.len() * 2 + 127, values: Some(Vec::new()) };
+        let mut row = ResultRow {
+            remaining: expected.len() * 2 + 127,
+            values: Some(Vec::new()),
+        };
         row.json(&value).unwrap();
         assert!(row.values.is_none());
     }
 
     #[test]
     fn oversized_json_stops_before_copying_string_and_later_rows_survive() {
-        let value = serde_json::json!({"x":"x".repeat(5 * 1024 * 1024)});
-        let mut buffer = JsonBuffer { bytes: Vec::new(), limit: 64, exceeded: false };
+        let value = serde_json::json!({"x":"x".repeat(RESULT_BYTES_LIMIT / 2)});
+        let mut buffer = JsonBuffer {
+            bytes: Vec::new(),
+            limit: 64,
+            exceeded: false,
+        };
         assert!(serde_json::to_writer(&mut buffer, &value).is_err());
         assert!(buffer.exceeded);
         assert!(buffer.bytes.len() <= 64);
@@ -294,9 +311,20 @@ mod tests {
         assert!(result.truncated);
         assert!(result.values.is_empty());
         let mut row = budget.row();
-        row.json(&serde_json::json!([1,2])).unwrap();
+        row.json(&serde_json::json!([1, 2])).unwrap();
         budget.finish_row(&mut result, row);
         assert_eq!(result.rows, [vec!["[1,2]"]]);
+    }
+
+    #[test]
+    fn page_budget_keeps_one_thousand_rows_with_ninety_one_columns() {
+        let mut budget = ResultBudget::new(1000);
+        let mut result = QueryResult::empty();
+        for _ in 0..1000 {
+            budget.push(&mut result, vec![DbValue::null(); 91]);
+        }
+        assert_eq!(result.values.len(), 1000);
+        assert!(!result.truncated);
     }
 
     #[test]
@@ -321,7 +349,7 @@ mod tests {
         let mut budget = ResultBudget::new(1);
         let mut result = QueryResult::empty();
         let mut row = budget.row();
-        row.text("text", &"x".repeat((8 * 1024 * 1024 - 128) / 2));
+        row.text("text", &"x".repeat((RESULT_BYTES_LIMIT - 128) / 2));
         budget.finish_row(&mut result, row);
         assert_eq!(result.values.len(), 1);
         assert!(!result.truncated);
@@ -345,7 +373,10 @@ mod tests {
         assert_eq!(result.display_result().rows.as_ptr(), rows);
         let wire = serde_json::to_value(&result).unwrap();
         assert_eq!(wire["rows"], serde_json::json!([]));
-        assert_eq!(wire["statements"][1]["values"][0][0]["value"], "exact value");
+        assert_eq!(
+            wire["statements"][1]["values"][0][0]["value"],
+            "exact value"
+        );
     }
 
     #[test]

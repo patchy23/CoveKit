@@ -1,7 +1,7 @@
 import { toRaw } from 'vue'
 import type { DbValue } from './contracts'
 
-export type ResultPageAction = 'advance' | 'fill-current' | 'load-next' | 'end'
+export type ResultPageAction = 'advance' | 'load-next' | 'end'
 
 /** 在构造网格投影前截取当前显示页，保留原行对象身份。 */
 export function sliceResultPage<T>(rows: T[], page: number, pageSize: number): T[] {
@@ -10,7 +10,7 @@ export function sliceResultPage<T>(rows: T[], page: number, pageSize: number): T
   return rows.slice(start, start + size)
 }
 
-/** 判断显式下一步是切页还是按需再读取一批；当前页未满时先补齐。 */
+/** 判断显式下一步是切页还是继续读取下一页所需的数据。 */
 export function resultPageAction(
   page: number,
   pageSize: number,
@@ -19,7 +19,6 @@ export function resultPageAction(
 ): ResultPageAction {
   const size = Math.max(1, Math.floor(pageSize))
   const end = Math.max(1, Math.floor(page)) * size
-  if (loadedCount < end && hasMore) return 'fill-current'
   if (loadedCount > end) return 'advance'
   return hasMore ? 'load-next' : 'end'
 }

@@ -1137,7 +1137,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       state.total = result.total
       state.durationMs = result.durationMs
       state.truncated = false
-      state.status = 'success'
+      state.status = state.rows.length ? 'success' : 'empty'
       state.error = ''
       state.resultTab = 'data'
       state.selectedRow = ''

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import {
   UiAlert,
   UiButton,
@@ -40,15 +40,15 @@ const pageAction = computed(() => {
   if (state.paginationMode === 'cursor') {
     const loadedEnd = (state.cursorBufferStart ?? 0) + state.rows.length
     const pageEnd = gridPage.value * gridPageSize.value
-    if (loadedEnd < pageEnd && state.hasMore) return 'fill-current'
     if (loadedEnd > pageEnd) return 'advance'
     return state.hasMore ? 'load-next' : 'end'
   }
   return resultPageAction(gridPage.value, gridPageSize.value, loadedRows.value, !!state.hasMore)
 })
-const pageSizeDraft = ref('100')
-const pageSizeError = ref('')
-watch(gridPageSize, (size) => (pageSizeDraft.value = String(size)), { immediate: true })
+const pageSizeOptions = [100, 200, 500, 1000].map((size) => ({
+  value: String(size),
+  label: String(size),
+}))
 const pagerDisabled = computed(
   () =>
     hasGridChanges(queryState.value) ||
@@ -58,19 +58,19 @@ const pagerDisabled = computed(
     db.filteredRows.busy.value
 )
 
-function applyPageSize() {
+function changePageSize(value: string) {
   if (pagerDisabled.value) return
-  const size = Number(pageSizeDraft.value)
-  if (!Number.isInteger(size) || size < 1 || size > 1000) {
-    pageSizeError.value = '每页条数须为 1 到 1000 的整数'
-    return
-  }
-  pageSizeError.value = ''
+  const size = Number(value)
+  if (!pageSizeOptions.some((option) => Number(option.value) === size)) return
   const tabId =
     Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === queryState.value) ??
     ''
-  if (queryState.value.paginationMode && tabId) void db.goToPage(tabId, 1, size)
-  else emit('patch', { gridPage: 1, gridPageSize: size })
+  if (queryState.value.paginationMode && tabId) {
+    void db.goToPage(tabId, gridPage.value, size)
+    return
+  }
+  const page = Math.min(gridPage.value, Math.max(1, Math.ceil(loadedRows.value / size)))
+  emit('patch', { gridPage: page, gridPageSize: size })
 }
 
 function previousPage() {
@@ -102,7 +102,7 @@ async function nextPage() {
   if (sourceState.paginationMode === 'cursor') {
     const tabId =
       Object.keys(db.queryStates.value).find((id) => db.queryStates.value[id] === sourceState) ?? ''
-    if (tabId) await db.goToPage(tabId, action === 'fill-current' ? page : next, size)
+    if (tabId) await db.goToPage(tabId, next, size)
     return
   }
   if (action === 'advance') {
@@ -298,7 +298,6 @@ async function nextPage() {
       >
       <template #trailing>
         <span role="status" class="text-caption text-text-muted dark:text-text-muted-dark">{{
-          pageSizeError ||
           queryState.loadLimit ||
           queryState.loadMoreError ||
           (queryState.loadingMore
@@ -316,20 +315,16 @@ async function nextPage() {
           @click="previousPage"
           >上一页</UiButton
         >
-        <UiInput
-          v-model="pageSizeDraft"
+        <UiSelect
+          :model-value="String(gridPageSize)"
+          :options="pageSizeOptions"
+          title="每页条数"
           aria-label="每页条数"
-          type="number"
-          min="1"
-          max="1000"
           class="w-[64px]"
           size="xs"
           :disabled="pagerDisabled"
-          @keydown.enter.prevent="applyPageSize"
+          @update:model-value="changePageSize"
         />
-        <UiButton size="xs" variant="ghost" :disabled="pagerDisabled" @click="applyPageSize"
-          >应用</UiButton
-        >
         <UiButton
           size="xs"
           variant="ghost"
@@ -345,11 +340,9 @@ async function nextPage() {
               ? '读取中…'
               : queryState.loadMoreError
                 ? '重试读取'
-                : pageAction === 'fill-current'
-                  ? '读取当前页剩余数据'
-                  : pageAction === 'load-next'
-                    ? '读取下一页数据'
-                    : '下一页'
+                : pageAction === 'load-next'
+                  ? '读取下一页数据'
+                  : '下一页'
           }}
         </UiButton>
       </template>

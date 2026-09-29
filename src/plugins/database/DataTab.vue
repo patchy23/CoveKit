@@ -2,7 +2,7 @@
 /**
  * 数据浏览页签：可暂存修改的表格浏览（后端分页）+ 刷新 + 查看结构
  */
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import EditableResultGrid from './EditableResultGrid.vue'
 import { hasGridChanges } from './workspace/useQueryWorkspace'
 import TableTools from './TableTools.vue'
@@ -12,7 +12,7 @@ import {
   UiEmptyState,
   UiIcon,
   UiIconButton,
-  UiInput,
+  UiSelect,
   UiSpinner,
   UiToolbar,
 } from '@/core/ui'
@@ -26,9 +26,10 @@ const { db } = props
 const state = computed(() => db.queryState.value)
 const gridPage = computed(() => state.value.gridPage ?? 1)
 const gridPageSize = computed(() => state.value.gridPageSize ?? 100)
-const pageSizeDraft = ref('100')
-const pageSizeError = ref('')
-watch(gridPageSize, (size) => (pageSizeDraft.value = String(size)), { immediate: true })
+const pageSizeOptions = [100, 200, 500, 1000].map((size) => ({
+  value: String(size),
+  label: String(size),
+}))
 const pagerDisabled = computed(
   () =>
     hasGridChanges(state.value) ||
@@ -38,15 +39,11 @@ const pagerDisabled = computed(
 )
 const pageAction = computed(() => (state.value.hasMore ? 'load-next' : 'end'))
 
-function applyPageSize() {
+function changePageSize(value: string) {
   if (pagerDisabled.value) return
-  const size = Number(pageSizeDraft.value)
-  if (!Number.isInteger(size) || size < 1 || size > 1000) {
-    pageSizeError.value = '每页条数须为 1 到 1000 的整数'
-    return
-  }
-  pageSizeError.value = ''
-  void db.goToPage(db.activeTabId.value, 1, size)
+  const size = Number(value)
+  if (!pageSizeOptions.some((option) => Number(option.value) === size)) return
+  void db.goToPage(db.activeTabId.value, gridPage.value, size)
 }
 
 function previousPage() {
@@ -140,7 +137,6 @@ function toStructure() {
     </span>
     <template #trailing>
       <span role="status" class="text-caption text-text-muted dark:text-text-muted-dark">{{
-        pageSizeError ||
         state.loadLimit ||
         state.loadMoreError ||
         (state.loadingMore
@@ -156,20 +152,16 @@ function toStructure() {
         @click="previousPage"
         >上一页</UiButton
       >
-      <UiInput
-        v-model="pageSizeDraft"
+      <UiSelect
+        :model-value="String(gridPageSize)"
+        :options="pageSizeOptions"
+        title="每页条数"
         aria-label="每页条数"
-        type="number"
-        min="1"
-        max="1000"
         class="w-[64px]"
         size="xs"
         :disabled="pagerDisabled"
-        @keydown.enter.prevent="applyPageSize"
+        @update:model-value="changePageSize"
       />
-      <UiButton size="xs" variant="ghost" :disabled="pagerDisabled" @click="applyPageSize"
-        >应用</UiButton
-      >
       <UiButton
         size="xs"
         variant="ghost"
@@ -183,11 +175,9 @@ function toStructure() {
             ? '读取中…'
             : state.loadMoreError
               ? '重试读取'
-              : pageAction === 'fill-current'
-                ? '读取当前页剩余数据'
-                : pageAction === 'load-next'
-                  ? '读取下一页数据'
-                  : '下一页'
+              : pageAction === 'load-next'
+                ? '读取下一页数据'
+                : '下一页'
         }}
       </UiButton>
     </template>

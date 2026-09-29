@@ -118,7 +118,7 @@ pub async fn dbc_table_data(
         return Err(result.error.unwrap_or_else(|| "表查询失败".into()));
     }
     if result.truncated && result.rows.len() <= page_size as usize {
-        return Err("当前页数据超过 8 MiB 浏览上限，请减小每页行数或通过 SQL 选择较小字段".into());
+        return Err("当前页数据超过 32 MiB 浏览上限，请减小每页行数或通过 SQL 选择较小字段".into());
     }
     let has_more = result.rows.len() > page_size as usize;
     result.rows.truncate(page_size as usize);

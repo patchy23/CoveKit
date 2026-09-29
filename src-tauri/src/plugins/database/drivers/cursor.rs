@@ -16,7 +16,7 @@ use super::{
 };
 use crate::plugins::database::{
     models::{DbValue, QueryResult},
-    results::ResultBudget,
+    results::{ResultBudget, RESULT_BYTES_LIMIT},
 };
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(120);
@@ -517,7 +517,7 @@ impl Pager {
             let Some(row) = row else {
                 break;
             };
-            // 一行最多 8 MiB；超大行显式失败，不跳过后继续声称结果完整。
+            // 一行最多 32 MiB；超大行显式失败，不跳过后继续声称结果完整。
             let cost = row.iter().fold(0usize, |sum, value| {
                 sum.saturating_add(
                     value
@@ -528,13 +528,13 @@ impl Pager {
                         .saturating_add(128),
                 )
             });
-            if cost > 8 * 1024 * 1024 {
+            if cost > RESULT_BYTES_LIMIT {
                 return Err(
-                    "DB_ROW_TOO_LARGE: 单行结果超过 8 MiB，已停止读取；请缩小投影列".into(),
+                    "DB_ROW_TOO_LARGE: 单行结果超过 32 MiB，已停止读取；请缩小投影列".into(),
                 );
             }
             if result.values.len() as u64 >= self.size
-                || used.saturating_add(cost) > 8 * 1024 * 1024
+                || used.saturating_add(cost) > RESULT_BYTES_LIMIT
             {
                 *pending = Some(row);
                 result.has_more = true;
@@ -559,7 +559,7 @@ fn single_row(
     result
         .values
         .pop()
-        .ok_or_else(|| "DB_ROW_TOO_LARGE: 单行结果超过 8 MiB，已停止读取；请缩小投影列".into())
+        .ok_or_else(|| "DB_ROW_TOO_LARGE: 单行结果超过 32 MiB，已停止读取；请缩小投影列".into())
 }
 
 async fn mysql(conn: &mut mysql_async::Conn, sql: &str, pager: &mut Pager) -> Result<(), String> {

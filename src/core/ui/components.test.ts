@@ -174,11 +174,18 @@ describe('公共 UI 组件', () => {
     ).toContain('ui-control-lg')
     expect(
       mount(UiSelect, {
-        props: { modelValue: 'a', options: [{ value: 'a' }], size: 'sm' },
+        props: { modelValue: 'a', options: [{ value: 'a' }], size: 'sm', ariaLabel: '每页条数' },
       })
         .get('button')
         .classes()
     ).toContain('ui-control-sm')
+    expect(
+      mount(UiSelect, {
+        props: { modelValue: 'a', options: [{ value: 'a' }], ariaLabel: '每页条数' },
+      })
+        .get('button')
+        .attributes('aria-label')
+    ).toBe('每页条数')
   })
 
   it('复选框和开关保持受控更新', async () => {

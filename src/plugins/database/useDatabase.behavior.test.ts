@@ -1484,7 +1484,7 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
   it('数据表按服务端目标页替换结果，滚动不取数且保留页内行索引', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()
-    const rows = Array.from({ length: 200 }, (_, index) => [`row-${index}`])
+    const rows = Array.from({ length: 500 }, (_, index) => [`row-${index}`])
     env.commands.dbcTableData.mockImplementation(
       async (_connId: string, _table: string, page: number, size: number) =>
         tablePage({
@@ -1508,28 +1508,41 @@ describe('门面提示与树命令（决策书 §2.1 反馈可见性）', () => 
     await flush()
     expect(env.commands.dbcTableData).toHaveBeenCalledTimes(1)
 
-    const pageSize = panel.get('input[aria-label="每页条数"]')
-    await pageSize.setValue('50')
-    expect(grid().props('rows')).toHaveLength(100)
-    await panel
-      .findAll('button')
-      .find((button) => button.text().trim() === '应用')!
-      .trigger('click')
-    await flush()
-    expect(grid().props('rows')).toHaveLength(50)
-
     await panel
       .findAll('button')
       .find((button) => button.text().includes('下一页'))!
       .trigger('click')
     await flush()
     expect(stateOf(api, tabId).gridPage).toBe(2)
-    expect(grid().props('rows')).toHaveLength(50)
-    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '51' })
+
+    const pageSize = panel.findComponent({ name: 'UiSelect' })
+    await pageSize.vm.$emit('update:modelValue', '200')
+    await flush()
+    expect(stateOf(api, tabId).gridPage).toBe(2)
+    expect(grid().props('rows')).toHaveLength(200)
+    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '201' })
+
+    await panel
+      .findAll('button')
+      .find((button) => button.text().includes('下一页'))!
+      .trigger('click')
+    await flush()
+    expect(stateOf(api, tabId).gridPage).toBe(3)
+    expect(grid().props('rows')).toHaveLength(100)
+    expect(grid().props('rows')[0]).toMatchObject({ __row: '0', __label: '401' })
+
+    await pageSize.vm.$emit('update:modelValue', '1000')
+    await flush()
+    expect(stateOf(api, tabId).gridPage).toBe(3)
+    expect(stateOf(api, tabId).status).toBe('empty')
+    expect(grid().props('rows')).toHaveLength(0)
+    expect(panel.text()).toContain('第 3 页 · 已加载 0 行')
     expect(env.commands.dbcTableData.mock.calls.map((call) => call.slice(2, 4))).toEqual([
       [1, 100],
-      [1, 50],
-      [2, 50],
+      [2, 100],
+      [2, 200],
+      [3, 200],
+      [3, 1000],
     ])
   })
 

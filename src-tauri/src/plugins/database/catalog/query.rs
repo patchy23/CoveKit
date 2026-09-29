@@ -301,7 +301,7 @@ pub async fn dbc_execute(
         };
         // actor 接管取消登记和工作连接；首批返回不意味着执行通道已结束。
         registration.active = false;
-        let mut result = drivers::cursor::start(app.clone(), slot, handle, request_id.clone(), sql.clone(), limit.min(500)).await?;
+        let mut result = drivers::cursor::start(app.clone(), slot, handle, request_id.clone(), sql.clone(), limit.min(1000)).await?;
         result.edit_target = edit_target;
         result.page_info = Some(crate::plugins::database::models::QueryPageInfo {
             mode: "cursor".into(),
@@ -374,7 +374,7 @@ pub async fn dbc_execute(
             }
             if result.truncated {
                 result = QueryResult::failed(
-                    "当前页结果超过 8 MiB 显示上限，请减小每页行数或选择较小字段".into(),
+                    "当前页结果超过 32 MiB 显示上限，请减小每页行数或选择较小字段".into(),
                 );
             } else {
                 result.has_more = result.rows.len() > page_size as usize;

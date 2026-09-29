@@ -10,7 +10,7 @@ import {
 import { rowsToTsv } from './resultText'
 import type { DbValue } from './contracts'
 
-it('显示页先切原始行并保留筛选行身份，未满页时先读完当前页', () => {
+it('显示页先切原始行并保留筛选行身份，未满页时仍继续读取数据', () => {
   const rows = markRaw(Array.from({ length: 250 }, (_, index) => [`row-${index}`]))
   const filtered = [rows[2], rows[100], rows[201]]
   const visible = sliceResultPage(filtered, 2, 1)
@@ -20,10 +20,10 @@ it('显示页先切原始行并保留筛选行身份，未满页时先读完当�
     { __row: '100', c0: 'row-100' },
   ])
   expect(sliceResultPage(rows, 2, 100)).toEqual(rows.slice(100, 200))
-  expect(resultPageAction(1, 100, 50, true)).toBe('fill-current')
+  expect(resultPageAction(1, 100, 50, true)).toBe('load-next')
   expect(resultPageAction(1, 100, 100, true)).toBe('load-next')
   expect(resultPageAction(1, 100, 200, true)).toBe('advance')
-  expect(resultPageAction(2, 100, 150, true)).toBe('fill-current')
+  expect(resultPageAction(2, 100, 150, true)).toBe('load-next')
   expect(resultPageAction(2, 100, 150, false)).toBe('end')
 })
 
