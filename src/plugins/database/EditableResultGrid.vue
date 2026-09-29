@@ -40,6 +40,7 @@ const checking = ref(false)
 const selected = ref<{ row: number; column: number } | null>(null)
 const editing = ref<{ row: number; column: number } | null>(null)
 const input = ref<InstanceType<typeof UiInput> | null>(null)
+const grid = ref<InstanceType<typeof ResultCanvasGrid> | null>(null)
 const detail = ref<{ name: string; value: DbValue } | null>(null)
 const menu = ref<{ x: number; y: number } | null>(null)
 const discardOpen = ref(false)
@@ -157,6 +158,10 @@ async function start(event?: CellEvent) {
   input.value?.focus()
   input.value?.select()
 }
+function finishEditing(focusGrid = false) {
+  editing.value = null
+  if (focusGrid) void nextTick(() => grid.value?.focus())
+}
 function put(row: number, column: number, value: DbValue) {
   const original = props.state.values[row]?.[column]
   if (!original) return
@@ -195,7 +200,7 @@ function setNull() {
   if (reason.value || !selected.value) return
   const { row, column } = selected.value
   put(row, column, { kind: 'null', value: null })
-  editing.value = null
+  finishEditing()
 }
 function showDetail() {
   if (!selected.value) return
@@ -264,7 +269,7 @@ async function save() {
     ),
   }))
   update({ gridSaving: true, gridError: '' })
-  editing.value = null
+  finishEditing()
   try {
     const affected = await tableIpc.apply(destination, changes, nextRequestId('grid-save'))
     const values = source.values.map((row, index) =>
@@ -302,7 +307,7 @@ async function save() {
 }
 function discard() {
   patch({ gridEdits: {}, gridError: '', gridMessage: '已放弃本地修改' })
-  editing.value = null
+  finishEditing()
   discardOpen.value = false
 }
 </script>
@@ -338,9 +343,11 @@ function discard() {
       {{ state.gridError || metadataError || state.gridMessage }}
     </p>
     <ResultCanvasGrid
+      ref="grid"
       :columns="db.tableColumns.value"
       :rows="rows"
       :selected="selected"
+      :editing="editing"
       :text="display"
       :dirty="dirtyCell"
       :revision="[state.rows, state.values, state.gridEdits]"
@@ -348,26 +355,25 @@ function discard() {
       @cell="start"
       @context="context"
       @copy="copyCell"
+      @editor-offscreen="finishEditing"
     >
+      <template #editor="{ style }">
+        <UiInput
+          v-if="editing"
+          ref="input"
+          :style="style"
+          :aria-label="`编辑 ${state.columns[editing.column]}`"
+          :model-value="valueAt(editing.row, editing.column).value ?? ''"
+          size="xs"
+          class="font-mono !rounded-none !px-[6px] !text-caption"
+          @update:model-value="change"
+          @blur="finishEditing()"
+          @keydown.enter.stop.prevent="finishEditing(true)"
+          @keydown.esc.stop.prevent="finishEditing(true)"
+        />
+      </template>
       <template #empty><slot name="empty">暂无数据</slot></template>
     </ResultCanvasGrid>
-    <UiModal
-      :open="!!editing"
-      :title="`编辑 ${editing ? state.columns[editing.column] : '单元格'}`"
-      description="修改暂存于结果页，点击保存并提交后才写入数据库。"
-      size="md"
-      @close="editing = null"
-    >
-      <UiInput
-        v-if="editing"
-        ref="input"
-        :aria-label="`编辑 ${state.columns[editing.column]}`"
-        :model-value="valueAt(editing.row, editing.column).value ?? ''"
-        @update:model-value="change"
-        @keydown.enter.prevent="editing = null"
-      />
-      <template #footer><UiButton @click="editing = null">完成</UiButton></template>
-    </UiModal>
     <UiContextMenu
       v-if="menu"
       :x="menu.x"

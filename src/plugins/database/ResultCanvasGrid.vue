@@ -7,6 +7,7 @@ import {
   hitGridCell,
   ROW_HEIGHT,
   HEADER_HEIGHT,
+  ROW_NUMBER_WIDTH,
 } from './databaseResultCanvas'
 
 type Cell = { row: Record<string, unknown>; column: UiDataGridColumn }
@@ -14,6 +15,7 @@ const props = defineProps<{
   columns: UiDataGridColumn[]
   rows: Record<string, unknown>[]
   selected: { row: number; column: number } | null
+  editing?: { row: number; column: number } | null
   text: (row: number, column: number) => string
   dirty: (row: number, column: number) => boolean
   revision?: unknown
@@ -23,6 +25,7 @@ const emit = defineEmits<{
   cell: [cell: Cell]
   context: [cell: Cell, event: MouseEvent]
   copy: []
+  'editor-offscreen': []
 }>()
 const root = ref<HTMLElement>()
 const canvas = ref<HTMLCanvasElement>()
@@ -33,6 +36,35 @@ const scrollTop = ref(0)
 const overrides = ref<Record<string, number>>({})
 const widths = computed(() => props.columns.map((c) => overrides.value[c.key] ?? c.width ?? 140))
 const layout = computed(() => gridColumns(widths.value))
+const editor = computed(() => {
+  if (!props.editing) return null
+  const row = props.rows.findIndex((item) => Number(item.__row) === props.editing!.row)
+  const column = props.editing.column
+  if (row < 0 || !props.columns[column]) return null
+  const cellLeft = layout.value.offsets[column]
+  const cellTop = HEADER_HEIGHT + row * ROW_HEIGHT
+  const cellWidth = widths.value[column]
+  const measuredWidth = width.value > 0
+  const measuredHeight = height.value > 0
+  const left = measuredWidth ? Math.max(cellLeft, scrollLeft.value + ROW_NUMBER_WIDTH) : cellLeft
+  const right = measuredWidth
+    ? Math.min(cellLeft + cellWidth, scrollLeft.value + width.value)
+    : cellLeft + cellWidth
+  const top = measuredHeight ? Math.max(cellTop, scrollTop.value + HEADER_HEIGHT) : cellTop
+  const bottom = measuredHeight
+    ? Math.min(cellTop + ROW_HEIGHT, scrollTop.value + height.value)
+    : cellTop + ROW_HEIGHT
+  return {
+    row,
+    cellLeft,
+    cellTop,
+    cellWidth,
+    left,
+    top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  }
+})
 const active = computed(() =>
   props.selected
     ? {
@@ -111,6 +143,29 @@ function scrolled() {
   scrollLeft.value = root.value.scrollLeft
   scrollTop.value = root.value.scrollTop
   schedule()
+}
+function checkEditorVisibility() {
+  const position = editor.value
+  if (!props.editing || !root.value || !position) {
+    if (props.editing && !position) emit('editor-offscreen')
+    return
+  }
+  if (!height.value || !width.value) return
+  if (height.value <= HEADER_HEIGHT || width.value <= ROW_NUMBER_WIDTH) {
+    emit('editor-offscreen')
+    return
+  }
+
+  const top = position.cellTop
+  const bottom = top + ROW_HEIGHT
+  const left = position.cellLeft
+  const right = left + position.cellWidth
+  const visibleTop = scrollTop.value + HEADER_HEIGHT
+  const visibleBottom = scrollTop.value + height.value
+  const visibleLeft = scrollLeft.value + ROW_NUMBER_WIDTH
+  const visibleRight = scrollLeft.value + width.value
+  if (top < visibleTop || bottom > visibleBottom || right <= visibleLeft || left >= visibleRight)
+    emit('editor-offscreen')
 }
 function cell(row: number, column: number): Cell | undefined {
   if (!props.rows[row] || !props.columns[column]) return
@@ -257,6 +312,20 @@ function begin(index: number, event: MouseEvent) {
 }
 watch(
   () => [
+    props.editing,
+    props.rows,
+    props.columns,
+    widths.value,
+    width.value,
+    height.value,
+    scrollLeft.value,
+    scrollTop.value,
+  ],
+  checkEditorVisibility,
+  { flush: 'post' }
+)
+watch(
+  () => [
     props.rows,
     props.columns,
     props.selected,
@@ -294,6 +363,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', measure)
   cancelAnimationFrame(frame)
 })
+defineExpose({ focus: () => root.value?.focus() })
 </script>
 
 <template>
@@ -359,6 +429,18 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
+      <slot
+        v-if="editor"
+        name="editor"
+        :style="{
+          position: 'absolute',
+          left: `${editor.left}px`,
+          top: `${editor.top}px`,
+          width: `${editor.width}px`,
+          height: `${editor.height}px`,
+          zIndex: 20,
+        }"
+      />
     </div>
     <div v-if="!rows.length" class="absolute top-8 left-2 text-secondary">
       <slot name="empty">暂无数据</slot>

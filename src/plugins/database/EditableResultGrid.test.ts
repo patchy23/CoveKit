@@ -78,6 +78,11 @@ async function edit(wrapper: ReturnType<typeof mount>, text: string) {
   await nextTick()
   await wrapper.get('input[aria-label="编辑 name"]').setValue(text)
 }
+async function finishEdit(wrapper: ReturnType<typeof mount>) {
+  const editor = wrapper.find('input[aria-label="编辑 name"]')
+  if (editor.exists()) await editor.trigger('keydown', { key: 'Enter' })
+  await nextTick()
+}
 function button(wrapper: ReturnType<typeof mount>, name: string) {
   return wrapper.findAll('button').find((button) => button.text() === name)!
 }
@@ -114,7 +119,7 @@ describe('结果单元格编辑事务', () => {
     expect(wrapper.getComponent(ResultCanvasGrid).props('text')(0, 1)).toBe('原始值')
     expect(wrapper.text()).not.toContain('(空字符串)')
     await edit(wrapper, '修改后')
-    await button(wrapper, '完成').trigger('click')
+    await finishEdit(wrapper)
     expect(state.gridEdits?.[0].name.value).toBe('修改后')
     await rowMenu(wrapper, '复制整行')
     expect(mocks.copy).toHaveBeenLastCalledWith('9007199254740993\t修改后', '已复制整行')
@@ -133,7 +138,7 @@ describe('结果单元格编辑事务', () => {
   it('从右键菜单复制整行与 INSERT，使用当前草稿且不触发数据库写入', async () => {
     const { wrapper } = setup()
     await edit(wrapper, '修改值')
-    await button(wrapper, '完成').trigger('click')
+    await finishEdit(wrapper)
     await rowMenu(wrapper, '复制整行')
     expect(mocks.copy).toHaveBeenLastCalledWith('9007199254740993\t修改值', '已复制整行')
     await rowMenu(wrapper, '复制为 SQL')
@@ -144,12 +149,14 @@ describe('结果单元格编辑事务', () => {
     expect(mocks.apply).not.toHaveBeenCalled()
     expect(button(wrapper, '复制整行')).toBeUndefined()
   })
-  it('双击弹窗编辑，完成不写库，手动保存保留精确主键和原值', async () => {
+  it('双击在当前单元格叠加输入，结束不写库，手动保存保留精确主键和原值', async () => {
     const { wrapper, state } = setup()
     expect(button(wrapper, '保存并提交')).toBeUndefined()
     await edit(wrapper, '修改值')
+    expect(wrapper.findAll('input')).toHaveLength(1)
+    expect(wrapper.findAll('canvas')).toHaveLength(1)
     expect(mocks.apply).not.toHaveBeenCalled()
-    await button(wrapper, '完成').trigger('click')
+    await finishEdit(wrapper)
     expect(wrapper.find('input').exists()).toBe(false)
     expect(state.gridEdits?.[0].name.value).toBe('修改值')
     await button(wrapper, '保存并提交').trigger('click')
@@ -173,11 +180,20 @@ describe('结果单元格编辑事务', () => {
     expect(wrapper.text()).toContain('已提交 1 行')
     expect(wrapper.getComponent(ResultCanvasGrid).props('text')(0, 1)).toBe('修改值')
   })
+  it('编辑单元格离开视口后销毁输入控件并保留可提交草稿', async () => {
+    const { wrapper, state } = setup()
+    await edit(wrapper, '离屏草稿')
+    wrapper.getComponent(ResultCanvasGrid).vm.$emit('editor-offscreen')
+    await nextTick()
+    expect(wrapper.find('input[aria-label="编辑 name"]').exists()).toBe(false)
+    expect(state.gridEdits?.[0].name).toEqual({ kind: 'text', value: '离屏草稿' })
+    expect(button(wrapper, '保存并提交').attributes('disabled')).toBeUndefined()
+  })
   it('空串不等于 NULL，通过单元格右键菜单设置空值', async () => {
     const { wrapper, state } = setup()
     await edit(wrapper, '')
     expect(state.gridEdits?.[0].name).toEqual({ kind: 'text', value: '' })
-    await button(wrapper, '完成').trigger('click')
+    await finishEdit(wrapper)
     await triggerCell(wrapper, 'context')
     await flushPromises()
     const nullAction = Array.from(
@@ -191,7 +207,7 @@ describe('结果单元格编辑事务', () => {
     const { wrapper, state } = setup()
     mocks.apply.mockRejectedValueOnce(new Error('原值冲突，已回滚'))
     await edit(wrapper, '重试内容')
-    await button(wrapper, '完成').trigger('click')
+    await finishEdit(wrapper)
     await button(wrapper, '保存并提交').trigger('click')
     await flushPromises()
     expect(state.gridEdits?.[0].name.value).toBe('重试内容')

@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, expect, it } from 'vitest'
+import { h, nextTick } from 'vue'
 import ResultCanvasGrid from './ResultCanvasGrid.vue'
 
 const mounted: Array<ReturnType<typeof mount>> = []
@@ -7,7 +8,11 @@ afterEach(() => {
   for (const wrapper of mounted) wrapper.unmount()
   mounted.length = 0
 })
-function setup(count = 100, columns = 91) {
+function setup(
+  count = 100,
+  columns = 91,
+  options: { editing?: { row: number; column: number }; editor?: boolean } = {}
+) {
   const wrapper = mount(ResultCanvasGrid, {
     props: {
       columns: Array.from({ length: columns }, (_, index) => ({
@@ -17,9 +22,16 @@ function setup(count = 100, columns = 91) {
       })),
       rows: Array.from({ length: count }, (_, index) => ({ __row: String(index + 200) })),
       selected: null,
+      editing: options.editing ?? null,
       text: (row, column) => `${row}:${column}`,
       dirty: () => false,
     },
+    slots: options.editor
+      ? {
+          editor: ({ style }: { style: Record<string, string> }) =>
+            h('input', { 'aria-label': '编辑中', style }),
+        }
+      : undefined,
   })
   mounted.push(wrapper)
   return wrapper
@@ -69,4 +81,43 @@ it('键盘选择、编辑和列宽调整无需为单元格挂载输入控件', a
   await handle.trigger('keydown', { key: 'ArrowRight' })
   expect(handle.attributes('aria-valuenow')).toBe('150')
   expect(wrapper.find('input').exists()).toBe(false)
+})
+
+it('只为当前单元格挂载一个编辑输入，并按列宽计算其内容坐标', async () => {
+  const wrapper = setup(20, 5, { editing: { row: 202, column: 2 }, editor: true })
+  const editor = wrapper.get('input[aria-label="编辑中"]')
+  expect(wrapper.findAll('input')).toHaveLength(1)
+  expect(editor.element.style.left).toBe('324px')
+  expect(editor.element.style.top).toBe('75px')
+  expect(editor.element.style.width).toBe('140px')
+
+  const columns = wrapper
+    .props('columns')
+    .map((column, index) => (index === 0 ? { ...column, width: 170 } : column))
+  await wrapper.setProps({ columns })
+  expect(wrapper.get('input[aria-label="编辑中"]').element.style.left).toBe('354px')
+})
+
+it('编辑框裁切在可视数据区域内，单元格离开视口时结束编辑', async () => {
+  const wrapper = setup(20, 5, { editing: { row: 200, column: 0 }, editor: true })
+  const root = wrapper.element as HTMLElement
+  Object.defineProperty(root, 'clientWidth', { configurable: true, value: 220 })
+  Object.defineProperty(root, 'clientHeight', { configurable: true, value: 100 })
+  window.dispatchEvent(new Event('resize'))
+  await nextTick()
+
+  const editor = wrapper.get('input[aria-label="编辑中"]')
+  expect(editor.element.style.left).toBe('44px')
+  expect(editor.element.style.width).toBe('140px')
+
+  root.scrollLeft = 100
+  root.dispatchEvent(new Event('scroll'))
+  await nextTick()
+  expect(editor.element.style.left).toBe('144px')
+  expect(editor.element.style.width).toBe('40px')
+
+  root.scrollTop = 1
+  root.dispatchEvent(new Event('scroll'))
+  await nextTick()
+  expect(wrapper.emitted('editor-offscreen')).toHaveLength(1)
 })
