@@ -23,6 +23,36 @@ import { adminIpc, queryIpc } from '../ipc'
 import { nextRequestId } from '../requestId'
 import type { TabContext } from '../workspace/useQueryWorkspace'
 
+interface ObjectGroup {
+  readonly key: string
+  readonly label: string
+  readonly kinds: readonly string[]
+}
+
+const TABLE_GROUP: ObjectGroup = { key: 'tables', label: '表', kinds: ['table'] }
+const MYSQL_VIEW_GROUP: ObjectGroup = { key: 'views', label: '视图', kinds: ['view'] }
+const SQL_VIEW_GROUP: ObjectGroup = {
+  key: 'views',
+  label: '视图',
+  kinds: ['view', 'materialized_view'],
+}
+const FUNCTION_GROUP: ObjectGroup = { key: 'funcs', label: '函数', kinds: ['function'] }
+const SEQUENCE_GROUP: ObjectGroup = { key: 'seqs', label: '序列', kinds: ['sequence'] }
+const MYSQL_GROUPS = [TABLE_GROUP, MYSQL_VIEW_GROUP, FUNCTION_GROUP]
+const SQL_GROUPS = [TABLE_GROUP, SQL_VIEW_GROUP, FUNCTION_GROUP, SEQUENCE_GROUP]
+
+const OBJECT_GROUPS: Record<V2DbType, readonly ObjectGroup[]> = {
+  mysql: MYSQL_GROUPS,
+  postgresql: SQL_GROUPS,
+  oracle: SQL_GROUPS,
+  dameng: SQL_GROUPS,
+  vastbase: SQL_GROUPS,
+  kingbase: SQL_GROUPS,
+  polardb: MYSQL_GROUPS,
+  redis: [{ key: 'keys', label: '键', kinds: ['key'] }],
+  sqlite: [TABLE_GROUP, MYSQL_VIEW_GROUP],
+}
+
 /**
  * 树过滤纯函数：关键字命中保留祖先链；无关键字时按展开状态裁剪子树
  * @param source 全量树节点（扁平数组，深度递增）
@@ -427,15 +457,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       conn.dbType === 'redis'
         ? meta.redisKeys.map((name) => ({ kind: 'key', name }))
         : (meta.objects[schemaKey] ?? [])
-    const groups: { key: string; label: string; kinds: string[] }[] =
-      conn.dbType === 'redis'
-        ? [{ key: 'keys', label: '键', kinds: ['key'] }]
-        : [
-            { key: 'tables', label: '表', kinds: ['table'] },
-            { key: 'views', label: '视图', kinds: ['view', 'materialized_view'] },
-            { key: 'funcs', label: '函数', kinds: ['function'] },
-            { key: 'seqs', label: '序列', kinds: ['sequence'] },
-          ]
+    const groups = OBJECT_GROUPS[conn.dbType as V2DbType] ?? []
     const items: UiTreeItem[] = []
     for (const group of groups) {
       const members = objects.filter((o) => group.kinds.includes(o.kind))
@@ -550,8 +572,8 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
         continue
       }
 
-      // sqlite：数据库下直接挂分组
-      items.push(...objectGroups(conn, `${prefix}::objects`, 2))
+      // SQLite：数据库节点和对象缓存使用同一 scope。
+      items.push(...objectGroups(conn, `${prefix}::db`, 2))
     }
     return items
   })

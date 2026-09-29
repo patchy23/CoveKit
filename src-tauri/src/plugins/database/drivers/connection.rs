@@ -335,10 +335,8 @@ pub(crate) async fn redis_mgr(
     } else {
         format!("{}:{}@", urlencode(&config.username), urlencode(password))
     };
-    let url = format!(
-        "{scheme}://{authority}{}:{}/{db_index}",
-        config.host, config.port
-    );
+    let host = redis_url_host(&config.host)?;
+    let url = format!("{scheme}://{authority}{host}:{}/{db_index}", config.port);
     let client =
         ::redis::Client::open(url.as_str()).map_err(|e| format!("Redis 地址解析失败: {e}"))?;
     // 连接管理器建立带超时（防挂起）
@@ -363,6 +361,21 @@ pub(crate) async fn redis_mgr(
         return Err(format!("Redis PING 异常: {pong}"));
     }
     Ok(mgr)
+}
+
+/// Redis URL 中的 IPv6 字面地址必须用方括号包裹。
+fn redis_url_host(host: &str) -> Result<String, String> {
+    let host = host.trim();
+    if host.is_empty() {
+        return Err("Redis 主机地址不能为空".into());
+    }
+    if host.starts_with('[') && host.ends_with(']') {
+        return Ok(host.to_string());
+    }
+    if host.parse::<std::net::Ipv6Addr>().is_ok() {
+        return Ok(format!("[{host}]"));
+    }
+    Ok(host.to_string())
 }
 
 /// 简单 URL 编码（redis 密码含特殊字符时转义）

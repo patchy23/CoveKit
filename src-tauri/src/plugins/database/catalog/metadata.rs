@@ -105,7 +105,7 @@ pub async fn dbc_objects(
                 .get_conn()
                 .await
                 .map_err(|e| format!("取连接失败: {e}"))?
-                .exec(dialect.objects_sql(), (database.clone(),))
+                .exec(dialect.objects_sql(), (database.clone(), database.clone()))
                 .await
                 .map_err(|e| format!("对象列表失败: {e}"))?;
             Ok(rows

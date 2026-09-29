@@ -21,11 +21,16 @@ impl DbDialect for MySqlDialect {
     }
 
     fn objects_sql(&self) -> &'static str {
-        // 表（BASE TABLE）与视图（VIEW）一次取回，kind 由 TABLE_TYPE 归一化
-        "SELECT TABLE_NAME, \
-                CASE TABLE_TYPE WHEN 'VIEW' THEN 'view' ELSE 'table' END \
-         FROM information_schema.TABLES \
-         WHERE TABLE_SCHEMA = ? ORDER BY TABLE_NAME"
+        // 表、视图和存储函数一次取回；MySQL 没有序列对象。
+        "SELECT name, kind FROM ( \
+             SELECT TABLE_NAME AS name, \
+                    CASE TABLE_TYPE WHEN 'VIEW' THEN 'view' ELSE 'table' END AS kind \
+             FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? \
+             UNION ALL \
+             SELECT ROUTINE_NAME AS name, 'function' AS kind \
+             FROM information_schema.ROUTINES \
+             WHERE ROUTINE_SCHEMA = ? AND ROUTINE_TYPE = 'FUNCTION' \
+         ) AS objects ORDER BY name"
     }
 
     fn columns_sql(&self) -> &'static str {

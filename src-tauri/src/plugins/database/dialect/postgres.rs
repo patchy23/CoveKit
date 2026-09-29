@@ -27,13 +27,19 @@ impl DbDialect for PostgresDialect {
     }
 
     fn objects_sql(&self) -> &'static str {
-        // 表（r/p 分区表）与视图（v/m 物化视图）一次取回，kind 由 relkind 归一化
-        "SELECT c.relname, \
-                CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized_view' ELSE 'table' END \
-         FROM pg_catalog.pg_class c \
-         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
-         WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'v', 'm') \
-         ORDER BY c.relname"
+        // 表、视图、物化视图、序列和函数按 PostgreSQL catalog 分类。
+        "SELECT name, kind FROM ( \
+             SELECT c.relname::text AS name, \
+                    CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'materialized_view' \
+                                   WHEN 'S' THEN 'sequence' ELSE 'table' END AS kind \
+             FROM pg_catalog.pg_class c \
+             JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace \
+             WHERE n.nspname = $1 AND c.relkind IN ('r', 'p', 'v', 'm', 'S') \
+             UNION ALL \
+             SELECT DISTINCT routine_name::text AS name, 'function' AS kind \
+             FROM information_schema.routines \
+             WHERE specific_schema = $1 AND routine_type = 'FUNCTION' \
+         ) AS objects ORDER BY name"
     }
 
     fn columns_sql(&self) -> &'static str {

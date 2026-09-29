@@ -87,7 +87,8 @@ impl DbType {
     pub fn default_port(self) -> u16 {
         match self {
             Self::Mysql | Self::Polardb => 3306,
-            Self::Postgresql | Self::Vastbase | Self::Kingbase | Self::Oracle => 5432,
+            Self::Postgresql | Self::Vastbase | Self::Kingbase => 5432,
+            Self::Oracle => 1521,
             Self::Dameng => 5236,
             Self::Redis => 6379,
             Self::Sqlite => 0,
