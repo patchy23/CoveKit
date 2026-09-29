@@ -386,20 +386,10 @@ defineExpose({ focus: () => root.value?.focus() })
         height: `${rows.length * ROW_HEIGHT + HEADER_HEIGHT}px`,
       }"
     >
-      <canvas
-        ref="canvas"
-        aria-hidden="true"
-        class="sticky top-0 left-0 block"
-        :style="{ width: `${width}px`, height: `${height}px` }"
-        @click="click"
-        @dblclick="open"
-        @contextmenu="context"
-        @mousemove="hover"
-      />
       <div
         role="row"
-        class="absolute left-0 flex bg-surface-muted dark:bg-surface-muted-dark border-b border-border dark:border-border-dark"
-        :style="{ top: `${scrollTop}px`, height: `${HEADER_HEIGHT}px` }"
+        class="sticky top-0 z-20 flex bg-surface-muted dark:bg-surface-muted-dark border-b border-border dark:border-border-dark"
+        :style="{ height: `${HEADER_HEIGHT}px` }"
       >
         <div
           role="columnheader"
@@ -433,6 +423,20 @@ defineExpose({ focus: () => root.value?.focus() })
           />
         </div>
       </div>
+      <canvas
+        ref="canvas"
+        aria-hidden="true"
+        class="sticky top-0 left-0 block"
+        :style="{
+          width: `${width}px`,
+          height: `${height}px`,
+          marginTop: `-${HEADER_HEIGHT}px`,
+        }"
+        @click="click"
+        @dblclick="open"
+        @contextmenu="context"
+        @mousemove="hover"
+      />
       <slot
         v-if="editor"
         name="editor"
