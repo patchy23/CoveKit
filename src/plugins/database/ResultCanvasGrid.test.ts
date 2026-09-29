@@ -61,13 +61,16 @@ it('空结果不渲染表头，避免覆盖空状态文案', () => {
   expect(wrapper.text()).toContain('暂无数据')
 })
 
-it('ResizeObserver 的尺寸测量延迟到下一帧，避免回调中改变布局', async () => {
+it('ResizeObserver 观察稳定父容器，尺寸无变化时不重复绘制', async () => {
   const observers: ResizeObserverCallback[] = []
+  const observed: Element[] = []
   class ResizeObserverMock {
     constructor(callback: ResizeObserverCallback) {
       observers.push(callback)
     }
-    observe() {}
+    observe(target: Element) {
+      observed.push(target)
+    }
     unobserve() {}
     disconnect() {}
   }
@@ -80,9 +83,16 @@ it('ResizeObserver 的尺寸测量延迟到下一帧，避免回调中改变布�
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id))
+  const runNextFrame = () => {
+    const frame = frames.entries().next().value
+    expect(frame).toBeDefined()
+    frames.delete(frame![0])
+    frame![1](0)
+  }
 
   const wrapper = setup(1, 2)
   const root = wrapper.element as HTMLElement
+  expect(observed).toEqual([root.parentElement])
   let measuredWidth = 120
   let measuredHeight = 80
   Object.defineProperty(root, 'clientWidth', {
@@ -102,16 +112,26 @@ it('ResizeObserver 的尺寸测量延迟到下一帧，避免回调中改变布�
   measuredHeight = 123
   observers[0]([], {} as ResizeObserver)
   expect(canvas.element.style.width).toBe('120px')
-  while (canvas.element.style.width !== '321px') {
-    const frame = frames.entries().next().value
-    expect(frame).toBeDefined()
-    frames.delete(frame![0])
-    frame![1](0)
+  for (let attempts = 0; canvas.element.style.width !== '321px' && attempts < 10; attempts += 1) {
+    runNextFrame()
     await nextTick()
   }
 
   expect(canvas.element.style.width).toBe('321px')
   expect(canvas.element.style.height).toBe('123px')
+
+  for (let attempts = 0; frames.size > 0 && attempts < 10; attempts += 1) {
+    runNextFrame()
+    await nextTick()
+  }
+  expect(frames.size).toBe(0)
+  observers[0]([], {} as ResizeObserver)
+  const stableMeasure = frames.entries().next().value
+  expect(stableMeasure).toBeDefined()
+  frames.delete(stableMeasure![0])
+  stableMeasure![1](0)
+  await nextTick()
+  expect(frames.size).toBe(0)
 })
 
 it('表头在字段名下显示数据库类型，缺少类型时明确标注未知', () => {

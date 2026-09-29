@@ -138,9 +138,26 @@ function measure() {
   if (!root.value) return
   const nextWidth = root.value.clientWidth
   const nextHeight = root.value.clientHeight
-  if (width.value !== nextWidth) width.value = nextWidth
-  if (height.value !== nextHeight) height.value = nextHeight
-  scrolled()
+  let changed = false
+  if (width.value !== nextWidth) {
+    width.value = nextWidth
+    changed = true
+  }
+  if (height.value !== nextHeight) {
+    height.value = nextHeight
+    changed = true
+  }
+  const nextLeft = root.value.scrollLeft
+  const nextTop = root.value.scrollTop
+  if (scrollLeft.value !== nextLeft) {
+    scrollLeft.value = nextLeft
+    changed = true
+  }
+  if (scrollTop.value !== nextTop) {
+    scrollTop.value = nextTop
+    changed = true
+  }
+  if (changed) schedule()
 }
 /** ResizeObserver 通知中只排下一帧测量，避免回写画布尺寸重入当前布局周期。 */
 function scheduleMeasure() {
@@ -152,8 +169,11 @@ function scheduleMeasure() {
 }
 function scrolled() {
   if (!root.value) return
-  scrollLeft.value = root.value.scrollLeft
-  scrollTop.value = root.value.scrollTop
+  const nextLeft = root.value.scrollLeft
+  const nextTop = root.value.scrollTop
+  if (scrollLeft.value === nextLeft && scrollTop.value === nextTop) return
+  scrollLeft.value = nextLeft
+  scrollTop.value = nextTop
   schedule()
 }
 function checkEditorVisibility() {
@@ -336,6 +356,7 @@ watch(
   checkEditorVisibility,
   { flush: 'post' }
 )
+watch([() => props.rows.length, widths], scheduleMeasure)
 watch(
   () => [
     props.rows,
@@ -357,7 +378,8 @@ watch(
 )
 onMounted(() => {
   observer = new ResizeObserver(scheduleMeasure)
-  observer.observe(root.value!)
+  // 观察受工作区布局约束的父容器，画布尺寸变化不会再次触发自身测量。
+  observer.observe(root.value!.parentElement ?? root.value!)
   themeObserver = new MutationObserver(schedule)
   themeObserver.observe(document.documentElement, {
     attributes: true,
