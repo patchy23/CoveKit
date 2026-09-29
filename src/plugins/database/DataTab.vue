@@ -6,6 +6,7 @@ import { computed, ref, watch } from 'vue'
 import EditableResultGrid from './EditableResultGrid.vue'
 import { hasGridChanges } from './workspace/useQueryWorkspace'
 import TableTools from './TableTools.vue'
+import { useLoadElapsed } from './useLoadElapsed'
 import {
   UiBadge,
   UiButton,
@@ -29,6 +30,8 @@ const gridPage = computed(() => state.value.gridPage ?? 1)
 const gridPageSize = computed(() => state.value.gridPageSize ?? 100)
 const pageDraft = ref(String(gridPage.value))
 const pageError = ref('')
+const cancelingLoad = ref(false)
+const loadElapsed = useLoadElapsed(() => state.value.loadingMore || cancelingLoad.value)
 watch(gridPage, (page) => {
   pageDraft.value = String(page)
   pageError.value = ''
@@ -42,9 +45,19 @@ const pagerDisabled = computed(
     hasGridChanges(state.value) ||
     state.value.gridSaving ||
     state.value.loadingMore ||
+    cancelingLoad.value ||
     state.value.status === 'running'
 )
-const pageAction = computed(() => (state.value.hasMore ? 'load-next' : 'end'))
+
+async function cancelLoad() {
+  if (cancelingLoad.value) return
+  cancelingLoad.value = true
+  try {
+    await db.cancelQuery()
+  } finally {
+    cancelingLoad.value = false
+  }
+}
 
 function changePageSize(value: string) {
   if (pagerDisabled.value) return
@@ -175,18 +188,42 @@ function toStructure() {
   <div :inert="hasGridChanges(state) || state.gridSaving || state.loadingMore">
     <TableTools :db="db" />
   </div>
-  <div
-    v-if="state.status === 'running'"
-    role="status"
-    class="flex min-h-0 flex-1 items-center justify-center gap-[6px] text-caption text-secondary dark:text-secondary-dark"
-  >
-    <UiSpinner size="xs" />正在加载表数据…
+  <div v-if="state.status === 'running'" class="flex min-h-0 flex-1 items-center justify-center">
+    <div
+      class="flex flex-col items-center gap-sm rounded-md border border-border bg-surface p-md text-secondary shadow-sm dark:border-border-dark dark:bg-surface-dark dark:text-secondary-dark"
+    >
+      <UiSpinner size="md" :label="cancelingLoad ? '正在取消读取' : '正在加载表数据'">
+        {{ cancelingLoad ? '正在取消读取…' : '正在加载表数据…' }}
+      </UiSpinner>
+      <span class="text-caption">已用时 {{ loadElapsed }}</span>
+      <UiButton size="sm" variant="secondary" :disabled="cancelingLoad" @click="cancelLoad"
+        >取消读取</UiButton
+      >
+    </div>
   </div>
   <UiEmptyState v-else-if="state.status === 'error'" :title="'加载失败'" :description="state.error">
     <UiButton size="sm" variant="secondary" @click="refresh">重试</UiButton>
   </UiEmptyState>
 
-  <EditableResultGrid v-else :db="db" :state="state" class="min-h-0 flex-1" :rows="gridRows" />
+  <div v-else class="relative flex min-h-0 flex-1">
+    <EditableResultGrid :db="db" :state="state" class="min-h-0 flex-1" :rows="gridRows" />
+    <div
+      v-if="state.loadingMore || cancelingLoad"
+      class="absolute inset-0 z-20 flex items-center justify-center bg-surface/70 dark:bg-surface-dark/70"
+    >
+      <div
+        class="flex flex-col items-center gap-sm rounded-md border border-border bg-surface p-md text-secondary shadow-sm dark:border-border-dark dark:bg-surface-dark dark:text-secondary-dark"
+      >
+        <UiSpinner size="md" :label="cancelingLoad ? '正在取消读取' : '正在加载表数据'">
+          {{ cancelingLoad ? '正在取消读取…' : '正在加载表数据…' }}
+        </UiSpinner>
+        <span class="text-caption">已用时 {{ loadElapsed }}</span>
+        <UiButton size="sm" variant="secondary" :disabled="cancelingLoad" @click="cancelLoad"
+          >取消读取</UiButton
+        >
+      </div>
+    </div>
+  </div>
   <UiToolbar density="compact" class="border-t border-border px-[6px] dark:border-border-dark">
     <span class="text-caption text-text-muted dark:text-text-muted-dark">
       {{
@@ -201,11 +238,9 @@ function toStructure() {
       <span role="status" class="text-caption text-text-muted dark:text-text-muted-dark">{{
         state.loadLimit ||
         state.loadMoreError ||
-        (state.loadingMore
-          ? '正在读取下一批…'
-          : hasGridChanges(state)
-            ? '请先保存或放弃修改，再翻页或调整每页条数'
-            : `第 ${gridPage} 页 · 已加载 ${state.rows.length} 行${state.hasMore ? '，仍有后续' : ''}`)
+        (hasGridChanges(state)
+          ? '请先保存或放弃修改，再翻页或调整每页条数'
+          : `第 ${gridPage} 页 · 已加载 ${state.rows.length} 行${state.hasMore ? '，仍有后续' : ''}`)
       }}</span>
       <UiButton
         size="xs"
@@ -254,18 +289,10 @@ function toStructure() {
       <UiButton
         size="xs"
         variant="ghost"
-        :disabled="pagerDisabled || pageAction === 'end' || !!state.loadLimit"
+        :disabled="pagerDisabled || !state.hasMore || !!state.loadLimit"
         @click="nextPage"
       >
-        {{
-          state.loadingMore
-            ? '读取中…'
-            : state.loadMoreError
-              ? '重试读取'
-              : pageAction === 'load-next'
-                ? '读取下一页数据'
-                : '下一页'
-        }}
+        下一页
       </UiButton>
       <UiButton
         size="xs"
@@ -275,9 +302,6 @@ function toStructure() {
         title="统计总数并跳转到尾页"
         @click="lastPage"
         >尾页</UiButton
-      >
-      <UiButton v-if="state.loadingMore" size="xs" variant="secondary" @click="db.cancelQuery"
-        >停止读取</UiButton
       >
     </template>
   </UiToolbar>

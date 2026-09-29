@@ -1024,13 +1024,34 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
 
   async function cancelQuery() {
     const tabId = activeTabId.value
+    const pendingState = queryStates.value[tabId]
+    if (
+      pendingState?.loadingMore &&
+      pendingState.paginationMode === 'cursor' &&
+      pendingState.cursorId
+    ) {
+      const cursorId = pendingState.cursorId
+      const context = tabContexts.value[tabId]
+      if (!context) return
+      try {
+        await queryIpc.closeCursor(context.connectionId, tabId, cursorId)
+        if (queryStates.value[tabId] === pendingState && pendingState.cursorId === cursorId) {
+          pendingState.cursorId = undefined
+          pendingState.hasMore = false
+          pendingState.loadMoreError =
+            '已停止后续读取，已加载数据保留；重新执行 SQL 可读取完整结果。'
+        }
+      } catch (error) {
+        ports.showError(error)
+      }
+      return
+    }
     const conn = activeTabConnection.value
     if (!conn) return
     const queryRequestId = inFlight.get(tabId)
     const requestId = queryRequestId ?? tableRequests.get(tabId)
     // 没有在途请求就没有取消对象，不打扰后端（取消与预期缺失不报错）
     if (!requestId) return
-    const pendingState = queryStates.value[tabId]
     if (pendingState && queryRequestId) pendingState.cancelRequested = true
     try {
       await queryIpc.cancel(requestId)

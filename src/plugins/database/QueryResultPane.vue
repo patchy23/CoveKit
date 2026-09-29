@@ -15,6 +15,7 @@ import EditableResultGrid from './EditableResultGrid.vue'
 import type { QueryState, useDatabase } from './useDatabase'
 import { hasGridChanges } from './workspace/useQueryWorkspace'
 import { resultPageAction } from './resultRows'
+import { useLoadElapsed } from './useLoadElapsed'
 
 const props = defineProps<{
   db: ReturnType<typeof useDatabase>
@@ -35,6 +36,8 @@ const gridPage = computed(() => queryState.value.gridPage ?? 1)
 const gridPageSize = computed(() => queryState.value.gridPageSize ?? 100)
 const pageDraft = ref(String(gridPage.value))
 const pageError = ref('')
+const cancelingLoad = ref(false)
+const loadElapsed = useLoadElapsed(() => queryState.value.loadingMore || cancelingLoad.value)
 watch(gridPage, (page) => {
   pageDraft.value = String(page)
   pageError.value = ''
@@ -45,9 +48,19 @@ const pagerDisabled = computed(
     hasGridChanges(queryState.value) ||
     queryState.value.gridSaving ||
     queryState.value.loadingMore ||
+    cancelingLoad.value ||
     queryState.value.status === 'running' ||
     db.filteredRows.busy.value
 )
+async function cancelLoad() {
+  if (cancelingLoad.value) return
+  cancelingLoad.value = true
+  try {
+    await db.cancelQuery()
+  } finally {
+    cancelingLoad.value = false
+  }
+}
 const previousDisabled = computed(() => {
   const state = queryState.value
   if (pagerDisabled.value || gridPage.value <= 1) return true
@@ -366,18 +379,36 @@ async function nextPage() {
               : `返回 ${queryState.total} 行，耗时 ${queryState.durationMs} ms。`
       }}
     </UiAlert>
-    <EditableResultGrid v-else :db="db" :state="queryState" class="min-h-0 flex-1" :rows="rows">
-      <template #empty>
-        <span>{{ queryState.filter ? '无匹配结果' : '当前查询未返回数据' }}</span>
-        <UiButton
-          v-if="queryState.filter"
-          size="xs"
-          variant="ghost"
-          @click="emit('patch', { filter: '', page: 1, gridPage: 1 })"
-          >清除过滤</UiButton
+    <div v-else class="relative flex min-h-0 flex-1">
+      <EditableResultGrid :db="db" :state="queryState" class="min-h-0 flex-1" :rows="rows">
+        <template #empty>
+          <span>{{ queryState.filter ? '无匹配结果' : '当前查询未返回数据' }}</span>
+          <UiButton
+            v-if="queryState.filter"
+            size="xs"
+            variant="ghost"
+            @click="emit('patch', { filter: '', page: 1, gridPage: 1 })"
+            >清除过滤</UiButton
+          >
+        </template>
+      </EditableResultGrid>
+      <div
+        v-if="queryState.loadingMore || cancelingLoad"
+        class="absolute inset-0 z-20 flex items-center justify-center bg-surface/70 dark:bg-surface-dark/70"
+      >
+        <div
+          class="flex flex-col items-center gap-sm rounded-md border border-border bg-surface p-md text-secondary shadow-sm dark:border-border-dark dark:bg-surface-dark dark:text-secondary-dark"
         >
-      </template>
-    </EditableResultGrid>
+          <UiSpinner size="md" :label="cancelingLoad ? '正在取消读取' : '正在加载查询结果'">
+            {{ cancelingLoad ? '正在取消读取…' : '正在加载查询结果…' }}
+          </UiSpinner>
+          <span class="text-caption">已用时 {{ loadElapsed }}</span>
+          <UiButton size="sm" variant="secondary" :disabled="cancelingLoad" @click="cancelLoad"
+            >取消读取</UiButton
+          >
+        </div>
+      </div>
+    </div>
     <UiToolbar density="compact" class="border-t border-border px-[6px] dark:border-border-dark">
       <UiInput
         :model-value="queryState.filter"
@@ -401,13 +432,11 @@ async function nextPage() {
         <span role="status" class="text-caption text-text-muted dark:text-text-muted-dark">{{
           queryState.loadLimit ||
           queryState.loadMoreError ||
-          (queryState.loadingMore
-            ? '正在读取下一批…'
-            : hasGridChanges(queryState)
-              ? '请先保存或放弃修改，再翻页或调整每页条数'
-              : queryState.paginationMode === 'cursor'
-                ? `第 ${gridPage} 页 · 游标仅保留最近 5 页，不能统计或直达尾页`
-                : `第 ${gridPage} 页 · 筛选后 ${loadedRows} 行${queryState.hasMore ? '，仍有后续' : ''}`)
+          (hasGridChanges(queryState)
+            ? '请先保存或放弃修改，再翻页或调整每页条数'
+            : queryState.paginationMode === 'cursor'
+              ? `第 ${gridPage} 页 · 游标仅保留最近 5 页，不能统计或直达尾页`
+              : `第 ${gridPage} 页 · 筛选后 ${loadedRows} 行${queryState.hasMore ? '，仍有后续' : ''}`)
         }}</span>
         <UiButton
           size="xs"
@@ -459,15 +488,7 @@ async function nextPage() {
           "
           @click="nextPage"
         >
-          {{
-            queryState.loadingMore
-              ? '读取中…'
-              : queryState.loadMoreError
-                ? '重试读取'
-                : pageAction === 'load-next'
-                  ? '读取下一页数据'
-                  : '下一页'
-          }}
+          下一页
         </UiButton>
         <UiButton
           size="xs"
@@ -477,13 +498,6 @@ async function nextPage() {
           title="统计总数并跳转到尾页"
           @click="lastPage"
           >尾页</UiButton
-        >
-        <UiButton
-          v-if="queryState.loadingMore && queryState.paginationMode !== 'cursor'"
-          size="xs"
-          variant="secondary"
-          @click="db.cancelQuery"
-          >停止读取</UiButton
         >
       </template>
     </UiToolbar>
