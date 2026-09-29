@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { reactive, ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 import { afterEach, expect, it, vi } from 'vitest'
 import QueryResultPane from './QueryResultPane.vue'
 import UiSelect from '@/core/ui/UiSelect.vue'
@@ -78,7 +78,8 @@ it('结果页签调整页大小时保留当前首行并受草稿保护', async (
   const second = makeState({ gridPage: 2, loadLimit: '', paginationMode: 'server' })
   queryStates.value = { query: second }
   await wrapper.setProps({ queryState: second, rows: [{ __row: '100', c0: 'row-100' }] })
-  expect(wrapper.text()).toContain('第 2 页')
+  expect(wrapper.text()).not.toContain('第 2 页')
+  expect(wrapper.find('[role="status"]').exists()).toBe(false)
 
   const pageSize = wrapper.findComponent(UiSelect)
   expect(wrapper.find('button[aria-label="每页条数"]').exists()).toBe(true)
@@ -132,10 +133,38 @@ it('页码 Enter 跳转，非法页码不请求，首页和尾页调用目标接
   await input.setValue('0')
   await input.trigger('keydown.enter')
   expect(db.jumpToPage).toHaveBeenCalledTimes(1)
-  expect(wrapper.get('[role="alert"]').text()).toContain('页码需在 1 至 4294967295 之间')
+  expect(db.showError).toHaveBeenCalledWith('页码需在 1 至 4294967295 之间。')
 
   await wrapper.get('button[aria-label="首页"]').trigger('click')
   expect(db.goToPage).toHaveBeenCalledWith('query', 1)
   await wrapper.get('button[aria-label="尾页"]').trigger('click')
   expect(db.goToLastPage).toHaveBeenCalledWith('query', 100)
+})
+
+it('读取错误使用数据库全局提示，不占分页工具栏', async () => {
+  const state = makeState({ loadLimit: '' })
+  const db = {
+    resultTabs: ref([{ value: 'data', label: '数据' }]),
+    filteredRows: {
+      value: [],
+      busy: ref(false),
+      error: ref(''),
+      ready: vi.fn(async () => []),
+    },
+    queryStates: ref({ query: state }),
+    activeTabId: ref('query'),
+    showError: vi.fn(),
+  } as unknown as ReturnType<typeof useDatabase>
+  const wrapper = mount(QueryResultPane, {
+    props: { db, queryState: state, rows: [], statusText: '查询完成' },
+    global: { stubs: { EditableResultGrid: true, UiTabs: true } },
+  })
+  wrappers.push(wrapper)
+
+  state.loadMoreError = '读取失败，当前页已保留。'
+  await nextTick()
+
+  expect(db.showError).toHaveBeenCalledWith('读取失败，当前页已保留。')
+  expect(wrapper.text()).not.toContain('读取失败')
+  expect(wrapper.find('[role="alert"]').exists()).toBe(false)
 })

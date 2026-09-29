@@ -35,13 +35,36 @@ const emit = defineEmits<{
 const gridPage = computed(() => queryState.value.gridPage ?? 1)
 const gridPageSize = computed(() => queryState.value.gridPageSize ?? 100)
 const pageDraft = ref(String(gridPage.value))
-const pageError = ref('')
 const cancelingLoad = ref(false)
 const loadElapsed = useLoadElapsed(() => queryState.value.loadingMore || cancelingLoad.value)
 watch(gridPage, (page) => {
   pageDraft.value = String(page)
-  pageError.value = ''
 })
+watch(
+  () =>
+    [
+      queryState.value,
+      queryState.value.loadMoreError,
+      queryState.value.loadLimit,
+      queryState.value.truncated,
+    ] as const,
+  (current, previous) => {
+    const [currentState, loadError, loadLimit, truncated] = current
+    const [previousState, previousError, previousLimit, previousTruncated] = previous ?? []
+    if (
+      loadError &&
+      currentState.status !== 'error' &&
+      (loadError !== previousError || currentState !== previousState)
+    ) {
+      db.showError(loadError)
+    } else if (loadLimit && (loadLimit !== previousLimit || currentState !== previousState)) {
+      db.showError(loadLimit)
+    } else if (truncated && !loadLimit && (!previousTruncated || currentState !== previousState)) {
+      db.showError('结果未完整（达到行数或字节上限）')
+    }
+  },
+  { immediate: true }
+)
 const loadedRows = computed(() => db.filteredRows.value.length)
 const pagerDisabled = computed(
   () =>
@@ -98,19 +121,18 @@ const pageSizeOptions = [100, 200, 500, 1000].map((size) => ({
 }))
 function updatePageDraft(value: string | number) {
   pageDraft.value = String(value)
-  pageError.value = ''
 }
 
 async function jumpToPage() {
   if (pagerDisabled.value) return
   const raw = pageDraft.value.trim()
   if (!/^[0-9]+$/.test(raw)) {
-    pageError.value = '请输入正整数页码。'
+    db.showError('请输入正整数页码。')
     return
   }
   const page = BigInt(raw)
   if (page < 1n || page > 0xffff_ffffn) {
-    pageError.value = '页码需在 1 至 4294967295 之间。'
+    db.showError('页码需在 1 至 4294967295 之间。')
     return
   }
   const value = Number(page)
@@ -119,7 +141,7 @@ async function jumpToPage() {
   if (!sourceState.paginationMode) {
     const pageCount = Math.max(1, Math.ceil(loadedRows.value / gridPageSize.value))
     if (value > pageCount) {
-      pageError.value = `页码超出已加载结果范围，共 ${pageCount} 页。`
+      db.showError(`页码超出已加载结果范围，共 ${pageCount} 页。`)
       return
     }
     emit('patch', { gridPage: value })
@@ -136,7 +158,7 @@ async function jumpToPage() {
     queryState.value === sourceState &&
     !sourceState.loadMoreError
   )
-    pageError.value = '无法读取目标页，当前页已保留。'
+    db.showError('无法读取目标页，当前页已保留。')
 }
 
 function firstPage() {
@@ -169,7 +191,7 @@ async function lastPage() {
     queryState.value === sourceState &&
     !sourceState.loadMoreError
   )
-    pageError.value = '无法读取尾页，当前页已保留。'
+    db.showError('无法读取尾页，当前页已保留。')
 }
 
 function changePageSize(value: string) {
@@ -414,7 +436,7 @@ async function nextPage() {
     <UiToolbar density="compact" class="border-t border-border px-[6px] dark:border-border-dark">
       <UiInput
         :model-value="queryState.filter"
-        class="min-w-0 w-[160px]"
+        class="min-w-[120px] w-[160px] shrink-0"
         size="xs"
         placeholder="筛选已加载结果…"
         @update:model-value="
@@ -425,21 +447,7 @@ async function nextPage() {
           })
         "
       />
-      <span
-        v-if="queryState.truncated && !queryState.hasMore"
-        class="text-caption text-warning-strong"
-        >结果未完整（达到行数或字节上限）</span
-      >
       <template #trailing>
-        <span role="status" class="text-caption text-text-muted dark:text-text-muted-dark">{{
-          queryState.loadLimit ||
-          queryState.loadMoreError ||
-          (hasGridChanges(queryState)
-            ? '请先保存或放弃修改，再翻页或调整每页条数'
-            : queryState.paginationMode === 'cursor'
-              ? `第 ${gridPage} 页 · 游标仅保留最近 5 页，不能统计或直达尾页`
-              : `第 ${gridPage} 页 · 筛选后 ${loadedRows} 行${queryState.hasMore ? '，仍有后续' : ''}`)
-        }}</span>
         <UiButton
           size="xs"
           variant="ghost"
@@ -462,7 +470,6 @@ async function nextPage() {
           title="输入页码并按 Enter 跳转"
           class="w-[68px]"
           size="xs"
-          :invalid="!!pageError"
           :disabled="pagerDisabled"
           @update:model-value="updatePageDraft"
           @keydown.enter.prevent="jumpToPage"
@@ -503,6 +510,5 @@ async function nextPage() {
         >
       </template>
     </UiToolbar>
-    <p v-if="pageError" role="alert" class="px-sm text-caption text-danger">{{ pageError }}</p>
   </div>
 </template>

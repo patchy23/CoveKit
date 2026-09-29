@@ -29,13 +29,28 @@ const state = computed(() => db.queryState.value)
 const gridPage = computed(() => state.value.gridPage ?? 1)
 const gridPageSize = computed(() => state.value.gridPageSize ?? 100)
 const pageDraft = ref(String(gridPage.value))
-const pageError = ref('')
 const cancelingLoad = ref(false)
 const loadElapsed = useLoadElapsed(() => state.value.loadingMore || cancelingLoad.value)
 watch(gridPage, (page) => {
   pageDraft.value = String(page)
-  pageError.value = ''
 })
+watch(
+  () => [state.value, state.value.loadMoreError, state.value.loadLimit] as const,
+  (current, previous) => {
+    const [currentState, loadError, loadLimit] = current
+    const [previousState, previousError, previousLimit] = previous ?? []
+    if (
+      loadError &&
+      currentState.status !== 'error' &&
+      (loadError !== previousError || currentState !== previousState)
+    ) {
+      db.showError(loadError)
+    } else if (loadLimit && (loadLimit !== previousLimit || currentState !== previousState)) {
+      db.showError(loadLimit)
+    }
+  },
+  { immediate: true }
+)
 const pageSizeOptions = [100, 200, 500, 1000].map((size) => ({
   value: String(size),
   label: String(size),
@@ -81,19 +96,18 @@ async function nextPage() {
 
 function updatePageDraft(value: string | number) {
   pageDraft.value = String(value)
-  pageError.value = ''
 }
 
 async function jumpToPage() {
   if (pagerDisabled.value) return
   const raw = pageDraft.value.trim()
   if (!/^[0-9]+$/.test(raw)) {
-    pageError.value = '请输入正整数页码。'
+    db.showError('请输入正整数页码。')
     return
   }
   const page = BigInt(raw)
   if (page < 1n || page > 0xffff_ffffn) {
-    pageError.value = '页码需在 1 至 4294967295 之间。'
+    db.showError('页码需在 1 至 4294967295 之间。')
     return
   }
   const tabId = db.activeTabId.value
@@ -107,7 +121,7 @@ async function jumpToPage() {
     state.value === source &&
     !source.loadMoreError
   )
-    pageError.value = '无法读取目标页，当前页已保留。'
+    db.showError('无法读取目标页，当前页已保留。')
 }
 
 function firstPage() {
@@ -127,7 +141,7 @@ async function lastPage() {
     state.value === source &&
     !source.loadMoreError
   )
-    pageError.value = '无法读取尾页，当前页已保留。'
+    db.showError('无法读取尾页，当前页已保留。')
 }
 
 /** 动态行对象（列名为 c0/c1…） */
@@ -237,13 +251,6 @@ function toStructure() {
       }}
     </span>
     <template #trailing>
-      <span role="status" class="text-caption text-text-muted dark:text-text-muted-dark">{{
-        state.loadLimit ||
-        state.loadMoreError ||
-        (hasGridChanges(state)
-          ? '请先保存或放弃修改，再翻页或调整每页条数'
-          : `第 ${gridPage} 页 · 已加载 ${state.rows.length} 行${state.hasMore ? '，仍有后续' : ''}`)
-      }}</span>
       <UiButton
         size="xs"
         variant="ghost"
@@ -270,7 +277,6 @@ function toStructure() {
         title="输入页码并按 Enter 跳转"
         class="w-[68px]"
         size="xs"
-        :invalid="!!pageError"
         :disabled="pagerDisabled"
         @update:model-value="updatePageDraft"
         @keydown.enter.prevent="jumpToPage"
@@ -307,5 +313,4 @@ function toStructure() {
       >
     </template>
   </UiToolbar>
-  <p v-if="pageError" role="alert" class="px-sm text-caption text-danger">{{ pageError }}</p>
 </template>
