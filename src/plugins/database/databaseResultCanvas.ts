@@ -1,5 +1,5 @@
 export const ROW_HEIGHT = 25
-export const HEADER_HEIGHT = 25
+export const HEADER_HEIGHT = 40
 export const ROW_NUMBER_WIDTH = 44
 
 export interface GridCellPosition {

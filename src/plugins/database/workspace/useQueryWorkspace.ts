@@ -71,6 +71,8 @@ export interface QueryState {
   affected: number
   /** 结果列（动态） */
   columns: string[]
+  /** 查询结果按列顺序返回的数据库原生类型；表浏览从现有结构元数据读取。 */
+  columnTypes?: string[]
   /** 当前页数据行 */
   rows: string[][]
   /** 后端总数（分页） */
@@ -122,6 +124,7 @@ function makeQueryState(sql = ''): QueryState {
     durationMs: 0,
     affected: 0,
     columns: [],
+    columnTypes: [],
     rows: [],
     total: 0,
     truncated: false,
@@ -422,7 +425,14 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       const state = queryStates.value[id]
       if (state) {
         invalidateFetch(id, state)
-        Object.assign(state, { rows: [], values: [], statements: [], gridEdits: {}, sql: '' })
+        Object.assign(state, {
+          rows: [],
+          values: [],
+          statements: [],
+          columnTypes: [],
+          gridEdits: {},
+          sql: '',
+        })
       }
       void queryIpc.closeWorkspace(context.connectionId, id).catch(ports.showError)
     }
@@ -515,6 +525,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       activeStatement: index,
       editTarget: result.editTarget,
       columns: result.columns,
+      columnTypes: result.columnTypes ?? [],
       rows: result.rows,
       values: result.values ?? [],
       total: result.rows.length,
@@ -849,6 +860,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       page: 1,
       gridPage: 1,
       columns: [],
+      columnTypes: [],
       rows: [],
       values: [],
       statements: [],
@@ -922,6 +934,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
           durationMs,
           affected: result.rowsAffected,
           columns: result.columns,
+          columnTypes: result.columnTypes ?? [],
           rows: result.rows,
           values: result.values ?? [],
           total: result.rows.length,
@@ -935,6 +948,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
           status: 'error',
           error: result.error ?? '查询失败',
           columns: result.columns,
+          columnTypes: result.columnTypes ?? [],
           rows: result.rows,
           values: result.values ?? [],
           resultTab: 'message',
@@ -1122,6 +1136,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       if (kind === 'data') state.page += 1
       else {
         const result = page as QueryResult
+        if (result.columnTypes?.length) state.columnTypes = result.columnTypes
         state.cursorId = result.hasMore ? (result.cursorId ?? cursorId) : undefined
         state.truncated = result.truncated
         const statement = state.statements[state.activeStatement]
@@ -1129,6 +1144,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
           Object.assign(statement, {
             rows: state.rows,
             values: state.values,
+            columnTypes: state.columnTypes,
             hasMore: state.hasMore,
             cursorId: state.cursorId,
             truncated: state.truncated,
@@ -1165,6 +1181,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     state.loadLimit = ''
     state.rows = []
     state.values = []
+    state.columnTypes = []
     resultBytes.delete(tabId)
     state.status = 'running'
     const generation = ++nextLoadGeneration
@@ -1199,6 +1216,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       state.stableOrder = page.stableOrder
       state.values = page.values ?? []
       state.columns = page.columns
+      state.columnTypes = []
       state.rows = page.rows
       state.total = page.rows.length
       state.durationMs = page.durationMs
@@ -1299,6 +1317,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
       const info = await queryIpc.redisKeyInfo(ctx.connectionId, key)
       if (!current()) return
       state.columns = ['键', '类型', 'TTL', '值']
+      state.columnTypes = []
       state.rows =
         info.kind === 'none' || info.ttl === -2
           ? []

@@ -37,13 +37,14 @@ describe('数据库结果画布几何与可视区', () => {
     const widths = [100, 80]
     expect(gridColumns(widths)).toEqual({ offsets: [44, 144, 224], totalWidth: 224 })
     expect(ROW_NUMBER_WIDTH).toBe(44)
-    expect(HEADER_HEIGHT).toBe(25)
+    expect(HEADER_HEIGHT).toBe(40)
     expect(ROW_HEIGHT).toBe(25)
-    expect(hitGridCell(20, 30, 0, 0, widths, 10)).toEqual({ row: 0, column: -1 })
+    expect(hitGridCell(20, 45, 0, 0, widths, 10)).toEqual({ row: 0, column: -1 })
     expect(hitGridCell(50, 24, 0, 0, widths, 10)).toBeNull()
-    expect(hitGridCell(50, 30, 0, 0, widths, 10)).toEqual({ row: 0, column: 0 })
-    expect(hitGridCell(45, 50, 20, 25, widths, 10)).toEqual({ row: 2, column: 0 })
-    expect(hitGridCell(300, 30, 0, 0, widths, 10)).toBeNull()
+    expect(hitGridCell(50, 39, 0, 0, widths, 10)).toBeNull()
+    expect(hitGridCell(50, 40, 0, 0, widths, 10)).toEqual({ row: 0, column: 0 })
+    expect(hitGridCell(45, 50, 20, 25, widths, 10)).toEqual({ row: 1, column: 0 })
+    expect(hitGridCell(300, 45, 0, 0, widths, 10)).toBeNull()
   })
 
   it('只绘制与视口相交的行列，并将画布文本限制在500字符', () => {

@@ -96,6 +96,18 @@ async function rowMenu(wrapper: ReturnType<typeof mount>, label: string) {
   await nextTick()
 }
 describe('结果单元格编辑事务', () => {
+  it('查询结果使用查询返回的原生列类型', async () => {
+    const { wrapper, state } = setup()
+    state.columnTypes = ['bigint', 'text']
+    await nextTick()
+    expect(wrapper.getComponent(ResultCanvasGrid).props('columnTypes')).toEqual(['bigint', 'text'])
+  })
+  it('表浏览使用现有列结构元数据的真实类型', async () => {
+    const { wrapper, db } = setup()
+    db.tabs.value[0].kind = 'data'
+    await flushPromises()
+    expect(wrapper.getComponent(ResultCanvasGrid).props('columnTypes')).toEqual(['bigint', 'text'])
+  })
   it('长字段网格仅显示短预览，完整值与复制保留原文', async () => {
     const { wrapper, state } = setup()
     const text = '长'.repeat(20_000)

@@ -13,6 +13,7 @@ import {
 type Cell = { row: Record<string, unknown>; column: UiDataGridColumn }
 const props = defineProps<{
   columns: UiDataGridColumn[]
+  columnTypes?: string[]
   rows: Record<string, unknown>[]
   selected: { row: number; column: number } | null
   editing?: { row: number; column: number } | null
@@ -402,7 +403,7 @@ defineExpose({ focus: () => root.value?.focus() })
       >
         <div
           role="columnheader"
-          class="sticky left-0 z-10 shrink-0 bg-surface-muted px-2 dark:bg-surface-muted-dark"
+          class="sticky left-0 z-10 flex shrink-0 items-center bg-surface-muted px-2 dark:bg-surface-muted-dark"
           style="width: 44px"
         >
           #
@@ -411,11 +412,14 @@ defineExpose({ focus: () => root.value?.focus() })
           v-for="(column, index) in columns"
           :key="column.key"
           role="columnheader"
-          class="relative shrink-0 truncate border-r border-border px-2 leading-[25px] dark:border-border-dark"
+          class="relative flex shrink-0 flex-col justify-center overflow-hidden border-r border-border px-2 dark:border-border-dark"
           :style="{ width: `${widths[index]}px` }"
-          :title="column.label"
+          :title="`${column.label}\n${columnTypes?.[index]?.trim() || '未知'}`"
         >
-          {{ column.label }}
+          <span class="truncate leading-[16px]">{{ column.label }}</span>
+          <span class="truncate leading-[16px] text-secondary dark:text-secondary-dark">
+            {{ columnTypes?.[index]?.trim() || '未知' }}
+          </span>
           <span
             role="separator"
             tabindex="0"

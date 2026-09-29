@@ -670,6 +670,33 @@ describe('查询结果归属（决策书 §2.3 场景 1/3）', () => {
     env.commands.dbcColumns.mockResolvedValue([{ name: 'updated_id' }])
     expect(await api.resolveEditorColumns('users')).toEqual(['updated_id'])
   })
+  it('保留查询和活动语句各自返回的列类型', async () => {
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    const tabId = openEditor(api, 'conn-a', 'SELECT id FROM users; SELECT created_at FROM users')
+    const first = result({ columns: ['id'], columnTypes: ['bigint'], rows: [['1']] })
+    const second = result({
+      columns: ['created_at'],
+      columnTypes: ['timestamp with time zone'],
+      rows: [['2026-09-29T00:00:00Z']],
+    })
+    env.commands.dbcExecute.mockResolvedValue(
+      result({
+        columns: second.columns,
+        columnTypes: second.columnTypes,
+        rows: second.rows,
+        statements: [first, second],
+      })
+    )
+
+    await api.runQuery()
+    expect(stateOf(api, tabId).columnTypes).toEqual(['timestamp with time zone'])
+    api.selectStatement(0)
+    expect(stateOf(api, tabId).columnTypes).toEqual(['bigint'])
+    api.selectStatement(1)
+    expect(stateOf(api, tabId).columnTypes).toEqual(['timestamp with time zone'])
+  })
+
   it('两个连接的两个页签并发执行，结果各自落在发起页签', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()

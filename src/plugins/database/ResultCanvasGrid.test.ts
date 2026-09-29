@@ -11,7 +11,11 @@ afterEach(() => {
 function setup(
   count = 100,
   columns = 91,
-  options: { editing?: { row: number; column: number }; editor?: boolean } = {}
+  options: {
+    editing?: { row: number; column: number }
+    editor?: boolean
+    columnTypes?: string[]
+  } = {}
 ) {
   const wrapper = mount(ResultCanvasGrid, {
     props: {
@@ -20,6 +24,7 @@ function setup(
         label: `列${index}`,
         width: 140,
       })),
+      columnTypes: options.columnTypes,
       rows: Array.from({ length: count }, (_, index) => ({ __row: String(index + 200) })),
       selected: null,
       editing: options.editing ?? null,
@@ -49,16 +54,24 @@ it('宽表正文只有一个画布，增加结果行数不增加单元格 DOM', 
   expect(wrapper.attributes('aria-rowcount')).toBe('1000')
 })
 
+it('表头在字段名下显示数据库类型，缺少类型时明确标注未知', () => {
+  const wrapper = setup(1, 2, { columnTypes: ['BIGINT'] })
+  const headers = wrapper.findAll('[role="columnheader"]')
+  expect(headers[1].text()).toContain('BIGINT')
+  expect(headers[1].attributes('title')).toBe('列0\nBIGINT')
+  expect(headers[2].text()).toContain('未知')
+})
+
 it('鼠标命中、双击和右键沿用原行身份，表头不触发编辑', async () => {
   const wrapper = setup()
   const canvas = wrapper.get('canvas')
-  await canvas.trigger('click', { clientX: 200, clientY: 35 })
+  await canvas.trigger('click', { clientX: 200, clientY: 45 })
   expect(wrapper.emitted('select')?.[0]?.[0]).toMatchObject({
     row: { __row: '200' },
     column: { key: 'c1' },
   })
-  await canvas.trigger('dblclick', { clientX: 200, clientY: 35 })
-  await canvas.trigger('contextmenu', { clientX: 200, clientY: 35 })
+  await canvas.trigger('dblclick', { clientX: 200, clientY: 45 })
+  await canvas.trigger('contextmenu', { clientX: 200, clientY: 45 })
   expect(wrapper.emitted('cell')).toHaveLength(1)
   expect(wrapper.emitted('context')).toHaveLength(1)
   await canvas.trigger('dblclick', { clientX: 200, clientY: 10 })
@@ -88,7 +101,7 @@ it('只为当前单元格挂载一个编辑输入，并按列宽计算其内容�
   const editor = wrapper.get('input[aria-label="编辑中"]')
   expect(wrapper.findAll('input')).toHaveLength(1)
   expect(editor.element.style.left).toBe('324px')
-  expect(editor.element.style.top).toBe('75px')
+  expect(editor.element.style.top).toBe('90px')
   expect(editor.element.style.width).toBe('140px')
 
   const columns = wrapper

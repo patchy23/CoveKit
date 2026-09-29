@@ -49,6 +49,14 @@ const target = computed(() => props.state.editTarget)
 const connection = computed(() =>
   props.db.connections.value.find((c) => c.id === target.value?.connId)
 )
+const columnTypes = computed(() => {
+  if (props.state.columnTypes?.length)
+    return props.state.columns.map((_, index) => props.state.columnTypes?.[index]?.trim() || '未知')
+  if (props.db.tabs.value.find((tab) => tab.id === tabId.value)?.kind !== 'data')
+    return props.state.columns.map(() => '未知')
+  const byName = new Map(metadata.value.map((column) => [column.name, column.dataType.trim()]))
+  return props.state.columns.map((name) => byName.get(name) || '未知')
+})
 const pending = computed(() => hasGridChanges(props.state))
 const count = computed(() => Object.keys(props.state.gridEdits ?? {}).length)
 const reason = computed(() => {
@@ -345,6 +353,7 @@ function discard() {
     <ResultCanvasGrid
       ref="grid"
       :columns="db.tableColumns.value"
+      :column-types="columnTypes"
       :rows="rows"
       :selected="selected"
       :editing="editing"
