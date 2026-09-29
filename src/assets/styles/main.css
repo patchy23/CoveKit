@@ -266,6 +266,16 @@ body.ui-drag-select-lock * {
     font-family: inherit;
   }
 
+  /* 数字输入保留原生语义，只隐藏浏览器的步进按钮。 */
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
   ::selection {
     @apply bg-tertiary text-on-tertiary dark:bg-tertiary-dark dark:text-on-tertiary-dark;
   }
