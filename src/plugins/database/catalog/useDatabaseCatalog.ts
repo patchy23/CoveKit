@@ -189,12 +189,15 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     expandedIds.value = next
   }
 
-  /** 连接成功（connection 域端口）：展开该连接节点并预取库/schema 列表 */
+  /** 连接成功：展开连接节点并预取目录；SQLite 单库目录也预取对象名。 */
   function prefetchConnection(connId: string) {
     const expanded = new Set(expandedIds.value)
     expanded.add(connId)
     expandedIds.value = expanded
     void ensureMeta(connId)
+    // SQLite 的 main 节点可能在断开前保持展开；重连后预载对象，避免树保持空白直到再次折叠展开。
+    if (ports.connections.value.find((conn) => conn.id === connId)?.dbType === 'sqlite')
+      void ensureObjects(connId, 'db')
   }
 
   /** 连接断开/删除（connection 域端口）：失效该连接的元数据缓存 */

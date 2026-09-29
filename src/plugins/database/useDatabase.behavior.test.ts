@@ -1131,6 +1131,36 @@ describe('页签与连接的连带影响（决策书 §2.3 场景 4）', () => {
 
 /* ────────────────────────────────────────────────────────────────────── */
 describe('元数据缓存隔离与失效（决策书 §2.3 场景 5）', () => {
+  it('SQLite 重连时刷新已展开 main 的对象列表', async () => {
+    const api = mountWorkbench()
+    const sqlite = connection('sqlite', '本地 SQLite', {
+      dbType: 'sqlite',
+      database: 'main',
+      port: 0,
+    })
+    env.commands.dbcConnections.mockResolvedValue([sqlite])
+    env.commands.dbcConnect.mockResolvedValue({ ...sqlite, status: 'online' })
+    env.commands.dbcDatabases.mockResolvedValue(['main'])
+    env.commands.dbcSchemas.mockResolvedValue(['main'])
+    env.commands.dbcObjects.mockResolvedValue([objectInfo('orders')])
+
+    await api.refreshConnections()
+    api.toggleTree(api.treeItems.value.find((item) => item.id === 'sqlite')!)
+    await flush()
+    api.toggleTree(api.treeItems.value.find((item) => item.id === 'sqlite::db')!)
+    await flush()
+    api.toggleTree(api.treeItems.value.find((item) => item.id === 'sqlite::db::tables')!)
+    expect(api.visibleTreeItems.value.map((item) => item.label)).toContain('orders')
+
+    await api.disconnect(sqlite)
+    await api.connect(sqlite)
+    await flush()
+
+    expect(env.commands.dbcObjects).toHaveBeenCalledTimes(2)
+    expect(env.commands.dbcObjects).toHaveBeenLastCalledWith('sqlite', 'db', undefined)
+    expect(api.visibleTreeItems.value.map((item) => item.label)).toContain('orders')
+  })
+
   it('库/schema 缓存按连接隔离：同名 schema 不串读', async () => {
     const api = mountWorkbench()
     env.commands.dbcDatabases.mockImplementation(async (connId: string) => [
