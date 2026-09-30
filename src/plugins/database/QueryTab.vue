@@ -2,7 +2,7 @@
 import { UiTooltip } from '@/core/ui'
 import { useCopy } from '@/core/feedback/useCopy'
 import { useUiStore } from '@/stores/ui'
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { save as dialogSave, open as dialogOpen } from '@tauri-apps/plugin-dialog'
 import { fileIpc, queryIpc } from './ipc'
 import { useToolLifecycle } from '@/core/lifecycle'
@@ -41,18 +41,92 @@ const editorRef = ref<InstanceType<typeof SqlEditor> | null>(null)
 const editorPaneRef = ref<HTMLElement | null>(null)
 
 /** 编辑器高度（px）：默认按容器 38%，可拖拽；不持久化（分隔条在面板下方，正向） */
-const editorSplit = useSplitPane({ initial: 320, min: 120, max: 100000 }, true)
+const editorMinHeight = 120
+const resultMinHeight = 140
+const editorSplit = useSplitPane({ initial: 320, min: editorMinHeight, max: 100000 }, true)
+let editorHeightInitialized = false
+let editorHeightChangedByUser = false
+let applyingMeasuredHeight = false
+let hostObserver: ResizeObserver | null = null
+let measureFrame: number | null = null
+let observerGeneration = 0
 
-onMounted(() => {
-  const parent = editorPaneRef.value?.parentElement
-  if (parent) editorSplit.size.value = Math.round(parent.clientHeight * 0.38)
-})
+watch(
+  editorSplit.size,
+  () => {
+    if (!applyingMeasuredHeight) editorHeightChangedByUser = true
+  },
+  { flush: 'sync' }
+)
 
-/** 拖拽上限：给结果区至少留 140px */
-function editorMax(): number {
-  const parent = editorPaneRef.value?.parentElement
-  return (parent ? parent.clientHeight : 800) - 140
+function editorHost(): HTMLElement | null {
+  return editorPaneRef.value?.parentElement ?? null
 }
+
+function editorMax(): number {
+  const parent = editorHost()
+  return Math.max(editorMinHeight, (parent ? parent.clientHeight : 800) - resultMinHeight)
+}
+
+function setMeasuredEditorHeight(height: number) {
+  if (editorSplit.size.value === height) return
+  applyingMeasuredHeight = true
+  editorSplit.size.value = height
+  applyingMeasuredHeight = false
+}
+
+function clampEditorHeight(height: number, maximum: number): number {
+  return Math.max(editorMinHeight, Math.min(height, maximum))
+}
+
+function measureEditorHost() {
+  const height = editorHost()?.clientHeight ?? 0
+  if (height <= 0) return
+
+  const maximum = Math.max(editorMinHeight, height - resultMinHeight)
+  if (!editorHeightInitialized) {
+    editorHeightInitialized = true
+    if (!editorHeightChangedByUser) {
+      setMeasuredEditorHeight(clampEditorHeight(Math.round(height * 0.38), maximum))
+      return
+    }
+  }
+
+  setMeasuredEditorHeight(clampEditorHeight(editorSplit.size.value, maximum))
+}
+
+function stopObservingEditorHost() {
+  observerGeneration += 1
+  hostObserver?.disconnect()
+  hostObserver = null
+  if (measureFrame !== null) {
+    cancelAnimationFrame(measureFrame)
+    measureFrame = null
+  }
+}
+
+function observeEditorHost() {
+  if (hostObserver) return
+  const parent = editorHost()
+  if (!parent) return
+
+  const generation = ++observerGeneration
+  const scheduleMeasure = () => {
+    if (generation !== observerGeneration || measureFrame !== null) return
+    measureFrame = requestAnimationFrame(() => {
+      measureFrame = null
+      if (generation === observerGeneration) measureEditorHost()
+    })
+  }
+  hostObserver = new ResizeObserver(scheduleMeasure)
+  hostObserver.observe(parent)
+  scheduleMeasure()
+}
+
+onMounted(observeEditorHost)
+onActivated(observeEditorHost)
+onDeactivated(stopObservingEditorHost)
+onBeforeUnmount(stopObservingEditorHost)
 
 /** 窄工具栏内的低频操作收纳。 */
 const moreMenu = ref<{ x: number; y: number } | null>(null)
