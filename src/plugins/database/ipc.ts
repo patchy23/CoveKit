@@ -22,6 +22,7 @@ import type {
   HistoryEntry,
   Payloads,
   QueryResult,
+  RedisDatabaseList,
   RedisKeyInfo,
   Results,
   SavedEntry,
@@ -138,6 +139,8 @@ export const queryIpc = {
     call('dbc_query_close', { connId, workspaceId, cursorId }),
   cancel: (requestId: string): Promise<void> => call('dbc_cancel', { requestId }),
   databases: (connId: string): Promise<string[]> => call('dbc_databases', { connId }),
+  redisDatabases: (connId: string): Promise<RedisDatabaseList> =>
+    call('dbc_redis_databases', { connId }),
   schemas: (connId: string, database?: string): Promise<string[]> =>
     call('dbc_schemas', { connId, database }),
   objects: (connId: string, schema?: string, database?: string): Promise<DbObjectInfo[]> =>
@@ -171,10 +174,24 @@ export const queryIpc = {
       after,
       requestId,
     }).then(hydrateResultRows),
-  redisKeys: (connId: string, pattern: string, cursor: number): Promise<[number, string[]]> =>
-    call('dbc_redis_keys', { connId, pattern, cursor }),
-  redisKeyInfo: (connId: string, key: string): Promise<RedisKeyInfo> =>
-    call('dbc_redis_key_info', { connId, key }),
+  redisKeys: (
+    connId: string,
+    pattern: string,
+    cursor: number,
+    database?: string
+  ): Promise<[number, string[]]> =>
+    call('dbc_redis_keys', {
+      connId,
+      pattern,
+      cursor,
+      ...(database === undefined ? {} : { database }),
+    }),
+  redisKeyInfo: (connId: string, key: string, database?: string): Promise<RedisKeyInfo> =>
+    call('dbc_redis_key_info', {
+      connId,
+      key,
+      ...(database === undefined ? {} : { database }),
+    }),
 }
 
 /** 管理操作（建库/授权/DDL/索引/表维护；SQL 由后端方言构造，前端只传选项） */

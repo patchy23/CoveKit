@@ -145,6 +145,11 @@ mod tests {
         ("database", "dbc_objects", "对象列表（表/视图等）"),
         (
             "database",
+            "dbc_redis_databases",
+            "Redis 逻辑库列表（含清单完整性警告）",
+        ),
+        (
+            "database",
             "dbc_redis_key_info",
             "Redis 键信息（TYPE/TTL/预览）",
         ),

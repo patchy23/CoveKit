@@ -313,12 +313,8 @@ async function onSave() {
           size="xs"
           label="清空已保存密码，以无密码方式连接"
         />
-        <UiField :label="form.dbType === 'redis' ? '数据库索引' : '默认数据库'" size="xs">
-          <UiInput
-            v-model="form.database"
-            size="xs"
-            :placeholder="form.dbType === 'redis' ? 'db0' : '例如：app_data'"
-          />
+        <UiField v-if="form.dbType !== 'redis'" label="默认数据库" size="xs">
+          <UiInput v-model="form.database" size="xs" placeholder="例如：app_data" />
         </UiField>
       </template>
       <UiField

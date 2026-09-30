@@ -444,6 +444,7 @@ crate::covekit_module! {
         files::dbc_sql_file_read => "打开 SQL 文件",
         files::dbc_sql_file_write => "保存 SQL 文件",
         files::dbc_export_rows => "导出类型化结果 CSV",
+        catalog::redis::dbc_redis_databases => "Redis 逻辑库列表（含清单完整性警告）",
         catalog::redis::dbc_redis_keys => "Redis 键列表（SCAN）",
         catalog::redis::dbc_redis_key_info => "Redis 键信息（TYPE/TTL/预览）",
         admin::dbc_charset_options => "字符集与排序规则选项（建库对话框）",

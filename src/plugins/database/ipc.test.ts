@@ -42,6 +42,37 @@ it('继续读取携带已接收偏移，关闭精确命中当前页游标', asyn
   })
 })
 
+it('Redis 库列表、SCAN 与键详情 IPC 携带明确的逻辑库范围', async () => {
+  vi.mocked(invokeCommand).mockResolvedValueOnce({ databases: ['db0', 'db2'], warning: null })
+  expect(await queryIpc.redisDatabases('redis-conn')).toEqual({
+    databases: ['db0', 'db2'],
+    warning: null,
+  })
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_redis_databases', { connId: 'redis-conn' })
+
+  vi.mocked(invokeCommand).mockResolvedValueOnce([17, ['shared']])
+  await queryIpc.redisKeys('redis-conn', 'item:*', 9, 'db2')
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_redis_keys', {
+    connId: 'redis-conn',
+    pattern: 'item:*',
+    cursor: 9,
+    database: 'db2',
+  })
+
+  vi.mocked(invokeCommand).mockResolvedValueOnce({
+    key: 'shared',
+    kind: 'string',
+    ttl: -1,
+    value: 'value',
+  })
+  await queryIpc.redisKeyInfo('redis-conn', 'shared', 'db2')
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_redis_key_info', {
+    connId: 'redis-conn',
+    key: 'shared',
+    database: 'db2',
+  })
+})
+
 function result(overrides: Partial<QueryResult> = {}): QueryResult {
   return {
     hasMore: false,

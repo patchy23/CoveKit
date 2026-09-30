@@ -1,8 +1,194 @@
 //! Redis 键浏览与命令执行辅助（键树 SCAN / 键信息 TYPE+TTL+预览 / 命令运行器）
 
-use crate::plugins::database::models::RedisKeyInfo;
+use crate::plugins::database::drivers::session::RedisSession;
+use crate::plugins::database::models::{RedisDatabaseList, RedisKeyInfo};
 use redis::aio::ConnectionManager;
 use redis::Value as RedisValue;
+use std::collections::BTreeSet;
+
+const MAX_REDIS_DATABASES: u64 = 4096;
+const MAX_REDIS_INFO_BYTES: usize = 1024 * 1024;
+
+/// 解析旧配置中的 `dbN` 或纯数字索引；不把非法输入静默归零。
+pub(crate) fn parse_database_index(database: &str) -> Result<u32, String> {
+    let database = database.trim();
+    let index = database.strip_prefix("db").unwrap_or(database);
+    if index.is_empty() {
+        return Err("Redis 数据库索引无效，请使用 db0、db1 等非负整数".to_string());
+    }
+    index
+        .parse::<u32>()
+        .map_err(|_| "Redis 数据库索引无效，请使用 db0、db1 等非负整数".to_string())
+}
+
+/// 旧连接配置曾把空值或单独的 `db` 解释为 db0；只在读取保存配置时保留该兼容行为。
+pub(crate) fn parse_config_database_index(database: &str) -> Result<u32, String> {
+    if matches!(database.trim(), "" | "db") {
+        Ok(0)
+    } else {
+        parse_database_index(database)
+    }
+}
+
+/// 枚举实例逻辑库。CONFIG 提供空库数量；权限不足时以 INFO keyspace 给出带警告的部分结果。
+pub(crate) async fn database_list(session: &RedisSession) -> Result<RedisDatabaseList, String> {
+    let mut manager = session.manager(0).await?;
+    let cluster_info = redis::cmd("INFO")
+        .arg("cluster")
+        .query_async::<String>(&mut manager)
+        .await;
+    match cluster_info {
+        Ok(info) if parse_cluster_enabled(&info) == Some(true) => {
+            return Ok(RedisDatabaseList {
+                databases: vec!["db0".to_string()],
+                warning: None,
+            });
+        }
+        Ok(_) => {}
+        Err(error) if is_unavailable_or_denied_command(&error) => {}
+        Err(error) => return Err(format!("Redis 集群模式探测失败: {error}")),
+    }
+
+    match redis::cmd("CONFIG")
+        .arg("GET")
+        .arg("databases")
+        .query_async::<Vec<String>>(&mut manager)
+        .await
+    {
+        Ok(values) => {
+            let count = parse_database_count(&values)?;
+            let truncated = count > MAX_REDIS_DATABASES;
+            Ok(RedisDatabaseList {
+                databases: database_names(count.min(MAX_REDIS_DATABASES)),
+                warning: truncated.then(|| {
+                    format!(
+                        "Redis 配置的逻辑库超过显示上限，仅列出前 {MAX_REDIS_DATABASES} 个"
+                    )
+                }),
+            })
+        }
+        Err(error) if is_unavailable_or_denied_command(&error) => {
+            let keyspace = redis::cmd("INFO")
+                .arg("keyspace")
+                .query_async::<String>(&mut manager)
+                .await;
+            match keyspace {
+                Ok(info) => {
+                    let (databases, truncated) = parse_keyspace_databases(&info)?;
+                    let warning = if truncated {
+                        "无法读取 Redis 数据库数量；INFO keyspace 中有超出支持范围的索引或条目超过上限，列表可能不完整"
+                            .to_string()
+                    } else {
+                        "无法读取 Redis 数据库数量；仅列出 db0 与 INFO keyspace 中有键的逻辑库，空库可能未显示"
+                            .to_string()
+                    };
+                    Ok(RedisDatabaseList {
+                        databases,
+                        warning: Some(warning),
+                    })
+                }
+                Err(info_error) if is_unavailable_or_denied_command(&info_error) => {
+                    Ok(RedisDatabaseList {
+                        databases: vec!["db0".to_string()],
+                        warning: Some(
+                            "Redis 的 CONFIG 与 INFO 权限不足，只能确认 db0；其他空逻辑库可能未显示"
+                                .to_string(),
+                        ),
+                    })
+                }
+                Err(info_error) => Err(format!("读取 Redis keyspace 信息失败: {info_error}")),
+            }
+        }
+        Err(error) => Err(format!("读取 Redis 数据库数量失败: {error}")),
+    }
+}
+
+fn is_unavailable_or_denied_command(error: &redis::RedisError) -> bool {
+    if error
+        .code()
+        .map(|code| code.eq_ignore_ascii_case("NOPERM"))
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    if error.kind() != redis::ErrorKind::ResponseError {
+        return false;
+    }
+    let message = error.to_string().to_ascii_lowercase();
+    [
+        "unknown command",
+        "unknown subcommand",
+        "command is disabled",
+        "not allowed",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
+}
+
+fn parse_cluster_enabled(info: &str) -> Option<bool> {
+    info.lines()
+        .find_map(|line| line.trim().strip_prefix("cluster_enabled:"))
+        .and_then(|value| match value.trim() {
+            "0" => Some(false),
+            "1" => Some(true),
+            _ => None,
+        })
+}
+
+fn parse_database_count(values: &[String]) -> Result<u64, String> {
+    if values.len() != 2 || !values[0].eq_ignore_ascii_case("databases") {
+        return Err("Redis CONFIG GET databases 返回格式无效".to_string());
+    }
+    let count = values[1]
+        .parse::<u64>()
+        .map_err(|_| "Redis 数据库数量格式无效".to_string())?;
+    if count == 0 {
+        return Err("Redis 配置的逻辑库数量必须大于零".to_string());
+    }
+    Ok(count)
+}
+
+fn database_names(count: u64) -> Vec<String> {
+    (0..count).map(|index| format!("db{index}")).collect()
+}
+
+fn parse_keyspace_databases(info: &str) -> Result<(Vec<String>, bool), String> {
+    if info.len() > MAX_REDIS_INFO_BYTES {
+        return Err("Redis INFO keyspace 响应超过读取上限".to_string());
+    }
+    let mut indexes = BTreeSet::from([0_u32]);
+    let mut truncated = false;
+    for line in info.lines() {
+        let Some((name, _)) = line.trim().split_once(':') else {
+            continue;
+        };
+        let Some(index) = name.strip_prefix("db") else {
+            continue;
+        };
+        let Ok(index) = index.parse::<u64>() else {
+            if index.chars().all(|value| value.is_ascii_digit()) {
+                truncated = true;
+            }
+            continue;
+        };
+        let Ok(index) = u32::try_from(index) else {
+            truncated = true;
+            continue;
+        };
+        if indexes.len() >= MAX_REDIS_DATABASES as usize && !indexes.contains(&index) {
+            truncated = true;
+            continue;
+        }
+        indexes.insert(index);
+    }
+    Ok((
+        indexes
+            .into_iter()
+            .map(|index| format!("db{index}"))
+            .collect(),
+        truncated,
+    ))
+}
 
 /// SCAN 键列表（游标分页；pattern 为空时全量）
 pub(crate) async fn scan_keys(
@@ -359,5 +545,56 @@ mod tests {
         assert_eq!(render_value(&RedisValue::Int(7)), "7");
         assert_eq!(render_value(&RedisValue::Okay), "OK");
         assert_eq!(render_value(&RedisValue::BulkString(b"hi".to_vec())), "hi");
+    }
+
+    #[test]
+    fn database_index_parser_preserves_legacy_forms_and_rejects_invalid_values() {
+        assert_eq!(parse_database_index("db0"), Ok(0));
+        assert_eq!(parse_database_index("db12"), Ok(12));
+        assert_eq!(parse_database_index("12"), Ok(12));
+        assert!(parse_database_index("").is_err());
+        assert_eq!(parse_config_database_index(""), Ok(0));
+        assert_eq!(parse_config_database_index("db"), Ok(0));
+        assert!(parse_database_index("db-1").is_err());
+        assert!(parse_database_index("db4294967296").is_err());
+    }
+
+    #[test]
+    fn database_list_parsers_bound_and_canonicalize_results() {
+        assert_eq!(
+            parse_database_count(&["databases".into(), "16".into()]),
+            Ok(16)
+        );
+        assert!(parse_database_count(&["databases".into(), "bad".into()]).is_err());
+        assert_eq!(parse_cluster_enabled("# Cluster\ncluster_enabled:1\n"), Some(true));
+        assert_eq!(parse_cluster_enabled("cluster_enabled:0\n"), Some(false));
+        let (databases, truncated) = parse_keyspace_databases(
+            "# Keyspace\ndb10:keys=1,expires=0\ndb3:keys=2,expires=0\n",
+        )
+        .unwrap();
+        assert_eq!(databases, vec!["db0", "db3", "db10"]);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn only_server_command_denials_fall_back_to_keyspace_listing() {
+        let denied = redis::parse_redis_value(
+            b"-NOPERM this user has no permissions to run the config command\r\n",
+        )
+        .and_then(RedisValue::extract_error)
+        .unwrap_err();
+        assert_eq!(denied.code(), Some("NOPERM"));
+        assert!(is_unavailable_or_denied_command(&denied));
+
+        let bad_password = redis::make_extension_error(
+            "WRONGPASS".to_string(),
+            Some("authentication failed".to_string()),
+        );
+        let network = redis::RedisError::from(std::io::Error::new(
+            std::io::ErrorKind::ConnectionReset,
+            "connection reset",
+        ));
+        assert!(!is_unavailable_or_denied_command(&bad_password));
+        assert!(!is_unavailable_or_denied_command(&network));
     }
 }

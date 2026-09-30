@@ -30,6 +30,7 @@ import DataTab from './DataTab.vue'
 import QueryTab from './QueryTab.vue'
 import StructureTab from './StructureTab.vue'
 import RedisTab from './RedisTab.vue'
+import { useConnectionsMenu } from './useConnectionsMenu'
 
 /* ── IPC 门面假实现（vi.hoisted：mock 工厂先于被 mock 模块的导入执行） ── */
 
@@ -59,6 +60,7 @@ const env = vi.hoisted(() => {
     dbcQueryCount: vi.fn(),
     dbcTableIndexes: vi.fn(),
     dbcTableDdl: vi.fn(),
+    dbcRedisDatabases: vi.fn(),
     dbcRedisKeys: vi.fn(),
     dbcRedisKeyInfo: vi.fn(),
     // 管理命令
@@ -112,6 +114,7 @@ vi.mock('./ipc', () => ({
     closeCursor: env.commands.dbcCloseCursor,
     cancel: env.commands.dbcCancel,
     databases: env.commands.dbcDatabases,
+    redisDatabases: env.commands.dbcRedisDatabases,
     schemas: env.commands.dbcSchemas,
     objects: env.commands.dbcObjects,
     columns: env.commands.dbcColumns,
@@ -283,6 +286,7 @@ beforeEach(() => {
   env.commands.dbcDatabases.mockResolvedValue([])
   env.commands.dbcSchemas.mockResolvedValue([])
   env.commands.dbcObjects.mockResolvedValue([])
+  env.commands.dbcRedisDatabases.mockResolvedValue({ databases: [], warning: null })
   env.commands.dbcColumns.mockResolvedValue([])
   env.commands.dbcHistory.mockResolvedValue([])
   env.commands.dbcSaved.mockResolvedValue([])
@@ -294,6 +298,7 @@ beforeEach(() => {
   })
   env.commands.dbcHistoryAdd.mockResolvedValue(undefined)
   env.commands.dbcCloseCursor.mockResolvedValue(undefined)
+  env.commands.dbcRedisKeys.mockResolvedValue([0, []])
   env.commands.dbcCancel.mockResolvedValue(undefined)
   env.commands.dbcConnect.mockImplementation(async (id: string) => connection(id, id))
   env.commands.dbcDisconnect.mockResolvedValue(undefined)
@@ -1918,6 +1923,228 @@ describe('SQL 草稿恢复', () => {
 })
 
 describe('Redis 与结构页异步归属', () => {
+  it('连接级刷新只重载已展开的 Redis 库', async () => {
+    const redis = connection('redis-a', 'Redis', {
+      dbType: 'redis',
+      database: 'db0',
+      port: 6379,
+    })
+    env.commands.dbcConnections.mockResolvedValue([redis])
+    env.commands.dbcRedisDatabases.mockResolvedValue({ databases: ['db0', 'db1'], warning: null })
+    env.commands.dbcRedisKeys.mockImplementation(
+      (_connId: string, _pattern: string, _cursor: number, database?: string) => {
+        if (database !== 'db0') throw new Error(`不应扫描未展开的库：${database}`)
+        return [0, ['visible-key']]
+      }
+    )
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    await api.ensureMeta('redis-a')
+    const db0 = api.treeItems.value.find((item) => item.id === 'redis-a::redis:db0')
+    expect(db0).toBeDefined()
+    api.toggleTree(db0!)
+    await flush()
+    expect(api.treeItems.value.some((item) => item.label === 'visible-key')).toBe(true)
+
+    await api.refreshTreeNode({
+      id: 'redis-a',
+      label: 'Redis',
+      kind: 'connection',
+      depth: 0,
+      expandable: true,
+      expanded: true,
+    })
+    expect(api.treeItems.value.some((item) => item.label === 'visible-key')).toBe(true)
+    expect(env.commands.dbcRedisKeys).toHaveBeenCalledTimes(2)
+    expect(env.commands.dbcRedisKeys.mock.calls.map((call) => call[3])).toEqual(['db0', 'db0'])
+    expect(env.commands.dbcObjects).not.toHaveBeenCalled()
+  })
+
+  it('Redis 库和键分组右键按目标库打开命令编辑器并刷新', async () => {
+    const redis = connection('redis-a', 'Redis', {
+      dbType: 'redis',
+      database: 'db0',
+      port: 6379,
+    })
+    env.commands.dbcConnections.mockResolvedValue([redis])
+    env.commands.dbcRedisDatabases.mockResolvedValue({ databases: ['db0', 'db1'], warning: null })
+    env.commands.dbcRedisKeys.mockResolvedValue([0, []])
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    await api.ensureMeta('redis-a')
+
+    const menu = useConnectionsMenu(api, vi.fn())
+    const event = {
+      preventDefault: vi.fn(),
+      clientX: 0,
+      clientY: 0,
+    } as unknown as MouseEvent
+    const db1 = api.treeItems.value.find((item) => item.id === 'redis-a::redis:db1')
+    const group = api.treeItems.value.find((item) => item.id === 'redis-a::redis:db1::keys')
+    expect(db1).toBeDefined()
+    expect(group).toBeDefined()
+
+    menu.openMenu(event, { item: db1! })
+    expect(menu.menuItems.value.map((item) => item.label)).toEqual(['打开命令编辑器', '刷新键列表'])
+    menu.menuItems.value[0].onClick?.()
+    expect(api.activeTabContext.value.database).toBe('db1')
+
+    menu.openMenu(event, { item: group! })
+    expect(menu.menuItems.value.map((item) => item.label)).toEqual(['打开命令编辑器', '刷新键列表'])
+    menu.menuItems.value[0].onClick?.()
+    expect(api.activeTabContext.value.database).toBe('db1')
+    menu.menuItems.value[1].onClick?.()
+    await flush()
+    expect(env.commands.dbcRedisKeys).toHaveBeenCalledWith('redis-a', '', 0, 'db1')
+  })
+
+  it('按逻辑库懒扫描 Redis 键，空批次、重复键和同名键页签各自保持库范围', async () => {
+    const redis = connection('redis-a', 'Redis', {
+      dbType: 'redis',
+      database: 'db1',
+      port: 6379,
+    })
+    env.commands.dbcConnections.mockResolvedValue([redis])
+    env.commands.dbcRedisDatabases.mockResolvedValue({
+      databases: ['db0', 'db1'],
+      warning: 'Redis 库清单受服务器权限限制',
+    })
+    env.commands.dbcRedisKeys.mockImplementation(
+      (_connId: string, _pattern: string, cursor: number, database?: string) => {
+        if (database === 'db0' && cursor === 0) return [12, ['shared', 'space::雪:%']]
+        if (database === 'db0') return [0, ['shared', 'last']]
+        if (database === 'db1' && cursor === 0) return [4, []]
+        if (database === 'db1') return [0, ['shared']]
+        throw new Error(`意外的 Redis 库：${database}`)
+      }
+    )
+    env.commands.dbcRedisKeyInfo.mockResolvedValue({
+      key: 'shared',
+      kind: 'string',
+      ttl: -1,
+      value: '内容',
+    })
+
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    await api.ensureMeta('redis-a')
+    expect(api.errorHint.value).toBe('Redis 库清单受服务器权限限制')
+    expect(env.commands.dbcRedisDatabases).toHaveBeenCalledWith('redis-a')
+    expect(env.commands.dbcDatabases).not.toHaveBeenCalled()
+    expect(env.commands.dbcSchemas).not.toHaveBeenCalled()
+
+    api.openSqlEditor('redis-a')
+    expect(api.databaseOptions.value.map((option) => option.value)).toEqual(['db0', 'db1'])
+    const db0 = api.treeItems.value.find((item) => item.id === 'redis-a::redis:db0')
+    const db1 = api.treeItems.value.find((item) => item.id === 'redis-a::redis:db1')
+    expect(db0).toBeDefined()
+    expect(db1).toBeDefined()
+    expect(api.treeItems.value.some((item) => item.id === 'redis-a::redis:db1::keys')).toBe(true)
+    api.toggleTree(db0!)
+    api.toggleTree(db1!)
+    await flush()
+    expect(env.commands.dbcRedisKeys).toHaveBeenNthCalledWith(1, 'redis-a', '', 0, 'db0')
+    expect(env.commands.dbcRedisKeys).toHaveBeenNthCalledWith(2, 'redis-a', '', 0, 'db1')
+    const emptyBatchScanMore = api.treeItems.value.find(
+      (item) => item.id === 'redis-a::redis:db1::scan-more'
+    )
+    expect(emptyBatchScanMore).toBeDefined()
+    api.toggleTree(emptyBatchScanMore!)
+    await flush()
+    expect(env.commands.dbcRedisKeys).toHaveBeenNthCalledWith(3, 'redis-a', '', 4, 'db1')
+
+    const encodedKey = encodeURIComponent('space::雪:%')
+    expect(api.parseLeafId(`redis-a::redis:db0::key:${encodedKey}`)).toMatchObject({
+      scope: 'redis:db0',
+      kind: 'key',
+      name: 'space::雪:%',
+    })
+    expect(
+      api.treeItems.value.some((item) => item.id === `redis-a::redis:db0::key:${encodedKey}`)
+    ).toBe(true)
+    const scanMore = api.treeItems.value.find((item) => item.id === 'redis-a::redis:db0::scan-more')
+    expect(scanMore).toBeDefined()
+    api.toggleTree(scanMore!)
+    await flush()
+    expect(env.commands.dbcRedisKeys).toHaveBeenNthCalledWith(4, 'redis-a', '', 12, 'db0')
+    const db0Keys = api.treeItems.value
+      .filter(
+        (item) =>
+          item.depth === 3 && item.kind === 'key' && item.id.startsWith('redis-a::redis:db0::')
+      )
+      .map((item) => item.label)
+    const db1Keys = api.treeItems.value
+      .filter(
+        (item) =>
+          item.depth === 3 && item.kind === 'key' && item.id.startsWith('redis-a::redis:db1::')
+      )
+      .map((item) => item.label)
+    expect(db0Keys).toEqual(['shared', 'space::雪:%', 'last'])
+    expect(db1Keys).toEqual(['shared'])
+
+    const db0Key = `redis-a::redis:db0::key:${encodeURIComponent('shared')}`
+    const db1Key = `redis-a::redis:db1::key:${encodeURIComponent('shared')}`
+    await api.selectResource(db0Key)
+    const db0Tab = api.activeTabId.value
+    await api.selectResource(db1Key)
+    const db1Tab = api.activeTabId.value
+    await flush()
+    expect(db0Tab).not.toBe(db1Tab)
+    expect(api.tabs.value.find((tab) => tab.id === db0Tab)?.label).toContain('db0')
+    expect(api.tabs.value.find((tab) => tab.id === db1Tab)?.label).toContain('db1')
+    expect(env.commands.dbcRedisKeyInfo).toHaveBeenNthCalledWith(1, 'redis-a', 'shared', 'db0')
+    expect(env.commands.dbcRedisKeyInfo).toHaveBeenNthCalledWith(2, 'redis-a', 'shared', 'db1')
+    const panel = mount(RedisTab, { props: { db: api } })
+    hosts.push(() => panel.unmount())
+    expect(panel.text()).toContain('Redis · db1')
+  })
+
+  it('刷新或断开后忽略 Redis 逻辑库目录中迟到的 SCAN 响应', async () => {
+    const redis = connection('redis-a', 'Redis', {
+      dbType: 'redis',
+      database: 'db0',
+      port: 6379,
+    })
+    env.commands.dbcConnections.mockResolvedValue([redis])
+    env.commands.dbcRedisDatabases
+      .mockResolvedValueOnce({ databases: ['db0'], warning: null })
+      .mockResolvedValueOnce({ databases: ['db2'], warning: null })
+    const staleScan = deferred<[number, string[]]>()
+    env.commands.dbcRedisKeys
+      .mockReturnValueOnce(staleScan.promise)
+      .mockResolvedValueOnce([0, ['fresh']])
+    env.commands.dbcConnect.mockResolvedValue(redis)
+    env.commands.dbcDisconnect.mockResolvedValue(undefined)
+
+    const api = mountWorkbench()
+    await api.refreshConnections()
+    await api.ensureMeta('redis-a')
+    const db0 = api.treeItems.value.find((item) => item.id === 'redis-a::redis:db0')
+    expect(db0).toBeDefined()
+    api.toggleTree(db0!)
+    await api.refreshTreeNode(db0!)
+    staleScan.resolve([0, ['stale']])
+    await flush()
+    expect(api.treeItems.value.some((item) => item.label === 'stale')).toBe(false)
+    expect(api.treeItems.value.some((item) => item.label === 'fresh')).toBe(true)
+
+    const afterDisconnect = deferred<[number, string[]]>()
+    env.commands.dbcRedisKeys.mockReturnValueOnce(afterDisconnect.promise)
+    const currentDb0 = api.treeItems.value.find((item) => item.id === 'redis-a::redis:db0')
+    expect(currentDb0).toBeDefined()
+    const refresh = api.refreshTreeNode(currentDb0!)
+    await api.disconnect(redis)
+    afterDisconnect.resolve([0, ['after-disconnect']])
+    await refresh
+    await flush()
+    env.commands.dbcConnect.mockResolvedValue({ ...redis, status: 'online' })
+    env.commands.dbcRedisKeys.mockResolvedValue([0, []])
+    await api.connect(redis)
+    await flush()
+    expect(api.treeItems.value.some((item) => item.id === 'redis-a::redis:db2')).toBe(true)
+    expect(api.treeItems.value.some((item) => item.label === 'after-disconnect')).toBe(false)
+  })
+
   it('Redis 首次返回直接渲染，刷新晚到不覆盖最新内容，过期键有明确提示', async () => {
     const api = mountWorkbench()
     await api.refreshConnections()

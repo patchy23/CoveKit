@@ -52,7 +52,7 @@ const toneOf = (kind: string) => {
           </UiBadge>
         </div>
         <p class="mt-[2px] text-caption text-secondary dark:text-secondary-dark">
-          {{ db.activeTabConnection.value?.label ?? '' }} · Redis 键
+          {{ db.activeTabConnection.value?.label ?? '' }} · {{ db.activeTabContext.value.database }}
         </p>
       </div>
 

@@ -7,7 +7,7 @@
 //! 同步算好 to_info 快照），await 校验在锁外执行；会话条目在 disconnect 时移除，
 //! agent 子进程由最后一个共享它的会话负责 shutdown（见 connection::disconnect）。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -20,6 +20,95 @@ use crate::plugins::database::models::{ConnConfig, ConnStatus, DbConnectionInfo}
 
 /// agent 运行时共享表：driver key → 进程客户端（同驱动多会话共享一个进程）
 pub struct AgentRuntimeState(pub Mutex<HashMap<&'static str, Arc<AgentClient>>>);
+
+const MAX_CACHED_REDIS_DATABASES: usize = 32;
+
+/// 一个 Redis 连接及其按逻辑库隔离的多路复用连接。
+/// 每个 manager 都从相同连接信息派生并固定 DB 索引，避免共享连接上的 SELECT 竞争；
+/// 缓存上限防止请求任意索引时无限保留 socket，缓存随所属会话释放。
+#[derive(Clone)]
+pub struct RedisSession {
+    client: Arc<::redis::Client>,
+    default_database: u32,
+    connect_timeout: Duration,
+    managers: Arc<tokio::sync::Mutex<RedisManagerCache>>,
+}
+
+#[derive(Default)]
+struct RedisManagerCache {
+    managers: HashMap<u32, Arc<tokio::sync::OnceCell<::redis::aio::ConnectionManager>>>,
+    recent: VecDeque<u32>,
+}
+
+impl RedisSession {
+    /// 创建一份尚未连接的 Redis 会话；首次访问某库时才建立对应 manager。
+    pub(crate) fn new(
+        client: ::redis::Client,
+        default_database: u32,
+        connect_timeout: Duration,
+    ) -> Self {
+        Self {
+            client: Arc::new(client),
+            default_database,
+            connect_timeout,
+            managers: Arc::new(tokio::sync::Mutex::new(RedisManagerCache::default())),
+        }
+    }
+
+    /// 连接配置中保存的逻辑库，旧命令漏传库名时沿用该值。
+    pub(crate) fn default_database(&self) -> u32 {
+        self.default_database
+    }
+
+    /// 取得固定在指定逻辑库上的连接管理器副本。
+    pub(crate) async fn manager(
+        &self,
+        database: u32,
+    ) -> Result<::redis::aio::ConnectionManager, String> {
+        // 只在缓存锁内登记 slot 和调整 LRU，握手由单库 OnceCell 在锁外合并等待。
+        let slot = self.managers.lock().await.slot(database);
+        let manager = slot
+            .get_or_try_init(|| async {
+                super::connection::redis_manager_for_database(
+                    self.client.as_ref(),
+                    database,
+                    self.connect_timeout,
+                )
+                .await
+            })
+            .await?;
+        Ok(manager.clone())
+    }
+}
+
+impl RedisManagerCache {
+    fn touch(&mut self, database: u32) {
+        self.recent.retain(|value| *value != database);
+        self.recent.push_back(database);
+    }
+
+    fn slot(
+        &mut self,
+        database: u32,
+    ) -> Arc<tokio::sync::OnceCell<::redis::aio::ConnectionManager>> {
+        if let Some(slot) = self.managers.get(&database) {
+            let slot = Arc::clone(slot);
+            self.touch(database);
+            return slot;
+        }
+        if self.managers.len() >= MAX_CACHED_REDIS_DATABASES {
+            while let Some(oldest) = self.recent.pop_front() {
+                if self.managers.remove(&oldest).is_some() {
+                    break;
+                }
+            }
+        }
+        let slot = Arc::new(tokio::sync::OnceCell::new());
+        self.managers.insert(database, Arc::clone(&slot));
+        self.touch(database);
+        slot
+    }
+}
 
 /// 会话注册表 State（命令层通过本结构取会话）
 pub struct DbState(
@@ -59,8 +148,8 @@ pub enum DbSession {
     Postgres(deadpool_postgres::Pool),
     /// rusqlite 单连接（SQLite 文件库，Arc 共享 + 锁内串行；会话表按值克隆）
     Sqlite(Arc<Mutex<SqliteConn>>),
-    /// redis 连接管理器（多路复用）
-    Redis(::redis::aio::ConnectionManager),
+    /// Redis 按逻辑库隔离的连接管理器缓存
+    Redis(RedisSession),
     /// agent 侧车会话（进程客户端 + 会话 id）
     Agent {
         /// 进程客户端（与同驱动其它会话共享）
@@ -195,7 +284,7 @@ fn mysql_cancel_target_gone(error: &mysql_async::Error) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::mysql_cancel_target_gone;
+    use super::{mysql_cancel_target_gone, RedisManagerCache, MAX_CACHED_REDIS_DATABASES};
 
     #[test]
     fn only_unknown_mysql_thread_is_an_idempotent_cancel() {
@@ -212,6 +301,21 @@ mod tests {
 
         assert!(mysql_cancel_target_gone(&unknown_thread));
         assert!(!mysql_cancel_target_gone(&query_interrupted));
+    }
+
+    #[test]
+    fn redis_manager_slots_are_bounded_and_evict_the_least_recent_database() {
+        let mut cache = RedisManagerCache::default();
+        for database in 0..MAX_CACHED_REDIS_DATABASES as u32 {
+            let _ = cache.slot(database);
+        }
+        let _ = cache.slot(0);
+        let _ = cache.slot(MAX_CACHED_REDIS_DATABASES as u32);
+
+        assert_eq!(cache.managers.len(), MAX_CACHED_REDIS_DATABASES);
+        assert!(cache.managers.contains_key(&0));
+        assert!(!cache.managers.contains_key(&1));
+        assert!(cache.managers.contains_key(&(MAX_CACHED_REDIS_DATABASES as u32)));
     }
 }
 

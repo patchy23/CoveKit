@@ -40,7 +40,7 @@ pub async fn dbc_databases(
             .await
         }
         DbSession::Sqlite(_) => Ok(vec!["main".to_string()]),
-        DbSession::Redis(_) => Ok(vec![entry.config.database.clone()]),
+        DbSession::Redis(session) => Ok(drivers::redis::database_list(session).await?.databases),
         DbSession::Agent { client, session_id } => client.list_databases(session_id).await,
     }
 }

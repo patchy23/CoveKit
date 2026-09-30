@@ -163,6 +163,12 @@ export interface RedisKeyInfo {
   value: string
 }
 
+/** Redis 可用逻辑库清单；warning 表示清单受服务器权限限制。 */
+export interface RedisDatabaseList {
+  databases: string[]
+  warning: string | null
+}
+
 /** 查询历史条目 */
 export interface HistoryEntry {
   database?: string
@@ -264,6 +270,7 @@ export const commands = {
   dbcExportRows: 'dbc_export_rows',
   dbcExportQuery: 'dbc_export_query',
   dbcRedisKeys: 'dbc_redis_keys',
+  dbcRedisDatabases: 'dbc_redis_databases',
   dbcRedisKeyInfo: 'dbc_redis_key_info',
   dbcCharsetOptions: 'dbc_charset_options',
   dbcUsers: 'dbc_users',
@@ -350,8 +357,9 @@ export type Payloads = {
     path: string
     requestId: string
   }
-  dbc_redis_keys: { connId: string; pattern: string; cursor: number }
-  dbc_redis_key_info: { connId: string; key: string }
+  dbc_redis_databases: { connId: string }
+  dbc_redis_keys: { connId: string; pattern: string; cursor: number; database?: string }
+  dbc_redis_key_info: { connId: string; key: string; database?: string }
   dbc_charset_options: { connId: string }
   dbc_users: { connId: string }
   dbc_create_database: {
@@ -413,6 +421,7 @@ export type Results = {
   dbc_sql_file_write: void
   dbc_export_rows: number
   dbc_export_query: number
+  dbc_redis_databases: RedisDatabaseList
   dbc_redis_keys: [number, string[]]
   dbc_redis_key_info: RedisKeyInfo
   dbc_charset_options: DbCharsetOptions

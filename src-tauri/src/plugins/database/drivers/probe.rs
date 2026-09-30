@@ -39,18 +39,21 @@ pub(crate) async fn probe_version(
             conn.query_row("SELECT sqlite_version()", [], |r| r.get::<_, String>(0))
                 .ok()
         }),
-        DbSession::Redis(mgr) => {
-            let mut mgr = mgr.clone();
-            ::redis::cmd("INFO")
-                .arg("server")
-                .query_async::<String>(&mut mgr)
-                .await
-                .ok()
-                .and_then(|info| {
-                    info.lines()
-                        .find(|l| l.starts_with("redis_version:"))
-                        .map(|l| l.trim_start_matches("redis_version:").to_string())
-                })
+        DbSession::Redis(session) => {
+            let mut manager = session.manager(session.default_database()).await.ok();
+            match manager.as_mut() {
+                Some(manager) => ::redis::cmd("INFO")
+                    .arg("server")
+                    .query_async::<String>(manager)
+                    .await
+                    .ok()
+                    .and_then(|info| {
+                        info.lines()
+                            .find(|l| l.starts_with("redis_version:"))
+                            .map(|l| l.trim_start_matches("redis_version:").to_string())
+                    }),
+                None => None,
+            }
         }
         DbSession::Agent { client, session_id } => {
             // connection_info 取版本；失败则回退 execute_query SELECT version()

@@ -41,8 +41,16 @@ export function useConnectionsMenu(
     const scope = item.id.split('::')[1] ?? ''
     const connection = db.connections.value.find((entry) => entry.id === connId)
     if (!connection) return []
-    if (item.kind === 'database' && connection.dbType === 'redis') {
-      return [{ label: '刷新键列表', onClick: () => void db.refreshTreeNode(item) }]
+    if (connection.dbType === 'redis' && (item.kind === 'database' || item.kind === 'group-keys')) {
+      const scope = item.id.slice(connId.length + 2).split('::')[0]
+      const context = db.scopeContext(connection, scope)
+      return [
+        {
+          label: '打开命令编辑器',
+          onClick: () => db.openSqlEditorWithSql(connId, '', context.database, context.schema),
+        },
+        { label: '刷新键列表', onClick: () => void db.refreshTreeNode(item) },
+      ]
     }
     if (item.kind === 'database' || item.kind === 'schema' || item.kind?.startsWith('group')) {
       const context = db.scopeContext(connection, scope)
@@ -125,7 +133,13 @@ export function useConnectionsMenu(
           online ? void db.disconnect(connection) : void db.connect(connection).catch(() => {}),
       },
       { label: '编辑连接', onClick: () => editConnection(connection) },
-      { label: '打开SQL编辑器', onClick: () => db.openSqlEditor(connection.id) },
+      {
+        label: connection.dbType === 'redis' ? '打开命令编辑器' : '打开SQL编辑器',
+        onClick: () =>
+          connection.dbType === 'redis'
+            ? db.openSqlEditorWithSql(connection.id, '', connection.database || 'db0', '')
+            : db.openSqlEditor(connection.id),
+      },
     ]
     if (online && CREATE_DB_TYPES.has(connection.dbType)) {
       items.push({ label: '新建数据库', onClick: () => (createDbFor.value = connection) })

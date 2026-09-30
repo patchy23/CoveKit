@@ -6,7 +6,7 @@
 //! agent 会话关闭后若已无其它会话共享该进程则 shutdown 并从运行时表移除。
 
 use std::sync::Arc;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use mysql_async::prelude::Queryable;
 use tauri::State;
@@ -15,7 +15,7 @@ use crate::plugins::database::agent::{AgentClient, AgentConnectParams, DriverSto
 use crate::plugins::database::models::{ConnConfig, DbType};
 
 use super::probe::probe_version;
-use super::session::{AgentRuntimeState, DbSession, DbSessionEntry, DbState};
+use super::session::{AgentRuntimeState, DbSession, DbSessionEntry, DbState, RedisSession};
 use super::{mysql, postgres, sqlite};
 
 /// 归一化连接配置：端口缺省（0）时补默认端口（sqlite 除外），数据库为空时补默认库名
@@ -62,7 +62,7 @@ pub async fn connect(
                 .map_err(|e| e.to_string())??,
             )
         }
-        DbType::Redis => DbSession::Redis(redis_mgr(&config, password).await?),
+        DbType::Redis => DbSession::Redis(redis_session(&config, password).await?),
         DbType::Oracle | DbType::Vastbase | DbType::Kingbase => {
             let (client, session_id) = agent_session(app, runtimes, &config, password).await?;
             DbSession::Agent { client, session_id }
@@ -316,19 +316,54 @@ pub(crate) fn connect_params(
     }
 }
 
-/// PostgreSQL 键标记探测（PK/UK）
+/// 创建固定到保存逻辑库的 Redis manager，供工作页等独立连接使用。
 pub(crate) async fn redis_mgr(
     config: &ConnConfig,
     password: &str,
 ) -> Result<::redis::aio::ConnectionManager, String> {
-    let index = config.database.trim().trim_start_matches("db");
-    let db_index: u32 = if index.is_empty() {
-        0
-    } else {
-        index
-            .parse()
-            .map_err(|_| "Redis 数据库索引必须是非负整数")?
-    };
+    let db_index = super::redis::parse_config_database_index(&config.database)?;
+    let client = redis_client(config, password, db_index)?;
+    let manager = redis_manager_for_database(&client, db_index, redis_connect_timeout(config)).await?;
+    redis_preflight(manager).await
+}
+
+/// 为共享连接创建按逻辑库隔离的会话；初始库沿用保存配置以兼容旧连接。
+async fn redis_session(config: &ConnConfig, password: &str) -> Result<RedisSession, String> {
+    let default_database = super::redis::parse_config_database_index(&config.database)?;
+    let client = redis_client(config, password, default_database)?;
+    let session = RedisSession::new(client, default_database, redis_connect_timeout(config));
+    let manager = session.manager(default_database).await?;
+    redis_preflight(manager).await?;
+    Ok(session)
+}
+
+fn redis_connect_timeout(config: &ConnConfig) -> Duration {
+    Duration::from_millis(config.connect_timeout_ms.clamp(1000, 120_000))
+}
+
+/// 从连接信息派生目标库客户端，保留 Redis AUTH、地址与 TLS 配置。
+pub(crate) async fn redis_manager_for_database(
+    client: &::redis::Client,
+    database: u32,
+    timeout: Duration,
+) -> Result<::redis::aio::ConnectionManager, String> {
+    let mut connection_info = client.get_connection_info().clone();
+    connection_info.redis.db = i64::from(database);
+    let client = ::redis::Client::open(connection_info)
+        .map_err(|e| format!("Redis 客户端配置无效: {e}"))?;
+    // 连接管理器建立带超时（防挂起）
+    let manager = tokio::time::timeout(timeout, ::redis::aio::ConnectionManager::new(client))
+        .await
+        .map_err(|_| format!("Redis 连接超时（{} ms）", timeout.as_millis()))?
+        .map_err(|e| format!("Redis 连接失败: {e}"))?;
+    Ok(manager)
+}
+
+fn redis_client(
+    config: &ConnConfig,
+    password: &str,
+    db_index: u32,
+) -> Result<::redis::Client, String> {
     let scheme = if config.ssl { "rediss" } else { "redis" };
     let authority = if config.username.is_empty() && password.is_empty() {
         String::new()
@@ -337,30 +372,22 @@ pub(crate) async fn redis_mgr(
     };
     let host = redis_url_host(&config.host)?;
     let url = format!("{scheme}://{authority}{host}:{}/{db_index}", config.port);
-    let client =
-        ::redis::Client::open(url.as_str()).map_err(|e| format!("Redis 地址解析失败: {e}"))?;
-    // 连接管理器建立带超时（防挂起）
-    let mgr = tokio::time::timeout(
-        std::time::Duration::from_millis(config.connect_timeout_ms.clamp(1000, 120_000)),
-        ::redis::aio::ConnectionManager::new(client),
-    )
-    .await
-    .map_err(|_| {
-        format!(
-            "Redis 连接超时（{} ms）",
-            config.connect_timeout_ms.clamp(1000, 120_000)
-        )
-    })?
-    .map_err(|e| format!("Redis 连接失败: {e}"))?;
+    ::redis::Client::open(url.as_str()).map_err(|e| format!("Redis 地址解析失败: {e}"))
+}
+
+async fn redis_preflight(
+    manager: ::redis::aio::ConnectionManager,
+) -> Result<::redis::aio::ConnectionManager, String> {
     // 预检 PING
+    let mut check = manager.clone();
     let pong: String = ::redis::cmd("PING")
-        .query_async::<String>(&mut mgr.clone())
+        .query_async::<String>(&mut check)
         .await
         .map_err(|e| format!("Redis 预检失败: {e}"))?;
     if pong != "PONG" {
         return Err(format!("Redis PING 异常: {pong}"));
     }
-    Ok(mgr)
+    Ok(manager)
 }
 
 /// Redis URL 中的 IPv6 字面地址必须用方括号包裹。

@@ -655,12 +655,17 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
   }
 
   /** Redis 键页签（树选中「查看数据」入口）：打开并加载键信息 */
-  function openRedisKeyTab(connId: string, key: string) {
-    const database =
+  function openRedisKeyTab(connId: string, key: string, database?: string) {
+    const configuredDatabase =
       ports.connections.value.find((connection) => connection.id === connId)?.database ?? ''
-    const tabId = `redis-${JSON.stringify([connId, database, key])}`
-    openOrFocusTab(tabId, `${key} · 键`, 'redis', connId, key)
-    tabContexts.value[tabId].database = database
+    const requestedDatabase = database?.trim() || configuredDatabase || 'db0'
+    const index = requestedDatabase.replace(/^db/i, '')
+    const canonicalDatabase = /^\d+$/.test(index)
+      ? `db${index.replace(/^0+(?=\d)/, '')}`
+      : requestedDatabase
+    const tabId = `redis-${JSON.stringify([connId, canonicalDatabase, key])}`
+    openOrFocusTab(tabId, `${key} · ${canonicalDatabase}`, 'redis', connId, key)
+    tabContexts.value[tabId].database = canonicalDatabase
     void loadRedisKeyInfo(tabId, key)
   }
 
@@ -1684,7 +1689,7 @@ export function useQueryWorkspace(ports: QueryWorkspacePorts) {
     state.error = ''
     state.rows = []
     try {
-      const info = await queryIpc.redisKeyInfo(ctx.connectionId, key)
+      const info = await queryIpc.redisKeyInfo(ctx.connectionId, key, ctx.database)
       if (!current()) return
       state.columns = ['键', '类型', 'TTL', '值']
       state.columnTypes = []

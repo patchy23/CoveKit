@@ -355,6 +355,16 @@ pub struct RedisKeyInfo {
     pub value: String,
 }
 
+/// Redis 逻辑库清单；warning 非空表示因权限或响应上限只能确认部分结果。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RedisDatabaseList {
+    /// 实例中可确认的逻辑库名（如 db0、db1）。
+    pub databases: Vec<String>,
+    /// 清单不完整时说明限制；完整清单为 null。
+    pub warning: Option<String>,
+}
+
 /// 查询历史条目
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
