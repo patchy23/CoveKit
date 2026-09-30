@@ -7,7 +7,7 @@
  * 跨域只拿 connection 域只读快照/窄命令、workspace 域只读 computed 视图与页签命令，
  * 不持有其它域的可写状态。
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onScopeDispose, ref, watch } from 'vue'
 import type { ComputedRef } from 'vue'
 import type { UiTreeItem } from '@/core/ui'
 import { useUiStore } from '@/stores/ui'
@@ -40,6 +40,10 @@ const FUNCTION_GROUP: ObjectGroup = { key: 'funcs', label: '函数', kinds: ['fu
 const SEQUENCE_GROUP: ObjectGroup = { key: 'seqs', label: '序列', kinds: ['sequence'] }
 const MYSQL_GROUPS = [TABLE_GROUP, MYSQL_VIEW_GROUP, FUNCTION_GROUP]
 const SQL_GROUPS = [TABLE_GROUP, SQL_VIEW_GROUP, FUNCTION_GROUP, SEQUENCE_GROUP]
+const REDIS_KEY_CACHE_LIMIT = 50_000
+const REDIS_KEY_NAME_BYTES_LIMIT = 32 * 1024 * 1024
+const REDIS_AUTO_REQUEST_LIMIT = 50
+const REDIS_AUTO_KEY_LIMIT = 5_000
 
 const OBJECT_GROUPS: Record<V2DbType, readonly ObjectGroup[]> = {
   mysql: MYSQL_GROUPS,
@@ -104,10 +108,68 @@ interface ConnMeta {
 
 interface RedisDatabaseMeta {
   keys: string[]
+  keyNameBytes: number
   cursor: number
+  started: boolean
   loaded: boolean
   loading: boolean
+  fetchingAll: boolean
+  error: string
+  limitReached: boolean
+  limitReason: 'keys' | 'bytes' | null
+  automaticRequests: number
+  automaticPaused: boolean
   request: symbol | null
+  inFlightRequest: symbol | null
+  fullScanToken: symbol | null
+  fullScanTask: Promise<void> | null
+}
+
+/** Redis 键目录的公开加载状态；total 为 null 表示服务端未能统计。 */
+export interface RedisKeyLoadState {
+  connId: string
+  database: string
+  loaded: number
+  total: number | null
+  hasMore: boolean
+  loading: boolean
+  fetchingAll: boolean
+  error: string
+  limitReached: boolean
+  limitReason: 'keys' | 'bytes' | null
+  autoLoadBudgetReached: boolean
+  automaticPaused: boolean
+}
+
+function newRedisDatabaseMeta(): RedisDatabaseMeta {
+  return {
+    keys: [],
+    keyNameBytes: 0,
+    cursor: 0,
+    started: false,
+    loaded: false,
+    loading: false,
+    fetchingAll: false,
+    error: '',
+    limitReached: false,
+    limitReason: null,
+    automaticRequests: 0,
+    automaticPaused: false,
+    request: null,
+    inFlightRequest: null,
+    fullScanToken: null,
+    fullScanTask: null,
+  }
+}
+
+/** 按 Redis 键名的 UTF-8 编码长度计费，不把对象开销误算成键名预算。 */
+function utf8ByteLength(value: string): number {
+  let bytes = 0
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0
+    bytes += codePoint <= 0x7f ? 1 : codePoint <= 0x7ff ? 2 : codePoint <= 0xffff ? 3 : 4
+  }
+  return bytes
 }
 
 /** catalog 域的跨域协作端口（由根门面注入） */
@@ -162,6 +224,20 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   // ── 元数据缓存 ──────────────────────────────────────────────────────────
   const metas = ref<Record<string, ConnMeta>>({})
   const objectRequests = new Map<string, Promise<void>>()
+  const redisAutoLoadEnabled = ref(false)
+  let disposed = false
+  // 同一连接/逻辑库的旧 IPC 尚未返回时，新缓存中的请求排队，避免刷新造成并发重复读取。
+  const redisRequestTails = new Map<string, Promise<void>>()
+
+  watch(
+    redisAutoLoadEnabled,
+    (enabled, wasEnabled) => {
+      if (!enabled || wasEnabled) return
+      for (const meta of Object.values(metas.value))
+        for (const cache of Object.values(meta.redisByDatabase)) cache.automaticPaused = false
+    },
+    { flush: 'sync' }
+  )
 
   // ── 树显示状态 ──────────────────────────────────────────────────────────
   const keyword = ref('')
@@ -248,6 +324,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
 
   /** 连接断开/删除（connection 域端口）：失效该连接的元数据缓存 */
   function invalidateConnectionMeta(connId: string) {
+    stopRedisKeyLoadsForConnection(connId, true)
     delete metas.value[connId]
     clearEditorColumns(connId)
     for (const key of schemaRequests.keys())
@@ -478,42 +555,314 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     schemaRequests.set(key, request)
     return request
   }
-  /** SCAN 允许空批次和重复键；保留游标，并给用户明确的继续扫描入口。 */
-  async function ensureRedisKeys(connId: string, database = 'db0', more = false) {
-    const meta = metaFor(connId)
-    const db = canonicalRedisDatabase(database)
-    if (!meta.redisByDatabase[db])
-      meta.redisByDatabase[db] = {
-        keys: [],
-        cursor: 0,
-        loaded: false,
-        loading: false,
-        request: null,
-      }
-    const cache = meta.redisByDatabase[db]
-    if (cache.loading || (cache.loaded && !more) || (more && cache.cursor === 0)) return
-    const request = Symbol()
-    cache.request = request
-    cache.loading = true
-    const current = () =>
+  function redisTarget(
+    nodeId: string,
+    createCache = false
+  ): {
+    conn: DbConnectionInfo
+    meta: ConnMeta
+    database: string
+    cache: RedisDatabaseMeta | undefined
+  } | null {
+    if (disposed) return null
+    let normalizedId = nodeId
+    if (normalizedId.endsWith('::scan-more'))
+      normalizedId = normalizedId.slice(0, -'::scan-more'.length)
+    const conn = ports.connections.value.find(
+      (item) =>
+        item.dbType === 'redis' &&
+        item.status === 'online' &&
+        (normalizedId === item.id || normalizedId.startsWith(`${item.id}::`))
+    )
+    if (!conn) return null
+    const meta = metas.value[conn.id]
+    if (!meta?.loaded) return null
+    const database =
+      normalizedId === conn.id
+        ? canonicalRedisDatabase(conn.database)
+        : redisDatabaseForNodeId(conn.id, normalizedId)
+    if (!meta.databases.includes(database)) return null
+    let cache = meta.redisByDatabase[database]
+    if (!cache && createCache) {
+      meta.redisByDatabase[database] = newRedisDatabaseMeta()
+      cache = meta.redisByDatabase[database]
+    }
+    return { conn, meta, database, cache }
+  }
+
+  function redisHasMore(cache: RedisDatabaseMeta): boolean {
+    return cache.limitReached || !cache.loaded || cache.cursor !== 0
+  }
+
+  function redisAutoBudgetReached(cache: RedisDatabaseMeta): boolean {
+    return (
+      cache.automaticRequests >= REDIS_AUTO_REQUEST_LIMIT ||
+      cache.keys.length >= REDIS_AUTO_KEY_LIMIT
+    )
+  }
+
+  function redisPageIsCurrent(
+    connId: string,
+    database: string,
+    meta: ConnMeta,
+    cache: RedisDatabaseMeta,
+    request: symbol
+  ): boolean {
+    return (
+      !disposed &&
       metas.value[connId] === meta &&
-      meta.redisByDatabase[db] === cache &&
-      cache.request === request
+      meta.redisByDatabase[database] === cache &&
+      cache.request === request &&
+      cache.inFlightRequest === request &&
+      ports.connections.value.some(
+        (conn) => conn.id === connId && conn.dbType === 'redis' && conn.status === 'online'
+      )
+    )
+  }
+
+  function appendRedisKeys(cache: RedisDatabaseMeta, keys: string[]): 'keys' | 'bytes' | null {
+    const seen = new Set(cache.keys)
+    const additions: string[] = []
+    let addedBytes = 0
+    let limitReason: 'keys' | 'bytes' | null = null
+    for (const key of keys) {
+      if (seen.has(key)) continue
+      if (cache.keys.length + additions.length >= REDIS_KEY_CACHE_LIMIT) {
+        limitReason = 'keys'
+        break
+      }
+      const bytes = utf8ByteLength(key)
+      if (cache.keyNameBytes + addedBytes + bytes > REDIS_KEY_NAME_BYTES_LIMIT) {
+        limitReason = 'bytes'
+        break
+      }
+      seen.add(key)
+      additions.push(key)
+      addedBytes += bytes
+    }
+    cache.keys.push(...additions)
+    cache.keyNameBytes += addedBytes
+    return limitReason
+  }
+
+  /**
+   * 同一库的旧缓存即使因刷新而失效，仍须等它的 IPC 返回后再发新请求；
+   * 每库独立排队，慢库不会阻塞其他 Redis 库。
+   */
+  async function requestRedisPage(
+    connId: string,
+    database: string,
+    meta: ConnMeta,
+    cache: RedisDatabaseMeta,
+    cursor: number
+  ): Promise<'applied' | 'limited' | 'failed' | 'stale'> {
+    const request = Symbol()
+    cache.started = true
+    cache.request = request
+    cache.inFlightRequest = request
+    cache.loading = true
+    cache.error = ''
+
+    const lockKey = JSON.stringify([connId, database])
+    const previous = redisRequestTails.get(lockKey) ?? Promise.resolve()
+    let releaseRequest!: () => void
+    const requestGate = new Promise<void>((resolve) => {
+      releaseRequest = resolve
+    })
+    // 队列只含由 finally 释放的 gate，不会 reject。
+    const requestTail = previous.then(() => requestGate)
+    redisRequestTails.set(lockKey, requestTail)
+
     try {
-      const [cursor, keys] = await queryIpc.redisKeys(connId, '', more ? cache.cursor : 0, db)
-      if (!current()) return
-      cache.keys = [...new Set([...cache.keys, ...keys])]
-      cache.cursor = cursor
+      await previous
+      if (!redisPageIsCurrent(connId, database, meta, cache, request)) return 'stale'
+      const [nextCursor, keys] = await queryIpc.redisKeys(connId, '', cursor, database)
+      if (!redisPageIsCurrent(connId, database, meta, cache, request)) return 'stale'
+      const limitReason = appendRedisKeys(cache, keys)
       cache.loaded = true
+      if (limitReason) {
+        cache.limitReached = true
+        cache.limitReason = limitReason
+        return 'limited'
+      }
+      cache.cursor = nextCursor
+      return 'applied'
     } catch (err) {
-      if (current()) ports.showError(err)
+      if (redisPageIsCurrent(connId, database, meta, cache, request)) {
+        cache.error = err instanceof Error ? err.message : String(err)
+        ports.showError(err)
+        return 'failed'
+      }
+      return 'stale'
     } finally {
-      if (current()) {
+      releaseRequest()
+      if (redisRequestTails.get(lockKey) === requestTail) redisRequestTails.delete(lockKey)
+      if (cache.inFlightRequest === request) cache.inFlightRequest = null
+      if (cache.request === request) cache.request = null
+      if (cache.inFlightRequest === null) {
         cache.loading = false
-        cache.request = null
       }
     }
   }
+
+  /** SCAN 允许空批次和重复键；列表只在成功取得完整批次后前进游标。 */
+  async function ensureRedisKeys(connId: string, database = 'db0', more = false) {
+    if (disposed) return
+    const conn = ports.connections.value.find(
+      (item) => item.id === connId && item.dbType === 'redis' && item.status === 'online'
+    )
+    const meta = metas.value[connId]
+    const db = canonicalRedisDatabase(database)
+    if (!conn || !meta?.loaded || !meta.databases.includes(db)) return
+    let cache = meta.redisByDatabase[db]
+    if (!cache) {
+      meta.redisByDatabase[db] = newRedisDatabaseMeta()
+      cache = meta.redisByDatabase[db]
+    }
+    if (!cache) return
+    if (cache.loading || cache.error || cache.limitReached) return
+    if (!more && cache.loaded) return
+    if (more && cache.loaded && cache.cursor === 0) return
+    cache.started = true
+    await requestRedisPage(connId, db, meta, cache, cache.loaded ? cache.cursor : 0)
+  }
+
+  function redisKeyLoadState(nodeId: string): RedisKeyLoadState | undefined {
+    const target = redisTarget(nodeId)
+    if (!target?.cache) return undefined
+    const { conn, meta, database, cache } = target
+    return {
+      connId: conn.id,
+      database,
+      loaded: cache.keys.length,
+      total: meta.redisKeyCounts[database] ?? null,
+      hasMore: redisHasMore(cache),
+      loading: cache.loading,
+      fetchingAll: cache.fetchingAll,
+      error: cache.error,
+      limitReached: cache.limitReached,
+      limitReason: cache.limitReason,
+      autoLoadBudgetReached: redisAutoBudgetReached(cache),
+      automaticPaused: cache.automaticPaused,
+    }
+  }
+
+  async function loadMoreRedisKeys(nodeId: string): Promise<void> {
+    const target = redisTarget(nodeId, true)
+    if (!target) return
+    const { conn, meta, database, cache } = target
+    if (!cache || cache.loading || cache.fetchingAll || cache.limitReached || !redisHasMore(cache))
+      return
+    cache.automaticPaused = false
+    cache.started = true
+    await requestRedisPage(conn.id, database, meta, cache, cache.loaded ? cache.cursor : 0)
+  }
+
+  async function autoLoadMoreRedisKeys(nodeId: string): Promise<void> {
+    if (!redisAutoLoadEnabled.value) return
+    const target = redisTarget(nodeId)
+    if (!target?.cache) return
+    const { conn, meta, database, cache } = target
+    if (
+      keyword.value.trim() ||
+      !expandedIds.value.has(conn.id) ||
+      !expandedIds.value.has(`${conn.id}::redis:${encodeURIComponent(database)}`) ||
+      !expandedIds.value.has(`${conn.id}::redis:${encodeURIComponent(database)}::keys`) ||
+      cache.automaticPaused ||
+      cache.loading ||
+      cache.fetchingAll ||
+      cache.error ||
+      cache.limitReached ||
+      !redisHasMore(cache) ||
+      redisAutoBudgetReached(cache)
+    )
+      return
+    cache.automaticRequests += 1
+    await requestRedisPage(conn.id, database, meta, cache, cache.loaded ? cache.cursor : 0)
+  }
+
+  async function fetchAllRedisKeys(nodeId: string): Promise<void> {
+    const target = redisTarget(nodeId, true)
+    if (!target) return
+    const { conn, meta, database, cache } = target
+    if (!cache || cache.limitReached || !redisHasMore(cache)) return
+    if (cache.fetchingAll && cache.fullScanTask) return cache.fullScanTask
+    if (cache.loading) return
+
+    cache.automaticPaused = false
+    const token = Symbol()
+    cache.fullScanToken = token
+    cache.fetchingAll = true
+    cache.error = ''
+    const scan = (async () => {
+      const isCurrentScan = () =>
+        metas.value[conn.id] === meta &&
+        meta.redisByDatabase[database] === cache &&
+        cache.fullScanToken === token
+      try {
+        while (isCurrentScan() && redisHasMore(cache) && !cache.limitReached && !cache.error) {
+          const result = await requestRedisPage(
+            conn.id,
+            database,
+            meta,
+            cache,
+            cache.loaded ? cache.cursor : 0
+          )
+          if (!isCurrentScan() || result !== 'applied') break
+          if (!redisHasMore(cache) || cache.limitReached) break
+          // 每批让出一次事件循环，避免大库全量扫描长时间占住渲染线程。
+          await new Promise<void>((resolve) => setTimeout(resolve, 0))
+        }
+      } finally {
+        if (isCurrentScan()) {
+          cache.fetchingAll = false
+          cache.fullScanToken = null
+          cache.fullScanTask = null
+        }
+      }
+    })()
+    cache.fullScanTask = scan
+    await scan
+  }
+
+  function stopRedisCache(cache: RedisDatabaseMeta, discardCurrentPage: boolean) {
+    cache.fullScanToken = null
+    cache.fetchingAll = false
+    cache.fullScanTask = null
+    if (discardCurrentPage) cache.request = null
+    if (cache.inFlightRequest === null) {
+      cache.loading = false
+    }
+  }
+
+  function stopRedisKeyLoad(nodeId: string) {
+    const cache = redisTarget(nodeId)?.cache
+    if (cache) {
+      cache.automaticPaused = true
+      stopRedisCache(cache, false)
+    }
+  }
+
+  function cancelRedisKeyLoad(nodeId: string) {
+    const cache = redisTarget(nodeId)?.cache
+    if (cache) stopRedisCache(cache, true)
+  }
+
+  function stopRedisKeyLoadsForConnection(connId: string, discardCurrentPage: boolean) {
+    const meta = metas.value[connId]
+    if (!meta) return
+    for (const cache of Object.values(meta.redisByDatabase))
+      stopRedisCache(cache, discardCurrentPage)
+  }
+
+  function pauseRedisKeyLoads() {
+    for (const connId of Object.keys(metas.value)) stopRedisKeyLoadsForConnection(connId, true)
+  }
+
+  onScopeDispose(() => {
+    disposed = true
+    pauseRedisKeyLoads()
+  })
 
   // ──────────────────────────────────────────────────────────────────────
   // 对象树（层级随数据库类型，与 mock 语义一致；叶子懒加载）
@@ -550,20 +899,28 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       items.push(
         branch(groupId, group.label, depth, `group-${group.key}`, members.length || undefined)
       )
-      if (conn.dbType === 'redis' && redisCache && redisCache.cursor !== 0)
-        items.push(
-          leaf(
-            `${schemaKey}::scan-more`,
-            redisCache?.loading ? '扫描中…' : '继续扫描键…',
-            depth + 1,
-            'scan-more'
-          )
-        )
       for (const obj of members) {
         const name = conn.dbType === 'redis' ? encodeURIComponent(obj.name) : obj.name
         const itemId = `${schemaKey}::${obj.kind}:${name}`
         items.push(leaf(itemId, obj.name, depth + 1, obj.kind))
       }
+      if (conn.dbType === 'redis' && redisCache?.started)
+        items.push(
+          leaf(
+            `${schemaKey}::scan-more`,
+            redisCache.loading
+              ? '加载中…'
+              : redisCache.limitReached
+                ? '已达上限'
+                : redisCache.error
+                  ? '加载失败，重试'
+                  : meta.redisKeyCounts[redisDatabase] == null
+                    ? `已加载 ${redisCache.keys.length}`
+                    : `已加载 ${redisCache.keys.length} / ${meta.redisKeyCounts[redisDatabase]}`,
+            depth + 1,
+            'redis-key-footer'
+          )
+        )
     }
     return items
   }
@@ -681,9 +1038,8 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   // ──────────────────────────────────────────────────────────────────────
 
   function toggleTree(item: UiTreeItem) {
-    if (item.kind === 'scan-more') {
-      const connId = item.id.split('::')[0]
-      void ensureRedisKeys(connId, redisDatabaseForNodeId(connId, item.id), true)
+    if (item.kind === 'redis-key-footer') {
+      void loadMoreRedisKeys(item.id)
       return
     }
     // 连接节点：已连接 → 折叠/展开（不重新连接）；未连接 → 连接并在成功后展开
@@ -693,6 +1049,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
         const willExpand = !isExpanded(item.id)
         toggleExpanded(item.id)
         if (willExpand) void ensureMeta(conn.id)
+        else if (conn.dbType === 'redis') stopRedisKeyLoadsForConnection(conn.id, true)
       } else if (conn.dbType === 'dameng') {
         ports.setConnectError(conn.id, '达梦驱动暂未支持（本版本未实现）')
       } else {
@@ -706,6 +1063,8 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       toggleExpanded(item.id)
       if (item.kind === 'database' && willExpand)
         void ensureRedisKeys(owner.id, redisDatabaseForNodeId(owner.id, item.id))
+      else if (!willExpand && (item.kind === 'database' || item.kind === 'group-keys'))
+        cancelRedisKeyLoad(item.id)
       return
     }
     toggleExpanded(item.id)
@@ -783,8 +1142,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
   /** 树选中/右键「查看数据」入口：打开数据页签并按叶子 scope 设置库/schema 上下文 */
   async function selectResource(id: string) {
     if (id.endsWith('::scan-more')) {
-      const connId = id.split('::')[0]
-      await ensureRedisKeys(connId, redisDatabaseForNodeId(connId, id), true)
+      await loadMoreRedisKeys(id)
       return
     }
     selectedResource.value = id
@@ -814,6 +1172,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     clearEditorColumns(connId)
     const meta = metaFor(connId)
     if (item.kind === 'connection') {
+      stopRedisKeyLoadsForConnection(connId, true)
       for (const key of objectRequests.keys())
         if (key.startsWith(`${connId}::`)) objectRequests.delete(key)
       meta.loaded = false
@@ -845,15 +1204,11 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     const owner = ports.connections.value.find((connection) => connection.id === connId)
     if (owner?.dbType === 'redis') {
       const database = redisDatabaseForNodeId(connId, item.id)
+      const previousCache = meta.redisByDatabase[database]
+      if (previousCache) stopRedisCache(previousCache, true)
       meta.redisByDatabase = {
         ...meta.redisByDatabase,
-        [database]: {
-          keys: [],
-          cursor: 0,
-          loaded: false,
-          loading: false,
-          request: null,
-        },
+        [database]: newRedisDatabaseMeta(),
       }
       await Promise.all([ensureMeta(connId, true), ensureRedisKeys(connId, database)])
       return
@@ -1066,6 +1421,13 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     ensureMeta,
     ensureObjects,
     ensureRedisKeys,
+    redisAutoLoadEnabled,
+    redisKeyLoadState,
+    loadMoreRedisKeys,
+    fetchAllRedisKeys,
+    stopRedisKeyLoad,
+    autoLoadMoreRedisKeys,
+    pauseRedisKeyLoads,
     resolveEditorColumns,
     // connection 域端口
     prefetchConnection,

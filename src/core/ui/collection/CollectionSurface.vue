@@ -16,6 +16,8 @@ const props = withDefaults(
     modelValue?: string
     rowHeight?: 22 | 24 | 28 | 32
     virtual?: boolean
+    /** 调用方保证 row/label/suffix 插槽只需固定一行。 */
+    fixedRowSlots?: boolean
     draggable?: boolean
     dragHandle?: boolean
     disabled?: boolean
@@ -30,6 +32,7 @@ const props = withDefaults(
   {
     modelValue: '',
     canDrop: undefined,
+    fixedRowSlots: false,
     rowHeight: 28,
     emptyText: '暂无项目',
     label: '项目列表',
@@ -49,14 +52,12 @@ const emit = defineEmits<{
 const root = ref<HTMLElement | null>(null)
 const rowsRoot = ref<HTMLElement | null>(null)
 const slots = useSlots()
-// 多行插槽与拖放继续沿用原完整布局；当前窗口化契约只覆盖固定单行节点。
+// 自定义行插槽默认禁用窗口化；调用方明确承诺固定单行后可 opt-in。
 const windowed = computed(
   () =>
     props.virtual &&
     !props.draggable &&
-    !slots.row &&
-    !slots.label &&
-    !slots.suffix &&
+    (props.fixedRowSlots || (!slots.row && !slots.label && !slots.suffix)) &&
     !props.items.some((item) => item.description)
 )
 const virtualRoot = computed(() => (windowed.value ? root.value : null))
@@ -129,7 +130,17 @@ watch(
       root.value?.contains(active)
     ) {
       const id = active.dataset.collectionId
-      void nextTick(() => focus(props.items.find((item) => item.id === id) ?? focusable.value[0]))
+      void nextTick(() => {
+        const retained = props.items.find((item) => item.id === id)
+        if (!retained || retained.disabled) {
+          focus(focusable.value[0])
+          return
+        }
+        focusedId.value = retained.id
+        root.value
+          ?.querySelector<HTMLElement>(`[id="${domId(retained)}"]`)
+          ?.focus({ preventScroll: true })
+      })
     }
   }
 )
@@ -327,6 +338,7 @@ const insertion = computed(() => {
                   position: 'absolute',
                   top: `${(rowIndexes.get(item.id) ?? 0) * rowHeight}px`,
                   height: `${rowHeight}px`,
+                  overflow: 'hidden',
                 }
               : {}),
           }"

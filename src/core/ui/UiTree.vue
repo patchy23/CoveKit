@@ -9,6 +9,8 @@ withDefaults(
     rowHeight?: 22 | 24 | 28 | 32
     /** 固定单行节点的视口渲染，完整键盘导航仍覆盖全部 items。 */
     virtual?: boolean
+    /** 调用方保证 row/label/suffix 插槽只需固定一行；与 virtual 一起显式启用。 */
+    fixedRowSlots?: boolean
     draggable?: boolean
     dragHandle?: boolean
     disabled?: boolean
@@ -22,6 +24,7 @@ withDefaults(
   }>(),
   {
     modelValue: '',
+    fixedRowSlots: false,
     canDrop: undefined,
     error: '',
     rowHeight: 24,

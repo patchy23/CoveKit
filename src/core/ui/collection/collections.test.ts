@@ -4,7 +4,7 @@ import UiTree from '../UiTree.vue'
 import UiSortableList from '../UiSortableList.vue'
 import UiIcon from '../UiIcon.vue'
 import { validMove } from './types'
-import { nextTick } from 'vue'
+import { h, nextTick } from 'vue'
 enableAutoUnmount(afterEach)
 afterEach(() => {
   vi.restoreAllMocks()
@@ -62,6 +62,72 @@ it('带拖放或多行说明时保留完整行布局', () => {
     props: { items: items.map((item) => ({ ...item, description: '第二行' })), virtual: true },
   })
   expect(described.findAll('[role="treeitem"]')).toHaveLength(120)
+})
+
+it('固定行自定义插槽显式启用虚拟化且操作按钮不选择节点', async () => {
+  const items = Array.from({ length: 3000 }, (_, index) => ({
+    id: String(index),
+    label: `键 ${index}`,
+    depth: 0,
+  }))
+  const full = mount(UiTree, {
+    props: { items, virtual: true },
+    slots: { label: ({ item }) => h('span', item.label) },
+  })
+  expect(full.findAll('[role="treeitem"]')).toHaveLength(3000)
+
+  const tree = mount(UiTree, {
+    attachTo: document.body,
+    props: { items, virtual: true, fixedRowSlots: true },
+    slots: {
+      label: ({ item }) => h('span', { class: 'custom-label' }, item.label),
+      suffix: () => h('button', { type: 'button' }, '操作'),
+    },
+  })
+  await nextTick()
+  expect(tree.findAll('[role="treeitem"]').length).toBeLessThan(150)
+  const first = tree.get('[data-collection-id="0"]')
+  await first.get('button').trigger('click')
+  expect(tree.emitted('select')).toBeUndefined()
+  ;(first.element as HTMLElement).focus()
+  await first.trigger('keydown', { key: 'End' })
+  await nextTick()
+  expect(tree.get('[data-collection-id="2999"] .custom-label').text()).toBe('键 2999')
+  expect(tree.findAll('[role="treeitem"]').length).toBeLessThan(150)
+})
+
+it('追加虚拟行时保留当前焦点而不把滚动视口带回焦点行', async () => {
+  const items = Array.from({ length: 3000 }, (_, index) => ({
+    id: String(index),
+    label: `键 ${index}`,
+    depth: 0,
+  }))
+  const tree = mount(UiTree, {
+    attachTo: document.body,
+    props: { items, modelValue: '0', virtual: true },
+  })
+  await nextTick()
+  await nextTick()
+
+  const viewport = tree.get('[role="tree"]').element as HTMLElement
+  const first = tree.get('[data-collection-id="0"]')
+  ;(first.element as HTMLElement).focus()
+  viewport.scrollTop = 12000
+  await viewport.dispatchEvent(new Event('scroll'))
+  await nextTick()
+  expect(viewport.scrollTop).toBe(12000)
+
+  await tree.setProps({ items: [...items, { id: '3000', label: '键 3000', depth: 0 }] })
+  await nextTick()
+  await nextTick()
+  expect(viewport.scrollTop).toBe(12000)
+  expect(document.activeElement).toBe(tree.get('[data-collection-id="0"]').element)
+
+  await tree.setProps({ items: items.slice(1) })
+  await nextTick()
+  await nextTick()
+  expect(document.activeElement).toBe(tree.get('[data-collection-id="1"]').element)
+  expect(viewport.scrollTop).toBeLessThan(12000)
 })
 it('叶子默认无图标，分支保留文件夹且业务可显式提供叶子图标', () => {
   const tree = mount(UiTree, { props: { items: rows } })

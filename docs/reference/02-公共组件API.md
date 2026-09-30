@@ -77,7 +77,7 @@
 - 默认仅分支节点显示文件夹图标，叶子和普通列表项不添加占位图标；业务可通过 `icon` 插槽显式提供协议、类型等图标。树形下拉沿用此规则。
 
 - `UiSortableList`：`items: UiListItem[]`，每项有稳定 `id`、`label`，可选 `description/kind/badge/muted/disabled/draggable`；`showIcon: false` 隐藏图标插槽及默认图标，树的层级缩进不变。默认允许排序，无父子层级。
-- `UiTree`：`items: UiTreeItem[]` 是深度优先排列的**可见节点**，在列表项基础上增加 `depth/expandable/expanded/loading`。默认不拖动，启用时传 `draggable`。空目录显式设置 `expandable`，不要根据子项数量判定目录。兼容数据库工具原有展开事件。
+- `UiTree`：`items: UiTreeItem[]` 是深度优先排列的**可见节点**，在列表项基础上增加 `depth/expandable/expanded/loading`。默认不拖动，启用时传 `draggable`；固定单行自定义插槽树可在 `virtual` 同时启用时传 `fixedRowSlots`。空目录显式设置 `expandable`，不要根据子项数量判定目录。兼容数据库工具原有展开事件。
 - 两者共用 `modelValue` 单选、`rowHeight` 22/24/28/32、`dragHandle`、`disabled/busy/loading/error/filtered/emptyText/label`。过滤中禁拖；busy 禁止重复操作；失败不改变传入数据。搜索、工具栏和业务菜单由页面组合。
 - `move` 只发请求 `{ id, targetId, position }`，position 为 before/after/inside；targetId 为 null 表示根层末尾。业务 `canDrop(move)` 附加约束，组件默认拒绝自身、后代及禁用节点。业务负责原子保存并更新 items，不能只改显示顺序。
 - 事件：`select(item)`、`update:modelValue(id)`、`toggle(item)`、`open(item)`、`contextmenu(item,event)`、`blankContextmenu(event)`、`retry()`。展开由业务持有，节点身份不随改名或移动改变。

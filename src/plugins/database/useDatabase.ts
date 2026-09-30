@@ -23,6 +23,7 @@ import { useDatabaseCatalog } from './catalog/useDatabaseCatalog'
 import { useQueryLibrary } from './library/useQueryLibrary'
 
 export { filterTreeItems } from './catalog/useDatabaseCatalog'
+export type { RedisKeyLoadState } from './catalog/useDatabaseCatalog'
 export { extractExecSql } from './workspace/useQueryWorkspace'
 export { withTimeout } from './connection/useDatabaseConnections'
 export type { QueryState, TabContext } from './workspace/useQueryWorkspace'
@@ -105,6 +106,13 @@ export function useDatabase() {
     resolveEditorColumns: cat.resolveEditorColumns,
     ensureMeta: cat.ensureMeta,
     invalidateConnectionMeta: cat.invalidateConnectionMeta,
+    redisAutoLoadEnabled: cat.redisAutoLoadEnabled,
+    redisKeyLoadState: cat.redisKeyLoadState,
+    loadMoreRedisKeys: cat.loadMoreRedisKeys,
+    fetchAllRedisKeys: cat.fetchAllRedisKeys,
+    stopRedisKeyLoad: cat.stopRedisKeyLoad,
+    autoLoadMoreRedisKeys: cat.autoLoadMoreRedisKeys,
+    pauseRedisKeyLoads: cat.pauseRedisKeyLoads,
     showSystemSchemas: cat.showSystemSchemas,
     toggleSystemSchemas: cat.toggleSystemSchemas,
     executionConfirmation: ws.executionConfirmation,

@@ -50,6 +50,7 @@ export function useConnectionsMenu(
           onClick: () => db.openSqlEditorWithSql(connId, '', context.database, context.schema),
         },
         { label: '刷新键列表', onClick: () => void db.refreshTreeNode(item) },
+        redisAutoLoadItem(),
       ]
     }
     if (item.kind === 'database' || item.kind === 'schema' || item.kind?.startsWith('group')) {
@@ -156,6 +157,7 @@ export function useConnectionsMenu(
           expanded: false,
         }),
     })
+    if (connection.dbType === 'redis') items.push(redisAutoLoadItem())
     if (online && !['sqlite', 'redis'].includes(connection.dbType)) {
       items.push({
         label: db.showSystemSchemas.value[connection.id] ? '隐藏系统库' : '显示系统库',
@@ -169,6 +171,15 @@ export function useConnectionsMenu(
       onClick: () => (deleteTarget.value = connection),
     })
     return items
+  }
+
+  function redisAutoLoadItem(): UiContextMenuItem {
+    return {
+      label: db.redisAutoLoadEnabled.value ? '关闭滚动自动加载' : '启用滚动自动加载',
+      onClick: () => {
+        db.redisAutoLoadEnabled.value = !db.redisAutoLoadEnabled.value
+      },
+    }
   }
 
   function openMenu(
