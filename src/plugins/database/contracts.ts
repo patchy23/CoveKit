@@ -163,9 +163,11 @@ export interface RedisKeyInfo {
   value: string
 }
 
-/** Redis 可用逻辑库清单；warning 表示清单受服务器权限限制。 */
+/** Redis 可用逻辑库清单与总键数；warning 表示库清单或键数统计受服务器权限限制。 */
 export interface RedisDatabaseList {
   databases: string[]
+  /** 后端统计的每库总键数；权限或统计不可用时为 null。 */
+  keyCounts: Record<string, number | null>
   warning: string | null
 }
 

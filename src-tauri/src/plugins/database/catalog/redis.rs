@@ -33,7 +33,7 @@ pub async fn dbc_redis_keys(
     redis::scan_keys(&mut mgr, &pattern, cursor, 200).await
 }
 
-/// Redis 逻辑库列表；warning 非空时 databases 只包含可确认的部分结果。
+/// Redis 逻辑库列表；warning 说明清单或键数统计受到限制。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_redis_databases(
     state: State<'_, DbState>,

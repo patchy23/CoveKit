@@ -95,6 +95,8 @@ interface ConnMeta {
   objects: Record<string, DbObjectInfo[]>
   /** Redis 的键、游标和请求状态按逻辑库隔离。 */
   redisByDatabase: Record<string, RedisDatabaseMeta>
+  /** Redis 服务器报告的每库总键数；缺失或 null 均表示未知。 */
+  redisKeyCounts: Record<string, number | null>
   loading: boolean
   loaded: boolean
   metadataRequest: symbol | null
@@ -190,6 +192,17 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     if (!value) return 'db0'
     const index = value.replace(/^db/i, '')
     return /^\d+$/.test(index) ? `db${index.replace(/^0+(?=\d)/, '')}` : value
+  }
+
+  function canonicalRedisKeyCounts(
+    keyCounts: Record<string, number | null> | undefined
+  ): Record<string, number | null> {
+    return Object.fromEntries(
+      Object.entries(keyCounts ?? {}).map(([database, count]) => [
+        canonicalRedisDatabase(database),
+        count,
+      ])
+    )
   }
 
   function databaseScopeValue(scope: string): string {
@@ -368,6 +381,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
       schemasByDatabase: {},
       objects: {},
       redisByDatabase: {},
+      redisKeyCounts: {},
       loading: false,
       loaded: false,
       metadataRequest: null,
@@ -375,11 +389,11 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
     return metas.value[connId]
   }
 
-  async function ensureMeta(connId: string) {
+  async function ensureMeta(connId: string, force = false) {
     const conn = ports.connections.value.find((c) => c.id === connId)
     if (!conn) return
     const meta = metaFor(connId)
-    if (meta.loaded || meta.loading) return
+    if (!force && (meta.loaded || meta.loading)) return
     const request = Symbol()
     meta.metadataRequest = request
     meta.loading = true
@@ -388,6 +402,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
         const result = await queryIpc.redisDatabases(connId)
         if (metas.value[connId] !== meta || meta.metadataRequest !== request) return
         meta.databases = [...new Set(result.databases.map(canonicalRedisDatabase))]
+        meta.redisKeyCounts = canonicalRedisKeyCounts(result.keyCounts)
         meta.schemas = []
         meta.schemasByDatabase = {}
         meta.loaded = true
@@ -582,7 +597,8 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
         for (const database of meta.databases) {
           const scope = `redis:${encodeURIComponent(database)}`
           const id = `${prefix}::${scope}`
-          items.push(branch(id, database, 1, 'database'))
+          const count = meta.redisKeyCounts[database]
+          items.push(branch(id, database, 1, 'database', count == null ? undefined : count))
           items.push(...objectGroups(conn, id, 2))
         }
         continue
@@ -839,7 +855,7 @@ export function useDatabaseCatalog(ports: DatabaseCatalogPorts) {
           request: null,
         },
       }
-      await ensureRedisKeys(connId, database)
+      await Promise.all([ensureMeta(connId, true), ensureRedisKeys(connId, database)])
       return
     }
     if (owner?.dbType === 'postgresql' && item.kind === 'database') {

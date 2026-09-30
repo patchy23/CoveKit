@@ -3,7 +3,7 @@
 //! 字段含义注释见各属性；错误统一走 `{ ok: false, error }` 结构，不抛错给前端。
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
 /// 数据库类型（与前端 V2DbType 一一对应；达梦 UI 保留入口但后端暂不支持）
@@ -355,13 +355,15 @@ pub struct RedisKeyInfo {
     pub value: String,
 }
 
-/// Redis 逻辑库清单；warning 非空表示因权限或响应上限只能确认部分结果。
+/// Redis 逻辑库清单与键数统计；warning 非空表示清单或键数受到权限、能力或响应上限影响。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RedisDatabaseList {
     /// 实例中可确认的逻辑库名（如 db0、db1）。
     pub databases: Vec<String>,
-    /// 清单不完整时说明限制；完整清单为 null。
+    /// 每个可见逻辑库的键数；null 表示实例没有提供可信统计值。
+    pub key_counts: BTreeMap<String, Option<u64>>,
+    /// 逻辑库清单或键数统计不完整时说明限制；无警告时为 null。
     pub warning: Option<String>,
 }
 

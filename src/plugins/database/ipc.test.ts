@@ -43,9 +43,14 @@ it('继续读取携带已接收偏移，关闭精确命中当前页游标', asyn
 })
 
 it('Redis 库列表、SCAN 与键详情 IPC 携带明确的逻辑库范围', async () => {
-  vi.mocked(invokeCommand).mockResolvedValueOnce({ databases: ['db0', 'db2'], warning: null })
+  vi.mocked(invokeCommand).mockResolvedValueOnce({
+    databases: ['db0', 'db2'],
+    keyCounts: { db0: 12, db2: null },
+    warning: null,
+  })
   expect(await queryIpc.redisDatabases('redis-conn')).toEqual({
     databases: ['db0', 'db2'],
+    keyCounts: { db0: 12, db2: null },
     warning: null,
   })
   expect(invokeCommand).toHaveBeenLastCalledWith('dbc_redis_databases', { connId: 'redis-conn' })
