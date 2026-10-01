@@ -2,6 +2,7 @@
  * 数据库工作台插件 · IPC 封装（本插件命令，独立于框架）
  */
 import { invokeCommand } from '@/core/ipc/ipc'
+import type { Channel } from '@tauri-apps/api/core'
 import type {
   ConnConfig,
   TableOptions,
@@ -19,6 +20,7 @@ import type {
   DbTablePage,
   DbUserInfo,
   DriverStatus,
+  DriverInstallProgress,
   HistoryEntry,
   Payloads,
   QueryResult,
@@ -61,6 +63,13 @@ export const connectionIpc = {
   test: (config: ConnConfig, password: string, clearPassword = false): Promise<string> =>
     call('dbc_test', { config, password, clearPassword }),
   driverStatus: (dbType: string): Promise<DriverStatus> => call('dbc_driver_status', { dbType }),
+  installDriver: (
+    dbType: string,
+    requestId: string,
+    onProgress: Channel<DriverInstallProgress>
+  ): Promise<DriverStatus> => call('dbc_driver_install', { dbType, requestId, onProgress }),
+  cancelDriverInstall: (requestId: string): Promise<void> =>
+    call('dbc_driver_install_cancel', { requestId }),
 }
 
 /** 查询与元数据 */

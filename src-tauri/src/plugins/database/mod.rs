@@ -378,30 +378,48 @@ pub async fn dbc_saved_delete(
     store::delete_saved(&app, &store_state, id)
 }
 
-/// 驱动诊断：agent 驱动是否就绪（前端提示如何获取驱动）
+/// 驱动状态：是否就绪、实现类型及当前平台自动安装能力。
 #[tauri::command(rename_all = "camelCase")]
 pub async fn dbc_driver_status(
     app: tauri::AppHandle,
     db_type: String,
-) -> Result<serde_json::Value, String> {
+) -> Result<models::DriverStatus, String> {
     let _storage_operation = crate::framework::storage::access::operation()?;
     let db_type =
         models::DbType::parse(&db_type).ok_or_else(|| format!("未知数据库类型：{db_type}"))?;
     if !db_type.is_agent() {
-        return Ok(serde_json::json!({ "ready": true, "kind": "native" }));
+        return Ok(models::DriverStatus {
+            ready: true,
+            kind: models::DriverKind::Native,
+            dir: None,
+            version: None,
+            auto_install: None,
+        });
     }
     let store = agent::DriverStore::new(&app)?;
-    let ready = store.agent_binary(db_type).is_some();
-    let dir = store.driver_dir(db_type)?;
-    let versions = store.versions();
-    let version = versions.get(agent::driver_key(db_type)).cloned();
-    Ok(serde_json::json!({
-        "ready": ready,
-        "kind": "agent",
-        "dir": dir.display().to_string(),
-        "version": version,
-        "note": "agent 驱动需手动放置到上述目录（大文件不随安装包分发）",
-    }))
+    agent::install::status(&store, db_type)
+}
+
+/// 独立安装 agent 驱动。下载和解包不占用连接测试或握手超时预算。
+#[tauri::command(rename_all = "camelCase")]
+pub async fn dbc_driver_install(
+    app: tauri::AppHandle,
+    state: State<'_, agent::DriverInstallState>,
+    db_type: String,
+    request_id: String,
+    on_progress: tauri::ipc::Channel<models::DriverInstallProgress>,
+) -> Result<models::DriverStatus, String> {
+    let _storage_operation = crate::framework::storage::access::operation()?;
+    agent::install::install_driver(&app, &state, db_type, request_id, on_progress).await
+}
+
+/// 只取消对应的驱动安装请求；等待中的请求不会影响当前安装者。
+#[tauri::command(rename_all = "camelCase")]
+pub async fn dbc_driver_install_cancel(
+    state: State<'_, agent::DriverInstallState>,
+    request_id: String,
+) -> Result<(), String> {
+    state.cancel(&request_id).await
 }
 
 // 模块静态清单：命令名、入库元数据与分派 handler 同源生成（AR07 §10.2）
@@ -423,7 +441,9 @@ crate::covekit_module! {
         dbc_saved_add => "添加收藏 SQL",
         dbc_saved_update => "更新收藏 SQL（编辑器二次保存）",
         dbc_saved_delete => "删除收藏 SQL",
-        dbc_driver_status => "agent 驱动就绪状态（含目录指引）",
+        dbc_driver_status => "数据库驱动状态与自动安装能力",
+        dbc_driver_install => "安装缺失的 Oracle agent 驱动",
+        dbc_driver_install_cancel => "取消指定 agent 驱动安装",
         catalog::query::dbc_execute => "执行 SQL（多语句拆分，查询返回表格）",
         catalog::query::dbc_cancel => "取消进行中的查询",
         catalog::query::dbc_query_fetch => "继续读取 SQL 查询结果",
@@ -479,6 +499,7 @@ pub fn register(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wr
         .manage(drivers::WorkspaceState::default())
         .manage(drivers::cursor::CursorState::default())
         .manage(drivers::AgentRuntimeState(Mutex::new(HashMap::new())))
+        .manage(agent::DriverInstallState::default())
         .manage(StoreState(Mutex::new(None)))
         .manage(secrets::SecretsState(Mutex::new(None)))
 }

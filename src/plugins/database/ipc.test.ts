@@ -1,10 +1,28 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { invokeCommand } from '@/core/ipc/ipc'
-import { draftIpc, queryIpc } from './ipc'
+import { connectionIpc, draftIpc, queryIpc } from './ipc'
+import type { DriverInstallProgress } from './contracts'
+import type { Channel } from '@tauri-apps/api/core'
 import type { QueryResult } from './contracts'
 
 vi.mock('@/core/ipc/ipc', () => ({ invokeCommand: vi.fn() }))
 afterEach(() => vi.clearAllMocks())
+
+it('Oracle 驱动安装沿数据库 typed IPC 传 requestId 与 Channel，取消命中同一请求', async () => {
+  const onProgress = { onmessage: vi.fn() } as unknown as Channel<DriverInstallProgress>
+  vi.mocked(invokeCommand).mockResolvedValueOnce({ ready: true, kind: 'agent' })
+  await connectionIpc.installDriver('oracle', 'install-1', onProgress)
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_driver_install', {
+    dbType: 'oracle',
+    requestId: 'install-1',
+    onProgress,
+  })
+
+  await connectionIpc.cancelDriverInstall('install-1')
+  expect(invokeCommand).toHaveBeenLastCalledWith('dbc_driver_install_cancel', {
+    requestId: 'install-1',
+  })
+})
 
 it('草稿增量通过原命令携带完整顺序，空顺序用于原子清空', async () => {
   await draftIpc.save([], ['a', 'b'])

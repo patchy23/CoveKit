@@ -281,6 +281,7 @@ onMounted(() => {
       :open="dialogOpen"
       :editing="editingConnection"
       @close="dialogOpen = false"
+      @operation-error="db.showError"
       @saved="onSaved"
     />
 

@@ -21,6 +21,7 @@ import RedisKeyListFooter from './RedisKeyListFooter.vue'
 import { useSplitPane } from '@/core/ui/useSplitPane'
 import { DB_TYPE_META } from './useDatabaseMeta'
 import type { DbConnectionInfo } from './contracts'
+import type { OracleDriverInstallView } from './connection/useDatabaseConnections'
 import type { useDatabase } from './useDatabase'
 import { useConnectionsMenu } from './useConnectionsMenu'
 
@@ -97,6 +98,23 @@ function onTreeContext(item: UiTreeItem, event: MouseEvent) {
     openMenu(event, { item })
   }
 }
+
+function oracleInstallLabel(state: OracleDriverInstallView): string {
+  const phaseLabels: Record<OracleDriverInstallView['phase'], string> = {
+    checking: '检查驱动…',
+    waiting: '准备驱动…',
+    downloading: '下载驱动',
+    verifying: '校验驱动…',
+    extracting: '解压驱动…',
+    validating: '验证驱动…',
+    complete: '驱动已就绪',
+  }
+  if (state.phase === 'downloading' && state.totalBytes && state.totalBytes > 0) {
+    const percent = Math.min(100, Math.floor((state.downloadedBytes / state.totalBytes) * 100))
+    return `${phaseLabels[state.phase]} ${percent}%`
+  }
+  return phaseLabels[state.phase]
+}
 </script>
 
 <template>
@@ -156,6 +174,13 @@ function onTreeContext(item: UiTreeItem, event: MouseEvent) {
         <template #suffix="{ item }">
           <template v-if="item.depth === 0">
             <template v-if="db.connecting.value[item.id]">
+              <span
+                v-if="db.oracleDriverInstall.value[item.id]"
+                class="max-w-[88px] truncate text-caption text-secondary dark:text-secondary-dark"
+                :title="oracleInstallLabel(db.oracleDriverInstall.value[item.id])"
+              >
+                {{ oracleInstallLabel(db.oracleDriverInstall.value[item.id]) }}
+              </span>
               <UiSpinner size="xs" />
               <UiIconButton
                 label="取消连接"

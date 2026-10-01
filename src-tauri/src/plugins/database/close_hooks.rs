@@ -2,7 +2,7 @@
 //!
 //! 清理由本模块自己提供，框架只负责协调、超时与汇总（`framework/lifecycle.rs`）。
 //!
-//! 退出路径只做**同步**动作：置取消标志 → 结束 agent 子进程 → 清空注册表。
+//! 退出路径只做**同步**动作：取消 Oracle 安装与查询 → 结束 agent 子进程 → 清空注册表。
 //! agent 子进程必须显式结束：父子进程之间没有作业对象绑定，父进程退出不会连带结束子进程，
 //! 留一个孤儿 sidecar 会在系统里长期挂着；协议 `shutdown` 是异步的，退出预算内不等它。
 //!
@@ -30,6 +30,12 @@ pub(crate) fn on_dispose(app: Option<&tauri::AppHandle>, _reason: CloseReason) -
         return Vec::new();
     };
     let mut failures = Vec::new();
+    for error in app
+        .state::<super::agent::DriverInstallState>()
+        .cancel_all()
+    {
+        failures.push(format!("{OWNER}.agent-install: {error}"));
+    }
     super::drivers::cursor::close_all(&app.state::<super::drivers::cursor::CursorState>());
 
     // 1) 进行中的查询：置取消标志，让执行中的命令尽快返回

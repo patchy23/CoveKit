@@ -191,13 +191,23 @@ export interface SavedEntry {
   at: string
 }
 
-/** agent 驱动状态（诊断） */
+/** agent 驱动状态（诊断与安装能力） */
 export interface DriverStatus {
   ready: boolean
   kind: 'native' | 'agent'
   dir?: string
   version?: string | null
   note?: string
+  autoInstall?: boolean
+}
+
+/** Oracle agent 驱动安装阶段与进度。 */
+export interface DriverInstallProgress {
+  requestId: string
+  dbType: string
+  phase: 'waiting' | 'downloading' | 'verifying' | 'extracting' | 'validating' | 'complete'
+  downloadedBytes: number
+  totalBytes?: number
 }
 
 /** 字符集选项（新建数据库对话框；collationsByCharset 用于字符集→排序规则联动） */
@@ -253,6 +263,8 @@ export const commands = {
   dbcSavedUpdate: 'dbc_saved_update',
   dbcSavedDelete: 'dbc_saved_delete',
   dbcDriverStatus: 'dbc_driver_status',
+  dbcDriverInstall: 'dbc_driver_install',
+  dbcDriverInstallCancel: 'dbc_driver_install_cancel',
   dbcExecute: 'dbc_execute',
   dbcCancel: 'dbc_cancel',
   dbcPrepareExecution: 'dbc_prepare_execution',
@@ -307,6 +319,12 @@ export type Payloads = {
   dbc_saved_update: { id: number; title: string; sql: string }
   dbc_saved_delete: { id: number }
   dbc_driver_status: { dbType: string }
+  dbc_driver_install: {
+    dbType: string
+    requestId: string
+    onProgress: import('@tauri-apps/api/core').Channel<DriverInstallProgress>
+  }
+  dbc_driver_install_cancel: { requestId: string }
   dbc_execute: {
     connId: string
     sql: string
@@ -403,6 +421,8 @@ export type Results = {
   dbc_saved_update: void
   dbc_saved_delete: void
   dbc_driver_status: DriverStatus
+  dbc_driver_install: DriverStatus
+  dbc_driver_install_cancel: void
   dbc_prepare_execution: ExecutionPreview
   dbc_workspace_close: void
   dbc_query_fetch: QueryResult

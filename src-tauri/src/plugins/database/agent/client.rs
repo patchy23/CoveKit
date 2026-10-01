@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -18,6 +18,7 @@ use tokio::time::{timeout, Duration};
 
 /// 单个 RPC 调用的超时（连接/查询等长操作默认 60s；调用方可覆盖）
 const RPC_TIMEOUT: Duration = Duration::from_secs(60);
+const START_FAILURE_STOP_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// 待响应请求表类型（id → 响应发送端；读循环与客户端共享）
 type PendingMap = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
@@ -33,6 +34,9 @@ pub struct AgentClient {
     /// 请求 id 递增
     next_id: AtomicU64,
 }
+
+/// 供 database 安装 owner 在 ready 等待期间取消验证子进程使用的弱句柄。
+pub(crate) type AgentChildHandle = Weak<Mutex<Child>>;
 
 /// 打开会话的入参（snake_case，与 dbx ConnectParams 对齐）
 #[derive(Debug, Clone)]
@@ -55,6 +59,49 @@ pub struct AgentConnectParams {
     pub ssl: bool,
 }
 
+/// 终止短期子进程并等待 OS 确认退出；轮询睡眠期间不持有同步锁。
+async fn stop_child(child: &Arc<Mutex<Child>>, wait: Duration) -> Result<(), String> {
+    {
+        let mut child = child.lock().map_err(|e| e.to_string())?;
+        if child
+            .try_wait()
+            .map_err(|e| format!("检查 agent 进程失败: {e}"))?
+            .is_some()
+        {
+            return Ok(());
+        }
+        if let Err(error) = child.start_kill() {
+            if child
+                .try_wait()
+                .map_err(|e| format!("检查 agent 进程失败: {e}"))?
+                .is_some()
+            {
+                return Ok(());
+            }
+            return Err(format!("结束 agent 验证进程失败: {error}"));
+        }
+    }
+
+    timeout(wait, async {
+        loop {
+            let exited = {
+                child
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .try_wait()
+                    .map_err(|e| format!("等待 agent 验证进程退出失败: {e}"))?
+                    .is_some()
+            };
+            if exited {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .map_err(|_| "agent 验证进程未在时限内退出".to_string())?
+}
+
 impl AgentClient {
     /// 复用前检查子进程存活；失败连接不得永久复用已退出客户端。
     pub(crate) fn is_running(&self) -> Result<bool, String> {
@@ -69,7 +116,7 @@ impl AgentClient {
     }
     /// 启动 agent 可执行文件并等待 ready 信号（不带额外环境变量）
     pub async fn spawn(program: &Path, working_dir: &Path) -> Result<Self, String> {
-        Self::spawn_with_env_and_args(program, working_dir, &[], &[]).await
+        Self::spawn_internal(program, working_dir, &[], &[], None).await
     }
 
     /// 启动 agent 可执行文件（可注入环境变量与命令行参数；测试用子进程重入需要 --exact 过滤）
@@ -78,6 +125,36 @@ impl AgentClient {
         working_dir: &Path,
         envs: &[(&str, &str)],
         args: &[&str],
+    ) -> Result<Self, String> {
+        Self::spawn_internal(program, working_dir, envs, args, None).await
+    }
+
+    /// 安装验证专用启动入口：spawn 成功后立即回传弱 child 句柄，
+    /// 让 database 的 dispose/cancel 在 ready 读取期间也能同步终止该进程。
+    pub(crate) async fn spawn_observed<F>(
+        program: &Path,
+        working_dir: &Path,
+        on_spawn: F,
+    ) -> Result<Self, String>
+    where
+        F: FnOnce(AgentChildHandle) -> Result<(), String> + Send + 'static,
+    {
+        Self::spawn_internal(
+            program,
+            working_dir,
+            &[],
+            &[],
+            Some(Box::new(on_spawn)),
+        )
+        .await
+    }
+
+    async fn spawn_internal(
+        program: &Path,
+        working_dir: &Path,
+        envs: &[(&str, &str)],
+        args: &[&str],
+        on_spawn: Option<Box<dyn FnOnce(AgentChildHandle) -> Result<(), String> + Send>>,
     ) -> Result<Self, String> {
         let mut cmd = Command::new(program);
         cmd.current_dir(working_dir)
@@ -91,18 +168,31 @@ impl AgentClient {
         for (k, v) in envs {
             cmd.env(k, v);
         }
-        let mut child = cmd
+        let child = cmd
             .spawn()
             .map_err(|e| format!("启动 agent 失败（{}）：{e}", program.display()))?;
 
         log::info!("数据库 agent 进程已创建 pid={:?}", child.id());
-        let stdin = child.stdin.take().ok_or("agent stdin 不可用")?;
-        let stdout = child.stdout.take().ok_or("agent stdout 不可用")?;
+        let child = Arc::new(Mutex::new(child));
+        if let Some(on_spawn) = on_spawn {
+            if let Err(error) = on_spawn(Arc::downgrade(&child)) {
+                return match stop_child(&child, START_FAILURE_STOP_TIMEOUT).await {
+                    Ok(()) => Err(error),
+                    Err(cleanup) => Err(format!("{error}；{cleanup}")),
+                };
+            }
+        }
+        let (stdin, stdout) = {
+            let mut guard = child.lock().map_err(|_| "agent 子进程锁不可用")?;
+            let stdin = guard.stdin.take().ok_or("agent stdin 不可用")?;
+            let stdout = guard.stdout.take().ok_or("agent stdout 不可用")?;
+            (stdin, stdout)
+        };
 
         let (writer_tx, writer_rx) = mpsc::channel::<String>(64);
         let pending = Arc::new(Mutex::new(HashMap::new()));
         let client = AgentClient {
-            child: Arc::new(Mutex::new(child)),
+            child,
             writer: writer_tx,
             pending: pending.clone(),
             next_id: AtomicU64::new(1),
@@ -133,8 +223,14 @@ impl AgentClient {
             Err("agent 启动输出异常（未收到 ready 信号）".to_string())
         })
         .await
-        .map_err(|_| "等待 agent ready 超时（10s）".to_string())?;
-        ready?;
+        .map_err(|_| "等待 agent ready 超时（10s）".to_string())
+        .and_then(|ready| ready);
+        if let Err(error) = ready {
+            return match client.kill_and_wait(START_FAILURE_STOP_TIMEOUT).await {
+                Ok(()) => Err(error),
+                Err(cleanup) => Err(format!("{error}；{cleanup}")),
+            };
+        }
         log::info!("数据库 agent 就绪");
 
         // 读任务：子进程 stdout → 按 id 路由响应（与 ready 等待共用同一读取器）
@@ -381,6 +477,11 @@ impl AgentClient {
             Err(error) => log::error!("数据库 agent 终止信号失败 kind={:?}", error.kind()),
         }
         Ok(())
+    }
+
+    /// 结束短期协议验证进程并等待其退出；每次轮询都在释放子进程锁后等待。
+    pub(crate) async fn kill_and_wait(&self, wait: Duration) -> Result<(), String> {
+        stop_child(&self.child, wait).await
     }
 
     /// 关闭全部会话并终止进程

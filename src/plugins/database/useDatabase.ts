@@ -93,6 +93,7 @@ export function useDatabase() {
     connecting: connection.connecting,
     connectError: connection.connectError,
     connectionOptions: connection.connectionOptions,
+    oracleDriverInstall: connection.oracleDriverInstall,
     connect: connection.connect,
     cancelConnect: connection.cancelConnect,
     disconnect: connection.disconnect,

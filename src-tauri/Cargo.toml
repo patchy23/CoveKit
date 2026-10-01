@@ -52,6 +52,12 @@ base64 = "=0.22.1"
 hmac = "0.12"
 sha2 = "0.10"
 hex = "0.4"
+tar = "=0.4.46"
+# Oracle agent 安装包是固定版本 tar.zst；复用 tar 目录项解析并以 zstd 解码，避免系统 tar。
+# tar 采用 MIT/Apache-2.0，zstd 0.13.3 采用 MIT；zstd-sys 捆绑的 upstream zstd 按 BSD 许可。
+# zstd-sys 用 cc 构建内置 zstd，不需要用户安装系统库或 libclang，Windows/macOS/Linux 均可构建。
+# 维护时随固定 DBX agent 版本复核压缩格式与摘要；tar/zstd 更新需同步评审锁文件和许可。
+zstd = { version = "=0.13.3", default-features = false }
 time = { version = "0.3", features = ["formatting", "parsing", "local-offset"] }
 # SSH 插件：russh 客户端 + SFTP + 凭证 AES-GCM 加密（ssh-key 由 russh 依赖提供）
 # ring 后端：避免 aws-lc-rs 在 Windows 依赖 NASM 汇编器

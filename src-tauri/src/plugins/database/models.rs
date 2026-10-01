@@ -108,6 +108,70 @@ impl DbType {
     }
 }
 
+/// 驱动来源（与 `dbc_driver_status` / `dbc_driver_install` 前端契约同步）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DriverKind {
+    /// Rust 原生驱动。
+    Native,
+    /// 独立 agent 侧车进程。
+    Agent,
+}
+
+/// 数据库驱动可用状态。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DriverStatus {
+    /// 本地驱动当前是否存在。
+    pub ready: bool,
+    /// 驱动实现方式。
+    pub kind: DriverKind,
+    /// agent 驱动存放目录。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
+    /// 已登记的驱动版本；未登记时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    /// 当前平台是否可由应用自动安装。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_install: Option<bool>,
+}
+
+/// 独立 Oracle agent 安装阶段。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DriverInstallPhase {
+    /// 请求已登记，可由前端开始监听取消。
+    Waiting,
+    /// 正在下载固定发布产物。
+    Downloading,
+    /// 正在校验产物摘要与文件清单。
+    Verifying,
+    /// 正在解包并核对 agent 二进制。
+    Extracting,
+    /// 正在启动 agent 并协商协议。
+    Validating,
+    /// 驱动已安装或原本已就绪。
+    Complete,
+}
+
+/// agent 驱动安装进度。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DriverInstallProgress {
+    /// 此安装请求的调用方生成 id。
+    pub request_id: String,
+    /// 数据库类型（小写）。
+    pub db_type: String,
+    /// 当前阶段。
+    pub phase: DriverInstallPhase,
+    /// 当前候选源已接收的压缩字节数。
+    pub downloaded_bytes: u64,
+    /// 固定发布产物大小；未知时省略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_bytes: Option<u64>,
+}
+
 /// 连接配置（保存于本地库；密码不入本结构，单独存 stronghold）
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

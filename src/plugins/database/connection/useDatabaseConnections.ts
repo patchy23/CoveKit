@@ -6,9 +6,29 @@
  * 连接成功后的树展开与元数据预取、断开/删除后的元数据失效、删除连接时关闭其页签，
  * 一律经端口委托给 catalog / workspace 域，本域不直读它们的内部状态。
  */
-import { computed, ref } from 'vue'
-import type { ConnConfig, DbConnectionInfo } from '../contracts'
+import { computed, onScopeDispose, ref } from 'vue'
+import type { ConnConfig, DbConnectionInfo, DriverInstallProgress } from '../contracts'
 import { connectionIpc } from '../ipc'
+import {
+  isOracleDriverInstallCancelled,
+  startOracleDriverInstall,
+  type OracleDriverInstallScope,
+} from './useOracleDriver'
+
+export interface OracleDriverInstallView {
+  phase: DriverInstallProgress['phase'] | 'checking'
+  downloadedBytes: number
+  totalBytes?: number
+}
+
+interface ConnectOperation {
+  cancelled: boolean
+  install?: OracleDriverInstallScope
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
 
 /** 给 Promise 加超时兜底（后端挂起时前端也能报错收尾） */
 export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
@@ -46,6 +66,8 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
   const connectError = ref<Record<string, string>>({})
   /** 连接取消标记（cancelConnect 置位；连接结果返回后据此丢弃并断开），即一次连接的请求 epoch */
   const cancelledConnect = ref<Record<string, boolean>>({})
+  const oracleDriverInstallState = ref<Record<string, OracleDriverInstallView>>({})
+  const connectOperations = new Map<string, ConnectOperation>()
 
   // ──────────────────────────────────────────────────────────────────────
   // 派生与只读视图
@@ -64,6 +86,11 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
 
   /** 只读「当前选中连接 id」视图：workspace 页签上下文回退用 */
   const activeConnectionIdView = computed(() => activeConnectionId.value)
+
+  /** Oracle 驱动安装进度只读视图，供连接列表展示；所有权留在连接域。 */
+  const oracleDriverInstall = computed<Readonly<Record<string, OracleDriverInstallView>>>(
+    () => oracleDriverInstallState.value
+  )
 
   // ──────────────────────────────────────────────────────────────────────
   // 供 catalog 树交互使用的窄命令
@@ -97,14 +124,55 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
 
   async function connect(conn: DbConnectionInfo) {
     if (connecting.value[conn.id]) return
+    const operation: ConnectOperation = { cancelled: false }
+    connectOperations.set(conn.id, operation)
     connecting.value[conn.id] = true
     connectError.value[conn.id] = ''
     cancelledConnect.value[conn.id] = false
     try {
+      if (conn.dbType === 'oracle') {
+        oracleDriverInstallState.value[conn.id] = {
+          phase: 'checking',
+          downloadedBytes: 0,
+        }
+        const status = await connectionIpc.driverStatus('oracle')
+        if (operation.cancelled) return
+        if (!status.ready) {
+          const install = startOracleDriverInstall({
+            onProgress: (progress) => {
+              if (connectOperations.get(conn.id) !== operation || operation.cancelled) return
+              oracleDriverInstallState.value[conn.id] = {
+                phase: progress.phase,
+                downloadedBytes: progress.downloadedBytes,
+                ...(progress.totalBytes === undefined ? {} : { totalBytes: progress.totalBytes }),
+              }
+            },
+            onError: (error) => {
+              ports.showError(error)
+            },
+          })
+          operation.install = install
+          try {
+            const installed = await install.promise
+            if (operation.cancelled) return
+            if (!installed.ready)
+              throw new Error(installed.note || 'Oracle agent 驱动安装后仍不可用。')
+          } catch (error) {
+            if (operation.cancelled || isOracleDriverInstallCancelled(error)) return
+            throw error
+          } finally {
+            operation.install = undefined
+            delete oracleDriverInstallState.value[conn.id]
+          }
+        } else {
+          delete oracleDriverInstallState.value[conn.id]
+        }
+        if (operation.cancelled) return
+      }
       // 超时由后端实际建连生命周期收尾，不能只丢弃 IPC Promise 留下迟到会话。
       const info = await connectionIpc.connect(conn.id)
-      // 连接过程中被取消：立即断开，避免留下幽灵会话
-      if (cancelledConnect.value[conn.id]) {
+      // 驱动准备或连接过程中被取消：立即断开，避免留下幽灵会话。
+      if (operation.cancelled || cancelledConnect.value[conn.id]) {
         cancelledConnect.value[conn.id] = false
         try {
           await connectionIpc.disconnect(conn.id)
@@ -119,25 +187,35 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
       // 连接成功后展开树节点并预取库/schema 列表（catalog 域）
       ports.prefetchCatalog(info.id)
     } catch (err) {
-      const wasCancelled = cancelledConnect.value[conn.id]
+      const wasCancelled = operation.cancelled || cancelledConnect.value[conn.id]
       cancelledConnect.value[conn.id] = false
       if (wasCancelled) return
-      connectError.value[conn.id] = String(err)
+      connectError.value[conn.id] = errorMessage(err)
       const index = connections.value.findIndex((c) => c.id === conn.id)
-      if (index >= 0) connections.value[index] = { ...conn, status: 'offline', error: String(err) }
+      if (index >= 0)
+        connections.value[index] = { ...conn, status: 'offline', error: errorMessage(err) }
       throw err
     } finally {
+      if (connectOperations.get(conn.id) === operation) connectOperations.delete(conn.id)
+      delete oracleDriverInstallState.value[conn.id]
       connecting.value[conn.id] = false
     }
   }
 
   /** 取消进行中的连接；完成清理前保持忙碌，避免迟到断开误伤重连。 */
   function cancelConnect(connId: string) {
+    const operation = connectOperations.get(connId)
+    if (operation) {
+      operation.cancelled = true
+      operation.install?.cancel()
+    }
     cancelledConnect.value[connId] = true
     connectError.value[connId] = ''
+    delete oracleDriverInstallState.value[connId]
   }
 
   async function disconnect(conn: DbConnectionInfo) {
+    if (connectOperations.has(conn.id)) cancelConnect(conn.id)
     try {
       await connectionIpc.disconnect(conn.id)
     } catch (error) {
@@ -170,6 +248,7 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
   }
 
   async function removeConnection(id: string) {
+    if (connectOperations.has(id)) cancelConnect(id)
     // 删除命令自身负责取消与断开；错误必须由调用方展示。
     await connectionIpc.remove(id)
     // 关闭该连接下的页签（workspace 域）并失效元数据（catalog 域）
@@ -180,6 +259,13 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
       activeConnectionId.value = connections.value[0]?.id ?? ''
     }
   }
+
+  onScopeDispose(() => {
+    for (const operation of connectOperations.values()) {
+      operation.cancelled = true
+      operation.install?.cancel()
+    }
+  })
 
   return {
     // 状态
@@ -193,6 +279,7 @@ export function useDatabaseConnections(ports: DatabaseConnectionsPorts) {
     // 跨域只读视图
     connectionList,
     activeConnectionIdView,
+    oracleDriverInstall,
     // 供 catalog 的窄命令
     setConnectError,
     activateConnection,

@@ -29,9 +29,12 @@ import type {
   DbConnectionInfo,
   DbObjectInfo,
   DbTablePage,
+  DriverInstallProgress,
+  DriverStatus,
   QueryResult,
   RedisDatabaseList,
 } from './contracts'
+import type { Channel } from '@tauri-apps/api/core'
 import { useDatabase } from './useDatabase'
 import DataTab from './DataTab.vue'
 import QueryTab from './QueryTab.vue'
@@ -49,6 +52,9 @@ const env = vi.hoisted(() => {
     dbcDisconnect: vi.fn(),
     dbcConnectionSave: vi.fn(),
     dbcConnectionDelete: vi.fn(),
+    dbcDriverStatus: vi.fn(),
+    dbcDriverInstall: vi.fn(),
+    dbcDriverInstallCancel: vi.fn(),
     // 查询
     dbcPrepare: vi.fn(),
     dbcExecute: vi.fn(),
@@ -102,7 +108,9 @@ vi.mock('./ipc', () => ({
     connect: env.commands.dbcConnect,
     disconnect: env.commands.dbcDisconnect,
     test: vi.fn(),
-    driverStatus: vi.fn(),
+    driverStatus: env.commands.dbcDriverStatus,
+    installDriver: env.commands.dbcDriverInstall,
+    cancelDriverInstall: env.commands.dbcDriverInstallCancel,
   },
   csvIpc: { preview: vi.fn(), import: vi.fn() },
   fileIpc: {
@@ -284,6 +292,11 @@ function executeArg(sql: string) {
 }
 
 beforeEach(() => {
+  let nextCallbackId = 0
+  vi.stubGlobal('__TAURI_INTERNALS__', {
+    transformCallback: () => ++nextCallbackId,
+    unregisterCallback: vi.fn(),
+  })
   setActivePinia(createPinia())
   env.reset()
   env.commands.dbcConnections.mockResolvedValue([
@@ -310,6 +323,7 @@ beforeEach(() => {
   env.commands.dbcConnect.mockImplementation(async (id: string) => connection(id, id))
   env.commands.dbcDisconnect.mockResolvedValue(undefined)
   env.commands.dbcConnectionDelete.mockResolvedValue(undefined)
+  env.commands.dbcDriverInstallCancel.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -1770,6 +1784,131 @@ describe('执行准备和持久化竞态', () => {
     await pending
     expect(env.commands.dbcDisconnect).toHaveBeenCalledWith(target.id)
     expect(api.connecting.value[target.id]).toBe(false)
+  })
+
+  it('Oracle 驱动已就绪时直接连接，缺失时先安装并逐请求公开进度', async () => {
+    const api = mountWorkbench()
+    const oracle = connection('oracle-1', 'Oracle', { dbType: 'oracle', status: 'offline' })
+    env.commands.dbcConnections.mockResolvedValue([oracle])
+    await api.refreshConnections()
+
+    env.commands.dbcDriverStatus.mockResolvedValueOnce({ ready: true, kind: 'agent' })
+    await api.connect(oracle)
+    expect(env.commands.dbcDriverInstall).not.toHaveBeenCalled()
+    expect(env.commands.dbcConnect).toHaveBeenCalledTimes(1)
+
+    env.commands.dbcConnect.mockClear()
+    env.commands.dbcDriverStatus.mockResolvedValueOnce({ ready: false, kind: 'agent' })
+    const installing = deferred<DriverStatus>()
+    env.commands.dbcDriverInstall.mockImplementationOnce(() => installing.promise)
+    const pending = api.connect(oracle)
+    await flush()
+    expect(env.commands.dbcDriverInstall).toHaveBeenCalledWith(
+      'oracle',
+      expect.any(String),
+      expect.anything()
+    )
+    expect(env.commands.dbcConnect).not.toHaveBeenCalled()
+
+    const [dbType, requestId, progress] = env.commands.dbcDriverInstall.mock.calls[0] as [
+      string,
+      string,
+      Channel<DriverInstallProgress>,
+    ]
+    progress.onmessage({
+      requestId,
+      dbType,
+      phase: 'downloading',
+      downloadedBytes: 25,
+      totalBytes: 100,
+    })
+    expect(api.oracleDriverInstall.value[oracle.id]).toEqual({
+      phase: 'downloading',
+      downloadedBytes: 25,
+      totalBytes: 100,
+    })
+
+    installing.resolve({ ready: true, kind: 'agent', version: '2.0' })
+    await pending
+    expect(env.commands.dbcConnect).toHaveBeenCalledTimes(1)
+    expect(api.oracleDriverInstall.value[oracle.id]).toBeUndefined()
+  })
+
+  it('Oracle 下载失败不连接，可重试；其它数据库保持原连接路径', async () => {
+    const api = mountWorkbench()
+    const oracle = connection('oracle-2', 'Oracle', { dbType: 'oracle', status: 'offline' })
+    env.commands.dbcConnections.mockResolvedValue([oracle])
+    await api.refreshConnections()
+    env.commands.dbcDriverStatus.mockResolvedValue({ ready: false, kind: 'agent' })
+    env.commands.dbcDriverInstall
+      .mockRejectedValueOnce(new Error('下载失败'))
+      .mockResolvedValueOnce({ ready: true, kind: 'agent' })
+
+    await expect(api.connect(oracle)).rejects.toThrow('下载失败')
+    expect(env.commands.dbcConnect).not.toHaveBeenCalled()
+    expect(api.connectError.value[oracle.id]).toContain('下载失败')
+    await api.connect(oracle)
+    expect(env.commands.dbcDriverInstall).toHaveBeenCalledTimes(2)
+    expect(env.commands.dbcConnect).toHaveBeenCalledTimes(1)
+
+    const mysql = connection('mysql-1', 'MySQL', { status: 'offline' })
+    env.commands.dbcConnect.mockClear()
+    await api.connect(mysql)
+    expect(env.commands.dbcDriverStatus).toHaveBeenCalledTimes(2)
+    expect(env.commands.dbcDriverInstall).toHaveBeenCalledTimes(2)
+    expect(env.commands.dbcConnect).toHaveBeenCalledTimes(1)
+  })
+
+  it('断开或卸载期间取消 Oracle 准备，迟到就绪结果不启动连接', async () => {
+    const api = mountWorkbench()
+    const oracle = connection('oracle-3', 'Oracle', { dbType: 'oracle', status: 'offline' })
+    env.commands.dbcConnections.mockResolvedValue([oracle])
+    await api.refreshConnections()
+    env.commands.dbcDriverStatus.mockResolvedValue({ ready: false, kind: 'agent' })
+    const installing = deferred<DriverStatus>()
+    env.commands.dbcDriverInstall.mockImplementation(() => installing.promise)
+    const pending = api.connect(oracle)
+    await flush()
+    const [dbType, requestId, progress] = env.commands.dbcDriverInstall.mock.calls[0] as [
+      string,
+      string,
+      Channel<DriverInstallProgress>,
+    ]
+
+    const disconnecting = api.disconnect(oracle)
+    await disconnecting
+    await api.connect(oracle)
+    expect(env.commands.dbcDriverInstall).toHaveBeenCalledTimes(1)
+    progress.onmessage({
+      requestId,
+      dbType,
+      phase: 'waiting',
+      downloadedBytes: 0,
+    })
+    expect(env.commands.dbcDriverInstallCancel).toHaveBeenCalledWith(requestId)
+    installing.resolve({ ready: true, kind: 'agent' })
+    await pending
+    expect(env.commands.dbcConnect).not.toHaveBeenCalled()
+
+    env.commands.dbcDriverStatus.mockResolvedValue({ ready: false, kind: 'agent' })
+    const afterUnmount = deferred<DriverStatus>()
+    env.commands.dbcDriverInstall.mockImplementationOnce(() => afterUnmount.promise)
+    const next = api.connect(oracle)
+    await flush()
+    const hostUnmount = hosts.pop()
+    hostUnmount?.()
+    const secondProgress = env.commands.dbcDriverInstall.mock
+      .calls[1][2] as Channel<DriverInstallProgress>
+    const secondRequestId = env.commands.dbcDriverInstall.mock.calls[1][1] as string
+    secondProgress.onmessage({
+      requestId: secondRequestId,
+      dbType: 'oracle',
+      phase: 'waiting',
+      downloadedBytes: 0,
+    })
+    afterUnmount.resolve({ ready: true, kind: 'agent' })
+    await next
+    expect(env.commands.dbcConnect).not.toHaveBeenCalled()
   })
 })
 

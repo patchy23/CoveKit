@@ -5,12 +5,14 @@
 //! - open_session 参数含 agentSessionId + 连接字段（snake_case，与 dbx ConnectParams 对齐）
 //! - 查询结果形状：{columns, column_types, rows, affected_rows, execution_time_ms, truncated}
 //!
-//! 目录：client.rs（协议客户端）/ manager.rs（驱动 store 与下载）/ runtime.rs（进程生命周期）
+//! 目录：client.rs（协议客户端）/ manager.rs（驱动存储）/ install.rs（Oracle 固定版安装）
 
 pub mod client;
+pub mod install;
 pub mod manager;
 
 pub use client::{AgentClient, AgentConnectParams};
+pub use install::DriverInstallState;
 pub use manager::DriverStore;
 
 /// agent 驱动 key（driver store 目录名，与 dbx 驱动注册名一致）
